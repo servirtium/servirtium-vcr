@@ -171,29 +171,23 @@ Remaining gap:
 
 - The first cut assumes decoded gzip bodies are textual enough for the current tape string storage. Full arbitrary binary decoded bodies should go through the existing `base64 below` path once the record-side emitter carries explicit body lengths end to end.
 
-## Chunked Transfer-Encoding (record) — TEST NOT YET PORTED
+## Chunked Transfer-Encoding (record) — PORTED
 
 Record mode against a `Transfer-Encoding: chunked` upstream is implemented and
 shipped (`std.http.client` de-chunks; the tape stores the decoded payload, same
-shape as the gzip-normalize path above), but **the monorepo has no test for it
-yet**. The Aether stdlib has one — `tests/integration/vcr_record_chunked/`
-(`vcr_chunked.ae`, a raw-socket C chunked responder `chunked_upstream.c`, and
-`test_vcr_record_chunked.sh`) — flagged by the aether-side handoff
-(`aether/VCR-MOVED-TO-MONOREPO.md`, Phase 1.5) as port-first-then-delete.
+shape as the gzip-normalize path above), and the monorepo now has coverage:
+`core_tests/chunked_record_probe.ae` (vendored from aether's `vcr_chunked.ae`,
+repointed to `import core.vcr`) + `core_tests/chunked_upstream.c` (the raw-socket
+C responder, since the Aether HTTP server only emits `Content-Length`). It has
+its own leaf, `core_tests/.chunked.ae` (NOT the `test_vcr_*` run-tests.sh loop,
+since it needs the C upstream process) — inline-Aether orchestration: cc the
+upstream, read its port, build+run the probe with `--extra core/aether_vcr.c`,
+tear the upstream down. Asserts all three tiers: client de-chunks, record tape
+stores the decoded payload (not framing), replay serves it decoded.
 
-To do:
-
-- Port `vcr_record_chunked` into `core_tests/` (it needs the C raw-socket
-  upstream because the Aether HTTP server only ever emits `Content-Length`, so
-  the test drives a hand-written chunked responder). Repoint `import
-  std.http.server.vcr` → `import core.vcr` like the other vendored tests, and
-  wire it into `core_tests/run-tests.sh` (it has a `.c` upstream + likely needs
-  a port, so it may want its own small runner rather than the plain
-  build+run loop).
-- The same test also asserts that `std.http.client` de-chunks the response body
-  — that's a pure Aether-stdlib *client* concern, not VCR. Optionally split it
-  into a client-only test that stays in the aether repo, so client de-chunk
-  coverage survives independent of the VCR engine.
+Per the aether handoff (`VCR-MOVED-TO-MONOREPO.md`), the **client-only** de-chunk
+assertion (a pure `std.http.client` concern, no VCR) is being split out to stay
+as a stdlib test in the aether repo — that half is the aether sibling's to keep.
 
 ## HTTP-Sourced Markdown Tapes — DONE
 
