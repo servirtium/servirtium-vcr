@@ -41,7 +41,8 @@ many-language monorepo. You point `aeb` at the node you want (a dot-prefixed
 edges and builds just its transitive dependencies, in order. Because every
 binding deps the `core/` node, asking for any one binding first builds the
 native lib once, then links or loads that single artifact — nothing else gets
-built. Running bare `aeb` targets every wired node.
+built. Bare `aeb` (no target) builds the whole repo: it collects every `.ae`
+node in the tree and builds the full graph in dependency order.
 
 ```sh
 ./bootstrap.sh        # installs the Aether toolchain + aeb if missing, then `aeb`
