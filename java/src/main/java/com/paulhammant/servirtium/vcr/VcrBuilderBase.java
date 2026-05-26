@@ -15,12 +15,17 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     record HeaderRemoval(Field field, String name) {
     }
 
+    private record StaticMount(String mount, String dir) {
+    }
+
     final String tapePath;
     String host = "127.0.0.1";
     int port;            // 0 => OS-assigned (dynamic)
     String label = "";
 
     private final List<HeaderRemoval> headerRemovals = new ArrayList<>();
+    private final List<StaticMount> staticContent = new ArrayList<>();
+    private final List<String> untaped = new ArrayList<>();
 
     VcrBuilderBase(String tapePath) {
         this.tapePath = tapePath;
@@ -49,6 +54,28 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     /** Remove a header by name from the given block (case-insensitive). */
     public S removeHeader(Field field, String name) {
         headerRemovals.add(new HeaderRemoval(field, name));
+        return self();
+    }
+
+    /**
+     * Serve a path prefix from an on-disk directory instead of the tape
+     * (Servirtium step 11).
+     *
+     * <p>Works in both playback and record mode (recording a browser suite is
+     * cleaner served same-origin from the VCR — no CORS preflights).
+     */
+    public S staticContent(String mountPath, String fsDir) {
+        staticContent.add(new StaticMount(mountPath, fsDir));
+        return self();
+    }
+
+    /**
+     * Mark an incidental request path (e.g. {@code /favicon.ico}) so the VCR
+     * answers 404 without consuming the tape cursor (playback) and never
+     * forwards/records it (record).
+     */
+    public S untaped(String path) {
+        untaped.add(path);
         return self();
     }
 
@@ -87,6 +114,25 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
                 check(r, "removeHeader");
             } catch (Throwable t) {
                 throw rethrow("removeHeader", t);
+            }
+        }
+        for (StaticMount s : staticContent) {
+            try {
+                MemorySegment r = (MemorySegment) NativeMethods.STATIC_CONTENT.invokeExact(
+                        NativeMethods.cString(arena, s.mount()),
+                        NativeMethods.cString(arena, s.dir()));
+                check(r, "staticContent");
+            } catch (Throwable t) {
+                throw rethrow("staticContent", t);
+            }
+        }
+        for (String p : untaped) {
+            try {
+                MemorySegment r = (MemorySegment) NativeMethods.UNTAPED.invokeExact(
+                        NativeMethods.cString(arena, p));
+                check(r, "untaped");
+            } catch (Throwable t) {
+                throw rethrow("untaped", t);
             }
         }
     }

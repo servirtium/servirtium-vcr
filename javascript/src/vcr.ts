@@ -90,6 +90,8 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected portValue = 0 // 0 => OS-assigned (dynamic)
   protected labelValue = ''
   protected readonly headerRemovals: HeaderRemoval[] = []
+  protected readonly staticMounts: Array<{ mount: string; dir: string }> = []
+  protected readonly untapedPaths: string[] = []
 
   protected constructor(protected readonly tapePath: string) {}
 
@@ -120,6 +122,26 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   }
 
   /**
+   * Serve a path prefix from an on-disk directory instead of the tape
+   * (Servirtium step 11). Available in both playback and record mode so a
+   * browser suite can be served same-origin from the VCR while recording.
+   */
+  staticContent(mountPath: string, fsDir: string): TSelf {
+    this.staticMounts.push({ mount: mountPath, dir: fsDir })
+    return this.self()
+  }
+
+  /**
+   * Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers 404
+   * for without consuming the tape cursor — a normal interaction recorded
+   * after it still matches. Available in both playback and record mode.
+   */
+  untaped(path: string): TSelf {
+    this.untapedPaths.push(path)
+    return this.self()
+  }
+
+  /**
    * Apply this builder's accumulated config after the reset and before the
    * server starts (mutations like static-content and unredactions must be
    * registered before the tape loads). Subclasses extend this.
@@ -128,14 +150,18 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
     for (const { field, name } of this.headerRemovals) {
       check(N.removeHeader(field, name), 'removeHeader')
     }
+    for (const { mount, dir } of this.staticMounts) {
+      check(N.staticContent(mount, dir), 'staticContent')
+    }
+    for (const path of this.untapedPaths) {
+      check(N.untaped(path), 'untaped')
+    }
   }
 }
 
 /** Configures and starts a playback VCR server. */
 export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   private readonly unredactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
-  private readonly staticMounts: Array<{ mount: string; dir: string }> = []
-  private readonly untapedPaths: string[] = []
   private strictHeadersOn = false
 
   constructor(tapePath: string) {
@@ -164,33 +190,11 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     return this
   }
 
-  /** Serve a path prefix from an on-disk directory instead of the tape (Servirtium step 11). */
-  staticContent(mountPath: string, fsDir: string): PlaybackBuilder {
-    this.staticMounts.push({ mount: mountPath, dir: fsDir })
-    return this
-  }
-
-  /**
-   * Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers 404
-   * for without consuming the tape cursor — a normal interaction recorded
-   * after it still matches.
-   */
-  untaped(path: string): PlaybackBuilder {
-    this.untapedPaths.push(path)
-    return this
-  }
-
   protected applyConfig(): void {
     super.applyConfig()
     if (this.strictHeadersOn) N.setStrictHeaders(1)
     for (const { field, pattern, replacement } of this.unredactions) {
       check(N.unredact(field, pattern, replacement), 'unredact')
-    }
-    for (const { mount, dir } of this.staticMounts) {
-      check(N.staticContent(mount, dir), 'staticContent')
-    }
-    for (const path of this.untapedPaths) {
-      check(N.untaped(path), 'untaped')
     }
   }
 

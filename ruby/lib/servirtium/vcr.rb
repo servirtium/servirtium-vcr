@@ -19,6 +19,8 @@ module Servirtium
       @port = 0 # 0 => OS-assigned (dynamic)
       @label = ''
       @header_removals = []
+      @static_content = []
+      @untaped = []
     end
 
     # Bind host. Defaults to 127.0.0.1.
@@ -45,6 +47,23 @@ module Servirtium
       self
     end
 
+    # Serve a path prefix from an on-disk directory instead of the tape
+    # (Servirtium step 11). On the shared base so record mode can also serve
+    # content same-origin (e.g. a browser test suite) while it records.
+    def static_content(mount_path, fs_dir)
+      @static_content << [mount_path, fs_dir]
+      self
+    end
+
+    # Mark an incidental path (e.g. /favicon.ico) the VCR answers 404 for
+    # without consuming the tape cursor, so the next recorded interaction
+    # still matches. On the shared base for the same reason as
+    # {#static_content}.
+    def untaped(path)
+      @untaped << path
+      self
+    end
+
     private
 
     # Wipe all process-global mutation/format/strict state so a previous
@@ -68,6 +87,12 @@ module Servirtium
     def apply_config
       @header_removals.each do |field, name|
         check(Native.call(:remove_header, field, name), 'remove_header')
+      end
+      @static_content.each do |mount, dir|
+        check(Native.call(:static_content, mount, dir), 'static_content')
+      end
+      @untaped.each do |path|
+        check(Native.call(:untaped, path), 'untaped')
       end
     end
 
@@ -99,8 +124,6 @@ module Servirtium
     def initialize(tape_path)
       super
       @unredactions = []
-      @static_content = []
-      @untaped = []
       @strict_headers = false
     end
 
@@ -116,21 +139,6 @@ module Servirtium
     # real value the live SUT sends, so a committed (scrubbed) tape matches.
     def unredact(field, pattern, replacement)
       @unredactions << [field, pattern, replacement]
-      self
-    end
-
-    # Serve a path prefix from an on-disk directory instead of the tape
-    # (Servirtium step 11).
-    def static_content(mount_path, fs_dir)
-      @static_content << [mount_path, fs_dir]
-      self
-    end
-
-    # Mark an incidental path (e.g. /favicon.ico) the VCR answers 404 for
-    # without consuming the tape cursor, so the next recorded interaction
-    # still matches.
-    def untaped(path)
-      @untaped << path
       self
     end
 
@@ -153,12 +161,6 @@ module Servirtium
       Native.call(:set_strict_headers, 1) if @strict_headers
       @unredactions.each do |field, pattern, replacement|
         check(Native.call(:unredact, field, pattern, replacement), 'unredact')
-      end
-      @static_content.each do |mount, dir|
-        check(Native.call(:static_content, mount, dir), 'static_content')
-      end
-      @untaped.each do |path|
-        check(Native.call(:untaped, path), 'untaped')
       end
     end
   end

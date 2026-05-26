@@ -8,4 +8,8 @@ gemspec
 gem 'rake', '~> 13.0'
 gem 'rspec', '~> 3.0'
 gem 'rubocop'
+# Drives real headless Chrome for the TodoBackend browser integration test
+# (integration/todobackend/ruby). 4.x fetches a matching chromedriver via
+# Selenium Manager automatically.
+gem 'selenium-webdriver', '~> 4.44'
 gem 'simplecov'
