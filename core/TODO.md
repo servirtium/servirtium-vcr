@@ -268,6 +268,9 @@ Candidate wrapper targets:
 - Python
 - Go
 - Node-side JavaScript
+- Flutter — rides on the existing Dart binding (`dart:ffi` works in a Flutter
+  app); target a Flutter `integration_test`/widget test driving a VCR, so a
+  Flutter UI can be tested offline against recorded backend tapes.
 
 End-user shape to aim for:
 
