@@ -87,6 +87,8 @@ class _BuilderBase:
         self._port = 0  # 0 => OS-assigned (dynamic)
         self._label = ""
         self._header_removals: list[tuple[Field, str]] = []
+        self._static_content: list[tuple[str, str]] = []
+        self._untaped: list[str] = []
 
     def host(self, host: str):
         """Bind host. Defaults to 127.0.0.1."""
@@ -108,6 +110,21 @@ class _BuilderBase:
         self._header_removals.append((field, name))
         return self
 
+    def static_content(self, mount_path: str, fs_dir: str):
+        """Serve a path prefix from an on-disk directory instead of the tape.
+
+        Works in both playback and record mode (recording a browser suite is
+        cleaner served same-origin from the VCR — no CORS preflights)."""
+        self._static_content.append((mount_path, fs_dir))
+        return self
+
+    def untaped(self, path: str):
+        """Mark an incidental path (e.g. /favicon.ico) the VCR answers 404 for
+        without touching the tape — no cursor consumed on playback, nothing
+        forwarded or recorded on record."""
+        self._untaped.append(path)
+        return self
+
     def _apply_config(self) -> None:
         """Apply accumulated config after the reset and before start.
 
@@ -115,6 +132,10 @@ class _BuilderBase:
         """
         for field, name in self._header_removals:
             _check(N.remove_header(int(field), N.encode(name)), "remove_header")
+        for mount, fs_dir in self._static_content:
+            _check(N.static_content(N.encode(mount), N.encode(fs_dir)), "static_content")
+        for path in self._untaped:
+            _check(N.untaped(N.encode(path)), "untaped")
 
 
 class PlaybackBuilder(_BuilderBase):
@@ -123,8 +144,6 @@ class PlaybackBuilder(_BuilderBase):
     def __init__(self, tape_path: str) -> None:
         super().__init__(tape_path)
         self._unredactions: list[tuple[Field, str, str]] = []
-        self._static_content: list[tuple[str, str]] = []
-        self._untaped: list[str] = []
         self._strict_headers = False
 
     def strict_headers(self, on: bool = True):
@@ -139,18 +158,6 @@ class PlaybackBuilder(_BuilderBase):
         self._unredactions.append((field, pattern, replacement))
         return self
 
-    def static_content(self, mount_path: str, fs_dir: str):
-        """Serve a path prefix from an on-disk directory instead of the tape."""
-        self._static_content.append((mount_path, fs_dir))
-        return self
-
-    def untaped(self, path: str):
-        """Mark an incidental path (e.g. /favicon.ico) the VCR answers 404 for
-        without consuming the tape cursor, so the next recorded interaction
-        still matches."""
-        self._untaped.append(path)
-        return self
-
     def _apply_config(self) -> None:
         super()._apply_config()
         if self._strict_headers:
@@ -160,10 +167,6 @@ class PlaybackBuilder(_BuilderBase):
                 N.unredact(int(field), N.encode(pattern), N.encode(replacement)),
                 "unredact",
             )
-        for mount, fs_dir in self._static_content:
-            _check(N.static_content(N.encode(mount), N.encode(fs_dir)), "static_content")
-        for path in self._untaped:
-            _check(N.untaped(N.encode(path)), "untaped")
 
     def start(self) -> "VcrServer":
         _reset_global_state()
