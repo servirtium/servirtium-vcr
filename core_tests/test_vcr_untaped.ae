@@ -1,0 +1,99 @@
+// Untaped-path support — incidental requests (the classic /favicon.ico a
+// real browser fires) marked "don't record / serve 404", so they never
+// touch the tape.
+//
+// What we cover (playback side — the browser-driven case):
+//   1. GET /favicon.ico BEFORE any tape request → 404, and last_kind
+//      stays KIND_OK (NOT TAPE_EXHAUSTED) — the untaped short-circuit
+//      runs ahead of all tape logic.
+//   2. The favicon GET did NOT consume the playback cursor: the single
+//      tape interaction (/api/ping) still matches right after.
+//   3. A non-untaped unknown path AFTER the tape is exhausted still
+//      reports the real TAPE_EXHAUSTED — untaped is opt-in, not a
+//      blanket 404.
+//
+// untaped() is registered BEFORE vcr.load(), same as static_content.
+
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+
+extern exit(code: int)
+extern http_server_start_raw(server: ptr) -> int
+
+const PORT = 18131
+const TAPE_PATH = "core_tests/tapes/static_smoke.tape"
+
+message StartVCR { raw: ptr }
+message Noop {}
+
+actor VCRActor {
+    state s = 0
+    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
+}
+
+actor SchedHelper {
+    state x = 0
+    receive { Noop() -> { x = 1 } }
+}
+
+get_status_and_body(url: string) -> {
+    creq = client.request("GET", url)
+    if creq == null { return -1, "" }
+    cresp, cerr = client.send_request(creq)
+    client.request_free(creq)
+    if cerr != "" { return -2, cerr }
+    s = client.response_status(cresp)
+    b = client.response_body(cresp)
+    body_owned = string.copy(b)
+    client.response_free(cresp)
+    return s, body_owned
+}
+
+main() {
+    println("=== VCR untaped-path (favicon) test ===\n")
+
+    // Mark favicon as untaped BEFORE loading — load() wires the routes.
+    ierr = vcr.untaped("/favicon.ico")
+    if ierr != "" { println("FAIL: untaped: ${ierr}"); exit(1) }
+
+    raw = vcr.load(TAPE_PATH, PORT)
+    if raw == null { println("FAIL: vcr.load"); exit(1) }
+
+    spawn(SchedHelper())
+    a = spawn(VCRActor())
+    a ! StartVCR { raw: raw }
+    sleep(500)
+
+    base = "http://127.0.0.1:${PORT}"
+
+    println("Test 1: /favicon.ico → 404 without touching the tape")
+    s1, _ = get_status_and_body("${base}/favicon.ico")
+    if s1 != 404 { println("  FAIL: expected 404, got ${s1}"); exit(1) }
+    if vcr.last_kind() != vcr.KIND_OK {
+        println("  FAIL: untaped path tripped last_kind=${vcr.last_kind()} (wanted KIND_OK)")
+        exit(1)
+    }
+    println("  PASS: 404, last_kind still KIND_OK")
+
+    println("\nTest 2: cursor intact — /api/ping still matches")
+    s2, b2 = get_status_and_body("${base}/api/ping")
+    if s2 != 200 { println("  FAIL: status ${s2} (favicon must not consume the cursor)"); exit(1) }
+    if string.contains(b2, "pong") != 1 {
+        println("  FAIL: tape body did not contain 'pong': ${b2}"); exit(1)
+    }
+    println("  PASS: 200 + ${b2}")
+
+    println("\nTest 3: non-untaped path after exhaustion still TAPE_EXHAUSTED")
+    s3, _ = get_status_and_body("${base}/api/not-on-tape")
+    if s3 != 599 { println("  FAIL: expected 599, got ${s3}"); exit(1) }
+    if vcr.last_kind() != vcr.KIND_TAPE_EXHAUSTED {
+        println("  FAIL: wanted KIND_TAPE_EXHAUSTED, got ${vcr.last_kind()}"); exit(1)
+    }
+    println("  PASS: 599, last_kind KIND_TAPE_EXHAUSTED")
+
+    println("\n=== All untaped-path tests passed ===")
+    vcr.eject(raw)
+    exit(0)
+}

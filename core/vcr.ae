@@ -111,6 +111,7 @@ exports (
     vcr_add_note,
     vcr_record_interaction_full, vcr_last_error, vcr_clear_last_error,
     vcr_add_static_content, vcr_clear_static_content,
+    vcr_add_untaped, vcr_clear_untaped,
     vcr_set_indent_code_blocks, vcr_set_emphasize_http_verbs,
     vcr_get_tape_count, vcr_get_method, vcr_get_path, vcr_get_status,
     vcr_get_content_type, vcr_get_body, vcr_get_req_headers, vcr_get_req_body,
@@ -143,6 +144,7 @@ exports (
     note,
     record_full, record_full_response, last_error, clear_last_error,
     static_content, clear_static_content,
+    untaped, clear_untaped,
     indent_code_blocks, emphasize_http_verbs, clear_format_options,
     str_replace_all, apply_redactions_for, apply_unredactions_for,
     route_path_for, register_routes, emit_code_block,
@@ -201,6 +203,13 @@ extern vcr_clear_last_error()
 // mounts BEFORE loading the tape.
 extern vcr_add_static_content(mount_path: string, fs_dir: string) -> int
 extern vcr_clear_static_content()
+
+// Untaped-path externs — incidental paths (e.g. /favicon.ico) the SUT/
+// browser hits that should never touch the tape. Both dispatchers
+// short-circuit a match to a bare 404: playback doesn't consume the
+// cursor, record doesn't forward or record it. Configure BEFORE load().
+extern vcr_add_untaped(path: string) -> int
+extern vcr_clear_untaped()
 
 // Step 12 externs — optional markdown formatting toggles for the
 // recorder. Playback tolerates either form regardless.
@@ -792,6 +801,34 @@ static_content(mount_path: string, fs_dir: string) -> string {
 // scenarios. Recommended pattern is one VCR per test.
 clear_static_content() {
     vcr_clear_static_content()
+}
+
+// ---- Untaped paths (Servirtium "don't record / 404") ----------------
+//
+// Mark a path the SUT/browser hits incidentally but that has no place
+// on the tape — /favicon.ico is the canonical case for browser-driven
+// (Selenium/Cypress) tests. A matching request gets a bare 404 from the
+// VCR without ever touching the tape: on playback it doesn't advance the
+// cursor or trip a mismatch (so the favicon GET stops reporting
+// TAPE_EXHAUSTED); on record it isn't forwarded upstream or written out.
+//
+// Exact path match; the server strips the query first, so "/favicon.ico"
+// also covers "/favicon.ico?v=2". Configure BEFORE vcr.load() (same as
+// static_content). Persists across load() in the same process;
+// clear_untaped() is the explicit reset.
+//
+//   vcr.untaped("/favicon.ico")
+//   raw = vcr.load(tape_path, port)
+//
+// Returns "" on success, error string otherwise.
+untaped(path: string) -> string {
+    ok = vcr_add_untaped(path)
+    if ok == 0 { return vcr_load_err() }
+    return ""
+}
+
+clear_untaped() {
+    vcr_clear_untaped()
 }
 
 // ---- Optional markdown formatting (Servirtium roadmap step 12) -------

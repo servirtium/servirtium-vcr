@@ -914,6 +914,56 @@ void vcr_clear_static_content(void) {
     mounts_free_storage();
 }
 
+/* ---- Untaped paths (favicon &c.) ------------------------------------
+ *
+ * Paths a browser/SUT hits incidentally — /favicon.ico the classic case
+ * — that should never touch the tape. Both dispatchers short-circuit a
+ * matching request to a bare 404 *before* any tape logic: on playback it
+ * doesn't consume the cursor or record a mismatch (so an incidental
+ * favicon GET no longer reports TAPE_EXHAUSTED); on record it isn't
+ * forwarded upstream or written to the recording. Exact path match — the
+ * server's path accessor strips the query, so "/favicon.ico" matches
+ * "/favicon.ico?v=2" too. Configured before load(); survives load() like
+ * static mounts; vcr_clear_untaped() is the explicit reset, so it is
+ * deliberately NOT touched by tape_free_storage(). */
+static char** g_untaped     = NULL;
+static int    g_untaped_n   = 0;
+static int    g_untaped_cap = 0;
+
+int vcr_add_untaped(const char* path) {
+    if (!path || path[0] != '/') {
+        tape_set_err("vcr_add_untaped: path must start with '/'");
+        return 0;
+    }
+    if (g_untaped_n >= g_untaped_cap) {
+        int new_cap = g_untaped_cap ? g_untaped_cap * 2 : 4;
+        char** bigger = (char**)realloc(g_untaped, sizeof(char*) * (size_t)new_cap);
+        if (!bigger) { tape_set_err("OOM growing untaped-path list"); return 0; }
+        g_untaped = bigger;
+        g_untaped_cap = new_cap;
+    }
+    char* copy = strdup(path);
+    if (!copy) { tape_set_err("OOM storing untaped path"); return 0; }
+    g_untaped[g_untaped_n++] = copy;
+    return 1;
+}
+
+void vcr_clear_untaped(void) {
+    for (int i = 0; i < g_untaped_n; i++) free(g_untaped[i]);
+    free(g_untaped);
+    g_untaped = NULL;
+    g_untaped_n = 0;
+    g_untaped_cap = 0;
+}
+
+static int path_is_untaped(const char* path) {
+    if (!path) return 0;
+    for (int i = 0; i < g_untaped_n; i++) {
+        if (strcmp(path, g_untaped[i]) == 0) return 1;
+    }
+    return 0;
+}
+
 /* Register the wildcard routes for every mount with the http
  * server. Called from Aether register_routes() after the tape
  * routes go in. */
@@ -1331,6 +1381,13 @@ static void emit_recorded_headers_to_response(void* res, const char* headers) {
 
 static void vcr_record_dispatch(void* req, void* res, void* ud) {
     (void)ud;
+    if (path_is_untaped(http_request_path(req))) {
+        /* incidental path (favicon &c.) — 404 without forwarding
+         * upstream or recording it into the tape. */
+        http_response_set_status(res, 404);
+        http_response_set_body(res, "");
+        return;
+    }
     const VcrHttpRequestPrefix* live_req = (const VcrHttpRequestPrefix*)req;
     if (!g_record_upstream_base || !*g_record_upstream_base) {
         record_dispatch_error(res, 500, "vcr record mode: upstream base not configured");
@@ -1487,6 +1544,13 @@ static void vcr_record_dispatch(void* req, void* res, void* ud) {
 
 void vcr_dispatch(void* req, void* res, void* ud) {
     (void)ud;
+    if (path_is_untaped(http_request_path(req))) {
+        /* incidental path (favicon &c.) — 404 without consuming the
+         * cursor or setting g_last_kind; it's not a tape interaction. */
+        http_response_set_status(res, 404);
+        http_response_set_body(res, "");
+        return;
+    }
     if (g_tape_cursor >= g_tape_n) {
         last_err_set("tape exhausted — SUT made more requests than the tape contains");
         g_last_kind = VCR_KIND_TAPE_EXHAUSTED;

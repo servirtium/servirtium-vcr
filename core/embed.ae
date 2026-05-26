@@ -229,6 +229,13 @@ vcr_embed_static_content(mount_path: string, fs_dir: string) -> string {
     return vcr_embed_dup(vcr.static_content(mount_path, fs_dir))
 }
 
+// Mark an incidental path (e.g. "/favicon.ico") as never-on-the-tape:
+// the VCR answers it 404 without consuming the playback cursor or, in
+// record mode, forwarding/recording it. Configure before start_*.
+vcr_embed_untaped(path: string) -> string {
+    return vcr_embed_dup(vcr.untaped(path))
+}
+
 vcr_embed_set_strict_headers(on: int) {
     vcr.set_strict_headers(on)
 }
@@ -255,6 +262,10 @@ vcr_embed_clear_header_removals() {
 
 vcr_embed_clear_static_content() {
     vcr.clear_static_content()
+}
+
+vcr_embed_clear_untaped() {
+    vcr.clear_untaped()
 }
 
 vcr_embed_clear_format_options() {
