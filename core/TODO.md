@@ -2,6 +2,38 @@
 
 Notes from scanning `/home/paul/scm/servirtium-README`, excluding the weather API walkthrough. Keep this file about the generic VCR/Servirtium implementation only.
 
+## Goal: rewrite `aether_vcr.c` in pure Aether
+
+`core/aether_vcr.c` is hand-written C: it backs the `extern` declarations in
+`core/vcr.ae` — tape storage globals, the dispatcher function the HTTP server
+calls per request, `HttpRequest` field reads, and the base64/gzip/de-chunk
+helpers. `vcr.ae` (parser/emitter/embed ABI) is pure Aether; only this runtime
+layer is C. Splitting it out was a mistake — the engine should have been all
+Aether. The `--extra aether_vcr.c` in `core/.build.ae` exists *only* because
+this file is hand-authored rather than emitted from the `.ae` sources; once it
+is gone, the build is a plain `ae build --emit=lib …` with no `--extra`.
+
+**Target:** fold every `aether_vcr.c` symbol into `vcr.ae` (or sibling `.ae`
+files), delete the C, drop `--extra` from the build, and confirm `core_tests/`
+(all 14) + the 12 bindings stay green.
+
+What kept it in C — to resolve in Aether first, not reasons to stop:
+
+- **Dispatcher as a route handler.** The server calls a per-request function;
+  originally that had to be a raw C function pointer matching the server's C
+  ABI. `std.http` now registers routes from Aether, so an Aether handler
+  closure should suffice — verify the registration API accepts one.
+- **Binary-safe buffers.** Bodies/headers must survive embedded NULs. Confirm
+  Aether's string/byte type is length-counted (not NUL-terminated) for the
+  request-body matcher and base64 path.
+- **gzip / de-chunk.** Needs zlib (gzip normalize) and chunked decoding. Aether
+  stdlib already gained de-chunk (CHANGELOG); check for a stdlib gzip/zlib
+  binding, else add one upstream — that's the one piece likely to need an
+  Aether-side change before this can fully land.
+
+No reason found to keep it in C permanently; the above are migration
+prerequisites, sequence them ahead of the rewrite.
+
 ## Current Shape
 
 - Playback and record mode share the same in-memory tape storage and Servirtium markdown emitter/parser.
