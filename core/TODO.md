@@ -171,6 +171,30 @@ Remaining gap:
 
 - The first cut assumes decoded gzip bodies are textual enough for the current tape string storage. Full arbitrary binary decoded bodies should go through the existing `base64 below` path once the record-side emitter carries explicit body lengths end to end.
 
+## Chunked Transfer-Encoding (record) — TEST NOT YET PORTED
+
+Record mode against a `Transfer-Encoding: chunked` upstream is implemented and
+shipped (`std.http.client` de-chunks; the tape stores the decoded payload, same
+shape as the gzip-normalize path above), but **the monorepo has no test for it
+yet**. The Aether stdlib has one — `tests/integration/vcr_record_chunked/`
+(`vcr_chunked.ae`, a raw-socket C chunked responder `chunked_upstream.c`, and
+`test_vcr_record_chunked.sh`) — flagged by the aether-side handoff
+(`aether/VCR-MOVED-TO-MONOREPO.md`, Phase 1.5) as port-first-then-delete.
+
+To do:
+
+- Port `vcr_record_chunked` into `core_tests/` (it needs the C raw-socket
+  upstream because the Aether HTTP server only ever emits `Content-Length`, so
+  the test drives a hand-written chunked responder). Repoint `import
+  std.http.server.vcr` → `import core.vcr` like the other vendored tests, and
+  wire it into `core_tests/run-tests.sh` (it has a `.c` upstream + likely needs
+  a port, so it may want its own small runner rather than the plain
+  build+run loop).
+- The same test also asserts that `std.http.client` de-chunks the response body
+  — that's a pure Aether-stdlib *client* concern, not VCR. Optionally split it
+  into a client-only test that stays in the aether repo, so client de-chunk
+  coverage survives independent of the VCR engine.
+
 ## HTTP-Sourced Markdown Tapes — DONE
 
 Servirtium step 16 mentions markdown recordings sourced over HTTP.
