@@ -47,8 +47,12 @@ node in the tree and builds the full graph in dependency order.
 ```sh
 ./bootstrap.sh        # installs the Aether toolchain + aeb if missing, then `aeb`
 # or, if you already have ae (>= 0.183) and aeb on PATH:
-aeb                   # engine -> all wired bindings' tests
+aeb                   # whole repo: every node, in dependency order
 aeb go/.tests.ae      # just one binding (builds the engine it deps, then tests)
 ```
 
 See [docs/](docs/) and each binding's own `docs/`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
