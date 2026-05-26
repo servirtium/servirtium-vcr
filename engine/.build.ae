@@ -1,0 +1,42 @@
+// The shared Servirtium VCR engine, built ONCE for the whole monorepo.
+//
+// Every language binding's .tests.ae deps this node and then links (cgo) or
+// loads (ctypes/ffi/koffi/Fiddle/FFM/uFFI) the single artifact it produces:
+//   engine/native/libservirtium_vcr.so
+//
+// Today the engine source is `embed.ae` (+ std/http/server/vcr) shipped inside
+// the INSTALLED Aether toolchain — we compile it via `ae build --emit=lib`. No
+// Aether source checkout needed; `AETHER_REPO` overrides for engine devs.
+//
+// FUTURE (see repo TODO): the engine source (module.ae / embed.ae /
+// aether_vcr.c) is slated to move OUT of the Aether stdlib and INTO this dir
+// (engine/src/), at which point this node compiles the in-repo source directly
+// and the monorepo owns the engine's evolution. It still needs the Aether
+// runtime/toolchain to build (the engine uses std.http's server, std.fs, etc.).
+
+import build
+import std.os
+import std.string
+
+main() {
+    b = build.start()
+    root = build._get(b, "root")
+    dest = "${root}/engine/native"
+    _m = os.system("mkdir -p \"${dest}\"")
+
+    override = os.getenv("AETHER_REPO")
+    embed = ""
+    if string.length(override) > 0 {
+        embed = "${override}/std/http/server/vcr/embed.ae"
+    } else {
+        // Installed toolchain: embed.ae ships next to `ae` under share/aether.
+        embed = "$(dirname $(command -v ae))/../share/aether/std/http/server/vcr/embed.ae"
+    }
+    rc = os.system("ae build --emit=lib --with=fs,net \"${embed}\" -o \"${dest}/libservirtium_vcr.so\"")
+    if rc != 0 {
+        println("engine: failed to build libservirtium_vcr.so (is `ae` >= 0.182 installed, with its stdlib?)")
+        return 1
+    }
+    println("engine: built engine/native/libservirtium_vcr.so")
+    return 0
+}
