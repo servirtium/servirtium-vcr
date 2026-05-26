@@ -58,10 +58,21 @@ Containerfile.sut      builds the Kotlin/http4k SUT image (gradle7.5.1/JDK11)
   tape was recorded against (they therefore run one-at-a-time, not concurrently).
   The SUT is started with its `baseUrl` set to the VCR origin so those URLs
   point back at the VCR.
-- **Determinism.** The spec is response-driven and Mocha runs serially, so the
-  request sequence is identical on replay even though todo IDs are server-issued
-  UUIDs — the browser reuses the UUIDs from each recorded response. Default
-  cursor matching (method + path, in order) is enough.
+- **Determinism.** The VCR records an *ordered* conversation and replays by
+  sequential cursor (method + path), so the request order must be identical on
+  replay. The spec is response-driven and Mocha runs serially, so it is —
+  except the upstream spec fired two `Q.all([...])` batches of concurrent
+  requests, whose arrival order isn't stable and made replay flaky. Our vendored
+  `suite/js/specs.js` serializes those two sites (same coverage, one request
+  after another); replay is then deterministic. Todo IDs are server-issued
+  UUIDs, but the browser reuses each recorded response's UUID for its follow-up
+  requests, so the sequence still lines up.
+- **Not byte-stable across re-records.** Two recordings differ (the SUT stamps a
+  fresh `Date` response header and mints new UUIDs each run), so the committed
+  tape isn't reproducible to the byte — fine for replay (within-tape consistency
+  is what matters), but drift-detection on re-record would always trip. Stable
+  tapes would need `remove_header(RESPONSE_HEADERS, "Date")` plus regex
+  redaction of the UUIDs (the latter pending a regex story — see core/TODO.md).
 
 Re-recording needs `podman`/`docker` and the [`todobackend-for-compatibility-kit`][sut]
 Kotlin source as a sibling checkout (or `TODOBACKEND_SRC=/path`); the record
