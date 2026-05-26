@@ -1,0 +1,62 @@
+// Subversion-family VCR tests (offline, pure-Aether) — ported from the
+// Aether engine's tests/integration/. Two probes, both compiled against
+// the LOCAL engine (core/vcr.ae + core/aether_vcr.c via --extra, the same
+// idiom as core_tests/) and run inline here — no .sh runner:
+//
+//   1. checkout_via_vcr.ae — byte-faithful replay of the canonical
+//      17-interaction SVN WebDAV tape through std.http.client. Asserts
+//      status/body/response-headers byte-equality (incl. SVN's duplicate
+//      DAV: header lines). Summary: "svn_vcr_replay: 17 passing, 0 failing".
+//   2. strict_match.ae — strict-match diagnostics on tiny.tape; asserts the
+//      KIND_* outcome of four header permutations. Summary:
+//      "svn_vcr_strict_match: 4 passing, 0 failing".
+//
+// The real-`svn`-client replay (driving the svn CLI through a VCR server)
+// lives in the sibling leaf .svn_checkout.ae.
+//
+// Run:  aeb integration/subversion_interop/.tests.ae
+import build
+import std.os
+
+main() {
+    b = build.start()
+    root = build._get(b, "root")
+    out = "${root}/target/subversion_interop"
+    cc = "${root}/core/aether_vcr.c"
+    _mk = os.system("mkdir -p \"${out}\"")
+
+    fails = 0
+
+    // --- probe 1: byte-faithful 17-interaction replay (port 18141) ---
+    bin1 = "${out}/checkout_via_vcr"
+    log1 = "${out}/checkout_via_vcr.log"
+    rc1 = os.system("cd \"${root}\" && ae build integration/subversion_interop/checkout_via_vcr.ae --extra \"${cc}\" -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
+    if rc1 != 0 {
+        println("subversion_interop: checkout_via_vcr FAILED (see ${log1})")
+        fails = fails + 1
+    } else {
+        grep1 = os.system("grep -q \"svn_vcr_replay:.*0 failing\" \"${log1}\"")
+        if grep1 != 0 { println("subversion_interop: checkout_via_vcr missing/nonzero summary"); fails = fails + 1 }
+        else { println("subversion_interop: checkout_via_vcr PASS (svn_vcr_replay: 17 passing, 0 failing)") }
+    }
+
+    // --- probe 2: strict-match permutation diagnostics (port 18142) ---
+    bin2 = "${out}/strict_match"
+    log2 = "${out}/strict_match.log"
+    rc2 = os.system("cd \"${root}\" && ae build integration/subversion_interop/strict_match.ae --extra \"${cc}\" -o \"${bin2}\" >\"${log2}\" 2>&1 && \"${bin2}\" >>\"${log2}\" 2>&1")
+    if rc2 != 0 {
+        println("subversion_interop: strict_match FAILED (see ${log2})")
+        fails = fails + 1
+    } else {
+        grep2 = os.system("grep -q \"svn_vcr_strict_match:.*0 failing\" \"${log2}\"")
+        if grep2 != 0 { println("subversion_interop: strict_match missing/nonzero summary"); fails = fails + 1 }
+        else { println("subversion_interop: strict_match PASS (svn_vcr_strict_match: 4 passing, 0 failing)") }
+    }
+
+    // Tidy the per-run scrubbed tape probe 1 drops under target/.
+    _rm = os.system("rm -f \"${root}/target\"/svn_vcr_scrubbed.*.md")
+
+    if fails != 0 { println("subversion_interop: ${fails} test(s) failed"); return 1 }
+    println("subversion_interop: offline probes passed")
+    return 0
+}
