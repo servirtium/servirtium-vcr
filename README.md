@@ -36,10 +36,12 @@ single artifact.
 
 The whole repo is built with **[aeb](https://github.com/aether-lang-org/aeb)**,
 the polyglot Aether build runner — the natural fit for a one-engine,
-many-language monorepo. `aeb` scans the dot-prefixed `.ae` nodes, builds the
-DAG from `build.dep(...)` edges, and produces everything in dependency order:
-the `core/` node builds the native lib once, then each binding's tests link
-or load that single artifact.
+many-language monorepo. You point `aeb` at the node you want (a dot-prefixed
+`.ae` script, e.g. `java/.tests.ae`); it follows that node's `build.dep(...)`
+edges and builds just its transitive dependencies, in order. Because every
+binding deps the `core/` node, asking for any one binding first builds the
+native lib once, then links or loads that single artifact — nothing else gets
+built. Running bare `aeb` targets every wired node.
 
 ```sh
 ./bootstrap.sh        # installs the Aether toolchain + aeb if missing, then `aeb`
