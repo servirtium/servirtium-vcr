@@ -1,0 +1,22 @@
+// Browser ↔ Servirtium VCR integration test (real Chrome via Selenium).
+// Proves the engine's browser-facing model end-to-end: a VCR serves a page
+// (static-content mount) AND replays that page's same-origin XHR from a tape,
+// in real headless Chrome. Engine-shared, so this proves it for all bindings;
+// hosted here via the Python binding. Deps the shared engine.
+//
+// Needs: a Chrome/Chromium browser + Python `selenium` (Selenium Manager
+// auto-fetches the matching chromedriver). The full TodoBackend Mocha suite
+// builds on this same pattern (serve the spec via the mount, replay a recorded
+// CRUD tape) — see docs.
+import build
+import std.os
+main() {
+    b = build.start()
+    build.dep(b, "engine/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/engine/native/libservirtium_vcr.so"
+    rc = os.system("cd \"${root}/integration\" && SERVIRTIUM_VCR_LIB=\"${lib}\" PYTHONPATH=\"${root}/python\" python3 browser_smoke.py")
+    if rc != 0 { println("integration(browser): failed"); return 1 }
+    println("integration(browser): passed")
+    return 0
+}

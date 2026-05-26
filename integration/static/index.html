@@ -1,0 +1,10 @@
+<!doctype html><meta charset=utf-8><title>vcr browser smoke</title>
+<body><div id=result>pending</div>
+<script>
+  // Same-origin XHR to the VCR (the page is served by the VCR's static mount),
+  // so no CORS — this is the trick that lets a browser test suite run against
+  // the VCR. Fetch a recorded endpoint and show what the tape replays.
+  fetch('/ok').then(r => r.text()).then(t => {
+    document.getElementById('result').textContent = 'replayed:' + t;
+  }).catch(e => { document.getElementById('result').textContent = 'error:' + e; });
+</script>
