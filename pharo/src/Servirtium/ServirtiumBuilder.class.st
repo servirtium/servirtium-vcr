@@ -16,7 +16,9 @@ Class {
 		'host',
 		'port',
 		'label',
-		'headerRemovals'
+		'headerRemovals',
+		'staticContents',
+		'untapedPaths'
 	],
 	#category : 'Servirtium',
 	#package : 'Servirtium'
@@ -35,7 +37,9 @@ ServirtiumBuilder >> initializeTape: aTapePath [
 	host := '127.0.0.1'.
 	port := 0.            "0 => OS-assigned (dynamic)"
 	label := ''.
-	headerRemovals := OrderedCollection new
+	headerRemovals := OrderedCollection new.
+	staticContents := OrderedCollection new.
+	untapedPaths := OrderedCollection new
 ]
 
 { #category : 'accessing' }
@@ -76,6 +80,27 @@ ServirtiumBuilder >> removeHeaderField: aField name: aName [
 	^ self
 ]
 
+{ #category : 'configuring' }
+ServirtiumBuilder >> staticContentMount: aMountPath dir: anFsDir [
+	"Serve a path prefix from an on-disk directory instead of the tape /
+	 upstream (Servirtium step 11). The engine honors static mounts in record
+	 mode too, so a browser suite can be recorded served same-origin from the
+	 VCR (no CORS/preflight noise), matching how it's replayed."
+
+	staticContents add: aMountPath -> anFsDir.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> untaped: aPath [
+	"Mark an incidental request path (e.g. '/favicon.ico') the VCR answers 404
+	 for without consuming the tape cursor (playback) / forwarding upstream
+	 (record) — a normal interaction recorded after it still matches."
+
+	untapedPaths add: aPath.
+	^ self
+]
+
 { #category : 'private' }
 ServirtiumBuilder >> resetGlobalState [
 	"Wipe all process-global mutation / format / strict state so a previous
@@ -102,7 +127,15 @@ ServirtiumBuilder >> applyConfig [
 	 server starts. Subclasses extend this with `super applyConfig`."
 
 	headerRemovals do: [ :assoc |
-		self check: (self library removeHeaderField: assoc key name: assoc value) op: 'removeHeader' ]
+		self check: (self library removeHeaderField: assoc key name: assoc value) op: 'removeHeader' ].
+	staticContents do: [ :assoc |
+		self
+			check: (self library staticContentMount: assoc key dir: assoc value)
+			op: 'staticContent' ].
+	untapedPaths do: [ :path |
+		self
+			check: (self library untapedPath: path)
+			op: 'untaped' ]
 ]
 
 { #category : 'private' }

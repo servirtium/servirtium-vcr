@@ -46,6 +46,8 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     private protected string LabelValue = "";
 
     private readonly List<(VcrField field, string name)> _headerRemovals = new();
+    private readonly List<(string mount, string dir)> _staticContent = new();
+    private readonly List<string> _untaped = new();
 
     private protected VcrBuilderBase(string tapePath) => TapePath = tapePath;
 
@@ -64,6 +66,31 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     public TSelf RemoveHeader(VcrField field, string name)
     {
         _headerRemovals.Add((field, name));
+        return Self;
+    }
+
+    /// <summary>
+    /// Serve a path prefix from an on-disk directory instead of the tape
+    /// (Servirtium step 11). Honored in both playback and record mode — the
+    /// engine wires the static routes either way, so a browser suite can be
+    /// served same-origin from the VCR while recording too (no CORS/OPTIONS
+    /// noise on the tape), matching how it's replayed.
+    /// </summary>
+    public TSelf StaticContent(string mountPath, string fsDir)
+    {
+        _staticContent.Add((mountPath, fsDir));
+        return Self;
+    }
+
+    /// <summary>
+    /// Mark an incidental request path (e.g. "/favicon.ico") the VCR answers
+    /// 404 for without consuming the tape cursor, so a normal interaction
+    /// recorded after it still matches. Honored in both playback and record
+    /// mode.
+    /// </summary>
+    public TSelf Untaped(string path)
+    {
+        _untaped.Add(path);
         return Self;
     }
 
@@ -97,6 +124,14 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
         {
             Check(NativeMethods.RemoveHeader((int)field, name), nameof(RemoveHeader));
         }
+        foreach ((string mount, string dir) in _staticContent)
+        {
+            Check(NativeMethods.StaticContent(mount, dir), nameof(StaticContent));
+        }
+        foreach (string path in _untaped)
+        {
+            Check(NativeMethods.Untaped(path), nameof(Untaped));
+        }
     }
 
     /// <summary>Throw if a mutation call returned a non-empty error string ("" = success).</summary>
@@ -114,8 +149,6 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
 public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
 {
     private readonly List<(VcrField field, string pattern, string replacement)> _unredactions = new();
-    private readonly List<(string mount, string dir)> _staticContent = new();
-    private readonly List<string> _untaped = new();
     private bool _strictHeaders;
 
     internal PlaybackBuilder(string tapePath) : base(tapePath) { }
@@ -143,27 +176,6 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         return this;
     }
 
-    /// <summary>
-    /// Serve a path prefix from an on-disk directory instead of the tape
-    /// (Servirtium step 11).
-    /// </summary>
-    public PlaybackBuilder StaticContent(string mountPath, string fsDir)
-    {
-        _staticContent.Add((mountPath, fsDir));
-        return this;
-    }
-
-    /// <summary>
-    /// Mark an incidental request path (e.g. "/favicon.ico") the VCR answers
-    /// 404 for without consuming the tape cursor, so a normal interaction
-    /// recorded after it still matches.
-    /// </summary>
-    public PlaybackBuilder Untaped(string path)
-    {
-        _untaped.Add(path);
-        return this;
-    }
-
     private protected override void ApplyConfig()
     {
         base.ApplyConfig();
@@ -171,14 +183,6 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         foreach ((VcrField field, string pattern, string replacement) in _unredactions)
         {
             Check(NativeMethods.Unredact((int)field, pattern, replacement), nameof(Unredact));
-        }
-        foreach ((string mount, string dir) in _staticContent)
-        {
-            Check(NativeMethods.StaticContent(mount, dir), nameof(StaticContent));
-        }
-        foreach (string path in _untaped)
-        {
-            Check(NativeMethods.Untaped(path), nameof(Untaped));
         }
     }
 

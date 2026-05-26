@@ -9,6 +9,7 @@
         "ext-ffi": "*"
     },
     "require-dev": {
+        "php-webdriver/webdriver": "^1.16",
         "phpunit/phpunit": "^11.5"
     },
     "autoload": {

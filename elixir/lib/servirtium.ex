@@ -44,14 +44,15 @@ defmodule Servirtium do
     * `:host` — bind host (default `"127.0.0.1"`)
     * `:label` — human-facing label for logs/diagnostics
     * `:remove_header` — list of `{field, name}` (case-insensitive name match)
+    * `:static_content` — list of `{mount_path, fs_dir}` served from disk
+      instead of the tape (works in both playback and record mode)
+    * `:untaped` — list of paths the VCR answers 404 without consuming the
+      tape cursor / forwarding upstream (e.g. `"/favicon.ico"`)
 
   Playback only:
 
     * `:strict_headers` — `true` to compare request headers on every interaction
     * `:unredact` — list of `{field, pattern, replacement}`
-    * `:static_content` — list of `{mount_path, fs_dir}`
-    * `:untaped` — list of paths the VCR answers 404 without consuming the
-      tape cursor (e.g. `"/favicon.ico"`)
 
   Record only:
 
@@ -311,6 +312,17 @@ defmodule Servirtium do
     for {field, name} <- Keyword.get(opts, :remove_header, []) do
       check!(Native.remove_header(field!(field), name), "remove_header")
     end
+
+    # static_content/untaped work in both playback and record mode — recording
+    # a browser suite is cleaner served same-origin from the VCR (no CORS
+    # preflights), so apply them on the shared path for both directions.
+    for {mount, dir} <- Keyword.get(opts, :static_content, []) do
+      check!(Native.static_content(mount, dir), "static_content")
+    end
+
+    for path <- Keyword.get(opts, :untaped, []) do
+      check!(Native.untaped(path), "untaped")
+    end
   end
 
   defp apply_playback_config(opts) do
@@ -318,14 +330,6 @@ defmodule Servirtium do
 
     for {field, pat, repl} <- Keyword.get(opts, :unredact, []) do
       check!(Native.unredact(field!(field), pat, repl), "unredact")
-    end
-
-    for {mount, dir} <- Keyword.get(opts, :static_content, []) do
-      check!(Native.static_content(mount, dir), "static_content")
-    end
-
-    for path <- Keyword.get(opts, :untaped, []) do
-      check!(Native.untaped(path), "untaped")
     end
   end
 

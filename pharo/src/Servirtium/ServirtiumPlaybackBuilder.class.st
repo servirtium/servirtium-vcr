@@ -8,8 +8,6 @@ Class {
 	#superclass : 'ServirtiumBuilder',
 	#instVars : [
 		'unredactions',
-		'staticContents',
-		'untapedPaths',
 		'strictHeaders'
 	],
 	#category : 'Servirtium',
@@ -21,8 +19,6 @@ ServirtiumPlaybackBuilder >> initializeTape: aTapePath [
 
 	super initializeTape: aTapePath.
 	unredactions := OrderedCollection new.
-	staticContents := OrderedCollection new.
-	untapedPaths := OrderedCollection new.
 	strictHeaders := false
 ]
 
@@ -50,25 +46,6 @@ ServirtiumPlaybackBuilder >> unredactField: aField pattern: aPattern replacement
 	^ self
 ]
 
-{ #category : 'configuring' }
-ServirtiumPlaybackBuilder >> staticContentMount: aMountPath dir: anFsDir [
-	"Serve a path prefix from an on-disk directory instead of the tape
-	 (Servirtium step 11)."
-
-	staticContents add: aMountPath -> anFsDir.
-	^ self
-]
-
-{ #category : 'configuring' }
-ServirtiumPlaybackBuilder >> untaped: aPath [
-	"Mark an incidental request path (e.g. '/favicon.ico') the VCR answers 404
-	 for without consuming the tape cursor — a normal interaction recorded
-	 after it still matches."
-
-	untapedPaths add: aPath.
-	^ self
-]
-
 { #category : 'private' }
 ServirtiumPlaybackBuilder >> applyConfig [
 
@@ -77,15 +54,7 @@ ServirtiumPlaybackBuilder >> applyConfig [
 	unredactions do: [ :tuple |
 		self
 			check: (self library unredactField: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
-			op: 'unredact' ].
-	staticContents do: [ :assoc |
-		self
-			check: (self library staticContentMount: assoc key dir: assoc value)
-			op: 'staticContent' ].
-	untapedPaths do: [ :path |
-		self
-			check: (self library untapedPath: path)
-			op: 'untaped' ]
+			op: 'unredact' ]
 ]
 
 { #category : 'starting' }

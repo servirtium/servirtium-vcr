@@ -21,6 +21,12 @@ abstract class VcrBuilderBase
     /** @var list<array{0: VcrField, 1: string}> */
     private array $headerRemovals = [];
 
+    /** @var list<array{0: string, 1: string}> */
+    private array $staticContent = [];
+
+    /** @var list<string> */
+    private array $untaped = [];
+
     protected function __construct(string $tapePath)
     {
         $this->tapePath = $tapePath;
@@ -59,6 +65,32 @@ abstract class VcrBuilderBase
     }
 
     /**
+     * Serve a path prefix from an on-disk directory instead of the tape
+     * (Servirtium step 11).
+     *
+     * Works in both playback and record mode — recording a browser suite is
+     * cleaner served same-origin from the VCR (no CORS preflights).
+     */
+    public function staticContent(string $mountPath, string $fsDir): static
+    {
+        $this->staticContent[] = [$mountPath, $fsDir];
+
+        return $this;
+    }
+
+    /**
+     * Mark an incidental path (e.g. /favicon.ico) the VCR answers 404 for
+     * without touching the tape — no cursor consumed on playback, nothing
+     * forwarded or recorded on record.
+     */
+    public function untaped(string $path): static
+    {
+        $this->untaped[] = $path;
+
+        return $this;
+    }
+
+    /**
      * Wipe all process-global mutation/format/strict state so a previous
      * fixture's settings can't leak into this one (v1 one-server-per-process
      * has no per-handle state). Called first by {@see start()}.
@@ -88,6 +120,12 @@ abstract class VcrBuilderBase
         $lib = Native::lib();
         foreach ($this->headerRemovals as [$field, $name]) {
             self::check($lib->aether_vcr_embed_remove_header($field->value, $name), 'removeHeader');
+        }
+        foreach ($this->staticContent as [$mount, $dir]) {
+            self::check($lib->aether_vcr_embed_static_content($mount, $dir), 'staticContent');
+        }
+        foreach ($this->untaped as $path) {
+            self::check($lib->aether_vcr_embed_untaped($path), 'untaped');
         }
     }
 

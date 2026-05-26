@@ -174,6 +174,14 @@ data RecordOptions = RecordOptions
   , recFailIfChanged     :: Bool
     -- ^ On stop, write the freshly recorded tape but throw 'VcrException' if
     -- it differs from the on-disk one — the drift contract.
+  , recStaticContent     :: [(String, String)]
+    -- ^ @(mountPath, fsDir)@: serve a path prefix from disk instead of
+    -- forwarding upstream. The engine honors static mounts in record mode too,
+    -- so a browser suite can be recorded served same-origin from the VCR (no
+    -- CORS\/preflight noise), matching how it's replayed.
+  , recUntaped           :: [String]
+    -- ^ Request paths (e.g. @\/favicon.ico@) the record-mode VCR answers 404
+    -- without forwarding upstream and never puts on the tape.
   }
 
 -- | A playback options record with sensible defaults for the given tape path.
@@ -205,6 +213,8 @@ recordOptions tape upstream = RecordOptions
   , recIndentCodeBlocks   = False
   , recEmphasizeHttpVerbs = False
   , recFailIfChanged      = False
+  , recStaticContent      = []
+  , recUntaped            = []
   }
 
 -- | Mode a running server was started in; drives 'stop' behaviour.
@@ -251,6 +261,22 @@ applyRemoveHeaders removals =
                 N.aether_vcr_embed_remove_header (fieldCode f) cName)
         removals
 
+-- | Register static-content mounts and untaped paths. The engine honors both
+-- in playback and record mode, so this is shared by both start functions.
+applyStaticAndUntaped :: [(String, String)] -> [String] -> IO ()
+applyStaticAndUntaped statics untaped = do
+  mapM_ (\(mount, dir) ->
+            check "static_content" $
+              withCString mount $ \cMount ->
+                withCString dir $ \cDir ->
+                  N.aether_vcr_embed_static_content cMount cDir)
+        statics
+  mapM_ (\path ->
+            check "untaped" $
+              withCString path $ \cPath ->
+                N.aether_vcr_embed_untaped cPath)
+        untaped
+
 -- | If a @start_*@ returned NULL, build a useful error string from the
 -- last-error slot.
 drainStartError :: IO String
@@ -276,17 +302,7 @@ startPlayback opts = do
                 withCString repl $ \cRepl ->
                   N.aether_vcr_embed_unredact (fieldCode f) cPat cRepl)
         (pbUnredactions opts)
-  mapM_ (\(mount, dir) ->
-            check "static_content" $
-              withCString mount $ \cMount ->
-                withCString dir $ \cDir ->
-                  N.aether_vcr_embed_static_content cMount cDir)
-        (pbStaticContent opts)
-  mapM_ (\path ->
-            check "untaped" $
-              withCString path $ \cPath ->
-                N.aether_vcr_embed_untaped cPath)
-        (pbUntaped opts)
+  applyStaticAndUntaped (pbStaticContent opts) (pbUntaped opts)
   handle <-
     withCString (pbLabel opts) $ \cLabel ->
       withCString (pbTapePath opts) $ \cTape ->
@@ -320,6 +336,7 @@ startRecord opts = do
                 withCString repl $ \cRepl ->
                   N.aether_vcr_embed_redact (fieldCode f) cPat cRepl)
         (recRedactions opts)
+  applyStaticAndUntaped (recStaticContent opts) (recUntaped opts)
   -- NOTE: the staged note is applied *after* start_record — load_record
   -- clears the tape (and the pending note) as it binds, so staging it
   -- pre-start would be wiped.

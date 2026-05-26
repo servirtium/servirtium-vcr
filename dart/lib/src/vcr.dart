@@ -130,6 +130,8 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
   int _port = 0; // 0 => OS-assigned (dynamic)
   String _label = '';
   final List<(VcrField, String)> _headerRemovals = [];
+  final List<(String, String)> _staticContent = [];
+  final List<String> _untaped = [];
 
   T get _self;
 
@@ -157,11 +159,35 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     return _self;
   }
 
+  /// Serve a path prefix from an on-disk directory instead of the tape.
+  ///
+  /// Works in both playback and record mode (recording a browser suite is
+  /// cleaner served same-origin from the VCR — no CORS preflights).
+  T staticContent(String mountPath, String fsDir) {
+    _staticContent.add((mountPath, fsDir));
+    return _self;
+  }
+
+  /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers 404
+  /// for without consuming the tape cursor on playback (and without forwarding
+  /// or recording anything in record mode).
+  T untaped(String path) {
+    _untaped.add(path);
+    return _self;
+  }
+
   /// Apply accumulated config after the reset and before start. Subclasses
   /// extend this.
   void _applyConfig() {
     for (final (field, name) in _headerRemovals) {
       withUtf8(name, (n) => _check(Native.removeHeader(field.value, n), 'removeHeader'));
+    }
+    for (final (mount, dir) in _staticContent) {
+      withUtf8(mount,
+          (m) => withUtf8(dir, (d) => _check(Native.staticContent(m, d), 'staticContent')));
+    }
+    for (final path in _untaped) {
+      withUtf8(path, (p) => _check(Native.untaped(p), 'untaped'));
     }
   }
 }
@@ -171,8 +197,6 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   PlaybackBuilder._(super.tapePath);
 
   final List<(VcrField, String, String)> _unredactions = [];
-  final List<(String, String)> _staticContent = [];
-  final List<String> _untaped = [];
   bool _strictHeaders = false;
 
   @override
@@ -192,20 +216,6 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     return this;
   }
 
-  /// Serve a path prefix from an on-disk directory instead of the tape.
-  PlaybackBuilder staticContent(String mountPath, String fsDir) {
-    _staticContent.add((mountPath, fsDir));
-    return this;
-  }
-
-  /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers 404
-  /// for without consuming the tape cursor — a normal interaction recorded
-  /// after it still matches.
-  PlaybackBuilder untaped(String path) {
-    _untaped.add(path);
-    return this;
-  }
-
   @override
   void _applyConfig() {
     super._applyConfig();
@@ -213,13 +223,6 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     for (final (field, pattern, replacement) in _unredactions) {
       withUtf8(pattern, (p) => withUtf8(replacement,
           (r) => _check(Native.unredact(field.value, p, r), 'unredact')));
-    }
-    for (final (mount, dir) in _staticContent) {
-      withUtf8(mount,
-          (m) => withUtf8(dir, (d) => _check(Native.staticContent(m, d), 'staticContent')));
-    }
-    for (final path in _untaped) {
-      withUtf8(path, (p) => _check(Native.untaped(p), 'untaped'));
     }
   }
 

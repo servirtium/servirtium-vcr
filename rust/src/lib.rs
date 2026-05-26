@@ -127,8 +127,6 @@ impl Vcr {
         PlaybackBuilder {
             common: Common::new(tape_path.into()),
             unredactions: Vec::new(),
-            static_content: Vec::new(),
-            untaped: Vec::new(),
             strict_headers: false,
         }
     }
@@ -159,6 +157,8 @@ struct Common {
     port: u16,
     label: String,
     header_removals: Vec<(Field, String)>,
+    static_content: Vec<(String, String)>,
+    untaped: Vec<String>,
 }
 
 impl Common {
@@ -169,7 +169,25 @@ impl Common {
             port: 0,
             label: String::new(),
             header_removals: Vec::new(),
+            static_content: Vec::new(),
+            untaped: Vec::new(),
         }
+    }
+
+    /// Apply the shared config (header removals, static content, untaped)
+    /// after the reset and before the tape loads. Used by both builders'
+    /// `start()`.
+    fn apply_shared(&self, n: &Native) -> Result<(), VcrError> {
+        for (field, name) in &self.header_removals {
+            check(n, unsafe { (n.remove_header)(*field as c_int, cstr(name)?.as_ptr()) }, "remove_header")?;
+        }
+        for (mount, dir) in &self.static_content {
+            check(n, unsafe { (n.static_content)(cstr(mount)?.as_ptr(), cstr(dir)?.as_ptr()) }, "static_content")?;
+        }
+        for path in &self.untaped {
+            check(n, unsafe { (n.untaped)(cstr(path)?.as_ptr()) }, "untaped")?;
+        }
+        Ok(())
     }
 }
 
@@ -205,8 +223,6 @@ fn check(n: &Native, ptr: *mut std::ffi::c_char, op: &str) -> Result<(), VcrErro
 pub struct PlaybackBuilder {
     common: Common,
     unredactions: Vec<(Field, String, String)>,
-    static_content: Vec<(String, String)>,
-    untaped: Vec<String>,
     strict_headers: bool,
 }
 
@@ -250,15 +266,16 @@ impl PlaybackBuilder {
         self
     }
     /// Serve a path prefix from an on-disk directory instead of the tape.
+    /// Works in both playback and record mode.
     pub fn static_content(mut self, mount_path: impl Into<String>, fs_dir: impl Into<String>) -> Self {
-        self.static_content.push((mount_path.into(), fs_dir.into()));
+        self.common.static_content.push((mount_path.into(), fs_dir.into()));
         self
     }
     /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers
     /// 404 for without consuming the tape cursor, so a normal interaction
     /// recorded after it still matches.
     pub fn untaped(mut self, path: impl Into<String>) -> Self {
-        self.untaped.push(path.into());
+        self.common.untaped.push(path.into());
         self
     }
 
@@ -270,10 +287,8 @@ impl PlaybackBuilder {
         let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
 
         reset_global_state(n);
-        // Header removals (shared) ...
-        for (field, name) in &self.common.header_removals {
-            check(n, unsafe { (n.remove_header)(*field as c_int, cstr(name)?.as_ptr()) }, "remove_header")?;
-        }
+        // Shared config (header removals, static content, untaped) ...
+        self.common.apply_shared(n)?;
         // ... then playback-specific config (must be set before start loads the tape).
         if self.strict_headers {
             unsafe { (n.set_strict_headers)(1) };
@@ -286,12 +301,6 @@ impl PlaybackBuilder {
                 },
                 "unredact",
             )?;
-        }
-        for (mount, dir) in &self.static_content {
-            check(n, unsafe { (n.static_content)(cstr(mount)?.as_ptr(), cstr(dir)?.as_ptr()) }, "static_content")?;
-        }
-        for path in &self.untaped {
-            check(n, unsafe { (n.untaped)(cstr(path)?.as_ptr()) }, "untaped")?;
         }
 
         let handle = unsafe {
@@ -345,6 +354,19 @@ impl RecordBuilder {
         self.common.header_removals.push((field, name.into()));
         self
     }
+    /// Serve a path prefix from an on-disk directory instead of the tape.
+    /// Works in record mode too — recording a browser suite is cleaner served
+    /// same-origin from the VCR (no CORS preflights).
+    pub fn static_content(mut self, mount_path: impl Into<String>, fs_dir: impl Into<String>) -> Self {
+        self.common.static_content.push((mount_path.into(), fs_dir.into()));
+        self
+    }
+    /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers
+    /// 404 for without touching the tape — nothing forwarded or recorded.
+    pub fn untaped(mut self, path: impl Into<String>) -> Self {
+        self.common.untaped.push(path.into());
+        self
+    }
     /// Scrub a value out of the given field before it lands on the tape.
     pub fn redact(
         mut self,
@@ -390,9 +412,7 @@ impl RecordBuilder {
         let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
 
         reset_global_state(n);
-        for (field, name) in &self.common.header_removals {
-            check(n, unsafe { (n.remove_header)(*field as c_int, cstr(name)?.as_ptr()) }, "remove_header")?;
-        }
+        self.common.apply_shared(n)?;
         if self.indent_code_blocks {
             unsafe { (n.indent_code_blocks)() };
         }

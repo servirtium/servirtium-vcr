@@ -183,16 +183,39 @@ type baseBuilder struct {
 	port           int
 	label          string
 	headerRemovals []headerRemoval
+	staticContent  []struct{ mount, dir string }
+	untaped        []string
 }
 
-// applyHeaderRemovals registers the accumulated header removals; shared by
-// both builders.
-func (b *baseBuilder) applyHeaderRemovals() error {
+// applyBase registers the config shared by both builders: header removals,
+// static-content mounts, and untaped paths. The latter two are honored in
+// both playback and record mode (the engine wires the static routes either
+// way and the record dispatcher checks untaped), so a browser suite can be
+// served same-origin from the VCR while recording too — no CORS/OPTIONS noise
+// on the tape — matching how it's replayed.
+func (b *baseBuilder) applyBase() error {
 	for _, hr := range b.headerRemovals {
 		cName := C.CString(hr.name)
 		res := C.aether_vcr_embed_remove_header(C.int(hr.field), cName)
 		C.free(unsafe.Pointer(cName))
 		if err := checkErr(res, "RemoveHeader"); err != nil {
+			return err
+		}
+	}
+	for _, sc := range b.staticContent {
+		cMount, cDir := C.CString(sc.mount), C.CString(sc.dir)
+		res := C.aether_vcr_embed_static_content(cMount, cDir)
+		C.free(unsafe.Pointer(cMount))
+		C.free(unsafe.Pointer(cDir))
+		if err := checkErr(res, "StaticContent"); err != nil {
+			return err
+		}
+	}
+	for _, p := range b.untaped {
+		cPath := C.CString(p)
+		res := C.aether_vcr_embed_untaped(cPath)
+		C.free(unsafe.Pointer(cPath))
+		if err := checkErr(res, "Untaped"); err != nil {
 			return err
 		}
 	}
@@ -212,8 +235,6 @@ type PlaybackBuilder struct {
 	baseBuilder
 	strictHeaders bool
 	unredactions  []replacement
-	staticContent []struct{ mount, dir string }
-	untaped       []string
 }
 
 // Host binds the host. Defaults to 127.0.0.1.
@@ -245,7 +266,7 @@ func (b *PlaybackBuilder) Unredact(field Field, pattern, repl string) *PlaybackB
 }
 
 // StaticContent serves a path prefix from an on-disk directory instead of the
-// tape (Servirtium step 11).
+// tape (Servirtium step 11). Honored in both playback and record mode.
 func (b *PlaybackBuilder) StaticContent(mountPath, fsDir string) *PlaybackBuilder {
 	b.staticContent = append(b.staticContent, struct{ mount, dir string }{mountPath, fsDir})
 	return b
@@ -260,7 +281,7 @@ func (b *PlaybackBuilder) Untaped(path string) *PlaybackBuilder {
 }
 
 func (b *PlaybackBuilder) applyConfig() error {
-	if err := b.applyHeaderRemovals(); err != nil {
+	if err := b.applyBase(); err != nil {
 		return err
 	}
 	if b.strictHeaders {
@@ -272,23 +293,6 @@ func (b *PlaybackBuilder) applyConfig() error {
 		C.free(unsafe.Pointer(cPat))
 		C.free(unsafe.Pointer(cRep))
 		if err := checkErr(res, "Unredact"); err != nil {
-			return err
-		}
-	}
-	for _, sc := range b.staticContent {
-		cMount, cDir := C.CString(sc.mount), C.CString(sc.dir)
-		res := C.aether_vcr_embed_static_content(cMount, cDir)
-		C.free(unsafe.Pointer(cMount))
-		C.free(unsafe.Pointer(cDir))
-		if err := checkErr(res, "StaticContent"); err != nil {
-			return err
-		}
-	}
-	for _, p := range b.untaped {
-		cPath := C.CString(p)
-		res := C.aether_vcr_embed_untaped(cPath)
-		C.free(unsafe.Pointer(cPath))
-		if err := checkErr(res, "Untaped"); err != nil {
 			return err
 		}
 	}
@@ -356,6 +360,22 @@ func (b *RecordBuilder) Redact(field Field, pattern, repl string) *RecordBuilder
 	return b
 }
 
+// StaticContent serves a path prefix from an on-disk directory instead of
+// forwarding upstream (Servirtium step 11). Honored in record mode too, so a
+// browser suite can be served same-origin from the record-mode VCR (no
+// CORS/OPTIONS noise on the tape), matching how it's replayed.
+func (b *RecordBuilder) StaticContent(mountPath, fsDir string) *RecordBuilder {
+	b.staticContent = append(b.staticContent, struct{ mount, dir string }{mountPath, fsDir})
+	return b
+}
+
+// Untaped marks an incidental request path (e.g. "/favicon.ico") the VCR
+// answers 404 for without forwarding upstream or recording it.
+func (b *RecordBuilder) Untaped(path string) *RecordBuilder {
+	b.untaped = append(b.untaped, path)
+	return b
+}
+
 // Note attaches a note to the first recorded interaction (Servirtium step 9).
 // For notes on later interactions, call Server.Note on the running server
 // between requests.
@@ -376,7 +396,7 @@ func (b *RecordBuilder) EmphasizeHTTPVerbs() *RecordBuilder { b.emphasizeHTTPVer
 func (b *RecordBuilder) FailIfChanged() *RecordBuilder { b.failIfChanged = true; return b }
 
 func (b *RecordBuilder) applyConfig() error {
-	if err := b.applyHeaderRemovals(); err != nil {
+	if err := b.applyBase(); err != nil {
 		return err
 	}
 	if b.indentCodeBlocks {
