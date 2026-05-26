@@ -1,0 +1,106 @@
+package com.paulhammant.servirtium.vcr;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.util.ArrayList;
+import java.util.List;
+
+/** Configures and starts a playback VCR server. */
+public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
+
+    private record Unredaction(Field field, String pattern, String replacement) {
+    }
+
+    private record StaticMount(String mount, String dir) {
+    }
+
+    private final List<Unredaction> unredactions = new ArrayList<>();
+    private final List<StaticMount> staticContent = new ArrayList<>();
+    private boolean strictHeaders;
+
+    PlaybackBuilder(String tapePath) {
+        super(tapePath);
+    }
+
+    @Override
+    PlaybackBuilder self() {
+        return this;
+    }
+
+    /**
+     * Compare the SUT's request headers against the recorded block on every
+     * interaction (Servirtium step 10), surfacing mismatches via
+     * {@link VcrServer#lastError()}.
+     */
+    public PlaybackBuilder strictHeaders() {
+        return strictHeaders(true);
+    }
+
+    public PlaybackBuilder strictHeaders(boolean on) {
+        this.strictHeaders = on;
+        return this;
+    }
+
+    /**
+     * Replace a redacted placeholder in the recorded expectation with the real
+     * value the live SUT sends, so a committed (scrubbed) tape still matches.
+     */
+    public PlaybackBuilder unredact(Field field, String pattern, String replacement) {
+        unredactions.add(new Unredaction(field, pattern, replacement));
+        return this;
+    }
+
+    /**
+     * Serve a path prefix from an on-disk directory instead of the tape
+     * (Servirtium step 11).
+     */
+    public PlaybackBuilder staticContent(String mountPath, String fsDir) {
+        staticContent.add(new StaticMount(mountPath, fsDir));
+        return this;
+    }
+
+    @Override
+    void applyConfig(Arena arena) {
+        super.applyConfig(arena);
+        try {
+            if (strictHeaders) {
+                NativeMethods.SET_STRICT_HEADERS.invokeExact(1);
+            }
+            for (Unredaction u : unredactions) {
+                MemorySegment r = (MemorySegment) NativeMethods.UNREDACT.invokeExact(
+                        u.field().code(),
+                        NativeMethods.cString(arena, u.pattern()),
+                        NativeMethods.cString(arena, u.replacement()));
+                check(r, "unredact");
+            }
+            for (StaticMount s : staticContent) {
+                MemorySegment r = (MemorySegment) NativeMethods.STATIC_CONTENT.invokeExact(
+                        NativeMethods.cString(arena, s.mount()),
+                        NativeMethods.cString(arena, s.dir()));
+                check(r, "staticContent");
+            }
+        } catch (Throwable t) {
+            throw rethrow("applyConfig", t);
+        }
+    }
+
+    public VcrServer start() {
+        resetGlobalState();
+        MemorySegment handle;
+        try (Arena arena = Arena.ofConfined()) {
+            applyConfig(arena);
+            handle = (MemorySegment) NativeMethods.START_PLAYBACK.invokeExact(
+                    NativeMethods.cString(arena, label),
+                    NativeMethods.cString(arena, tapePath),
+                    NativeMethods.cString(arena, host),
+                    port);
+        } catch (Throwable t) {
+            throw rethrow("playback start", t);
+        }
+        if (handle.address() == 0) {
+            throw new VcrException(
+                    "vcr playback failed to start for tape '" + tapePath + "': " + drainStartError());
+        }
+        return new VcrServer(handle, host, tapePath, false, false);
+    }
+}

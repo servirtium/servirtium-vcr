@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <PackageId>Servirtium.Vcr</PackageId>
+    <Product>Servirtium</Product>
+    <Description>Idiomatic .NET record/replay (Servirtium) over the Aether VCR core, via P/Invoke to a precompiled native library.</Description>
+    <PackageProjectUrl>https://github.com/servirtium/servirtium-dotnet</PackageProjectUrl>
+    <IsPackable>true</IsPackable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!--
+    Native VCR libraries, one per RID, built from the Aether std VCR
+    embedding module (see build-native.sh / CI). Shipped as NuGet runtime
+    assets so the right binary is restored per platform, and copied to the
+    output dir so it sits next to the managed assembly for dev/test runs
+    (the NativeLoader resolver also probes runtimes/&lt;rid&gt;/native).
+  -->
+  <ItemGroup>
+    <None Include="runtimes/**/native/*"
+          Pack="true"
+          PackagePath="runtimes/"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

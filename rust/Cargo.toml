@@ -1,0 +1,14 @@
+[package]
+name = "servirtium"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "Record/replay HTTP service tests in the Servirtium markdown tape format — a thin Rust FFI wrapper over the Aether VCR core."
+repository = "https://github.com/servirtium/servirtium-rust"
+readme = "README.md"
+
+[dependencies]
+libloading = "0.8"
+
+[dev-dependencies]
+ureq = "2"

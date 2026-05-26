@@ -1,0 +1,37 @@
+{
+  "name": "@servirtium/vcr",
+  "version": "2.0.0",
+  "description": "Record/replay for HTTP service tests in the Servirtium markdown tape format — a thin Node.js (koffi FFI) wrapper over the Aether VCR core.",
+  "homepage": "https://servirtium.dev",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "files": [
+    "dist/**/*",
+    "native/**/*",
+    "build-native.sh"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsc",
+    "build:native": "./build-native.sh",
+    "test": "jest --runInBand",
+    "prepare": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "koffi": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^22.10.0",
+    "jest": "^29.7.0",
+    "rimraf": "^5.0.5",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.6.3"
+  }
+}

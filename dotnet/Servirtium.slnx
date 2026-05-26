@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Servirtium.Vcr.Tests/Servirtium.Vcr.Tests.csproj" />
+  <Project Path="Servirtium.Vcr/Servirtium.Vcr.csproj" />
+</Solution>

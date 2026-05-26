@@ -1,0 +1,10 @@
+node_modules
+.vscode
+.idea
+dist
+
+# Native libs are build artifacts produced by build-native.sh. The host's
+# prebuilt linux-x64 .so is committed for convenience; ignore other platforms'
+# locally-built variants.
+native/*.dylib
+native/*.dll

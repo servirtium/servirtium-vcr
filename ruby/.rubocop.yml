@@ -1,0 +1,21 @@
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 3.3
+  Exclude:
+    - vendor/**/*
+    # Predates the 2.0 rewrite; left unported as a TODO (see MIGRATION.md).
+    - todobackend_compatibility_test.rb
+
+Layout/LineLength:
+  Max: 100
+
+Metrics/BlockLength:
+  Exclude:
+    - spec/**/*
+
+Style/Documentation:
+  Enabled: false
+
+Style/GlobalVars:
+  Exclude:
+    - spec/spec_helper.rb

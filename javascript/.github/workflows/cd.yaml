@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  test:
+    name: build native + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build the native VCR library from the Aether std embed module.
+      # Requires the Aether toolchain (`ae`) on PATH and an aether checkout
+      # (point AETHER_REPO at it). CI must set these up before this step.
+      - name: Build native library
+        run: ./build-native.sh
+        env:
+          AETHER_REPO: ${{ github.workspace }}/../aether
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test

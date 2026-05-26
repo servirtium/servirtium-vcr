@@ -1,0 +1,12 @@
+*/bin/
+*/obj/
+.compatibility_suite*
+.idea/
+Servirtium.sln.DotSettings.user
+
+# Native VCR libraries are build artifacts: produced by build-native.sh
+# (locally) or the CI matrix (per RID), and bundled at pack time. Not
+# committed — run ./build-native.sh after cloning to `dotnet test`.
+Servirtium.Vcr/runtimes/**/native/*.so
+Servirtium.Vcr/runtimes/**/native/*.dylib
+Servirtium.Vcr/runtimes/**/native/*.dll

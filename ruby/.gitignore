@@ -1,0 +1,17 @@
+/.bundle/
+/.idea
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+
+Gemfile.lock
+
+# locally built gems
+*.gem
+
+# rspec failure tracking
+.rspec_status

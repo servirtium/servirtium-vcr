@@ -1,0 +1,14 @@
+// Rust binding tests. libloading loads the shared engine via SERVIRTIUM_VCR_LIB
+// (tests serialized by the crate's internal global Mutex).
+import build
+import std.os
+main() {
+    b = build.start()
+    build.dep(b, "engine/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/engine/native/libservirtium_vcr.so"
+    rc = os.system("cd \"${root}/rust\" && SERVIRTIUM_VCR_LIB=\"${lib}\" cargo test")
+    if rc != 0 { println("rust: tests failed"); return 1 }
+    println("rust: tests passed")
+    return 0
+}

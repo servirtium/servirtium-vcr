@@ -1,0 +1,13 @@
+// Ruby binding tests. Fiddle loads the shared engine via SERVIRTIUM_VCR_LIB.
+import build
+import std.os
+main() {
+    b = build.start()
+    build.dep(b, "engine/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/engine/native/libservirtium_vcr.so"
+    rc = os.system("cd \"${root}/ruby\" && SERVIRTIUM_VCR_LIB=\"${lib}\" rspec")
+    if rc != 0 { println("ruby: tests failed"); return 1 }
+    println("ruby: tests passed")
+    return 0
+}
