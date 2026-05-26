@@ -122,10 +122,11 @@ function defineSpecsFor(apiRoot){
       });
 
       it("can navigate from a list of todos to an individual todo via urls", function(){
-        var makeTwoTodos = Q.all( [
-          postRoot({title:"todo the first"}),
-          postRoot({title:"todo the second"})
-          ] );
+        // Serialized for Servirtium VCR replay: a VCR records an ordered
+        // conversation, so the two creates run one-after-another (was Q.all)
+        // to keep the recorded request order deterministic.
+        var makeTwoTodos = postRoot({title:"todo the first"})
+          .then( function(){ return postRoot({title:"todo the second"}); } );
 
         var getAgainstUrlOfFirstTodo = makeTwoTodos.then( getRoot ).then( function(todoList){
           expect(todoList).to.have.length(2);
@@ -154,33 +155,29 @@ function defineSpecsFor(apiRoot){
       });
 
       it("changes to a todo are persisted and show up when re-fetching the todo", function(){
-        var patchedTodo = createFreshTodoAndGetItsUrl()
-          .then( function(urlForNewTodo){
-            return patchJson( urlForNewTodo, {title:"changed title", completed:true} );
-          });
-
         function verifyTodosProperties(todo){
           expect(todo).to.have.property("completed",true);
           expect(todo).to.have.property("title","changed title");
         }
 
-        var verifyRefetchedTodo = patchedTodo.then(function(todo){
-          return get( todo.url );
-        }).then( function(refetchedTodo){
-          verifyTodosProperties(refetchedTodo);
-        });
-
-        var verifyRefetchedTodoList = patchedTodo.then(function(){
-          return getRoot();
-        }).then( function(todoList){
-          expect(todoList).to.have.length(1);
-          verifyTodosProperties(todoList[0]);
-        });
-
-        return Q.all([
-          verifyRefetchedTodo,
-          verifyRefetchedTodoList
-        ]);
+        // Serialized for Servirtium VCR replay: the re-fetch of the todo and
+        // the re-fetch of the list run sequentially (was Q.all of two chains
+        // racing on a shared promise) so the recorded order is deterministic.
+        return createFreshTodoAndGetItsUrl()
+          .then( function(urlForNewTodo){
+            return patchJson( urlForNewTodo, {title:"changed title", completed:true} );
+          })
+          .then( function(patchedTodo){
+            return get( patchedTodo.url );
+          })
+          .then( function(refetchedTodo){
+            verifyTodosProperties(refetchedTodo);
+            return getRoot();
+          })
+          .then( function(todoList){
+            expect(todoList).to.have.length(1);
+            verifyTodosProperties(todoList[0]);
+          });
       });
 
       it("can delete a todo making a DELETE request to the todo's url", function(){
