@@ -17,22 +17,30 @@ is gone, the build is a plain `ae build --emit=lib …` with no `--extra`.
 files), delete the C, drop `--extra` from the build, and confirm `core_tests/`
 (all 14) + the 12 bindings stay green.
 
-What kept it in C — to resolve in Aether first, not reasons to stop:
+**Feasibility (recon done):** ~95% is pure-Aether-doable TODAY. The prerequisites
+I'd guessed at are all already in Aether and verified:
 
-- **Dispatcher as a route handler.** The server calls a per-request function;
-  originally that had to be a raw C function pointer matching the server's C
-  ABI. `std.http` now registers routes from Aether, so an Aether handler
-  closure should suffice — verify the registration API accepts one.
-- **Binary-safe buffers.** Bodies/headers must survive embedded NULs. Confirm
-  Aether's string/byte type is length-counted (not NUL-terminated) for the
-  request-body matcher and base64 path.
-- **gzip / de-chunk.** Needs zlib (gzip normalize) and chunked decoding. Aether
-  stdlib already gained de-chunk (CHANGELOG); check for a stdlib gzip/zlib
-  binding, else add one upstream — that's the one piece likely to need an
-  Aether-side change before this can fully land.
+- **Dispatcher as a route handler** — ✅ `std.http` registers a plain Aether
+  function `(req, res, ud)` as a route handler (no closure needed; the VCR's
+  state is already global). Request reads: `http.request_method/path/query`,
+  `http.get_header(req, name)`, binary-safe body via `http.request_body` +
+  `http_request_body_length`. Response writes: `response_set_status`,
+  `response_set_header`, **`response_add_header`** (duplicate `DAV:` headers),
+  **`response_set_body_n`** (binary), **`response_clear_headers`**.
+- **Binary-safe buffers** — ✅ `std.bytes` (set/get/finish, embedded-NUL-safe);
+  body length via `http_request_body_length`.
+- **gzip / base64 / de-chunk** — ✅ `std.zlib` (`gzip_deflate`/`gzip_inflate`),
+  `std.cryptography.base64_encode/decode`; de-chunk already in `std.http.client`.
+- Dynamic collections (`std.list`, `std.map`), structs — ✅.
 
-No reason found to keep it in C permanently; the above are migration
-prerequisites, sequence them ahead of the rewrite.
+**The ONE blocker:** no way to iterate *all* request headers from Aether (only
+`get_header` by name). Record mode needs it to capture whatever headers the SUT
+sent (`normalize_live_headers` walks the request's header arrays in C today).
+Playback does NOT need it. Filed as a wish to the Aether team —
+`aether/vcr_request_header_iteration_wish.md` (3 accessors:
+`http_request_header_count/name/value`). **The rewrite is staged behind that
+wish** (decided 2026-05-26: file the wish, hold the rewrite). Once it lands,
+fold `aether_vcr.c` into `vcr.ae`, delete the C, drop `--extra`.
 
 ## Current Shape
 
