@@ -21,3 +21,10 @@
 **/*.phar
 **/pubspec.lock
 **/build/Servirtium.image
+
+# integration/todobackend per-language build artifacts (never commit)
+/integration/todobackend/pharo/build/
+/integration/todobackend/*/vendor/
+/integration/todobackend/*/_build/
+/integration/todobackend/*/deps/
+/integration/todobackend/*/.dart_tool/

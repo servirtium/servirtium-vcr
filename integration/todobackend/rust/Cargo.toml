@@ -1,0 +1,22 @@
+[package]
+name = "todobackend-rust-integration"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# TodoBackend browser integration for the Rust binding. Depends on the
+# servirtium crate by path; drives real headless Chrome via thirtyfour (an
+# async WebDriver client) connecting to a chromedriver we start ourselves.
+[dependencies]
+servirtium = { path = "../../../rust" }
+thirtyfour = "0.32"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process"] }
+
+# Record entry point — gated behind `--bin record` so a normal `cargo test`
+# (the playback leaf) never starts a SUT.
+[[bin]]
+name = "record"
+path = "src/record.rs"
+
+[lib]
+path = "src/browser.rs"

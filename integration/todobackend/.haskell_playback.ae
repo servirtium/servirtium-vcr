@@ -1,0 +1,27 @@
+// TodoBackend browser integration — Haskell binding, PLAYBACK leaf.
+//
+// Name this leaf to run it:  aeb integration/todobackend/.haskell_playback.ae
+//
+// Replays the committed CRUD tape through a Haskell-hosted VCR and runs the
+// real TodoBackend Mocha spec against it in headless Chrome (the `webdriver`
+// package driving the cached chromedriver directly). No SUT, no network —
+// proves the full record/replay loop for the Haskell binding.
+//
+// Models the `.tests.ae` invocation: generate cabal.project.local so the
+// build links + loads the native engine (ghc-pkg rejects a relative
+// extra-lib-dirs), then `cabal run` the integration executable.
+import build
+import std.os
+import std.io
+main() {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    root = build._get(b, "root")
+    nat = "${root}/core/native"
+    cfg = "package servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
+    _w = io.write_file("${root}/haskell/cabal.project.local", cfg)
+    rc = os.system("cd \"${root}/haskell\" && PATH=\"$(dirname $(find $HOME/.cache/selenium -name chromedriver -type f | head -1)):$PATH\" LD_LIBRARY_PATH=\"${nat}\" cabal run -v0 servirtium-todobackend -- playback")
+    if rc != 0 { println("todobackend/haskell playback: failed"); return 1 }
+    println("todobackend/haskell playback: passed")
+    return 0
+}

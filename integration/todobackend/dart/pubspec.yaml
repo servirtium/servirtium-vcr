@@ -1,0 +1,17 @@
+name: todobackend_dart_integration
+description: >-
+  TodoBackend browser integration for the Servirtium VCR Dart binding. Drives
+  real headless Chrome (the `webdriver` pub package against a chromedriver) and
+  runs the vendored TodoBackend Mocha spec against a Dart-hosted VCR.
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  servirtium:
+    path: ../../../dart
+  webdriver: ^3.1.0
+
+dev_dependencies:
+  test: ^1.25.0

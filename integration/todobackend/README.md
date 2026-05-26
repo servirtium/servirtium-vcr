@@ -19,7 +19,7 @@ binding there are two leaves:
 ```sh
 # Replay the committed tape, run the Mocha suite in Chrome — offline, no SUT:
 aeb integration/todobackend/.python_playback.ae
-aeb integration/todobackend/.ruby_playback.ae        # … java, javascript, …
+aeb integration/todobackend/.ruby_playback.ae        # … java, javascript, dotnet, go, haskell, pharo, …
 
 # Re-record the tape: bring the Kotlin SUT up in a container, drive the suite
 # through a record-mode VCR, flush the tape, tear the container down:
@@ -32,6 +32,20 @@ aeb integration/todobackend/.python_record.ae
 - **`.{lang}_record.ae`** — container lifecycle inline in Aether (modelled on
   aeb's [container-lifecycle example][cl]): UP the SUT → record → DOWN
   unconditionally, then fail iff the recording failed. Run on demand.
+
+Most bindings drive the cached `chromedriver` directly (it speaks W3C). Two
+have their own wiring:
+
+- **`haskell`** uses the [`webdriver`][hswd] package (`Test.WebDriver`,
+  `DriverConfigChromedriver`), which launches the cached `chromedriver` on an
+  ephemeral port and connects straight to it — no Selenium server.
+- **`pharo`** uses [Parasol][parasol] (Pharo's Selenium WebDriver client), which
+  speaks the protocol over `/wd/hub` to a Selenium **Server** (it does *not* hit
+  chromedriver's `/session` directly). So `pharo/run.sh` starts a
+  `selenium-server standalone` (backed by the cached chromedriver) on an
+  ephemeral port and tears it down — exactly how Parasol's own CI drives Chrome.
+  Needs a Selenium 4.x server jar at `SELENIUM_SERVER_JAR` (default
+  `$HOME/.cache/selenium/selenium-server.jar`) and a Pharo VM at `PHARO_DIR`.
 
 ## Layout
 
@@ -88,3 +102,5 @@ polls).
 [sut]: https://github.com/servirtium/todobackend-for-compatibility-kit
 [http4k]: https://www.http4k.org/
 [cl]: https://github.com/aether-lang-org/aeb/blob/main/docs/examples/container-lifecycle/.up_poke_down.ae
+[hswd]: https://hackage.haskell.org/package/webdriver
+[parasol]: https://github.com/SeasideSt/Parasol

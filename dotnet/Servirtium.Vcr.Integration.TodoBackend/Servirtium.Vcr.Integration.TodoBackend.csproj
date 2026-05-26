@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    TodoBackend browser integration tests for the .NET binding. Kept in its own
+    project (NOT in Servirtium.slnx) so the everyday `dotnet test` unit run
+    stays fast and Selenium-free; the aeb leaves run THIS project's csproj
+    directly. Selenium.WebDriver ships Selenium Manager, which auto-fetches a
+    matching chromedriver — no manual driver wiring (like the Java binding).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Selenium.WebDriver" Version="4.44.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Servirtium.Vcr/Servirtium.Vcr.csproj" />
+  </ItemGroup>
+
+</Project>
