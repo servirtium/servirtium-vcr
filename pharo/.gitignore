@@ -1,0 +1,18 @@
+# Throwaway image built by run-tests.sh (a fresh copy of the dev image).
+/build/
+
+# Pharo working artifacts.
+*.changes
+*.sources
+Pharo*.image
+playground.ph
+*.fuel
+
+# The native VCR engine is a build artifact: produced by build-native.sh
+# (locally) or the CI matrix (per platform). Run ./build-native.sh after
+# cloning to (re)create it.
+native/*.so
+native/*.dylib
+native/*.dll
+
+.idea/

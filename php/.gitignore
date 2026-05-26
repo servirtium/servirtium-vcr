@@ -1,0 +1,7 @@
+/vendor/
+/native/*.so
+/native/*.dylib
+/native/*.dll
+/phpunit.phar
+/.phpunit.cache/
+/composer.lock

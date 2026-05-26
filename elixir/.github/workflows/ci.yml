@@ -1,0 +1,48 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PREFIX: ${{ github.workspace }}/.toolchain
+      AETHER_REF: v0.184.0
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          elixir-version: "1.18.3"
+
+      - name: Install Aether toolchain (ae)
+        run: |
+          set -euo pipefail
+          mkdir -p "$PREFIX/bin"
+          curl -fsSL "https://raw.githubusercontent.com/aether-lang-org/aether/main/get.sh" -o /tmp/get.sh
+          AETHER_REF="$AETHER_REF" sh /tmp/get.sh
+          echo "$PREFIX/bin" >> "$GITHUB_PATH"
+
+      - name: Build native VCR engine
+        run: ./build-native.sh
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Compile (builds the NIF)
+        run: mix compile
+
+      - name: Test (serial — one VCR server per process)
+        run: mix test
+
+  formatted:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          elixir-version: "1.18.3"
+      - run: mix format --check-formatted

@@ -1,0 +1,30 @@
+{
+    "name": "servirtium/servirtium-php",
+    "description": "Record/replay for HTTP service tests in the Servirtium markdown tape format — a thin PHP FFI layer over the Aether VCR core.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["servirtium", "vcr", "http", "record", "replay", "testing", "ffi"],
+    "require": {
+        "php": ">=8.4",
+        "ext-ffi": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Servirtium\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Servirtium\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

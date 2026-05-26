@@ -1,0 +1,13 @@
+// PHP binding tests. FFI loads the shared engine via SERVIRTIUM_VCR_LIB.
+import build
+import std.os
+main() {
+    b = build.start()
+    build.dep(b, "engine/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/engine/native/libservirtium_vcr.so"
+    rc = os.system("cd \"${root}/php\" && { [ -f phpunit.phar ] || curl -fsSL https://phar.phpunit.de/phpunit-11.phar -o phpunit.phar; } && SERVIRTIUM_VCR_LIB=\"${lib}\" php phpunit.phar --configuration phpunit.xml")
+    if rc != 0 { println("php: tests failed"); return 1 }
+    println("php: tests passed")
+    return 0
+}

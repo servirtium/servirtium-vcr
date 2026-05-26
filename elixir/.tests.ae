@@ -1,0 +1,14 @@
+// Elixir binding tests (C NIF). The NIF Makefile links the shared engine
+// directly (NATIVE_DIR repointed to ../engine/native), so no SERVIRTIUM_VCR_LIB
+// is needed; ExUnit runs serially (max_cases: 1).
+import build
+import std.os
+main() {
+    b = build.start()
+    build.dep(b, "engine/.build.ae")
+    root = build._get(b, "root")
+    rc = os.system("cd \"${root}/elixir\" && mix deps.get >/dev/null 2>&1 && mix test")
+    if rc != 0 { println("elixir: tests failed"); return 1 }
+    println("elixir: tests passed")
+    return 0
+}
