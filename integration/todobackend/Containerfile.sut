@@ -1,0 +1,22 @@
+# Builds the Servirtium TodoBackend SUT (Kotlin + http4k) used to RECORD the
+# CRUD tape. Mirrors the sibling repo's Dockerfile but with fully-qualified
+# image names (podman here has no unqualified-search registry). Build context
+# is the todobackend-for-compatibility-kit checkout:
+#
+#   podman build -t todobackend-sut:latest \
+#     -f integration/todobackend/Containerfile.sut \
+#     ../todobackend-for-compatibility-kit
+#
+# Only needed to (re)record the tape — the playback browser test replays the
+# committed tape with no SUT.
+FROM docker.io/library/gradle:7.5.1-jdk11-alpine AS build
+COPY --chown=gradle:gradle . /home/gradle/src
+WORKDIR /home/gradle/src
+RUN gradle build --no-daemon
+
+FROM docker.io/library/eclipse-temurin:11-jre-alpine AS run
+EXPOSE 8000
+RUN mkdir /app
+COPY --from=build /home/gradle/src/build/distributions/http4k-todo-backend-1.0-SNAPSHOT.tar /app/
+RUN cd /app/ && tar -xf http4k-todo-backend-1.0-SNAPSHOT.tar --strip-components=1 && rm http4k-todo-backend-1.0-SNAPSHOT.tar
+ENTRYPOINT /app/bin/http4k-todo-backend
