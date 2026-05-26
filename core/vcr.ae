@@ -154,12 +154,10 @@ exports (
     parse_one_interaction, parse_tape_file
 )
 
-// ---- HTTP client externs (for load_url) ----
-
-extern http_get_with_timeout_raw(url: string, timeout_ms: int) -> ptr
-extern http_response_error(resp: ptr) -> string
-extern http_response_body(resp: ptr) -> string
-extern http_response_free(resp: ptr)
+// HTTP client functions for load_url (http_get_with_timeout_raw,
+// http_response_error / _body / _free) come from `import std.http` above —
+// it re-exports the std.net client surface, so no raw extern re-declaration
+// is needed here.
 
 // ---- Externs into the C-side parser + dispatcher ----
 
