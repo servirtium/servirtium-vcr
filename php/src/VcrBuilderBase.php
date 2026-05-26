@@ -70,6 +70,7 @@ abstract class VcrBuilderBase
         $lib->aether_vcr_embed_clear_unredactions();
         $lib->aether_vcr_embed_clear_header_removals();
         $lib->aether_vcr_embed_clear_static_content();
+        $lib->aether_vcr_embed_clear_untaped();
         $lib->aether_vcr_embed_clear_format_options();
         $lib->aether_vcr_embed_set_strict_headers(0);
         $lib->aether_vcr_embed_clear_last_error();

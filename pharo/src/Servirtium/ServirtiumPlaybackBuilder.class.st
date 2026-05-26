@@ -9,6 +9,7 @@ Class {
 	#instVars : [
 		'unredactions',
 		'staticContents',
+		'untapedPaths',
 		'strictHeaders'
 	],
 	#category : 'Servirtium',
@@ -21,6 +22,7 @@ ServirtiumPlaybackBuilder >> initializeTape: aTapePath [
 	super initializeTape: aTapePath.
 	unredactions := OrderedCollection new.
 	staticContents := OrderedCollection new.
+	untapedPaths := OrderedCollection new.
 	strictHeaders := false
 ]
 
@@ -57,6 +59,16 @@ ServirtiumPlaybackBuilder >> staticContentMount: aMountPath dir: anFsDir [
 	^ self
 ]
 
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> untaped: aPath [
+	"Mark an incidental request path (e.g. '/favicon.ico') the VCR answers 404
+	 for without consuming the tape cursor — a normal interaction recorded
+	 after it still matches."
+
+	untapedPaths add: aPath.
+	^ self
+]
+
 { #category : 'private' }
 ServirtiumPlaybackBuilder >> applyConfig [
 
@@ -69,7 +81,11 @@ ServirtiumPlaybackBuilder >> applyConfig [
 	staticContents do: [ :assoc |
 		self
 			check: (self library staticContentMount: assoc key dir: assoc value)
-			op: 'staticContent' ]
+			op: 'staticContent' ].
+	untapedPaths do: [ :path |
+		self
+			check: (self library untapedPath: path)
+			op: 'untaped' ]
 ]
 
 { #category : 'starting' }

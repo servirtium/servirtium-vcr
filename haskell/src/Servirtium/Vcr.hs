@@ -141,6 +141,9 @@ data PlaybackOptions = PlaybackOptions
     -- ^ @(field, name)@: drop a header by name (case-insensitive).
   , pbStaticContent  :: [(String, String)]
     -- ^ @(mountPath, fsDir)@: serve a path prefix from disk instead of tape.
+  , pbUntaped        :: [String]
+    -- ^ Request paths (e.g. @\/favicon.ico@) the VCR answers 404 without
+    -- consuming the tape cursor, and never puts on the tape.
   }
 
 -- | Options for a __record__ fixture. Build with 'recordOptions' and override
@@ -184,6 +187,7 @@ playbackOptions tape = PlaybackOptions
   , pbUnredactions  = []
   , pbRemoveHeaders = []
   , pbStaticContent = []
+  , pbUntaped       = []
   }
 
 -- | A record options record with sensible defaults for the given tape path
@@ -227,6 +231,7 @@ resetGlobalState = do
   N.aether_vcr_embed_clear_unredactions
   N.aether_vcr_embed_clear_header_removals
   N.aether_vcr_embed_clear_static_content
+  N.aether_vcr_embed_clear_untaped
   N.aether_vcr_embed_clear_format_options
   N.aether_vcr_embed_set_strict_headers 0
   N.aether_vcr_embed_clear_last_error
@@ -277,6 +282,11 @@ startPlayback opts = do
                 withCString dir $ \cDir ->
                   N.aether_vcr_embed_static_content cMount cDir)
         (pbStaticContent opts)
+  mapM_ (\path ->
+            check "untaped" $
+              withCString path $ \cPath ->
+                N.aether_vcr_embed_untaped cPath)
+        (pbUntaped opts)
   handle <-
     withCString (pbLabel opts) $ \cLabel ->
       withCString (pbTapePath opts) $ \cTape ->

@@ -46,6 +46,7 @@ extern char *aether_vcr_embed_unredact(int field, const char *pattern, const cha
 extern char *aether_vcr_embed_remove_header(int field, const char *name);
 extern char *aether_vcr_embed_note(const char *title, const char *body);
 extern char *aether_vcr_embed_static_content(const char *mount_path, const char *fs_dir);
+extern char *aether_vcr_embed_untaped(const char *path);
 extern void  aether_vcr_embed_set_strict_headers(int on);
 extern void  aether_vcr_embed_indent_code_blocks(void);
 extern void  aether_vcr_embed_emphasize_http_verbs(void);
@@ -53,6 +54,7 @@ extern void  aether_vcr_embed_clear_redactions(void);
 extern void  aether_vcr_embed_clear_unredactions(void);
 extern void  aether_vcr_embed_clear_header_removals(void);
 extern void  aether_vcr_embed_clear_static_content(void);
+extern void  aether_vcr_embed_clear_untaped(void);
 extern void  aether_vcr_embed_clear_format_options(void);
 extern void  aether_vcr_embed_free_string(char *s);
 
@@ -298,6 +300,15 @@ static ERL_NIF_TERM nif_static_content(ErlNifEnv *env, int argc, const ERL_NIF_T
     return take_cstr(env, res);
 }
 
+static ERL_NIF_TERM nif_untaped(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    char *path = term_to_cstr(env, argv[0]);
+    if (!path) return enif_make_badarg(env);
+    char *res = aether_vcr_embed_untaped(path);
+    enif_free(path);
+    return take_cstr(env, res);
+}
+
 static ERL_NIF_TERM nif_set_strict_headers(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     int on;
@@ -330,6 +341,7 @@ CLEAR_NIF(nif_clear_redactions,      aether_vcr_embed_clear_redactions)
 CLEAR_NIF(nif_clear_unredactions,    aether_vcr_embed_clear_unredactions)
 CLEAR_NIF(nif_clear_header_removals, aether_vcr_embed_clear_header_removals)
 CLEAR_NIF(nif_clear_static_content,  aether_vcr_embed_clear_static_content)
+CLEAR_NIF(nif_clear_untaped,         aether_vcr_embed_clear_untaped)
 CLEAR_NIF(nif_clear_format_options,  aether_vcr_embed_clear_format_options)
 
 /* ---- registration ------------------------------------------------------ */
@@ -356,6 +368,7 @@ static ErlNifFunc nif_funcs[] = {
     {"remove_header",  2, nif_remove_header,  0},
     {"note",           2, nif_note,           0},
     {"static_content", 2, nif_static_content, 0},
+    {"untaped",        1, nif_untaped,        0},
     {"set_strict_headers",   1, nif_set_strict_headers,   0},
     {"indent_code_blocks",   0, nif_indent_code_blocks,   0},
     {"emphasize_http_verbs", 0, nif_emphasize_http_verbs, 0},
@@ -364,6 +377,7 @@ static ErlNifFunc nif_funcs[] = {
     {"clear_unredactions",    0, nif_clear_unredactions,    0},
     {"clear_header_removals", 0, nif_clear_header_removals, 0},
     {"clear_static_content",  0, nif_clear_static_content,  0},
+    {"clear_untaped",         0, nif_clear_untaped,         0},
     {"clear_format_options",  0, nif_clear_format_options,  0},
 };
 

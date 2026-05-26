@@ -90,6 +90,7 @@ module Servirtium
       [:remove_header,  'aether_vcr_embed_remove_header',  VOIDP, [INT, VOIDP]],
       [:note,           'aether_vcr_embed_note',           VOIDP, [VOIDP, VOIDP]],
       [:static_content, 'aether_vcr_embed_static_content', VOIDP, [VOIDP, VOIDP]],
+      [:untaped,        'aether_vcr_embed_untaped',        VOIDP, [VOIDP]],
 
       [:set_strict_headers,  'aether_vcr_embed_set_strict_headers',  VOID, [INT]],
       [:indent_code_blocks,  'aether_vcr_embed_indent_code_blocks',  VOID, []],
@@ -99,6 +100,7 @@ module Servirtium
       [:clear_unredactions,    'aether_vcr_embed_clear_unredactions',    VOID, []],
       [:clear_header_removals, 'aether_vcr_embed_clear_header_removals', VOID, []],
       [:clear_static_content,  'aether_vcr_embed_clear_static_content',  VOID, []],
+      [:clear_untaped,         'aether_vcr_embed_clear_untaped',         VOID, []],
       [:clear_format_options,  'aether_vcr_embed_clear_format_options',  VOID, []],
 
       # ---- string ownership ----

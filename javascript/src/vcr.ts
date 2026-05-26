@@ -73,6 +73,7 @@ function resetGlobalState(): void {
   N.clearUnredactions()
   N.clearHeaderRemovals()
   N.clearStaticContent()
+  N.clearUntaped()
   N.clearFormatOptions()
   N.setStrictHeaders(0)
   N.clearLastError()
@@ -134,6 +135,7 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
 export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   private readonly unredactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
   private readonly staticMounts: Array<{ mount: string; dir: string }> = []
+  private readonly untapedPaths: string[] = []
   private strictHeadersOn = false
 
   constructor(tapePath: string) {
@@ -168,6 +170,16 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     return this
   }
 
+  /**
+   * Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers 404
+   * for without consuming the tape cursor — a normal interaction recorded
+   * after it still matches.
+   */
+  untaped(path: string): PlaybackBuilder {
+    this.untapedPaths.push(path)
+    return this
+  }
+
   protected applyConfig(): void {
     super.applyConfig()
     if (this.strictHeadersOn) N.setStrictHeaders(1)
@@ -176,6 +188,9 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
     for (const { mount, dir } of this.staticMounts) {
       check(N.staticContent(mount, dir), 'staticContent')
+    }
+    for (const path of this.untapedPaths) {
+      check(N.untaped(path), 'untaped')
     }
   }
 

@@ -50,6 +50,24 @@ final class PlaybackTest extends TestCase
         }
     }
 
+    public function testUntapedPath404sWithoutConsumingTheTapeCursor(): void
+    {
+        $vcr = Vcr::playback($this->tape('single_get.md'))->untaped('/favicon.ico')->port(0)->start();
+        try {
+            // The incidental path is answered 404 and never touches the tape.
+            [$status] = $this->httpGet($vcr->baseUrl() . '/favicon.ico');
+            $this->assertSame(404, $status);
+
+            // The normal recorded interaction still replays (cursor not consumed).
+            [$status, $body] = $this->httpGet($vcr->baseUrl() . '/ok');
+            $this->assertSame(200, $status);
+            $this->assertSame('ok-body', $body);
+            $this->assertSame(VcrOutcome::Ok, $vcr->lastKind());
+        } finally {
+            $vcr->stop();
+        }
+    }
+
     public function testFlagsAPathMismatchViaDiagnostics(): void
     {
         $vcr = Vcr::playback($this->tape('single_get.md'))->port(0)->start();

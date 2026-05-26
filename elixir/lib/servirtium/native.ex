@@ -61,6 +61,7 @@ defmodule Servirtium.Native do
   def remove_header(_field, _name), do: :erlang.nif_error(@nif_not_loaded)
   def note(_title, _body), do: :erlang.nif_error(@nif_not_loaded)
   def static_content(_mount_path, _fs_dir), do: :erlang.nif_error(@nif_not_loaded)
+  def untaped(_path), do: :erlang.nif_error(@nif_not_loaded)
   def set_strict_headers(_on), do: :erlang.nif_error(@nif_not_loaded)
   def indent_code_blocks, do: :erlang.nif_error(@nif_not_loaded)
   def emphasize_http_verbs, do: :erlang.nif_error(@nif_not_loaded)
@@ -69,5 +70,6 @@ defmodule Servirtium.Native do
   def clear_unredactions, do: :erlang.nif_error(@nif_not_loaded)
   def clear_header_removals, do: :erlang.nif_error(@nif_not_loaded)
   def clear_static_content, do: :erlang.nif_error(@nif_not_loaded)
+  def clear_untaped, do: :erlang.nif_error(@nif_not_loaded)
   def clear_format_options, do: :erlang.nif_error(@nif_not_loaded)
 end

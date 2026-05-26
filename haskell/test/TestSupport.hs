@@ -5,6 +5,7 @@
 -- record→replay test — no @warp@ dependency.
 module TestSupport
   ( httpGet
+  , httpGetStatus
   , withUpstream
   ) where
 
@@ -15,7 +16,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as LBS
 import Network.HTTP.Client
-  ( defaultManagerSettings, httpLbs, newManager, parseRequest, responseBody )
+  ( defaultManagerSettings, httpLbs, newManager, parseRequest, responseBody, responseStatus )
+import Network.HTTP.Types.Status (statusCode)
 import Network.Socket
 import Network.Socket.ByteString (recv, sendAll)
 
@@ -26,6 +28,14 @@ httpGet url = do
   req <- parseRequest url
   resp <- httpLbs req mgr
   pure (BC.unpack (LBS.toStrict (responseBody resp)))
+
+-- | GET @url@ via http-client and return the HTTP status code (e.g. 404).
+httpGetStatus :: String -> IO Int
+httpGetStatus url = do
+  mgr <- newManager defaultManagerSettings
+  req <- parseRequest url
+  resp <- httpLbs req mgr
+  pure (statusCode (responseStatus resp))
 
 -- | Run @act@ with a tiny upstream HTTP server bound on an OS-assigned port
 -- of 127.0.0.1 that answers every request with @body@ (a 200 with an explicit

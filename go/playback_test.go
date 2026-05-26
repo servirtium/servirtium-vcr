@@ -159,3 +159,27 @@ func TestPlaybackStaticContentServedFromDisk(t *testing.T) {
 		t.Fatalf("expected %q from tape, got %q", "ok-body", body)
 	}
 }
+
+func TestPlaybackUntapedReturns404WithoutConsumingTape(t *testing.T) {
+	srv, err := servirtium.Playback(tapePath("single_get.md")).
+		Untaped("/favicon.ico").
+		Port(0).
+		Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	// Untaped path answers 404 without touching the tape cursor:
+	if status, _ := get(t, srv.BaseURL(), "/favicon.ico"); status != http.StatusNotFound {
+		t.Fatalf("expected 404 for untaped path, got %d", status)
+	}
+	// The normal recorded interaction still replays (cursor wasn't consumed):
+	status, body := get(t, srv.BaseURL(), "/ok")
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d", status)
+	}
+	if body != "ok-body" {
+		t.Fatalf("expected %q from tape, got %q", "ok-body", body)
+	}
+}

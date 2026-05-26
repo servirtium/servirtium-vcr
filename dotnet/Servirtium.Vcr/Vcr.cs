@@ -78,6 +78,7 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
         NativeMethods.ClearUnredactions();
         NativeMethods.ClearHeaderRemovals();
         NativeMethods.ClearStaticContent();
+        NativeMethods.ClearUntaped();
         NativeMethods.ClearFormatOptions();
         NativeMethods.SetStrictHeaders(0);
         NativeMethods.ClearLastError();
@@ -114,6 +115,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
 {
     private readonly List<(VcrField field, string pattern, string replacement)> _unredactions = new();
     private readonly List<(string mount, string dir)> _staticContent = new();
+    private readonly List<string> _untaped = new();
     private bool _strictHeaders;
 
     internal PlaybackBuilder(string tapePath) : base(tapePath) { }
@@ -151,6 +153,17 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         return this;
     }
 
+    /// <summary>
+    /// Mark an incidental request path (e.g. "/favicon.ico") the VCR answers
+    /// 404 for without consuming the tape cursor, so a normal interaction
+    /// recorded after it still matches.
+    /// </summary>
+    public PlaybackBuilder Untaped(string path)
+    {
+        _untaped.Add(path);
+        return this;
+    }
+
     private protected override void ApplyConfig()
     {
         base.ApplyConfig();
@@ -162,6 +175,10 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         foreach ((string mount, string dir) in _staticContent)
         {
             Check(NativeMethods.StaticContent(mount, dir), nameof(StaticContent));
+        }
+        foreach (string path in _untaped)
+        {
+            Check(NativeMethods.Untaped(path), nameof(Untaped));
         }
     }
 

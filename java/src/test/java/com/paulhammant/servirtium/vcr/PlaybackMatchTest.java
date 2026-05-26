@@ -96,4 +96,17 @@ class PlaybackMatchTest {
                     .forEach(p -> p.toFile().delete());
         }
     }
+
+    @Test
+    void untapedPathReturns404WithoutConsumingTheCursor() throws Exception {
+        try (VcrServer vcr = Vcr.playback(tape("single_get.md"))
+                .untaped("/favicon.ico")
+                .port(0).start()) {
+
+            // Incidental path -> 404, and does not advance the tape cursor:
+            assertEquals(404, send(vcr.baseUrl() + "/favicon.ico", null).statusCode());
+            // The recorded interaction still replays afterwards:
+            assertEquals("ok-body", send(vcr.baseUrl() + "/ok", null).body());
+        }
+    }
 }

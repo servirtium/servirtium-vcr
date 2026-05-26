@@ -63,6 +63,7 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
             NativeMethods.CLEAR_UNREDACTIONS.invokeExact();
             NativeMethods.CLEAR_HEADER_REMOVALS.invokeExact();
             NativeMethods.CLEAR_STATIC_CONTENT.invokeExact();
+            NativeMethods.CLEAR_UNTAPED.invokeExact();
             NativeMethods.CLEAR_FORMAT_OPTIONS.invokeExact();
             NativeMethods.SET_STRICT_HEADERS.invokeExact(0);
             NativeMethods.CLEAR_LAST_ERROR.invokeExact();

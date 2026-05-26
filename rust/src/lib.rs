@@ -128,6 +128,7 @@ impl Vcr {
             common: Common::new(tape_path.into()),
             unredactions: Vec::new(),
             static_content: Vec::new(),
+            untaped: Vec::new(),
             strict_headers: false,
         }
     }
@@ -181,6 +182,7 @@ fn reset_global_state(n: &Native) {
         (n.clear_unredactions)();
         (n.clear_header_removals)();
         (n.clear_static_content)();
+        (n.clear_untaped)();
         (n.clear_format_options)();
         (n.set_strict_headers)(0);
         (n.clear_last_error)();
@@ -204,6 +206,7 @@ pub struct PlaybackBuilder {
     common: Common,
     unredactions: Vec<(Field, String, String)>,
     static_content: Vec<(String, String)>,
+    untaped: Vec<String>,
     strict_headers: bool,
 }
 
@@ -251,6 +254,13 @@ impl PlaybackBuilder {
         self.static_content.push((mount_path.into(), fs_dir.into()));
         self
     }
+    /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers
+    /// 404 for without consuming the tape cursor, so a normal interaction
+    /// recorded after it still matches.
+    pub fn untaped(mut self, path: impl Into<String>) -> Self {
+        self.untaped.push(path.into());
+        self
+    }
 
     /// Reset process-global state, apply this fixture's config, and start the
     /// playback server. Acquires the one-server-per-process lock, held until
@@ -279,6 +289,9 @@ impl PlaybackBuilder {
         }
         for (mount, dir) in &self.static_content {
             check(n, unsafe { (n.static_content)(cstr(mount)?.as_ptr(), cstr(dir)?.as_ptr()) }, "static_content")?;
+        }
+        for path in &self.untaped {
+            check(n, unsafe { (n.untaped)(cstr(path)?.as_ptr()) }, "untaped")?;
         }
 
         let handle = unsafe {

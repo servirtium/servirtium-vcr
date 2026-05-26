@@ -36,6 +36,7 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_remove_header
   , aether_vcr_embed_note
   , aether_vcr_embed_static_content
+  , aether_vcr_embed_untaped
   , aether_vcr_embed_set_strict_headers
   , aether_vcr_embed_indent_code_blocks
   , aether_vcr_embed_emphasize_http_verbs
@@ -43,6 +44,7 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_clear_unredactions
   , aether_vcr_embed_clear_header_removals
   , aether_vcr_embed_clear_static_content
+  , aether_vcr_embed_clear_untaped
   , aether_vcr_embed_clear_format_options
   , aether_vcr_embed_free_string
   ) where
@@ -116,6 +118,9 @@ foreign import ccall unsafe "aether_vcr_embed_note"
 foreign import ccall unsafe "aether_vcr_embed_static_content"
   aether_vcr_embed_static_content :: CString -> CString -> IO CString
 
+foreign import ccall unsafe "aether_vcr_embed_untaped"
+  aether_vcr_embed_untaped :: CString -> IO CString
+
 foreign import ccall unsafe "aether_vcr_embed_set_strict_headers"
   aether_vcr_embed_set_strict_headers :: CInt -> IO ()
 
@@ -136,6 +141,9 @@ foreign import ccall unsafe "aether_vcr_embed_clear_header_removals"
 
 foreign import ccall unsafe "aether_vcr_embed_clear_static_content"
   aether_vcr_embed_clear_static_content :: IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_clear_untaped"
+  aether_vcr_embed_clear_untaped :: IO ()
 
 foreign import ccall unsafe "aether_vcr_embed_clear_format_options"
   aether_vcr_embed_clear_format_options :: IO ()

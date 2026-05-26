@@ -123,6 +123,7 @@ unredact = _decl("aether_vcr_embed_unredact", _CSTR, [ctypes.c_int, ctypes.c_cha
 remove_header = _decl("aether_vcr_embed_remove_header", _CSTR, [ctypes.c_int, ctypes.c_char_p])
 note = _decl("aether_vcr_embed_note", _CSTR, [ctypes.c_char_p, ctypes.c_char_p])
 static_content = _decl("aether_vcr_embed_static_content", _CSTR, [ctypes.c_char_p, ctypes.c_char_p])
+untaped = _decl("aether_vcr_embed_untaped", _CSTR, [ctypes.c_char_p])
 set_strict_headers = _decl("aether_vcr_embed_set_strict_headers", None, [ctypes.c_int])
 indent_code_blocks = _decl("aether_vcr_embed_indent_code_blocks", None, [])
 emphasize_http_verbs = _decl("aether_vcr_embed_emphasize_http_verbs", None, [])
@@ -130,6 +131,7 @@ clear_redactions = _decl("aether_vcr_embed_clear_redactions", None, [])
 clear_unredactions = _decl("aether_vcr_embed_clear_unredactions", None, [])
 clear_header_removals = _decl("aether_vcr_embed_clear_header_removals", None, [])
 clear_static_content = _decl("aether_vcr_embed_clear_static_content", None, [])
+clear_untaped = _decl("aether_vcr_embed_clear_untaped", None, [])
 clear_format_options = _decl("aether_vcr_embed_clear_format_options", None, [])
 
 # ---- string ownership -----------------------------------------------------

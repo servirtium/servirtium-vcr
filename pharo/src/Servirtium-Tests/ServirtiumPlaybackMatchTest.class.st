@@ -53,6 +53,26 @@ ServirtiumPlaybackMatchTest >> testStrictMatchingFlagsAMissingRequestHeader [
 ]
 
 { #category : 'tests' }
+ServirtiumPlaybackMatchTest >> testUntapedPath404sWithoutConsumingTheTapeCursor [
+
+	(Servirtium playback: (self tapePath: 'single_get.md'))
+		untaped: '/favicon.ico';
+		port: 0;
+		startThenDo: [ :server |
+			| client |
+			"The incidental path is answered 404 and never touches the tape."
+			client := ZnClient new
+				enforceHttpSuccess: false;
+				get: server baseUrl , '/favicon.ico';
+				yourself.
+			self assert: client response code equals: 404.
+
+			"The recorded interaction still replays — the cursor wasn't consumed."
+			self assert: (ZnClient new get: server baseUrl , '/ok') equals: 'ok-body'.
+			self assert: server lastKind equals: #ok ]
+]
+
+{ #category : 'tests' }
 ServirtiumPlaybackMatchTest >> testStaticContentIsServedFromDiskNotTheTape [
 
 	| dir |

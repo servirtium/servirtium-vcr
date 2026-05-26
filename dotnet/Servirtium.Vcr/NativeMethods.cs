@@ -118,6 +118,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_static_content", CharSet = CharSet.Ansi)]
     internal static extern IntPtr StaticContent(string mountPath, string fsDir);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_untaped", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr Untaped(string path);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_strict_headers")]
     internal static extern void SetStrictHeaders(int on);
 
@@ -138,6 +141,9 @@ internal static class NativeMethods
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_static_content")]
     internal static extern void ClearStaticContent();
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_untaped")]
+    internal static extern void ClearUntaped();
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_format_options")]
     internal static extern void ClearFormatOptions();

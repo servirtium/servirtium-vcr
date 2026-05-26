@@ -96,6 +96,7 @@ void _resetGlobalState() {
   Native.clearUnredactions();
   Native.clearHeaderRemovals();
   Native.clearStaticContent();
+  Native.clearUntaped();
   Native.clearFormatOptions();
   Native.setStrictHeaders(0);
   Native.clearLastError();
@@ -171,6 +172,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
 
   final List<(VcrField, String, String)> _unredactions = [];
   final List<(String, String)> _staticContent = [];
+  final List<String> _untaped = [];
   bool _strictHeaders = false;
 
   @override
@@ -196,6 +198,14 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     return this;
   }
 
+  /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers 404
+  /// for without consuming the tape cursor — a normal interaction recorded
+  /// after it still matches.
+  PlaybackBuilder untaped(String path) {
+    _untaped.add(path);
+    return this;
+  }
+
   @override
   void _applyConfig() {
     super._applyConfig();
@@ -207,6 +217,9 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     for (final (mount, dir) in _staticContent) {
       withUtf8(mount,
           (m) => withUtf8(dir, (d) => _check(Native.staticContent(m, d), 'staticContent')));
+    }
+    for (final path in _untaped) {
+      withUtf8(path, (p) => _check(Native.untaped(p), 'untaped'));
     }
   }
 

@@ -16,6 +16,7 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 
     private final List<Unredaction> unredactions = new ArrayList<>();
     private final List<StaticMount> staticContent = new ArrayList<>();
+    private final List<String> untaped = new ArrayList<>();
     private boolean strictHeaders;
 
     PlaybackBuilder(String tapePath) {
@@ -59,6 +60,15 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
         return this;
     }
 
+    /**
+     * Mark an incidental request path (e.g. {@code /favicon.ico}) so the VCR
+     * answers 404 without consuming the tape cursor, and never records it.
+     */
+    public PlaybackBuilder untaped(String path) {
+        untaped.add(path);
+        return this;
+    }
+
     @Override
     void applyConfig(Arena arena) {
         super.applyConfig(arena);
@@ -78,6 +88,11 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
                         NativeMethods.cString(arena, s.mount()),
                         NativeMethods.cString(arena, s.dir()));
                 check(r, "staticContent");
+            }
+            for (String p : untaped) {
+                MemorySegment r = (MemorySegment) NativeMethods.UNTAPED.invokeExact(
+                        NativeMethods.cString(arena, p));
+                check(r, "untaped");
             }
         } catch (Throwable t) {
             throw rethrow("applyConfig", t);

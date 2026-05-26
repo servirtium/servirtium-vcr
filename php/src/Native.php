@@ -46,6 +46,7 @@ final class Native
         char*  aether_vcr_embed_remove_header(int field, const char* name);
         char*  aether_vcr_embed_note(const char* title, const char* body);
         char*  aether_vcr_embed_static_content(const char* mount_path, const char* fs_dir);
+        char*  aether_vcr_embed_untaped(const char* path);
         void   aether_vcr_embed_set_strict_headers(int on);
         void   aether_vcr_embed_indent_code_blocks(void);
         void   aether_vcr_embed_emphasize_http_verbs(void);
@@ -53,6 +54,7 @@ final class Native
         void   aether_vcr_embed_clear_unredactions(void);
         void   aether_vcr_embed_clear_header_removals(void);
         void   aether_vcr_embed_clear_static_content(void);
+        void   aether_vcr_embed_clear_untaped(void);
         void   aether_vcr_embed_clear_format_options(void);
         void   aether_vcr_embed_free_string(char* s);
         C;

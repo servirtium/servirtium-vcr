@@ -50,6 +50,8 @@ defmodule Servirtium do
     * `:strict_headers` — `true` to compare request headers on every interaction
     * `:unredact` — list of `{field, pattern, replacement}`
     * `:static_content` — list of `{mount_path, fs_dir}`
+    * `:untaped` — list of paths the VCR answers 404 without consuming the
+      tape cursor (e.g. `"/favicon.ico"`)
 
   Record only:
 
@@ -299,6 +301,7 @@ defmodule Servirtium do
     Native.clear_unredactions()
     Native.clear_header_removals()
     Native.clear_static_content()
+    Native.clear_untaped()
     Native.clear_format_options()
     Native.set_strict_headers(0)
     Native.clear_last_error()
@@ -319,6 +322,10 @@ defmodule Servirtium do
 
     for {mount, dir} <- Keyword.get(opts, :static_content, []) do
       check!(Native.static_content(mount, dir), "static_content")
+    end
+
+    for path <- Keyword.get(opts, :untaped, []) do
+      check!(Native.untaped(path), "untaped")
     end
   end
 

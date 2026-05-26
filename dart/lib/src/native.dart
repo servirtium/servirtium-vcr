@@ -132,6 +132,9 @@ typedef _NoteD = Pointer<Utf8> Function(Pointer<Utf8> title, Pointer<Utf8> body)
 typedef _StaticC = Pointer<Utf8> Function(Pointer<Utf8> mount, Pointer<Utf8> dir);
 typedef _StaticD = Pointer<Utf8> Function(Pointer<Utf8> mount, Pointer<Utf8> dir);
 
+typedef _UntapedC = Pointer<Utf8> Function(Pointer<Utf8> path);
+typedef _UntapedD = Pointer<Utf8> Function(Pointer<Utf8> path);
+
 typedef _SetIntC = Void Function(Int32 on);
 typedef _SetIntD = void Function(int on);
 
@@ -184,6 +187,8 @@ class Native {
   static final note = _lib.lookupFunction<_NoteC, _NoteD>('aether_vcr_embed_note');
   static final staticContent =
       _lib.lookupFunction<_StaticC, _StaticD>('aether_vcr_embed_static_content');
+  static final untaped =
+      _lib.lookupFunction<_UntapedC, _UntapedD>('aether_vcr_embed_untaped');
   static final setStrictHeaders =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_strict_headers');
   static final indentCodeBlocks = _lib
@@ -198,6 +203,8 @@ class Native {
       'aether_vcr_embed_clear_header_removals');
   static final clearStaticContent = _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>(
       'aether_vcr_embed_clear_static_content');
+  static final clearUntaped = _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>(
+      'aether_vcr_embed_clear_untaped');
   static final clearFormatOptions = _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>(
       'aether_vcr_embed_clear_format_options');
 

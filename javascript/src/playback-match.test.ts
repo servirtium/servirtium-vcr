@@ -74,4 +74,20 @@ describe('playback matching', () => {
       fs.rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('untaped path 404s without consuming the tape cursor', async () => {
+    const vcr = Vcr.playback(tape('single_get.md')).untaped('/favicon.ico').port(0).start()
+    try {
+      // The incidental path is answered 404 and never touches the tape.
+      const favicon = await fetch(`${vcr.baseUrl}/favicon.ico`)
+      expect(favicon.status).toBe(404)
+
+      // The recorded interaction still replays — the cursor wasn't consumed.
+      const fromTape = await fetch(`${vcr.baseUrl}/ok`)
+      expect(await fromTape.text()).toBe('ok-body')
+      expect(vcr.lastKind).toBe(VcrOutcome.Ok)
+    } finally {
+      vcr.close()
+    }
+  })
 })

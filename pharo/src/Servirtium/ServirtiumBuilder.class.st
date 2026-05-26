@@ -88,6 +88,7 @@ ServirtiumBuilder >> resetGlobalState [
 	lib clearUnredactions.
 	lib clearHeaderRemovals.
 	lib clearStaticContent.
+	lib clearUntaped.
 	lib clearFormatOptions.
 	lib setStrictHeaders: 0.
 	lib clearLastError

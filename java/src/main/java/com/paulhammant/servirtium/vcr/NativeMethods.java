@@ -115,6 +115,10 @@ final class NativeMethods {
             "aether_vcr_embed_static_content",
             FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
 
+    static final MethodHandle UNTAPED = down(
+            "aether_vcr_embed_untaped",
+            FunctionDescriptor.of(C_STR, C_PTR));
+
     static final MethodHandle SET_STRICT_HEADERS = down(
             "aether_vcr_embed_set_strict_headers",
             FunctionDescriptor.ofVoid(C_INT));
@@ -141,6 +145,10 @@ final class NativeMethods {
 
     static final MethodHandle CLEAR_STATIC_CONTENT = down(
             "aether_vcr_embed_clear_static_content",
+            FunctionDescriptor.ofVoid());
+
+    static final MethodHandle CLEAR_UNTAPED = down(
+            "aether_vcr_embed_clear_untaped",
             FunctionDescriptor.ofVoid());
 
     static final MethodHandle CLEAR_FORMAT_OPTIONS = down(

@@ -23,6 +23,18 @@ RSpec.describe 'Servirtium playback' do
     end
   end
 
+  it 'answers an untaped path 404 without consuming the tape cursor' do
+    Servirtium.playback(tape).untaped('/favicon.ico').port(0).start do |server|
+      # The incidental path is answered 404 and never touches the tape.
+      expect(get(server, '/favicon.ico').code).to eq('404')
+      # The normal recorded interaction still replays (cursor not consumed).
+      res = get(server, '/ok')
+      expect(res.code).to eq('200')
+      expect(res.body).to eq('ok-body')
+      expect(server.last_kind).to eq(:ok)
+    end
+  end
+
   it 'reports a path/method mismatch via diagnostics' do
     Servirtium.playback(tape).port(0).start do |server|
       res = get(server, '/not-on-tape')

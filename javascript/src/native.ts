@@ -120,6 +120,10 @@ export const staticContent = lib.func(
   'void* aether_vcr_embed_static_content(const char* mount_path, const char* fs_dir)',
 )
 
+export const untaped = lib.func(
+  'void* aether_vcr_embed_untaped(const char* path)',
+)
+
 export const setStrictHeaders = lib.func(
   'void aether_vcr_embed_set_strict_headers(int on)',
 )
@@ -140,6 +144,10 @@ export const clearHeaderRemovals = lib.func(
 
 export const clearStaticContent = lib.func(
   'void aether_vcr_embed_clear_static_content()',
+)
+
+export const clearUntaped = lib.func(
+  'void aether_vcr_embed_clear_untaped()',
 )
 
 export const clearFormatOptions = lib.func('void aether_vcr_embed_clear_format_options()')

@@ -15,6 +15,9 @@ final class PlaybackBuilder extends VcrBuilderBase
     /** @var list<array{0: string, 1: string}> */
     private array $staticContent = [];
 
+    /** @var list<string> */
+    private array $untaped = [];
+
     private bool $strictHeadersOn = false;
 
     public function __construct(string $tapePath)
@@ -57,6 +60,18 @@ final class PlaybackBuilder extends VcrBuilderBase
         return $this;
     }
 
+    /**
+     * Mark an incidental path (e.g. /favicon.ico) the VCR answers 404 for
+     * without consuming the tape cursor, so the next recorded interaction
+     * still matches.
+     */
+    public function untaped(string $path): static
+    {
+        $this->untaped[] = $path;
+
+        return $this;
+    }
+
     protected function applyConfig(): void
     {
         parent::applyConfig();
@@ -69,6 +84,9 @@ final class PlaybackBuilder extends VcrBuilderBase
         }
         foreach ($this->staticContent as [$mount, $dir]) {
             self::check($lib->aether_vcr_embed_static_content($mount, $dir), 'staticContent');
+        }
+        foreach ($this->untaped as $path) {
+            self::check($lib->aether_vcr_embed_untaped($path), 'untaped');
         }
     }
 

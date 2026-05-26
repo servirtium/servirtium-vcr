@@ -75,4 +75,19 @@ public class PlaybackMatchTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task Untaped_path_returns_404_without_consuming_the_tape()
+    {
+        using var vcr = Vcr.Playback(TapePath("single_get.md"))
+            .Untaped("/favicon.ico")
+            .Port(0).Start();
+        using var client = new HttpClient { BaseAddress = new Uri(vcr.BaseUrl) };
+
+        // The untaped path answers 404 without touching the tape cursor:
+        var resp = await client.GetAsync("/favicon.ico");
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        // The normal recorded interaction still replays (cursor wasn't consumed):
+        Assert.Equal("ok-body", await client.GetStringAsync("/ok"));
+    }
 }

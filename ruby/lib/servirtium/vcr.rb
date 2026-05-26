@@ -55,6 +55,7 @@ module Servirtium
       Native.call(:clear_unredactions)
       Native.call(:clear_header_removals)
       Native.call(:clear_static_content)
+      Native.call(:clear_untaped)
       Native.call(:clear_format_options)
       Native.call(:set_strict_headers, 0)
       Native.call(:clear_last_error)
@@ -99,6 +100,7 @@ module Servirtium
       super
       @unredactions = []
       @static_content = []
+      @untaped = []
       @strict_headers = false
     end
 
@@ -124,6 +126,14 @@ module Servirtium
       self
     end
 
+    # Mark an incidental path (e.g. /favicon.ico) the VCR answers 404 for
+    # without consuming the tape cursor, so the next recorded interaction
+    # still matches.
+    def untaped(path)
+      @untaped << path
+      self
+    end
+
     # Start the server. With a block, yields the {Server} and closes it after.
     def start(&)
       reset_global_state
@@ -146,6 +156,9 @@ module Servirtium
       end
       @static_content.each do |mount, dir|
         check(Native.call(:static_content, mount, dir), 'static_content')
+      end
+      @untaped.each do |path|
+        check(Native.call(:untaped, path), 'untaped')
       end
     end
   end

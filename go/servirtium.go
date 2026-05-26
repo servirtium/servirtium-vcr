@@ -55,6 +55,7 @@ char*  aether_vcr_embed_unredact(int field, const char* pattern, const char* rep
 char*  aether_vcr_embed_remove_header(int field, const char* name);
 char*  aether_vcr_embed_note(const char* title, const char* body);
 char*  aether_vcr_embed_static_content(const char* mount_path, const char* fs_dir);
+char*  aether_vcr_embed_untaped(const char* path);
 void   aether_vcr_embed_set_strict_headers(int on);
 void   aether_vcr_embed_indent_code_blocks(void);
 void   aether_vcr_embed_emphasize_http_verbs(void);
@@ -62,6 +63,7 @@ void   aether_vcr_embed_clear_redactions(void);
 void   aether_vcr_embed_clear_unredactions(void);
 void   aether_vcr_embed_clear_header_removals(void);
 void   aether_vcr_embed_clear_static_content(void);
+void   aether_vcr_embed_clear_untaped(void);
 void   aether_vcr_embed_clear_format_options(void);
 
 void   aether_vcr_embed_free_string(char* s);
@@ -157,6 +159,7 @@ func resetGlobalState() {
 	C.aether_vcr_embed_clear_unredactions()
 	C.aether_vcr_embed_clear_header_removals()
 	C.aether_vcr_embed_clear_static_content()
+	C.aether_vcr_embed_clear_untaped()
 	C.aether_vcr_embed_clear_format_options()
 	C.aether_vcr_embed_set_strict_headers(0)
 	C.aether_vcr_embed_clear_last_error()
@@ -210,6 +213,7 @@ type PlaybackBuilder struct {
 	strictHeaders bool
 	unredactions  []replacement
 	staticContent []struct{ mount, dir string }
+	untaped       []string
 }
 
 // Host binds the host. Defaults to 127.0.0.1.
@@ -247,6 +251,14 @@ func (b *PlaybackBuilder) StaticContent(mountPath, fsDir string) *PlaybackBuilde
 	return b
 }
 
+// Untaped marks an incidental request path (e.g. "/favicon.ico") the VCR
+// answers 404 for without consuming the tape cursor, so a normal interaction
+// recorded after it still matches.
+func (b *PlaybackBuilder) Untaped(path string) *PlaybackBuilder {
+	b.untaped = append(b.untaped, path)
+	return b
+}
+
 func (b *PlaybackBuilder) applyConfig() error {
 	if err := b.applyHeaderRemovals(); err != nil {
 		return err
@@ -269,6 +281,14 @@ func (b *PlaybackBuilder) applyConfig() error {
 		C.free(unsafe.Pointer(cMount))
 		C.free(unsafe.Pointer(cDir))
 		if err := checkErr(res, "StaticContent"); err != nil {
+			return err
+		}
+	}
+	for _, p := range b.untaped {
+		cPath := C.CString(p)
+		res := C.aether_vcr_embed_untaped(cPath)
+		C.free(unsafe.Pointer(cPath))
+		if err := checkErr(res, "Untaped"); err != nil {
 			return err
 		}
 	}

@@ -80,6 +80,21 @@ defmodule Servirtium.PlaybackTest do
     end
   end
 
+  test "an untaped path returns 404 without consuming the tape cursor" do
+    Servirtium.with_playback(
+      tape("single_get.md"),
+      [port: 0, untaped: ["/favicon.ico"]],
+      fn srv ->
+        base = Servirtium.base_url(srv)
+        # Incidental path → 404, and does not advance the tape cursor.
+        assert {404, _body} = get(base, "/favicon.ico")
+        # The recorded interaction still replays afterwards.
+        assert {200, "ok-body"} = get(base, "/ok")
+        assert Servirtium.last_kind() == :ok
+      end
+    )
+  end
+
   test "global state does not leak: strict_headers from a prior fixture is reset" do
     # First fixture turns strict headers on.
     Servirtium.with_playback(tape("single_get.md"), [port: 0, strict_headers: true], fn _ ->

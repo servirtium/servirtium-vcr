@@ -70,6 +70,7 @@ def _reset_global_state() -> None:
     N.clear_unredactions()
     N.clear_header_removals()
     N.clear_static_content()
+    N.clear_untaped()
     N.clear_format_options()
     N.set_strict_headers(0)
     N.clear_last_error()
@@ -123,6 +124,7 @@ class PlaybackBuilder(_BuilderBase):
         super().__init__(tape_path)
         self._unredactions: list[tuple[Field, str, str]] = []
         self._static_content: list[tuple[str, str]] = []
+        self._untaped: list[str] = []
         self._strict_headers = False
 
     def strict_headers(self, on: bool = True):
@@ -142,6 +144,13 @@ class PlaybackBuilder(_BuilderBase):
         self._static_content.append((mount_path, fs_dir))
         return self
 
+    def untaped(self, path: str):
+        """Mark an incidental path (e.g. /favicon.ico) the VCR answers 404 for
+        without consuming the tape cursor, so the next recorded interaction
+        still matches."""
+        self._untaped.append(path)
+        return self
+
     def _apply_config(self) -> None:
         super()._apply_config()
         if self._strict_headers:
@@ -153,6 +162,8 @@ class PlaybackBuilder(_BuilderBase):
             )
         for mount, fs_dir in self._static_content:
             _check(N.static_content(N.encode(mount), N.encode(fs_dir)), "static_content")
+        for path in self._untaped:
+            _check(N.untaped(N.encode(path)), "untaped")
 
     def start(self) -> "VcrServer":
         _reset_global_state()

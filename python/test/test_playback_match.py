@@ -67,3 +67,15 @@ def test_static_content_is_served_from_disk_not_the_tape():
             # From the tape (unaffected):
             status, body = http_get(vcr.base_url, "/ok")
             assert body == "ok-body"
+
+
+def test_untaped_path_404s_without_consuming_the_tape_cursor():
+    with servirtium.playback(tape("single_get.md")).untaped("/favicon.ico").port(0).start() as vcr:
+        # The incidental path is answered 404 and never touches the tape.
+        status, _ = http_get(vcr.base_url, "/favicon.ico")
+        assert status == 404
+        # The normal recorded interaction still replays (cursor not consumed).
+        status, body = http_get(vcr.base_url, "/ok")
+        assert status == 200
+        assert body == "ok-body"
+        assert vcr.last_kind is servirtium.Outcome.OK

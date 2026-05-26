@@ -109,3 +109,30 @@ fn static_content_is_served_from_disk_not_the_tape() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn untaped_path_returns_404_without_consuming_the_tape() {
+    let vcr = Vcr::playback(tape_path("single_get.md"))
+        .untaped("/favicon.ico")
+        .port(0)
+        .start()
+        .unwrap();
+
+    let base = vcr.base_url();
+
+    // The untaped path answers 404 without touching the tape cursor. ureq
+    // surfaces a 4xx as `Error::Status`.
+    match ureq::get(&format!("{base}/favicon.ico")).call() {
+        Err(ureq::Error::Status(code, _)) => assert_eq!(404, code),
+        other => panic!("expected a 404 status for the untaped path, got {other:?}"),
+    }
+
+    // The normal recorded interaction still replays (cursor wasn't consumed).
+    let from_tape = ureq::get(&format!("{base}/ok"))
+        .call()
+        .unwrap()
+        .into_string()
+        .unwrap();
+    assert_eq!("ok-body", from_tape);
+    assert_eq!(Outcome::Ok, vcr.last_kind());
+}

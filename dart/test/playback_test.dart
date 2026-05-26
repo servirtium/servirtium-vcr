@@ -38,4 +38,21 @@ void main() {
       vcr.close();
     }
   });
+
+  test('untaped path 404s without consuming the tape cursor', () async {
+    final vcr = Vcr.playback(_tape('single_get.md')).untaped('/favicon.ico').port(0).start();
+    try {
+      // The incidental path is answered 404 and never touches the tape.
+      final (status, _) = await httpGet('${vcr.baseUrl}/favicon.ico');
+      expect(status, 404);
+
+      // The recorded interaction still replays — the cursor wasn't consumed.
+      final (okStatus, body) = await httpGet('${vcr.baseUrl}/ok');
+      expect(okStatus, 200);
+      expect(body, 'ok-body');
+      expect(vcr.lastKind, VcrOutcome.ok);
+    } finally {
+      vcr.close();
+    }
+  });
 }

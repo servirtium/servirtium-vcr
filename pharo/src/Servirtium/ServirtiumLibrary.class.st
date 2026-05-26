@@ -206,6 +206,12 @@ ServirtiumLibrary >> staticContentMount: mountPath dir: fsDir [
 ]
 
 { #category : 'ffi - mutations' }
+ServirtiumLibrary >> untapedPath: path [
+
+	^ self ffiCall: #( void* aether_vcr_embed_untaped ( String path ) )
+]
+
+{ #category : 'ffi - mutations' }
 ServirtiumLibrary >> setStrictHeaders: on [
 
 	^ self ffiCall: #( void aether_vcr_embed_set_strict_headers ( int on ) )
@@ -245,6 +251,12 @@ ServirtiumLibrary >> clearHeaderRemovals [
 ServirtiumLibrary >> clearStaticContent [
 
 	^ self ffiCall: #( void aether_vcr_embed_clear_static_content ( void ) )
+]
+
+{ #category : 'ffi - clearing' }
+ServirtiumLibrary >> clearUntaped [
+
+	^ self ffiCall: #( void aether_vcr_embed_clear_untaped ( void ) )
 ]
 
 { #category : 'ffi - clearing' }
