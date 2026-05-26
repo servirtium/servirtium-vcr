@@ -16,7 +16,7 @@ build-time guarantee, not a test target.
 
 ```
 servirtium-vcr/
-  engine/        # builds libservirtium_vcr.so once (ae build --emit=lib); every binding deps it
+  core/        # builds libservirtium_vcr.so once (ae build --emit=lib); every binding deps it
   go/            # cgo                         python/    # ctypes
   dart/          # dart:ffi (also Flutter)     dotnet/    # P/Invoke
   java/          # FFM / Panama (JDK 22+)      rust/      # libloading
@@ -27,7 +27,7 @@ servirtium-vcr/
   docs/
 ```
 
-All **12** bindings are wired and pass through one `aeb` run: the `engine/`
+All **12** bindings are wired and pass through one `aeb` run: the `core/`
 node builds `libservirtium_vcr.so` once, then each binding's `.tests.ae`
 links (go/elixir/haskell) or loads (the rest, via `SERVIRTIUM_VCR_LIB`) that
 single artifact.
@@ -38,7 +38,7 @@ The whole repo is built with **[aeb](https://github.com/aether-lang-org/aeb)**,
 the polyglot Aether build runner — the natural fit for a one-engine,
 many-language monorepo. `aeb` scans the dot-prefixed `.ae` nodes, builds the
 DAG from `build.dep(...)` edges, and produces everything in dependency order:
-the `engine/` node builds the native lib once, then each binding's tests link
+the `core/` node builds the native lib once, then each binding's tests link
 or load that single artifact.
 
 ```sh

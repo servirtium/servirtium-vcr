@@ -1,9 +1,9 @@
 # aeb build outputs
 /target/
-# the shared native engine is a build artifact (engine/.build.ae rebuilds it)
-/engine/native/*.so
-/engine/native/*.dylib
-/engine/native/*.dll
+# the shared native engine is a build artifact (core/.build.ae rebuilds it)
+/core/native/*.so
+/core/native/*.dylib
+/core/native/*.dll
 
 # per-language build artifacts
 **/bin/

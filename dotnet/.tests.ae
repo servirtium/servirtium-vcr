@@ -3,9 +3,9 @@ import build
 import std.os
 main() {
     b = build.start()
-    build.dep(b, "engine/.build.ae")
+    build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/engine/native/libservirtium_vcr.so"
+    lib = "${root}/core/native/libservirtium_vcr.so"
     rc = os.system("cd \"${root}/dotnet\" && SERVIRTIUM_VCR_LIB=\"${lib}\" dotnet test --nologo")
     if rc != 0 { println("dotnet: tests failed"); return 1 }
     println("dotnet: tests passed")

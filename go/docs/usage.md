@@ -19,7 +19,7 @@ in matters. In recommended order:
 
 Vendor a **self-contained C bundle** into an internal test package and let
 cgo compile it as part of your `go test`. The bundle is `servirtium.go` + a
-cgo bridge + a `cengine/` directory holding the Aether VCR engine emitted as
+cgo bridge + a `ccore/` directory holding the Aether VCR engine emitted as
 C (`aetherc --emit-c` + `--emit-header`) plus its runtime/std C closure — the
 [`mattn/go-sqlite3`](https://github.com/mattn/go-sqlite3) model.
 
@@ -28,13 +28,13 @@ yourrepo/
   internal/servirtiumvcr/        # committed; you import this directly
     servirtium.go
     cgo_bridge.go                # #cgo CFLAGS: -I${SRCDIR}/cengine
-    cengine/  *.c  *.h           # the engine + Aether runtime/std closure
+    ccore/  *.c  *.h           # the engine + Aether runtime/std closure
 ```
 
 Why this is the recommended path:
 
 - **No prebuilt `.so`, no per-`GOOS/GOARCH` binary, no rpath, no native-lib
-  install.** cgo compiles `cengine/*.c` for whatever target your CI/dev uses,
+  install.** cgo compiles `ccore/*.c` for whatever target your CI/dev uses,
   so it just works on linux/macOS/Windows with a C toolchain.
 - **Reproducible + reviewable.** The bundle carries a provenance stamp (the
   Aether version + `embed.ae` hash it was generated from); updating Servirtium
@@ -44,12 +44,12 @@ Why this is the recommended path:
 
 Put it in a normal internal package dir you own and `import` directly — **not**
 Go's `vendor/` (which `go mod vendor` manages from the module graph and won't
-cleanly carry the `cengine/` subtree). Trade-off to name out loud: vendoring
+cleanly carry the `ccore/` subtree). Trade-off to name out loud: vendoring
 pins you (no `go get -u`); re-vendor on update.
 
 > Status: the bundle is produced by an aeb release step (`go.cgo_dist`); see
 > [building.md](building.md). Until that's wired, ask for a generated
-> `cengine/` unit, or use a local `replace` for in-repo dev.
+> `ccore/` unit, or use a local `replace` for in-repo dev.
 
 ### Alternatives
 

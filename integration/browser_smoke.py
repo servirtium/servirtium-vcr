@@ -8,7 +8,7 @@ TodoBackend Mocha suite rides on. The engine is shared, so hosting it from the
 Python binding proves the browser-facing behaviour for every binding.
 
 Run via integration/.tests.ae (sets SERVIRTIUM_VCR_LIB + PYTHONPATH), or:
-  SERVIRTIUM_VCR_LIB=../engine/native/libservirtium_vcr.so \
+  SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so \
   PYTHONPATH=../python python3 browser_smoke.py
 """
 import os

@@ -5,9 +5,9 @@ import std.os
 import std.string
 main() {
     b = build.start()
-    build.dep(b, "engine/.build.ae")
+    build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/engine/native/libservirtium_vcr.so"
+    lib = "${root}/core/native/libservirtium_vcr.so"
     jdk = os.getenv("JAVA25_HOME")
     if string.length(jdk) == 0 { jdk = "/usr/lib/jvm/java-25-openjdk-amd64" }
     rc = os.system("cd \"${root}/java\" && SERVIRTIUM_VCR_LIB=\"${lib}\" JAVA_HOME=\"${jdk}\" mvn -q test")

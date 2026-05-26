@@ -1,15 +1,15 @@
 // Haskell binding tests (foreign import ccall). Links the shared engine at
 // build time: we generate cabal.project.local pointing extra-lib-dirs + rpath
-// at the monorepo engine/native (ghc-pkg rejects a relative extra-lib-dirs),
+// at the monorepo core/native (ghc-pkg rejects a relative extra-lib-dirs),
 // then `cabal test` with LD_LIBRARY_PATH for the runtime loader.
 import build
 import std.os
 import std.io
 main() {
     b = build.start()
-    build.dep(b, "engine/.build.ae")
+    build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    nat = "${root}/engine/native"
+    nat = "${root}/core/native"
     cfg = "package servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
     _w = io.write_file("${root}/haskell/cabal.project.local", cfg)
     rc = os.system("cd \"${root}/haskell\" && LD_LIBRARY_PATH=\"${nat}\" cabal test")

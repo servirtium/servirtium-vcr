@@ -1,15 +1,15 @@
 // The shared Servirtium VCR engine, built ONCE for the whole monorepo from
-// the engine source that now lives IN this repo (engine/src/), no longer in
+// the engine source that now lives IN this repo (core/), no longer in
 // the Aether stdlib.
 //
-// Output: engine/native/libservirtium_vcr.so — every binding's .tests.ae deps
+// Output: core/native/libservirtium_vcr.so — every binding's .tests.ae deps
 // this node and then links (cgo/NIF/cabal) or loads (ctypes/ffi/koffi/Fiddle/
 // FFM/uFFI, via SERVIRTIUM_VCR_LIB) that single artifact.
 //
-// Source: engine/src/embed.ae (the aether_vcr_embed_* C-ABI) imports the local
-// `vcr` module (engine/src/vcr/module.ae — the Servirtium markdown parser /
+// Source: core/embed.ae (the aether_vcr_embed_* C-ABI) imports the local
+// `vcr` module (core/vcr/module.ae — the Servirtium markdown parser /
 // emitter / dispatcher-registration), whose externs are backed by the
-// hand-written engine/src/vcr/aether_vcr.c (storage + dispatcher + record),
+// hand-written core/vcr/aether_vcr.c (storage + dispatcher + record),
 // linked via `--extra`. It still builds against the Aether toolchain + runtime
 // (the engine uses std.http's server, std.fs, std.string) — Aether stays a
 // build dependency; only the VCR-specific source is now monorepo-owned.
@@ -23,13 +23,13 @@ import std.os
 main() {
     b = build.start()
     root = build._get(b, "root")
-    dest = "${root}/engine/native"
+    dest = "${root}/core/native"
     _m = os.system("mkdir -p \"${dest}\"")
-    rc = os.system("cd \"${root}/engine/src\" && ae build --emit=lib --with=fs,net embed.ae --extra vcr/aether_vcr.c -o \"${dest}/libservirtium_vcr.so\"")
+    rc = os.system("cd \"${root}/core\" && ae build --emit=lib --with=fs,net embed.ae --extra vcr/aether_vcr.c -o \"${dest}/libservirtium_vcr.so\"")
     if rc != 0 {
-        println("engine: failed to build libservirtium_vcr.so from engine/src (is `ae` >= 0.182 installed?)")
+        println("engine: failed to build libservirtium_vcr.so from core (is `ae` >= 0.182 installed?)")
         return 1
     }
-    println("engine: built engine/native/libservirtium_vcr.so (from engine/src)")
+    println("engine: built core/native/libservirtium_vcr.so (from core)")
     return 0
 }

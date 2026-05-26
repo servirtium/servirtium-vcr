@@ -6,9 +6,9 @@ import std.os
 import std.string
 main() {
     b = build.start()
-    build.dep(b, "engine/.build.ae")
+    build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/engine/native/libservirtium_vcr.so"
+    lib = "${root}/core/native/libservirtium_vcr.so"
     pharo = os.getenv("PHARO_DIR")
     if string.length(pharo) == 0 { pharo = "$HOME/.local/pharo" }
     rc = os.system("cd \"${root}/pharo\" && SERVIRTIUM_VCR_LIB=\"${lib}\" PHARO_DIR=\"${pharo}\" ./run-tests.sh")

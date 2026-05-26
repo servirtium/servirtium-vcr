@@ -6,9 +6,9 @@ import std.os
 
 main() {
     b = build.start()
-    build.dep(b, "engine/.build.ae")
+    build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/engine/native/libservirtium_vcr.so"
+    lib = "${root}/core/native/libservirtium_vcr.so"
     rc = os.system("cd \"${root}/python\" && SERVIRTIUM_VCR_LIB=\"${lib}\" python3 -m pytest -q")
     if rc != 0 {
         println("python: pytest failed")

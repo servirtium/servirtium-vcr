@@ -30,7 +30,7 @@
 package servirtium
 
 /*
-#cgo LDFLAGS: -L${SRCDIR}/../engine/native -lservirtium_vcr -Wl,-rpath,${SRCDIR}/../engine/native
+#cgo LDFLAGS: -L${SRCDIR}/../core/native -lservirtium_vcr -Wl,-rpath,${SRCDIR}/../core/native
 
 #include <stdlib.h>
 

@@ -6,9 +6,9 @@ import std.os
 
 main() {
     b = build.start()
-    build.dep(b, "engine/.build.ae")
+    build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/engine/native/libservirtium_vcr.so"
+    lib = "${root}/core/native/libservirtium_vcr.so"
     base = "cd \"${root}/dart\" && SERVIRTIUM_VCR_LIB=\"${lib}\""
     rc = os.system("${base} dart pub get >/dev/null 2>&1 && ${base} dart test -j 1")
     if rc != 0 {

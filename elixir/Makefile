@@ -8,7 +8,7 @@ ERLANG_PATH ?= $(shell erl -noshell -eval 'io:format("~s", [code:root_dir()]), h
 ERTS_INCLUDE_DIR ?= $(ERLANG_PATH)/usr/include
 
 PROJECT_DIR := $(shell pwd)
-NATIVE_DIR  := $(PROJECT_DIR)/../engine/native
+NATIVE_DIR  := $(PROJECT_DIR)/../core/native
 PRIV_DIR    := $(PROJECT_DIR)/priv
 
 NIF_SO := $(PRIV_DIR)/servirtium_nif.so
