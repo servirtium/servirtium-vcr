@@ -1,0 +1,66 @@
+// TodoBackend browser integration — Python binding, RECORD leaf.
+//
+// Name this leaf to (re)record the tape:
+//   aeb integration/todobackend/.python_record.ae
+//
+// Container lifecycle inline, modelled on aeb's container-lifecycle example
+// (docs/examples/container-lifecycle/.up_poke_down.ae): UP the Kotlin/http4k
+// SUT -> RECORD the Mocha CRUD suite through a record-mode VCR (Python
+// selenium) -> DOWN, unconditionally, then fail iff the recording failed.
+// The SUT's baseUrl is the VCR origin so the todo URLs it returns point back
+// at the VCR (and get recorded). Built locally as todobackend-sut:latest from
+// the sibling source via Containerfile.sut if absent.
+import build
+import std.os
+import std.string
+
+// Container engine: podman if present, else docker.
+_engine() {
+    out, _ = os.exec("command -v podman >/dev/null 2>&1 && echo podman || echo docker")
+    return string.trim(out)
+}
+
+main() {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/core/native/libservirtium_vcr.so"
+    eng = _engine()
+    name = "tbsut-rec"
+    image = "todobackend-sut:latest"
+    src = "${root}/../todobackend-for-compatibility-kit"
+
+    // Build the SUT image from the sibling source if it isn't here yet.
+    have = os.system("${eng} image exists ${image} >/dev/null 2>&1")
+    if have != 0 {
+        println("record: building ${image} from ${src}")
+        bld = os.system("${eng} build -t ${image} -f \"${root}/integration/todobackend/Containerfile.sut\" \"${src}\"")
+        if bld != 0 { println("record: image build failed (sibling SUT source at ${src}?)"); return 1 }
+    }
+
+    // --- UP: SUT on host :54321 -> container :8000; baseUrl = VCR origin :51080 ---
+    _rm0 = os.system("${eng} rm -f ${name} >/dev/null 2>&1")
+    rc = os.system("${eng} run -d --name ${name} -p 54321:8000 --entrypoint /app/bin/http4k-todo-backend ${image} 8000 http://127.0.0.1:51080 >/dev/null")
+    if rc != 0 { println("record: failed to start SUT container"); return 1 }
+    ready = 0
+    i = 0
+    while i < 50 {
+        probe = os.system("curl -fsS -o /dev/null http://127.0.0.1:54321/ 2>/dev/null")
+        if probe == 0 { ready = 1  i = 50 } else { _s = os.system("sleep 0.3")  i = i + 1 }
+    }
+
+    // --- RECORD: drive the Mocha suite through a record-mode VCR ---
+    result = 1
+    if ready == 1 {
+        println("record: SUT up on :54321")
+        result = os.system("cd \"${root}/integration/todobackend/python\" && SERVIRTIUM_VCR_LIB=\"${lib}\" PYTHONPATH=\"${root}/python:.\" TODOBACKEND_UPSTREAM=http://127.0.0.1:54321 python3 record.py")
+    } else {
+        println("record: SUT never became ready on :54321")
+    }
+
+    // --- DOWN: unconditional teardown, then fail iff the recording failed ---
+    _stop = os.system("${eng} rm -f ${name} >/dev/null 2>&1")
+    println("record: tore down ${name}")
+    if result != 0 { return 1 }
+    return 0
+}

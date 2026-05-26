@@ -21,8 +21,9 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 
 HERE = pathlib.Path(__file__).resolve().parent
-SUITE_DIR = HERE / "suite"
-TAPE = HERE / "tapes" / "todobackend_crud.md"
+BASE = HERE.parent  # integration/todobackend — suite/ and tapes/ are shared here
+SUITE_DIR = BASE / "suite"
+TAPE = BASE / "tapes" / "todobackend_crud.md"
 
 # Both phases bind here (see module docstring on why it can't be dynamic).
 VCR_PORT = 51080
