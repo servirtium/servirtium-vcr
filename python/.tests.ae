@@ -1,0 +1,19 @@
+// Python binding tests (ctypes). The loader honors SERVIRTIUM_VCR_LIB, which
+// we point at the shared engine artifact this node deps. Inline-Aether step
+// (no aeb python-pytest SDK verb wired here): run pytest serially.
+import build
+import std.os
+
+main() {
+    b = build.start()
+    build.dep(b, "engine/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/engine/native/libservirtium_vcr.so"
+    rc = os.system("cd \"${root}/python\" && SERVIRTIUM_VCR_LIB=\"${lib}\" python3 -m pytest -q")
+    if rc != 0 {
+        println("python: pytest failed")
+        return 1
+    }
+    println("python: pytest passed")
+    return 0
+}

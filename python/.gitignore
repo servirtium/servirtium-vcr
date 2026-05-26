@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+
+# virtualenvs
+.venv/
+venv/
+
+# packaging
+servirtium.egg-info/
+build/
+dist/
+
+# native build artifacts — run ./build-native.sh (or let CI build them).
+# A prebuilt copy may be committed for convenience; uncomment to treat as
+# build-only:
+# servirtium/native/*.so
+# servirtium/native/*.dylib
+# servirtium/native/*.dll
+
+# editor / IDE
+.idea/
+*.iml
+
+# scratch tapes
+test/just_testing_ignore_me.md

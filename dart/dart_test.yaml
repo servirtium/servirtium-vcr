@@ -1,0 +1,5 @@
+# The Aether VCR is ONE active server per process (its tape / cursor /
+# mutation state is process-global), so these tests MUST run serially.
+# concurrency: 1 forbids the test runner from running suites in parallel —
+# parallel suites would stomp each other's global state (spurious 599s).
+concurrency: 1

@@ -1,0 +1,14 @@
+// Go binding tests. cgo links the shared engine (engine/.build.ae output:
+// engine/native/libservirtium_vcr.so) via servirtium.go's
+// `#cgo LDFLAGS: -L${SRCDIR}/../engine/native ... -rpath ...`, so this deps
+// the engine node. No pkg() — go.mod lives in this dir (go/), so go_test must
+// run from source_dir; pkg() would make the SDK run from the repo root (which
+// has no go.mod). Tests run serially (one VCR server per process).
+import build
+import go
+
+main() {
+    b = build.start()
+    build.dep(b, "engine/.build.ae")
+    go.go_test(b) { }
+}

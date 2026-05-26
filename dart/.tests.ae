@@ -1,0 +1,20 @@
+// Dart binding tests (dart:ffi). The loader honors SERVIRTIUM_VCR_LIB, pointed
+// at the shared engine artifact this node deps. Inline-Aether step: `dart test`
+// serially (-j 1; native VCR state is process-global, shared across isolates).
+import build
+import std.os
+
+main() {
+    b = build.start()
+    build.dep(b, "engine/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/engine/native/libservirtium_vcr.so"
+    base = "cd \"${root}/dart\" && SERVIRTIUM_VCR_LIB=\"${lib}\""
+    rc = os.system("${base} dart pub get >/dev/null 2>&1 && ${base} dart test -j 1")
+    if rc != 0 {
+        println("dart: tests failed")
+        return 1
+    }
+    println("dart: tests passed")
+    return 0
+}

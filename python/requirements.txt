@@ -1,0 +1,2 @@
+# No runtime dependencies — the binding uses only the Python standard
+# library (ctypes). The native VCR engine ships as servirtium/native/.
