@@ -87,31 +87,26 @@ ServirtiumRecordBuilder >> failIfChanged [
 ]
 
 { #category : 'private' }
-ServirtiumRecordBuilder >> applyConfig [
+ServirtiumRecordBuilder >> applyConfig: handle [
 
-	super applyConfig.
-	indentCodeBlocks ifTrue: [ self library indentCodeBlocks ].
-	emphasizeHttpVerbs ifTrue: [ self library emphasizeHttpVerbs ].
+	super applyConfig: handle.
+	indentCodeBlocks ifTrue: [ self library indentCodeBlocks: handle ].
+	emphasizeHttpVerbs ifTrue: [ self library emphasizeHttpVerbs: handle ].
 	redactions do: [ :tuple |
 		self
-			check: (self library redactField: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
+			check: (self library redact: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
 			op: 'redact' ]
-	"NOTE: the staged note is applied *after* start_record — load_record
-	 clears the tape (and the pending note) as it binds, so staging it
-	 pre-start would be wiped. See `start`."
 ]
 
 { #category : 'starting' }
 ServirtiumRecordBuilder >> start [
-	"Reset process-global state, apply config, start the record server, then
-	 stage the pending note (after the tape has been (re)bound). Answers a
-	 running ServirtiumServer that flushes the tape on stop."
+	"Open the record server, apply config to its handle, stage the pending note,
+	 then begin serving. Answers a running ServirtiumServer that flushes the
+	 tape on stop."
 
 	| handle |
-	self resetGlobalState.
-	self applyConfig.
 	handle := self library
-		startRecordLabel: label
+		openRecordLabel: label
 		tape: tapePath
 		upstream: upstreamBase
 		host: host
@@ -119,8 +114,15 @@ ServirtiumRecordBuilder >> start [
 	handle isNull ifTrue: [
 		ServirtiumError signal:
 			'vcr record failed to start for tape ''' , tapePath , ''' (upstream ''' , upstreamBase , ''')' ].
+	self applyConfig: handle.
 	note ifNotNil: [
-		self check: (self library noteTitle: note key body: note value) op: 'note' ].
+		self check: (self library note: handle title: note key body: note value) op: 'note' ].
+	(self library start: handle) < 0 ifTrue: [
+		| detail |
+		detail := self drainStartError: handle.
+		self library stop: handle.
+		ServirtiumError signal:
+			'vcr record failed to begin serving for tape ''' , tapePath , ''': ' , detail ].
 	^ ServirtiumServer handle: handle host: host tape: tapePath recordMode: true failIfChanged: failIfChanged
 ]
 

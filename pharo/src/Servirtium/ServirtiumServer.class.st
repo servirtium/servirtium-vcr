@@ -4,8 +4,8 @@ Call `stop` when done; in record mode `stop` also flushes the captured tape
 to disk (and raises a ServirtiumError if failIfChanged was set and the new
 tape drifts from the on-disk one).
 
-v1 state is process-global, so the diagnostics (lastError / lastKind /
-lastIndex), tapeLength, resetCursor and clearLastError take no handle.
+Per-listener: every diagnostic / config call is scoped to this server's
+handle, so N servers can run at once.
 "
 Class {
 	#name : 'ServirtiumServer',
@@ -75,35 +75,35 @@ ServirtiumServer >> baseUrl [
 ServirtiumServer >> tapeLength [
 	"Tape entry count (playback), or interactions captured so far (record)."
 
-	^ self library tapeLength
+	^ self library tapeLength: self handle
 ]
 
 { #category : 'diagnostics' }
 ServirtiumServer >> lastError [
 	"Most-recent dispatch diagnostic; empty String when none flagged."
 
-	^ self library takeString: self library lastError
+	^ self library takeString: (self library lastError: self handle)
 ]
 
 { #category : 'diagnostics' }
 ServirtiumServer >> lastKind [
 	"Symbolic outcome of the most-recent dispatch (e.g. #ok, #bodyDiff)."
 
-	^ ServirtiumOutcome symbolForCode: self library lastKind
+	^ ServirtiumOutcome symbolForCode: (self library lastKind: self handle)
 ]
 
 { #category : 'diagnostics' }
 ServirtiumServer >> lastKindCode [
 	"Raw integer outcome of the most-recent dispatch."
 
-	^ self library lastKind
+	^ self library lastKind: self handle
 ]
 
 { #category : 'diagnostics' }
 ServirtiumServer >> lastIndex [
 	"Tape index of the most-recent matched interaction, or -1."
 
-	^ self library lastIndex
+	^ self library lastIndex: self handle
 ]
 
 { #category : 'recording' }
@@ -112,7 +112,7 @@ ServirtiumServer >> noteTitle: aTitle body: aBody [
 	 Call between requests to annotate specific interactions."
 
 	| err |
-	err := self library takeString: (self library noteTitle: aTitle body: aBody).
+	err := self library takeString: (self library note: self handle title: aTitle body: aBody).
 	err isEmpty ifFalse: [ ServirtiumError signal: err ]
 ]
 
@@ -120,14 +120,14 @@ ServirtiumServer >> noteTitle: aTitle body: aBody [
 ServirtiumServer >> resetCursor [
 	"Rewind the replay cursor to interaction 0 and clear last-* slots."
 
-	self library resetCursor
+	self library resetCursor: self handle
 ]
 
 { #category : 'diagnostics' }
 ServirtiumServer >> clearLastError [
 	"Clear the last-error slot between sub-cases."
 
-	self library clearLastError
+	self library clearLastError: self handle
 ]
 
 { #category : 'lifecycle' }

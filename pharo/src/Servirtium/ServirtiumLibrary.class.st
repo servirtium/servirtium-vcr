@@ -26,8 +26,9 @@ a returned char* without then freeing it.
 
 == Handles ==
 A server handle is an opaque `void*` surfaced as an ExternalAddress; NULL
-(isNull) means failure. The diagnostics / tape-length / mutation calls take
-NO handle: v1 state is process-global (one server per process).
+(isNull) means failure. Per-listener: every config / diagnostic / lifecycle
+call takes the handle, so N servers can run at once. Lifecycle is
+open -> configure(handle) -> start.
 "
 Class {
 	#name : 'ServirtiumLibrary',
@@ -98,15 +99,21 @@ ServirtiumLibrary >> takeString: aRawPointer [
 ]
 
 { #category : 'ffi - lifecycle' }
-ServirtiumLibrary >> startPlaybackLabel: label tape: tapePath host: host port: port [
+ServirtiumLibrary >> openPlaybackLabel: label tape: tapePath host: host port: port [
 
-	^ self ffiCall: #( void* aether_vcr_embed_start_playback ( String label, String tapePath, String host, int port ) )
+	^ self ffiCall: #( void* aether_vcr_embed_open_playback ( String label, String tapePath, String host, int port ) )
 ]
 
 { #category : 'ffi - lifecycle' }
-ServirtiumLibrary >> startRecordLabel: label tape: tapePath upstream: upstreamBase host: host port: port [
+ServirtiumLibrary >> openRecordLabel: label tape: tapePath upstream: upstreamBase host: host port: port [
 
-	^ self ffiCall: #( void* aether_vcr_embed_start_record ( String label, String tapePath, String upstreamBase, String host, int port ) )
+	^ self ffiCall: #( void* aether_vcr_embed_open_record ( String label, String tapePath, String upstreamBase, String host, int port ) )
+]
+
+{ #category : 'ffi - lifecycle' }
+ServirtiumLibrary >> start: server [
+
+	^ self ffiCall: #( int aether_vcr_embed_start ( void* server ) )
 ]
 
 { #category : 'ffi - lifecycle' }
@@ -140,129 +147,129 @@ ServirtiumLibrary >> baseUrl: server host: host [
 ]
 
 { #category : 'ffi - introspection' }
-ServirtiumLibrary >> tapeLength [
+ServirtiumLibrary >> tapeLength: server [
 
-	^ self ffiCall: #( int aether_vcr_embed_tape_length ( void ) )
+	^ self ffiCall: #( int aether_vcr_embed_tape_length ( void* server ) )
 ]
 
 { #category : 'ffi - introspection' }
-ServirtiumLibrary >> resetCursor [
+ServirtiumLibrary >> resetCursor: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_reset_cursor ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_reset_cursor ( void* server ) )
 ]
 
 { #category : 'ffi - diagnostics' }
-ServirtiumLibrary >> lastError [
+ServirtiumLibrary >> lastError: server [
 
-	^ self ffiCall: #( void* aether_vcr_embed_last_error ( void ) )
+	^ self ffiCall: #( void* aether_vcr_embed_last_error ( void* server ) )
 ]
 
 { #category : 'ffi - diagnostics' }
-ServirtiumLibrary >> lastKind [
+ServirtiumLibrary >> lastKind: server [
 
-	^ self ffiCall: #( int aether_vcr_embed_last_kind ( void ) )
+	^ self ffiCall: #( int aether_vcr_embed_last_kind ( void* server ) )
 ]
 
 { #category : 'ffi - diagnostics' }
-ServirtiumLibrary >> lastIndex [
+ServirtiumLibrary >> lastIndex: server [
 
-	^ self ffiCall: #( int aether_vcr_embed_last_index ( void ) )
+	^ self ffiCall: #( int aether_vcr_embed_last_index ( void* server ) )
 ]
 
 { #category : 'ffi - diagnostics' }
-ServirtiumLibrary >> clearLastError [
+ServirtiumLibrary >> clearLastError: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_clear_last_error ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_clear_last_error ( void* server ) )
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> redactField: field pattern: pattern replacement: replacement [
+ServirtiumLibrary >> redact: server field: field pattern: pattern replacement: replacement [
 
-	^ self ffiCall: #( void* aether_vcr_embed_redact ( int field, String pattern, String replacement ) )
+	^ self ffiCall: #( void* aether_vcr_embed_redact ( void* server, int field, String pattern, String replacement ) )
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> unredactField: field pattern: pattern replacement: replacement [
+ServirtiumLibrary >> unredact: server field: field pattern: pattern replacement: replacement [
 
-	^ self ffiCall: #( void* aether_vcr_embed_unredact ( int field, String pattern, String replacement ) )
+	^ self ffiCall: #( void* aether_vcr_embed_unredact ( void* server, int field, String pattern, String replacement ) )
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> removeHeaderField: field name: name [
+ServirtiumLibrary >> removeHeader: server field: field name: name [
 
-	^ self ffiCall: #( void* aether_vcr_embed_remove_header ( int field, String name ) )
+	^ self ffiCall: #( void* aether_vcr_embed_remove_header ( void* server, int field, String name ) )
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> noteTitle: title body: body [
+ServirtiumLibrary >> note: server title: title body: body [
 
-	^ self ffiCall: #( void* aether_vcr_embed_note ( String title, String body ) )
+	^ self ffiCall: #( void* aether_vcr_embed_note ( void* server, String title, String body ) )
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> staticContentMount: mountPath dir: fsDir [
+ServirtiumLibrary >> staticContent: server mount: mountPath dir: fsDir [
 
-	^ self ffiCall: #( void* aether_vcr_embed_static_content ( String mountPath, String fsDir ) )
+	^ self ffiCall: #( void* aether_vcr_embed_static_content ( void* server, String mountPath, String fsDir ) )
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> untapedPath: path [
+ServirtiumLibrary >> untaped: server path: path [
 
-	^ self ffiCall: #( void* aether_vcr_embed_untaped ( String path ) )
+	^ self ffiCall: #( void* aether_vcr_embed_untaped ( void* server, String path ) )
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> setStrictHeaders: on [
+ServirtiumLibrary >> setStrictHeaders: server on: on [
 
-	^ self ffiCall: #( void aether_vcr_embed_set_strict_headers ( int on ) )
+	^ self ffiCall: #( void aether_vcr_embed_set_strict_headers ( void* server, int on ) )
 ]
 
 { #category : 'ffi - format' }
-ServirtiumLibrary >> indentCodeBlocks [
+ServirtiumLibrary >> indentCodeBlocks: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_indent_code_blocks ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_indent_code_blocks ( void* server ) )
 ]
 
 { #category : 'ffi - format' }
-ServirtiumLibrary >> emphasizeHttpVerbs [
+ServirtiumLibrary >> emphasizeHttpVerbs: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_emphasize_http_verbs ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_emphasize_http_verbs ( void* server ) )
 ]
 
 { #category : 'ffi - clearing' }
-ServirtiumLibrary >> clearRedactions [
+ServirtiumLibrary >> clearRedactions: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_clear_redactions ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_clear_redactions ( void* server ) )
 ]
 
 { #category : 'ffi - clearing' }
-ServirtiumLibrary >> clearUnredactions [
+ServirtiumLibrary >> clearUnredactions: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_clear_unredactions ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_clear_unredactions ( void* server ) )
 ]
 
 { #category : 'ffi - clearing' }
-ServirtiumLibrary >> clearHeaderRemovals [
+ServirtiumLibrary >> clearHeaderRemovals: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_clear_header_removals ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_clear_header_removals ( void* server ) )
 ]
 
 { #category : 'ffi - clearing' }
-ServirtiumLibrary >> clearStaticContent [
+ServirtiumLibrary >> clearStaticContent: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_clear_static_content ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_clear_static_content ( void* server ) )
 ]
 
 { #category : 'ffi - clearing' }
-ServirtiumLibrary >> clearUntaped [
+ServirtiumLibrary >> clearUntaped: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_clear_untaped ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_clear_untaped ( void* server ) )
 ]
 
 { #category : 'ffi - clearing' }
-ServirtiumLibrary >> clearFormatOptions [
+ServirtiumLibrary >> clearFormatOptions: server [
 
-	^ self ffiCall: #( void aether_vcr_embed_clear_format_options ( void ) )
+	^ self ffiCall: #( void aether_vcr_embed_clear_format_options ( void* server ) )
 ]
 
 { #category : 'strings' }

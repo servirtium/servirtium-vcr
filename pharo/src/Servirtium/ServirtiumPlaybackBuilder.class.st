@@ -47,32 +47,37 @@ ServirtiumPlaybackBuilder >> unredactField: aField pattern: aPattern replacement
 ]
 
 { #category : 'private' }
-ServirtiumPlaybackBuilder >> applyConfig [
+ServirtiumPlaybackBuilder >> applyConfig: handle [
 
-	super applyConfig.
-	strictHeaders ifTrue: [ self library setStrictHeaders: 1 ].
+	super applyConfig: handle.
+	strictHeaders ifTrue: [ self library setStrictHeaders: handle on: 1 ].
 	unredactions do: [ :tuple |
 		self
-			check: (self library unredactField: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
+			check: (self library unredact: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
 			op: 'unredact' ]
 ]
 
 { #category : 'starting' }
 ServirtiumPlaybackBuilder >> start [
-	"Reset process-global state, apply this fixture's config, then start the
-	 playback server. Answers a running ServirtiumServer."
+	"Open the playback server, apply this fixture's config to its handle, then
+	 begin serving. Answers a running ServirtiumServer."
 
 	| handle |
-	self resetGlobalState.
-	self applyConfig.
 	handle := self library
-		startPlaybackLabel: label
+		openPlaybackLabel: label
 		tape: tapePath
 		host: host
 		port: port.
 	handle isNull ifTrue: [
 		ServirtiumError signal:
-			'vcr playback failed to start for tape ''' , tapePath , ''': ' , self drainStartError ].
+			'vcr playback failed to start for tape ''' , tapePath , '''' ].
+	self applyConfig: handle.
+	(self library start: handle) < 0 ifTrue: [
+		| detail |
+		detail := self drainStartError: handle.
+		self library stop: handle.
+		ServirtiumError signal:
+			'vcr playback failed to begin serving for tape ''' , tapePath , ''': ' , detail ].
 	^ ServirtiumServer handle: handle host: host tape: tapePath recordMode: false failIfChanged: false
 ]
 

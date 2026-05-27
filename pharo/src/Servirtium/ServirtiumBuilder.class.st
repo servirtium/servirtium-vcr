@@ -102,39 +102,19 @@ ServirtiumBuilder >> untaped: aPath [
 ]
 
 { #category : 'private' }
-ServirtiumBuilder >> resetGlobalState [
-	"Wipe all process-global mutation / format / strict state so a previous
-	 fixture's settings can't leak into this one (v1 one-server-per-process
-	 has no per-handle state). Called first by `start`."
-
-	| lib |
-	lib := self library.
-	lib clearRedactions.
-	lib clearUnredactions.
-	lib clearHeaderRemovals.
-	lib clearStaticContent.
-	lib clearUntaped.
-	lib clearFormatOptions.
-	lib setStrictHeaders: 0.
-	lib clearLastError
-	"A staged-but-unconsumed note is reset core-side when start_*
-	 (re)loads the tape, so there's nothing to clear here."
-]
-
-{ #category : 'private' }
-ServirtiumBuilder >> applyConfig [
-	"Apply config common to both builders after the reset and before the
-	 server starts. Subclasses extend this with `super applyConfig`."
+ServirtiumBuilder >> applyConfig: handle [
+	"Apply config common to both builders to the opened handle, before serving
+	 starts. Subclasses extend this with `super applyConfig: handle`."
 
 	headerRemovals do: [ :assoc |
-		self check: (self library removeHeaderField: assoc key name: assoc value) op: 'removeHeader' ].
+		self check: (self library removeHeader: handle field: assoc key name: assoc value) op: 'removeHeader' ].
 	staticContents do: [ :assoc |
 		self
-			check: (self library staticContentMount: assoc key dir: assoc value)
+			check: (self library staticContent: handle mount: assoc key dir: assoc value)
 			op: 'staticContent' ].
 	untapedPaths do: [ :path |
 		self
-			check: (self library untapedPath: path)
+			check: (self library untaped: handle path: path)
 			op: 'untaped' ]
 ]
 
@@ -149,10 +129,10 @@ ServirtiumBuilder >> check: aResultPointer op: anOperation [
 ]
 
 { #category : 'private' }
-ServirtiumBuilder >> drainStartError [
+ServirtiumBuilder >> drainStartError: handle [
 
 	| err |
-	err := self library takeString: self library lastError.
+	err := self library takeString: (self library lastError: handle).
 	^ err isEmpty
 		ifTrue: [ '(no detail; check tape path and port availability)' ]
 		ifFalse: [ err ]
