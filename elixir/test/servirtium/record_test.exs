@@ -42,7 +42,7 @@ defmodule Servirtium.RecordTest do
     # ---- replay (offline) ----
     Servirtium.with_playback(tape, [port: 0], fn srv ->
       assert {200, "hello-from-upstream"} = get(Servirtium.base_url(srv), "/greeting")
-      assert Servirtium.last_kind() == :ok
+      assert Servirtium.last_kind(srv) == :ok
     end)
   end
 

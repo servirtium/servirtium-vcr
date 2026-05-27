@@ -3,7 +3,7 @@ defmodule Servirtium.PlaybackTest do
   Playback round-trip from a small tape, plus mismatch diagnostics and
   static-content bypass. SUT client is `:httpc` (Erlang built-in).
 
-  NOT async — the VCR is one server per process (state is process-global).
+  Per-listener: each fixture's state is keyed by its own handle.
   """
   use ExUnit.Case, async: false
 
@@ -21,9 +21,9 @@ defmodule Servirtium.PlaybackTest do
 
     try do
       assert {200, "ok-body"} = get(Servirtium.base_url(srv), "/ok")
-      assert Servirtium.last_kind() == :ok
-      assert Servirtium.last_error() == ""
-      assert Servirtium.tape_length() == 1
+      assert Servirtium.last_kind(srv) == :ok
+      assert Servirtium.last_error(srv) == ""
+      assert Servirtium.tape_length(srv) == 1
     after
       Servirtium.stop(srv)
     end
@@ -44,8 +44,8 @@ defmodule Servirtium.PlaybackTest do
       # /nope is not on the tape → the dispatcher flags a mismatch.
       {status, _body} = get(Servirtium.base_url(srv), "/nope")
 
-      refute Servirtium.last_kind() == :ok
-      refute Servirtium.last_error() == ""
+      refute Servirtium.last_kind(srv) == :ok
+      refute Servirtium.last_error(srv) == ""
       # The SUT gets a non-200 error status back from the VCR.
       assert status >= 400
     end)
@@ -90,7 +90,7 @@ defmodule Servirtium.PlaybackTest do
         assert {404, _body} = get(base, "/favicon.ico")
         # The recorded interaction still replays afterwards.
         assert {200, "ok-body"} = get(base, "/ok")
-        assert Servirtium.last_kind() == :ok
+        assert Servirtium.last_kind(srv) == :ok
       end
     )
   end
@@ -105,7 +105,7 @@ defmodule Servirtium.PlaybackTest do
     # reset cleared the previous strict setting).
     Servirtium.with_playback(tape("single_get.md"), [port: 0], fn srv ->
       assert {200, "ok-body"} = get(Servirtium.base_url(srv), "/ok")
-      assert Servirtium.last_kind() == :ok
+      assert Servirtium.last_kind(srv) == :ok
     end)
   end
 end

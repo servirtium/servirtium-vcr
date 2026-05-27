@@ -108,13 +108,10 @@ defmodule Servirtium do
   """
   @spec playback(String.t(), keyword()) :: {:ok, Server.t()}
   def playback(tape_path, opts \\ []) do
-    reset_global_state()
     host = Keyword.get(opts, :host, "127.0.0.1")
-    apply_shared_config(opts)
-    apply_playback_config(opts)
 
     handle =
-      Native.start_playback(
+      Native.open_playback(
         Keyword.get(opts, :label, ""),
         tape_path,
         host,
@@ -122,8 +119,17 @@ defmodule Servirtium do
       )
 
     if handle == 0 do
+      raise Server.error("vcr playback failed to start for tape #{inspect(tape_path)}")
+    end
+
+    apply_shared_config(handle, opts)
+    apply_playback_config(handle, opts)
+
+    if Native.start(handle) < 0 do
+      detail = drain_start_error(handle)
+      Native.stop(handle)
       raise Server.error(
-              "vcr playback failed to start for tape #{inspect(tape_path)}: #{drain_start_error()}"
+              "vcr playback failed to begin serving for tape #{inspect(tape_path)}: #{detail}"
             )
     end
 
@@ -145,13 +151,10 @@ defmodule Servirtium do
   """
   @spec record(String.t(), String.t(), keyword()) :: {:ok, Server.t()}
   def record(tape_path, upstream_base, opts \\ []) do
-    reset_global_state()
     host = Keyword.get(opts, :host, "127.0.0.1")
-    apply_shared_config(opts)
-    apply_record_config(opts)
 
     handle =
-      Native.start_record(
+      Native.open_record(
         Keyword.get(opts, :label, ""),
         tape_path,
         upstream_base,
@@ -162,9 +165,12 @@ defmodule Servirtium do
     if handle == 0 do
       raise Server.error(
               "vcr record failed to start for tape #{inspect(tape_path)} " <>
-                "(upstream #{inspect(upstream_base)}): #{drain_start_error()}"
+                "(upstream #{inspect(upstream_base)})"
             )
     end
+
+    apply_shared_config(handle, opts)
+    apply_record_config(handle, opts)
 
     srv = %Server{
       handle: handle,
@@ -174,9 +180,8 @@ defmodule Servirtium do
       fail_if_changed: Keyword.get(opts, :fail_if_changed, false)
     }
 
-    # Stage the note AFTER start_record — load_record clears the tape (and the
-    # pending note) as it binds, so a pre-start note would be wiped. It attaches
-    # to the first interaction the SUT triggers.
+    # Stage the note AFTER open_record (which clears the tape and any pending
+    # note) but BEFORE serving begins; it attaches to the first interaction.
     case Keyword.get(opts, :note) do
       {title, body} ->
         case note(srv, title, body) do
@@ -184,12 +189,20 @@ defmodule Servirtium do
             :ok
 
           {:error, msg} ->
-            stop(srv)
+            Native.stop(handle)
             raise Server.error(msg)
         end
 
       nil ->
         :ok
+    end
+
+    if Native.start(handle) < 0 do
+      detail = drain_start_error(handle)
+      Native.stop(handle)
+      raise Server.error(
+              "vcr record failed to begin serving for tape #{inspect(tape_path)}: #{detail}"
+            )
     end
 
     {:ok, srv}
@@ -236,28 +249,28 @@ defmodule Servirtium do
   def port(%Server{handle: h}), do: Native.port(h)
 
   @doc "Tape entry count (playback), or interactions captured so far (record)."
-  @spec tape_length() :: integer()
-  def tape_length, do: Native.tape_length()
+  @spec tape_length(Server.t()) :: integer()
+  def tape_length(%Server{handle: h}), do: Native.tape_length(h)
 
   @doc "Most-recent dispatch diagnostic; empty string when none flagged."
-  @spec last_error() :: String.t()
-  def last_error, do: Native.last_error()
+  @spec last_error(Server.t()) :: String.t()
+  def last_error(%Server{handle: h}), do: Native.last_error(h)
 
   @doc "Outcome atom of the most-recent dispatch (`:ok`, `:body_diff`, …)."
-  @spec last_kind() :: atom()
-  def last_kind, do: Map.get(@kinds, Native.last_kind(), :ok)
+  @spec last_kind(Server.t()) :: atom()
+  def last_kind(%Server{handle: h}), do: Map.get(@kinds, Native.last_kind(h), :ok)
 
   @doc "Tape index of the most-recent matched interaction, or -1."
-  @spec last_index() :: integer()
-  def last_index, do: Native.last_index()
+  @spec last_index(Server.t()) :: integer()
+  def last_index(%Server{handle: h}), do: Native.last_index(h)
 
   @doc "Rewind the replay cursor to interaction 0 and clear the last-* slots."
-  @spec reset_cursor() :: :ok
-  def reset_cursor, do: Native.reset_cursor()
+  @spec reset_cursor(Server.t()) :: :ok
+  def reset_cursor(%Server{handle: h}), do: Native.reset_cursor(h)
 
   @doc "Clear the last-error slot between sub-cases."
-  @spec clear_last_error() :: :ok
-  def clear_last_error, do: Native.clear_last_error()
+  @spec clear_last_error(Server.t()) :: :ok
+  def clear_last_error(%Server{handle: h}), do: Native.clear_last_error(h)
 
   @doc """
   Stage a note (record mode) for the *next* interaction to be captured. Call
@@ -265,7 +278,7 @@ defmodule Servirtium do
   `{:error, msg}`.
   """
   @spec note(Server.t(), String.t(), String.t()) :: :ok | {:error, String.t()}
-  def note(%Server{}, title, body), do: check(Native.note(title, body))
+  def note(%Server{handle: h}, title, body), do: check(Native.note(h, title, body))
 
   @doc """
   Stop the server. In record mode this also flushes the captured tape to disk
@@ -293,59 +306,42 @@ defmodule Servirtium do
 
   # ---- internals -----------------------------------------------------------
 
-  # Wipe all process-global mutation/format/strict state so a previous fixture's
-  # settings can't leak into this one (v1 one-server-per-process has no
-  # per-handle state). A staged-but-unconsumed note is reset core-side when
-  # start_* (re)loads the tape, so there's nothing to clear here.
-  defp reset_global_state do
-    Native.clear_redactions()
-    Native.clear_unredactions()
-    Native.clear_header_removals()
-    Native.clear_static_content()
-    Native.clear_untaped()
-    Native.clear_format_options()
-    Native.set_strict_headers(0)
-    Native.clear_last_error()
-  end
-
-  defp apply_shared_config(opts) do
+  defp apply_shared_config(handle, opts) do
     for {field, name} <- Keyword.get(opts, :remove_header, []) do
-      check!(Native.remove_header(field!(field), name), "remove_header")
+      check!(Native.remove_header(handle, field!(field), name), "remove_header")
     end
 
     # static_content/untaped work in both playback and record mode — recording
     # a browser suite is cleaner served same-origin from the VCR (no CORS
     # preflights), so apply them on the shared path for both directions.
     for {mount, dir} <- Keyword.get(opts, :static_content, []) do
-      check!(Native.static_content(mount, dir), "static_content")
+      check!(Native.static_content(handle, mount, dir), "static_content")
     end
 
     for path <- Keyword.get(opts, :untaped, []) do
-      check!(Native.untaped(path), "untaped")
+      check!(Native.untaped(handle, path), "untaped")
     end
   end
 
-  defp apply_playback_config(opts) do
-    if Keyword.get(opts, :strict_headers, false), do: Native.set_strict_headers(1)
+  defp apply_playback_config(handle, opts) do
+    if Keyword.get(opts, :strict_headers, false), do: Native.set_strict_headers(handle, 1)
 
     for {field, pat, repl} <- Keyword.get(opts, :unredact, []) do
-      check!(Native.unredact(field!(field), pat, repl), "unredact")
+      check!(Native.unredact(handle, field!(field), pat, repl), "unredact")
     end
   end
 
-  defp apply_record_config(opts) do
-    if Keyword.get(opts, :indent_code_blocks, false), do: Native.indent_code_blocks()
-    if Keyword.get(opts, :emphasize_http_verbs, false), do: Native.emphasize_http_verbs()
+  defp apply_record_config(handle, opts) do
+    if Keyword.get(opts, :indent_code_blocks, false), do: Native.indent_code_blocks(handle)
+    if Keyword.get(opts, :emphasize_http_verbs, false), do: Native.emphasize_http_verbs(handle)
 
     for {field, pat, repl} <- Keyword.get(opts, :redact, []) do
-      check!(Native.redact(field!(field), pat, repl), "redact")
+      check!(Native.redact(handle, field!(field), pat, repl), "redact")
     end
-
-    # NOTE staged after start_record — see record/3.
   end
 
-  defp drain_start_error do
-    case Native.last_error() do
+  defp drain_start_error(handle) do
+    case Native.last_error(handle) do
       "" -> "(no detail; check tape path and port availability)"
       err -> err
     end
