@@ -67,25 +67,25 @@ final class VcrServer
     /** Tape entry count (playback), or interactions captured so far (record). */
     public function tapeLength(): int
     {
-        return Native::lib()->aether_vcr_embed_tape_length();
+        return Native::lib()->aether_vcr_embed_tape_length($this->requireHandle());
     }
 
     /** Most-recent dispatch diagnostic; empty when none flagged. */
     public function lastError(): string
     {
-        return Native::takeString(Native::lib()->aether_vcr_embed_last_error());
+        return Native::takeString(Native::lib()->aether_vcr_embed_last_error($this->requireHandle()));
     }
 
     /** Outcome of the most-recent dispatch. */
     public function lastKind(): VcrOutcome
     {
-        return VcrOutcome::from(Native::lib()->aether_vcr_embed_last_kind());
+        return VcrOutcome::from(Native::lib()->aether_vcr_embed_last_kind($this->requireHandle()));
     }
 
     /** Tape index of the most-recent matched interaction, or -1. */
     public function lastIndex(): int
     {
-        return Native::lib()->aether_vcr_embed_last_index();
+        return Native::lib()->aether_vcr_embed_last_index($this->requireHandle());
     }
 
     // ---- operations -------------------------------------------------------
@@ -96,7 +96,7 @@ final class VcrServer
      */
     public function note(string $title, string $body): void
     {
-        $err = Native::takeString(Native::lib()->aether_vcr_embed_note($title, $body));
+        $err = Native::takeString(Native::lib()->aether_vcr_embed_note($this->requireHandle(), $title, $body));
         if ($err !== '') {
             throw new VcrException($err);
         }
@@ -105,13 +105,13 @@ final class VcrServer
     /** Rewind the replay cursor to interaction 0 and clear last-* slots. */
     public function resetCursor(): void
     {
-        Native::lib()->aether_vcr_embed_reset_cursor();
+        Native::lib()->aether_vcr_embed_reset_cursor($this->requireHandle());
     }
 
     /** Clear the last-error slot between sub-cases. */
     public function clearLastError(): void
     {
-        Native::lib()->aether_vcr_embed_clear_last_error();
+        Native::lib()->aether_vcr_embed_clear_last_error($this->requireHandle());
     }
 
     // ---- lifecycle --------------------------------------------------------

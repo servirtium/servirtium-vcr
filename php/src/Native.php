@@ -15,9 +15,10 @@ use FFI\CData;
  * location/loading, the C signature declarations, and the string-ownership
  * helper.
  *
- * v1 contract (matching the Aether side): ONE active VCR server per process —
- * the tape / cursor / mutation state is process-global, so the diagnostics,
- * tape-length, and mutation calls take no handle.
+ * Per-listener contract (matching the Aether side): N independent VCR servers
+ * can run concurrently in one process, each keyed by its own handle; every
+ * config / diagnostic / lifecycle call takes the handle. Lifecycle is
+ * open -> configure(handle) -> start.
  *
  * Returned `char*` values are caller-owned and NUL-terminated; copy them to a
  * PHP string with `FFI::string()` and free them with
@@ -28,34 +29,38 @@ final class Native
 {
     /** The C header describing every symbol we call. */
     private const HEADER = <<<'C'
-        void*  aether_vcr_embed_start_playback(const char* label, const char* tape_path, const char* host, int port);
-        void*  aether_vcr_embed_start_record(const char* label, const char* tape_path, const char* upstream_base, const char* host, int port);
+        void*  aether_vcr_embed_open_playback(const char* label, const char* tape_path, const char* host, int port);
+        void*  aether_vcr_embed_open_playback_url(const char* label, const char* tape_url, const char* host, int port);
+        void*  aether_vcr_embed_open_record(const char* label, const char* tape_path, const char* upstream_base, const char* host, int port);
+        int    aether_vcr_embed_start(void* server);
         void   aether_vcr_embed_stop(void* server);
         char*  aether_vcr_embed_stop_and_flush(void* server, const char* tape_path);
         char*  aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path);
+        char*  aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path);
         int    aether_vcr_embed_port(void* server);
         char*  aether_vcr_embed_base_url(void* server, const char* host);
-        int    aether_vcr_embed_tape_length(void);
-        void   aether_vcr_embed_reset_cursor(void);
-        char*  aether_vcr_embed_last_error(void);
-        int    aether_vcr_embed_last_kind(void);
-        int    aether_vcr_embed_last_index(void);
-        void   aether_vcr_embed_clear_last_error(void);
-        char*  aether_vcr_embed_redact(int field, const char* pattern, const char* replacement);
-        char*  aether_vcr_embed_unredact(int field, const char* pattern, const char* replacement);
-        char*  aether_vcr_embed_remove_header(int field, const char* name);
-        char*  aether_vcr_embed_note(const char* title, const char* body);
-        char*  aether_vcr_embed_static_content(const char* mount_path, const char* fs_dir);
-        char*  aether_vcr_embed_untaped(const char* path);
-        void   aether_vcr_embed_set_strict_headers(int on);
-        void   aether_vcr_embed_indent_code_blocks(void);
-        void   aether_vcr_embed_emphasize_http_verbs(void);
-        void   aether_vcr_embed_clear_redactions(void);
-        void   aether_vcr_embed_clear_unredactions(void);
-        void   aether_vcr_embed_clear_header_removals(void);
-        void   aether_vcr_embed_clear_static_content(void);
-        void   aether_vcr_embed_clear_untaped(void);
-        void   aether_vcr_embed_clear_format_options(void);
+        int    aether_vcr_embed_tape_length(void* server);
+        void   aether_vcr_embed_reset_cursor(void* server);
+        char*  aether_vcr_embed_last_error(void* server);
+        int    aether_vcr_embed_last_kind(void* server);
+        int    aether_vcr_embed_last_index(void* server);
+        void   aether_vcr_embed_clear_last_error(void* server);
+        char*  aether_vcr_embed_redact(void* server, int field, const char* pattern, const char* replacement);
+        char*  aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement);
+        char*  aether_vcr_embed_remove_header(void* server, int field, const char* name);
+        char*  aether_vcr_embed_strict_ignore_common_headers(void* server);
+        char*  aether_vcr_embed_note(void* server, const char* title, const char* body);
+        char*  aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir);
+        char*  aether_vcr_embed_untaped(void* server, const char* path);
+        void   aether_vcr_embed_set_strict_headers(void* server, int on);
+        void   aether_vcr_embed_indent_code_blocks(void* server);
+        void   aether_vcr_embed_emphasize_http_verbs(void* server);
+        void   aether_vcr_embed_clear_redactions(void* server);
+        void   aether_vcr_embed_clear_unredactions(void* server);
+        void   aether_vcr_embed_clear_header_removals(void* server);
+        void   aether_vcr_embed_clear_static_content(void* server);
+        void   aether_vcr_embed_clear_untaped(void* server);
+        void   aether_vcr_embed_clear_format_options(void* server);
         void   aether_vcr_embed_free_string(char* s);
         C;
 

@@ -91,41 +91,20 @@ abstract class VcrBuilderBase
     }
 
     /**
-     * Wipe all process-global mutation/format/strict state so a previous
-     * fixture's settings can't leak into this one (v1 one-server-per-process
-     * has no per-handle state). Called first by {@see start()}.
+     * Apply this builder's accumulated config to the opened handle, before
+     * serving starts. Subclasses extend this.
      */
-    final protected static function resetGlobalState(): void
-    {
-        $lib = Native::lib();
-        $lib->aether_vcr_embed_clear_redactions();
-        $lib->aether_vcr_embed_clear_unredactions();
-        $lib->aether_vcr_embed_clear_header_removals();
-        $lib->aether_vcr_embed_clear_static_content();
-        $lib->aether_vcr_embed_clear_untaped();
-        $lib->aether_vcr_embed_clear_format_options();
-        $lib->aether_vcr_embed_set_strict_headers(0);
-        $lib->aether_vcr_embed_clear_last_error();
-        // A staged-but-unconsumed note is reset core-side when start_*
-        // (re)loads the tape, so there's nothing to clear here.
-    }
-
-    /**
-     * Apply this builder's accumulated config after the reset and before the
-     * server starts (mutations like static-content and unredactions must be
-     * registered before the tape loads). Subclasses extend this.
-     */
-    protected function applyConfig(): void
+    protected function applyConfig(CData $handle): void
     {
         $lib = Native::lib();
         foreach ($this->headerRemovals as [$field, $name]) {
-            self::check($lib->aether_vcr_embed_remove_header($field->value, $name), 'removeHeader');
+            self::check($lib->aether_vcr_embed_remove_header($handle, $field->value, $name), 'removeHeader');
         }
         foreach ($this->staticContent as [$mount, $dir]) {
-            self::check($lib->aether_vcr_embed_static_content($mount, $dir), 'staticContent');
+            self::check($lib->aether_vcr_embed_static_content($handle, $mount, $dir), 'staticContent');
         }
         foreach ($this->untaped as $path) {
-            self::check($lib->aether_vcr_embed_untaped($path), 'untaped');
+            self::check($lib->aether_vcr_embed_untaped($handle, $path), 'untaped');
         }
     }
 
@@ -139,9 +118,9 @@ abstract class VcrBuilderBase
     }
 
     /** Drain the last-error slot for a failed start, with a fallback hint. */
-    final protected static function drainStartError(): string
+    final protected static function drainStartError(CData $handle): string
     {
-        $err = Native::takeString(Native::lib()->aether_vcr_embed_last_error());
+        $err = Native::takeString(Native::lib()->aether_vcr_embed_last_error($handle));
 
         return $err !== '' ? $err : '(no detail; check tape path and port availability)';
     }
