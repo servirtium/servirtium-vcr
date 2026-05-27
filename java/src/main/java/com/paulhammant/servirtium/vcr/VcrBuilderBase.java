@@ -80,37 +80,14 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     }
 
     /**
-     * Wipe all process-global mutation/format/strict state so a previous
-     * fixture's settings can't leak into this one (v1 one-server-per-process
-     * has no per-handle state). Called first by {@code start()}.
+     * Apply this builder's accumulated config to the opened handle, before
+     * serving starts. Subclasses extend this.
      */
-    static void resetGlobalState() {
-        try {
-            NativeMethods.CLEAR_REDACTIONS.invokeExact();
-            NativeMethods.CLEAR_UNREDACTIONS.invokeExact();
-            NativeMethods.CLEAR_HEADER_REMOVALS.invokeExact();
-            NativeMethods.CLEAR_STATIC_CONTENT.invokeExact();
-            NativeMethods.CLEAR_UNTAPED.invokeExact();
-            NativeMethods.CLEAR_FORMAT_OPTIONS.invokeExact();
-            NativeMethods.SET_STRICT_HEADERS.invokeExact(0);
-            NativeMethods.CLEAR_LAST_ERROR.invokeExact();
-            // A staged-but-unconsumed note is reset core-side when start_*
-            // (re)loads the tape, so there's nothing to clear here.
-        } catch (Throwable t) {
-            throw new VcrException("resetGlobalState failed: " + t.getMessage());
-        }
-    }
-
-    /**
-     * Apply this builder's accumulated config after the reset and before the
-     * server starts (mutations like static-content and unredactions must be
-     * registered before the tape loads). Subclasses extend this.
-     */
-    void applyConfig(Arena arena) {
+    void applyConfig(Arena arena, MemorySegment handle) {
         for (HeaderRemoval h : headerRemovals) {
             try {
                 MemorySegment r = (MemorySegment) NativeMethods.REMOVE_HEADER.invokeExact(
-                        h.field().code(), NativeMethods.cString(arena, h.name()));
+                        handle, h.field().code(), NativeMethods.cString(arena, h.name()));
                 check(r, "removeHeader");
             } catch (Throwable t) {
                 throw rethrow("removeHeader", t);
@@ -119,6 +96,7 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
         for (StaticMount s : staticContent) {
             try {
                 MemorySegment r = (MemorySegment) NativeMethods.STATIC_CONTENT.invokeExact(
+                        handle,
                         NativeMethods.cString(arena, s.mount()),
                         NativeMethods.cString(arena, s.dir()));
                 check(r, "staticContent");
@@ -129,7 +107,7 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
         for (String p : untaped) {
             try {
                 MemorySegment r = (MemorySegment) NativeMethods.UNTAPED.invokeExact(
-                        NativeMethods.cString(arena, p));
+                        handle, NativeMethods.cString(arena, p));
                 check(r, "untaped");
             } catch (Throwable t) {
                 throw rethrow("untaped", t);
@@ -152,9 +130,9 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
         return new VcrException("vcr " + op + " failed: " + t.getMessage());
     }
 
-    static String drainStartError() {
+    static String drainStartError(MemorySegment handle) {
         try {
-            MemorySegment p = (MemorySegment) NativeMethods.LAST_ERROR.invokeExact();
+            MemorySegment p = (MemorySegment) NativeMethods.LAST_ERROR.invokeExact(handle);
             String err = NativeMethods.takeString(p);
             return (err == null || err.isEmpty())
                     ? "(no detail; check tape path and port availability)"

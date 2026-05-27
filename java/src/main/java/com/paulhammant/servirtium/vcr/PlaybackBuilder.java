@@ -47,14 +47,15 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
 
     @Override
-    void applyConfig(Arena arena) {
-        super.applyConfig(arena);
+    void applyConfig(Arena arena, MemorySegment handle) {
+        super.applyConfig(arena, handle);
         try {
             if (strictHeaders) {
-                NativeMethods.SET_STRICT_HEADERS.invokeExact(1);
+                NativeMethods.SET_STRICT_HEADERS.invokeExact(handle, 1);
             }
             for (Unredaction u : unredactions) {
                 MemorySegment r = (MemorySegment) NativeMethods.UNREDACT.invokeExact(
+                        handle,
                         u.field().code(),
                         NativeMethods.cString(arena, u.pattern()),
                         NativeMethods.cString(arena, u.replacement()));
@@ -66,21 +67,26 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
 
     public VcrServer start() {
-        resetGlobalState();
         MemorySegment handle;
         try (Arena arena = Arena.ofConfined()) {
-            applyConfig(arena);
-            handle = (MemorySegment) NativeMethods.START_PLAYBACK.invokeExact(
+            handle = (MemorySegment) NativeMethods.OPEN_PLAYBACK.invokeExact(
                     NativeMethods.cString(arena, label),
                     NativeMethods.cString(arena, tapePath),
                     NativeMethods.cString(arena, host),
                     port);
+            if (handle.address() == 0) {
+                throw new VcrException("vcr playback failed to start for tape '" + tapePath + "'");
+            }
+            applyConfig(arena, handle);
+            int rc = (int) NativeMethods.START.invokeExact(handle);
+            if (rc < 0) {
+                String detail = drainStartError(handle);
+                NativeMethods.STOP.invokeExact(handle);
+                throw new VcrException(
+                        "vcr playback failed to begin serving for tape '" + tapePath + "': " + detail);
+            }
         } catch (Throwable t) {
             throw rethrow("playback start", t);
-        }
-        if (handle.address() == 0) {
-            throw new VcrException(
-                    "vcr playback failed to start for tape '" + tapePath + "': " + drainStartError());
         }
         return new VcrServer(handle, host, tapePath, false, false);
     }

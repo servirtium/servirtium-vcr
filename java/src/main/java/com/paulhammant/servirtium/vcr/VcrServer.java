@@ -58,7 +58,7 @@ public final class VcrServer implements AutoCloseable {
     /** Tape entry count (playback), or interactions captured so far (record). */
     public int tapeLength() {
         try {
-            return (int) NativeMethods.TAPE_LENGTH.invokeExact();
+            return (int) NativeMethods.TAPE_LENGTH.invokeExact(handle());
         } catch (Throwable t) {
             throw new VcrException("tapeLength() failed: " + t.getMessage());
         }
@@ -67,7 +67,7 @@ public final class VcrServer implements AutoCloseable {
     /** Most-recent dispatch diagnostic; empty when none flagged. */
     public String lastError() {
         try {
-            MemorySegment p = (MemorySegment) NativeMethods.LAST_ERROR.invokeExact();
+            MemorySegment p = (MemorySegment) NativeMethods.LAST_ERROR.invokeExact(handle());
             return NativeMethods.takeString(p);
         } catch (Throwable t) {
             throw new VcrException("lastError() failed: " + t.getMessage());
@@ -77,7 +77,7 @@ public final class VcrServer implements AutoCloseable {
     /** Outcome of the most-recent dispatch. */
     public Outcome lastKind() {
         try {
-            return Outcome.fromCode((int) NativeMethods.LAST_KIND.invokeExact());
+            return Outcome.fromCode((int) NativeMethods.LAST_KIND.invokeExact(handle()));
         } catch (Throwable t) {
             throw new VcrException("lastKind() failed: " + t.getMessage());
         }
@@ -86,7 +86,7 @@ public final class VcrServer implements AutoCloseable {
     /** Tape index of the most-recent matched interaction, or -1. */
     public int lastIndex() {
         try {
-            return (int) NativeMethods.LAST_INDEX.invokeExact();
+            return (int) NativeMethods.LAST_INDEX.invokeExact(handle());
         } catch (Throwable t) {
             throw new VcrException("lastIndex() failed: " + t.getMessage());
         }
@@ -99,6 +99,7 @@ public final class VcrServer implements AutoCloseable {
     public void note(String title, String body) {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment res = (MemorySegment) NativeMethods.NOTE.invokeExact(
+                    handle(),
                     NativeMethods.cString(arena, title),
                     NativeMethods.cString(arena, body));
             String err = NativeMethods.takeString(res);
@@ -113,7 +114,7 @@ public final class VcrServer implements AutoCloseable {
     /** Rewind the replay cursor to interaction 0 and clear last-* slots. */
     public void resetCursor() {
         try {
-            NativeMethods.RESET_CURSOR.invokeExact();
+            NativeMethods.RESET_CURSOR.invokeExact(handle());
         } catch (Throwable t) {
             throw new VcrException("resetCursor() failed: " + t.getMessage());
         }
@@ -122,7 +123,7 @@ public final class VcrServer implements AutoCloseable {
     /** Clear the last-error slot between sub-cases. */
     public void clearLastError() {
         try {
-            NativeMethods.CLEAR_LAST_ERROR.invokeExact();
+            NativeMethods.CLEAR_LAST_ERROR.invokeExact(handle());
         } catch (Throwable t) {
             throw new VcrException("clearLastError() failed: " + t.getMessage());
         }

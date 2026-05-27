@@ -13,9 +13,9 @@ import java.lang.invoke.MethodHandle;
  * 1:1 with the {@code aether_vcr_embed_*} C-ABI exported by
  * {@code std/http/server/vcr/embed.ae}.
  *
- * <p>v1 contract (matching the Aether side): ONE active VCR server per process
- * — the tape/cursor/mutation state is process-global, so the diagnostics,
- * tape-length, and mutation calls take no handle. Returned {@code char*} values
+ * <p>Per-listener contract (matching the Aether side): N independent VCR
+ * servers can run concurrently in one process, each keyed by its own handle;
+ * every config / diagnostic / lifecycle call takes the handle. Returned {@code char*} values
  * are caller-owned and NUL-terminated; copy them into a Java String and free
  * them via {@link #freeString} (see {@link #takeString}).
  *
@@ -37,13 +37,21 @@ final class NativeMethods {
 
     // ---- lifecycle ---------------------------------------------------------
 
-    static final MethodHandle START_PLAYBACK = down(
-            "aether_vcr_embed_start_playback",
+    static final MethodHandle OPEN_PLAYBACK = down(
+            "aether_vcr_embed_open_playback",
             FunctionDescriptor.of(C_PTR, C_PTR, C_PTR, C_PTR, C_INT));
 
-    static final MethodHandle START_RECORD = down(
-            "aether_vcr_embed_start_record",
+    static final MethodHandle OPEN_PLAYBACK_URL = down(
+            "aether_vcr_embed_open_playback_url",
+            FunctionDescriptor.of(C_PTR, C_PTR, C_PTR, C_PTR, C_INT));
+
+    static final MethodHandle OPEN_RECORD = down(
+            "aether_vcr_embed_open_record",
             FunctionDescriptor.of(C_PTR, C_PTR, C_PTR, C_PTR, C_PTR, C_INT));
+
+    static final MethodHandle START = down(
+            "aether_vcr_embed_start",
+            FunctionDescriptor.of(C_INT, C_PTR));
 
     static final MethodHandle STOP = down(
             "aether_vcr_embed_stop",
@@ -55,6 +63,10 @@ final class NativeMethods {
 
     static final MethodHandle STOP_AND_FLUSH_FAIL_IF_CHANGED = down(
             "aether_vcr_embed_stop_and_flush_fail_if_changed",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+
+    static final MethodHandle STOP_AND_FLUSH_OR_CHECK = down(
+            "aether_vcr_embed_stop_and_flush_or_check",
             FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
 
     // ---- introspection -----------------------------------------------------
@@ -69,91 +81,95 @@ final class NativeMethods {
 
     static final MethodHandle TAPE_LENGTH = down(
             "aether_vcr_embed_tape_length",
-            FunctionDescriptor.of(C_INT));
+            FunctionDescriptor.of(C_INT, C_PTR));
 
     static final MethodHandle RESET_CURSOR = down(
             "aether_vcr_embed_reset_cursor",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
-    // ---- diagnostics (process-global, no handle) ---------------------------
+    // ---- diagnostics (handle-based) ----------------------------------------
 
     static final MethodHandle LAST_ERROR = down(
             "aether_vcr_embed_last_error",
-            FunctionDescriptor.of(C_STR));
+            FunctionDescriptor.of(C_STR, C_PTR));
 
     static final MethodHandle LAST_KIND = down(
             "aether_vcr_embed_last_kind",
-            FunctionDescriptor.of(C_INT));
+            FunctionDescriptor.of(C_INT, C_PTR));
 
     static final MethodHandle LAST_INDEX = down(
             "aether_vcr_embed_last_index",
-            FunctionDescriptor.of(C_INT));
+            FunctionDescriptor.of(C_INT, C_PTR));
 
     static final MethodHandle CLEAR_LAST_ERROR = down(
             "aether_vcr_embed_clear_last_error",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
     // ---- mutations / config (call BEFORE start; return "" or an error) -----
 
     static final MethodHandle REDACT = down(
             "aether_vcr_embed_redact",
-            FunctionDescriptor.of(C_STR, C_INT, C_PTR, C_PTR));
+            FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR, C_PTR));
 
     static final MethodHandle UNREDACT = down(
             "aether_vcr_embed_unredact",
-            FunctionDescriptor.of(C_STR, C_INT, C_PTR, C_PTR));
+            FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR, C_PTR));
 
     static final MethodHandle REMOVE_HEADER = down(
             "aether_vcr_embed_remove_header",
-            FunctionDescriptor.of(C_STR, C_INT, C_PTR));
+            FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR));
+
+    static final MethodHandle STRICT_IGNORE_COMMON_HEADERS = down(
+            "aether_vcr_embed_strict_ignore_common_headers",
+            FunctionDescriptor.of(C_STR, C_PTR));
 
     static final MethodHandle NOTE = down(
             "aether_vcr_embed_note",
-            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
 
     static final MethodHandle STATIC_CONTENT = down(
             "aether_vcr_embed_static_content",
-            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
 
     static final MethodHandle UNTAPED = down(
             "aether_vcr_embed_untaped",
-            FunctionDescriptor.of(C_STR, C_PTR));
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
 
     static final MethodHandle SET_STRICT_HEADERS = down(
             "aether_vcr_embed_set_strict_headers",
-            FunctionDescriptor.ofVoid(C_INT));
+            FunctionDescriptor.ofVoid(C_PTR, C_INT));
 
     static final MethodHandle INDENT_CODE_BLOCKS = down(
             "aether_vcr_embed_indent_code_blocks",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
     static final MethodHandle EMPHASIZE_HTTP_VERBS = down(
             "aether_vcr_embed_emphasize_http_verbs",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
     static final MethodHandle CLEAR_REDACTIONS = down(
             "aether_vcr_embed_clear_redactions",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
     static final MethodHandle CLEAR_UNREDACTIONS = down(
             "aether_vcr_embed_clear_unredactions",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
     static final MethodHandle CLEAR_HEADER_REMOVALS = down(
             "aether_vcr_embed_clear_header_removals",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
     static final MethodHandle CLEAR_STATIC_CONTENT = down(
             "aether_vcr_embed_clear_static_content",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
     static final MethodHandle CLEAR_UNTAPED = down(
             "aether_vcr_embed_clear_untaped",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
     static final MethodHandle CLEAR_FORMAT_OPTIONS = down(
             "aether_vcr_embed_clear_format_options",
-            FunctionDescriptor.ofVoid());
+            FunctionDescriptor.ofVoid(C_PTR));
 
     // ---- string ownership --------------------------------------------------
 

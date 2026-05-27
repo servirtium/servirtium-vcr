@@ -82,60 +82,61 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     }
 
     @Override
-    void applyConfig(Arena arena) {
-        super.applyConfig(arena);
+    void applyConfig(Arena arena, MemorySegment handle) {
+        super.applyConfig(arena, handle);
         try {
             if (indentCodeBlocks) {
-                NativeMethods.INDENT_CODE_BLOCKS.invokeExact();
+                NativeMethods.INDENT_CODE_BLOCKS.invokeExact(handle);
             }
             if (emphasizeHttpVerbs) {
-                NativeMethods.EMPHASIZE_HTTP_VERBS.invokeExact();
+                NativeMethods.EMPHASIZE_HTTP_VERBS.invokeExact(handle);
             }
             for (Redaction r : redactions) {
                 MemorySegment res = (MemorySegment) NativeMethods.REDACT.invokeExact(
+                        handle,
                         r.field().code(),
                         NativeMethods.cString(arena, r.pattern()),
                         NativeMethods.cString(arena, r.replacement()));
                 check(res, "redact");
             }
-            // NOTE: the staged note is applied *after* start_record — load_record
-            // clears the tape (and the pending note) as it binds, so staging it
-            // pre-start would be wiped. See start().
         } catch (Throwable t) {
             throw rethrow("applyConfig", t);
         }
     }
 
     public VcrServer start() {
-        resetGlobalState();
         MemorySegment handle;
         try (Arena arena = Arena.ofConfined()) {
-            applyConfig(arena);
-            handle = (MemorySegment) NativeMethods.START_RECORD.invokeExact(
+            handle = (MemorySegment) NativeMethods.OPEN_RECORD.invokeExact(
                     NativeMethods.cString(arena, label),
                     NativeMethods.cString(arena, tapePath),
                     NativeMethods.cString(arena, upstreamBase),
                     NativeMethods.cString(arena, host),
                     port);
-        } catch (Throwable t) {
-            throw rethrow("record start", t);
-        }
-        if (handle.address() == 0) {
-            throw new VcrException(
-                    "vcr record failed to start for tape '" + tapePath
-                            + "' (upstream '" + upstreamBase + "'): " + drainStartError());
-        }
-        // Stage the note now (after load_record cleared the tape) so it attaches
-        // to the first interaction the SUT triggers.
-        if (note != null) {
-            try (Arena arena = Arena.ofConfined()) {
+            if (handle.address() == 0) {
+                throw new VcrException(
+                        "vcr record failed to start for tape '" + tapePath
+                                + "' (upstream '" + upstreamBase + "')");
+            }
+            applyConfig(arena, handle);
+            // Stage the note now (open_record cleared the tape) so it attaches
+            // to the first interaction the SUT triggers, before serving begins.
+            if (note != null) {
                 MemorySegment res = (MemorySegment) NativeMethods.NOTE.invokeExact(
+                        handle,
                         NativeMethods.cString(arena, note.title()),
                         NativeMethods.cString(arena, note.body()));
                 check(res, "note");
-            } catch (Throwable t) {
-                throw rethrow("note", t);
             }
+            int rc = (int) NativeMethods.START.invokeExact(handle);
+            if (rc < 0) {
+                String detail = drainStartError(handle);
+                NativeMethods.STOP.invokeExact(handle);
+                throw new VcrException(
+                        "vcr record failed to begin serving for tape '" + tapePath + "': " + detail);
+            }
+        } catch (Throwable t) {
+            throw rethrow("record start", t);
         }
         return new VcrServer(handle, host, tapePath, true, failIfChanged);
     }
