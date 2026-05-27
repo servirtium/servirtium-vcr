@@ -1,6 +1,6 @@
 // Subversion-family VCR tests (offline, pure-Aether) — ported from the
 // Aether engine's tests/integration/. Two probes, both compiled against
-// the LOCAL engine (core/vcr.ae + core/aether_vcr.c via --extra, the same
+// the LOCAL engine (core/vcr.ae, pure Aether, the same
 // idiom as core_tests/) and run inline here — no .sh runner:
 //
 //   1. checkout_via_vcr.ae — byte-faithful replay of the canonical
@@ -22,7 +22,6 @@ main() {
     b = build.start()
     root = build._get(b, "root")
     out = "${root}/target/subversion_interop"
-    cc = "${root}/core/aether_vcr.c"
     _mk = os.system("mkdir -p \"${out}\"")
 
     fails = 0
@@ -30,7 +29,7 @@ main() {
     // --- probe 1: byte-faithful 17-interaction replay (port 18141) ---
     bin1 = "${out}/checkout_via_vcr"
     log1 = "${out}/checkout_via_vcr.log"
-    rc1 = os.system("cd \"${root}\" && ae build integration/subversion_interop/checkout_via_vcr.ae --extra \"${cc}\" -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
+    rc1 = os.system("cd \"${root}\" && ae build integration/subversion_interop/checkout_via_vcr.ae -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
     if rc1 != 0 {
         println("subversion_interop: checkout_via_vcr FAILED (see ${log1})")
         fails = fails + 1
@@ -43,7 +42,7 @@ main() {
     // --- probe 2: strict-match permutation diagnostics (port 18142) ---
     bin2 = "${out}/strict_match"
     log2 = "${out}/strict_match.log"
-    rc2 = os.system("cd \"${root}\" && ae build integration/subversion_interop/strict_match.ae --extra \"${cc}\" -o \"${bin2}\" >\"${log2}\" 2>&1 && \"${bin2}\" >>\"${log2}\" 2>&1")
+    rc2 = os.system("cd \"${root}\" && ae build integration/subversion_interop/strict_match.ae -o \"${bin2}\" >\"${log2}\" 2>&1 && \"${bin2}\" >>\"${log2}\" 2>&1")
     if rc2 != 0 {
         println("subversion_interop: strict_match FAILED (see ${log2})")
         fails = fails + 1

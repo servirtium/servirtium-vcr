@@ -38,7 +38,11 @@
 import vcr
 import std.http
 
-// Caller-owned-string helpers (std/http/server/vcr/aether_vcr.c).
+// Caller-owned-string helpers. Stateless malloc/strdup-style string
+// dup + free for the embed ABI's caller-owned-return contract. They
+// resolve from the Aether runtime (libaether bundles a copy); they
+// touch no tape state, so the pure-Aether engine (core/vcr.ae +
+// core/runtime, now folded into vcr.ae) is unaffected.
 extern vcr_embed_dup(s: string) -> string
 extern vcr_embed_free(s: string)
 

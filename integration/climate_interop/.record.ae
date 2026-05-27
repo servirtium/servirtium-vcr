@@ -4,7 +4,7 @@
 // want to re-record the tape or sanity-check against the live upstream.
 //
 // Both probes honor AETHER_SKIP_NETWORK (set it and they skip / replay-only),
-// and both are built against the LOCAL engine (core/aether_vcr.c via --extra,
+// and both are built against the LOCAL engine (core/vcr.ae (pure Aether),
 // same idiom as .tests.ae) so they build cleanly even on offline runners.
 //
 //   1. test_climate_record_then_replay.ae — Servirtium roadmap step 3.
@@ -28,7 +28,6 @@ main() {
     b = build.start()
     root = build._get(b, "root")
     out = "${root}/target/climate_interop"
-    cc = "${root}/core/aether_vcr.c"
     _mk = os.system("mkdir -p \"${out}\"")
 
     fails = 0
@@ -37,7 +36,7 @@ main() {
     // --- records from the live mirror when the tape is absent) ---
     bin1 = "${out}/test_climate_record_then_replay"
     log1 = "${out}/test_climate_record_then_replay.log"
-    rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_record_then_replay.ae --extra \"${cc}\" -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
+    rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_record_then_replay.ae -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
     if rc1 != 0 {
         println("climate_interop(record): test_climate_record_then_replay FAILED (see ${log1})")
         fails = fails + 1

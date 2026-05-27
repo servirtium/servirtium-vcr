@@ -2,7 +2,7 @@
 // "weather" walkthrough, ported from the Aether engine's
 // contrib/climate_http_tests/ into the monorepo so it rides on core/ (the
 // engine now lives here). One probe, compiled against the LOCAL engine
-// (core/vcr.ae + core/aether_vcr.c via --extra, the same idiom as core_tests/
+// (core/vcr.ae, pure Aether, the same idiom as core_tests/
 // and integration/subversion_interop/) and run inline here — no .sh runner:
 //
 //   test_climate_via_vcr.ae — replays the committed 5-interaction tape
@@ -24,7 +24,6 @@ main() {
     b = build.start()
     root = build._get(b, "root")
     out = "${root}/target/climate_interop"
-    cc = "${root}/core/aether_vcr.c"
     _mk = os.system("mkdir -p \"${out}\"")
 
     fails = 0
@@ -32,7 +31,7 @@ main() {
     // --- probe: offline 5-interaction replay (port 18099) ---
     bin1 = "${out}/test_climate_via_vcr"
     log1 = "${out}/test_climate_via_vcr.log"
-    rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_via_vcr.ae --extra \"${cc}\" -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
+    rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_via_vcr.ae -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
     if rc1 != 0 {
         println("climate_interop: test_climate_via_vcr FAILED (see ${log1})")
         fails = fails + 1

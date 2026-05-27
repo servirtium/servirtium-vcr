@@ -4,7 +4,7 @@
 //
 // Inline UP -> use -> DOWN, modelled on integration/todobackend/.python_record.ae:
 // the "service" is the VCR replay server process (checkout_server.ae, built
-// against the local engine via --extra), torn down unconditionally.
+// against the local engine (pure Aether)), torn down unconditionally.
 //
 //   UP    build checkout_server.ae, start it on :18142 reading the vendored
 //         pre-scrubbed tape (tapes/svn_checkout_scrubbed.tape), poll for READY
@@ -36,7 +36,6 @@ main() {
     b = build.start()
     root = build._get(b, "root")
     out = "${root}/target/subversion_interop"
-    cc = "${root}/core/aether_vcr.c"
     tape = "${root}/integration/subversion_interop/tapes/svn_checkout_scrubbed.tape"
     srv_bin = "${out}/checkout_server"
     srv_log = "${out}/checkout_server.log"
@@ -45,7 +44,7 @@ main() {
     _mk = os.system("mkdir -p \"${out}\" && rm -rf \"${out}/svn_checkout\"")
 
     // --- build the VCR replay server against the local engine ---
-    bld = os.system("cd \"${root}\" && ae build integration/subversion_interop/checkout_server.ae --extra \"${cc}\" -o \"${srv_bin}\" 2>\"${srv_log}\"")
+    bld = os.system("cd \"${root}\" && ae build integration/subversion_interop/checkout_server.ae -o \"${srv_bin}\" 2>\"${srv_log}\"")
     if bld != 0 {
         println("subversion_interop(svn_checkout): server build failed (see ${srv_log})")
         return 1

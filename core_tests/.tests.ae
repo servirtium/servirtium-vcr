@@ -1,5 +1,5 @@
 // Aether-level engine tests: the test_vcr_*.ae suite (vendored from the Aether
-// stdlib) compiled against the LOCAL engine (core/vcr.ae + core/aether_vcr.c),
+// stdlib) compiled against the LOCAL engine (core/vcr.ae, pure Aether),
 // not the .so the bindings use. run-tests.sh builds + runs each as a binary.
 import build
 import std.os

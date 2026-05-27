@@ -6,7 +6,7 @@
 //
 // Its own leaf (not the test_vcr_* run-tests.sh loop) because it needs the C
 // upstream process. Orchestration is inline-Aether (no .sh): cc the upstream,
-// start it, read its port, build+run the probe with --extra core/aether_vcr.c,
+// start it, read its port, build+run the probe with the pure-Aether engine,
 // tear the upstream down. Name it to run:
 //   aeb core_tests/.chunked.ae
 import build
@@ -21,7 +21,7 @@ main() {
     cc = os.system("cc \"${root}/core_tests/chunked_upstream.c\" -o \"${td}/chunked_upstream\"")
     if cc != 0 { println("core_tests/chunked: failed to compile chunked_upstream.c"); return 1 }
 
-    bp = os.system("cd \"${root}\" && ae build core_tests/chunked_record_probe.ae --extra core/aether_vcr.c -o \"${td}/probe\"")
+    bp = os.system("cd \"${root}\" && ae build core_tests/chunked_record_probe.ae -o \"${td}/probe\"")
     if bp != 0 { println("core_tests/chunked: failed to build probe"); return 1 }
 
     // UP: start the chunked upstream; it prints its OS-assigned port to stdout.

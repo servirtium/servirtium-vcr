@@ -35,7 +35,6 @@ extern exit(code: int)
 // Use raw form: actor receive handlers can't cleanly discard the
 // wrapper's string return without an unused-result warning.
 extern http_server_start_raw(server: ptr) -> int
-extern vcr_decode_base64_body_raw(body: string) -> string
 
 // Inline-extern std.list (same pattern as contrib/aeocha) — bare
 // `import std.list` would expose list.new etc., but inline keeps
@@ -129,7 +128,7 @@ scrub_tape(src: string) -> string {
 //
 // (No status line, no trailing blank, LF not CRLF.) This function
 // converts the former into the latter for direct byte-equality
-// against vcr_get_resp_headers(i).
+// against vcr.vcr_get_resp_headers(i).
 //
 // ALSO drops two wire-layer headers that legitimately differ between
 // recording and replay even though the response payload is identical:
@@ -214,7 +213,7 @@ normalize_response_headers(blob: string) -> string {
 
 expected_body_for_replay(body: string, content_type: string) -> string {
     if string.contains(content_type, "Base64 below") == 1 {
-        decoded = vcr_decode_base64_body_raw(body)
+        decoded = vcr.vcr_decode_base64_body_raw(body)
         if decoded == null {
             println("FAIL: base64 decode expected body")
             exit(1)
@@ -350,17 +349,17 @@ main() {
     expected_content_types = list_new()
     i = 0
     while i < n_interactions {
-        list_add_raw(expected_methods,        string_concat(vcr_get_method(i), ""))
-        list_add_raw(expected_paths,          string_concat(vcr_get_path(i), ""))
+        list_add_raw(expected_methods,        string_concat(vcr.vcr_get_method(i), ""))
+        list_add_raw(expected_paths,          string_concat(vcr.vcr_get_path(i), ""))
         // Status is int; box via map-as-tuple isn't worth it — stash
         // by reading at use-time from vcr's stored copy of the parsed
         // tape (still safe; the dispatcher's cursor doesn't mutate
         // the per-entry status field).
         // Bodies and headers are the heavyweight ones to snapshot.
-        list_add_raw(expected_bodies,         string_concat(vcr_get_body(i), ""))
-        list_add_raw(expected_headers,        string_concat(vcr_get_resp_headers(i), ""))
-        list_add_raw(expected_req_bodies,     string_concat(vcr_get_req_body(i), ""))
-        list_add_raw(expected_content_types,  string_concat(vcr_get_content_type(i), ""))
+        list_add_raw(expected_bodies,         string_concat(vcr.vcr_get_body(i), ""))
+        list_add_raw(expected_headers,        string_concat(vcr.vcr_get_resp_headers(i), ""))
+        list_add_raw(expected_req_bodies,     string_concat(vcr.vcr_get_req_body(i), ""))
+        list_add_raw(expected_content_types,  string_concat(vcr.vcr_get_content_type(i), ""))
         i = i + 1
     }
 
@@ -378,7 +377,7 @@ main() {
     while i < n_interactions {
         method = list_get_raw(expected_methods, i)
         path = list_get_raw(expected_paths, i)
-        exp_status = vcr_get_status(i)   // int — safe to re-read
+        exp_status = vcr.vcr_get_status(i)   // int — safe to re-read
         exp_body_raw = list_get_raw(expected_bodies, i)
         exp_headers = list_get_raw(expected_headers, i)
         req_body = list_get_raw(expected_req_bodies, i)

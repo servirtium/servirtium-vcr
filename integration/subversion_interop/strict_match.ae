@@ -46,7 +46,7 @@ const TAPE_REL = "integration/subversion_interop/tapes/tiny.tape"
 // inline because cross-module qualified-const lookup
 // (`vcr.KIND_OK`) hits a codegen ordering issue (the C #define
 // for vcr_KIND_OK lands after the function body that uses it).
-// Same numeric values as the runtime side (aether_vcr.c
+// Same numeric values as the runtime side (core/vcr.ae
 // VCR_KIND_* defines), kept in sync manually.
 const KIND_OK                  = 0
 const KIND_PATH_OR_METHOD_DIFF = 1

@@ -7,15 +7,15 @@
 // FFM/uFFI, via SERVIRTIUM_VCR_LIB) that single artifact.
 //
 // Source: core/embed.ae (the aether_vcr_embed_* C-ABI) imports the local
-// `vcr` module (core/vcr.ae — the Servirtium markdown parser /
-// emitter / dispatcher-registration), whose externs are backed by the
-// hand-written core/aether_vcr.c (storage + dispatcher + record),
-// linked via `--extra`. It still builds against the Aether toolchain + runtime
-// (the engine uses std.http's server, std.fs, std.string) — Aether stays a
-// build dependency; only the VCR-specific source is now monorepo-owned.
+// `vcr` module (core/vcr.ae) — the WHOLE engine (Servirtium markdown
+// parser / emitter + tape storage + dispatchers + matching + record) is
+// now PURE AETHER. No hand-written C, no `--extra`. It builds against the
+// Aether toolchain + runtime (the engine uses std.http's server + request-
+// header iteration, std.http.client, std.zlib, std.cryptography, std.bytes,
+// std.fs, std.string) — Aether stays a build dependency.
 //
-// Needs ae >= 0.182 (-fPIC runtime for --emit=lib --with=net); chunked
-// de-chunk >= 0.183.
+// Needs ae with the -fPIC runtime (>= 0.182), chunked de-chunk (>= 0.183),
+// and std.http request-header iteration (http.request_header_count/_name/_value).
 
 import build
 import std.os
@@ -25,7 +25,11 @@ main() {
     root = build._get(b, "root")
     dest = "${root}/core/native"
     _m = os.system("mkdir -p \"${dest}\"")
-    rc = os.system("cd \"${root}/core\" && ae build --emit=lib --with=fs,net embed.ae --extra aether_vcr.c -o \"${dest}/libservirtium_vcr.so\"")
+    // Pure Aether: a plain `ae build --emit=lib` with no `--extra`. The
+    // recorder's request-header iteration is std.http's
+    // http.request_header_count/_name/_value (the wish in
+    // aether/vcr_request_header_iteration_wish.md landed).
+    rc = os.system("cd \"${root}/core\" && ae build --emit=lib --with=fs,net embed.ae -o \"${dest}/libservirtium_vcr.so\"")
     if rc != 0 {
         println("engine: failed to build libservirtium_vcr.so from core (is `ae` >= 0.182 installed?)")
         return 1

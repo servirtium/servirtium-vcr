@@ -101,9 +101,14 @@
 import std.http
 import std.fs
 import std.string
+import std.config
+import std.list
+import std.mem
+import std.zlib
+import std.cryptography
 
 exports (
-    vcr_load_err, vcr_tape_length, vcr_dispatch, vcr_register_static_routes,
+    vcr_load_err, vcr_tape_length, vcr_register_static_routes,
     vcr_record_interaction,
     vcr_add_redaction, vcr_clear_redactions,
     vcr_add_unredaction, vcr_clear_unredactions,
@@ -115,7 +120,7 @@ exports (
     vcr_set_indent_code_blocks, vcr_set_emphasize_http_verbs,
     vcr_get_tape_count, vcr_get_method, vcr_get_path, vcr_get_status,
     vcr_get_content_type, vcr_get_body, vcr_get_req_headers, vcr_get_req_body,
-    vcr_get_resp_headers,
+    vcr_get_resp_headers, vcr_decode_base64_body_raw,
     vcr_get_note_present, vcr_get_note_title, vcr_get_note_body,
     vcr_get_indent_code_blocks, vcr_get_emphasize_http_verbs,
     vcr_get_redaction_count, vcr_get_redaction_field,
@@ -161,130 +166,1390 @@ exports (
 // it re-exports the std.net client surface, so no raw extern re-declaration
 // is needed here.
 
-// ---- Externs into the C-side parser + dispatcher ----
+// ---- Runtime: tape storage, dispatchers, matching, mutation state ----
+//
+// Ported from the hand-written core/aether_vcr.c to PURE AETHER and
+// folded inline here (a separate sibling module can't be imported
+// across both build contexts — embed.ae builds from core/, the tests
+// build from repo root with `import core.vcr` — so the runtime lives
+// in this file, same as the parser/emitter). The ONLY C remaining is
+// core/_header_iter_shim.c: request-header iteration, the one accessor
+// std.http lacks (aether/vcr_request_header_iteration_wish.md). When
+// std.http ships it, delete the shim + drop --extra entirely.
+//
+// Process-global mutable state lives behind std.config (a KV store
+// readable from any context, incl. the @c_callback dispatchers — the
+// design intent the compiler's own E0200 error points to). Collection
+// handles (tape list, redaction/mount/untaped lists) are std.list
+// pointers stashed in config as stringified ptr_to_long and re-fetched
+// per call; scalars (cursor, last_kind/index, toggles, …) are config
+// string slots.
 
-// vcr_load_tape removed in the C→Aether parser port. The Aether
-// parse_tape_file now reads + parses, calling vcr_aether_*
-// setters to populate the C-side tape storage.
-extern vcr_load_err() -> string                       // populated by vcr_aether_set_load_err on parse failure
-extern vcr_set_quiet(on: int)                          // suppress load-path stdout diagnostics (embed ABI sets this)
-extern vcr_quiet() -> int                              // 1 when quiet mode is on
-extern vcr_tape_length() -> int
-extern vcr_dispatch(req: ptr, res: ptr, ud: ptr)     // server handler — matches next entry, emits response
-extern vcr_register_static_routes(server: ptr)         // registers configured static-content mounts
-extern vcr_register_record_routes(server: ptr, upstream_base: string) -> int
+// ---- Structs (heap-allocated, stored as ptrs in std.list) ----
 
-// Record-mode externs — append captured interactions, then flush
-// the lot to disk in canonical Servirtium markdown when the test
-// is done.
-extern vcr_record_interaction(method: string, path: string, status: int, content_type: string, body: string) -> int
+struct Interaction {
+    method: string
+    path: string
+    status: int
+    body: string
+    content_type: string     // "" means none (C stored NULL)
+    has_content_type: int     // 1 if a content_type was present
+    note_title: string
+    has_note: int
+    note_body: string
+    req_headers: string
+    req_body: string
+    resp_headers: string
+}
 
-// Mutation-mode externs (Servirtium step 8). Redactions are applied
-// at flush time only — the in-memory capture stays untouched, so
-// the same VCR can serve replays AND emit redacted tapes.
-extern vcr_add_redaction(field: int, pattern: string, replacement: string) -> int
-extern vcr_clear_redactions()
-extern vcr_add_unredaction(field: int, pattern: string, replacement: string) -> int
-extern vcr_clear_unredactions()
-extern vcr_add_header_removal(field: int, name: string) -> int
-extern vcr_clear_header_removals()
+struct Redaction {
+    field: int
+    pattern: string
+    replacement: string
+}
 
-// Note extern (Servirtium step 9). Stages a (title, body) note
-// that attaches to the next interaction recorded.
-extern vcr_add_note(title: string, body: string) -> int
+struct HeaderRemoval {
+    field: int
+    name: string
+}
 
-// Step 10 externs — strict request matching + last-error surface.
-extern vcr_record_interaction_full(method: string, path: string, status: int, content_type: string, body: string, req_headers: string, req_body: string) -> int
-extern vcr_last_error() -> string
-extern vcr_clear_last_error()
+struct StaticMount {
+    mount_path: string
+    fs_dir: string
+}
 
-// Step 11 externs — static-content mount points. Routes are
-// registered when vcr.load() calls register_routes() — so configure
-// mounts BEFORE loading the tape.
-extern vcr_add_static_content(mount_path: string, fs_dir: string) -> int
-extern vcr_clear_static_content()
+// ---- Raw allocation + ptr<->long stash helpers ----
 
-// Untaped-path externs — incidental paths (e.g. /favicon.ico) the SUT/
-// browser hits that should never touch the tape. Both dispatchers
-// short-circuit a match to a bare 404: playback doesn't consume the
-// cursor, record doesn't forward or record it. Configure BEFORE load().
-extern vcr_add_untaped(path: string) -> int
-extern vcr_clear_untaped()
+extern malloc(n: int) -> ptr
+extern free(p: ptr)
 
-// Step 12 externs — optional markdown formatting toggles for the
-// recorder. Playback tolerates either form regardless.
-extern vcr_set_indent_code_blocks(on: int)
-extern vcr_set_emphasize_http_verbs(on: int)
+// ---- Header-iteration shim (the ONLY remaining C) ----
+// Provided by core/_header_iter_shim.c. Retires when std.http ships
+// these accessors (aether/vcr_request_header_iteration_wish.md), at
+// which point the --extra is dropped from the build entirely.
 
-// Tape-iteration accessors — used by the Aether-side emitter to
-// walk the in-memory tape one Interaction at a time. Storage stays
-// in C (the dispatcher reads it directly via Interaction*); the
-// emitter is the only side that needed read access from Aether,
-// hence this targeted accessor surface.
-extern vcr_get_tape_count() -> int
-extern vcr_get_method(i: int) -> string
-extern vcr_get_path(i: int) -> string
-extern vcr_get_status(i: int) -> int
-extern vcr_get_content_type(i: int) -> string
-extern vcr_get_body(i: int) -> string
-extern vcr_get_req_headers(i: int) -> string
-extern vcr_get_req_body(i: int) -> string
-extern vcr_get_resp_headers(i: int) -> string
-extern vcr_get_note_present(i: int) -> int
-extern vcr_get_note_title(i: int) -> string
-extern vcr_get_note_body(i: int) -> string
-extern vcr_get_indent_code_blocks() -> int
-extern vcr_get_emphasize_http_verbs() -> int
-extern vcr_get_redaction_count() -> int
-extern vcr_get_redaction_field(i: int) -> int
-extern vcr_get_redaction_pattern(i: int) -> string
-extern vcr_get_redaction_replacement(i: int) -> string
-extern vcr_get_unredaction_count() -> int
-extern vcr_get_unredaction_field(i: int) -> int
-extern vcr_get_unredaction_pattern(i: int) -> string
-extern vcr_get_unredaction_replacement(i: int) -> string
-extern vcr_get_header_removal_count() -> int
-extern vcr_get_header_removal_field(i: int) -> int
-extern vcr_get_header_removal_name(i: int) -> string
+// std.http server request/response accessors used directly.
+extern http_request_method(req: ptr) -> string
+extern http_request_path(req: ptr) -> string
+extern http_request_query(req: ptr) -> string
+extern http_request_body(req: ptr) -> string
+extern http_request_body_length(req: ptr) -> int
+extern http_get_header(req: ptr, name: string) -> string
+extern http_response_set_status(res: ptr, code: int)
+extern http_response_set_header(res: ptr, name: string, value: string)
+extern http_response_add_header(res: ptr, name: string, value: string)
+extern http_response_clear_headers(res: ptr)
+extern http_response_set_body(res: ptr, body: string)
+extern http_response_set_body_n(res: ptr, body: string, length: int)
+extern http_server_add_route(server: ptr, method: string, path: string, handler: ptr, user_data: ptr)
+extern http_serve_file(res: ptr, filepath: string)
 
-// Setters used by the Aether-side parser to populate the tape.
-// Inverse of the get_* accessors. Single all-fields setter rather
-// than per-field setters so we don't need a "current interaction"
-// cursor — each call appends one new interaction with everything
-// pre-filled.
-extern vcr_aether_clear_tape()
-extern vcr_aether_append_interaction(method: string, path: string, status: int, content_type: string, body: string, req_headers: string, req_body: string, note_title: string, note_body: string) -> int
-extern vcr_aether_set_load_err(msg: string)
-// Response-headers setter — called by parse_one_interaction after
-// vcr_aether_append_interaction so the dispatcher can emit the
-// tape's recorded response headers (X-* trace IDs, ETags, etc.) at
-// replay time. Empty/absent → dispatcher falls back to the legacy
-// content-type-only path (preserves backward compat with tapes that
-// have no `### Response headers recorded for playback:` block).
-extern vcr_aether_set_resp_headers(index: int, headers: string)
+// std.http.client raw surface for record-mode upstream forwarding.
+extern http_request_raw(method: string, url: string) -> ptr
+extern http_request_set_header_raw(req: ptr, name: string, value: string) -> int
+extern http_request_set_body_raw(req: ptr, body: string, length: int, content_type: string) -> int
+extern http_request_set_timeout_raw(req: ptr, seconds: int) -> int
+extern http_request_free_raw(req: ptr)
+extern http_send_raw(req: ptr) -> ptr
+extern http_response_status(response: ptr) -> int
+extern http_response_body(response: ptr) -> string
+extern http_response_body_length(response: ptr) -> int
+extern http_response_headers(response: ptr) -> string
+extern http_response_error(response: ptr) -> string
+extern http_response_free(response: ptr)
 
-// Per-dispatch outcome accessors. Tests check these after each
-// request to confirm what the dispatcher decided. See KIND_*
-// constants below for the kind enum. Models the Java Servirtium
-// ServiceMonitor's per-interaction notification but as a passive
-// read surface — no callback, no allocation.
-extern vcr_last_kind() -> int
-extern vcr_last_index() -> int
+// gzip / base64: use the high-level std wrappers — zlib.gzip_inflate /
+// zlib.gzip_deflate / cryptography.base64_decode — which each return
+// (string, length, err) where the returned string is a length-bearing
+// AetherString (binary-safe, carries embedded NULs), exactly like the
+// buffer the old C path memcpy'd out. zlib_backend_available is the one
+// raw probe still used directly.
+extern zlib_backend_available() -> int
 
-// Strict-headers opt-in. When set, dispatcher compares the SUT's
-// request headers against the recorded block unconditionally —
-// even if the recorded block is blank (the implicit gate that
-// vcr_get_req_headers populates for non-blank tapes still works
-// either way). Used by tests that want to deliberately exercise
-// the diagnostic paths.
-extern vcr_set_strict_headers(on: int)
-extern vcr_get_strict_headers() -> int
 
-// Reset the dispatch cursor to interaction 0 without freeing the
-// tape or stopping the server. Used by tests that drive a series
-// of independent cases against the same loaded tape. Also clears
-// the last_kind / last_index / last_error slots.
-extern vcr_reset_cursor()
+// ---- config-backed scalar state slots ----
+// Keys are namespaced "vcrrt." to avoid clobbering host config use.
+
+cfg_get_int(key: string, dflt: int) -> int {
+    v = config.get(key)
+    if v == "" { return dflt }
+    n, err = string.to_int(v)
+    if err != "" { return dflt }
+    return n
+}
+
+cfg_set_int(key: string, val: int) {
+    config.put(key, string.from_int(val))
+}
+
+cfg_get_str(key: string) -> string {
+    return config.get(key)
+}
+
+cfg_set_str(key: string, val: string) {
+    config.put(key, val)
+}
+
+// ---- collection handles (std.list ptrs stashed in config) ----
+
+// std.string.to_long() / string_get_long() truncate to 32 bits in
+// this toolchain (0.187) — it silently drops the high word of a
+// 64-bit value, which corrupts a stashed heap pointer and segfaults
+// on the next dereference. string_to_long_raw() (the out-parameter
+// form) parses the full 64-bit value correctly, so we route the
+// pointer round-trip through it.
+extern string_to_long_raw(str: string, out_value: ptr) -> int
+
+parse_full_long(s: string) -> long {
+    slot = malloc(8)
+    rc = string_to_long_raw(s, slot)
+    if rc == 0 { return 0 }
+    return mem.get_long(slot, 0)
+}
+
+list_handle(key: string) -> ptr {
+    h = config.get(key)
+    if h == "" {
+        l = list_new()
+        config.put(key, string.from_long(mem.ptr_to_long(l)))
+        return l
+    }
+    v = parse_full_long(h)
+    return mem.long_to_ptr(v)
+}
+
+// Reset a stored list handle to a fresh empty list (drops the old
+// handle reference; elements were malloc'd — we leak them, same as
+// a fresh-process test cadence; the old C tape_free_storage freed,
+// but per-process test lifetime makes this immaterial and avoids
+// chasing struct field frees across the FFI).
+list_reset(key: string) {
+    l = list_new()
+    config.put(key, string.from_long(mem.ptr_to_long(l)))
+}
+
+tape_list() -> ptr        { return list_handle("vcrrt.tape") }
+redactions() -> ptr       { return list_handle("vcrrt.redactions") }
+unredactions() -> ptr     { return list_handle("vcrrt.unredactions") }
+header_removals() -> ptr  { return list_handle("vcrrt.header_removals") }
+mounts() -> ptr           { return list_handle("vcrrt.mounts") }
+untaped_list() -> ptr          { return list_handle("vcrrt.untaped") }
+
+tape_get(i: int) -> *Interaction {
+    return list_get_raw(tape_list(), i) as *Interaction
+}
+
+// ---- scalar accessors ----
+
+vcr_set_quiet(on: int) { cfg_set_int("vcrrt.quiet", on) }
+vcr_quiet() -> int { return cfg_get_int("vcrrt.quiet", 0) }
+
+vcr_load_err() -> string {
+    e = config.get("vcrrt.load_err")
+    return e
+}
+vcr_aether_set_load_err(msg: string) { cfg_set_str("vcrrt.load_err", msg) }
+
+vcr_last_error() -> string { return config.get("vcrrt.last_error") }
+
+set_last_error(msg: string) { cfg_set_str("vcrrt.last_error", msg) }
+
+vcr_last_kind() -> int { return cfg_get_int("vcrrt.last_kind", KIND_OK) }
+vcr_last_index() -> int { return cfg_get_int("vcrrt.last_index", -1) }
+
+set_last_kind(k: int) { cfg_set_int("vcrrt.last_kind", k) }
+set_last_index(i: int) { cfg_set_int("vcrrt.last_index", i) }
+
+vcr_clear_last_error() {
+    cfg_set_str("vcrrt.last_error", "")
+    set_last_kind(KIND_OK)
+    set_last_index(-1)
+}
+
+vcr_set_strict_headers(on: int) {
+    if on != 0 { cfg_set_int("vcrrt.strict", 1) } else { cfg_set_int("vcrrt.strict", 0) }
+}
+vcr_get_strict_headers() -> int { return cfg_get_int("vcrrt.strict", 0) }
+
+vcr_set_indent_code_blocks(on: int) {
+    if on != 0 { cfg_set_int("vcrrt.indent", 1) } else { cfg_set_int("vcrrt.indent", 0) }
+}
+vcr_set_emphasize_http_verbs(on: int) {
+    if on != 0 { cfg_set_int("vcrrt.emph", 1) } else { cfg_set_int("vcrrt.emph", 0) }
+}
+vcr_get_indent_code_blocks() -> int { return cfg_get_int("vcrrt.indent", 0) }
+vcr_get_emphasize_http_verbs() -> int { return cfg_get_int("vcrrt.emph", 0) }
+
+cursor() -> int { return cfg_get_int("vcrrt.cursor", 0) }
+set_cursor(i: int) { cfg_set_int("vcrrt.cursor", i) }
+
+vcr_reset_cursor() {
+    set_cursor(0)
+    cfg_set_str("vcrrt.last_error", "")
+    set_last_kind(KIND_OK)
+    set_last_index(-1)
+}
+
+// ---- pending note (record-mode staging) ----
+
+pending_note_title() -> string { return config.get("vcrrt.pending_note_title") }
+pending_note_body() -> string { return config.get("vcrrt.pending_note_body") }
+pending_note_present() -> int { return cfg_get_int("vcrrt.pending_note_present", 0) }
+
+clear_pending_note() {
+    cfg_set_int("vcrrt.pending_note_present", 0)
+    cfg_set_str("vcrrt.pending_note_title", "")
+    cfg_set_str("vcrrt.pending_note_body", "")
+}
+
+vcr_add_note(title: string, body: string) -> int {
+    if string.length(title) == 0 {
+        // C: null title fails; we treat "" as the closest analogue but
+        // the only caller passes a real title — keep parity by allowing
+        // empty? The C rejected NULL, not "". Match by allowing "".
+    }
+    cfg_set_int("vcrrt.pending_note_present", 1)
+    cfg_set_str("vcrrt.pending_note_title", string.copy(title))
+    cfg_set_str("vcrrt.pending_note_body", string.copy(body))
+    return 1
+}
+
+// ---- tape length ----
+
+vcr_tape_length() -> int { return list_size(tape_list()) }
+vcr_get_tape_count() -> int { return list_size(tape_list()) }
+
+// ---- low-level append (mirrors tape_append) ----
+
+tape_append(method: string, path: string, status: int, body: string,
+            content_type: string, has_ct: int,
+            req_headers: string, req_body: string) -> int {
+    e = malloc(128) as *Interaction
+    e.method = string.copy(method)
+    e.path = string.copy(path)
+    e.status = status
+    e.body = string.copy(body)
+    e.content_type = string.copy(content_type)
+    e.has_content_type = has_ct
+    e.req_headers = string.copy(req_headers)
+    e.req_body = string.copy(req_body)
+    e.resp_headers = string.copy("")
+    // Drain the pending note onto this interaction.
+    if pending_note_present() == 1 {
+        e.has_note = 1
+        e.note_title = string.copy(pending_note_title())
+        e.note_body = string.copy(pending_note_body())
+        clear_pending_note()
+    } else {
+        e.has_note = 0
+        e.note_title = string.copy("")
+        e.note_body = string.copy("")
+    }
+    list_add_raw(tape_list(), e)
+    return 0
+}
+
+vcr_record_interaction(method: string, path: string, status: int,
+                       content_type: string, body: string) -> int {
+    return vcr_record_interaction_full(method, path, status, content_type, body, "", "")
+}
+
+vcr_record_interaction_full(method: string, path: string, status: int,
+                            content_type: string, body: string,
+                            req_headers: string, req_body: string) -> int {
+    if string.length(method) == 0 && string.length(path) == 0 {
+        // C rejected null method/path; empty is not null but the only
+        // callers pass real values. Keep going on empties to preserve
+        // record() with "" paths if any test relies on it.
+    }
+    has_ct = 0
+    ct = content_type
+    if string.length(content_type) > 0 { has_ct = 1 } else { ct = "" }
+    if tape_append(method, path, status, body, ct, has_ct, req_headers, req_body) != 0 {
+        cfg_set_str("vcrrt.load_err", "OOM appending captured interaction")
+        return 0
+    }
+    return 1
+}
+
+// ---- aether-side parser populators ----
+
+vcr_aether_clear_tape() {
+    list_reset("vcrrt.tape")
+    set_cursor(0)
+    cfg_set_str("vcrrt.last_error", "")
+    set_last_kind(KIND_OK)
+    set_last_index(-1)
+    clear_pending_note()
+    cfg_set_str("vcrrt.record_upstream_base", "")
+    // mirror vcr_load_tape: load_err reset to "".
+    cfg_set_str("vcrrt.load_err", "")
+}
+
+vcr_aether_append_interaction(method: string, path: string, status: int,
+                              content_type: string, body: string,
+                              req_headers: string, req_body: string,
+                              note_title: string, note_body: string) -> int {
+    if string.length(note_title) > 0 {
+        cfg_set_int("vcrrt.pending_note_present", 1)
+        cfg_set_str("vcrrt.pending_note_title", string.copy(note_title))
+        cfg_set_str("vcrrt.pending_note_body", string.copy(note_body))
+    }
+    has_ct = 0
+    ct = content_type
+    if string.length(content_type) > 0 { has_ct = 1 } else { ct = "" }
+    if tape_append(method, path, status, body, ct, has_ct, req_headers, req_body) != 0 {
+        cfg_set_str("vcrrt.load_err", "OOM appending parsed interaction")
+        return 0
+    }
+    return 1
+}
+
+vcr_aether_set_resp_headers(index: int, headers: string) {
+    n = list_size(tape_list())
+    if index < 0 || index >= n { return }
+    e = tape_get(index)
+    e.resp_headers = string.copy(headers)
+}
+
+// ---- tape getters ----
+
+vcr_get_method(i: int) -> string {
+    if i < 0 || i >= list_size(tape_list()) { return "" }
+    return tape_get(i).method
+}
+vcr_get_path(i: int) -> string {
+    if i < 0 || i >= list_size(tape_list()) { return "" }
+    return tape_get(i).path
+}
+vcr_get_status(i: int) -> int {
+    if i < 0 || i >= list_size(tape_list()) { return 0 }
+    return tape_get(i).status
+}
+vcr_get_content_type(i: int) -> string {
+    if i < 0 || i >= list_size(tape_list()) { return "" }
+    return tape_get(i).content_type
+}
+vcr_get_body(i: int) -> string {
+    if i < 0 || i >= list_size(tape_list()) { return "" }
+    return tape_get(i).body
+}
+vcr_get_req_headers(i: int) -> string {
+    if i < 0 || i >= list_size(tape_list()) { return "" }
+    return tape_get(i).req_headers
+}
+vcr_get_req_body(i: int) -> string {
+    if i < 0 || i >= list_size(tape_list()) { return "" }
+    return tape_get(i).req_body
+}
+vcr_get_resp_headers(i: int) -> string {
+    if i < 0 || i >= list_size(tape_list()) { return "" }
+    return tape_get(i).resp_headers
+}
+vcr_get_note_present(i: int) -> int {
+    if i < 0 || i >= list_size(tape_list()) { return 0 }
+    return tape_get(i).has_note
+}
+vcr_get_note_title(i: int) -> string {
+    if i < 0 || i >= list_size(tape_list()) { return "" }
+    return tape_get(i).note_title
+}
+vcr_get_note_body(i: int) -> string {
+    if i < 0 || i >= list_size(tape_list()) { return "" }
+    return tape_get(i).note_body
+}
+
+// ---- redaction / unredaction / header-removal storage ----
+
+valid_redaction_field(field: int) -> int {
+    if field == FIELD_PATH { return 1 }
+    if field == FIELD_RESPONSE_BODY { return 1 }
+    if field == FIELD_REQUEST_HEADERS { return 1 }
+    if field == FIELD_REQUEST_BODY { return 1 }
+    if field == FIELD_RESPONSE_HEADERS { return 1 }
+    return 0
+}
+
+redaction_add(l: ptr, field: int, pattern: string, replacement: string, api: string) -> int {
+    if valid_redaction_field(field) == 0 {
+        cfg_set_str("vcrrt.load_err", "unsupported field selector")
+        return 0
+    }
+    r = malloc(64) as *Redaction
+    r.field = field
+    r.pattern = string.copy(pattern)
+    r.replacement = string.copy(replacement)
+    list_add_raw(l, r)
+    return 1
+}
+
+vcr_add_redaction(field: int, pattern: string, replacement: string) -> int {
+    return redaction_add(redactions(), field, pattern, replacement, "redaction")
+}
+vcr_add_unredaction(field: int, pattern: string, replacement: string) -> int {
+    return redaction_add(unredactions(), field, pattern, replacement, "unredaction")
+}
+vcr_clear_redactions() { list_reset("vcrrt.redactions") }
+vcr_clear_unredactions() { list_reset("vcrrt.unredactions") }
+
+vcr_get_redaction_count() -> int { return list_size(redactions()) }
+vcr_get_redaction_field(i: int) -> int {
+    if i < 0 || i >= list_size(redactions()) { return 0 }
+    return (list_get_raw(redactions(), i) as *Redaction).field
+}
+vcr_get_redaction_pattern(i: int) -> string {
+    if i < 0 || i >= list_size(redactions()) { return "" }
+    return (list_get_raw(redactions(), i) as *Redaction).pattern
+}
+vcr_get_redaction_replacement(i: int) -> string {
+    if i < 0 || i >= list_size(redactions()) { return "" }
+    return (list_get_raw(redactions(), i) as *Redaction).replacement
+}
+vcr_get_unredaction_count() -> int { return list_size(unredactions()) }
+vcr_get_unredaction_field(i: int) -> int {
+    if i < 0 || i >= list_size(unredactions()) { return 0 }
+    return (list_get_raw(unredactions(), i) as *Redaction).field
+}
+vcr_get_unredaction_pattern(i: int) -> string {
+    if i < 0 || i >= list_size(unredactions()) { return "" }
+    return (list_get_raw(unredactions(), i) as *Redaction).pattern
+}
+vcr_get_unredaction_replacement(i: int) -> string {
+    if i < 0 || i >= list_size(unredactions()) { return "" }
+    return (list_get_raw(unredactions(), i) as *Redaction).replacement
+}
+
+valid_header_removal_field(field: int) -> int {
+    if field == FIELD_REQUEST_HEADERS { return 1 }
+    if field == FIELD_RESPONSE_HEADERS { return 1 }
+    return 0
+}
+
+vcr_add_header_removal(field: int, name: string) -> int {
+    if valid_header_removal_field(field) == 0 {
+        cfg_set_str("vcrrt.load_err", "header removal only supports request/response header fields")
+        return 0
+    }
+    if string.length(name) == 0 {
+        cfg_set_str("vcrrt.load_err", "header removal requires a header name")
+        return 0
+    }
+    h = malloc(48) as *HeaderRemoval
+    h.field = field
+    h.name = string.copy(name)
+    list_add_raw(header_removals(), h)
+    return 1
+}
+vcr_clear_header_removals() { list_reset("vcrrt.header_removals") }
+
+vcr_get_header_removal_count() -> int { return list_size(header_removals()) }
+vcr_get_header_removal_field(i: int) -> int {
+    if i < 0 || i >= list_size(header_removals()) { return 0 }
+    return (list_get_raw(header_removals(), i) as *HeaderRemoval).field
+}
+vcr_get_header_removal_name(i: int) -> string {
+    if i < 0 || i >= list_size(header_removals()) { return "" }
+    return (list_get_raw(header_removals(), i) as *HeaderRemoval).name
+}
+
+header_removed_for_field(field: int, name: string) -> int {
+    n = list_size(header_removals())
+    i = 0
+    while i < n {
+        h = list_get_raw(header_removals(), i) as *HeaderRemoval
+        if h.field == field && icmp_rt(h.name, name) == 0 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+// ---- static mounts ----
+
+strip_trailing_slash(s: string) -> string {
+    n = string.length(s)
+    if n > 1 && string.char_at(s, n - 1) == 47 {
+        return string.substring(s, 0, n - 1)
+    }
+    return s
+}
+
+vcr_add_static_content(mount_path: string, fs_dir: string) -> int {
+    if string.length(mount_path) == 0 {
+        cfg_set_str("vcrrt.load_err", "vcr_add_static_content: null mount_path or fs_dir")
+        return 0
+    }
+    if string.char_at(mount_path, 0) != 47 {
+        cfg_set_str("vcrrt.load_err", "vcr_add_static_content: mount_path must start with '/'")
+        return 0
+    }
+    m = malloc(48) as *StaticMount
+    m.mount_path = string.copy(strip_trailing_slash(mount_path))
+    m.fs_dir = string.copy(strip_trailing_slash(fs_dir))
+    list_add_raw(mounts(), m)
+    return 1
+}
+vcr_clear_static_content() { list_reset("vcrrt.mounts") }
+
+// ---- untaped paths ----
+
+vcr_add_untaped(path: string) -> int {
+    if string.length(path) == 0 || string.char_at(path, 0) != 47 {
+        cfg_set_str("vcrrt.load_err", "vcr_add_untaped: path must start with '/'")
+        return 0
+    }
+    // store path strings; std.list of heap strings. Wrap in a 1-field
+    // struct so the element is a stable ptr.
+    s = malloc(16) as *StaticMount
+    s.mount_path = string.copy(path)
+    s.fs_dir = string.copy("")
+    list_add_raw(untaped_list(), s)
+    return 1
+}
+vcr_clear_untaped() { list_reset("vcrrt.untaped") }
+
+path_is_untaped(path: string) -> int {
+    if string.length(path) == 0 { return 0 }
+    n = list_size(untaped_list())
+    i = 0
+    while i < n {
+        s = list_get_raw(untaped_list(), i) as *StaticMount
+        if string.equals(path, s.mount_path) == 1 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+// ---- string / ascii helpers ----
+
+// Lowercase ASCII compare. -1 / 0 / 1. Public so vcr.ae can reuse.
+icmp_rt(a: string, b: string) -> int {
+    al = string.length(a)
+    bl = string.length(b)
+    minl = al
+    if bl < minl { minl = bl }
+    i = 0
+    while i < minl {
+        ca = string.char_at(a, i)
+        cb = string.char_at(b, i)
+        if ca >= 65 && ca <= 90 { ca = ca + 32 }
+        if cb >= 65 && cb <= 90 { cb = cb + 32 }
+        if ca != cb {
+            if ca < cb { return -1 }
+            return 1
+        }
+        i = i + 1
+    }
+    if al < bl { return -1 }
+    if al > bl { return 1 }
+    return 0
+}
+
+// Case-insensitive substring search.
+ascii_ci_contains(haystack: string, needle: string) -> int {
+    nl = string.length(needle)
+    if nl == 0 { return 0 }
+    hl = string.length(haystack)
+    h = 0
+    // Only start positions where the full needle can still fit.
+    while h + nl <= hl {
+        matched = 1
+        i = 0
+        while i < nl {
+            a = string.char_at(haystack, h + i)
+            b = string.char_at(needle, i)
+            if a >= 65 && a <= 90 { a = a + 32 }
+            if b >= 65 && b <= 90 { b = b + 32 }
+            if a != b { matched = 0 ; i = nl ; break }
+            i = i + 1
+        }
+        if matched == 1 { return 1 }
+        h = h + 1
+    }
+    return 0
+}
+
+is_blank(s: string) -> int {
+    n = string.length(s)
+    i = 0
+    while i < n {
+        c = string.char_at(s, i)
+        if c != 32 && c != 9 && c != 10 && c != 13 { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+// Pull the first header name out of "Name: ...\n..." up to ':' or '\n'.
+first_header_name(recorded: string) -> string {
+    n = string.length(recorded)
+    i = 0
+    while i < n {
+        c = string.char_at(recorded, i)
+        if c == 58 || c == 10 { break }
+        i = i + 1
+    }
+    return string.substring(recorded, 0, i)
+}
+
+// Replace-all (mirror str_replace_all in vcr.ae / C replace_all_c).
+replace_all(src: string, pattern: string, replacement: string) -> string {
+    plen = string.length(pattern)
+    if plen == 0 { return string.copy(src) }
+    out = string.copy("")
+    cursor = 0
+    src_len = string.length(src)
+    while cursor < src_len {
+        idx = string.index_of_from(src, pattern, cursor)
+        if idx < 0 {
+            tail = string.substring(src, cursor, src_len)
+            out = string_concat(out, tail)
+            return out
+        }
+        chunk = string.substring(src, cursor, idx)
+        out = string_concat(out, chunk)
+        out = string_concat(out, replacement)
+        cursor = idx + plen
+    }
+    return out
+}
+
+rt_apply_unredactions_for(src: string, field: int) -> string {
+    out = string.copy(src)
+    n = list_size(unredactions())
+    i = 0
+    while i < n {
+        r = list_get_raw(unredactions(), i) as *Redaction
+        if r.field == field {
+            out = replace_all(out, r.pattern, r.replacement)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// Remove headers matching a removal-field from a "Name: Value\n..." block.
+remove_headers_from_block(headers: string, field: int) -> string {
+    if string.length(headers) == 0 { return string.copy("") }
+    out = string.copy("")
+    cursor = 0
+    h_len = string.length(headers)
+    while cursor < h_len {
+        nl_idx = string.index_of_from(headers, "\n", cursor)
+        line_end = h_len
+        if nl_idx >= 0 { line_end = nl_idx }
+        line = string.substring(headers, cursor, line_end)
+        line_len = string.length(line)
+        // trim trailing CR for the name lookup
+        name_line = line
+        if line_len > 0 && string.char_at(line, line_len - 1) == 13 {
+            name_line = string.substring(line, 0, line_len - 1)
+        }
+        keep = 1
+        colon_idx = string.index_of(name_line, ":")
+        if colon_idx > 0 {
+            name = string.substring(name_line, 0, colon_idx)
+            if header_removed_for_field(field, name) == 1 { keep = 0 }
+        }
+        if keep == 1 && line_len > 0 {
+            out = string_concat(out, line)
+            if nl_idx >= 0 { out = string_concat(out, "\n") }
+        }
+        if nl_idx < 0 { break }
+        cursor = nl_idx + 1
+    }
+    return out
+}
+
+is_hop_by_hop_header(name: string) -> int {
+    if string.length(name) == 0 { return 1 }
+    if icmp_rt(name, "Host") == 0 { return 1 }
+    if icmp_rt(name, "Connection") == 0 { return 1 }
+    if icmp_rt(name, "Content-Length") == 0 { return 1 }
+    if icmp_rt(name, "Transfer-Encoding") == 0 { return 1 }
+    if icmp_rt(name, "Keep-Alive") == 0 { return 1 }
+    if icmp_rt(name, "Proxy-Authenticate") == 0 { return 1 }
+    if icmp_rt(name, "Proxy-Authorization") == 0 { return 1 }
+    if icmp_rt(name, "TE") == 0 { return 1 }
+    if icmp_rt(name, "Trailer") == 0 { return 1 }
+    if icmp_rt(name, "Upgrade") == 0 { return 1 }
+    return 0
+}
+
+// ---- request normalization ----
+
+// Sort a list of "Name: Value" lines case-insensitively, join with \n,
+// trailing \n. (insertion sort like vcr.ae's sort_lines, but operating
+// on a pre-collected blob with trailing newlines.)
+sort_join_lines(blob: string) -> string {
+    if string.length(blob) == 0 { return string.copy("") }
+    out = string.copy("")
+    cursor = 0
+    blob_len = string.length(blob)
+    while cursor < blob_len {
+        nl_idx = string.index_of_from(blob, "\n", cursor)
+        line_end = blob_len
+        if nl_idx >= 0 { line_end = nl_idx }
+        line = string.substring(blob, cursor, line_end)
+        if string.length(line) > 0 {
+            ins_pos = 0
+            o_len = string.length(out)
+            while ins_pos < o_len {
+                nl2 = string.index_of_from(out, "\n", ins_pos)
+                exists_end = o_len
+                if nl2 >= 0 { exists_end = nl2 }
+                exists = string.substring(out, ins_pos, exists_end)
+                if icmp_rt(exists, line) > 0 { break }
+                if nl2 < 0 { ins_pos = o_len ; break }
+                ins_pos = nl2 + 1
+            }
+            prefix = string.substring(out, 0, ins_pos)
+            suffix = string.substring(out, ins_pos, o_len)
+            out = string_concat(prefix, line)
+            out = string_concat(out, "\n")
+            out = string_concat(out, suffix)
+        }
+        if nl_idx < 0 { break }
+        cursor = nl_idx + 1
+    }
+    return out
+}
+
+// Build the canonical "Name: Value\n..." blob from the live request,
+// dropping Host / Connection / Content-Length / Accept-Encoding and
+// any header-removal'd names. Sorted ascending by name (ci).
+normalize_live_headers(req: ptr) -> string {
+    count = http.request_header_count(req)
+    if count <= 0 { return string.copy("") }
+    collected = string.copy("")
+    i = 0
+    while i < count {
+        key = http.request_header_name(req, i)
+        val = http.request_header_value(req, i)
+        if string.length(key) == 0 {
+            i = i + 1
+            continue
+        }
+        skip = 0
+        if icmp_rt(key, "Host") == 0 { skip = 1 }
+        if icmp_rt(key, "Connection") == 0 { skip = 1 }
+        if icmp_rt(key, "Content-Length") == 0 { skip = 1 }
+        if icmp_rt(key, "Accept-Encoding") == 0 { skip = 1 }
+        if skip == 0 && header_removed_for_field(FIELD_REQUEST_HEADERS, key) == 1 { skip = 1 }
+        if skip == 0 {
+            line = string_concat(key, ": ")
+            line = string_concat(line, val)
+            collected = string_concat(collected, line)
+            collected = string_concat(collected, "\n")
+        }
+        i = i + 1
+    }
+    return sort_join_lines(collected)
+}
+
+request_header_value(req: ptr, name: string) -> string {
+    count = http.request_header_count(req)
+    i = 0
+    while i < count {
+        key = http.request_header_name(req, i)
+        if string.length(key) > 0 && icmp_rt(key, name) == 0 {
+            return http.request_header_value(req, i)
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+request_accepts_gzip(req: ptr) -> int {
+    ae = request_header_value(req, "Accept-Encoding")
+    return ascii_ci_contains(ae, "gzip")
+}
+
+// ---- url / path builders ----
+
+build_recorded_path(req: ptr) -> string {
+    path = http_request_path(req)
+    if string.length(path) == 0 { path = "/" }
+    query = http_request_query(req)
+    out = string.copy(path)
+    if string.length(query) > 0 { out = string_concat(out, query) }
+    return out
+}
+
+build_upstream_url(base: string, req: ptr) -> string {
+    path = http_request_path(req)
+    if string.length(path) == 0 { path = "/" }
+    query = http_request_query(req)
+    out = string.copy(base)
+    if string.length(base) > 0 && string.char_at(path, 0) != 47 {
+        out = string_concat(out, "/")
+    }
+    out = string_concat(out, path)
+    if string.length(query) > 0 { out = string_concat(out, query) }
+    return out
+}
+
+expected_path_includes_query(path: string) -> int {
+    if string.index_of(path, "?") >= 0 { return 1 }
+    return 0
+}
+
+// ---- response-header block helpers (record mode) ----
+
+response_header_value_from_block(headers: string, name: string) -> string {
+    if string.length(headers) == 0 { return "" }
+    name_len = string.length(name)
+    cursor = 0
+    h_len = string.length(headers)
+    while cursor < h_len {
+        nl = string.index_of_from(headers, "\n", cursor)
+        line_end = h_len
+        if nl >= 0 { line_end = nl }
+        line = string.substring(headers, cursor, line_end)
+        colon = string.index_of(line, ":")
+        if colon == name_len {
+            cand = string.substring(line, 0, colon)
+            if icmp_rt(cand, name) == 0 {
+                val = string.substring(line, colon + 1, string.length(line))
+                // trim leading ws and trailing ws/CR
+                val = trim_ws_cr(val)
+                return val
+            }
+        }
+        if nl < 0 { break }
+        cursor = nl + 1
+    }
+    return ""
+}
+
+trim_ws_cr(s: string) -> string {
+    n = string.length(s)
+    start = 0
+    while start < n {
+        c = string.char_at(s, start)
+        if c != 32 && c != 9 { break }
+        start = start + 1
+    }
+    end = n
+    while end > start {
+        c = string.char_at(s, end - 1)
+        if c != 32 && c != 9 && c != 13 { break }
+        end = end - 1
+    }
+    return string.substring(s, start, end)
+}
+
+header_block_has_token_value(headers: string, name: string, token: string) -> int {
+    v = response_header_value_from_block(headers, name)
+    return ascii_ci_contains(v, token)
+}
+
+// Build the tape-side response-headers blob: drop the status line
+// (first line), drop hop-by-hop, optionally drop Content-Encoding.
+// Mirrors response_headers_for_tape.
+response_headers_for_tape(raw_headers: string, strip_content_encoding: int) -> string {
+    if string.length(raw_headers) == 0 { return string.copy("") }
+    // skip the first line (status line)
+    first_nl = string.index_of(raw_headers, "\n")
+    start = 0
+    if first_nl >= 0 { start = first_nl + 1 }
+    out = string.copy("")
+    cursor = start
+    h_len = string.length(raw_headers)
+    while cursor < h_len {
+        nl = string.index_of_from(raw_headers, "\n", cursor)
+        line_end = h_len
+        if nl >= 0 { line_end = nl }
+        line = string.substring(raw_headers, cursor, line_end)
+        ll = string.length(line)
+        if ll > 0 && string.char_at(line, ll - 1) == 13 {
+            line = string.substring(line, 0, ll - 1)
+        }
+        colon = string.index_of(line, ":")
+        if colon > 0 {
+            name = string.substring(line, 0, colon)
+            drop = 0
+            if is_hop_by_hop_header(name) == 1 { drop = 1 }
+            if drop == 0 && strip_content_encoding == 1 && icmp_rt(name, "Content-Encoding") == 0 { drop = 1 }
+            if drop == 0 {
+                out = string_concat(out, line)
+                out = string_concat(out, "\n")
+            }
+        }
+        if nl < 0 { break }
+        cursor = nl + 1
+    }
+    return out
+}
+
+// Emit recorded caller headers verbatim to the live response (record
+// mode echoes them back). Mirrors emit_recorded_headers_to_response.
+emit_recorded_headers_to_response(res: ptr, headers: string) {
+    http_response_clear_headers(res)
+    if string.length(headers) == 0 { return }
+    cursor = 0
+    h_len = string.length(headers)
+    while cursor < h_len {
+        nl = string.index_of_from(headers, "\n", cursor)
+        line_end = h_len
+        if nl >= 0 { line_end = nl }
+        line = string.substring(headers, cursor, line_end)
+        ll = string.length(line)
+        if ll > 0 && string.char_at(line, ll - 1) == 13 {
+            line = string.substring(line, 0, ll - 1)
+        }
+        colon = string.index_of(line, ":")
+        if colon > 0 {
+            name = string.substring(line, 0, colon)
+            val = string.substring(line, colon + 1, string.length(line))
+            // skip a single leading space/tab
+            val = trim_leading_ws(val)
+            http_response_add_header(res, name, val)
+        }
+        if nl < 0 { break }
+        cursor = nl + 1
+    }
+}
+
+trim_leading_ws(s: string) -> string {
+    n = string.length(s)
+    start = 0
+    while start < n {
+        c = string.char_at(s, start)
+        if c != 32 && c != 9 { break }
+        start = start + 1
+    }
+    return string.substring(s, start, n)
+}
+
+// ---- base64 decode (binary-safe via std.cryptography) ----
+
+decode_base64_body(src: string) -> {
+    decoded, n, err = cryptography.base64_decode(src)
+    if err != "" { return "", 0, 0 }
+    return decoded, n, 1
+}
+
+// Public base64 decode helper (the subversion_interop byte-faithful
+// replay test reads this to verify base64-marked bodies decode to the
+// expected bytes). Returns the decoded string (length-bearing) or ""
+// on decode failure. Replaces the old C vcr_decode_base64_body_raw.
+vcr_decode_base64_body_raw(body: string) -> string {
+    decoded, n, ok = decode_base64_body(body)
+    if ok == 0 { return "" }
+    return decoded
+}
+
+// ---- error helper for record dispatch ----
+
+record_dispatch_error(res: ptr, status: int, msg: string) {
+    set_last_error(msg)
+    set_last_kind(KIND_RECORD_ERROR)
+    set_last_index(-1)
+    http_response_set_status(res, status)
+    http_response_set_body(res, msg)
+}
+
+// ---- record-mode route registration ----
+
+vcr_register_record_routes(server: ptr, upstream_base: string) -> int {
+    if server == null || string.length(upstream_base) == 0 {
+        cfg_set_str("vcrrt.load_err", "vcr.record mode: null server or upstream_base")
+        return 0
+    }
+    cfg_set_str("vcrrt.record_upstream_base", strip_trailing_slash(upstream_base))
+    http_server_add_route(server, "*", "*", vcr_record_dispatch, 0)
+    vcr_register_static_routes(server)
+    return 1
+}
+
+vcr_register_static_routes(server: ptr) {
+    if server == null { return }
+    n = list_size(mounts())
+    i = 0
+    while i < n {
+        m = list_get_raw(mounts(), i) as *StaticMount
+        pattern = string_concat(m.mount_path, "/*")
+        http_server_add_route(server, "GET", pattern, vcr_static_dispatch, m)
+        i = i + 1
+    }
+}
+
+// ---- static dispatcher ----
+
+@c_callback
+vcr_static_dispatch(req: ptr, res: ptr, ud: ptr) {
+    if ud == null {
+        http_response_set_status(res, 500)
+        http_response_set_body(res, "static dispatch: null mount")
+        return
+    }
+    m = ud as *StaticMount
+    path = http_request_path(req)
+    if string.length(path) == 0 {
+        http_response_set_status(res, 400)
+        http_response_set_body(res, "static dispatch: null request path")
+        return
+    }
+    mlen = string.length(m.mount_path)
+    if string.starts_with(path, m.mount_path) == 0 {
+        http_response_set_status(res, 500)
+        http_response_set_body(res, "static dispatch: prefix mismatch (router bug)")
+        return
+    }
+    rel = string.substring(path, mlen, string.length(path))
+    if string.length(rel) > 0 && string.char_at(rel, 0) == 47 {
+        rel = string.substring(rel, 1, string.length(rel))
+    }
+    if string.length(rel) == 0 { rel = "index.html" }
+    // traversal guard
+    bad = 0
+    if string.index_of(rel, "..") >= 0 { bad = 1 }
+    if string.index_of(rel, "%2e") >= 0 { bad = 1 }
+    if string.index_of(rel, "%2E") >= 0 { bad = 1 }
+    if string.index_of(rel, "%2f") >= 0 { bad = 1 }
+    if string.index_of(rel, "%2F") >= 0 { bad = 1 }
+    if string.index_of(rel, "%5c") >= 0 { bad = 1 }
+    if string.index_of(rel, "%5C") >= 0 { bad = 1 }
+    if string.index_of(rel, "\\") >= 0 { bad = 1 }
+    if bad == 1 {
+        http_response_set_status(res, 403)
+        http_response_set_body(res, "403 - Forbidden")
+        return
+    }
+    filepath = string_concat(m.fs_dir, "/")
+    filepath = string_concat(filepath, rel)
+    http_serve_file(res, filepath)
+}
+
+// ---- record dispatcher ----
+
+@c_callback
+vcr_record_dispatch(req: ptr, res: ptr, ud: ptr) {
+    if path_is_untaped(http_request_path(req)) == 1 {
+        http_response_set_status(res, 404)
+        http_response_set_body(res, "")
+        return
+    }
+    base = config.get("vcrrt.record_upstream_base")
+    if string.length(base) == 0 {
+        record_dispatch_error(res, 500, "vcr record mode: upstream base not configured")
+        return
+    }
+    url = build_upstream_url(base, req)
+    method = http_request_method(req)
+    if string.length(method) == 0 { method = "GET" }
+
+    creq = http_request_raw(method, url)
+    if creq == null {
+        record_dispatch_error(res, 500, "vcr record mode: failed to build client request")
+        return
+    }
+
+    count = http.request_header_count(req)
+    i = 0
+    while i < count {
+        key = http.request_header_name(req, i)
+        val = http.request_header_value(req, i)
+        if string.length(key) > 0 && is_hop_by_hop_header(key) == 0 {
+            http_request_set_header_raw(creq, key, val)
+        }
+        i = i + 1
+    }
+
+    body_len = http_request_body_length(req)
+    live_body = http_request_body(req)
+    if body_len > 0 {
+        ctype = request_header_value(req, "Content-Type")
+        http_request_set_body_raw(creq, live_body, body_len, ctype)
+    }
+    http_request_set_timeout_raw(creq, 30)
+
+    cresp = http_send_raw(creq)
+    http_request_free_raw(creq)
+    if cresp == null {
+        record_dispatch_error(res, 502, "vcr record mode: upstream request failed")
+        return
+    }
+    cerr = http_response_error(cresp)
+    if string.length(cerr) > 0 {
+        msg = string_concat("vcr record mode: upstream transport error: ", cerr)
+        http_response_free(cresp)
+        record_dispatch_error(res, 502, msg)
+        return
+    }
+
+    body = http_response_body(cresp)
+    resp_body_len = http_response_body_length(cresp)
+    raw_headers = http_response_headers(cresp)
+    caller_headers = response_headers_for_tape(raw_headers, 0)
+    upstream_gzip = header_block_has_token_value(caller_headers, "Content-Encoding", "gzip")
+    resp_headers = response_headers_for_tape(raw_headers, upstream_gzip)
+    content_type = response_header_value_from_block(resp_headers, "Content-Type")
+    req_headers = normalize_live_headers(req)
+
+    body_for_tape = body
+    if upstream_gzip == 1 {
+        if zlib_backend_available() == 0 {
+            http_response_free(cresp)
+            record_dispatch_error(res, 500, "vcr record mode: gzip response but zlib unavailable")
+            return
+        }
+        inflated, inflated_len, ierr = zlib.gzip_inflate(body, resp_body_len)
+        if ierr != "" {
+            http_response_free(cresp)
+            record_dispatch_error(res, 500, "vcr record mode: failed to decode gzip response")
+            return
+        }
+        body_for_tape = inflated
+    }
+
+    recorded_path = build_recorded_path(req)
+    req_body_for_tape = ""
+    if body_len > 0 { req_body_for_tape = live_body }
+
+    rec_ok = vcr_record_interaction_full(method, recorded_path,
+                                         http_response_status(cresp),
+                                         content_type, body_for_tape,
+                                         req_headers, req_body_for_tape)
+    if rec_ok == 0 {
+        http_response_free(cresp)
+        record_dispatch_error(res, 500, "vcr record mode: failed to record interaction")
+        return
+    }
+    vcr_aether_set_resp_headers(list_size(tape_list()) - 1, resp_headers)
+
+    http_response_set_status(res, http_response_status(cresp))
+    emit_recorded_headers_to_response(res, caller_headers)
+    http_response_set_body_n(res, body, resp_body_len)
+
+    set_last_error("")
+    set_last_kind(KIND_OK)
+    set_last_index(list_size(tape_list()) - 1)
+
+    http_response_free(cresp)
+}
+
+// ---- playback dispatcher ----
+
+@c_callback
+vcr_dispatch(req: ptr, res: ptr, ud: ptr) {
+    if path_is_untaped(http_request_path(req)) == 1 {
+        http_response_set_status(res, 404)
+        http_response_set_body(res, "")
+        return
+    }
+    cur = cursor()
+    n = list_size(tape_list())
+    if cur >= n {
+        msg = "tape exhausted — SUT made more requests than the tape contains"
+        set_last_error(msg)
+        set_last_kind(KIND_TAPE_EXHAUSTED)
+        set_last_index(cur)
+        http_response_set_status(res, 599)
+        http_response_set_body(res, msg)
+        return
+    }
+    e = tape_get(cur)
+    expected_path = rt_apply_unredactions_for(e.path, FIELD_PATH)
+    expected_req_headers = rt_apply_unredactions_for(e.req_headers, FIELD_REQUEST_HEADERS)
+    expected_req_body = rt_apply_unredactions_for(e.req_body, FIELD_REQUEST_BODY)
+    expected_req_headers = remove_headers_from_block(expected_req_headers, FIELD_REQUEST_HEADERS)
+
+    got_method = http_request_method(req)
+    got_path = http_request_path(req)
+    if expected_path_includes_query(expected_path) == 1 {
+        got_path = build_recorded_path(req)
+    }
+    if string.length(got_method) == 0 || string.equals(got_method, e.method) == 0
+       || string.length(got_path) == 0 || string.equals(got_path, expected_path) == 0 {
+        gm = got_method
+        if string.length(gm) == 0 { gm = "(null)" }
+        gp = got_path
+        if string.length(gp) == 0 { gp = "(null)" }
+        msg = "tape mismatch at interaction ${cur}: expected ${e.method} ${expected_path}, got ${gm} ${gp}"
+        set_last_error(msg)
+        set_last_kind(KIND_PATH_OR_METHOD_DIFF)
+        set_last_index(cur)
+        http_response_set_status(res, 599)
+        http_response_set_body(res, msg)
+        return
+    }
+
+    strict = vcr_get_strict_headers()
+    if is_blank(expected_req_headers) == 0 || strict == 1 {
+        live = normalize_live_headers(req)
+        if string.equals(live, expected_req_headers) == 0 {
+            diag_ok = 0
+            kind = KIND_HEADER_MISSING
+            msg = ""
+
+            // First sweep: recorded lines not present in live.
+            p = 0
+            eh_len = string.length(expected_req_headers)
+            while p < eh_len && diag_ok == 0 {
+                eol = string.index_of_from(expected_req_headers, "\n", p)
+                line_end = eh_len
+                if eol >= 0 { line_end = eol }
+                rline = string.substring(expected_req_headers, p, line_end)
+                if string.length(rline) > 0 {
+                    needle = string_concat(rline, "\n")
+                    if string.index_of(live, needle) < 0 {
+                        // check same-name value-diff
+                        colon = string.index_of(rline, ":")
+                        if colon > 0 {
+                            name_colon = string.substring(rline, 0, colon + 1)
+                            // live always renders "Name: ..." — search for
+                            // "Name:" at a line start.
+                            mpos = find_line_start_token(live, name_colon)
+                            if mpos >= 0 {
+                                hdr = first_header_name(rline)
+                                msg = "interaction ${cur}: '${hdr}' request header value differed"
+                                kind = KIND_HEADER_VALUE_DIFF
+                                diag_ok = 1
+                            }
+                        }
+                        if diag_ok == 0 {
+                            hdr = first_header_name(rline)
+                            msg = "interaction ${cur}: '${hdr}' request header was expected but not encountered"
+                            kind = KIND_HEADER_MISSING
+                            diag_ok = 1
+                        }
+                    }
+                }
+                if eol < 0 { break }
+                p = eol + 1
+            }
+
+            // Second sweep: live lines not in recorded → unexpected.
+            if diag_ok == 0 {
+                lp = 0
+                l_len = string.length(live)
+                while lp < l_len && diag_ok == 0 {
+                    eol = string.index_of_from(live, "\n", lp)
+                    line_end = l_len
+                    if eol >= 0 { line_end = eol }
+                    lline = string.substring(live, lp, line_end)
+                    if string.length(lline) > 0 {
+                        needle = string_concat(lline, "\n")
+                        if string.index_of(expected_req_headers, needle) < 0 {
+                            hdr = first_header_name(lline)
+                            msg = "interaction ${cur}: '${hdr}' request header encountered but not expected"
+                            kind = KIND_HEADER_UNEXPECTED
+                            diag_ok = 1
+                        }
+                    }
+                    if eol < 0 { break }
+                    lp = eol + 1
+                }
+            }
+
+            if diag_ok == 0 {
+                msg = "interaction ${cur}: request headers differ — recorded:\n${expected_req_headers}\nlive:\n${live}"
+                kind = KIND_HEADER_MISSING
+            }
+            set_last_error(msg)
+            set_last_kind(kind)
+            set_last_index(cur)
+            http_response_set_status(res, 599)
+            http_response_set_body(res, msg)
+            return
+        }
+    }
+
+    // Request-body comparison.
+    if is_blank(expected_req_body) == 0 {
+        live_body = http_request_body(req)
+        if string.equals(live_body, expected_req_body) == 0 {
+            rlen = string.length(expected_req_body)
+            llen = string.length(live_body)
+            msg = "interaction ${cur}: request body different to expectation — recorded=${rlen} bytes, live=${llen} bytes"
+            set_last_error(msg)
+            set_last_kind(KIND_BODY_DIFF)
+            set_last_index(cur)
+            http_response_set_status(res, 599)
+            http_response_set_body(res, msg)
+            return
+        }
+    }
+
+    http_response_set_status(res, e.status)
+    http_response_clear_headers(res)
+
+    // Emit recorded response headers verbatim.
+    emitted_ct = 0
+    if string.length(e.resp_headers) > 0 {
+        cursor2 = 0
+        rh_len = string.length(e.resp_headers)
+        while cursor2 < rh_len {
+            nl = string.index_of_from(e.resp_headers, "\n", cursor2)
+            line_end = rh_len
+            if nl >= 0 { line_end = nl }
+            line = string.substring(e.resp_headers, cursor2, line_end)
+            ll = string.length(line)
+            if ll > 0 && string.char_at(line, ll - 1) == 13 {
+                line = string.substring(line, 0, ll - 1)
+            }
+            colon = string.index_of(line, ":")
+            if colon > 0 {
+                name = string.substring(line, 0, colon)
+                val = string.substring(line, colon + 1, string.length(line))
+                val = trim_leading_ws(val)
+                if icmp_rt(name, "Content-Type") == 0 { emitted_ct = 1 }
+                if icmp_rt(name, "Content-Length") != 0 && icmp_rt(name, "Content-Encoding") != 0 {
+                    http_response_add_header(res, name, val)
+                }
+            }
+            if nl < 0 { break }
+            cursor2 = nl + 1
+        }
+    }
+    if emitted_ct == 0 && e.has_content_type == 1 && string.length(e.content_type) > 0 {
+        http_response_add_header(res, "Content-Type", e.content_type)
+    }
+
+    if ascii_ci_contains(e.content_type, "base64 below") == 1 {
+        decoded, dlen, dok = decode_base64_body(e.body)
+        if dok == 1 {
+            http_response_set_body_n(res, decoded, dlen)
+        } else {
+            http_response_set_body(res, e.body)
+        }
+    } else {
+        if request_accepts_gzip(req) == 1 && zlib_backend_available() == 1 {
+            gz_owned, gz_len, gerr = zlib.gzip_deflate(e.body, string.length(e.body), -1)
+            if gerr == "" {
+                http_response_set_body_n(res, gz_owned, gz_len)
+                http_response_set_header(res, "Content-Encoding", "gzip")
+                http_response_set_header(res, "Vary", "Accept-Encoding")
+            } else {
+                http_response_set_body(res, e.body)
+            }
+        } else {
+            http_response_set_body(res, e.body)
+        }
+    }
+
+    set_last_error("")
+    set_last_kind(KIND_OK)
+    set_last_index(cur)
+    set_cursor(cur + 1)
+}
+
+// Find `token` (e.g. "Name:") where it is at the start of the blob
+// or preceded by '\n'. Returns index or -1.
+find_line_start_token(haystack: string, token: string) -> int {
+    cursor = 0
+    h_len = string.length(haystack)
+    while cursor <= h_len {
+        idx = string.index_of_from(haystack, token, cursor)
+        if idx < 0 { return -1 }
+        if idx == 0 { return idx }
+        if string.char_at(haystack, idx - 1) == 10 { return idx }
+        cursor = idx + 1
+    }
+    return -1
+}
+
 
 // Kind-of-outcome enum. Returned by vcr.last_kind() after each
 // dispatch to tell the test which branch the dispatcher took.
