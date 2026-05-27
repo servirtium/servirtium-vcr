@@ -28,45 +28,45 @@ module Servirtium
 
     # Tape entry count (playback) / interactions captured so far (record).
     def tape_length
-      Native.call(:tape_length)
+      Native.call(:tape_length, handle)
     end
 
     # Most-recent dispatch diagnostic; empty when none flagged.
     def last_error
-      Native.take_string(Native.call(:last_error))
+      Native.take_string(Native.call(:last_error, handle))
     end
 
     # Outcome of the most-recent dispatch, as a symbol (e.g. +:ok+). See
     # {Outcome}.
     def last_kind
-      Outcome.symbol(Native.call(:last_kind))
+      Outcome.symbol(Native.call(:last_kind, handle))
     end
 
     # Raw integer outcome of the most-recent dispatch (see {Outcome}).
     def last_kind_code
-      Native.call(:last_kind)
+      Native.call(:last_kind, handle)
     end
 
     # Tape index of the most-recent matched interaction, or -1.
     def last_index
-      Native.call(:last_index)
+      Native.call(:last_index, handle)
     end
 
     # Stage a note (record mode) for the *next* interaction to be captured.
     # Call between requests to annotate specific interactions.
     def note(title, body)
-      err = Native.take_string(Native.call(:note, title, body))
+      err = Native.take_string(Native.call(:note, handle, title, body))
       raise Servirtium::Error, err unless err.empty?
     end
 
     # Rewind the replay cursor to interaction 0 and clear last-* slots.
     def reset_cursor
-      Native.call(:reset_cursor)
+      Native.call(:reset_cursor, handle)
     end
 
     # Clear the last-error slot between sub-cases.
     def clear_last_error
-      Native.call(:clear_last_error)
+      Native.call(:clear_last_error, handle)
     end
 
     # Stop the server. In record mode also flushes the tape (raising on drift

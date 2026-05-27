@@ -10,9 +10,9 @@ module Servirtium
   # 1:1 with the C symbols; everything idiomatic lives a layer up in
   # {Servirtium::Vcr}/{Servirtium::Server}.
   #
-  # v1 contract (matching the Aether side): ONE active VCR server per
-  # process — the tape/cursor/mutation state is process-global, so the
-  # diagnostics, tape-length, and mutation calls take no handle.
+  # Per-listener contract (matching the Aether side): N independent VCR
+  # servers can run concurrently in one process, each keyed by its own
+  # handle; every config / diagnostic / lifecycle call takes the handle.
   #
   # Returned +char*+ values are caller-owned and NUL-terminated; copy them
   # to a Ruby String and free them with +free_string+. {.take_string} does
@@ -63,45 +63,50 @@ module Servirtium
 
     # (ruby_name, c_symbol, return_type, [arg_types])
     BINDINGS = [
-      # ---- lifecycle ----
-      [:start_playback, 'aether_vcr_embed_start_playback', VOIDP, [VOIDP, VOIDP, VOIDP, INT]],
-      [:start_record,   'aether_vcr_embed_start_record',   VOIDP,
+      # ---- lifecycle: open -> start ----
+      [:open_playback, 'aether_vcr_embed_open_playback', VOIDP, [VOIDP, VOIDP, VOIDP, INT]],
+      [:open_playback_url, 'aether_vcr_embed_open_playback_url', VOIDP, [VOIDP, VOIDP, VOIDP, INT]],
+      [:open_record,   'aether_vcr_embed_open_record',   VOIDP,
        [VOIDP, VOIDP, VOIDP, VOIDP, INT]],
+      [:start,          'aether_vcr_embed_start',          INT,   [VOIDP]],
       [:stop,           'aether_vcr_embed_stop',           VOID,  [VOIDP]],
       [:stop_and_flush, 'aether_vcr_embed_stop_and_flush', VOIDP, [VOIDP, VOIDP]],
       [:stop_and_flush_fail_if_changed,
        'aether_vcr_embed_stop_and_flush_fail_if_changed', VOIDP, [VOIDP, VOIDP]],
+      [:stop_and_flush_or_check,
+       'aether_vcr_embed_stop_and_flush_or_check', VOIDP, [VOIDP, VOIDP]],
 
-      # ---- introspection ----
+      # ---- introspection (handle-based) ----
       [:port,         'aether_vcr_embed_port',         INT,   [VOIDP]],
       [:base_url,     'aether_vcr_embed_base_url',     VOIDP, [VOIDP, VOIDP]],
-      [:tape_length,  'aether_vcr_embed_tape_length',  INT,   []],
-      [:reset_cursor, 'aether_vcr_embed_reset_cursor', VOID,  []],
+      [:tape_length,  'aether_vcr_embed_tape_length',  INT,   [VOIDP]],
+      [:reset_cursor, 'aether_vcr_embed_reset_cursor', VOID,  [VOIDP]],
 
-      # ---- diagnostics (process-global, no handle) ----
-      [:last_error,       'aether_vcr_embed_last_error',       VOIDP, []],
-      [:last_kind,        'aether_vcr_embed_last_kind',        INT,   []],
-      [:last_index,       'aether_vcr_embed_last_index',       INT,   []],
-      [:clear_last_error, 'aether_vcr_embed_clear_last_error', VOID,  []],
+      # ---- diagnostics (handle-based) ----
+      [:last_error,       'aether_vcr_embed_last_error',       VOIDP, [VOIDP]],
+      [:last_kind,        'aether_vcr_embed_last_kind',        INT,   [VOIDP]],
+      [:last_index,       'aether_vcr_embed_last_index',       INT,   [VOIDP]],
+      [:clear_last_error, 'aether_vcr_embed_clear_last_error', VOID,  [VOIDP]],
 
-      # ---- mutations / config (call BEFORE start; return "" or an error) ----
-      [:redact,         'aether_vcr_embed_redact',         VOIDP, [INT, VOIDP, VOIDP]],
-      [:unredact,       'aether_vcr_embed_unredact',       VOIDP, [INT, VOIDP, VOIDP]],
-      [:remove_header,  'aether_vcr_embed_remove_header',  VOIDP, [INT, VOIDP]],
-      [:note,           'aether_vcr_embed_note',           VOIDP, [VOIDP, VOIDP]],
-      [:static_content, 'aether_vcr_embed_static_content', VOIDP, [VOIDP, VOIDP]],
-      [:untaped,        'aether_vcr_embed_untaped',        VOIDP, [VOIDP]],
+      # ---- mutations / config (handle 1st arg; call BEFORE start) ----
+      [:redact,         'aether_vcr_embed_redact',         VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
+      [:unredact,       'aether_vcr_embed_unredact',       VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
+      [:remove_header,  'aether_vcr_embed_remove_header',  VOIDP, [VOIDP, INT, VOIDP]],
+      [:strict_ignore_common_headers, 'aether_vcr_embed_strict_ignore_common_headers', VOIDP, [VOIDP]],
+      [:note,           'aether_vcr_embed_note',           VOIDP, [VOIDP, VOIDP, VOIDP]],
+      [:static_content, 'aether_vcr_embed_static_content', VOIDP, [VOIDP, VOIDP, VOIDP]],
+      [:untaped,        'aether_vcr_embed_untaped',        VOIDP, [VOIDP, VOIDP]],
 
-      [:set_strict_headers,  'aether_vcr_embed_set_strict_headers',  VOID, [INT]],
-      [:indent_code_blocks,  'aether_vcr_embed_indent_code_blocks',  VOID, []],
-      [:emphasize_http_verbs, 'aether_vcr_embed_emphasize_http_verbs', VOID, []],
+      [:set_strict_headers,  'aether_vcr_embed_set_strict_headers',  VOID, [VOIDP, INT]],
+      [:indent_code_blocks,  'aether_vcr_embed_indent_code_blocks',  VOID, [VOIDP]],
+      [:emphasize_http_verbs, 'aether_vcr_embed_emphasize_http_verbs', VOID, [VOIDP]],
 
-      [:clear_redactions,      'aether_vcr_embed_clear_redactions',      VOID, []],
-      [:clear_unredactions,    'aether_vcr_embed_clear_unredactions',    VOID, []],
-      [:clear_header_removals, 'aether_vcr_embed_clear_header_removals', VOID, []],
-      [:clear_static_content,  'aether_vcr_embed_clear_static_content',  VOID, []],
-      [:clear_untaped,         'aether_vcr_embed_clear_untaped',         VOID, []],
-      [:clear_format_options,  'aether_vcr_embed_clear_format_options',  VOID, []],
+      [:clear_redactions,      'aether_vcr_embed_clear_redactions',      VOID, [VOIDP]],
+      [:clear_unredactions,    'aether_vcr_embed_clear_unredactions',    VOID, [VOIDP]],
+      [:clear_header_removals, 'aether_vcr_embed_clear_header_removals', VOID, [VOIDP]],
+      [:clear_static_content,  'aether_vcr_embed_clear_static_content',  VOID, [VOIDP]],
+      [:clear_untaped,         'aether_vcr_embed_clear_untaped',         VOID, [VOIDP]],
+      [:clear_format_options,  'aether_vcr_embed_clear_format_options',  VOID, [VOIDP]],
 
       # ---- string ownership ----
       [:free_string, 'aether_vcr_embed_free_string', VOID, [VOIDP]]

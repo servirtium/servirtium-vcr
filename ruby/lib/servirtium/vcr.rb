@@ -5,13 +5,11 @@ require 'servirtium/field'
 require 'servirtium/server'
 
 module Servirtium
-  # Shared bind options + global-state reset for both builders.
+  # Shared bind options for both builders.
   #
-  # v1 contract (from the Aether side): ONE active VCR server per process.
-  # The mutation/diagnostic state is process-global, so {#start} resets it to
-  # a clean slate before applying this fixture's config — a redaction / note /
-  # strict setting from a previous test never leaks forward. Run tests
-  # serially (one server per process at a time).
+  # Per-listener contract (from the Aether side): N independent VCR servers
+  # can run concurrently in one process, each keyed by its own handle.
+  # Lifecycle is open -> configure(handle) -> start.
   class BuilderBase
     def initialize(tape_path)
       @tape_path = tape_path
@@ -66,33 +64,17 @@ module Servirtium
 
     private
 
-    # Wipe all process-global mutation/format/strict state so a previous
-    # fixture's settings can't leak into this one (v1 one-server-per-process
-    # has no per-handle state). Called first by {#start}.
-    def reset_global_state
-      Native.call(:clear_redactions)
-      Native.call(:clear_unredactions)
-      Native.call(:clear_header_removals)
-      Native.call(:clear_static_content)
-      Native.call(:clear_untaped)
-      Native.call(:clear_format_options)
-      Native.call(:set_strict_headers, 0)
-      Native.call(:clear_last_error)
-      # A staged-but-unconsumed note is reset core-side when start_*
-      # (re)loads the tape, so there's nothing to clear here.
-    end
-
-    # Apply config common to both builders after the reset and before the
-    # server starts. Subclasses extend this.
-    def apply_config
+    # Apply config common to both builders to the opened handle, before
+    # serving starts. Subclasses extend this.
+    def apply_config(handle)
       @header_removals.each do |field, name|
-        check(Native.call(:remove_header, field, name), 'remove_header')
+        check(Native.call(:remove_header, handle, field, name), 'remove_header')
       end
       @static_content.each do |mount, dir|
-        check(Native.call(:static_content, mount, dir), 'static_content')
+        check(Native.call(:static_content, handle, mount, dir), 'static_content')
       end
       @untaped.each do |path|
-        check(Native.call(:untaped, path), 'untaped')
+        check(Native.call(:untaped, handle, path), 'untaped')
       end
     end
 
@@ -102,8 +84,8 @@ module Servirtium
       raise Servirtium::Error, "vcr #{operation} failed: #{err}" unless err.empty?
     end
 
-    def drain_start_error
-      err = Native.take_string(Native.call(:last_error))
+    def drain_start_error(handle)
+      err = Native.take_string(Native.call(:last_error, handle))
       err.empty? ? '(no detail; check tape path and port availability)' : err
     end
 
@@ -144,23 +126,26 @@ module Servirtium
 
     # Start the server. With a block, yields the {Server} and closes it after.
     def start(&)
-      reset_global_state
-      apply_config
-      handle = Native.call(:start_playback, @label, @tape_path, @host, @port)
+      handle = Native.call(:open_playback, @label, @tape_path, @host, @port)
       if handle.null?
         raise Servirtium::Error,
-              "vcr playback failed to start for tape '#{@tape_path}': #{drain_start_error}"
+              "vcr playback failed to start for tape '#{@tape_path}'"
+      end
+      apply_config(handle)
+      if Native.call(:start, handle).negative?
+        raise Servirtium::Error,
+              "vcr playback failed to begin serving for tape '#{@tape_path}': #{drain_start_error(handle)}"
       end
       with_server(Server.new(handle, @host, @tape_path, record_mode: false), &)
     end
 
     private
 
-    def apply_config
+    def apply_config(handle)
       super
-      Native.call(:set_strict_headers, 1) if @strict_headers
+      Native.call(:set_strict_headers, handle, 1) if @strict_headers
       @unredactions.each do |field, pattern, replacement|
-        check(Native.call(:unredact, field, pattern, replacement), 'unredact')
+        check(Native.call(:unredact, handle, field, pattern, replacement), 'unredact')
       end
     end
   end
@@ -213,12 +198,15 @@ module Servirtium
     # Start the server. With a block, yields the {Server} and closes it after
     # (which flushes the tape).
     def start(&)
-      reset_global_state
-      apply_config
-      handle = start_handle
-      # Stage the note now (after load_record cleared the tape) so it attaches
-      # to the first interaction the SUT triggers.
-      check(Native.call(:note, @note[0], @note[1]), 'note') if @note
+      handle = open_handle
+      apply_config(handle)
+      # Stage the note now (open_record cleared the tape) so it attaches to
+      # the first interaction the SUT triggers, before serving begins.
+      check(Native.call(:note, handle, @note[0], @note[1]), 'note') if @note
+      if Native.call(:start, handle).negative?
+        raise Servirtium::Error,
+              "vcr record failed to begin serving for tape '#{@tape_path}': #{drain_start_error(handle)}"
+      end
       server = Server.new(handle, @host, @tape_path, record_mode: true,
                                                      fail_if_changed: @fail_if_changed)
       with_server(server, &)
@@ -226,8 +214,8 @@ module Servirtium
 
     private
 
-    def start_handle
-      handle = Native.call(:start_record, @label, @tape_path, @upstream_base, @host, @port)
+    def open_handle
+      handle = Native.call(:open_record, @label, @tape_path, @upstream_base, @host, @port)
       return handle unless handle.null?
 
       raise Servirtium::Error,
@@ -235,16 +223,13 @@ module Servirtium
             "(upstream '#{@upstream_base}')"
     end
 
-    def apply_config
+    def apply_config(handle)
       super
-      Native.call(:indent_code_blocks) if @indent_code_blocks
-      Native.call(:emphasize_http_verbs) if @emphasize_http_verbs
+      Native.call(:indent_code_blocks, handle) if @indent_code_blocks
+      Native.call(:emphasize_http_verbs, handle) if @emphasize_http_verbs
       @redactions.each do |field, pattern, replacement|
-        check(Native.call(:redact, field, pattern, replacement), 'redact')
+        check(Native.call(:redact, handle, field, pattern, replacement), 'redact')
       end
-      # NOTE: the staged note is applied *after* start_record — load_record
-      # clears the tape (and the pending note) as it binds, so staging it
-      # pre-start would be wiped. See #start.
     end
   end
 
