@@ -7,12 +7,14 @@
 // FFM/uFFI, via SERVIRTIUM_VCR_LIB) that single artifact.
 //
 // Source: core/embed.ae (the aether_vcr_embed_* C-ABI) imports the local
-// `vcr` module (core/vcr.ae) — the WHOLE engine (Servirtium markdown
-// parser / emitter + tape storage + dispatchers + matching + record) is
-// now PURE AETHER. No hand-written C, no `--extra`. It builds against the
-// Aether toolchain + runtime (the engine uses std.http's server + request-
-// header iteration, std.http.client, std.zlib, std.cryptography, std.bytes,
-// std.fs, std.string) — Aether stays a build dependency.
+// `vcr` module (core/vcr.ae) — the WHOLE engine RUNTIME (Servirtium markdown
+// parser / emitter + tape storage + dispatchers + matching + record) is now
+// PURE AETHER (was the 2133-line core/aether_vcr.c). The only C left is
+// core/_embed_strdup.c (~12 lines): the embed ABI's vcr_embed_dup/free
+// caller-owned-string bridge — the one malloc/free FFI primitive Aether's
+// stdlib can't express — linked via `--extra`. The engine uses std.http's
+// server + request-header iteration, std.http.client, std.zlib,
+// std.cryptography, std.bytes, std.fs, std.string.
 //
 // Needs ae with the -fPIC runtime (>= 0.182), chunked de-chunk (>= 0.183),
 // and std.http request-header iteration (http.request_header_count/_name/_value).
@@ -25,11 +27,11 @@ main() {
     root = build._get(b, "root")
     dest = "${root}/core/native"
     _m = os.system("mkdir -p \"${dest}\"")
-    // Pure Aether: a plain `ae build --emit=lib` with no `--extra`. The
-    // recorder's request-header iteration is std.http's
-    // http.request_header_count/_name/_value (the wish in
+    // Pure-Aether runtime + the ~12-line vcr_embed_dup/free FFI string bridge
+    // (_embed_strdup.c) via --extra. The recorder's request-header iteration
+    // is std.http's http.request_header_count/_name/_value (the wish in
     // aether/vcr_request_header_iteration_wish.md landed).
-    rc = os.system("cd \"${root}/core\" && ae build --emit=lib --with=fs,net embed.ae -o \"${dest}/libservirtium_vcr.so\"")
+    rc = os.system("cd \"${root}/core\" && ae build --emit=lib --with=fs,net embed.ae --extra _embed_strdup.c -o \"${dest}/libservirtium_vcr.so\"")
     if rc != 0 {
         println("engine: failed to build libservirtium_vcr.so from core (is `ae` >= 0.182 installed?)")
         return 1
