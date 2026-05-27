@@ -95,42 +95,22 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Wipe all process-global mutation/format/strict state so a previous
-    /// fixture's settings can't leak into this one (v1 one-server-per-process
-    /// has no per-handle state). Called first by <see cref="ApplyConfig"/>.
+    /// Apply this builder's accumulated config to the opened handle, before
+    /// serving starts. Subclasses extend this.
     /// </summary>
-    private protected static void ResetGlobalState()
-    {
-        NativeMethods.ClearRedactions();
-        NativeMethods.ClearUnredactions();
-        NativeMethods.ClearHeaderRemovals();
-        NativeMethods.ClearStaticContent();
-        NativeMethods.ClearUntaped();
-        NativeMethods.ClearFormatOptions();
-        NativeMethods.SetStrictHeaders(0);
-        NativeMethods.ClearLastError();
-        // A staged-but-unconsumed note is reset core-side when start_*
-        // (re)loads the tape, so there's nothing to clear here.
-    }
-
-    /// <summary>
-    /// Apply this builder's accumulated config after the reset and before
-    /// the server starts (mutations like static-content and unredactions
-    /// must be registered before the tape loads). Subclasses extend this.
-    /// </summary>
-    private protected virtual void ApplyConfig()
+    private protected virtual void ApplyConfig(IntPtr handle)
     {
         foreach ((VcrField field, string name) in _headerRemovals)
         {
-            Check(NativeMethods.RemoveHeader((int)field, name), nameof(RemoveHeader));
+            Check(NativeMethods.RemoveHeader(handle, (int)field, name), nameof(RemoveHeader));
         }
         foreach ((string mount, string dir) in _staticContent)
         {
-            Check(NativeMethods.StaticContent(mount, dir), nameof(StaticContent));
+            Check(NativeMethods.StaticContent(handle, mount, dir), nameof(StaticContent));
         }
         foreach (string path in _untaped)
         {
-            Check(NativeMethods.Untaped(path), nameof(Untaped));
+            Check(NativeMethods.Untaped(handle, path), nameof(Untaped));
         }
     }
 
@@ -176,31 +156,36 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         return this;
     }
 
-    private protected override void ApplyConfig()
+    private protected override void ApplyConfig(IntPtr handle)
     {
-        base.ApplyConfig();
-        if (_strictHeaders) NativeMethods.SetStrictHeaders(1);
+        base.ApplyConfig(handle);
+        if (_strictHeaders) NativeMethods.SetStrictHeaders(handle, 1);
         foreach ((VcrField field, string pattern, string replacement) in _unredactions)
         {
-            Check(NativeMethods.Unredact((int)field, pattern, replacement), nameof(Unredact));
+            Check(NativeMethods.Unredact(handle, (int)field, pattern, replacement), nameof(Unredact));
         }
     }
 
     public VcrServer Start()
     {
-        ResetGlobalState();
-        ApplyConfig();
-        IntPtr handle = NativeMethods.StartPlayback(LabelValue, TapePath, HostValue, PortValue);
+        IntPtr handle = NativeMethods.OpenPlayback(LabelValue, TapePath, HostValue, PortValue);
         if (handle == IntPtr.Zero)
         {
-            throw new VcrException($"vcr playback failed to start for tape '{TapePath}': {DrainStartError()}");
+            throw new VcrException($"vcr playback failed to start for tape '{TapePath}'");
+        }
+        ApplyConfig(handle);
+        if (NativeMethods.Start(handle) < 0)
+        {
+            string detail = DrainStartError(handle);
+            NativeMethods.Stop(handle);
+            throw new VcrException($"vcr playback failed to begin serving for tape '{TapePath}': {detail}");
         }
         return new VcrServer(handle, HostValue, TapePath, recordMode: false, failIfChanged: false);
     }
 
-    private static string DrainStartError()
+    private static string DrainStartError(IntPtr handle)
     {
-        string err = NativeMethods.TakeString(NativeMethods.LastError());
+        string err = NativeMethods.TakeString(NativeMethods.LastError(handle));
         return string.IsNullOrEmpty(err) ? "(no detail; check tape path and port availability)" : err;
     }
 }
@@ -263,35 +248,37 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         return this;
     }
 
-    private protected override void ApplyConfig()
+    private protected override void ApplyConfig(IntPtr handle)
     {
-        base.ApplyConfig();
-        if (_indentCodeBlocks) NativeMethods.IndentCodeBlocks();
-        if (_emphasizeHttpVerbs) NativeMethods.EmphasizeHttpVerbs();
+        base.ApplyConfig(handle);
+        if (_indentCodeBlocks) NativeMethods.IndentCodeBlocks(handle);
+        if (_emphasizeHttpVerbs) NativeMethods.EmphasizeHttpVerbs(handle);
         foreach ((VcrField field, string pattern, string replacement) in _redactions)
         {
-            Check(NativeMethods.Redact((int)field, pattern, replacement), nameof(Redact));
+            Check(NativeMethods.Redact(handle, (int)field, pattern, replacement), nameof(Redact));
         }
-        // NOTE: the staged note is applied *after* start_record — load_record
-        // clears the tape (and the pending note) as it binds, so staging it
-        // pre-start would be wiped. See Start().
     }
 
     public VcrServer Start()
     {
-        ResetGlobalState();
-        ApplyConfig();
-        IntPtr handle = NativeMethods.StartRecord(LabelValue, TapePath, _upstreamBase, HostValue, PortValue);
+        IntPtr handle = NativeMethods.OpenRecord(LabelValue, TapePath, _upstreamBase, HostValue, PortValue);
         if (handle == IntPtr.Zero)
         {
             throw new VcrException(
                 $"vcr record failed to start for tape '{TapePath}' (upstream '{_upstreamBase}')");
         }
-        // Stage the note now (after load_record cleared the tape) so it
-        // attaches to the first interaction the SUT triggers.
+        ApplyConfig(handle);
+        // Stage the note now (open_record cleared the tape) so it attaches to
+        // the first interaction the SUT triggers, before serving begins.
         if (_note is { } n)
         {
-            Check(NativeMethods.Note(n.title, n.body), nameof(Note));
+            Check(NativeMethods.Note(handle, n.title, n.body), nameof(Note));
+        }
+        if (NativeMethods.Start(handle) < 0)
+        {
+            string detail = NativeMethods.TakeString(NativeMethods.LastError(handle));
+            NativeMethods.Stop(handle);
+            throw new VcrException($"vcr record failed to begin serving for tape '{TapePath}': {detail}");
         }
         return new VcrServer(handle, HostValue, TapePath, recordMode: true, failIfChanged: _failIfChanged);
     }
@@ -329,16 +316,16 @@ public sealed class VcrServer : IDisposable
     public string BaseUrl => _baseUrl ??= NativeMethods.TakeString(NativeMethods.BaseUrl(Handle, _host));
 
     /// <summary>Tape entry count (playback), or interactions captured so far (record).</summary>
-    public int TapeLength => NativeMethods.TapeLength();
+    public int TapeLength => NativeMethods.TapeLength(Handle);
 
     /// <summary>Most-recent dispatch diagnostic; empty when none flagged.</summary>
-    public string LastError => NativeMethods.TakeString(NativeMethods.LastError());
+    public string LastError => NativeMethods.TakeString(NativeMethods.LastError(Handle));
 
     /// <summary>Outcome of the most-recent dispatch.</summary>
-    public VcrOutcome LastKind => (VcrOutcome)NativeMethods.LastKind();
+    public VcrOutcome LastKind => (VcrOutcome)NativeMethods.LastKind(Handle);
 
     /// <summary>Tape index of the most-recent matched interaction, or -1.</summary>
-    public int LastIndex => NativeMethods.LastIndex();
+    public int LastIndex => NativeMethods.LastIndex(Handle);
 
     /// <summary>
     /// Stage a note (record mode) for the *next* interaction to be captured.
@@ -346,14 +333,14 @@ public sealed class VcrServer : IDisposable
     /// </summary>
     public void Note(string title, string body)
     {
-        VcrBuilderBaseCheck(NativeMethods.Note(title, body));
+        VcrBuilderBaseCheck(NativeMethods.Note(Handle, title, body));
     }
 
     /// <summary>Rewind the replay cursor to interaction 0 and clear last-* slots.</summary>
-    public void ResetCursor() => NativeMethods.ResetCursor();
+    public void ResetCursor() => NativeMethods.ResetCursor(Handle);
 
     /// <summary>Clear the last-error slot between sub-cases.</summary>
-    public void ClearLastError() => NativeMethods.ClearLastError();
+    public void ClearLastError() => NativeMethods.ClearLastError(Handle);
 
     private static void VcrBuilderBaseCheck(IntPtr resultPtr)
     {

@@ -56,21 +56,29 @@ internal static class NativeMethods
 
     // ---- lifecycle -----------------------------------------------------
 
-    [DllImport(Lib, EntryPoint = "aether_vcr_embed_start_playback", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr StartPlayback(string label, string tapePath, string host, int port);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_open_playback", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr OpenPlayback(string label, string tapePath, string host, int port);
 
-    [DllImport(Lib, EntryPoint = "aether_vcr_embed_start_record", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr StartRecord(string label, string tapePath, string upstreamBase, string host, int port);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_open_playback_url", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr OpenPlaybackUrl(string label, string tapeUrl, string host, int port);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_open_record", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr OpenRecord(string label, string tapePath, string upstreamBase, string host, int port);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_start")]
+    internal static extern int Start(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_stop")]
     internal static extern void Stop(IntPtr server);
 
-    // v1 has no per-handle tape-path store, so the path is passed at flush.
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_stop_and_flush", CharSet = CharSet.Ansi)]
     internal static extern IntPtr StopAndFlush(IntPtr server, string tapePath);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_stop_and_flush_fail_if_changed", CharSet = CharSet.Ansi)]
     internal static extern IntPtr StopAndFlushFailIfChanged(IntPtr server, string tapePath);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_stop_and_flush_or_check", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr StopAndFlushOrCheck(IntPtr server, string tapePath);
 
     // ---- introspection -------------------------------------------------
 
@@ -82,71 +90,74 @@ internal static class NativeMethods
     internal static extern IntPtr BaseUrl(IntPtr server, string host);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_tape_length")]
-    internal static extern int TapeLength();
+    internal static extern int TapeLength(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_reset_cursor")]
-    internal static extern void ResetCursor();
+    internal static extern void ResetCursor(IntPtr server);
 
-    // ---- diagnostics (process-global, no handle) -----------------------
+    // ---- diagnostics (handle-based) ------------------------------------
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_error")]
-    internal static extern IntPtr LastError();
+    internal static extern IntPtr LastError(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_kind")]
-    internal static extern int LastKind();
+    internal static extern int LastKind(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_index")]
-    internal static extern int LastIndex();
+    internal static extern int LastIndex(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_last_error")]
-    internal static extern void ClearLastError();
+    internal static extern void ClearLastError(IntPtr server);
 
     // ---- mutations / config (call BEFORE start; return "" or an error) -
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_redact", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr Redact(int field, string pattern, string replacement);
+    internal static extern IntPtr Redact(IntPtr server, int field, string pattern, string replacement);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_unredact", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr Unredact(int field, string pattern, string replacement);
+    internal static extern IntPtr Unredact(IntPtr server, int field, string pattern, string replacement);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_remove_header", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr RemoveHeader(int field, string name);
+    internal static extern IntPtr RemoveHeader(IntPtr server, int field, string name);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_strict_ignore_common_headers", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr StrictIgnoreCommonHeaders(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_note", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr Note(string title, string body);
+    internal static extern IntPtr Note(IntPtr server, string title, string body);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_static_content", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr StaticContent(string mountPath, string fsDir);
+    internal static extern IntPtr StaticContent(IntPtr server, string mountPath, string fsDir);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_untaped", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr Untaped(string path);
+    internal static extern IntPtr Untaped(IntPtr server, string path);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_strict_headers")]
-    internal static extern void SetStrictHeaders(int on);
+    internal static extern void SetStrictHeaders(IntPtr server, int on);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_indent_code_blocks")]
-    internal static extern void IndentCodeBlocks();
+    internal static extern void IndentCodeBlocks(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_emphasize_http_verbs")]
-    internal static extern void EmphasizeHttpVerbs();
+    internal static extern void EmphasizeHttpVerbs(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_redactions")]
-    internal static extern void ClearRedactions();
+    internal static extern void ClearRedactions(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_unredactions")]
-    internal static extern void ClearUnredactions();
+    internal static extern void ClearUnredactions(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_header_removals")]
-    internal static extern void ClearHeaderRemovals();
+    internal static extern void ClearHeaderRemovals(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_static_content")]
-    internal static extern void ClearStaticContent();
+    internal static extern void ClearStaticContent(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_untaped")]
-    internal static extern void ClearUntaped();
+    internal static extern void ClearUntaped(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_format_options")]
-    internal static extern void ClearFormatOptions();
+    internal static extern void ClearFormatOptions(IntPtr server);
 
     // ---- string ownership ----------------------------------------------
 
