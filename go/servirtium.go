@@ -21,12 +21,11 @@
 //
 // # One server per process
 //
-// The Aether VCR is one active server per process in v1: its tape, replay
-// cursor, mutation, static-mount, and diagnostic state are process-global.
-// You cannot run two Servers simultaneously in one process. Run tests
-// SERIALLY — do NOT call t.Parallel(). Start() resets all process-global
-// mutation/strict/format state first, so a setting from a prior fixture
-// never leaks forward, even within one process.
+// The Aether VCR is per-listener: N independent Servers can run concurrently
+// in one process, each keyed by its own handle. A fixture's tape, replay
+// cursor, mutations, static mounts, and diagnostics are scoped to its handle,
+// so two Servers can be alive at once without bleeding into each other.
+// Lifecycle is open -> configure(handle) -> start.
 package servirtium
 
 /*
@@ -34,37 +33,41 @@ package servirtium
 
 #include <stdlib.h>
 
-void*  aether_vcr_embed_start_playback(const char* label, const char* tape_path, const char* host, int port);
-void*  aether_vcr_embed_start_record(const char* label, const char* tape_path, const char* upstream_base, const char* host, int port);
+void*  aether_vcr_embed_open_playback(const char* label, const char* tape_path, const char* host, int port);
+void*  aether_vcr_embed_open_playback_url(const char* label, const char* tape_url, const char* host, int port);
+void*  aether_vcr_embed_open_record(const char* label, const char* tape_path, const char* upstream_base, const char* host, int port);
+int    aether_vcr_embed_start(void* server);
 void   aether_vcr_embed_stop(void* server);
 char*  aether_vcr_embed_stop_and_flush(void* server, const char* tape_path);
 char*  aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path);
+char*  aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path);
 
 int    aether_vcr_embed_port(void* server);
 char*  aether_vcr_embed_base_url(void* server, const char* host);
-int    aether_vcr_embed_tape_length(void);
-void   aether_vcr_embed_reset_cursor(void);
+int    aether_vcr_embed_tape_length(void* server);
+void   aether_vcr_embed_reset_cursor(void* server);
 
-char*  aether_vcr_embed_last_error(void);
-int    aether_vcr_embed_last_kind(void);
-int    aether_vcr_embed_last_index(void);
-void   aether_vcr_embed_clear_last_error(void);
+char*  aether_vcr_embed_last_error(void* server);
+int    aether_vcr_embed_last_kind(void* server);
+int    aether_vcr_embed_last_index(void* server);
+void   aether_vcr_embed_clear_last_error(void* server);
 
-char*  aether_vcr_embed_redact(int field, const char* pattern, const char* replacement);
-char*  aether_vcr_embed_unredact(int field, const char* pattern, const char* replacement);
-char*  aether_vcr_embed_remove_header(int field, const char* name);
-char*  aether_vcr_embed_note(const char* title, const char* body);
-char*  aether_vcr_embed_static_content(const char* mount_path, const char* fs_dir);
-char*  aether_vcr_embed_untaped(const char* path);
-void   aether_vcr_embed_set_strict_headers(int on);
-void   aether_vcr_embed_indent_code_blocks(void);
-void   aether_vcr_embed_emphasize_http_verbs(void);
-void   aether_vcr_embed_clear_redactions(void);
-void   aether_vcr_embed_clear_unredactions(void);
-void   aether_vcr_embed_clear_header_removals(void);
-void   aether_vcr_embed_clear_static_content(void);
-void   aether_vcr_embed_clear_untaped(void);
-void   aether_vcr_embed_clear_format_options(void);
+char*  aether_vcr_embed_redact(void* server, int field, const char* pattern, const char* replacement);
+char*  aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement);
+char*  aether_vcr_embed_remove_header(void* server, int field, const char* name);
+char*  aether_vcr_embed_strict_ignore_common_headers(void* server);
+char*  aether_vcr_embed_note(void* server, const char* title, const char* body);
+char*  aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir);
+char*  aether_vcr_embed_untaped(void* server, const char* path);
+void   aether_vcr_embed_set_strict_headers(void* server, int on);
+void   aether_vcr_embed_indent_code_blocks(void* server);
+void   aether_vcr_embed_emphasize_http_verbs(void* server);
+void   aether_vcr_embed_clear_redactions(void* server);
+void   aether_vcr_embed_clear_unredactions(void* server);
+void   aether_vcr_embed_clear_header_removals(void* server);
+void   aether_vcr_embed_clear_static_content(void* server);
+void   aether_vcr_embed_clear_untaped(void* server);
+void   aether_vcr_embed_clear_format_options(void* server);
 
 void   aether_vcr_embed_free_string(char* s);
 */
@@ -148,23 +151,6 @@ func checkErr(ptr *C.char, op string) error {
 	return nil
 }
 
-// resetGlobalState wipes all process-global mutation/format/strict state so a
-// previous fixture's settings can't leak into this one (v1 one-server-per-
-// process has no per-handle state). Called first by every Start().
-//
-// A staged-but-unconsumed note is reset core-side when start_* (re)loads the
-// tape, so there's nothing to clear here.
-func resetGlobalState() {
-	C.aether_vcr_embed_clear_redactions()
-	C.aether_vcr_embed_clear_unredactions()
-	C.aether_vcr_embed_clear_header_removals()
-	C.aether_vcr_embed_clear_static_content()
-	C.aether_vcr_embed_clear_untaped()
-	C.aether_vcr_embed_clear_format_options()
-	C.aether_vcr_embed_set_strict_headers(0)
-	C.aether_vcr_embed_clear_last_error()
-}
-
 // ---- shared builder fields -------------------------------------------------
 
 type headerRemoval struct {
@@ -193,10 +179,10 @@ type baseBuilder struct {
 // way and the record dispatcher checks untaped), so a browser suite can be
 // served same-origin from the VCR while recording too — no CORS/OPTIONS noise
 // on the tape — matching how it's replayed.
-func (b *baseBuilder) applyBase() error {
+func (b *baseBuilder) applyBase(handle unsafe.Pointer) error {
 	for _, hr := range b.headerRemovals {
 		cName := C.CString(hr.name)
-		res := C.aether_vcr_embed_remove_header(C.int(hr.field), cName)
+		res := C.aether_vcr_embed_remove_header(handle, C.int(hr.field), cName)
 		C.free(unsafe.Pointer(cName))
 		if err := checkErr(res, "RemoveHeader"); err != nil {
 			return err
@@ -204,7 +190,7 @@ func (b *baseBuilder) applyBase() error {
 	}
 	for _, sc := range b.staticContent {
 		cMount, cDir := C.CString(sc.mount), C.CString(sc.dir)
-		res := C.aether_vcr_embed_static_content(cMount, cDir)
+		res := C.aether_vcr_embed_static_content(handle, cMount, cDir)
 		C.free(unsafe.Pointer(cMount))
 		C.free(unsafe.Pointer(cDir))
 		if err := checkErr(res, "StaticContent"); err != nil {
@@ -213,7 +199,7 @@ func (b *baseBuilder) applyBase() error {
 	}
 	for _, p := range b.untaped {
 		cPath := C.CString(p)
-		res := C.aether_vcr_embed_untaped(cPath)
+		res := C.aether_vcr_embed_untaped(handle, cPath)
 		C.free(unsafe.Pointer(cPath))
 		if err := checkErr(res, "Untaped"); err != nil {
 			return err
@@ -280,16 +266,16 @@ func (b *PlaybackBuilder) Untaped(path string) *PlaybackBuilder {
 	return b
 }
 
-func (b *PlaybackBuilder) applyConfig() error {
-	if err := b.applyBase(); err != nil {
+func (b *PlaybackBuilder) applyConfig(handle unsafe.Pointer) error {
+	if err := b.applyBase(handle); err != nil {
 		return err
 	}
 	if b.strictHeaders {
-		C.aether_vcr_embed_set_strict_headers(1)
+		C.aether_vcr_embed_set_strict_headers(handle, 1)
 	}
 	for _, u := range b.unredactions {
 		cPat, cRep := C.CString(u.pattern), C.CString(u.replacem)
-		res := C.aether_vcr_embed_unredact(C.int(u.field), cPat, cRep)
+		res := C.aether_vcr_embed_unredact(handle, C.int(u.field), cPat, cRep)
 		C.free(unsafe.Pointer(cPat))
 		C.free(unsafe.Pointer(cRep))
 		if err := checkErr(res, "Unredact"); err != nil {
@@ -299,22 +285,26 @@ func (b *PlaybackBuilder) applyConfig() error {
 	return nil
 }
 
-// Start resets process-global state, applies this fixture's config, and
-// starts the playback server. The returned Server must be Closed.
+// Start opens the playback server, applies this fixture's config to its
+// handle, then begins serving. The returned Server must be Closed.
 func (b *PlaybackBuilder) Start() (*Server, error) {
-	resetGlobalState()
-	if err := b.applyConfig(); err != nil {
-		return nil, err
-	}
-
 	cLabel, cTape, cHost := C.CString(b.label), C.CString(b.tapePath), C.CString(b.host)
 	defer C.free(unsafe.Pointer(cLabel))
 	defer C.free(unsafe.Pointer(cTape))
 	defer C.free(unsafe.Pointer(cHost))
 
-	handle := C.aether_vcr_embed_start_playback(cLabel, cTape, cHost, C.int(b.port))
+	handle := C.aether_vcr_embed_open_playback(cLabel, cTape, cHost, C.int(b.port))
 	if handle == nil {
-		return nil, fmt.Errorf("vcr playback failed to start for tape %q: %s", b.tapePath, drainStartError())
+		return nil, fmt.Errorf("vcr playback failed to start for tape %q", b.tapePath)
+	}
+	if err := b.applyConfig(handle); err != nil {
+		C.aether_vcr_embed_stop(handle)
+		return nil, err
+	}
+	if C.aether_vcr_embed_start(handle) < 0 {
+		err := drainStartError(handle)
+		C.aether_vcr_embed_stop(handle)
+		return nil, fmt.Errorf("vcr playback failed to begin serving for tape %q: %s", b.tapePath, err)
 	}
 	return &Server{handle: handle, host: b.host, tapePath: b.tapePath}, nil
 }
@@ -395,40 +385,32 @@ func (b *RecordBuilder) EmphasizeHTTPVerbs() *RecordBuilder { b.emphasizeHTTPVer
 // contract, so a normal git diff shows the change and CI fails loudly.
 func (b *RecordBuilder) FailIfChanged() *RecordBuilder { b.failIfChanged = true; return b }
 
-func (b *RecordBuilder) applyConfig() error {
-	if err := b.applyBase(); err != nil {
+func (b *RecordBuilder) applyConfig(handle unsafe.Pointer) error {
+	if err := b.applyBase(handle); err != nil {
 		return err
 	}
 	if b.indentCodeBlocks {
-		C.aether_vcr_embed_indent_code_blocks()
+		C.aether_vcr_embed_indent_code_blocks(handle)
 	}
 	if b.emphasizeHTTPVerb {
-		C.aether_vcr_embed_emphasize_http_verbs()
+		C.aether_vcr_embed_emphasize_http_verbs(handle)
 	}
 	for _, r := range b.redactions {
 		cPat, cRep := C.CString(r.pattern), C.CString(r.replacem)
-		res := C.aether_vcr_embed_redact(C.int(r.field), cPat, cRep)
+		res := C.aether_vcr_embed_redact(handle, C.int(r.field), cPat, cRep)
 		C.free(unsafe.Pointer(cPat))
 		C.free(unsafe.Pointer(cRep))
 		if err := checkErr(res, "Redact"); err != nil {
 			return err
 		}
 	}
-	// NOTE: the staged note is applied *after* start_record — load_record
-	// clears the tape (and the pending note) as it binds, so staging it
-	// pre-start would be wiped. See Start.
 	return nil
 }
 
-// Start resets process-global state, applies this fixture's config, and
-// starts the record server. The returned Server must be Closed; Close flushes
-// the tape (and returns an error on drift if FailIfChanged was set).
+// Start opens the record server, applies this fixture's config to its handle,
+// then begins serving. The returned Server must be Closed; Close flushes the
+// tape (and returns an error on drift if FailIfChanged was set).
 func (b *RecordBuilder) Start() (*Server, error) {
-	resetGlobalState()
-	if err := b.applyConfig(); err != nil {
-		return nil, err
-	}
-
 	cLabel := C.CString(b.label)
 	cTape := C.CString(b.tapePath)
 	cUpstream := C.CString(b.upstreamBase)
@@ -438,27 +420,36 @@ func (b *RecordBuilder) Start() (*Server, error) {
 	defer C.free(unsafe.Pointer(cUpstream))
 	defer C.free(unsafe.Pointer(cHost))
 
-	handle := C.aether_vcr_embed_start_record(cLabel, cTape, cUpstream, cHost, C.int(b.port))
+	handle := C.aether_vcr_embed_open_record(cLabel, cTape, cUpstream, cHost, C.int(b.port))
 	if handle == nil {
-		return nil, fmt.Errorf("vcr record failed to start for tape %q (upstream %q): %s",
-			b.tapePath, b.upstreamBase, drainStartError())
+		return nil, fmt.Errorf("vcr record failed to start for tape %q (upstream %q)",
+			b.tapePath, b.upstreamBase)
+	}
+	if err := b.applyConfig(handle); err != nil {
+		C.aether_vcr_embed_stop(handle)
+		return nil, err
 	}
 
 	srv := &Server{handle: handle, host: b.host, tapePath: b.tapePath, recordMode: true, failIfChanged: b.failIfChanged}
 
-	// Stage the note now (after load_record cleared the tape) so it attaches
-	// to the first interaction the SUT triggers.
+	// Stage the note now (open_record cleared the tape) so it attaches to the
+	// first interaction the SUT triggers — before serving begins.
 	if b.note != nil {
 		if err := srv.Note(b.note.title, b.note.body); err != nil {
-			srv.Close()
+			C.aether_vcr_embed_stop(handle)
 			return nil, err
 		}
+	}
+	if C.aether_vcr_embed_start(handle) < 0 {
+		err := drainStartError(handle)
+		C.aether_vcr_embed_stop(handle)
+		return nil, fmt.Errorf("vcr record failed to begin serving for tape %q: %s", b.tapePath, err)
 	}
 	return srv, nil
 }
 
-func drainStartError() string {
-	if err := takeString(C.aether_vcr_embed_last_error()); err != "" {
+func drainStartError(handle unsafe.Pointer) string {
+	if err := takeString(C.aether_vcr_embed_last_error(handle)); err != "" {
 		return err
 	}
 	return "(no detail; check tape path and port availability)"
@@ -492,16 +483,16 @@ func (s *Server) BaseURL() string {
 
 // TapeLength reports tape entries (playback) or interactions captured so far
 // (record).
-func (s *Server) TapeLength() int { return int(C.aether_vcr_embed_tape_length()) }
+func (s *Server) TapeLength() int { return int(C.aether_vcr_embed_tape_length(s.handle)) }
 
 // LastError is the most-recent dispatch diagnostic; "" when none flagged.
-func (s *Server) LastError() string { return takeString(C.aether_vcr_embed_last_error()) }
+func (s *Server) LastError() string { return takeString(C.aether_vcr_embed_last_error(s.handle)) }
 
 // LastKind is the Outcome of the most-recent dispatch.
-func (s *Server) LastKind() Outcome { return Outcome(C.aether_vcr_embed_last_kind()) }
+func (s *Server) LastKind() Outcome { return Outcome(C.aether_vcr_embed_last_kind(s.handle)) }
 
 // LastIndex is the tape index of the most-recent matched interaction, or -1.
-func (s *Server) LastIndex() int { return int(C.aether_vcr_embed_last_index()) }
+func (s *Server) LastIndex() int { return int(C.aether_vcr_embed_last_index(s.handle)) }
 
 // Note stages a note (record mode) for the next interaction to be captured.
 // Call between requests to annotate specific interactions.
@@ -509,15 +500,15 @@ func (s *Server) Note(title, body string) error {
 	cTitle, cBody := C.CString(title), C.CString(body)
 	defer C.free(unsafe.Pointer(cTitle))
 	defer C.free(unsafe.Pointer(cBody))
-	return checkErr(C.aether_vcr_embed_note(cTitle, cBody), "Note")
+	return checkErr(C.aether_vcr_embed_note(s.handle, cTitle, cBody), "Note")
 }
 
 // ResetCursor rewinds the replay cursor to interaction 0 and clears the
 // last-* slots.
-func (s *Server) ResetCursor() { C.aether_vcr_embed_reset_cursor() }
+func (s *Server) ResetCursor() { C.aether_vcr_embed_reset_cursor(s.handle) }
 
 // ClearLastError clears the last-error slot between sub-cases.
-func (s *Server) ClearLastError() { C.aether_vcr_embed_clear_last_error() }
+func (s *Server) ClearLastError() { C.aether_vcr_embed_clear_last_error(s.handle) }
 
 // Close stops the server. In record mode it also flushes the tape to disk and
 // returns an error on drift if FailIfChanged was set. Close is idempotent.
