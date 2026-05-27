@@ -16,7 +16,8 @@
 /// ```
 ///
 /// v1 contract (from the Aether side): ONE active VCR server per process. The
-/// mutation/diagnostic state is process-global, so [PlaybackBuilder.start] /
+/// Per-listener: N independent servers can run at once, each keyed by its own
+/// handle (lifecycle open -> configure(handle) -> start). [PlaybackBuilder.start] /
 /// [RecordBuilder.start] reset it to a clean slate before applying this
 /// fixture's config — a redaction/note/strict setting from a previous test
 /// never leaks forward. Run tests serially (one server per process at a time;
@@ -89,23 +90,8 @@ void _check(Pointer<Utf8> resultPtr, String op) {
   }
 }
 
-/// Wipe all process-global mutation/format/strict state so a previous
-/// fixture's settings can't leak into this one (v1 has no per-handle state).
-void _resetGlobalState() {
-  Native.clearRedactions();
-  Native.clearUnredactions();
-  Native.clearHeaderRemovals();
-  Native.clearStaticContent();
-  Native.clearUntaped();
-  Native.clearFormatOptions();
-  Native.setStrictHeaders(0);
-  Native.clearLastError();
-  // A staged-but-unconsumed note is reset core-side when start_* (re)loads
-  // the tape, so there's nothing to clear here.
-}
-
-String _drainStartError() {
-  final err = takeString(Native.lastError());
+String _drainStartError(Pointer<Void> handle) {
+  final err = takeString(Native.lastError(handle));
   return err.isNotEmpty ? err : '(no detail; check tape path and port availability)';
 }
 
@@ -176,18 +162,18 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     return _self;
   }
 
-  /// Apply accumulated config after the reset and before start. Subclasses
-  /// extend this.
-  void _applyConfig() {
+  /// Apply accumulated config to the opened handle, before serving starts.
+  /// Subclasses extend this.
+  void _applyConfig(Pointer<Void> handle) {
     for (final (field, name) in _headerRemovals) {
-      withUtf8(name, (n) => _check(Native.removeHeader(field.value, n), 'removeHeader'));
+      withUtf8(name, (n) => _check(Native.removeHeader(handle, field.value, n), 'removeHeader'));
     }
     for (final (mount, dir) in _staticContent) {
       withUtf8(mount,
-          (m) => withUtf8(dir, (d) => _check(Native.staticContent(m, d), 'staticContent')));
+          (m) => withUtf8(dir, (d) => _check(Native.staticContent(handle, m, d), 'staticContent')));
     }
     for (final path in _untaped) {
-      withUtf8(path, (p) => _check(Native.untaped(p), 'untaped'));
+      withUtf8(path, (p) => _check(Native.untaped(handle, p), 'untaped'));
     }
   }
 }
@@ -217,29 +203,33 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   }
 
   @override
-  void _applyConfig() {
-    super._applyConfig();
-    if (_strictHeaders) Native.setStrictHeaders(1);
+  void _applyConfig(Pointer<Void> handle) {
+    super._applyConfig(handle);
+    if (_strictHeaders) Native.setStrictHeaders(handle, 1);
     for (final (field, pattern, replacement) in _unredactions) {
       withUtf8(pattern, (p) => withUtf8(replacement,
-          (r) => _check(Native.unredact(field.value, p, r), 'unredact')));
+          (r) => _check(Native.unredact(handle, field.value, p, r), 'unredact')));
     }
   }
 
-  /// Reset process-global state, apply this fixture's config, and start the
-  /// playback server. Throws [VcrException] if it fails to bind/load.
+  /// Open the playback server, apply this fixture's config to its handle,
+  /// then begin serving. Throws [VcrException] if it fails to bind/load.
   VcrServer start() {
-    _resetGlobalState();
-    _applyConfig();
     final handle = withUtf8(
         _label,
         (l) => withUtf8(
             _tapePath,
             (t) => withUtf8(
-                _host, (h) => Native.startPlayback(l, t, h, _port))));
+                _host, (h) => Native.openPlayback(l, t, h, _port))));
     if (handle == nullptr) {
+      throw VcrException("vcr playback failed to start for tape '$_tapePath'");
+    }
+    _applyConfig(handle);
+    if (Native.start(handle) < 0) {
+      final err = _drainStartError(handle);
+      Native.stop(handle);
       throw VcrException(
-          "vcr playback failed to start for tape '$_tapePath': ${_drainStartError()}");
+          "vcr playback failed to begin serving for tape '$_tapePath': $err");
     }
     return VcrServer._(handle, _host, _tapePath, recordMode: false, failIfChanged: false);
   }
@@ -292,24 +282,19 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   }
 
   @override
-  void _applyConfig() {
-    super._applyConfig();
-    if (_indentCodeBlocks) Native.indentCodeBlocks();
-    if (_emphasizeHttpVerbs) Native.emphasizeHttpVerbs();
+  void _applyConfig(Pointer<Void> handle) {
+    super._applyConfig(handle);
+    if (_indentCodeBlocks) Native.indentCodeBlocks(handle);
+    if (_emphasizeHttpVerbs) Native.emphasizeHttpVerbs(handle);
     for (final (field, pattern, replacement) in _redactions) {
       withUtf8(pattern, (p) => withUtf8(replacement,
-          (r) => _check(Native.redact(field.value, p, r), 'redact')));
+          (r) => _check(Native.redact(handle, field.value, p, r), 'redact')));
     }
-    // NOTE: the staged note is applied *after* start_record — load_record
-    // clears the tape (and the pending note) as it binds, so staging it
-    // pre-start would be wiped. See start().
   }
 
-  /// Reset process-global state, apply this fixture's config, and start the
-  /// record server. Throws [VcrException] if it fails to bind.
+  /// Open the record server, apply this fixture's config to its handle, then
+  /// begin serving. Throws [VcrException] if it fails to bind.
   VcrServer start() {
-    _resetGlobalState();
-    _applyConfig();
     final handle = withUtf8(
         _label,
         (l) => withUtf8(
@@ -317,18 +302,25 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
             (t) => withUtf8(
                 _upstreamBase,
                 (u) => withUtf8(
-                    _host, (h) => Native.startRecord(l, t, u, h, _port)))));
+                    _host, (h) => Native.openRecord(l, t, u, h, _port)))));
     if (handle == nullptr) {
       throw VcrException(
           "vcr record failed to start for tape '$_tapePath' "
-          "(upstream '$_upstreamBase'): ${_drainStartError()}");
+          "(upstream '$_upstreamBase')");
     }
-    // Stage the note now (after load_record cleared the tape) so it attaches
-    // to the first interaction the SUT triggers.
+    _applyConfig(handle);
+    // Stage the note now (openRecord cleared the tape) so it attaches to the
+    // first interaction the SUT triggers, before serving begins.
     final n = _note;
     if (n != null) {
       withUtf8(n.$1,
-          (t) => withUtf8(n.$2, (b) => _check(Native.note(t, b), 'note')));
+          (t) => withUtf8(n.$2, (b) => _check(Native.note(handle, t, b), 'note')));
+    }
+    if (Native.start(handle) < 0) {
+      final err = _drainStartError(handle);
+      Native.stop(handle);
+      throw VcrException(
+          "vcr record failed to begin serving for tape '$_tapePath': $err");
     }
     return VcrServer._(handle, _host, _tapePath,
         recordMode: true, failIfChanged: _failIfChanged);
@@ -363,27 +355,28 @@ class VcrServer {
       withUtf8(_host, (h) => takeString(Native.baseUrl(_requireHandle, h)))!;
 
   /// Tape entry count (playback), or interactions captured so far (record).
-  int get tapeLength => Native.tapeLength();
+  int get tapeLength => Native.tapeLength(_requireHandle);
 
   /// Most-recent dispatch diagnostic; empty when none flagged.
-  String get lastError => takeString(Native.lastError());
+  String get lastError => takeString(Native.lastError(_requireHandle));
 
   /// Outcome of the most-recent dispatch.
-  VcrOutcome get lastKind => VcrOutcome.fromValue(Native.lastKind());
+  VcrOutcome get lastKind => VcrOutcome.fromValue(Native.lastKind(_requireHandle));
 
   /// Tape index of the most-recent matched interaction, or -1.
-  int get lastIndex => Native.lastIndex();
+  int get lastIndex => Native.lastIndex(_requireHandle);
 
   /// Stage a note (record mode) for the *next* interaction to be captured.
   void note(String title, String body) {
-    withUtf8(title, (t) => withUtf8(body, (b) => _check(Native.note(t, b), 'note')));
+    final h = _requireHandle;
+    withUtf8(title, (t) => withUtf8(body, (b) => _check(Native.note(h, t, b), 'note')));
   }
 
   /// Rewind the replay cursor to interaction 0 and clear last-* slots.
-  void resetCursor() => Native.resetCursor();
+  void resetCursor() => Native.resetCursor(_requireHandle);
 
   /// Clear the last-error slot between sub-cases.
-  void clearLastError() => Native.clearLastError();
+  void clearLastError() => Native.clearLastError(_requireHandle);
 
   /// Stop the server; flush the tape if recording. Throws [VcrException] on a
   /// record-mode flush error or drift (when `failIfChanged` was set).

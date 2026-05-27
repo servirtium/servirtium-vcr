@@ -5,9 +5,10 @@
 /// location/loading, the typedef/lookup declarations, and the
 /// string-ownership helpers.
 ///
-/// v1 contract (matching the Aether side): ONE active VCR server per process —
-/// the tape / cursor / mutation state is process-global, so the diagnostics,
-/// tape-length, and mutation calls take no handle.
+/// Per-listener contract (matching the Aether side): N independent VCR
+/// servers can run concurrently in one process, each keyed by its own handle;
+/// every config / diagnostic / lifecycle call takes the handle. Lifecycle is
+/// open -> configure(handle) -> start.
 ///
 /// Returned `char*` values are caller-owned and NUL-terminated; copy them to a
 /// Dart [String] and free them with `aether_vcr_embed_free_string` (see
@@ -109,34 +110,37 @@ typedef _PortD = int Function(Pointer<Void> server);
 typedef _BaseUrlC = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> host);
 typedef _BaseUrlD = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> host);
 
-typedef _IntNoArgC = Int32 Function();
-typedef _IntNoArgD = int Function();
+typedef _StartC = Int32 Function(Pointer<Void> server);
+typedef _StartD = int Function(Pointer<Void> server);
 
-typedef _VoidNoArgC = Void Function();
-typedef _VoidNoArgD = void Function();
+typedef _IntHandleC = Int32 Function(Pointer<Void> server);
+typedef _IntHandleD = int Function(Pointer<Void> server);
 
-typedef _StrNoArgC = Pointer<Utf8> Function();
-typedef _StrNoArgD = Pointer<Utf8> Function();
+typedef _VoidHandleC = Void Function(Pointer<Void> server);
+typedef _VoidHandleD = void Function(Pointer<Void> server);
+
+typedef _StrHandleC = Pointer<Utf8> Function(Pointer<Void> server);
+typedef _StrHandleD = Pointer<Utf8> Function(Pointer<Void> server);
 
 typedef _RedactC = Pointer<Utf8> Function(
-    Int32 field, Pointer<Utf8> pattern, Pointer<Utf8> replacement);
+    Pointer<Void> server, Int32 field, Pointer<Utf8> pattern, Pointer<Utf8> replacement);
 typedef _RedactD = Pointer<Utf8> Function(
-    int field, Pointer<Utf8> pattern, Pointer<Utf8> replacement);
+    Pointer<Void> server, int field, Pointer<Utf8> pattern, Pointer<Utf8> replacement);
 
-typedef _RemoveHeaderC = Pointer<Utf8> Function(Int32 field, Pointer<Utf8> name);
-typedef _RemoveHeaderD = Pointer<Utf8> Function(int field, Pointer<Utf8> name);
+typedef _RemoveHeaderC = Pointer<Utf8> Function(Pointer<Void> server, Int32 field, Pointer<Utf8> name);
+typedef _RemoveHeaderD = Pointer<Utf8> Function(Pointer<Void> server, int field, Pointer<Utf8> name);
 
-typedef _NoteC = Pointer<Utf8> Function(Pointer<Utf8> title, Pointer<Utf8> body);
-typedef _NoteD = Pointer<Utf8> Function(Pointer<Utf8> title, Pointer<Utf8> body);
+typedef _NoteC = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> title, Pointer<Utf8> body);
+typedef _NoteD = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> title, Pointer<Utf8> body);
 
-typedef _StaticC = Pointer<Utf8> Function(Pointer<Utf8> mount, Pointer<Utf8> dir);
-typedef _StaticD = Pointer<Utf8> Function(Pointer<Utf8> mount, Pointer<Utf8> dir);
+typedef _StaticC = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> mount, Pointer<Utf8> dir);
+typedef _StaticD = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> mount, Pointer<Utf8> dir);
 
-typedef _UntapedC = Pointer<Utf8> Function(Pointer<Utf8> path);
-typedef _UntapedD = Pointer<Utf8> Function(Pointer<Utf8> path);
+typedef _UntapedC = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> path);
+typedef _UntapedD = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> path);
 
-typedef _SetIntC = Void Function(Int32 on);
-typedef _SetIntD = void Function(int on);
+typedef _SetIntC = Void Function(Pointer<Void> server, Int32 on);
+typedef _SetIntD = void Function(Pointer<Void> server, int on);
 
 typedef _FreeStringC = Void Function(Pointer<Utf8> s);
 typedef _FreeStringD = void Function(Pointer<Utf8> s);
@@ -149,34 +153,39 @@ class Native {
   Native._();
 
   // ---- lifecycle ----------------------------------------------------------
-  static final startPlayback = _lib.lookupFunction<_StartPlaybackC, _StartPlaybackD>(
-      'aether_vcr_embed_start_playback');
-  static final startRecord =
-      _lib.lookupFunction<_StartRecordC, _StartRecordD>('aether_vcr_embed_start_record');
+  static final openPlayback = _lib.lookupFunction<_StartPlaybackC, _StartPlaybackD>(
+      'aether_vcr_embed_open_playback');
+  static final openPlaybackUrl = _lib.lookupFunction<_StartPlaybackC, _StartPlaybackD>(
+      'aether_vcr_embed_open_playback_url');
+  static final openRecord =
+      _lib.lookupFunction<_StartRecordC, _StartRecordD>('aether_vcr_embed_open_record');
+  static final start = _lib.lookupFunction<_StartC, _StartD>('aether_vcr_embed_start');
   static final stop = _lib.lookupFunction<_StopC, _StopD>('aether_vcr_embed_stop');
   static final stopAndFlush =
       _lib.lookupFunction<_FlushC, _FlushD>('aether_vcr_embed_stop_and_flush');
   static final stopAndFlushFailIfChanged = _lib.lookupFunction<_FlushC, _FlushD>(
       'aether_vcr_embed_stop_and_flush_fail_if_changed');
+  static final stopAndFlushOrCheck = _lib.lookupFunction<_FlushC, _FlushD>(
+      'aether_vcr_embed_stop_and_flush_or_check');
 
   // ---- introspection ------------------------------------------------------
   static final port = _lib.lookupFunction<_PortC, _PortD>('aether_vcr_embed_port');
   static final baseUrl =
       _lib.lookupFunction<_BaseUrlC, _BaseUrlD>('aether_vcr_embed_base_url');
   static final tapeLength =
-      _lib.lookupFunction<_IntNoArgC, _IntNoArgD>('aether_vcr_embed_tape_length');
+      _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_tape_length');
   static final resetCursor =
-      _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>('aether_vcr_embed_reset_cursor');
+      _lib.lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_reset_cursor');
 
-  // ---- diagnostics (process-global, no handle) ----------------------------
+  // ---- diagnostics (handle-based) -----------------------------------------
   static final lastError =
-      _lib.lookupFunction<_StrNoArgC, _StrNoArgD>('aether_vcr_embed_last_error');
+      _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_last_error');
   static final lastKind =
-      _lib.lookupFunction<_IntNoArgC, _IntNoArgD>('aether_vcr_embed_last_kind');
+      _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_last_kind');
   static final lastIndex =
-      _lib.lookupFunction<_IntNoArgC, _IntNoArgD>('aether_vcr_embed_last_index');
+      _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_last_index');
   static final clearLastError = _lib
-      .lookupFunction<_VoidNoArgC, _VoidNoArgD>('aether_vcr_embed_clear_last_error');
+      .lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_clear_last_error');
 
   // ---- mutations / config (call BEFORE start; return "" or an error) ------
   static final redact = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_redact');
@@ -184,6 +193,8 @@ class Native {
       _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_unredact');
   static final removeHeader = _lib
       .lookupFunction<_RemoveHeaderC, _RemoveHeaderD>('aether_vcr_embed_remove_header');
+  static final strictIgnoreCommonHeaders = _lib.lookupFunction<_StrHandleC, _StrHandleD>(
+      'aether_vcr_embed_strict_ignore_common_headers');
   static final note = _lib.lookupFunction<_NoteC, _NoteD>('aether_vcr_embed_note');
   static final staticContent =
       _lib.lookupFunction<_StaticC, _StaticD>('aether_vcr_embed_static_content');
@@ -192,20 +203,20 @@ class Native {
   static final setStrictHeaders =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_strict_headers');
   static final indentCodeBlocks = _lib
-      .lookupFunction<_VoidNoArgC, _VoidNoArgD>('aether_vcr_embed_indent_code_blocks');
-  static final emphasizeHttpVerbs = _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>(
+      .lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_indent_code_blocks');
+  static final emphasizeHttpVerbs = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
       'aether_vcr_embed_emphasize_http_verbs');
   static final clearRedactions = _lib
-      .lookupFunction<_VoidNoArgC, _VoidNoArgD>('aether_vcr_embed_clear_redactions');
-  static final clearUnredactions = _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>(
+      .lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_clear_redactions');
+  static final clearUnredactions = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
       'aether_vcr_embed_clear_unredactions');
-  static final clearHeaderRemovals = _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>(
+  static final clearHeaderRemovals = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
       'aether_vcr_embed_clear_header_removals');
-  static final clearStaticContent = _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>(
+  static final clearStaticContent = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
       'aether_vcr_embed_clear_static_content');
-  static final clearUntaped = _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>(
+  static final clearUntaped = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
       'aether_vcr_embed_clear_untaped');
-  static final clearFormatOptions = _lib.lookupFunction<_VoidNoArgC, _VoidNoArgD>(
+  static final clearFormatOptions = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
       'aether_vcr_embed_clear_format_options');
 
   // ---- string ownership ---------------------------------------------------
