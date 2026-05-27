@@ -9,11 +9,11 @@ paths, mode, mutations, and diagnostics live in test setup/teardown.
         # point the SUT at vcr.base_url, drive it ...
         assert vcr.last_kind is servirtium.Outcome.OK
 
-v1 contract (from the Aether side): ONE active VCR server per process. The
-mutation/diagnostic state is process-global, so :meth:`start` resets it to a
-clean slate before applying this fixture's config — a redaction/note/strict
-setting from a previous test never leaks forward. Run tests serially (one
-server per process at a time).
+Per-listener contract (from the Aether side): N independent VCR servers can
+run concurrently in one process, each keyed by its own handle. A fixture's
+config / diagnostics / tape are scoped to its handle, so two
+``servirtium.playback(...).start()`` servers can be alive at once without
+their cursors or mutations bleeding into each other.
 """
 
 from __future__ import annotations
@@ -60,22 +60,6 @@ def _check(result_ptr, op: str) -> None:
     err = N.take_string(result_ptr)
     if err:
         raise VcrError(f"vcr {op} failed: {err}")
-
-
-def _reset_global_state() -> None:
-    """Wipe all process-global mutation/format/strict state so a previous
-    fixture's settings can't leak into this one (v1 has no per-handle state).
-    """
-    N.clear_redactions()
-    N.clear_unredactions()
-    N.clear_header_removals()
-    N.clear_static_content()
-    N.clear_untaped()
-    N.clear_format_options()
-    N.set_strict_headers(0)
-    N.clear_last_error()
-    # A staged-but-unconsumed note is reset core-side when start_* (re)loads
-    # the tape, so there's nothing to clear here.
 
 
 class _BuilderBase:
@@ -125,17 +109,17 @@ class _BuilderBase:
         self._untaped.append(path)
         return self
 
-    def _apply_config(self) -> None:
-        """Apply accumulated config after the reset and before start.
+    def _apply_config(self, handle) -> None:
+        """Apply accumulated config to the opened handle, before start.
 
         Subclasses extend this.
         """
         for field, name in self._header_removals:
-            _check(N.remove_header(int(field), N.encode(name)), "remove_header")
+            _check(N.remove_header(handle, int(field), N.encode(name)), "remove_header")
         for mount, fs_dir in self._static_content:
-            _check(N.static_content(N.encode(mount), N.encode(fs_dir)), "static_content")
+            _check(N.static_content(handle, N.encode(mount), N.encode(fs_dir)), "static_content")
         for path in self._untaped:
-            _check(N.untaped(N.encode(path)), "untaped")
+            _check(N.untaped(handle, N.encode(path)), "untaped")
 
 
 class PlaybackBuilder(_BuilderBase):
@@ -158,20 +142,18 @@ class PlaybackBuilder(_BuilderBase):
         self._unredactions.append((field, pattern, replacement))
         return self
 
-    def _apply_config(self) -> None:
-        super()._apply_config()
+    def _apply_config(self, handle) -> None:
+        super()._apply_config(handle)
         if self._strict_headers:
-            N.set_strict_headers(1)
+            N.set_strict_headers(handle, 1)
         for field, pattern, replacement in self._unredactions:
             _check(
-                N.unredact(int(field), N.encode(pattern), N.encode(replacement)),
+                N.unredact(handle, int(field), N.encode(pattern), N.encode(replacement)),
                 "unredact",
             )
 
     def start(self) -> "VcrServer":
-        _reset_global_state()
-        self._apply_config()
-        handle = N.start_playback(
+        handle = N.open_playback(
             N.encode(self._label),
             N.encode(self._tape_path),
             N.encode(self._host),
@@ -180,7 +162,13 @@ class PlaybackBuilder(_BuilderBase):
         if not handle:
             raise VcrError(
                 f"vcr playback failed to start for tape '{self._tape_path}': "
-                f"{_drain_start_error()}"
+                f"{_drain_start_error(None)}"
+            )
+        self._apply_config(handle)
+        if N.start(handle) < 0:
+            raise VcrError(
+                f"vcr playback failed to begin serving for tape "
+                f"'{self._tape_path}': {_drain_start_error(handle)}"
             )
         return VcrServer(handle, self._host, self._tape_path, record_mode=False, fail_if_changed=False)
 
@@ -224,25 +212,20 @@ class RecordBuilder(_BuilderBase):
         self._fail_if_changed = on
         return self
 
-    def _apply_config(self) -> None:
-        super()._apply_config()
+    def _apply_config(self, handle) -> None:
+        super()._apply_config(handle)
         if self._indent_code_blocks:
-            N.indent_code_blocks()
+            N.indent_code_blocks(handle)
         if self._emphasize_http_verbs:
-            N.emphasize_http_verbs()
+            N.emphasize_http_verbs(handle)
         for field, pattern, replacement in self._redactions:
             _check(
-                N.redact(int(field), N.encode(pattern), N.encode(replacement)),
+                N.redact(handle, int(field), N.encode(pattern), N.encode(replacement)),
                 "redact",
             )
-        # NOTE: the staged note is applied *after* start_record — load_record
-        # clears the tape (and the pending note) as it binds, so staging it
-        # pre-start would be wiped. See start().
 
     def start(self) -> "VcrServer":
-        _reset_global_state()
-        self._apply_config()
-        handle = N.start_record(
+        handle = N.open_record(
             N.encode(self._label),
             N.encode(self._tape_path),
             N.encode(self._upstream_base),
@@ -252,13 +235,19 @@ class RecordBuilder(_BuilderBase):
         if not handle:
             raise VcrError(
                 f"vcr record failed to start for tape '{self._tape_path}' "
-                f"(upstream '{self._upstream_base}'): {_drain_start_error()}"
+                f"(upstream '{self._upstream_base}'): {_drain_start_error(None)}"
             )
-        # Stage the note now (after load_record cleared the tape) so it
-        # attaches to the first interaction the SUT triggers.
+        self._apply_config(handle)
+        # Stage the note now (open_record cleared the tape) so it attaches
+        # to the first interaction the SUT triggers.
         if self._note is not None:
             title, body = self._note
-            _check(N.note(N.encode(title), N.encode(body)), "note")
+            _check(N.note(handle, N.encode(title), N.encode(body)), "note")
+        if N.start(handle) < 0:
+            raise VcrError(
+                f"vcr record failed to begin serving for tape "
+                f"'{self._tape_path}': {_drain_start_error(handle)}"
+            )
         return VcrServer(
             handle,
             self._host,
@@ -268,8 +257,12 @@ class RecordBuilder(_BuilderBase):
         )
 
 
-def _drain_start_error() -> str:
-    err = N.take_string(N.last_error())
+def _drain_start_error(handle) -> str:
+    # When open failed there's no handle; the failure reason is still
+    # retrievable by re-opening — but we can't. Fall back to a generic hint.
+    if handle is None:
+        return "(no detail; check tape path and port availability)"
+    err = N.take_string(N.last_error(handle))
     return err or "(no detail; check tape path and port availability)"
 
 
@@ -312,35 +305,35 @@ class VcrServer:
     @property
     def tape_length(self) -> int:
         """Tape entry count (playback), or interactions captured (record)."""
-        return N.tape_length()
+        return N.tape_length(self._require_handle())
 
     @property
     def last_error(self) -> str:
         """Most-recent dispatch diagnostic; empty when none flagged."""
-        return N.take_string(N.last_error())
+        return N.take_string(N.last_error(self._require_handle()))
 
     @property
     def last_kind(self) -> Outcome:
         """Outcome of the most-recent dispatch."""
-        return Outcome(N.last_kind())
+        return Outcome(N.last_kind(self._require_handle()))
 
     @property
     def last_index(self) -> int:
         """Tape index of the most-recent matched interaction, or -1."""
-        return N.last_index()
+        return N.last_index(self._require_handle())
 
     # ---- operations -------------------------------------------------------
     def note(self, title: str, body: str) -> None:
         """Stage a note (record mode) for the *next* interaction to be captured."""
-        _check(N.note(N.encode(title), N.encode(body)), "note")
+        _check(N.note(self._require_handle(), N.encode(title), N.encode(body)), "note")
 
     def reset_cursor(self) -> None:
         """Rewind the replay cursor to interaction 0 and clear last-* slots."""
-        N.reset_cursor()
+        N.reset_cursor(self._require_handle())
 
     def clear_last_error(self) -> None:
         """Clear the last-error slot between sub-cases."""
-        N.clear_last_error()
+        N.clear_last_error(self._require_handle())
 
     # ---- lifecycle --------------------------------------------------------
     def close(self) -> None:

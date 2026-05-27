@@ -88,51 +88,63 @@ def _decl(name, restype, argtypes):
 _CSTR = ctypes.c_void_p
 _HANDLE = ctypes.c_void_p
 
-# ---- lifecycle ------------------------------------------------------------
-start_playback = _decl(
-    "aether_vcr_embed_start_playback",
+# ---- lifecycle: open (create + bind, NOT serving) -> start ----------------
+open_playback = _decl(
+    "aether_vcr_embed_open_playback",
     _HANDLE,
     [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int],
 )
-start_record = _decl(
-    "aether_vcr_embed_start_record",
+open_playback_url = _decl(
+    "aether_vcr_embed_open_playback_url",
+    _HANDLE,
+    [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int],
+)
+open_record = _decl(
+    "aether_vcr_embed_open_record",
     _HANDLE,
     [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int],
 )
+start = _decl("aether_vcr_embed_start", ctypes.c_int, [_HANDLE])
 stop = _decl("aether_vcr_embed_stop", None, [_HANDLE])
 stop_and_flush = _decl("aether_vcr_embed_stop_and_flush", _CSTR, [_HANDLE, ctypes.c_char_p])
 stop_and_flush_fail_if_changed = _decl(
     "aether_vcr_embed_stop_and_flush_fail_if_changed", _CSTR, [_HANDLE, ctypes.c_char_p]
 )
+stop_and_flush_or_check = _decl(
+    "aether_vcr_embed_stop_and_flush_or_check", _CSTR, [_HANDLE, ctypes.c_char_p]
+)
 
-# ---- introspection --------------------------------------------------------
+# ---- introspection (handle-based) -----------------------------------------
 port = _decl("aether_vcr_embed_port", ctypes.c_int, [_HANDLE])
 base_url = _decl("aether_vcr_embed_base_url", _CSTR, [_HANDLE, ctypes.c_char_p])
-tape_length = _decl("aether_vcr_embed_tape_length", ctypes.c_int, [])
-reset_cursor = _decl("aether_vcr_embed_reset_cursor", None, [])
+tape_length = _decl("aether_vcr_embed_tape_length", ctypes.c_int, [_HANDLE])
+reset_cursor = _decl("aether_vcr_embed_reset_cursor", None, [_HANDLE])
 
-# ---- diagnostics (process-global, no handle) ------------------------------
-last_error = _decl("aether_vcr_embed_last_error", _CSTR, [])
-last_kind = _decl("aether_vcr_embed_last_kind", ctypes.c_int, [])
-last_index = _decl("aether_vcr_embed_last_index", ctypes.c_int, [])
-clear_last_error = _decl("aether_vcr_embed_clear_last_error", None, [])
+# ---- diagnostics (handle-based) -------------------------------------------
+last_error = _decl("aether_vcr_embed_last_error", _CSTR, [_HANDLE])
+last_kind = _decl("aether_vcr_embed_last_kind", ctypes.c_int, [_HANDLE])
+last_index = _decl("aether_vcr_embed_last_index", ctypes.c_int, [_HANDLE])
+clear_last_error = _decl("aether_vcr_embed_clear_last_error", None, [_HANDLE])
 
-# ---- mutations / config (call BEFORE start; return "" or an error) --------
-redact = _decl("aether_vcr_embed_redact", _CSTR, [ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
-unredact = _decl("aether_vcr_embed_unredact", _CSTR, [ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
-remove_header = _decl("aether_vcr_embed_remove_header", _CSTR, [ctypes.c_int, ctypes.c_char_p])
-note = _decl("aether_vcr_embed_note", _CSTR, [ctypes.c_char_p, ctypes.c_char_p])
-static_content = _decl("aether_vcr_embed_static_content", _CSTR, [ctypes.c_char_p, ctypes.c_char_p])
-untaped = _decl("aether_vcr_embed_untaped", _CSTR, [ctypes.c_char_p])
-set_strict_headers = _decl("aether_vcr_embed_set_strict_headers", None, [ctypes.c_int])
-indent_code_blocks = _decl("aether_vcr_embed_indent_code_blocks", None, [])
-emphasize_http_verbs = _decl("aether_vcr_embed_emphasize_http_verbs", None, [])
-clear_redactions = _decl("aether_vcr_embed_clear_redactions", None, [])
-clear_unredactions = _decl("aether_vcr_embed_clear_unredactions", None, [])
-clear_header_removals = _decl("aether_vcr_embed_clear_header_removals", None, [])
-clear_static_content = _decl("aether_vcr_embed_clear_static_content", None, [])
-clear_untaped = _decl("aether_vcr_embed_clear_untaped", None, [])
-clear_format_options = _decl("aether_vcr_embed_clear_format_options", None, [])
+# ---- mutations / config (handle 1st arg; call BEFORE start) ----------------
+redact = _decl("aether_vcr_embed_redact", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
+unredact = _decl("aether_vcr_embed_unredact", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
+remove_header = _decl("aether_vcr_embed_remove_header", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p])
+strict_ignore_common_headers = _decl(
+    "aether_vcr_embed_strict_ignore_common_headers", _CSTR, [_HANDLE]
+)
+note = _decl("aether_vcr_embed_note", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p])
+static_content = _decl("aether_vcr_embed_static_content", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p])
+untaped = _decl("aether_vcr_embed_untaped", _CSTR, [_HANDLE, ctypes.c_char_p])
+set_strict_headers = _decl("aether_vcr_embed_set_strict_headers", None, [_HANDLE, ctypes.c_int])
+indent_code_blocks = _decl("aether_vcr_embed_indent_code_blocks", None, [_HANDLE])
+emphasize_http_verbs = _decl("aether_vcr_embed_emphasize_http_verbs", None, [_HANDLE])
+clear_redactions = _decl("aether_vcr_embed_clear_redactions", None, [_HANDLE])
+clear_unredactions = _decl("aether_vcr_embed_clear_unredactions", None, [_HANDLE])
+clear_header_removals = _decl("aether_vcr_embed_clear_header_removals", None, [_HANDLE])
+clear_static_content = _decl("aether_vcr_embed_clear_static_content", None, [_HANDLE])
+clear_untaped = _decl("aether_vcr_embed_clear_untaped", None, [_HANDLE])
+clear_format_options = _decl("aether_vcr_embed_clear_format_options", None, [_HANDLE])
 
 # ---- string ownership -----------------------------------------------------
 free_string = _decl("aether_vcr_embed_free_string", None, [ctypes.c_void_p])

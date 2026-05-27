@@ -1,8 +1,7 @@
 """Shared pytest fixtures and helpers.
 
-The Aether VCR is ONE active server per process (its tape/cursor/mutation
-state is process-global), so these tests must run serially — pytest does that
-by default; do NOT add pytest-xdist parallelism.
+The Aether VCR is per-listener: N independent servers can run concurrently
+in one process, each keyed by its own handle (see test_concurrent.py).
 """
 
 import http.client
