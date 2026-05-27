@@ -24,12 +24,10 @@
 --
 -- == One server per process
 --
--- The Aether VCR is __one active server per process__ in v1 (its tape \/
--- cursor \/ mutation state is process-global). Run tests __serially__
--- (hspec is sequential by default; with tasty set @NumThreads 1@). 'start' /
--- 'startPlayback' / 'startRecord' first reset all process-global state, then
--- apply this fixture's config, so a setting from a previous test never leaks
--- forward. See @docs\/architecture.md@.
+-- The Aether VCR is __per-listener__: N independent servers can run
+-- concurrently in one process, each keyed by its own handle. A fixture's
+-- config \/ diagnostics \/ tape are scoped to its handle. Lifecycle is
+-- open -> configure(handle) -> start. See @docs\/architecture.md@.
 module Servirtium.Vcr
   ( -- * Building a fixture
     PlaybackOptions (..)
@@ -231,21 +229,6 @@ data VcrServer = VcrServer
 
 -- Internal helpers ----------------------------------------------------------
 
--- | Wipe all process-global mutation\/format\/strict state so a previous
--- fixture's settings can't leak into this one (v1 one-server-per-process has
--- no per-handle state). A staged-but-unconsumed note is reset core-side when
--- @start_*@ (re)loads the tape, so there's nothing to clear here.
-resetGlobalState :: IO ()
-resetGlobalState = do
-  N.aether_vcr_embed_clear_redactions
-  N.aether_vcr_embed_clear_unredactions
-  N.aether_vcr_embed_clear_header_removals
-  N.aether_vcr_embed_clear_static_content
-  N.aether_vcr_embed_clear_untaped
-  N.aether_vcr_embed_clear_format_options
-  N.aether_vcr_embed_set_strict_headers 0
-  N.aether_vcr_embed_clear_last_error
-
 -- | Run a @char*@-returning mutation and turn a non-empty result into a
 -- 'VcrException'.
 check :: String -> IO CString -> IO ()
@@ -253,118 +236,122 @@ check op act = do
   err <- N.takeString =<< act
   unless (null err) $ throwIO (VcrException ("vcr " ++ op ++ " failed: " ++ err))
 
-applyRemoveHeaders :: [(Field, String)] -> IO ()
-applyRemoveHeaders removals =
+applyRemoveHeaders :: N.Handle -> [(Field, String)] -> IO ()
+applyRemoveHeaders h removals =
   mapM_ (\(f, name) ->
             check "remove_header" $
               withCString name $ \cName ->
-                N.aether_vcr_embed_remove_header (fieldCode f) cName)
+                N.aether_vcr_embed_remove_header h (fieldCode f) cName)
         removals
 
--- | Register static-content mounts and untaped paths. The engine honors both
--- in playback and record mode, so this is shared by both start functions.
-applyStaticAndUntaped :: [(String, String)] -> [String] -> IO ()
-applyStaticAndUntaped statics untaped = do
+-- | Register static-content mounts and untaped paths on the handle. The
+-- engine honors both in playback and record mode, so this is shared.
+applyStaticAndUntaped :: N.Handle -> [(String, String)] -> [String] -> IO ()
+applyStaticAndUntaped h statics untaped = do
   mapM_ (\(mount, dir) ->
             check "static_content" $
               withCString mount $ \cMount ->
                 withCString dir $ \cDir ->
-                  N.aether_vcr_embed_static_content cMount cDir)
+                  N.aether_vcr_embed_static_content h cMount cDir)
         statics
   mapM_ (\path ->
             check "untaped" $
               withCString path $ \cPath ->
-                N.aether_vcr_embed_untaped cPath)
+                N.aether_vcr_embed_untaped h cPath)
         untaped
 
--- | If a @start_*@ returned NULL, build a useful error string from the
--- last-error slot.
-drainStartError :: IO String
-drainStartError = do
-  err <- N.takeString =<< N.aether_vcr_embed_last_error
+-- | Build a useful error string from a handle's last-error slot.
+drainStartError :: N.Handle -> IO String
+drainStartError h = do
+  err <- N.takeString =<< N.aether_vcr_embed_last_error h
   pure $ if null err
            then "(no detail; check tape path and port availability)"
            else err
 
 -- Starting ------------------------------------------------------------------
 
--- | Reset process-global state, apply the playback options, and start the
--- playback server. Throws 'VcrException' on failure. Prefer 'withPlayback',
--- which auto-stops.
+-- | Open the playback server, apply the options to its handle, then begin
+-- serving. Throws 'VcrException' on failure. Prefer 'withPlayback', which
+-- auto-stops.
 startPlayback :: PlaybackOptions -> IO VcrServer
 startPlayback opts = do
-  resetGlobalState
-  applyRemoveHeaders (pbRemoveHeaders opts)
-  when (pbStrictHeaders opts) $ N.aether_vcr_embed_set_strict_headers 1
-  mapM_ (\(f, pat, repl) ->
-            check "unredact" $
-              withCString pat $ \cPat ->
-                withCString repl $ \cRepl ->
-                  N.aether_vcr_embed_unredact (fieldCode f) cPat cRepl)
-        (pbUnredactions opts)
-  applyStaticAndUntaped (pbStaticContent opts) (pbUntaped opts)
   handle <-
     withCString (pbLabel opts) $ \cLabel ->
       withCString (pbTapePath opts) $ \cTape ->
         withCString (pbHost opts) $ \cHost ->
-          N.aether_vcr_embed_start_playback cLabel cTape cHost (fromIntegral (pbPort opts))
+          N.aether_vcr_embed_open_playback cLabel cTape cHost (fromIntegral (pbPort opts))
   if handle == nullPtr
-    then do
-      detail <- drainStartError
-      throwIO $ VcrException
-        ("vcr playback failed to start for tape '" ++ pbTapePath opts ++ "': " ++ detail)
-    else pure VcrServer
-      { vcrHandle   = handle
-      , vcrHost     = pbHost opts
-      , vcrTapePath = pbTapePath opts
-      , vcrMode     = Playback
-      }
+    then throwIO $ VcrException
+      ("vcr playback failed to start for tape '" ++ pbTapePath opts ++ "'")
+    else do
+      applyRemoveHeaders handle (pbRemoveHeaders opts)
+      when (pbStrictHeaders opts) $ N.aether_vcr_embed_set_strict_headers handle 1
+      mapM_ (\(f, pat, repl) ->
+                check "unredact" $
+                  withCString pat $ \cPat ->
+                    withCString repl $ \cRepl ->
+                      N.aether_vcr_embed_unredact handle (fieldCode f) cPat cRepl)
+            (pbUnredactions opts)
+      applyStaticAndUntaped handle (pbStaticContent opts) (pbUntaped opts)
+      rc <- N.aether_vcr_embed_start handle
+      if rc < 0
+        then do
+          detail <- drainStartError handle
+          N.aether_vcr_embed_stop handle
+          throwIO $ VcrException
+            ("vcr playback failed to begin serving for tape '" ++ pbTapePath opts ++ "': " ++ detail)
+        else pure VcrServer
+          { vcrHandle   = handle
+          , vcrHost     = pbHost opts
+          , vcrTapePath = pbTapePath opts
+          , vcrMode     = Playback
+          }
 
--- | Reset process-global state, apply the record options, and start the
--- record server. The builder note is staged __after__ @start_record@ (the
--- tape load clears any pending note). Throws 'VcrException' on failure.
--- Prefer 'withRecord', which auto-stops (and flushes the tape).
+-- | Open the record server, apply the options to its handle, stage the note,
+-- then begin serving. Throws 'VcrException' on failure. Prefer 'withRecord',
+-- which auto-stops (and flushes the tape).
 startRecord :: RecordOptions -> IO VcrServer
 startRecord opts = do
-  resetGlobalState
-  applyRemoveHeaders (recRemoveHeaders opts)
-  when (recIndentCodeBlocks opts) N.aether_vcr_embed_indent_code_blocks
-  when (recEmphasizeHttpVerbs opts) N.aether_vcr_embed_emphasize_http_verbs
-  mapM_ (\(f, pat, repl) ->
-            check "redact" $
-              withCString pat $ \cPat ->
-                withCString repl $ \cRepl ->
-                  N.aether_vcr_embed_redact (fieldCode f) cPat cRepl)
-        (recRedactions opts)
-  applyStaticAndUntaped (recStaticContent opts) (recUntaped opts)
-  -- NOTE: the staged note is applied *after* start_record — load_record
-  -- clears the tape (and the pending note) as it binds, so staging it
-  -- pre-start would be wiped.
   handle <-
     withCString (recLabel opts) $ \cLabel ->
       withCString (recTapePath opts) $ \cTape ->
         withCString (recUpstreamBase opts) $ \cUp ->
           withCString (recHost opts) $ \cHost ->
-            N.aether_vcr_embed_start_record cLabel cTape cUp cHost (fromIntegral (recPort opts))
+            N.aether_vcr_embed_open_record cLabel cTape cUp cHost (fromIntegral (recPort opts))
   if handle == nullPtr
-    then do
-      detail <- drainStartError
-      throwIO $ VcrException
-        ("vcr record failed to start for tape '" ++ recTapePath opts
-          ++ "' (upstream '" ++ recUpstreamBase opts ++ "'): " ++ detail)
+    then throwIO $ VcrException
+      ("vcr record failed to start for tape '" ++ recTapePath opts
+        ++ "' (upstream '" ++ recUpstreamBase opts ++ "')")
     else do
+      applyRemoveHeaders handle (recRemoveHeaders opts)
+      when (recIndentCodeBlocks opts) (N.aether_vcr_embed_indent_code_blocks handle)
+      when (recEmphasizeHttpVerbs opts) (N.aether_vcr_embed_emphasize_http_verbs handle)
+      mapM_ (\(f, pat, repl) ->
+                check "redact" $
+                  withCString pat $ \cPat ->
+                    withCString repl $ \cRepl ->
+                      N.aether_vcr_embed_redact handle (fieldCode f) cPat cRepl)
+            (recRedactions opts)
+      applyStaticAndUntaped handle (recStaticContent opts) (recUntaped opts)
       let server = VcrServer
             { vcrHandle   = handle
             , vcrHost     = recHost opts
             , vcrTapePath = recTapePath opts
             , vcrMode     = Record (recFailIfChanged opts)
             }
-      -- Stage the note now (after load_record cleared the tape) so it
-      -- attaches to the first interaction the SUT triggers.
+      -- Stage the note now (open_record cleared the tape) so it attaches to
+      -- the first interaction the SUT triggers, before serving begins.
       case recNote opts of
         Nothing            -> pure ()
         Just (title, body) -> note server title body
-      pure server
+      rc <- N.aether_vcr_embed_start handle
+      if rc < 0
+        then do
+          detail <- drainStartError handle
+          N.aether_vcr_embed_stop handle
+          throwIO $ VcrException
+            ("vcr record failed to begin serving for tape '" ++ recTapePath opts ++ "': " ++ detail)
+        else pure server
 
 -- | 'bracket' over 'startPlayback' / 'stop': start a playback server, run the
 -- action, and always stop the server afterwards.
@@ -406,34 +393,34 @@ port server = fromIntegral <$> N.aether_vcr_embed_port (vcrHandle server)
 
 -- | Tape entry count (playback), or interactions captured so far (record).
 tapeLength :: VcrServer -> IO Int
-tapeLength _ = fromIntegral <$> N.aether_vcr_embed_tape_length
+tapeLength server = fromIntegral <$> N.aether_vcr_embed_tape_length (vcrHandle server)
 
 -- | Most-recent dispatch diagnostic; empty when none flagged.
 lastError :: VcrServer -> IO String
-lastError _ = N.takeString =<< N.aether_vcr_embed_last_error
+lastError server = N.takeString =<< N.aether_vcr_embed_last_error (vcrHandle server)
 
 -- | Outcome of the most-recent dispatch.
 lastKind :: VcrServer -> IO Outcome
-lastKind _ = outcomeFromRaw <$> N.aether_vcr_embed_last_kind
+lastKind server = outcomeFromRaw <$> N.aether_vcr_embed_last_kind (vcrHandle server)
 
 -- | Tape index of the most-recent matched interaction, or -1.
 lastIndex :: VcrServer -> IO Int
-lastIndex _ = fromIntegral <$> N.aether_vcr_embed_last_index
+lastIndex server = fromIntegral <$> N.aether_vcr_embed_last_index (vcrHandle server)
 
 -- | Stage a note (record mode) for the __next__ interaction to be captured.
 -- Call between requests to annotate specific interactions. Throws
 -- 'VcrException' if the core rejects it.
 note :: VcrServer -> String -> String -> IO ()
-note _ title body =
+note server title body =
   check "note" $
     withCString title $ \cTitle ->
       withCString body $ \cBody ->
-        N.aether_vcr_embed_note cTitle cBody
+        N.aether_vcr_embed_note (vcrHandle server) cTitle cBody
 
 -- | Rewind the replay cursor to interaction 0 and clear the last-* slots.
 resetCursor :: VcrServer -> IO ()
-resetCursor _ = N.aether_vcr_embed_reset_cursor
+resetCursor server = N.aether_vcr_embed_reset_cursor (vcrHandle server)
 
 -- | Clear the last-error slot between sub-cases.
 clearLastError :: VcrServer -> IO ()
-clearLastError _ = N.aether_vcr_embed_clear_last_error
+clearLastError server = N.aether_vcr_embed_clear_last_error (vcrHandle server)
