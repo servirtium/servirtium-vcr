@@ -12,7 +12,8 @@
 //      reports the real TAPE_EXHAUSTED — untaped is opt-in, not a
 //      blanket 404.
 //
-// untaped() is registered BEFORE vcr.load(), same as static_content.
+// Per-listener: untaped_h(handle, ...) is configured AFTER vcr.load()
+// (load -> config(handle) -> serve), same as static_content_h.
 
 import core.vcr
 import std.http
@@ -54,12 +55,14 @@ get_status_and_body(url: string) -> {
 main() {
     println("=== VCR untaped-path (favicon) test ===\n")
 
-    // Mark favicon as untaped BEFORE loading — load() wires the routes.
-    ierr = vcr.untaped("/favicon.ico")
-    if ierr != "" { println("FAIL: untaped: ${ierr}"); exit(1) }
-
+    // Per-listener: create the server first, then configure it by handle
+    // (load -> config(handle) -> serve), then start serving.
     raw = vcr.load(TAPE_PATH, PORT)
     if raw == null { println("FAIL: vcr.load"); exit(1) }
+
+    // Mark favicon as untaped on THIS server.
+    ierr = vcr.untaped_h(raw, "/favicon.ico")
+    if ierr != "" { println("FAIL: untaped: ${ierr}"); exit(1) }
 
     spawn(SchedHelper())
     a = spawn(VCRActor())

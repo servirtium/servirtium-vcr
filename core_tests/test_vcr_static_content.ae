@@ -75,14 +75,13 @@ main() {
 
     setup_static_root()
 
-    // Register the mount BEFORE loading the tape. vcr.load() walks
-    // both the tape entries and the registered mounts to wire up
-    // routes against the http server.
-    serr = vcr.static_content("/assets", STATIC_ROOT)
-    if serr != "" { println("FAIL: static_content: ${serr}"); exit(1) }
-
+    // Per-listener: load creates the server; configure the mount by
+    // handle AFTER load (load -> config(handle) -> serve).
     raw = vcr.load(TAPE_PATH, PORT)
     if raw == null { println("FAIL: vcr.load"); exit(1) }
+
+    serr = vcr.static_content_h(raw, "/assets", STATIC_ROOT)
+    if serr != "" { println("FAIL: static_content: ${serr}"); exit(1) }
 
     spawn(SchedHelper())
     a = spawn(VCRActor())

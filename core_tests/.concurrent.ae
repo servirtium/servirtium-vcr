@@ -1,0 +1,23 @@
+// Per-listener concurrency probe: TWO playback VCRs in ONE process on two
+// ports with two different tapes, served at once, each asserting it
+// replays ITS OWN tape with independent cursors/diagnostics. The
+// deliverable for the per-listener refactor.
+//
+// Its own leaf (not the test_vcr_* run-tests.sh loop) so it can be run on
+// its own:  aeb core_tests/.concurrent.ae
+import build
+import std.os
+main() {
+    b = build.start()
+    root = build._get(b, "root")
+    td = "${root}/target/core_tests_concurrent"
+    _mk = os.system("mkdir -p \"${td}\"")
+
+    bp = os.system("cd \"${root}\" && ae build core_tests/concurrent_probe.ae -o \"${td}/probe\"")
+    if bp != 0 { println("core_tests/concurrent: failed to build probe"); return 1 }
+
+    result = os.system("cd \"${root}\" && \"${td}/probe\"")
+    if result != 0 { println("core_tests/concurrent: failed"); return 1 }
+    println("core_tests/concurrent: passed")
+    return 0
+}

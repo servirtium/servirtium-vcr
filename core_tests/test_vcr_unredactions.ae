@@ -88,17 +88,17 @@ main() {
     werr = write_tape(TAPE_PATH)
     if werr != "" { println("FAIL: write tape ${werr}"); exit(1) }
 
-    u1 = vcr.unredact(vcr.FIELD_PATH, "REDACTED", "actual")
-    if u1 != "" { println("FAIL: unredact path ${u1}"); exit(1) }
-    u2 = vcr.unredact(vcr.FIELD_REQUEST_HEADERS, "Bearer REDACTED", "Bearer actual")
-    if u2 != "" { println("FAIL: unredact headers ${u2}"); exit(1) }
-    u3 = vcr.unredact(vcr.FIELD_REQUEST_BODY, "payload=REDACTED", "payload=actual")
-    if u3 != "" { println("FAIL: unredact body ${u3}"); exit(1) }
-    h1 = vcr.remove_header(vcr.FIELD_REQUEST_HEADERS, "X-Request-Id")
-    if h1 != "" { println("FAIL: remove live request header ${h1}"); exit(1) }
-
     raw = vcr.load(TAPE_PATH, PORT)
     if raw == null { println("FAIL: vcr.load returned null"); exit(1) }
+
+    u1 = vcr.unredact_h(raw, vcr.FIELD_PATH, "REDACTED", "actual")
+    if u1 != "" { println("FAIL: unredact path ${u1}"); exit(1) }
+    u2 = vcr.unredact_h(raw, vcr.FIELD_REQUEST_HEADERS, "Bearer REDACTED", "Bearer actual")
+    if u2 != "" { println("FAIL: unredact headers ${u2}"); exit(1) }
+    u3 = vcr.unredact_h(raw, vcr.FIELD_REQUEST_BODY, "payload=REDACTED", "payload=actual")
+    if u3 != "" { println("FAIL: unredact body ${u3}"); exit(1) }
+    h1 = vcr.remove_header_h(raw, vcr.FIELD_REQUEST_HEADERS, "X-Request-Id")
+    if h1 != "" { println("FAIL: remove live request header ${h1}"); exit(1) }
 
     spawn(SchedHelper())
     a = spawn(VCRActor())

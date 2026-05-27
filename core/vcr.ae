@@ -108,7 +108,7 @@ import std.zlib
 import std.cryptography
 
 exports (
-    vcr_load_err, vcr_tape_length, vcr_register_static_routes,
+    vcr_load_err, vcr_tape_length,
     vcr_record_interaction,
     vcr_add_redaction, vcr_clear_redactions,
     vcr_add_unredaction, vcr_clear_unredactions,
@@ -158,7 +158,16 @@ exports (
     extract_code_block_at, extract_indented_at,
     parse_interaction_header_aether, parse_response_body_header_aether,
     icmp_aether, sort_lines, normalize_recorded_headers,
-    parse_one_interaction, parse_tape_file
+    parse_one_interaction, parse_tape_file,
+    use_handle,
+    redact_h, unredact_h, remove_header_h, note_h,
+    static_content_h, untaped_h, set_strict_headers_h,
+    indent_code_blocks_h, emphasize_http_verbs_h,
+    clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
+    clear_static_content_h, clear_untaped_h, clear_format_options_h,
+    last_error_h, last_kind_h, last_index_h, clear_last_error_h,
+    tape_length_h, reset_cursor_h, load_error_h,
+    stop_and_flush_h, stop_and_flush_fail_if_changed_h, stop_and_flush_or_check_h
 )
 
 // HTTP client functions for load_url (http_get_with_timeout_raw,
@@ -328,89 +337,164 @@ list_reset(key: string) {
     config.put(key, string.from_long(mem.ptr_to_long(l)))
 }
 
-tape_list() -> ptr        { return list_handle("vcrrt.tape") }
-redactions() -> ptr       { return list_handle("vcrrt.redactions") }
-unredactions() -> ptr     { return list_handle("vcrrt.unredactions") }
-header_removals() -> ptr  { return list_handle("vcrrt.header_removals") }
-mounts() -> ptr           { return list_handle("vcrrt.mounts") }
-untaped_list() -> ptr          { return list_handle("vcrrt.untaped") }
+// ---- per-server keying ----
+//
+// Per-listener isolation: every VCR's mutable state (cursor, last_*,
+// toggles, tape + mutation lists) is namespaced under a key derived
+// from the server handle, so N servers in one process never clobber
+// each other. The key is the handle's pointer value rendered as a
+// decimal string (mem.ptr_to_long). State slots become
+// "vcrrt.<key>.<suffix>"; list handles "vcrrt.<key>.tape" etc.
+//
+// The dispatcher recovers its key from `ud` (= the server handle) and
+// threads it explicitly through matching/serving — concurrent requests
+// on distinct servers run on distinct background threads, so a global
+// "current" slot would race; keys must be passed as parameters.
+//
+// The no-server record/flush/redact helpers (used by tests that drive
+// record()/flush() without binding a port) operate on a process-global
+// "current key" slot (vcrrt.cur), defaulting to "0". Those calls are
+// single-threaded test setup, never concurrent dispatch.
+
+key_for(handle: ptr) -> string {
+    return string.from_long(mem.ptr_to_long(handle))
+}
+
+// The current key for the no-handle record/flush/mutation helpers.
+cur_key() -> string {
+    c = config.get("vcrrt.cur")
+    if c == "" { return "0" }
+    return c
+}
+set_cur_key(key: string) { config.put("vcrrt.cur", key) }
+
+// Build a namespaced config slot key for server `key` + `suffix`.
+slot(key: string, suffix: string) -> string {
+    p = string_concat("vcrrt.", key)
+    p = string_concat(p, ".")
+    return string_concat(p, suffix)
+}
+
+tape_list_k(key: string) -> ptr        { return list_handle(slot(key, "tape")) }
+redactions_k(key: string) -> ptr       { return list_handle(slot(key, "redactions")) }
+unredactions_k(key: string) -> ptr     { return list_handle(slot(key, "unredactions")) }
+header_removals_k(key: string) -> ptr  { return list_handle(slot(key, "header_removals")) }
+mounts_k(key: string) -> ptr           { return list_handle(slot(key, "mounts")) }
+untaped_list_k(key: string) -> ptr     { return list_handle(slot(key, "untaped")) }
+
+// Convenience wrappers bound to the current (no-handle) key.
+tape_list() -> ptr        { return tape_list_k(cur_key()) }
+redactions() -> ptr       { return redactions_k(cur_key()) }
+unredactions() -> ptr     { return unredactions_k(cur_key()) }
+header_removals() -> ptr  { return header_removals_k(cur_key()) }
+mounts() -> ptr           { return mounts_k(cur_key()) }
+untaped_list() -> ptr     { return untaped_list_k(cur_key()) }
+
+tape_get_k(key: string, i: int) -> *Interaction {
+    return list_get_raw(tape_list_k(key), i) as *Interaction
+}
 
 tape_get(i: int) -> *Interaction {
     return list_get_raw(tape_list(), i) as *Interaction
 }
 
-// ---- scalar accessors ----
+// ---- scalar accessors (key-aware + current-key wrappers) ----
+//
+// quiet + cur are the only truly process-global slots. Everything else
+// is per-server: the *_k forms take the key explicitly (used by the
+// dispatcher and the handle-based public surface); the bare forms read
+// the no-handle current key (used by record()/flush()/mutation helpers).
 
 vcr_set_quiet(on: int) { cfg_set_int("vcrrt.quiet", on) }
 vcr_quiet() -> int { return cfg_get_int("vcrrt.quiet", 0) }
 
-vcr_load_err() -> string {
-    e = config.get("vcrrt.load_err")
-    return e
+vcr_load_err_k(key: string) -> string { return config.get(slot(key, "load_err")) }
+vcr_load_err() -> string { return vcr_load_err_k(cur_key()) }
+set_load_err(msg: string) { cfg_set_str(slot(cur_key(), "load_err"), msg) }
+vcr_aether_set_load_err(msg: string) { set_load_err(msg) }
+
+vcr_last_error_k(key: string) -> string { return config.get(slot(key, "last_error")) }
+vcr_last_error() -> string { return vcr_last_error_k(cur_key()) }
+
+set_last_error_k(key: string, msg: string) { cfg_set_str(slot(key, "last_error"), msg) }
+set_last_error(msg: string) { set_last_error_k(cur_key(), msg) }
+
+vcr_last_kind_k(key: string) -> int { return cfg_get_int(slot(key, "last_kind"), KIND_OK) }
+vcr_last_kind() -> int { return vcr_last_kind_k(cur_key()) }
+vcr_last_index_k(key: string) -> int { return cfg_get_int(slot(key, "last_index"), -1) }
+vcr_last_index() -> int { return vcr_last_index_k(cur_key()) }
+
+set_last_kind_k(key: string, k: int) { cfg_set_int(slot(key, "last_kind"), k) }
+set_last_kind(k: int) { set_last_kind_k(cur_key(), k) }
+set_last_index_k(key: string, i: int) { cfg_set_int(slot(key, "last_index"), i) }
+set_last_index(i: int) { set_last_index_k(cur_key(), i) }
+
+vcr_clear_last_error_k(key: string) {
+    cfg_set_str(slot(key, "last_error"), "")
+    set_last_kind_k(key, KIND_OK)
+    set_last_index_k(key, -1)
 }
-vcr_aether_set_load_err(msg: string) { cfg_set_str("vcrrt.load_err", msg) }
+vcr_clear_last_error() { vcr_clear_last_error_k(cur_key()) }
 
-vcr_last_error() -> string { return config.get("vcrrt.last_error") }
-
-set_last_error(msg: string) { cfg_set_str("vcrrt.last_error", msg) }
-
-vcr_last_kind() -> int { return cfg_get_int("vcrrt.last_kind", KIND_OK) }
-vcr_last_index() -> int { return cfg_get_int("vcrrt.last_index", -1) }
-
-set_last_kind(k: int) { cfg_set_int("vcrrt.last_kind", k) }
-set_last_index(i: int) { cfg_set_int("vcrrt.last_index", i) }
-
-vcr_clear_last_error() {
-    cfg_set_str("vcrrt.last_error", "")
-    set_last_kind(KIND_OK)
-    set_last_index(-1)
+vcr_set_strict_headers_k(key: string, on: int) {
+    if on != 0 { cfg_set_int(slot(key, "strict"), 1) } else { cfg_set_int(slot(key, "strict"), 0) }
 }
-
-vcr_set_strict_headers(on: int) {
-    if on != 0 { cfg_set_int("vcrrt.strict", 1) } else { cfg_set_int("vcrrt.strict", 0) }
-}
-vcr_get_strict_headers() -> int { return cfg_get_int("vcrrt.strict", 0) }
+vcr_set_strict_headers(on: int) { vcr_set_strict_headers_k(cur_key(), on) }
+vcr_get_strict_headers_k(key: string) -> int { return cfg_get_int(slot(key, "strict"), 0) }
+vcr_get_strict_headers() -> int { return vcr_get_strict_headers_k(cur_key()) }
 
 vcr_set_indent_code_blocks(on: int) {
-    if on != 0 { cfg_set_int("vcrrt.indent", 1) } else { cfg_set_int("vcrrt.indent", 0) }
+    if on != 0 { cfg_set_int(slot(cur_key(), "indent"), 1) } else { cfg_set_int(slot(cur_key(), "indent"), 0) }
 }
 vcr_set_emphasize_http_verbs(on: int) {
-    if on != 0 { cfg_set_int("vcrrt.emph", 1) } else { cfg_set_int("vcrrt.emph", 0) }
+    if on != 0 { cfg_set_int(slot(cur_key(), "emph"), 1) } else { cfg_set_int(slot(cur_key(), "emph"), 0) }
 }
-vcr_get_indent_code_blocks() -> int { return cfg_get_int("vcrrt.indent", 0) }
-vcr_get_emphasize_http_verbs() -> int { return cfg_get_int("vcrrt.emph", 0) }
+vcr_get_indent_code_blocks() -> int { return cfg_get_int(slot(cur_key(), "indent"), 0) }
+vcr_get_emphasize_http_verbs() -> int { return cfg_get_int(slot(cur_key(), "emph"), 0) }
 
-cursor() -> int { return cfg_get_int("vcrrt.cursor", 0) }
-set_cursor(i: int) { cfg_set_int("vcrrt.cursor", i) }
+cursor_k(key: string) -> int { return cfg_get_int(slot(key, "cursor"), 0) }
+set_cursor_k(key: string, i: int) { cfg_set_int(slot(key, "cursor"), i) }
+cursor() -> int { return cursor_k(cur_key()) }
+set_cursor(i: int) { set_cursor_k(cur_key(), i) }
 
-vcr_reset_cursor() {
-    set_cursor(0)
-    cfg_set_str("vcrrt.last_error", "")
-    set_last_kind(KIND_OK)
-    set_last_index(-1)
+vcr_reset_cursor_k(key: string) {
+    set_cursor_k(key, 0)
+    cfg_set_str(slot(key, "last_error"), "")
+    set_last_kind_k(key, KIND_OK)
+    set_last_index_k(key, -1)
 }
+vcr_reset_cursor() { vcr_reset_cursor_k(cur_key()) }
+
+// ---- per-server mode + record upstream ----
+// mode: "" / "playback" = replay; "record" = forward+capture. The single
+// wildcard dispatcher reads it from the request's server key to decide.
+
+record_upstream_base_k(key: string) -> string { return config.get(slot(key, "record_upstream_base")) }
+set_record_upstream_base_k(key: string, base: string) { cfg_set_str(slot(key, "record_upstream_base"), base) }
+
+set_mode_k(key: string, mode: string) { cfg_set_str(slot(key, "mode"), mode) }
+mode_k(key: string) -> string { return config.get(slot(key, "mode")) }
 
 // ---- pending note (record-mode staging) ----
 
-pending_note_title() -> string { return config.get("vcrrt.pending_note_title") }
-pending_note_body() -> string { return config.get("vcrrt.pending_note_body") }
-pending_note_present() -> int { return cfg_get_int("vcrrt.pending_note_present", 0) }
+pending_note_title_k(key: string) -> string { return config.get(slot(key, "pending_note_title")) }
+pending_note_body_k(key: string) -> string { return config.get(slot(key, "pending_note_body")) }
+pending_note_present_k(key: string) -> int { return cfg_get_int(slot(key, "pending_note_present"), 0) }
+pending_note_title() -> string { return pending_note_title_k(cur_key()) }
+pending_note_body() -> string { return pending_note_body_k(cur_key()) }
+pending_note_present() -> int { return pending_note_present_k(cur_key()) }
 
-clear_pending_note() {
-    cfg_set_int("vcrrt.pending_note_present", 0)
-    cfg_set_str("vcrrt.pending_note_title", "")
-    cfg_set_str("vcrrt.pending_note_body", "")
+clear_pending_note_k(key: string) {
+    cfg_set_int(slot(key, "pending_note_present"), 0)
+    cfg_set_str(slot(key, "pending_note_title"), "")
+    cfg_set_str(slot(key, "pending_note_body"), "")
 }
+clear_pending_note() { clear_pending_note_k(cur_key()) }
 
 vcr_add_note(title: string, body: string) -> int {
-    if string.length(title) == 0 {
-        // C: null title fails; we treat "" as the closest analogue but
-        // the only caller passes a real title — keep parity by allowing
-        // empty? The C rejected NULL, not "". Match by allowing "".
-    }
-    cfg_set_int("vcrrt.pending_note_present", 1)
-    cfg_set_str("vcrrt.pending_note_title", string.copy(title))
-    cfg_set_str("vcrrt.pending_note_body", string.copy(body))
+    cfg_set_int(slot(cur_key(), "pending_note_present"), 1)
+    cfg_set_str(slot(cur_key(), "pending_note_title"), string.copy(title))
+    cfg_set_str(slot(cur_key(), "pending_note_body"), string.copy(body))
     return 1
 }
 
@@ -421,9 +505,9 @@ vcr_get_tape_count() -> int { return list_size(tape_list()) }
 
 // ---- low-level append (mirrors tape_append) ----
 
-tape_append(method: string, path: string, status: int, body: string,
-            content_type: string, has_ct: int,
-            req_headers: string, req_body: string) -> int {
+tape_append_k(srvkey: string, method: string, path: string, status: int, body: string,
+              content_type: string, has_ct: int,
+              req_headers: string, req_body: string) -> int {
     e = malloc(128) as *Interaction
     e.method = string.copy(method)
     e.path = string.copy(path)
@@ -434,19 +518,24 @@ tape_append(method: string, path: string, status: int, body: string,
     e.req_headers = string.copy(req_headers)
     e.req_body = string.copy(req_body)
     e.resp_headers = string.copy("")
-    // Drain the pending note onto this interaction.
-    if pending_note_present() == 1 {
+    // Drain this server's pending note onto this interaction.
+    if pending_note_present_k(srvkey) == 1 {
         e.has_note = 1
-        e.note_title = string.copy(pending_note_title())
-        e.note_body = string.copy(pending_note_body())
-        clear_pending_note()
+        e.note_title = string.copy(pending_note_title_k(srvkey))
+        e.note_body = string.copy(pending_note_body_k(srvkey))
+        clear_pending_note_k(srvkey)
     } else {
         e.has_note = 0
         e.note_title = string.copy("")
         e.note_body = string.copy("")
     }
-    list_add_raw(tape_list(), e)
+    list_add_raw(tape_list_k(srvkey), e)
     return 0
+}
+tape_append(method: string, path: string, status: int, body: string,
+            content_type: string, has_ct: int,
+            req_headers: string, req_body: string) -> int {
+    return tape_append_k(cur_key(), method, path, status, body, content_type, has_ct, req_headers, req_body)
 }
 
 vcr_record_interaction(method: string, path: string, status: int,
@@ -454,36 +543,37 @@ vcr_record_interaction(method: string, path: string, status: int,
     return vcr_record_interaction_full(method, path, status, content_type, body, "", "")
 }
 
-vcr_record_interaction_full(method: string, path: string, status: int,
-                            content_type: string, body: string,
-                            req_headers: string, req_body: string) -> int {
-    if string.length(method) == 0 && string.length(path) == 0 {
-        // C rejected null method/path; empty is not null but the only
-        // callers pass real values. Keep going on empties to preserve
-        // record() with "" paths if any test relies on it.
-    }
+record_interaction_full_k(srvkey: string, method: string, path: string, status: int,
+                          content_type: string, body: string,
+                          req_headers: string, req_body: string) -> int {
     has_ct = 0
     ct = content_type
     if string.length(content_type) > 0 { has_ct = 1 } else { ct = "" }
-    if tape_append(method, path, status, body, ct, has_ct, req_headers, req_body) != 0 {
-        cfg_set_str("vcrrt.load_err", "OOM appending captured interaction")
+    if tape_append_k(srvkey, method, path, status, body, ct, has_ct, req_headers, req_body) != 0 {
+        set_load_err("OOM appending captured interaction")
         return 0
     }
     return 1
+}
+vcr_record_interaction_full(method: string, path: string, status: int,
+                            content_type: string, body: string,
+                            req_headers: string, req_body: string) -> int {
+    return record_interaction_full_k(cur_key(), method, path, status, content_type, body, req_headers, req_body)
 }
 
 // ---- aether-side parser populators ----
 
 vcr_aether_clear_tape() {
-    list_reset("vcrrt.tape")
-    set_cursor(0)
-    cfg_set_str("vcrrt.last_error", "")
-    set_last_kind(KIND_OK)
-    set_last_index(-1)
+    key = cur_key()
+    list_reset(slot(key, "tape"))
+    set_cursor_k(key, 0)
+    cfg_set_str(slot(key, "last_error"), "")
+    set_last_kind_k(key, KIND_OK)
+    set_last_index_k(key, -1)
     clear_pending_note()
-    cfg_set_str("vcrrt.record_upstream_base", "")
+    set_record_upstream_base_k(key, "")
     // mirror vcr_load_tape: load_err reset to "".
-    cfg_set_str("vcrrt.load_err", "")
+    set_load_err("")
 }
 
 vcr_aether_append_interaction(method: string, path: string, status: int,
@@ -491,20 +581,26 @@ vcr_aether_append_interaction(method: string, path: string, status: int,
                               req_headers: string, req_body: string,
                               note_title: string, note_body: string) -> int {
     if string.length(note_title) > 0 {
-        cfg_set_int("vcrrt.pending_note_present", 1)
-        cfg_set_str("vcrrt.pending_note_title", string.copy(note_title))
-        cfg_set_str("vcrrt.pending_note_body", string.copy(note_body))
+        cfg_set_int(slot(cur_key(), "pending_note_present"), 1)
+        cfg_set_str(slot(cur_key(), "pending_note_title"), string.copy(note_title))
+        cfg_set_str(slot(cur_key(), "pending_note_body"), string.copy(note_body))
     }
     has_ct = 0
     ct = content_type
     if string.length(content_type) > 0 { has_ct = 1 } else { ct = "" }
     if tape_append(method, path, status, body, ct, has_ct, req_headers, req_body) != 0 {
-        cfg_set_str("vcrrt.load_err", "OOM appending parsed interaction")
+        set_load_err("OOM appending parsed interaction")
         return 0
     }
     return 1
 }
 
+set_resp_headers_k(srvkey: string, index: int, headers: string) {
+    n = list_size(tape_list_k(srvkey))
+    if index < 0 || index >= n { return }
+    e = tape_get_k(srvkey, index)
+    e.resp_headers = string.copy(headers)
+}
 vcr_aether_set_resp_headers(index: int, headers: string) {
     n = list_size(tape_list())
     if index < 0 || index >= n { return }
@@ -572,7 +668,7 @@ valid_redaction_field(field: int) -> int {
 
 redaction_add(l: ptr, field: int, pattern: string, replacement: string, api: string) -> int {
     if valid_redaction_field(field) == 0 {
-        cfg_set_str("vcrrt.load_err", "unsupported field selector")
+        set_load_err("unsupported field selector")
         return 0
     }
     r = malloc(64) as *Redaction
@@ -589,8 +685,8 @@ vcr_add_redaction(field: int, pattern: string, replacement: string) -> int {
 vcr_add_unredaction(field: int, pattern: string, replacement: string) -> int {
     return redaction_add(unredactions(), field, pattern, replacement, "unredaction")
 }
-vcr_clear_redactions() { list_reset("vcrrt.redactions") }
-vcr_clear_unredactions() { list_reset("vcrrt.unredactions") }
+vcr_clear_redactions() { list_reset(slot(cur_key(), "redactions")) }
+vcr_clear_unredactions() { list_reset(slot(cur_key(), "unredactions")) }
 
 vcr_get_redaction_count() -> int { return list_size(redactions()) }
 vcr_get_redaction_field(i: int) -> int {
@@ -627,11 +723,11 @@ valid_header_removal_field(field: int) -> int {
 
 vcr_add_header_removal(field: int, name: string) -> int {
     if valid_header_removal_field(field) == 0 {
-        cfg_set_str("vcrrt.load_err", "header removal only supports request/response header fields")
+        set_load_err("header removal only supports request/response header fields")
         return 0
     }
     if string.length(name) == 0 {
-        cfg_set_str("vcrrt.load_err", "header removal requires a header name")
+        set_load_err("header removal requires a header name")
         return 0
     }
     h = malloc(48) as *HeaderRemoval
@@ -640,7 +736,7 @@ vcr_add_header_removal(field: int, name: string) -> int {
     list_add_raw(header_removals(), h)
     return 1
 }
-vcr_clear_header_removals() { list_reset("vcrrt.header_removals") }
+vcr_clear_header_removals() { list_reset(slot(cur_key(), "header_removals")) }
 
 vcr_get_header_removal_count() -> int { return list_size(header_removals()) }
 vcr_get_header_removal_field(i: int) -> int {
@@ -652,15 +748,19 @@ vcr_get_header_removal_name(i: int) -> string {
     return (list_get_raw(header_removals(), i) as *HeaderRemoval).name
 }
 
-header_removed_for_field(field: int, name: string) -> int {
-    n = list_size(header_removals())
+header_removed_for_field_k(key: string, field: int, name: string) -> int {
+    l = header_removals_k(key)
+    n = list_size(l)
     i = 0
     while i < n {
-        h = list_get_raw(header_removals(), i) as *HeaderRemoval
+        h = list_get_raw(l, i) as *HeaderRemoval
         if h.field == field && icmp_rt(h.name, name) == 0 { return 1 }
         i = i + 1
     }
     return 0
+}
+header_removed_for_field(field: int, name: string) -> int {
+    return header_removed_for_field_k(cur_key(), field, name)
 }
 
 // ---- static mounts ----
@@ -675,11 +775,11 @@ strip_trailing_slash(s: string) -> string {
 
 vcr_add_static_content(mount_path: string, fs_dir: string) -> int {
     if string.length(mount_path) == 0 {
-        cfg_set_str("vcrrt.load_err", "vcr_add_static_content: null mount_path or fs_dir")
+        set_load_err("vcr_add_static_content: null mount_path or fs_dir")
         return 0
     }
     if string.char_at(mount_path, 0) != 47 {
-        cfg_set_str("vcrrt.load_err", "vcr_add_static_content: mount_path must start with '/'")
+        set_load_err("vcr_add_static_content: mount_path must start with '/'")
         return 0
     }
     m = malloc(48) as *StaticMount
@@ -688,13 +788,13 @@ vcr_add_static_content(mount_path: string, fs_dir: string) -> int {
     list_add_raw(mounts(), m)
     return 1
 }
-vcr_clear_static_content() { list_reset("vcrrt.mounts") }
+vcr_clear_static_content() { list_reset(slot(cur_key(), "mounts")) }
 
 // ---- untaped paths ----
 
 vcr_add_untaped(path: string) -> int {
     if string.length(path) == 0 || string.char_at(path, 0) != 47 {
-        cfg_set_str("vcrrt.load_err", "vcr_add_untaped: path must start with '/'")
+        set_load_err("vcr_add_untaped: path must start with '/'")
         return 0
     }
     // store path strings; std.list of heap strings. Wrap in a 1-field
@@ -705,18 +805,45 @@ vcr_add_untaped(path: string) -> int {
     list_add_raw(untaped_list(), s)
     return 1
 }
-vcr_clear_untaped() { list_reset("vcrrt.untaped") }
+vcr_clear_untaped() { list_reset(slot(cur_key(), "untaped")) }
 
-path_is_untaped(path: string) -> int {
+path_is_untaped_k(key: string, path: string) -> int {
     if string.length(path) == 0 { return 0 }
-    n = list_size(untaped_list())
+    l = untaped_list_k(key)
+    n = list_size(l)
     i = 0
     while i < n {
-        s = list_get_raw(untaped_list(), i) as *StaticMount
+        s = list_get_raw(l, i) as *StaticMount
         if string.equals(path, s.mount_path) == 1 { return 1 }
         i = i + 1
     }
     return 0
+}
+path_is_untaped(path: string) -> int {
+    return path_is_untaped_k(cur_key(), path)
+}
+
+// Find the static mount whose mount_path prefixes `path` (longest-prefix
+// not needed — mounts are exact prefixes and don't overlap in practice).
+// Returns the *StaticMount or null.
+static_mount_for_k(key: string, path: string) -> *StaticMount {
+    if string.length(path) == 0 { return null }
+    l = mounts_k(key)
+    n = list_size(l)
+    i = 0
+    while i < n {
+        m = list_get_raw(l, i) as *StaticMount
+        mp = m.mount_path
+        mlen = string.length(mp)
+        // path must equal mp or start with mp + "/" (so "/assets" matches
+        // "/assets" and "/assets/x" but not "/assetsX").
+        if string.starts_with(path, mp) == 1 {
+            if string.length(path) == mlen { return m }
+            if string.char_at(path, mlen) == 47 { return m }
+        }
+        i = i + 1
+    }
+    return null
 }
 
 // ---- string / ascii helpers ----
@@ -813,12 +940,13 @@ replace_all(src: string, pattern: string, replacement: string) -> string {
     return out
 }
 
-rt_apply_unredactions_for(src: string, field: int) -> string {
+rt_apply_unredactions_for_k(srvkey: string, src: string, field: int) -> string {
     out = string.copy(src)
-    n = list_size(unredactions())
+    l = unredactions_k(srvkey)
+    n = list_size(l)
     i = 0
     while i < n {
-        r = list_get_raw(unredactions(), i) as *Redaction
+        r = list_get_raw(l, i) as *Redaction
         if r.field == field {
             out = replace_all(out, r.pattern, r.replacement)
         }
@@ -826,8 +954,41 @@ rt_apply_unredactions_for(src: string, field: int) -> string {
     }
     return out
 }
+rt_apply_unredactions_for(src: string, field: int) -> string {
+    return rt_apply_unredactions_for_k(cur_key(), src, field)
+}
 
 // Remove headers matching a removal-field from a "Name: Value\n..." block.
+remove_headers_from_block_k(srvkey: string, headers: string, field: int) -> string {
+    if string.length(headers) == 0 { return string.copy("") }
+    out = string.copy("")
+    cursor = 0
+    h_len = string.length(headers)
+    while cursor < h_len {
+        nl_idx = string.index_of_from(headers, "\n", cursor)
+        line_end = h_len
+        if nl_idx >= 0 { line_end = nl_idx }
+        line = string.substring(headers, cursor, line_end)
+        line_len = string.length(line)
+        name_line = line
+        if line_len > 0 && string.char_at(line, line_len - 1) == 13 {
+            name_line = string.substring(line, 0, line_len - 1)
+        }
+        keep = 1
+        colon_idx = string.index_of(name_line, ":")
+        if colon_idx > 0 {
+            name = string.substring(name_line, 0, colon_idx)
+            if header_removed_for_field_k(srvkey, field, name) == 1 { keep = 0 }
+        }
+        if keep == 1 && line_len > 0 {
+            out = string_concat(out, line)
+            if nl_idx >= 0 { out = string_concat(out, "\n") }
+        }
+        if nl_idx < 0 { break }
+        cursor = nl_idx + 1
+    }
+    return out
+}
 remove_headers_from_block(headers: string, field: int) -> string {
     if string.length(headers) == 0 { return string.copy("") }
     out = string.copy("")
@@ -917,7 +1078,7 @@ sort_join_lines(blob: string) -> string {
 // Build the canonical "Name: Value\n..." blob from the live request,
 // dropping Host / Connection / Content-Length / Accept-Encoding and
 // any header-removal'd names. Sorted ascending by name (ci).
-normalize_live_headers(req: ptr) -> string {
+normalize_live_headers_k(srvkey: string, req: ptr) -> string {
     count = http.request_header_count(req)
     if count <= 0 { return string.copy("") }
     collected = string.copy("")
@@ -934,7 +1095,7 @@ normalize_live_headers(req: ptr) -> string {
         if icmp_rt(key, "Connection") == 0 { skip = 1 }
         if icmp_rt(key, "Content-Length") == 0 { skip = 1 }
         if icmp_rt(key, "Accept-Encoding") == 0 { skip = 1 }
-        if skip == 0 && header_removed_for_field(FIELD_REQUEST_HEADERS, key) == 1 { skip = 1 }
+        if skip == 0 && header_removed_for_field_k(srvkey, FIELD_REQUEST_HEADERS, key) == 1 { skip = 1 }
         if skip == 0 {
             line = string_concat(key, ": ")
             line = string_concat(line, val)
@@ -944,6 +1105,9 @@ normalize_live_headers(req: ptr) -> string {
         i = i + 1
     }
     return sort_join_lines(collected)
+}
+normalize_live_headers(req: ptr) -> string {
+    return normalize_live_headers_k(cur_key(), req)
 }
 
 request_header_value(req: ptr, name: string) -> string {
@@ -1141,61 +1305,35 @@ vcr_decode_base64_body_raw(body: string) -> string {
 
 // ---- error helper for record dispatch ----
 
-record_dispatch_error(res: ptr, status: int, msg: string) {
-    set_last_error(msg)
-    set_last_kind(KIND_RECORD_ERROR)
-    set_last_index(-1)
+record_dispatch_error_k(srvkey: string, res: ptr, status: int, msg: string) {
+    set_last_error_k(srvkey, msg)
+    set_last_kind_k(srvkey, KIND_RECORD_ERROR)
+    set_last_index_k(srvkey, -1)
     http_response_set_status(res, status)
     http_response_set_body(res, msg)
 }
 
-// ---- record-mode route registration ----
-
+// ---- record-mode setup (per-server) ----
+// Stash the upstream base + mode under the server's key; the single
+// wildcard dispatcher (registered by register_routes) reads them.
 vcr_register_record_routes(server: ptr, upstream_base: string) -> int {
     if server == null || string.length(upstream_base) == 0 {
-        cfg_set_str("vcrrt.load_err", "vcr.record mode: null server or upstream_base")
+        set_load_err("vcr.record mode: null server or upstream_base")
         return 0
     }
-    cfg_set_str("vcrrt.record_upstream_base", strip_trailing_slash(upstream_base))
-    http_server_add_route(server, "*", "*", vcr_record_dispatch, 0)
-    vcr_register_static_routes(server)
+    key = key_for(server)
+    set_record_upstream_base_k(key, strip_trailing_slash(upstream_base))
+    set_mode_k(key, "record")
+    register_routes(server)
     return 1
 }
 
-vcr_register_static_routes(server: ptr) {
-    if server == null { return }
-    n = list_size(mounts())
-    i = 0
-    while i < n {
-        m = list_get_raw(mounts(), i) as *StaticMount
-        pattern = string_concat(m.mount_path, "/*")
-        http_server_add_route(server, "GET", pattern, vcr_static_dispatch, m)
-        i = i + 1
-    }
-}
-
-// ---- static dispatcher ----
-
-@c_callback
-vcr_static_dispatch(req: ptr, res: ptr, ud: ptr) {
-    if ud == null {
-        http_response_set_status(res, 500)
-        http_response_set_body(res, "static dispatch: null mount")
-        return
-    }
-    m = ud as *StaticMount
+// ---- static-content file serving (folded into the dispatcher) ----
+// Serve `path` from static mount `m`. mime detection + traversal guard
+// preserved from the old vcr_static_dispatch.
+serve_static_file(m: *StaticMount, req: ptr, res: ptr) {
     path = http_request_path(req)
-    if string.length(path) == 0 {
-        http_response_set_status(res, 400)
-        http_response_set_body(res, "static dispatch: null request path")
-        return
-    }
     mlen = string.length(m.mount_path)
-    if string.starts_with(path, m.mount_path) == 0 {
-        http_response_set_status(res, 500)
-        http_response_set_body(res, "static dispatch: prefix mismatch (router bug)")
-        return
-    }
     rel = string.substring(path, mlen, string.length(path))
     if string.length(rel) > 0 && string.char_at(rel, 0) == 47 {
         rel = string.substring(rel, 1, string.length(rel))
@@ -1221,18 +1359,12 @@ vcr_static_dispatch(req: ptr, res: ptr, ud: ptr) {
     http_serve_file(res, filepath)
 }
 
-// ---- record dispatcher ----
+// ---- record path (per-server) ----
 
-@c_callback
-vcr_record_dispatch(req: ptr, res: ptr, ud: ptr) {
-    if path_is_untaped(http_request_path(req)) == 1 {
-        http_response_set_status(res, 404)
-        http_response_set_body(res, "")
-        return
-    }
-    base = config.get("vcrrt.record_upstream_base")
+do_record(srvkey: string, req: ptr, res: ptr) {
+    base = record_upstream_base_k(srvkey)
     if string.length(base) == 0 {
-        record_dispatch_error(res, 500, "vcr record mode: upstream base not configured")
+        record_dispatch_error_k(srvkey, res, 500, "vcr record mode: upstream base not configured")
         return
     }
     url = build_upstream_url(base, req)
@@ -1241,7 +1373,7 @@ vcr_record_dispatch(req: ptr, res: ptr, ud: ptr) {
 
     creq = http_request_raw(method, url)
     if creq == null {
-        record_dispatch_error(res, 500, "vcr record mode: failed to build client request")
+        record_dispatch_error_k(srvkey, res, 500, "vcr record mode: failed to build client request")
         return
     }
 
@@ -1267,14 +1399,14 @@ vcr_record_dispatch(req: ptr, res: ptr, ud: ptr) {
     cresp = http_send_raw(creq)
     http_request_free_raw(creq)
     if cresp == null {
-        record_dispatch_error(res, 502, "vcr record mode: upstream request failed")
+        record_dispatch_error_k(srvkey, res, 502, "vcr record mode: upstream request failed")
         return
     }
     cerr = http_response_error(cresp)
     if string.length(cerr) > 0 {
         msg = string_concat("vcr record mode: upstream transport error: ", cerr)
         http_response_free(cresp)
-        record_dispatch_error(res, 502, msg)
+        record_dispatch_error_k(srvkey, res, 502, msg)
         return
     }
 
@@ -1285,19 +1417,19 @@ vcr_record_dispatch(req: ptr, res: ptr, ud: ptr) {
     upstream_gzip = header_block_has_token_value(caller_headers, "Content-Encoding", "gzip")
     resp_headers = response_headers_for_tape(raw_headers, upstream_gzip)
     content_type = response_header_value_from_block(resp_headers, "Content-Type")
-    req_headers = normalize_live_headers(req)
+    req_headers = normalize_live_headers_k(srvkey, req)
 
     body_for_tape = body
     if upstream_gzip == 1 {
         if zlib_backend_available() == 0 {
             http_response_free(cresp)
-            record_dispatch_error(res, 500, "vcr record mode: gzip response but zlib unavailable")
+            record_dispatch_error_k(srvkey, res, 500, "vcr record mode: gzip response but zlib unavailable")
             return
         }
         inflated, inflated_len, ierr = zlib.gzip_inflate(body, resp_body_len)
         if ierr != "" {
             http_response_free(cresp)
-            record_dispatch_error(res, 500, "vcr record mode: failed to decode gzip response")
+            record_dispatch_error_k(srvkey, res, 500, "vcr record mode: failed to decode gzip response")
             return
         }
         body_for_tape = inflated
@@ -1307,53 +1439,47 @@ vcr_record_dispatch(req: ptr, res: ptr, ud: ptr) {
     req_body_for_tape = ""
     if body_len > 0 { req_body_for_tape = live_body }
 
-    rec_ok = vcr_record_interaction_full(method, recorded_path,
-                                         http_response_status(cresp),
-                                         content_type, body_for_tape,
-                                         req_headers, req_body_for_tape)
+    rec_ok = record_interaction_full_k(srvkey, method, recorded_path,
+                                       http_response_status(cresp),
+                                       content_type, body_for_tape,
+                                       req_headers, req_body_for_tape)
     if rec_ok == 0 {
         http_response_free(cresp)
-        record_dispatch_error(res, 500, "vcr record mode: failed to record interaction")
+        record_dispatch_error_k(srvkey, res, 500, "vcr record mode: failed to record interaction")
         return
     }
-    vcr_aether_set_resp_headers(list_size(tape_list()) - 1, resp_headers)
+    set_resp_headers_k(srvkey, list_size(tape_list_k(srvkey)) - 1, resp_headers)
 
     http_response_set_status(res, http_response_status(cresp))
     emit_recorded_headers_to_response(res, caller_headers)
     http_response_set_body_n(res, body, resp_body_len)
 
-    set_last_error("")
-    set_last_kind(KIND_OK)
-    set_last_index(list_size(tape_list()) - 1)
+    set_last_error_k(srvkey, "")
+    set_last_kind_k(srvkey, KIND_OK)
+    set_last_index_k(srvkey, list_size(tape_list_k(srvkey)) - 1)
 
     http_response_free(cresp)
 }
 
-// ---- playback dispatcher ----
+// ---- playback path (per-server) ----
 
-@c_callback
-vcr_dispatch(req: ptr, res: ptr, ud: ptr) {
-    if path_is_untaped(http_request_path(req)) == 1 {
-        http_response_set_status(res, 404)
-        http_response_set_body(res, "")
-        return
-    }
-    cur = cursor()
-    n = list_size(tape_list())
+do_playback(srvkey: string, req: ptr, res: ptr) {
+    cur = cursor_k(srvkey)
+    n = list_size(tape_list_k(srvkey))
     if cur >= n {
         msg = "tape exhausted — SUT made more requests than the tape contains"
-        set_last_error(msg)
-        set_last_kind(KIND_TAPE_EXHAUSTED)
-        set_last_index(cur)
+        set_last_error_k(srvkey, msg)
+        set_last_kind_k(srvkey, KIND_TAPE_EXHAUSTED)
+        set_last_index_k(srvkey, cur)
         http_response_set_status(res, 599)
         http_response_set_body(res, msg)
         return
     }
-    e = tape_get(cur)
-    expected_path = rt_apply_unredactions_for(e.path, FIELD_PATH)
-    expected_req_headers = rt_apply_unredactions_for(e.req_headers, FIELD_REQUEST_HEADERS)
-    expected_req_body = rt_apply_unredactions_for(e.req_body, FIELD_REQUEST_BODY)
-    expected_req_headers = remove_headers_from_block(expected_req_headers, FIELD_REQUEST_HEADERS)
+    e = tape_get_k(srvkey, cur)
+    expected_path = rt_apply_unredactions_for_k(srvkey, e.path, FIELD_PATH)
+    expected_req_headers = rt_apply_unredactions_for_k(srvkey, e.req_headers, FIELD_REQUEST_HEADERS)
+    expected_req_body = rt_apply_unredactions_for_k(srvkey, e.req_body, FIELD_REQUEST_BODY)
+    expected_req_headers = remove_headers_from_block_k(srvkey, expected_req_headers, FIELD_REQUEST_HEADERS)
 
     got_method = http_request_method(req)
     got_path = http_request_path(req)
@@ -1367,17 +1493,17 @@ vcr_dispatch(req: ptr, res: ptr, ud: ptr) {
         gp = got_path
         if string.length(gp) == 0 { gp = "(null)" }
         msg = "tape mismatch at interaction ${cur}: expected ${e.method} ${expected_path}, got ${gm} ${gp}"
-        set_last_error(msg)
-        set_last_kind(KIND_PATH_OR_METHOD_DIFF)
-        set_last_index(cur)
+        set_last_error_k(srvkey, msg)
+        set_last_kind_k(srvkey, KIND_PATH_OR_METHOD_DIFF)
+        set_last_index_k(srvkey, cur)
         http_response_set_status(res, 599)
         http_response_set_body(res, msg)
         return
     }
 
-    strict = vcr_get_strict_headers()
+    strict = vcr_get_strict_headers_k(srvkey)
     if is_blank(expected_req_headers) == 0 || strict == 1 {
-        live = normalize_live_headers(req)
+        live = normalize_live_headers_k(srvkey, req)
         if string.equals(live, expected_req_headers) == 0 {
             diag_ok = 0
             kind = KIND_HEADER_MISSING
@@ -1447,9 +1573,9 @@ vcr_dispatch(req: ptr, res: ptr, ud: ptr) {
                 msg = "interaction ${cur}: request headers differ — recorded:\n${expected_req_headers}\nlive:\n${live}"
                 kind = KIND_HEADER_MISSING
             }
-            set_last_error(msg)
-            set_last_kind(kind)
-            set_last_index(cur)
+            set_last_error_k(srvkey, msg)
+            set_last_kind_k(srvkey, kind)
+            set_last_index_k(srvkey, cur)
             http_response_set_status(res, 599)
             http_response_set_body(res, msg)
             return
@@ -1463,9 +1589,9 @@ vcr_dispatch(req: ptr, res: ptr, ud: ptr) {
             rlen = string.length(expected_req_body)
             llen = string.length(live_body)
             msg = "interaction ${cur}: request body different to expectation — recorded=${rlen} bytes, live=${llen} bytes"
-            set_last_error(msg)
-            set_last_kind(KIND_BODY_DIFF)
-            set_last_index(cur)
+            set_last_error_k(srvkey, msg)
+            set_last_kind_k(srvkey, KIND_BODY_DIFF)
+            set_last_index_k(srvkey, cur)
             http_response_set_status(res, 599)
             http_response_set_body(res, msg)
             return
@@ -1529,10 +1655,40 @@ vcr_dispatch(req: ptr, res: ptr, ud: ptr) {
         }
     }
 
-    set_last_error("")
-    set_last_kind(KIND_OK)
-    set_last_index(cur)
-    set_cursor(cur + 1)
+    set_last_error_k(srvkey, "")
+    set_last_kind_k(srvkey, KIND_OK)
+    set_last_index_k(srvkey, cur)
+    set_cursor_k(srvkey, cur + 1)
+}
+
+// ---- the single per-server wildcard dispatcher ----
+// ud = the server handle. Recover the key, then per request:
+//   (a) path in this server's untaped list  -> 404 (no cursor consumed)
+//   (b) path under a static mount           -> serve file
+//   (c) else: record mode -> forward+capture ; playback -> tape match
+@c_callback
+vcr_dispatch(req: ptr, res: ptr, ud: ptr) {
+    srvkey = key_for(ud)
+    path = http_request_path(req)
+    if path_is_untaped_k(srvkey, path) == 1 {
+        http_response_set_status(res, 404)
+        http_response_set_body(res, "")
+        return
+    }
+    m = static_mount_for_k(srvkey, path)
+    if m != null {
+        // Static mounts are GET-only (mirrors the old GET-route registration).
+        method = http_request_method(req)
+        if string.length(method) == 0 || string.equals(method, "GET") == 1 {
+            serve_static_file(m, req, res)
+            return
+        }
+    }
+    if string.equals(mode_k(srvkey), "record") == 1 {
+        do_record(srvkey, req, res)
+    } else {
+        do_playback(srvkey, req, res)
+    }
 }
 
 // Find `token` (e.g. "Name:") where it is at the start of the blob
@@ -1624,27 +1780,34 @@ load_error() -> string {
     return vcr_load_err()
 }
 
+// Per-listener lifecycle: create + bind the server FIRST so its handle
+// (and thus its state key) exists, set that key current, then parse the
+// tape into THIS server's state. The wildcard dispatcher (ud = handle)
+// is registered here; serving is NOT started (the caller wires that, as
+// before). Config calls (redact/static_content/untaped/...) take the
+// handle and run AFTER load. Returns null (and leaves a load_error) on
+// server_create or parse failure.
 load(tape_path: string, port: int) -> ptr {
-    // Aether-side parser. The pre-port C parser (still shipped as
-    // vcr_load_tape) is unused by this surface but retained as a
-    // fallback for the duration of the C→Aether migration.
-    perr = parse_tape_file(tape_path)
-    if perr != "" {
-        diag("vcr.load: ${perr}")
-        return null
-    }
-
     raw = http.server_create(port)
     if raw == 0 {
+        // No handle yet — report under the default key so load_error()
+        // (no-handle) surfaces it.
+        set_cur_key("0")
         diag("vcr.load: server_create on port ${port} returned 0")
         return null
     }
+    key = key_for(raw)
+    set_cur_key(key)
+    set_mode_k(key, "playback")
 
-    // Aether registers the replay routes from the parsed tape. The
-    // dispatcher then matches on (method, path) and emits the
-    // recorded response.
+    perr = parse_tape_file(tape_path)
+    if perr != "" {
+        diag("vcr.load: ${perr}")
+        http.server_stop(raw)
+        return null
+    }
+
     register_routes(raw)
-
     return raw
 }
 
@@ -1656,12 +1819,22 @@ load(tape_path: string, port: int) -> ptr {
 // include network errors (DNS, connection refused, timeout) and
 // parse errors (invalid markdown format). Call eject(server) when done.
 load_url(tape_url: string, port: int) -> ptr {
+    raw = http.server_create(port)
+    if raw == 0 {
+        set_cur_key("0")
+        diag("vcr.load_url: server_create on port ${port} returned 0")
+        return null
+    }
+    key = key_for(raw)
+    set_cur_key(key)
+    set_mode_k(key, "playback")
     vcr_aether_clear_tape()
 
     // Fetch the tape over HTTP using raw client (30s timeout)
     resp = http_get_with_timeout_raw(tape_url, 30000)
     if resp == null {
         diag("vcr.load_url: failed to fetch ${tape_url}")
+        http.server_stop(raw)
         return null
     }
 
@@ -1669,6 +1842,7 @@ load_url(tape_url: string, port: int) -> ptr {
     if err != "" && string.length(err) > 0 {
         diag("vcr.load_url: ${err}")
         http_response_free(resp)
+        http.server_stop(raw)
         return null
     }
 
@@ -1680,16 +1854,10 @@ load_url(tape_url: string, port: int) -> ptr {
     http_response_free(resp)
 
     // Parse the fetched markdown using the same path as load()
-    // The parser populates the C-side tape storage via vcr_aether_* calls
     perr = parse_tape_text("http-sourced", tape_markdown)
     if perr != "" {
         diag("vcr.load_url: ${perr}")
-        return null
-    }
-
-    raw = http.server_create(port)
-    if raw == 0 {
-        diag("vcr.load_url: server_create on port ${port} returned 0")
+        http.server_stop(raw)
         return null
     }
 
@@ -1704,6 +1872,61 @@ eject(server: ptr) {
     http.server_stop(server)
 }
 
+// ---- handle-based surface (per-listener) -----------------------------
+//
+// These take the server handle and act on THAT server's state, so a
+// test can run N VCRs at once and address each independently. They are
+// the surface the embed ABI / bindings call. The no-handle forms above
+// remain for the record-without-a-server tests (they act on the default
+// "current" key) and as the single-server convenience.
+
+// Select the server whose state the subsequent no-handle calls address.
+// (Mostly internal; the handle-based wrappers below set it themselves.)
+use_handle(server: ptr) { set_cur_key(key_for(server)) }
+
+redact_h(server: ptr, field: int, pattern: string, replacement: string) -> string {
+    set_cur_key(key_for(server))
+    return redact(field, pattern, replacement)
+}
+unredact_h(server: ptr, field: int, pattern: string, replacement: string) -> string {
+    set_cur_key(key_for(server))
+    return unredact(field, pattern, replacement)
+}
+remove_header_h(server: ptr, field: int, name: string) -> string {
+    set_cur_key(key_for(server))
+    return remove_header(field, name)
+}
+note_h(server: ptr, title: string, body: string) -> string {
+    set_cur_key(key_for(server))
+    return note(title, body)
+}
+static_content_h(server: ptr, mount_path: string, fs_dir: string) -> string {
+    set_cur_key(key_for(server))
+    return static_content(mount_path, fs_dir)
+}
+untaped_h(server: ptr, path: string) -> string {
+    set_cur_key(key_for(server))
+    return untaped(path)
+}
+set_strict_headers_h(server: ptr, on: int) { vcr_set_strict_headers_k(key_for(server), on) }
+indent_code_blocks_h(server: ptr) { set_cur_key(key_for(server)); indent_code_blocks() }
+emphasize_http_verbs_h(server: ptr) { set_cur_key(key_for(server)); emphasize_http_verbs() }
+clear_redactions_h(server: ptr) { set_cur_key(key_for(server)); clear_redactions() }
+clear_unredactions_h(server: ptr) { set_cur_key(key_for(server)); clear_unredactions() }
+clear_header_removals_h(server: ptr) { set_cur_key(key_for(server)); clear_header_removals() }
+clear_static_content_h(server: ptr) { set_cur_key(key_for(server)); clear_static_content() }
+clear_untaped_h(server: ptr) { set_cur_key(key_for(server)); clear_untaped() }
+clear_format_options_h(server: ptr) { set_cur_key(key_for(server)); clear_format_options() }
+
+// diagnostics / lifecycle (handle-based, no shared current-key reliance)
+last_error_h(server: ptr) -> string { return vcr_last_error_k(key_for(server)) }
+last_kind_h(server: ptr) -> int { return vcr_last_kind_k(key_for(server)) }
+last_index_h(server: ptr) -> int { return vcr_last_index_k(key_for(server)) }
+clear_last_error_h(server: ptr) { vcr_clear_last_error_k(key_for(server)) }
+tape_length_h(server: ptr) -> int { return list_size(tape_list_k(key_for(server))) }
+reset_cursor_h(server: ptr) { vcr_reset_cursor_k(key_for(server)) }
+load_error_h(server: ptr) -> string { return vcr_load_err_k(key_for(server)) }
+
 // How many entries the loaded tape has (or, in record mode, how
 // many interactions have been captured so far). Useful for
 // sanity-checking in test setup and after-record verification.
@@ -1716,13 +1939,15 @@ tape_length() -> int { return vcr_tape_length() }
 // the run is complete; it writes the markdown tape to the same path
 // vcr.load(tape_path, port) later replays from.
 load_record(tape_path: string, upstream_base: string, port: int) -> ptr {
-    vcr_aether_clear_tape()
-
     raw = http.server_create(port)
     if raw == 0 {
+        set_cur_key("0")
         diag("vcr.load_record: server_create on port ${port} returned 0")
         return null
     }
+    key = key_for(raw)
+    set_cur_key(key)
+    vcr_aether_clear_tape()
 
     ok = vcr_register_record_routes(raw, upstream_base)
     if ok == 0 {
@@ -1739,8 +1964,27 @@ load_record(tape_path: string, upstream_base: string, port: int) -> ptr {
 // the developer reviews git diff to decide whether upstream changed
 // legitimately or unexpectedly.
 eject_record(server: ptr, tape_path: string) -> string {
+    set_cur_key(key_for(server))
     http.server_stop(server)
     return flush(tape_path)
+}
+
+// Handle-based flush drift variants for the embed ABI. They select the
+// server's state, stop it, then flush/check that server's captured tape.
+stop_and_flush_h(server: ptr, tape_path: string) -> string {
+    set_cur_key(key_for(server))
+    http.server_stop(server)
+    return flush(tape_path)
+}
+stop_and_flush_fail_if_changed_h(server: ptr, tape_path: string) -> string {
+    set_cur_key(key_for(server))
+    http.server_stop(server)
+    return flush_and_fail_if_changed(tape_path)
+}
+stop_and_flush_or_check_h(server: ptr, tape_path: string) -> string {
+    set_cur_key(key_for(server))
+    http.server_stop(server)
+    return flush_or_check(tape_path)
 }
 
 // ---- Record mode -----------------------------------------------------
@@ -2228,23 +2472,15 @@ route_already_registered(method: string, route_path: string, before: int) -> int
     return 0
 }
 
-// Register replay routes in Aether. C still owns the dispatcher
-// function pointer and static-content file serving, but route
-// enumeration and path normalization belong with the tape parser.
+// Register the single wildcard dispatcher with ud = the server handle.
+// Per-listener: the dispatcher recovers the server's state key from ud
+// (= the handle) and folds untaped / static-content / tape-match /
+// record-forward into the one route — so config can happen AFTER the
+// handle exists (load -> config(handle) -> serve), and N servers in one
+// process keep disjoint state. No per-tape-path routes are needed: the
+// wildcard matches every method+path and the dispatcher does the work.
 register_routes(server: ptr) {
-    http.server_add_route(server, "*", "*", vcr_dispatch, 0)
-
-    n = vcr_get_tape_count()
-    i = 0
-    while i < n {
-        method = string.copy(vcr_get_method(i))
-        route_path = route_path_for(string.copy(vcr_get_path(i)))
-        if route_already_registered(method, route_path, i) == 0 {
-            http.server_add_route(server, method, route_path, vcr_dispatch, 0)
-        }
-        i = i + 1
-    }
-    vcr_register_static_routes(server)
+    http.server_add_route(server, "*", "*", vcr_dispatch, server)
 }
 
 header_removed_for(field: int, name: string) -> int {

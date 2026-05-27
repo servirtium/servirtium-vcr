@@ -58,13 +58,13 @@ get_with_user_agent(url: string) -> (int, string) {
 
 main() {
     println("=== VCR strict-match: ignore a stock client's volatile header ===")
-    vcr.set_strict_headers(1)
 
     // ---- Phase A: control — the auto-header is rejected as unexpected.
     println("\nPhase A: strict on, no ignore — User-Agent must be rejected")
-    vcr.clear_last_error()
     rawA = vcr.load(TAPE, PORT_A)
     if rawA == null { println("  FAIL: load A: ${vcr.load_error()}"); exit(1) }
+    vcr.set_strict_headers_h(rawA, 1)
+    vcr.clear_last_error_h(rawA)
     if serve_bg(rawA, PORT_A) == 0 { println("  FAIL: serve A"); vcr.eject(rawA); exit(1) }
     sleep(300)
 
@@ -73,7 +73,7 @@ main() {
         println("  FAIL: expected 599 (unexpected header), got ${statusA}")
         vcr.eject(rawA); exit(1)
     }
-    errA = vcr.last_error()
+    errA = vcr.last_error_h(rawA)
     if string.contains(errA, "User-Agent") != 1 {
         println("  FAIL: last_error should name User-Agent, got: ${errA}")
         vcr.eject(rawA); exit(1)
@@ -84,18 +84,18 @@ main() {
 
     // ---- Phase B: ignore User-Agent, then the same request matches.
     println("\nPhase B: remove_header(REQUEST_HEADERS, User-Agent) — must match")
-    vcr.clear_last_error()
-    rerr = vcr.remove_header(vcr.FIELD_REQUEST_HEADERS, "User-Agent")
-    if rerr != "" { println("  FAIL: remove_header: ${rerr}"); exit(1) }
-
     rawB = vcr.load(TAPE, PORT_B)
     if rawB == null { println("  FAIL: load B: ${vcr.load_error()}"); exit(1) }
+    vcr.set_strict_headers_h(rawB, 1)
+    vcr.clear_last_error_h(rawB)
+    rerr = vcr.remove_header_h(rawB, vcr.FIELD_REQUEST_HEADERS, "User-Agent")
+    if rerr != "" { println("  FAIL: remove_header: ${rerr}"); exit(1) }
     if serve_bg(rawB, PORT_B) == 0 { println("  FAIL: serve B"); vcr.eject(rawB); exit(1) }
     sleep(300)
 
     statusB, bodyB = get_with_user_agent("http://127.0.0.1:${PORT_B}/hello")
     if statusB != 200 {
-        println("  FAIL: expected 200 after ignoring User-Agent, got ${statusB} (last_error='${vcr.last_error()}')")
+        println("  FAIL: expected 200 after ignoring User-Agent, got ${statusB} (last_error='${vcr.last_error_h(rawB)}')")
         vcr.eject(rawB); exit(1)
     }
     if string.contains(bodyB, "hello-strict") != 1 {

@@ -80,11 +80,11 @@ main() {
 
     setup_static_root()
 
-    serr = vcr.static_content("/static", STATIC_ROOT)
-    if serr != "" { println("FAIL: static_content: ${serr}"); exit(1) }
-
     raw = vcr.load(TAPE_PATH, PORT)
     if raw == null { println("FAIL: vcr.load"); exit(1) }
+
+    serr = vcr.static_content_h(raw, "/static", STATIC_ROOT)
+    if serr != "" { println("FAIL: static_content: ${serr}"); exit(1) }
 
     spawn(SchedHelper())
     a = spawn(VCRActor())

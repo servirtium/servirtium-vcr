@@ -1,0 +1,127 @@
+// PER-LISTENER concurrency: TWO playback VCRs in ONE process, on two
+// ports, with two different tapes, served at the same time. This is the
+// deliverable for the per-listener refactor — it proves each VCR replays
+// ITS OWN tape and that cursors / diagnostics don't bleed between them.
+//
+// End-user payoff: a test mocks a weather API and a payments API at once,
+// each its own tape + base_url.
+
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+
+extern exit(code: int)
+
+const WEATHER_PORT  = 18281
+const PAYMENTS_PORT = 18282
+const WEATHER_TAPE  = "core_tests/tapes/concurrent_weather.tape"
+const PAYMENTS_TAPE = "core_tests/tapes/concurrent_payments.tape"
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+get_status_body(url: string) -> {
+    req = client.request("GET", url)
+    client.set_timeout(req, 5)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err }
+    s = client.response_status(resp)
+    b = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return s, b
+}
+
+post_status_body(url: string) -> {
+    req = client.request("POST", url)
+    client.set_timeout(req, 5)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err }
+    s = client.response_status(resp)
+    b = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return s, b
+}
+
+main() {
+    println("=== VCR per-listener concurrency: two VCRs, two tapes, one process ===\n")
+
+    // ---- Bring up BOTH playback VCRs at once. ----
+    weather = vcr.load(WEATHER_TAPE, WEATHER_PORT)
+    if weather == null { fail("load weather: ${vcr.load_error()}") }
+    payments = vcr.load(PAYMENTS_TAPE, PAYMENTS_PORT)
+    if payments == null { fail("load payments: ${vcr.load_error()}") }
+
+    // Each reports its own tape length (2 each) independently.
+    if vcr.tape_length_h(weather) != 2 { fail("weather tape_length ${vcr.tape_length_h(weather)} (want 2)") }
+    if vcr.tape_length_h(payments) != 2 { fail("payments tape_length ${vcr.tape_length_h(payments)} (want 2)") }
+    println("Both tapes loaded: weather=2, payments=2 interactions")
+
+    serr1 = http.server_start_background(weather)
+    if serr1 != "" { fail("weather start ${serr1}") }
+    serr2 = http.server_start_background(payments)
+    if serr2 != "" { fail("payments start ${serr2}") }
+    sleep(400)
+
+    wbase = "http://127.0.0.1:${WEATHER_PORT}"
+    pbase = "http://127.0.0.1:${PAYMENTS_PORT}"
+
+    // ---- Interleave requests across both servers. ----
+
+    // Weather interaction 0.
+    println("\nWeather GET /weather")
+    s, b = get_status_body("${wbase}/weather")
+    if s != 200 || string.contains(b, "London") != 1 { fail("weather/0 status=${s} body=${b}") }
+    if vcr.last_kind_h(weather) != vcr.KIND_OK { fail("weather last_kind ${vcr.last_kind_h(weather)}") }
+    if vcr.last_index_h(weather) != 0 { fail("weather last_index ${vcr.last_index_h(weather)} (want 0)") }
+    println("  PASS: ${b}")
+
+    // Payments interaction 0 — payments cursor is independent of weather's.
+    println("Payments POST /charge")
+    ps, pb = post_status_body("${pbase}/charge")
+    if ps != 201 || string.contains(pb, "ch_123") != 1 { fail("payments/0 status=${ps} body=${pb}") }
+    if vcr.last_kind_h(payments) != vcr.KIND_OK { fail("payments last_kind ${vcr.last_kind_h(payments)}") }
+    if vcr.last_index_h(payments) != 0 { fail("payments last_index ${vcr.last_index_h(payments)} (want 0)") }
+    println("  PASS: ${pb}")
+
+    // Weather interaction 1 — its cursor advanced to 1, NOT reset by the
+    // payments hit in between (no cross-bleed).
+    println("Weather GET /weather/forecast")
+    s2, b2 = get_status_body("${wbase}/weather/forecast")
+    if s2 != 200 || string.contains(b2, "rain") != 1 { fail("weather/1 status=${s2} body=${b2}") }
+    if vcr.last_index_h(weather) != 1 { fail("weather last_index ${vcr.last_index_h(weather)} (want 1)") }
+    println("  PASS: ${b2}")
+
+    // Payments interaction 1.
+    println("Payments GET /balance")
+    ps2, pb2 = get_status_body("${pbase}/balance")
+    if ps2 != 200 || string.contains(pb2, "4200") != 1 { fail("payments/1 status=${ps2} body=${pb2}") }
+    if vcr.last_index_h(payments) != 1 { fail("payments last_index ${vcr.last_index_h(payments)} (want 1)") }
+    println("  PASS: ${pb2}")
+
+    // ---- Cross-bleed check: a payments path on the WEATHER server is a
+    // mismatch (the weather tape never had /charge), proving each server
+    // matches only its OWN tape and the diagnostics are per-server. ----
+    println("\nCross-bleed check: weather server rejects a payments path")
+    cs, _ = get_status_body("${wbase}/balance")
+    // weather tape is exhausted (both entries consumed) -> 599 TAPE_EXHAUSTED
+    if cs != 599 { fail("expected 599 on weather/balance, got ${cs}") }
+    if vcr.last_kind_h(weather) != vcr.KIND_TAPE_EXHAUSTED {
+        fail("weather last_kind ${vcr.last_kind_h(weather)} (want TAPE_EXHAUSTED)")
+    }
+    // payments diagnostics are UNTOUCHED by the weather mismatch.
+    if vcr.last_kind_h(payments) != vcr.KIND_OK {
+        fail("payments last_kind bled to ${vcr.last_kind_h(payments)} (want OK)")
+    }
+    if vcr.last_index_h(payments) != 1 { fail("payments last_index bled to ${vcr.last_index_h(payments)}") }
+    println("  PASS: weather=TAPE_EXHAUSTED, payments diagnostics intact (OK, index 1)")
+
+    vcr.eject(weather)
+    vcr.eject(payments)
+    println("\n=== Per-listener concurrency test passed ===")
+    exit(0)
+}

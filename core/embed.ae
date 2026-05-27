@@ -6,7 +6,7 @@
 // Build it as a shared library and dlsym the exports:
 //
 //     ae build --emit=lib --with=fs,net \
-//         std/http/server/vcr/embed.ae -o libvcr.so
+//         core/embed.ae --extra core/_embed_strdup.c -o libvcr.so
 //
 // No new VCR semantics — record / playback / mutation / parse all stay
 // exactly as the vcr module implements them. This layer adds only the
@@ -20,39 +20,38 @@
 //     OS-assigned port (port 0) is resolved by the time the start call
 //     returns and `vcr_embed_port` can report it;
 //   * returns caller-owned C strings (every string result is duplicated
-//     via `vcr_embed_dup`; the host frees it with `vcr_embed_free_string`)
-//     rather than the vcr surface's borrowed TLS/arena strings.
+//     via `vcr_embed_dup`; the host frees it with `vcr_embed_free_string`).
 //
 // Export naming: every function is prefixed `vcr_embed_`, so under
-// `--emit=lib` it lands as `aether_vcr_embed_<name>`. A bare `vcr_`
-// prefix would collide at link with the existing C runtime symbols in
-// `aether_vcr.c` (`vcr_last_error`, `vcr_tape_length`, …); the
-// `vcr_embed_` prefix is the embed-only namespace the wish asked us to
-// pick (open question 2).
+// `--emit=lib` it lands as `aether_vcr_embed_<name>`.
 //
-// v1 contract: ONE active VCR server per process (the underlying
-// tape / cursor / mutation state is process-global). Returned strings
-// are NUL-terminated (binary bodies remain the existing tape limitation).
-// The opaque handle is the HTTP server pointer.
+// PER-LISTENER contract: N independent VCR servers can run concurrently
+// in one process. The opaque handle is the HTTP server pointer; every
+// config / diagnostic / lifecycle call takes the handle and addresses
+// THAT server's state (tape / cursor / mutations / mounts / diagnostics).
+// Lifecycle is open -> configure -> start:
+//   1. vcr_embed_open_playback / _open_playback_url / _open_record
+//      create + bind the server and return the handle (NOT serving yet);
+//   2. config calls (redact / static_content / untaped / strict / ...)
+//      take the handle;
+//   3. vcr_embed_start(handle) begins serving on a background thread.
 
 import vcr
 import std.http
 
-// Caller-owned-string helpers. Stateless malloc/strdup-style string
-// dup + free for the embed ABI's caller-owned-return contract. They
-// resolve from the Aether runtime (libaether bundles a copy); they
-// touch no tape state, so the pure-Aether engine (core/vcr.ae +
-// core/runtime, now folded into vcr.ae) is unaffected.
+// Caller-owned-string helpers (core/_embed_strdup.c). malloc/strdup-style
+// dup + free for the caller-owned-return contract.
 extern vcr_embed_dup(s: string) -> string
 extern vcr_embed_free(s: string)
 
-// ---- lifecycle ----
+// ---- lifecycle: open (create + bind + register, NOT serving) ----
 
-// Parse `tape_path`, bind `host:port` (port 0 = OS-assigned), start the
-// accept loop on a background thread, and return the server handle.
+// Parse `tape_path`, create + bind `host:port` (port 0 = OS-assigned),
+// register the per-server wildcard dispatcher, and return the handle.
 // `label` is human-facing (logs/diagnostics), never the state key.
-// Returns null on parse/bind failure.
-vcr_embed_start_playback(label: string, tape_path: string, host: string, port: int) -> ptr {
+// Does NOT start serving — call vcr_embed_start(handle) after config.
+// Returns null on parse/bind failure (reason via vcr_embed_last_error).
+vcr_embed_open_playback(label: string, tape_path: string, host: string, port: int) -> ptr {
     vcr.set_quiet(1)
     raw = vcr.load(tape_path, port)
     if raw == 0 {
@@ -64,19 +63,12 @@ vcr_embed_start_playback(label: string, tape_path: string, host: string, port: i
         vcr.eject(raw)
         return null
     }
-    sb = http_server_start_background_raw(raw)
-    if sb < 0 {
-        return null
-    }
     return raw
 }
 
-// As vcr_embed_start_playback, but the tape is fetched over HTTP from
-// `tape_url` instead of read from disk — for centralized/shared tape
-// libraries (vcr_embed_surface_and_strict_ignore_wish.md §1). `label`
-// is human-facing only. Returns null on fetch/parse/bind failure; the
-// reason is retrievable via vcr_embed_last_error().
-vcr_embed_start_playback_url(label: string, tape_url: string, host: string, port: int) -> ptr {
+// As vcr_embed_open_playback, but the tape is fetched over HTTP from
+// `tape_url` instead of read from disk.
+vcr_embed_open_playback_url(label: string, tape_url: string, host: string, port: int) -> ptr {
     vcr.set_quiet(1)
     raw = vcr.load_url(tape_url, port)
     if raw == 0 {
@@ -88,17 +80,14 @@ vcr_embed_start_playback_url(label: string, tape_url: string, host: string, port
         vcr.eject(raw)
         return null
     }
-    sb = http_server_start_background_raw(raw)
-    if sb < 0 {
-        return null
-    }
     return raw
 }
 
-// Record mode: bind `host:port`, forward each request to `upstream_base`,
-// return the live response to the caller, and capture the interaction.
-// Flush to the tape with vcr_embed_stop_and_flush. Returns null on failure.
-vcr_embed_start_record(label: string, tape_path: string, upstream_base: string, host: string, port: int) -> ptr {
+// Record mode: create + bind `host:port`; the dispatcher will forward
+// each request to `upstream_base`, return the live response, and capture
+// the interaction. Flush with vcr_embed_stop_and_flush. Returns null on
+// failure. Does NOT start serving — call vcr_embed_start(handle).
+vcr_embed_open_record(label: string, tape_path: string, upstream_base: string, host: string, port: int) -> ptr {
     vcr.set_quiet(1)
     raw = vcr.load_record(tape_path, upstream_base, port)
     if raw == 0 {
@@ -110,11 +99,13 @@ vcr_embed_start_record(label: string, tape_path: string, upstream_base: string, 
         vcr.eject(raw)
         return null
     }
-    sb = http_server_start_background_raw(raw)
-    if sb < 0 {
-        return null
-    }
     return raw
+}
+
+// Begin serving: start the accept loop on a background thread. Returns
+// >= 0 on success, < 0 on failure.
+vcr_embed_start(s: ptr) -> int {
+    return http_server_start_background_raw(s)
 }
 
 // Stop the accept loop (playback handles just stop).
@@ -125,28 +116,23 @@ vcr_embed_stop(s: ptr) {
 // Record handles: stop + flush the captured markdown to `tape_path`.
 // Returns "" on success, else an error (caller frees the string).
 vcr_embed_stop_and_flush(s: ptr, tape_path: string) -> string {
-    return vcr_embed_dup(vcr.eject_record(s, tape_path))
+    return vcr_embed_dup(vcr.stop_and_flush_h(s, tape_path))
 }
 
 // Stop + flush, overwriting the tape AND returning a non-empty drift
 // error when the new recording differs (Servirtium step-4 contract).
 vcr_embed_stop_and_flush_fail_if_changed(s: ptr, tape_path: string) -> string {
-    vcr.eject(s)
-    return vcr_embed_dup(vcr.flush_and_fail_if_changed(tape_path))
+    return vcr_embed_dup(vcr.stop_and_flush_fail_if_changed_h(s, tape_path))
 }
 
 // Stop + the non-destructive drift variant: writes the freshly recorded
 // tape to a `<tape_path>.actual` sibling and byte-compares against the
-// committed tape WITHOUT overwriting it. Returns "" when they match (and
-// removes the .actual sibling), else a mismatch message (leaving .actual
-// on disk for inspection). For CI that prefers reviewing drift over
-// rewriting the checked-in tape (the wish §1 form). Caller frees.
+// committed tape WITHOUT overwriting it. Caller frees.
 vcr_embed_stop_and_flush_or_check(s: ptr, tape_path: string) -> string {
-    vcr.eject(s)
-    return vcr_embed_dup(vcr.flush_or_check(tape_path))
+    return vcr_embed_dup(vcr.stop_and_flush_or_check_h(s, tape_path))
 }
 
-// ---- introspection ----
+// ---- introspection (handle-based) ----
 
 // Resolved listening port (the OS-assigned port when started with 0).
 vcr_embed_port(s: ptr) -> int {
@@ -160,120 +146,113 @@ vcr_embed_base_url(s: ptr, host: string) -> string {
     return vcr_embed_dup(url)
 }
 
-vcr_embed_tape_length() -> int {
-    return vcr.tape_length()
+vcr_embed_tape_length(s: ptr) -> int {
+    return vcr.tape_length_h(s)
 }
 
-vcr_embed_reset_cursor() {
-    vcr.reset_cursor()
+vcr_embed_reset_cursor(s: ptr) {
+    vcr.reset_cursor_h(s)
 }
 
 // ---- diagnostics (drain after a request to assert outcomes) ----
 
-// The last match-failure detail, or — when no match failure is pending
-// — the last load failure reason (fetch/parse/bind). Since the embed
-// layer runs the server quietly (no stdout), this is how a host learns
-// *why* a start_playback[_url] returned null.
-vcr_embed_last_error() -> string {
-    e = vcr.last_error()
+// The last match-failure detail, or — when no match failure is pending —
+// the last load failure reason (fetch/parse/bind).
+vcr_embed_last_error(s: ptr) -> string {
+    e = vcr.last_error_h(s)
     if e == "" {
-        e = vcr.load_error()
+        e = vcr.load_error_h(s)
     }
     return vcr_embed_dup(e)
 }
 
-vcr_embed_last_kind() -> int {
-    return vcr.last_kind()
+vcr_embed_last_kind(s: ptr) -> int {
+    return vcr.last_kind_h(s)
 }
 
-vcr_embed_last_index() -> int {
-    return vcr.last_index()
+vcr_embed_last_index(s: ptr) -> int {
+    return vcr.last_index_h(s)
 }
 
-vcr_embed_clear_last_error() {
-    vcr.clear_last_error()
+vcr_embed_clear_last_error(s: ptr) {
+    vcr.clear_last_error_h(s)
 }
 
-// ---- mutations / config (call BEFORE start, as the vcr surface requires) ----
+// ---- mutations / config (handle 1st arg; call BEFORE start) ----
 
-vcr_embed_redact(field: int, pattern: string, replacement: string) -> string {
-    return vcr_embed_dup(vcr.redact(field, pattern, replacement))
+vcr_embed_redact(s: ptr, field: int, pattern: string, replacement: string) -> string {
+    return vcr_embed_dup(vcr.redact_h(s, field, pattern, replacement))
 }
 
-vcr_embed_unredact(field: int, pattern: string, replacement: string) -> string {
-    return vcr_embed_dup(vcr.unredact(field, pattern, replacement))
+vcr_embed_unredact(s: ptr, field: int, pattern: string, replacement: string) -> string {
+    return vcr_embed_dup(vcr.unredact_h(s, field, pattern, replacement))
 }
 
-vcr_embed_remove_header(field: int, name: string) -> string {
-    return vcr_embed_dup(vcr.remove_header(field, name))
+vcr_embed_remove_header(s: ptr, field: int, name: string) -> string {
+    return vcr_embed_dup(vcr.remove_header_h(s, field, name))
 }
 
 // One-call opt-in for the headers stock HTTP clients attach but a tape
 // never recorded — User-Agent, Accept, Accept-Encoding, Connection. Each
 // is dropped from BOTH the recorded expectation and the live request
-// before strict matching (see vcr.remove_header), so a StrictHeaders
-// test against a real client (Go/Java/Rust/.NET) matches without the
-// test scrubbing each header by hand (the wish §2 ergonomics item). Host
-// is already stripped during normalization, so it's omitted here. Call
-// BEFORE start_playback[_url], like the other config. Returns "" on
-// success, else the first error (caller frees).
-vcr_embed_strict_ignore_common_headers() -> string {
-    e = vcr.remove_header(vcr.FIELD_REQUEST_HEADERS, "User-Agent")
-    if e == "" { e = vcr.remove_header(vcr.FIELD_REQUEST_HEADERS, "Accept") }
-    if e == "" { e = vcr.remove_header(vcr.FIELD_REQUEST_HEADERS, "Accept-Encoding") }
-    if e == "" { e = vcr.remove_header(vcr.FIELD_REQUEST_HEADERS, "Connection") }
+// before strict matching. Returns "" on success, else the first error.
+vcr_embed_strict_ignore_common_headers(s: ptr) -> string {
+    e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "User-Agent")
+    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Accept") }
+    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Accept-Encoding") }
+    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Connection") }
     return vcr_embed_dup(e)
 }
 
-vcr_embed_note(title: string, body: string) -> string {
-    return vcr_embed_dup(vcr.note(title, body))
+vcr_embed_note(s: ptr, title: string, body: string) -> string {
+    return vcr_embed_dup(vcr.note_h(s, title, body))
 }
 
-vcr_embed_static_content(mount_path: string, fs_dir: string) -> string {
-    return vcr_embed_dup(vcr.static_content(mount_path, fs_dir))
+vcr_embed_static_content(s: ptr, mount_path: string, fs_dir: string) -> string {
+    return vcr_embed_dup(vcr.static_content_h(s, mount_path, fs_dir))
 }
 
 // Mark an incidental path (e.g. "/favicon.ico") as never-on-the-tape:
 // the VCR answers it 404 without consuming the playback cursor or, in
-// record mode, forwarding/recording it. Configure before start_*.
-vcr_embed_untaped(path: string) -> string {
-    return vcr_embed_dup(vcr.untaped(path))
+// record mode, forwarding/recording it. Configure before start.
+vcr_embed_untaped(s: ptr, path: string) -> string {
+    return vcr_embed_dup(vcr.untaped_h(s, path))
 }
 
-vcr_embed_set_strict_headers(on: int) {
-    vcr.set_strict_headers(on)
+vcr_embed_set_strict_headers(s: ptr, on: int) {
+    vcr.set_strict_headers_h(s, on)
 }
 
-vcr_embed_indent_code_blocks() {
-    vcr.indent_code_blocks()
+vcr_embed_indent_code_blocks(s: ptr) {
+    vcr.indent_code_blocks_h(s)
 }
 
-vcr_embed_emphasize_http_verbs() {
-    vcr.emphasize_http_verbs()
+vcr_embed_emphasize_http_verbs(s: ptr) {
+    vcr.emphasize_http_verbs_h(s)
 }
 
-vcr_embed_clear_redactions() {
-    vcr.clear_redactions()
+vcr_embed_clear_redactions(s: ptr) {
+    vcr.clear_redactions_h(s)
 }
 
-vcr_embed_clear_unredactions() {
-    vcr.clear_unredactions()
+vcr_embed_clear_unredactions(s: ptr) {
+    vcr.clear_unredactions_h(s)
 }
 
-vcr_embed_clear_header_removals() {
-    vcr.clear_header_removals()
+vcr_embed_clear_header_removals(s: ptr) {
+    vcr.clear_header_removals_h(s)
 }
 
-vcr_embed_clear_static_content() {
-    vcr.clear_static_content()
+vcr_embed_clear_static_content(s: ptr) {
+    vcr.clear_static_content_h(s)
 }
 
-vcr_embed_clear_untaped() {
-    vcr.clear_untaped()
+vcr_embed_clear_untaped(s: ptr) {
+    vcr.clear_untaped_h(s)
 }
 
-vcr_embed_clear_format_options() {
-    vcr.clear_format_options()
+vcr_embed_clear_format_options(s: ptr) {
+    vcr.clear_format_options_h(s)
 }
 
 // ---- string ownership ----
