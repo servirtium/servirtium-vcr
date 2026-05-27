@@ -174,39 +174,21 @@ impl Common {
         }
     }
 
-    /// Apply the shared config (header removals, static content, untaped)
-    /// after the reset and before the tape loads. Used by both builders'
+    /// Apply the shared config (header removals, static content, untaped) to
+    /// the opened handle, before serving starts. Used by both builders'
     /// `start()`.
-    fn apply_shared(&self, n: &Native) -> Result<(), VcrError> {
+    fn apply_shared(&self, n: &Native, h: Handle) -> Result<(), VcrError> {
         for (field, name) in &self.header_removals {
-            check(n, unsafe { (n.remove_header)(*field as c_int, cstr(name)?.as_ptr()) }, "remove_header")?;
+            check(n, unsafe { (n.remove_header)(h, *field as c_int, cstr(name)?.as_ptr()) }, "remove_header")?;
         }
         for (mount, dir) in &self.static_content {
-            check(n, unsafe { (n.static_content)(cstr(mount)?.as_ptr(), cstr(dir)?.as_ptr()) }, "static_content")?;
+            check(n, unsafe { (n.static_content)(h, cstr(mount)?.as_ptr(), cstr(dir)?.as_ptr()) }, "static_content")?;
         }
         for path in &self.untaped {
-            check(n, unsafe { (n.untaped)(cstr(path)?.as_ptr()) }, "untaped")?;
+            check(n, unsafe { (n.untaped)(h, cstr(path)?.as_ptr()) }, "untaped")?;
         }
         Ok(())
     }
-}
-
-/// Wipe all process-global mutation/format/strict state so a previous
-/// fixture's settings can't leak into this one (v1 one-server-per-process
-/// has no per-handle state).
-fn reset_global_state(n: &Native) {
-    unsafe {
-        (n.clear_redactions)();
-        (n.clear_unredactions)();
-        (n.clear_header_removals)();
-        (n.clear_static_content)();
-        (n.clear_untaped)();
-        (n.clear_format_options)();
-        (n.set_strict_headers)(0);
-        (n.clear_last_error)();
-    }
-    // A staged-but-unconsumed note is reset core-side when start_* (re)loads
-    // the tape, so there's nothing to clear here.
 }
 
 /// Run a `char*`-returning mutation and turn a non-empty result into an error.
@@ -279,32 +261,15 @@ impl PlaybackBuilder {
         self
     }
 
-    /// Reset process-global state, apply this fixture's config, and start the
-    /// playback server. Acquires the one-server-per-process lock, held until
-    /// the returned [`VcrServer`] is dropped.
+    /// Open the playback server, apply this fixture's config to its handle,
+    /// then begin serving. Acquires the wrapper lock, held until the returned
+    /// [`VcrServer`] is dropped.
     pub fn start(self) -> Result<VcrServer, VcrError> {
         let n = native().map_err(VcrError::new)?;
         let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
 
-        reset_global_state(n);
-        // Shared config (header removals, static content, untaped) ...
-        self.common.apply_shared(n)?;
-        // ... then playback-specific config (must be set before start loads the tape).
-        if self.strict_headers {
-            unsafe { (n.set_strict_headers)(1) };
-        }
-        for (field, pattern, replacement) in &self.unredactions {
-            check(
-                n,
-                unsafe {
-                    (n.unredact)(*field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
-                },
-                "unredact",
-            )?;
-        }
-
         let handle = unsafe {
-            (n.start_playback)(
+            (n.open_playback)(
                 cstr(&self.common.label)?.as_ptr(),
                 cstr(&self.common.tape_path)?.as_ptr(),
                 cstr(&self.common.host)?.as_ptr(),
@@ -313,9 +278,33 @@ impl PlaybackBuilder {
         };
         if handle.is_null() {
             return Err(VcrError::new(format!(
-                "vcr playback failed to start for tape '{}': {}",
-                self.common.tape_path,
-                drain_start_error(n)
+                "vcr playback failed to start for tape '{}'",
+                self.common.tape_path
+            )));
+        }
+
+        // Shared config (header removals, static content, untaped) ...
+        self.common.apply_shared(n, handle)?;
+        // ... then playback-specific config (before serving starts).
+        if self.strict_headers {
+            unsafe { (n.set_strict_headers)(handle, 1) };
+        }
+        for (field, pattern, replacement) in &self.unredactions {
+            check(
+                n,
+                unsafe {
+                    (n.unredact)(handle, *field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
+                },
+                "unredact",
+            )?;
+        }
+
+        if unsafe { (n.start)(handle) } < 0 {
+            let err = drain_start_error(n, handle);
+            unsafe { (n.stop)(handle) };
+            return Err(VcrError::new(format!(
+                "vcr playback failed to begin serving for tape '{}': {}",
+                self.common.tape_path, err
             )));
         }
         Ok(VcrServer::new(n, guard, handle, self.common.host, self.common.tape_path, Mode::Playback))
@@ -411,29 +400,8 @@ impl RecordBuilder {
         let n = native().map_err(VcrError::new)?;
         let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
 
-        reset_global_state(n);
-        self.common.apply_shared(n)?;
-        if self.indent_code_blocks {
-            unsafe { (n.indent_code_blocks)() };
-        }
-        if self.emphasize_http_verbs {
-            unsafe { (n.emphasize_http_verbs)() };
-        }
-        for (field, pattern, replacement) in &self.redactions {
-            check(
-                n,
-                unsafe {
-                    (n.redact)(*field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
-                },
-                "redact",
-            )?;
-        }
-        // NOTE: the staged note is applied *after* start_record — load_record
-        // clears the tape (and the pending note) as it binds, so staging it
-        // pre-start would be wiped.
-
         let handle = unsafe {
-            (n.start_record)(
+            (n.open_record)(
                 cstr(&self.common.label)?.as_ptr(),
                 cstr(&self.common.tape_path)?.as_ptr(),
                 cstr(&self.upstream_base)?.as_ptr(),
@@ -443,17 +411,40 @@ impl RecordBuilder {
         };
         if handle.is_null() {
             return Err(VcrError::new(format!(
-                "vcr record failed to start for tape '{}' (upstream '{}'): {}",
-                self.common.tape_path,
-                self.upstream_base,
-                drain_start_error(n)
+                "vcr record failed to start for tape '{}' (upstream '{}')",
+                self.common.tape_path, self.upstream_base
             )));
         }
 
-        // Stage the note now (after load_record cleared the tape) so it
-        // attaches to the first interaction the SUT triggers.
+        self.common.apply_shared(n, handle)?;
+        if self.indent_code_blocks {
+            unsafe { (n.indent_code_blocks)(handle) };
+        }
+        if self.emphasize_http_verbs {
+            unsafe { (n.emphasize_http_verbs)(handle) };
+        }
+        for (field, pattern, replacement) in &self.redactions {
+            check(
+                n,
+                unsafe {
+                    (n.redact)(handle, *field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
+                },
+                "redact",
+            )?;
+        }
+        // Stage the note now (open_record cleared the tape) so it attaches
+        // to the first interaction the SUT triggers, before serving begins.
         if let Some((title, body)) = &self.note {
-            check(n, unsafe { (n.note)(cstr(title)?.as_ptr(), cstr(body)?.as_ptr()) }, "note")?;
+            check(n, unsafe { (n.note)(handle, cstr(title)?.as_ptr(), cstr(body)?.as_ptr()) }, "note")?;
+        }
+
+        if unsafe { (n.start)(handle) } < 0 {
+            let err = drain_start_error(n, handle);
+            unsafe { (n.stop)(handle) };
+            return Err(VcrError::new(format!(
+                "vcr record failed to begin serving for tape '{}': {}",
+                self.common.tape_path, err
+            )));
         }
 
         Ok(VcrServer::new(
@@ -467,8 +458,8 @@ impl RecordBuilder {
     }
 }
 
-fn drain_start_error(n: &Native) -> String {
-    let err = take_string(n, unsafe { (n.last_error)() });
+fn drain_start_error(n: &Native, h: Handle) -> String {
+    let err = take_string(n, unsafe { (n.last_error)(h) });
     if err.is_empty() {
         "(no detail; check tape path and port availability)".to_string()
     } else {
@@ -531,38 +522,38 @@ impl VcrServer {
 
     /// Tape entry count (playback), or interactions captured so far (record).
     pub fn tape_length(&self) -> i32 {
-        unsafe { (self.n.tape_length)() }
+        unsafe { (self.n.tape_length)(self.handle) }
     }
 
     /// Most-recent dispatch diagnostic; empty when none flagged.
     pub fn last_error(&self) -> String {
-        take_string(self.n, unsafe { (self.n.last_error)() })
+        take_string(self.n, unsafe { (self.n.last_error)(self.handle) })
     }
 
     /// Outcome of the most-recent dispatch.
     pub fn last_kind(&self) -> Outcome {
-        Outcome::from_raw(unsafe { (self.n.last_kind)() })
+        Outcome::from_raw(unsafe { (self.n.last_kind)(self.handle) })
     }
 
     /// Tape index of the most-recent matched interaction, or -1.
     pub fn last_index(&self) -> i32 {
-        unsafe { (self.n.last_index)() }
+        unsafe { (self.n.last_index)(self.handle) }
     }
 
     /// Stage a note (record mode) for the *next* interaction to be captured.
     /// Call between requests to annotate specific interactions.
     pub fn note(&self, title: &str, body: &str) -> Result<(), VcrError> {
-        check(self.n, unsafe { (self.n.note)(cstr(title)?.as_ptr(), cstr(body)?.as_ptr()) }, "note")
+        check(self.n, unsafe { (self.n.note)(self.handle, cstr(title)?.as_ptr(), cstr(body)?.as_ptr()) }, "note")
     }
 
     /// Rewind the replay cursor to interaction 0 and clear last-* slots.
     pub fn reset_cursor(&self) {
-        unsafe { (self.n.reset_cursor)() };
+        unsafe { (self.n.reset_cursor)(self.handle) };
     }
 
     /// Clear the last-error slot between sub-cases.
     pub fn clear_last_error(&self) {
-        unsafe { (self.n.clear_last_error)() };
+        unsafe { (self.n.clear_last_error)(self.handle) };
     }
 
     /// Stop the server and, in record mode, flush the tape — returning any

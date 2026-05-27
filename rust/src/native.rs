@@ -2,11 +2,12 @@
 //! `libloading`. 1:1 with the `aether_vcr_embed_*` C-ABI exported by
 //! `std/http/server/vcr/embed.ae`.
 //!
-//! v1 contract (matching the Aether side): ONE active VCR server per
-//! process — the tape/cursor/mutation state is process-global, so the
-//! diagnostics, tape-length, and mutation calls take no handle. Returned
-//! `char*` values are caller-owned and NUL-terminated; copy them into a
-//! Rust `String` via [`take_string`] which frees them per the ABI.
+//! Per-listener contract (matching the Aether side): N independent VCR
+//! servers can run concurrently in one process, each keyed by its own
+//! handle; every config / diagnostic / lifecycle call takes the handle.
+//! Lifecycle is open -> configure(handle) -> start. Returned `char*` values
+//! are caller-owned and NUL-terminated; copy them into a Rust `String` via
+//! [`take_string`] which frees them per the ABI.
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::path::PathBuf;
@@ -22,45 +23,51 @@ pub(crate) type Handle = *mut c_void;
 pub(crate) struct Native {
     _lib: Library,
 
-    pub start_playback:
+    pub open_playback:
         unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, c_int) -> Handle,
-    pub start_record: unsafe extern "C" fn(
+    pub open_playback_url:
+        unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, c_int) -> Handle,
+    pub open_record: unsafe extern "C" fn(
         *const c_char,
         *const c_char,
         *const c_char,
         *const c_char,
         c_int,
     ) -> Handle,
+    pub start: unsafe extern "C" fn(Handle) -> c_int,
     pub stop: unsafe extern "C" fn(Handle),
     pub stop_and_flush: unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
     pub stop_and_flush_fail_if_changed:
         unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
+    pub stop_and_flush_or_check:
+        unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
 
     pub port: unsafe extern "C" fn(Handle) -> c_int,
     pub base_url: unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
-    pub tape_length: unsafe extern "C" fn() -> c_int,
-    pub reset_cursor: unsafe extern "C" fn(),
+    pub tape_length: unsafe extern "C" fn(Handle) -> c_int,
+    pub reset_cursor: unsafe extern "C" fn(Handle),
 
-    pub last_error: unsafe extern "C" fn() -> *mut c_char,
-    pub last_kind: unsafe extern "C" fn() -> c_int,
-    pub last_index: unsafe extern "C" fn() -> c_int,
-    pub clear_last_error: unsafe extern "C" fn(),
+    pub last_error: unsafe extern "C" fn(Handle) -> *mut c_char,
+    pub last_kind: unsafe extern "C" fn(Handle) -> c_int,
+    pub last_index: unsafe extern "C" fn(Handle) -> c_int,
+    pub clear_last_error: unsafe extern "C" fn(Handle),
 
-    pub redact: unsafe extern "C" fn(c_int, *const c_char, *const c_char) -> *mut c_char,
-    pub unredact: unsafe extern "C" fn(c_int, *const c_char, *const c_char) -> *mut c_char,
-    pub remove_header: unsafe extern "C" fn(c_int, *const c_char) -> *mut c_char,
-    pub note: unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char,
-    pub static_content: unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char,
-    pub untaped: unsafe extern "C" fn(*const c_char) -> *mut c_char,
-    pub set_strict_headers: unsafe extern "C" fn(c_int),
-    pub indent_code_blocks: unsafe extern "C" fn(),
-    pub emphasize_http_verbs: unsafe extern "C" fn(),
-    pub clear_redactions: unsafe extern "C" fn(),
-    pub clear_unredactions: unsafe extern "C" fn(),
-    pub clear_header_removals: unsafe extern "C" fn(),
-    pub clear_static_content: unsafe extern "C" fn(),
-    pub clear_untaped: unsafe extern "C" fn(),
-    pub clear_format_options: unsafe extern "C" fn(),
+    pub redact: unsafe extern "C" fn(Handle, c_int, *const c_char, *const c_char) -> *mut c_char,
+    pub unredact: unsafe extern "C" fn(Handle, c_int, *const c_char, *const c_char) -> *mut c_char,
+    pub remove_header: unsafe extern "C" fn(Handle, c_int, *const c_char) -> *mut c_char,
+    pub strict_ignore_common_headers: unsafe extern "C" fn(Handle) -> *mut c_char,
+    pub note: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> *mut c_char,
+    pub static_content: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> *mut c_char,
+    pub untaped: unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
+    pub set_strict_headers: unsafe extern "C" fn(Handle, c_int),
+    pub indent_code_blocks: unsafe extern "C" fn(Handle),
+    pub emphasize_http_verbs: unsafe extern "C" fn(Handle),
+    pub clear_redactions: unsafe extern "C" fn(Handle),
+    pub clear_unredactions: unsafe extern "C" fn(Handle),
+    pub clear_header_removals: unsafe extern "C" fn(Handle),
+    pub clear_static_content: unsafe extern "C" fn(Handle),
+    pub clear_untaped: unsafe extern "C" fn(Handle),
+    pub clear_format_options: unsafe extern "C" fn(Handle),
 
     pub free_string: unsafe extern "C" fn(*mut c_char),
 }
@@ -151,11 +158,14 @@ fn load() -> Result<Native, String> {
     }
 
     Ok(Native {
-        start_playback: sym!(b"aether_vcr_embed_start_playback\0"),
-        start_record: sym!(b"aether_vcr_embed_start_record\0"),
+        open_playback: sym!(b"aether_vcr_embed_open_playback\0"),
+        open_playback_url: sym!(b"aether_vcr_embed_open_playback_url\0"),
+        open_record: sym!(b"aether_vcr_embed_open_record\0"),
+        start: sym!(b"aether_vcr_embed_start\0"),
         stop: sym!(b"aether_vcr_embed_stop\0"),
         stop_and_flush: sym!(b"aether_vcr_embed_stop_and_flush\0"),
         stop_and_flush_fail_if_changed: sym!(b"aether_vcr_embed_stop_and_flush_fail_if_changed\0"),
+        stop_and_flush_or_check: sym!(b"aether_vcr_embed_stop_and_flush_or_check\0"),
         port: sym!(b"aether_vcr_embed_port\0"),
         base_url: sym!(b"aether_vcr_embed_base_url\0"),
         tape_length: sym!(b"aether_vcr_embed_tape_length\0"),
@@ -167,6 +177,7 @@ fn load() -> Result<Native, String> {
         redact: sym!(b"aether_vcr_embed_redact\0"),
         unredact: sym!(b"aether_vcr_embed_unredact\0"),
         remove_header: sym!(b"aether_vcr_embed_remove_header\0"),
+        strict_ignore_common_headers: sym!(b"aether_vcr_embed_strict_ignore_common_headers\0"),
         note: sym!(b"aether_vcr_embed_note\0"),
         static_content: sym!(b"aether_vcr_embed_static_content\0"),
         untaped: sym!(b"aether_vcr_embed_untaped\0"),
