@@ -9,11 +9,11 @@
 //   expect(vcr.lastKind).toBe(VcrOutcome.Ok)
 //   vcr.close()
 //
-// v1 contract (from the Aether side): ONE active VCR server per process. The
-// mutation/diagnostic state is process-global, so `.start()` resets it to a
-// clean slate before applying this fixture's config — a redaction / note /
-// strict setting from a previous test never leaks forward. Run tests serially
-// (one server per process at a time).
+// Per-listener contract (from the Aether side): N independent VCR servers can
+// run concurrently in one process, each keyed by its own handle. A fixture's
+// config / diagnostics / tape are scoped to its handle, so two `.start()`
+// servers can be alive at once without bleeding into each other. Lifecycle is
+// open -> configure(handle) -> start.
 
 import * as N from './native'
 
@@ -58,25 +58,6 @@ function check(resultPtr: unknown, op: string): void {
   if (err) {
     throw new VcrError(`vcr ${op} failed: ${err}`)
   }
-}
-
-/**
- * Wipe all process-global mutation / format / strict state so a previous
- * fixture's settings can't leak into this one (v1 one-server-per-process has
- * no per-handle state). Called first by every `.start()`.
- *
- * A staged-but-unconsumed note is reset core-side when `start_*` (re)loads the
- * tape, so there's nothing to clear here.
- */
-function resetGlobalState(): void {
-  N.clearRedactions()
-  N.clearUnredactions()
-  N.clearHeaderRemovals()
-  N.clearStaticContent()
-  N.clearUntaped()
-  N.clearFormatOptions()
-  N.setStrictHeaders(0)
-  N.clearLastError()
 }
 
 interface HeaderRemoval {
@@ -142,19 +123,18 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   }
 
   /**
-   * Apply this builder's accumulated config after the reset and before the
-   * server starts (mutations like static-content and unredactions must be
-   * registered before the tape loads). Subclasses extend this.
+   * Apply this builder's accumulated config to the opened handle, before
+   * serving starts. Subclasses extend this.
    */
-  protected applyConfig(): void {
+  protected applyConfig(handle: unknown): void {
     for (const { field, name } of this.headerRemovals) {
-      check(N.removeHeader(field, name), 'removeHeader')
+      check(N.removeHeader(handle, field, name), 'removeHeader')
     }
     for (const { mount, dir } of this.staticMounts) {
-      check(N.staticContent(mount, dir), 'staticContent')
+      check(N.staticContent(handle, mount, dir), 'staticContent')
     }
     for (const path of this.untapedPaths) {
-      check(N.untaped(path), 'untaped')
+      check(N.untaped(handle, path), 'untaped')
     }
   }
 }
@@ -190,21 +170,25 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     return this
   }
 
-  protected applyConfig(): void {
-    super.applyConfig()
-    if (this.strictHeadersOn) N.setStrictHeaders(1)
+  protected applyConfig(handle: unknown): void {
+    super.applyConfig(handle)
+    if (this.strictHeadersOn) N.setStrictHeaders(handle, 1)
     for (const { field, pattern, replacement } of this.unredactions) {
-      check(N.unredact(field, pattern, replacement), 'unredact')
+      check(N.unredact(handle, field, pattern, replacement), 'unredact')
     }
   }
 
   start(): VcrServer {
-    resetGlobalState()
-    this.applyConfig()
-    const handle = N.startPlayback(this.labelValue, this.tapePath, this.hostValue, this.portValue)
+    const handle = N.openPlayback(this.labelValue, this.tapePath, this.hostValue, this.portValue)
     if (N.isNull(handle)) {
+      throw new VcrError(`vcr playback failed to start for tape '${this.tapePath}'`)
+    }
+    this.applyConfig(handle)
+    if (N.start(handle) < 0) {
+      const err = drainStartError(handle)
+      N.stop(handle)
       throw new VcrError(
-        `vcr playback failed to start for tape '${this.tapePath}': ${drainStartError()}`,
+        `vcr playback failed to begin serving for tape '${this.tapePath}': ${err}`,
       )
     }
     return new VcrServer(handle, this.hostValue, this.tapePath, false, false)
@@ -264,22 +248,17 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     return this
   }
 
-  protected applyConfig(): void {
-    super.applyConfig()
-    if (this.indentCodeBlocksOn) N.indentCodeBlocks()
-    if (this.emphasizeHttpVerbsOn) N.emphasizeHttpVerbs()
+  protected applyConfig(handle: unknown): void {
+    super.applyConfig(handle)
+    if (this.indentCodeBlocksOn) N.indentCodeBlocks(handle)
+    if (this.emphasizeHttpVerbsOn) N.emphasizeHttpVerbs(handle)
     for (const { field, pattern, replacement } of this.redactions) {
-      check(N.redact(field, pattern, replacement), 'redact')
+      check(N.redact(handle, field, pattern, replacement), 'redact')
     }
-    // NOTE: the staged note is applied *after* start_record — load_record
-    // clears the tape (and the pending note) as it binds, so staging it
-    // pre-start would be wiped. See start().
   }
 
   start(): VcrServer {
-    resetGlobalState()
-    this.applyConfig()
-    const handle = N.startRecord(
+    const handle = N.openRecord(
       this.labelValue,
       this.tapePath,
       this.upstreamBase,
@@ -288,20 +267,28 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     )
     if (N.isNull(handle)) {
       throw new VcrError(
-        `vcr record failed to start for tape '${this.tapePath}' (upstream '${this.upstreamBase}'): ${drainStartError()}`,
+        `vcr record failed to start for tape '${this.tapePath}' (upstream '${this.upstreamBase}')`,
       )
     }
-    // Stage the note now (after load_record cleared the tape) so it attaches
-    // to the first interaction the SUT triggers.
+    this.applyConfig(handle)
+    // Stage the note now (openRecord cleared the tape) so it attaches to the
+    // first interaction the SUT triggers, before serving begins.
     if (this.pendingNote) {
-      check(N.note(this.pendingNote.title, this.pendingNote.body), 'note')
+      check(N.note(handle, this.pendingNote.title, this.pendingNote.body), 'note')
+    }
+    if (N.start(handle) < 0) {
+      const err = drainStartError(handle)
+      N.stop(handle)
+      throw new VcrError(
+        `vcr record failed to begin serving for tape '${this.tapePath}': ${err}`,
+      )
     }
     return new VcrServer(handle, this.hostValue, this.tapePath, true, this.failIfChangedOn)
   }
 }
 
-function drainStartError(): string {
-  const err = N.takeString(N.lastError())
+function drainStartError(handle: unknown): string {
+  const err = N.takeString(N.lastError(handle))
   return err || '(no detail; check tape path and port availability)'
 }
 
@@ -346,22 +333,22 @@ export class VcrServer {
 
   /** Tape entry count (playback), or interactions captured so far (record). */
   get tapeLength(): number {
-    return N.tapeLength()
+    return N.tapeLength(this.requireHandle())
   }
 
   /** Most-recent dispatch diagnostic; empty when none flagged. */
   get lastError(): string {
-    return N.takeString(N.lastError())
+    return N.takeString(N.lastError(this.requireHandle()))
   }
 
   /** Outcome of the most-recent dispatch. */
   get lastKind(): VcrOutcome {
-    return N.lastKind() as VcrOutcome
+    return N.lastKind(this.requireHandle()) as VcrOutcome
   }
 
   /** Tape index of the most-recent matched interaction, or -1. */
   get lastIndex(): number {
-    return N.lastIndex()
+    return N.lastIndex(this.requireHandle())
   }
 
   /**
@@ -369,18 +356,18 @@ export class VcrServer {
    * Call between requests to annotate specific interactions.
    */
   note(title: string, body: string): void {
-    const err = N.takeString(N.note(title, body))
+    const err = N.takeString(N.note(this.requireHandle(), title, body))
     if (err) throw new VcrError(err)
   }
 
   /** Rewind the replay cursor to interaction 0 and clear last-* slots. */
   resetCursor(): void {
-    N.resetCursor()
+    N.resetCursor(this.requireHandle())
   }
 
   /** Clear the last-error slot between sub-cases. */
   clearLastError(): void {
-    N.clearLastError()
+    N.clearLastError(this.requireHandle())
   }
 
   /** Stop the server; in record mode, flush the tape (and check drift if failIfChanged). */

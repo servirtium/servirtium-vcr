@@ -7,9 +7,10 @@
 // and then frees it via `aether_vcr_embed_free_string`, per the ABI's
 // ownership rule.
 //
-// v1 contract (matching the Aether side): ONE active VCR server per process —
-// the tape / cursor / mutation state is process-global, so the diagnostics,
-// tape-length, and mutation calls take no handle.
+// Per-listener contract (matching the Aether side): N independent VCR servers
+// can run concurrently in one process, each keyed by its own handle; every
+// config / diagnostic / lifecycle call takes the handle. Lifecycle is
+// open -> configure(handle) -> start.
 
 import * as fs from 'fs'
 import * as path from 'path'
@@ -56,23 +57,32 @@ type CharPtr = unknown
 
 // ---- lifecycle ------------------------------------------------------------
 
-export const startPlayback = lib.func(
-  'void* aether_vcr_embed_start_playback(const char* label, const char* tape_path, const char* host, int port)',
+export const openPlayback = lib.func(
+  'void* aether_vcr_embed_open_playback(const char* label, const char* tape_path, const char* host, int port)',
 )
 
-export const startRecord = lib.func(
-  'void* aether_vcr_embed_start_record(const char* label, const char* tape_path, const char* upstream_base, const char* host, int port)',
+export const openPlaybackUrl = lib.func(
+  'void* aether_vcr_embed_open_playback_url(const char* label, const char* tape_url, const char* host, int port)',
 )
+
+export const openRecord = lib.func(
+  'void* aether_vcr_embed_open_record(const char* label, const char* tape_path, const char* upstream_base, const char* host, int port)',
+)
+
+export const start = lib.func('int aether_vcr_embed_start(void* server)')
 
 export const stop = lib.func('void aether_vcr_embed_stop(void* server)')
 
-// v1 has no per-handle tape-path store, so the path is passed at flush.
 export const stopAndFlush = lib.func(
   'void* aether_vcr_embed_stop_and_flush(void* server, const char* tape_path)',
 )
 
 export const stopAndFlushFailIfChanged = lib.func(
   'void* aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path)',
+)
+
+export const stopAndFlushOrCheck = lib.func(
+  'void* aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path)',
 )
 
 // ---- introspection --------------------------------------------------------
@@ -84,73 +94,77 @@ export const baseUrl = lib.func(
   'void* aether_vcr_embed_base_url(void* server, const char* host)',
 )
 
-export const tapeLength = lib.func('int aether_vcr_embed_tape_length()')
+export const tapeLength = lib.func('int aether_vcr_embed_tape_length(void* server)')
 
-export const resetCursor = lib.func('void aether_vcr_embed_reset_cursor()')
+export const resetCursor = lib.func('void aether_vcr_embed_reset_cursor(void* server)')
 
-// ---- diagnostics (process-global, no handle) ------------------------------
+// ---- diagnostics (handle-based) -------------------------------------------
 
-export const lastError = lib.func('void* aether_vcr_embed_last_error()')
+export const lastError = lib.func('void* aether_vcr_embed_last_error(void* server)')
 
-export const lastKind = lib.func('int aether_vcr_embed_last_kind()')
+export const lastKind = lib.func('int aether_vcr_embed_last_kind(void* server)')
 
-export const lastIndex = lib.func('int aether_vcr_embed_last_index()')
+export const lastIndex = lib.func('int aether_vcr_embed_last_index(void* server)')
 
-export const clearLastError = lib.func('void aether_vcr_embed_clear_last_error()')
+export const clearLastError = lib.func('void aether_vcr_embed_clear_last_error(void* server)')
 
 // ---- mutations / config (call BEFORE start; return "" or an error) --------
 
 export const redact = lib.func(
-  'void* aether_vcr_embed_redact(int field, const char* pattern, const char* replacement)',
+  'void* aether_vcr_embed_redact(void* server, int field, const char* pattern, const char* replacement)',
 )
 
 export const unredact = lib.func(
-  'void* aether_vcr_embed_unredact(int field, const char* pattern, const char* replacement)',
+  'void* aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement)',
 )
 
 export const removeHeader = lib.func(
-  'void* aether_vcr_embed_remove_header(int field, const char* name)',
+  'void* aether_vcr_embed_remove_header(void* server, int field, const char* name)',
+)
+
+export const strictIgnoreCommonHeaders = lib.func(
+  'void* aether_vcr_embed_strict_ignore_common_headers(void* server)',
 )
 
 export const note = lib.func(
-  'void* aether_vcr_embed_note(const char* title, const char* body)',
+  'void* aether_vcr_embed_note(void* server, const char* title, const char* body)',
 )
 
 export const staticContent = lib.func(
-  'void* aether_vcr_embed_static_content(const char* mount_path, const char* fs_dir)',
+  'void* aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir)',
 )
 
 export const untaped = lib.func(
-  'void* aether_vcr_embed_untaped(const char* path)',
+  'void* aether_vcr_embed_untaped(void* server, const char* path)',
 )
 
 export const setStrictHeaders = lib.func(
-  'void aether_vcr_embed_set_strict_headers(int on)',
+  'void aether_vcr_embed_set_strict_headers(void* server, int on)',
 )
 
-export const indentCodeBlocks = lib.func('void aether_vcr_embed_indent_code_blocks()')
+export const indentCodeBlocks = lib.func('void aether_vcr_embed_indent_code_blocks(void* server)')
 
 export const emphasizeHttpVerbs = lib.func(
-  'void aether_vcr_embed_emphasize_http_verbs()',
+  'void aether_vcr_embed_emphasize_http_verbs(void* server)',
 )
 
-export const clearRedactions = lib.func('void aether_vcr_embed_clear_redactions()')
+export const clearRedactions = lib.func('void aether_vcr_embed_clear_redactions(void* server)')
 
-export const clearUnredactions = lib.func('void aether_vcr_embed_clear_unredactions()')
+export const clearUnredactions = lib.func('void aether_vcr_embed_clear_unredactions(void* server)')
 
 export const clearHeaderRemovals = lib.func(
-  'void aether_vcr_embed_clear_header_removals()',
+  'void aether_vcr_embed_clear_header_removals(void* server)',
 )
 
 export const clearStaticContent = lib.func(
-  'void aether_vcr_embed_clear_static_content()',
+  'void aether_vcr_embed_clear_static_content(void* server)',
 )
 
 export const clearUntaped = lib.func(
-  'void aether_vcr_embed_clear_untaped()',
+  'void aether_vcr_embed_clear_untaped(void* server)',
 )
 
-export const clearFormatOptions = lib.func('void aether_vcr_embed_clear_format_options()')
+export const clearFormatOptions = lib.func('void aether_vcr_embed_clear_format_options(void* server)')
 
 // ---- string ownership -----------------------------------------------------
 
