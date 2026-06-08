@@ -114,6 +114,12 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_redact", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Redact(IntPtr server, int field, string pattern, string replacement);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_normalize_whole_tape", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr NormalizeWholeTape(IntPtr server, string pattern, string name);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_redact_whole_tape", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr RedactWholeTape(IntPtr server, string pattern, string replacement);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_unredact", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Unredact(IntPtr server, int field, string pattern, string replacement);
 

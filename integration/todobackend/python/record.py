@@ -29,6 +29,10 @@ def main() -> int:
         servirtium.record(str(TAPE), upstream)
         .static_content("/suite", str(SUITE_DIR))
         .untaped("/favicon.ico")
+        .normalize_whole_tape(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "id"
+        )
+        .redact_whole_tape(r"Date: .+ GMT", "Date: <DATE>")
         .port(VCR_PORT)
         .start()
     )

@@ -25,6 +25,8 @@ upstream isEmpty ifTrue: [
 result := (Servirtium record: tape upstream: upstream)
 	staticContentMount: '/suite' dir: suite;
 	untaped: '/favicon.ico';
+	normalizeWholeTape: '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' name: 'id';
+	redactWholeTape: 'Date: .+ GMT' replacement: 'Date: <DATE>';
 	port: 51080;
 	startThenDo: [ :vcr |
 		| pf |

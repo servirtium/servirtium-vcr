@@ -198,6 +198,8 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 /** Configures and starts a record VCR server. */
 export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   private readonly redactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
+  private readonly wholeTapeNormalizations: Array<{ pattern: string; name: string }> = []
+  private readonly wholeTapeRedactions: Array<{ pattern: string; replacement: string }> = []
   private pendingNote: { title: string; body: string } | null = null
   private indentCodeBlocksOn = false
   private emphasizeHttpVerbsOn = false
@@ -214,6 +216,29 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   /** Scrub a value out of the given field before it lands on the tape. */
   redact(field: VcrField, pattern: string, replacement: string): RecordBuilder {
     this.redactions.push({ field, pattern, replacement })
+    return this
+  }
+
+  /**
+   * Tokenize every distinct match of `pattern` across the WHOLE tape (all
+   * fields and interactions, in first-appearance order) into a stable
+   * `{{name-N}}` token. Use for correlated volatiles — e.g. a server-minted id
+   * that appears in a response body and then recurs in later request paths —
+   * so the same value maps to the same token everywhere it occurs.
+   */
+  normalizeWholeTape(pattern: string, name: string): RecordBuilder {
+    this.wholeTapeNormalizations.push({ pattern, name })
+    return this
+  }
+
+  /**
+   * Collapse every match of `pattern` across the WHOLE tape (all fields and
+   * interactions) to the constant `replacement`. Use for uncorrelated
+   * volatiles where each occurrence is independent — e.g. a `Date` header — so
+   * they don't churn the committed tape.
+   */
+  redactWholeTape(pattern: string, replacement: string): RecordBuilder {
+    this.wholeTapeRedactions.push({ pattern, replacement })
     return this
   }
 
@@ -254,6 +279,12 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     if (this.emphasizeHttpVerbsOn) N.emphasizeHttpVerbs(handle)
     for (const { field, pattern, replacement } of this.redactions) {
       check(N.redact(handle, field, pattern, replacement), 'redact')
+    }
+    for (const { pattern, name } of this.wholeTapeNormalizations) {
+      check(N.normalizeWholeTape(handle, pattern, name), 'normalizeWholeTape')
+    }
+    for (const { pattern, replacement } of this.wholeTapeRedactions) {
+      check(N.redactWholeTape(handle, pattern, replacement), 'redactWholeTape')
     }
   }
 

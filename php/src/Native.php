@@ -46,6 +46,8 @@ final class Native
         int    aether_vcr_embed_last_index(void* server);
         void   aether_vcr_embed_clear_last_error(void* server);
         char*  aether_vcr_embed_redact(void* server, int field, const char* pattern, const char* replacement);
+        char*  aether_vcr_embed_normalize_whole_tape(void* server, const char* pattern, const char* name);
+        char*  aether_vcr_embed_redact_whole_tape(void* server, const char* pattern, const char* replacement);
         char*  aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement);
         char*  aether_vcr_embed_remove_header(void* server, int field, const char* name);
         char*  aether_vcr_embed_strict_ignore_common_headers(void* server);

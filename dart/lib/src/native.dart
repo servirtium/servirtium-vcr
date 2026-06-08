@@ -127,6 +127,11 @@ typedef _RedactC = Pointer<Utf8> Function(
 typedef _RedactD = Pointer<Utf8> Function(
     Pointer<Void> server, int field, Pointer<Utf8> pattern, Pointer<Utf8> replacement);
 
+typedef _WholeTapeC = Pointer<Utf8> Function(
+    Pointer<Void> server, Pointer<Utf8> pattern, Pointer<Utf8> nameOrReplacement);
+typedef _WholeTapeD = Pointer<Utf8> Function(
+    Pointer<Void> server, Pointer<Utf8> pattern, Pointer<Utf8> nameOrReplacement);
+
 typedef _RemoveHeaderC = Pointer<Utf8> Function(Pointer<Void> server, Int32 field, Pointer<Utf8> name);
 typedef _RemoveHeaderD = Pointer<Utf8> Function(Pointer<Void> server, int field, Pointer<Utf8> name);
 
@@ -191,6 +196,10 @@ class Native {
   static final redact = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_redact');
   static final unredact =
       _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_unredact');
+  static final normalizeWholeTape = _lib.lookupFunction<_WholeTapeC, _WholeTapeD>(
+      'aether_vcr_embed_normalize_whole_tape');
+  static final redactWholeTape = _lib.lookupFunction<_WholeTapeC, _WholeTapeD>(
+      'aether_vcr_embed_redact_whole_tape');
   static final removeHeader = _lib
       .lookupFunction<_RemoveHeaderC, _RemoveHeaderD>('aether_vcr_embed_remove_header');
   static final strictIgnoreCommonHeaders = _lib.lookupFunction<_StrHandleC, _StrHandleD>(

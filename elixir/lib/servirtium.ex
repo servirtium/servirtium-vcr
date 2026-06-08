@@ -57,6 +57,10 @@ defmodule Servirtium do
   Record only:
 
     * `:redact` — list of `{field, pattern, replacement}`
+    * `:normalize_whole_tape` — list of `{pattern, name}` applied across the
+      whole tape (record mode, before start)
+    * `:redact_whole_tape` — list of `{pattern, replacement}` applied across the
+      whole tape (record mode, before start)
     * `:note` — `{title, body}` attached to the first recorded interaction
     * `:indent_code_blocks` — `true` to emit 4-space-indented blocks
     * `:emphasize_http_verbs` — `true` to emit `*GET*` instead of `GET`
@@ -337,6 +341,14 @@ defmodule Servirtium do
 
     for {field, pat, repl} <- Keyword.get(opts, :redact, []) do
       check!(Native.redact(handle, field!(field), pat, repl), "redact")
+    end
+
+    for {pat, name} <- Keyword.get(opts, :normalize_whole_tape, []) do
+      check!(Native.normalize_whole_tape(handle, pat, name), "normalize_whole_tape")
+    end
+
+    for {pat, repl} <- Keyword.get(opts, :redact_whole_tape, []) do
+      check!(Native.redact_whole_tape(handle, pat, repl), "redact_whole_tape")
     end
   end
 

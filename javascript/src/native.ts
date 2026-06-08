@@ -114,6 +114,14 @@ export const redact = lib.func(
   'void* aether_vcr_embed_redact(void* server, int field, const char* pattern, const char* replacement)',
 )
 
+export const normalizeWholeTape = lib.func(
+  'void* aether_vcr_embed_normalize_whole_tape(void* server, const char* pattern, const char* name)',
+)
+
+export const redactWholeTape = lib.func(
+  'void* aether_vcr_embed_redact_whole_tape(void* server, const char* pattern, const char* replacement)',
+)
+
 export const unredact = lib.func(
   'void* aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement)',
 )

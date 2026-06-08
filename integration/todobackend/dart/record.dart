@@ -26,7 +26,10 @@ Future<int> _main() async {
     return 2;
   }
 
-  final vcr = Vcr.record(tape, upstream)
+  final vcr = (Vcr.record(tape, upstream)
+        ..normalizeWholeTape(
+            r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'id')
+        ..redactWholeTape(r'Date: .+ GMT', 'Date: <DATE>'))
       .staticContent('/suite', suiteDir)
       .untaped('/favicon.ico')
       .port(vcrPort)

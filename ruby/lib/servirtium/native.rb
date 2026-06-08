@@ -90,6 +90,8 @@ module Servirtium
 
       # ---- mutations / config (handle 1st arg; call BEFORE start) ----
       [:redact,         'aether_vcr_embed_redact',         VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
+      [:normalize_whole_tape, 'aether_vcr_embed_normalize_whole_tape', VOIDP, [VOIDP, VOIDP, VOIDP]],
+      [:redact_whole_tape,    'aether_vcr_embed_redact_whole_tape',    VOIDP, [VOIDP, VOIDP, VOIDP]],
       [:unredact,       'aether_vcr_embed_unredact',       VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
       [:remove_header,  'aether_vcr_embed_remove_header',  VOIDP, [VOIDP, INT, VOIDP]],
       [:strict_ignore_common_headers, 'aether_vcr_embed_strict_ignore_common_headers', VOIDP, [VOIDP]],

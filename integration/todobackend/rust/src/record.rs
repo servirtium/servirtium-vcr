@@ -28,6 +28,11 @@ async fn main() -> std::process::ExitCode {
     let vcr = Vcr::record(tape_path(), upstream)
         .static_content("/suite", suite_dir())
         .untaped("/favicon.ico")
+        .normalize_whole_tape(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "id",
+        )
+        .redact_whole_tape(r"Date: .+ GMT", "Date: <DATE>")
         .port(VCR_PORT)
         .start()
         .expect("record VCR should start on the fixed port");

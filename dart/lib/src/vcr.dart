@@ -241,6 +241,8 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
 
   final String _upstreamBase;
   final List<(VcrField, String, String)> _redactions = [];
+  final List<(String, String)> _normalizeWholeTape = [];
+  final List<(String, String)> _redactWholeTape = [];
   (String, String)? _note;
   bool _indentCodeBlocks = false;
   bool _emphasizeHttpVerbs = false;
@@ -252,6 +254,23 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   /// Scrub a value out of the given field before it lands on the tape.
   RecordBuilder redact(VcrField field, String pattern, String replacement) {
     _redactions.add((field, pattern, replacement));
+    return this;
+  }
+
+  /// Tokenize every distinct match of [pattern] across the WHOLE tape (all
+  /// fields and interactions, in first-appearance order) into a stable
+  /// `{{name-N}}` placeholder. Use for correlated volatiles — an id minted in
+  /// one response that recurs in later request paths keeps the same token.
+  RecordBuilder normalizeWholeTape(String pattern, String name) {
+    _normalizeWholeTape.add((pattern, name));
+    return this;
+  }
+
+  /// Collapse every match of [pattern] across the WHOLE tape to the constant
+  /// [replacement]. Use for uncorrelated volatiles (e.g. a `Date` header) where
+  /// each occurrence is independent and a single fixed value suffices.
+  RecordBuilder redactWholeTape(String pattern, String replacement) {
+    _redactWholeTape.add((pattern, replacement));
     return this;
   }
 
@@ -289,6 +308,14 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     for (final (field, pattern, replacement) in _redactions) {
       withUtf8(pattern, (p) => withUtf8(replacement,
           (r) => _check(Native.redact(handle, field.value, p, r), 'redact')));
+    }
+    for (final (pattern, name) in _normalizeWholeTape) {
+      withUtf8(pattern, (p) => withUtf8(name,
+          (n) => _check(Native.normalizeWholeTape(handle, p, n), 'normalizeWholeTape')));
+    }
+    for (final (pattern, replacement) in _redactWholeTape) {
+      withUtf8(pattern, (p) => withUtf8(replacement,
+          (r) => _check(Native.redactWholeTape(handle, p, r), 'redactWholeTape')));
     }
   }
 

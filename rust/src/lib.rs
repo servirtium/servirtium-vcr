@@ -142,6 +142,8 @@ impl Vcr {
             common: Common::new(tape_path.into()),
             upstream_base: upstream_base.into(),
             redactions: Vec::new(),
+            normalize_whole_tape: Vec::new(),
+            redact_whole_tape: Vec::new(),
             note: None,
             indent_code_blocks: false,
             emphasize_http_verbs: false,
@@ -316,6 +318,8 @@ pub struct RecordBuilder {
     common: Common,
     upstream_base: String,
     redactions: Vec<(Field, String, String)>,
+    normalize_whole_tape: Vec<(String, String)>,
+    redact_whole_tape: Vec<(String, String)>,
     note: Option<(String, String)>,
     indent_code_blocks: bool,
     emphasize_http_verbs: bool,
@@ -365,6 +369,29 @@ impl RecordBuilder {
     ) -> Self {
         self.redactions
             .push((field, pattern.into(), replacement.into()));
+        self
+    }
+    /// Tokenize every distinct regex match across the WHOLE tape (all fields
+    /// and interactions, in first-appearance order) into a stable `{{name-N}}`
+    /// placeholder. Use this for correlated ids that recur in later request
+    /// paths, so the scrubbed value stays linkable across interactions.
+    pub fn normalize_whole_tape(
+        mut self,
+        pattern: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Self {
+        self.normalize_whole_tape.push((pattern.into(), name.into()));
+        self
+    }
+    /// Collapse every regex match across the WHOLE tape to the constant
+    /// `replacement`. Use this for uncorrelated volatiles (e.g. `Date`
+    /// headers) where each match should become the same fixed string.
+    pub fn redact_whole_tape(
+        mut self,
+        pattern: impl Into<String>,
+        replacement: impl Into<String>,
+    ) -> Self {
+        self.redact_whole_tape.push((pattern.into(), replacement.into()));
         self
     }
     /// Attach a note to the *first* recorded interaction. For notes on later
@@ -430,6 +457,24 @@ impl RecordBuilder {
                     (n.redact)(handle, *field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
                 },
                 "redact",
+            )?;
+        }
+        for (pattern, name) in &self.normalize_whole_tape {
+            check(
+                n,
+                unsafe {
+                    (n.normalize_whole_tape)(handle, cstr(pattern)?.as_ptr(), cstr(name)?.as_ptr())
+                },
+                "normalize_whole_tape",
+            )?;
+        }
+        for (pattern, replacement) in &self.redact_whole_tape {
+            check(
+                n,
+                unsafe {
+                    (n.redact_whole_tape)(handle, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
+                },
+                "redact_whole_tape",
             )?;
         }
         // Stage the note now (open_record cleared the tape) so it attaches

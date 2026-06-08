@@ -15,6 +15,12 @@ final class RecordBuilder extends VcrBuilderBase
     /** @var list<array{0: VcrField, 1: string, 2: string}> */
     private array $redactions = [];
 
+    /** @var list<array{0: string, 1: string}> */
+    private array $normalizeWholeTapes = [];
+
+    /** @var list<array{0: string, 1: string}> */
+    private array $redactWholeTapes = [];
+
     /** @var array{0: string, 1: string}|null */
     private ?array $note = null;
 
@@ -32,6 +38,32 @@ final class RecordBuilder extends VcrBuilderBase
     public function redact(VcrField $field, string $pattern, string $replacement): static
     {
         $this->redactions[] = [$field, $pattern, $replacement];
+
+        return $this;
+    }
+
+    /**
+     * Whole-tape normalization: every distinct regex match across the WHOLE
+     * tape (all fields/interactions, in first-appearance order) becomes a
+     * stable `{{name-N}}` token. Use for CORRELATED volatiles — ids minted in
+     * one interaction that recur in later request paths — so they round-trip
+     * on playback and a re-record stays byte-identical.
+     */
+    public function normalizeWholeTape(string $pattern, string $name): self
+    {
+        $this->normalizeWholeTapes[] = [$pattern, $name];
+
+        return $this;
+    }
+
+    /**
+     * Whole-tape redaction: every regex match across the WHOLE tape collapses
+     * to the single constant `$replacement`. Use for UNCORRELATED volatiles
+     * (e.g. the `Date` response header) that just need to be made constant.
+     */
+    public function redactWholeTape(string $pattern, string $replacement): self
+    {
+        $this->redactWholeTapes[] = [$pattern, $replacement];
 
         return $this;
     }
@@ -88,6 +120,12 @@ final class RecordBuilder extends VcrBuilderBase
         }
         foreach ($this->redactions as [$field, $pattern, $replacement]) {
             self::check($lib->aether_vcr_embed_redact($handle, $field->value, $pattern, $replacement), 'redact');
+        }
+        foreach ($this->normalizeWholeTapes as [$pattern, $name]) {
+            self::check($lib->aether_vcr_embed_normalize_whole_tape($handle, $pattern, $name), 'normalizeWholeTape');
+        }
+        foreach ($this->redactWholeTapes as [$pattern, $replacement]) {
+            self::check($lib->aether_vcr_embed_redact_whole_tape($handle, $pattern, $replacement), 'redactWholeTape');
         }
     }
 

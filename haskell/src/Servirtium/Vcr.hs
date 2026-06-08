@@ -160,6 +160,17 @@ data RecordOptions = RecordOptions
   , recRedactions        :: [(Field, String, String)]
     -- ^ @(field, pattern, replacement)@: scrub a value before it lands on the
     -- tape (applied at flush time, so the live SUT still sees real bytes).
+  , recNormalizeWholeTape :: [(String, String)]
+    -- ^ @(pattern, name)@: every distinct regex match across the __whole__ tape
+    -- (all fields\/interactions, in first-appearance order) becomes a stable
+    -- @{{name-N}}@ token. Use for __correlated__ volatiles — e.g. a
+    -- server-minted id that appears in a POST response and then recurs in
+    -- later request paths — so the same token round-trips on playback.
+  , recRedactWholeTape    :: [(String, String)]
+    -- ^ @(pattern, replacement)@: every regex match across the __whole__ tape
+    -- collapses to the constant @replacement@. Use for __uncorrelated__
+    -- volatiles of variable cardinality — e.g. a @Date@ response header — that
+    -- just need to be pinned to one value.
   , recRemoveHeaders     :: [(Field, String)]
     -- ^ @(field, name)@: drop a header by name (case-insensitive).
   , recNote              :: Maybe (String, String)
@@ -206,6 +217,8 @@ recordOptions tape upstream = RecordOptions
   , recPort               = 0
   , recLabel              = ""
   , recRedactions         = []
+  , recNormalizeWholeTape = []
+  , recRedactWholeTape    = []
   , recRemoveHeaders      = []
   , recNote               = Nothing
   , recIndentCodeBlocks   = False
@@ -332,6 +345,18 @@ startRecord opts = do
                     withCString repl $ \cRepl ->
                       N.aether_vcr_embed_redact handle (fieldCode f) cPat cRepl)
             (recRedactions opts)
+      mapM_ (\(pat, name) ->
+                check "normalize_whole_tape" $
+                  withCString pat $ \cPat ->
+                    withCString name $ \cName ->
+                      N.aether_vcr_embed_normalize_whole_tape handle cPat cName)
+            (recNormalizeWholeTape opts)
+      mapM_ (\(pat, repl) ->
+                check "redact_whole_tape" $
+                  withCString pat $ \cPat ->
+                    withCString repl $ \cRepl ->
+                      N.aether_vcr_embed_redact_whole_tape handle cPat cRepl)
+            (recRedactWholeTape opts)
       applyStaticAndUntaped handle (recStaticContent opts) (recUntaped opts)
       let server = VcrServer
             { vcrHandle   = handle

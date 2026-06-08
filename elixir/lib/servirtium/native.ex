@@ -60,6 +60,8 @@ defmodule Servirtium.Native do
 
   def redact(_handle, _field, _pattern, _replacement), do: :erlang.nif_error(@nif_not_loaded)
   def unredact(_handle, _field, _pattern, _replacement), do: :erlang.nif_error(@nif_not_loaded)
+  def normalize_whole_tape(_handle, _pattern, _name), do: :erlang.nif_error(@nif_not_loaded)
+  def redact_whole_tape(_handle, _pattern, _replacement), do: :erlang.nif_error(@nif_not_loaded)
   def remove_header(_handle, _field, _name), do: :erlang.nif_error(@nif_not_loaded)
   def note(_handle, _title, _body), do: :erlang.nif_error(@nif_not_loaded)
   def static_content(_handle, _mount_path, _fs_dir), do: :erlang.nif_error(@nif_not_loaded)

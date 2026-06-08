@@ -35,6 +35,8 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_clear_last_error
   , -- * Mutations (set before start; note staged after start_record)
     aether_vcr_embed_redact
+  , aether_vcr_embed_normalize_whole_tape
+  , aether_vcr_embed_redact_whole_tape
   , aether_vcr_embed_unredact
   , aether_vcr_embed_remove_header
   , aether_vcr_embed_strict_ignore_common_headers
@@ -119,6 +121,12 @@ foreign import ccall unsafe "aether_vcr_embed_clear_last_error"
 
 foreign import ccall unsafe "aether_vcr_embed_redact"
   aether_vcr_embed_redact :: Handle -> CInt -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_normalize_whole_tape"
+  aether_vcr_embed_normalize_whole_tape :: Handle -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_redact_whole_tape"
+  aether_vcr_embed_redact_whole_tape :: Handle -> CString -> CString -> IO CString
 
 foreign import ccall unsafe "aether_vcr_embed_unredact"
   aether_vcr_embed_unredact :: Handle -> CInt -> CString -> CString -> IO CString

@@ -10,6 +10,8 @@ Class {
 	#instVars : [
 		'upstreamBase',
 		'redactions',
+		'normalizations',
+		'wholeTapeRedactions',
 		'note',
 		'indentCodeBlocks',
 		'emphasizeHttpVerbs',
@@ -30,6 +32,8 @@ ServirtiumRecordBuilder >> initializeTape: aTapePath [
 
 	super initializeTape: aTapePath.
 	redactions := OrderedCollection new.
+	normalizations := OrderedCollection new.
+	wholeTapeRedactions := OrderedCollection new.
 	note := nil.
 	indentCodeBlocks := false.
 	emphasizeHttpVerbs := false.
@@ -48,6 +52,24 @@ ServirtiumRecordBuilder >> redactField: aField pattern: aPattern replacement: aR
 	"Scrub a value out of the given field before it lands on the tape."
 
 	redactions add: { aField. aPattern. aReplacement }.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> normalizeWholeTape: aPattern name: aName [
+	"Rewrite every distinct match of aPattern (a regex) across the whole tape
+	 to a stable placeholder derived from aName, preserving correlation."
+
+	normalizations add: { aPattern. aName }.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> redactWholeTape: aPattern replacement: aReplacement [
+	"Collapse every match of aPattern (a regex) across the whole tape to the
+	 constant aReplacement before it lands on the tape."
+
+	wholeTapeRedactions add: { aPattern. aReplacement }.
 	^ self
 ]
 
@@ -95,7 +117,15 @@ ServirtiumRecordBuilder >> applyConfig: handle [
 	redactions do: [ :tuple |
 		self
 			check: (self library redact: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
-			op: 'redact' ]
+			op: 'redact' ].
+	normalizations do: [ :tuple |
+		self
+			check: (self library normalizeWholeTape: handle pattern: (tuple at: 1) name: (tuple at: 2))
+			op: 'normalizeWholeTape' ].
+	wholeTapeRedactions do: [ :tuple |
+		self
+			check: (self library redactWholeTape: handle pattern: (tuple at: 1) replacement: (tuple at: 2))
+			op: 'redactWholeTape' ]
 ]
 
 { #category : 'starting' }

@@ -25,6 +25,8 @@ async function main() {
   const vcr = Vcr.record(TAPE, upstream)
     .staticContent('/suite', SUITE_DIR)
     .untaped('/favicon.ico')
+    .normalizeWholeTape('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'id')
+    .redactWholeTape('Date: .+ GMT', 'Date: <DATE>')
     .port(VCR_PORT)
     .start()
   try {

@@ -189,6 +189,18 @@ ServirtiumLibrary >> redact: server field: field pattern: pattern replacement: r
 ]
 
 { #category : 'ffi - mutations' }
+ServirtiumLibrary >> normalizeWholeTape: server pattern: pattern name: name [
+
+	^ self ffiCall: #( void* aether_vcr_embed_normalize_whole_tape ( void* server, String pattern, String name ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> redactWholeTape: server pattern: pattern replacement: replacement [
+
+	^ self ffiCall: #( void* aether_vcr_embed_redact_whole_tape ( void* server, String pattern, String replacement ) )
+]
+
+{ #category : 'ffi - mutations' }
 ServirtiumLibrary >> unredact: server field: field pattern: pattern replacement: replacement [
 
 	^ self ffiCall: #( void* aether_vcr_embed_unredact ( void* server, int field, String pattern, String replacement ) )

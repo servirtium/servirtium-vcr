@@ -128,6 +128,12 @@ clear_last_error = _decl("aether_vcr_embed_clear_last_error", None, [_HANDLE])
 
 # ---- mutations / config (handle 1st arg; call BEFORE start) ----------------
 redact = _decl("aether_vcr_embed_redact", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
+normalize_whole_tape = _decl(
+    "aether_vcr_embed_normalize_whole_tape", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p]
+)
+redact_whole_tape = _decl(
+    "aether_vcr_embed_redact_whole_tape", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p]
+)
 unredact = _decl("aether_vcr_embed_unredact", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
 remove_header = _decl("aether_vcr_embed_remove_header", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p])
 strict_ignore_common_headers = _decl(

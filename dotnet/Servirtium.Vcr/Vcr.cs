@@ -195,6 +195,8 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
 {
     private readonly string _upstreamBase;
     private readonly List<(VcrField field, string pattern, string replacement)> _redactions = new();
+    private readonly List<(string pattern, string name)> _normalizeWholeTape = new();
+    private readonly List<(string pattern, string replacement)> _redactWholeTape = new();
     private (string title, string body)? _note;
     private bool _indentCodeBlocks;
     private bool _emphasizeHttpVerbs;
@@ -209,6 +211,31 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     public RecordBuilder Redact(VcrField field, string pattern, string replacement)
     {
         _redactions.Add((field, pattern, replacement));
+        return this;
+    }
+
+    /// <summary>
+    /// Normalize every distinct regex match across the WHOLE tape (all fields
+    /// and interactions, in first-appearance order) to a stable
+    /// <c>{{name-N}}</c> token. Use for correlated, recurring volatile ids
+    /// (e.g. a UUID minted in one response that reappears in later request
+    /// paths) so the same value maps to the same token everywhere.
+    /// </summary>
+    public RecordBuilder NormalizeWholeTape(string pattern, string name)
+    {
+        _normalizeWholeTape.Add((pattern, name));
+        return this;
+    }
+
+    /// <summary>
+    /// Redact every regex match across the WHOLE tape (all fields and
+    /// interactions) to the constant <paramref name="replacement"/>. Use for
+    /// uncorrelated volatiles where the value never needs to round-trip
+    /// (e.g. a <c>Date</c> header).
+    /// </summary>
+    public RecordBuilder RedactWholeTape(string pattern, string replacement)
+    {
+        _redactWholeTape.Add((pattern, replacement));
         return this;
     }
 
@@ -256,6 +283,14 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         foreach ((VcrField field, string pattern, string replacement) in _redactions)
         {
             Check(NativeMethods.Redact(handle, (int)field, pattern, replacement), nameof(Redact));
+        }
+        foreach ((string pattern, string name) in _normalizeWholeTape)
+        {
+            Check(NativeMethods.NormalizeWholeTape(handle, pattern, name), nameof(NormalizeWholeTape));
+        }
+        foreach ((string pattern, string replacement) in _redactWholeTape)
+        {
+            Check(NativeMethods.RedactWholeTape(handle, pattern, replacement), nameof(RedactWholeTape));
         }
     }
 

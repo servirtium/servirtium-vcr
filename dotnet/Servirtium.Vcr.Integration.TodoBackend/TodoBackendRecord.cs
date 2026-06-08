@@ -36,6 +36,8 @@ public class TodoBackendRecord
         using (var vcr = Vcr.Record(TodoBackendBrowser.Tape, upstream)
             .StaticContent("/suite", TodoBackendBrowser.SuiteDir)
             .Untaped("/favicon.ico")
+            .NormalizeWholeTape("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "id")
+            .RedactWholeTape("Date: .+ GMT", "Date: <DATE>")
             .Port(TodoBackendBrowser.VcrPort)
             .Start())
         {

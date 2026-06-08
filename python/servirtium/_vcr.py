@@ -180,6 +180,8 @@ class RecordBuilder(_BuilderBase):
         super().__init__(tape_path)
         self._upstream_base = upstream_base
         self._redactions: list[tuple[Field, str, str]] = []
+        self._normalize_whole_tape: list[tuple[str, str]] = []
+        self._redact_whole_tape: list[tuple[str, str]] = []
         self._note: tuple[str, str] | None = None
         self._indent_code_blocks = False
         self._emphasize_http_verbs = False
@@ -188,6 +190,20 @@ class RecordBuilder(_BuilderBase):
     def redact(self, field: Field, pattern: str, replacement: str):
         """Scrub a value out of the given field before it lands on the tape."""
         self._redactions.append((field, pattern, replacement))
+        return self
+
+    def normalize_whole_tape(self, pattern: str, name: str):
+        """Rewrite every distinct regex match across the WHOLE tape (all fields,
+        all interactions, in first-appearance order) to a stable ``{{name-N}}``
+        token. Use for correlated server-minted values like entity ids that
+        recur in later request paths."""
+        self._normalize_whole_tape.append((pattern, name))
+        return self
+
+    def redact_whole_tape(self, pattern: str, replacement: str):
+        """Collapse every regex match across the WHOLE tape to the one constant
+        ``replacement``. Use for uncorrelated volatile values like Date headers."""
+        self._redact_whole_tape.append((pattern, replacement))
         return self
 
     def note(self, title: str, body: str):
@@ -222,6 +238,16 @@ class RecordBuilder(_BuilderBase):
             _check(
                 N.redact(handle, int(field), N.encode(pattern), N.encode(replacement)),
                 "redact",
+            )
+        for pattern, name in self._normalize_whole_tape:
+            _check(
+                N.normalize_whole_tape(handle, N.encode(pattern), N.encode(name)),
+                "normalize_whole_tape",
+            )
+        for pattern, replacement in self._redact_whole_tape:
+            _check(
+                N.redact_whole_tape(handle, N.encode(pattern), N.encode(replacement)),
+                "redact_whole_tape",
             )
 
     def start(self) -> "VcrServer":

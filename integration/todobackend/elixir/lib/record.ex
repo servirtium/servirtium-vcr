@@ -38,7 +38,11 @@ defmodule TodoBackend.Record do
       Servirtium.record(Browser.tape(), upstream,
         port: Browser.vcr_port(),
         static_content: [{"/suite", Browser.suite_dir()}],
-        untaped: ["/favicon.ico"]
+        untaped: ["/favicon.ico"],
+        normalize_whole_tape: [
+          {"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "id"}
+        ],
+        redact_whole_tape: [{"Date: .+ GMT", "Date: <DATE>"}]
       )
 
     rc =

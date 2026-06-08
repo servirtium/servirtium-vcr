@@ -52,6 +52,8 @@ extern char *aether_vcr_embed_redact(void *server, int field, const char *patter
 extern char *aether_vcr_embed_unredact(void *server, int field, const char *pattern, const char *replacement);
 extern char *aether_vcr_embed_remove_header(void *server, int field, const char *name);
 extern char *aether_vcr_embed_strict_ignore_common_headers(void *server);
+extern char *aether_vcr_embed_normalize_whole_tape(void *server, const char *pattern, const char *name);
+extern char *aether_vcr_embed_redact_whole_tape(void *server, const char *pattern, const char *replacement);
 extern char *aether_vcr_embed_note(void *server, const char *title, const char *body);
 extern char *aether_vcr_embed_static_content(void *server, const char *mount_path, const char *fs_dir);
 extern char *aether_vcr_embed_untaped(void *server, const char *path);
@@ -337,6 +339,40 @@ static ERL_NIF_TERM nif_note(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]
     return take_cstr(env, res);
 }
 
+static ERL_NIF_TERM nif_normalize_whole_tape(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    char *pattern = term_to_cstr(env, argv[1]);
+    char *name    = term_to_cstr(env, argv[2]);
+    if (!pattern || !name) {
+        if (pattern) enif_free(pattern);
+        if (name)    enif_free(name);
+        return enif_make_badarg(env);
+    }
+    char *res = aether_vcr_embed_normalize_whole_tape(h, pattern, name);
+    enif_free(pattern); enif_free(name);
+    return take_cstr(env, res);
+}
+
+static ERL_NIF_TERM nif_redact_whole_tape(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    char *pattern     = term_to_cstr(env, argv[1]);
+    char *replacement = term_to_cstr(env, argv[2]);
+    if (!pattern || !replacement) {
+        if (pattern)     enif_free(pattern);
+        if (replacement) enif_free(replacement);
+        return enif_make_badarg(env);
+    }
+    char *res = aether_vcr_embed_redact_whole_tape(h, pattern, replacement);
+    enif_free(pattern); enif_free(replacement);
+    return take_cstr(env, res);
+}
+
 static ERL_NIF_TERM nif_static_content(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -435,6 +471,8 @@ static ErlNifFunc nif_funcs[] = {
 
     {"redact",         4, nif_redact,         0},
     {"unredact",       4, nif_unredact,       0},
+    {"normalize_whole_tape", 3, nif_normalize_whole_tape, 0},
+    {"redact_whole_tape",    3, nif_redact_whole_tape,    0},
     {"remove_header",  3, nif_remove_header,  0},
     {"note",           3, nif_note,           0},
     {"static_content", 3, nif_static_content, 0},
