@@ -55,6 +55,8 @@ void   aether_vcr_embed_clear_last_error(void* server);
 char*  aether_vcr_embed_redact(void* server, int field, const char* pattern, const char* replacement);
 char*  aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement);
 char*  aether_vcr_embed_remove_header(void* server, int field, const char* name);
+char*  aether_vcr_embed_normalize_whole_tape(void* server, const char* pattern, const char* name);
+char*  aether_vcr_embed_redact_whole_tape(void* server, const char* pattern, const char* replacement);
 char*  aether_vcr_embed_strict_ignore_common_headers(void* server);
 char*  aether_vcr_embed_note(void* server, const char* title, const char* body);
 char*  aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir);
@@ -321,12 +323,14 @@ func Record(tapePath, upstreamBase string) *RecordBuilder {
 // RecordBuilder configures and starts a record VCR server.
 type RecordBuilder struct {
 	baseBuilder
-	upstreamBase      string
-	redactions        []replacement
-	note              *struct{ title, body string }
-	indentCodeBlocks  bool
-	emphasizeHTTPVerb bool
-	failIfChanged     bool
+	upstreamBase        string
+	redactions          []replacement
+	normalizations      []struct{ pattern, name string }
+	wholeTapeRedactions []struct{ pattern, repl string }
+	note                *struct{ title, body string }
+	indentCodeBlocks    bool
+	emphasizeHTTPVerb   bool
+	failIfChanged       bool
 }
 
 // Host binds the host. Defaults to 127.0.0.1.
@@ -347,6 +351,30 @@ func (b *RecordBuilder) RemoveHeader(field Field, name string) *RecordBuilder {
 // Redact scrubs a value out of the given field before it lands on the tape.
 func (b *RecordBuilder) Redact(field Field, pattern, repl string) *RecordBuilder {
 	b.redactions = append(b.redactions, replacement{field, pattern, repl})
+	return b
+}
+
+// NormalizeWholeTape rewrites every distinct match of pattern (a regex),
+// scanned across all fields and interactions in first-appearance order, to a
+// stable {{name-N}} token. The engine mints the token, so a server-generated
+// value that recurs — a created entity's id echoed back in a later request
+// path — collapses to one token everywhere it appears (identity preserved, so
+// it round-trips on playback). Use it for correlated dynamic values; the
+// payoff is a byte-identical re-record so FailIfChanged drift detection fires
+// only on real upstream changes.
+func (b *RecordBuilder) NormalizeWholeTape(pattern, name string) *RecordBuilder {
+	b.normalizations = append(b.normalizations, struct{ pattern, name string }{pattern, name})
+	return b
+}
+
+// RedactWholeTape collapses every match of pattern (a regex) to the constant
+// repl, across all fields and interactions. The companion to
+// NormalizeWholeTape for a volatile value you never correlate and whose number
+// of distinct values can vary run to run — a Date response header — where a
+// per-value token would not itself be byte-stable. E.g.
+// RedactWholeTape(`Date: .+ GMT`, "Date: <DATE>").
+func (b *RecordBuilder) RedactWholeTape(pattern, repl string) *RecordBuilder {
+	b.wholeTapeRedactions = append(b.wholeTapeRedactions, struct{ pattern, repl string }{pattern, repl})
 	return b
 }
 
@@ -401,6 +429,24 @@ func (b *RecordBuilder) applyConfig(handle unsafe.Pointer) error {
 		C.free(unsafe.Pointer(cPat))
 		C.free(unsafe.Pointer(cRep))
 		if err := checkErr(res, "Redact"); err != nil {
+			return err
+		}
+	}
+	for _, n := range b.normalizations {
+		cPat, cName := C.CString(n.pattern), C.CString(n.name)
+		res := C.aether_vcr_embed_normalize_whole_tape(handle, cPat, cName)
+		C.free(unsafe.Pointer(cPat))
+		C.free(unsafe.Pointer(cName))
+		if err := checkErr(res, "NormalizeWholeTape"); err != nil {
+			return err
+		}
+	}
+	for _, w := range b.wholeTapeRedactions {
+		cPat, cRep := C.CString(w.pattern), C.CString(w.repl)
+		res := C.aether_vcr_embed_redact_whole_tape(handle, cPat, cRep)
+		C.free(unsafe.Pointer(cPat))
+		C.free(unsafe.Pointer(cRep))
+		if err := checkErr(res, "RedactWholeTape"); err != nil {
 			return err
 		}
 	}

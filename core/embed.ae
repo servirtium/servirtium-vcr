@@ -192,6 +192,24 @@ vcr_embed_remove_header(s: ptr, field: int, name: string) -> string {
     return vcr_embed_dup(vcr.remove_header_h(s, field, name))
 }
 
+// Register a whole-tape normalization rule: every distinct match of `pattern`
+// (regex, scanned across all fields and interactions) is rewritten to a
+// stable {{name-N}} token on flush. Server-minted values that recur — a
+// created entity's id echoed back in later request paths — collapse to one
+// token, so a re-record comes out byte-identical and drift detection
+// (fail_if_changed) only fires on real changes. Configure before start.
+vcr_embed_normalize_whole_tape(s: ptr, pattern: string, name: string) -> string {
+    return vcr_embed_dup(vcr.normalize_whole_tape_h(s, pattern, name))
+}
+
+// Collapse every whole-tape match of `pattern` to the constant `replacement`.
+// The companion to normalize for volatile-but-uncorrelated values (Date
+// headers, nonces): a value whose distinct-count varies per run, so a
+// correlated token would not be byte-stable. Configure before start.
+vcr_embed_redact_whole_tape(s: ptr, pattern: string, replacement: string) -> string {
+    return vcr_embed_dup(vcr.redact_whole_tape_h(s, pattern, replacement))
+}
+
 // One-call opt-in for the headers stock HTTP clients attach but a tape
 // never recorded — User-Agent, Accept, Accept-Encoding, Connection. Each
 // is dropped from BOTH the recorded expectation and the live request
@@ -233,6 +251,10 @@ vcr_embed_emphasize_http_verbs(s: ptr) {
 
 vcr_embed_clear_redactions(s: ptr) {
     vcr.clear_redactions_h(s)
+}
+
+vcr_embed_clear_normalizations(s: ptr) {
+    vcr.clear_normalizations_h(s)
 }
 
 vcr_embed_clear_unredactions(s: ptr) {

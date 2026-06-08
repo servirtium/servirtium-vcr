@@ -119,6 +119,14 @@ final class NativeMethods {
             "aether_vcr_embed_remove_header",
             FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR));
 
+    static final MethodHandle NORMALIZE_WHOLE_TAPE = down(
+            "aether_vcr_embed_normalize_whole_tape",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
+
+    static final MethodHandle REDACT_WHOLE_TAPE = down(
+            "aether_vcr_embed_redact_whole_tape",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
+
     static final MethodHandle STRICT_IGNORE_COMMON_HEADERS = down(
             "aether_vcr_embed_strict_ignore_common_headers",
             FunctionDescriptor.of(C_STR, C_PTR));

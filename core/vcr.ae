@@ -106,6 +106,7 @@ import std.list
 import std.mem
 import std.zlib
 import std.cryptography
+import std.regex
 
 exports (
     vcr_load_err, vcr_tape_length,
@@ -127,6 +128,9 @@ exports (
     vcr_get_redaction_pattern, vcr_get_redaction_replacement,
     vcr_get_unredaction_count, vcr_get_unredaction_field,
     vcr_get_unredaction_pattern, vcr_get_unredaction_replacement,
+    vcr_add_normalization, vcr_clear_normalizations,
+    vcr_get_normalization_count, vcr_get_normalization_pattern,
+    vcr_get_normalization_name, vcr_get_normalization_replacement,
     vcr_get_header_removal_count, vcr_get_header_removal_field,
     vcr_get_header_removal_name,
     vcr_aether_clear_tape, vcr_aether_append_interaction,
@@ -145,6 +149,8 @@ exports (
     load_record, eject_record,
     record, clear_recording, flush, flush_or_check, flush_and_fail_if_changed,
     redact, clear_redactions, unredact, clear_unredactions,
+    normalize_whole_tape, redact_whole_tape, clear_normalizations,
+    apply_normalizations, build_normalization_map,
     remove_header, clear_header_removals,
     note,
     record_full, record_full_response, last_error, clear_last_error,
@@ -161,6 +167,7 @@ exports (
     parse_one_interaction, parse_tape_file,
     use_handle,
     redact_h, unredact_h, remove_header_h, note_h,
+    normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     static_content_h, untaped_h, set_strict_headers_h,
     indent_code_blocks_h, emphasize_http_verbs_h,
     clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
@@ -215,6 +222,39 @@ struct Redaction {
     field: int
     pattern: string
     replacement: string
+}
+
+// A whole-tape rewrite rule applied across ALL fields and interactions. Two
+// modes, distinguished by which slot is set:
+//
+//   correlate (replacement == "", name set) — every DISTINCT match becomes a
+//     stable {{name-N}} token, N by order of first appearance. The engine
+//     mints the token, so a server-generated value that recurs (a created
+//     entity's id echoed back in a later request path) collapses to the SAME
+//     token everywhere — identity preserved, so it round-trips on playback.
+//     Set via normalize_whole_tape().
+//
+//   collapse (replacement set, name == "") — every match becomes the one
+//     constant you supply (a plain regex replace_all over the whole tape).
+//     Identity erased — use it for volatile values you never correlate, like
+//     Date headers, where the COUNT of distinct values varies per run and
+//     correlated tokens would therefore NOT be byte-stable. Set via
+//     redact_whole_tape().
+//
+// Either way the point is the same: re-recording the same suite yields a
+// byte-identical tape, so drift detection fires only on real changes. See
+// build_normalization_map / apply_normalizations.
+struct Normalization {
+    pattern: string
+    name: string
+    replacement: string
+}
+
+// One resolved value->token mapping, built fresh per emit by
+// build_normalization_map() and consumed by apply_normalizations().
+struct NormToken {
+    value: string
+    token: string
 }
 
 struct HeaderRemoval {
@@ -378,6 +418,8 @@ slot(key: string, suffix: string) -> string {
 tape_list_k(key: string) -> ptr        { return list_handle(slot(key, "tape")) }
 redactions_k(key: string) -> ptr       { return list_handle(slot(key, "redactions")) }
 unredactions_k(key: string) -> ptr     { return list_handle(slot(key, "unredactions")) }
+normalizations_k(key: string) -> ptr   { return list_handle(slot(key, "normalizations")) }
+normtokens_k(key: string) -> ptr       { return list_handle(slot(key, "normtokens")) }
 header_removals_k(key: string) -> ptr  { return list_handle(slot(key, "header_removals")) }
 mounts_k(key: string) -> ptr           { return list_handle(slot(key, "mounts")) }
 untaped_list_k(key: string) -> ptr     { return list_handle(slot(key, "untaped")) }
@@ -386,6 +428,8 @@ untaped_list_k(key: string) -> ptr     { return list_handle(slot(key, "untaped")
 tape_list() -> ptr        { return tape_list_k(cur_key()) }
 redactions() -> ptr       { return redactions_k(cur_key()) }
 unredactions() -> ptr     { return unredactions_k(cur_key()) }
+normalizations() -> ptr   { return normalizations_k(cur_key()) }
+normtokens() -> ptr       { return normtokens_k(cur_key()) }
 header_removals() -> ptr  { return header_removals_k(cur_key()) }
 mounts() -> ptr           { return mounts_k(cur_key()) }
 untaped_list() -> ptr     { return untaped_list_k(cur_key()) }
@@ -713,6 +757,165 @@ vcr_get_unredaction_pattern(i: int) -> string {
 vcr_get_unredaction_replacement(i: int) -> string {
     if i < 0 || i >= list_size(unredactions()) { return "" }
     return (list_get_raw(unredactions(), i) as *Redaction).replacement
+}
+
+// ---- whole-tape normalization storage ----
+
+// Register a whole-tape rule. The pattern is validated by compiling it once
+// here so a bad regex fails at config time (returns 0 + load_err) rather than
+// silently no-op'ing at flush. Correlate mode passes name + replacement="";
+// collapse mode passes name="" + the constant replacement.
+vcr_add_normalization(pattern: string, name: string, replacement: string) -> int {
+    re, err = regex.compile(pattern)
+    if err != "" {
+        set_load_err(string_concat("invalid normalize pattern: ", err))
+        return 0
+    }
+    regex.free(re)
+    r = malloc(64) as *Normalization
+    r.pattern = string.copy(pattern)
+    r.name = string.copy(name)
+    r.replacement = string.copy(replacement)
+    list_add_raw(normalizations(), r)
+    return 1
+}
+vcr_clear_normalizations() { list_reset(slot(cur_key(), "normalizations")) }
+vcr_get_normalization_count() -> int { return list_size(normalizations()) }
+vcr_get_normalization_pattern(i: int) -> string {
+    if i < 0 || i >= list_size(normalizations()) { return "" }
+    return (list_get_raw(normalizations(), i) as *Normalization).pattern
+}
+vcr_get_normalization_name(i: int) -> string {
+    if i < 0 || i >= list_size(normalizations()) { return "" }
+    return (list_get_raw(normalizations(), i) as *Normalization).name
+}
+vcr_get_normalization_replacement(i: int) -> string {
+    if i < 0 || i >= list_size(normalizations()) { return "" }
+    return (list_get_raw(normalizations(), i) as *Normalization).replacement
+}
+
+// Look up the token already assigned to `val` this emit, or "" if none yet.
+norm_token_for(val: string) -> string {
+    l = normtokens()
+    nt = list_size(l)
+    i = 0
+    while i < nt {
+        e = list_get_raw(l, i) as *NormToken
+        if e.value == val { return e.token }
+        i = i + 1
+    }
+    return ""
+}
+
+norm_token_add(value: string, token: string) {
+    e = malloc(64) as *NormToken
+    e.value = string.copy(value)
+    e.token = string.copy(token)
+    list_add_raw(normtokens(), e)
+}
+
+// Scan one field string for every match of `re`, assigning a fresh
+// {{name-N}} token to each value not seen before this emit. `counter` is the
+// running per-rule index; returns it advanced past any tokens minted here.
+scan_field_for_norm(re: ptr, name: string, s: string, counter: int) -> int {
+    if string.length(s) == 0 { return counter }
+    fa, ferr = regex.find_all(re, s)
+    if ferr != "" { return counter }
+    m = regex.find_all_count(fa)
+    c = counter
+    i = 0
+    while i < m {
+        st = regex.find_all_start(fa, i)
+        en = regex.find_all_end(fa, i)
+        val = string.substring(s, st, en)
+        if norm_token_for(val) == "" {
+            c = c + 1
+            tok = string_concat("{{", name)
+            tok = string_concat(tok, "-")
+            tok = string_concat(tok, string.from_int(c))
+            tok = string_concat(tok, "}}")
+            norm_token_add(val, tok)
+        }
+        i = i + 1
+    }
+    regex.find_all_free(fa)
+    return c
+}
+
+// Build the per-emit value->token table by walking interactions in document
+// order and, within each, fields in canonical order (path, request headers,
+// request body, response headers, response body). First appearance wins the
+// next token index, so the table — and therefore the flushed tape — is
+// deterministic across re-records regardless of the live values seen.
+build_normalization_map() {
+    list_reset(slot(cur_key(), "normtokens"))
+    nr = vcr_get_normalization_count()
+    if nr == 0 { return }
+    n = vcr_get_tape_count()
+    ri = 0
+    while ri < nr {
+        pattern = string.copy(vcr_get_normalization_pattern(ri))
+        name = string.copy(vcr_get_normalization_name(ri))
+        repl = string.copy(vcr_get_normalization_replacement(ri))
+        // Collapse rules (replacement set) need no token table — they're a
+        // straight regex replace_all in apply_normalizations. Only correlate
+        // rules build first-appearance tokens here.
+        if string.length(repl) > 0 {
+            ri = ri + 1
+        } else {
+        re, err = regex.compile(pattern)
+        if err == "" {
+            counter = 0
+            ii = 0
+            while ii < n {
+                counter = scan_field_for_norm(re, name, string.copy(vcr_get_path(ii)), counter)
+                counter = scan_field_for_norm(re, name, string.copy(vcr_get_req_headers(ii)), counter)
+                counter = scan_field_for_norm(re, name, string.copy(vcr_get_req_body(ii)), counter)
+                counter = scan_field_for_norm(re, name, string.copy(vcr_get_resp_headers(ii)), counter)
+                counter = scan_field_for_norm(re, name, string.copy(vcr_get_body(ii)), counter)
+                ii = ii + 1
+            }
+            regex.free(re)
+        }
+        ri = ri + 1
+        }
+    }
+}
+
+// Apply the built value->token table to one field string. Substitution is a
+// literal replace of each captured value (the regex already ran in the build
+// pass). Tokens are applied in first-appearance order; this assumes captured
+// values are not substrings of one another (true for ids/uuids/etags) — the
+// common Servirtium normalization shapes.
+apply_normalizations(s: string) -> string {
+    out = s
+
+    // Collapse rules first: regex replace_all every match to its constant.
+    nr = vcr_get_normalization_count()
+    i = 0
+    while i < nr {
+        repl = string.copy(vcr_get_normalization_replacement(i))
+        if string.length(repl) > 0 {
+            re, err = regex.compile(string.copy(vcr_get_normalization_pattern(i)))
+            if err == "" {
+                rep, rerr = regex.replace_all(re, out, repl)
+                if rerr == "" { out = rep }
+                regex.free(re)
+            }
+        }
+        i = i + 1
+    }
+
+    // Correlate rules: literal replace of each captured value with its token.
+    l = normtokens()
+    nt = list_size(l)
+    j = 0
+    while j < nt {
+        e = list_get_raw(l, j) as *NormToken
+        out = str_replace_all(out, e.value, e.token)
+        j = j + 1
+    }
+    return out
 }
 
 valid_header_removal_field(field: int) -> int {
@@ -1892,6 +2095,18 @@ unredact_h(server: ptr, field: int, pattern: string, replacement: string) -> str
     set_cur_key(key_for(server))
     return unredact(field, pattern, replacement)
 }
+normalize_whole_tape_h(server: ptr, pattern: string, name: string) -> string {
+    set_cur_key(key_for(server))
+    return normalize_whole_tape(pattern, name)
+}
+redact_whole_tape_h(server: ptr, pattern: string, replacement: string) -> string {
+    set_cur_key(key_for(server))
+    return redact_whole_tape(pattern, replacement)
+}
+clear_normalizations_h(server: ptr) {
+    set_cur_key(key_for(server))
+    clear_normalizations()
+}
 remove_header_h(server: ptr, field: int, name: string) -> string {
     set_cur_key(key_for(server))
     return remove_header(field, name)
@@ -2136,6 +2351,30 @@ redact(field: int, pattern: string, replacement: string) -> string {
 // next.
 clear_redactions() {
     vcr_clear_redactions()
+}
+
+// Register a whole-tape normalization: every distinct match of `pattern`
+// (across all fields and interactions) is rewritten to a stable {{name-N}}
+// token on flush, so server-minted values that recur collapse to one token
+// and re-records stay byte-identical. Returns "" on success, else load_err.
+normalize_whole_tape(pattern: string, name: string) -> string {
+    ok = vcr_add_normalization(pattern, name, "")
+    if ok == 0 { return vcr_load_err() }
+    return ""
+}
+
+// Collapse every whole-tape match of `pattern` to the constant `replacement`
+// (a plain regex replace_all across all fields/interactions). For volatile
+// values you never correlate — Date headers, request ids — where a per-value
+// token would not be byte-stable. Returns "" on success, else load_err.
+redact_whole_tape(pattern: string, replacement: string) -> string {
+    ok = vcr_add_normalization(pattern, "", replacement)
+    if ok == 0 { return vcr_load_err() }
+    return ""
+}
+
+clear_normalizations() {
+    vcr_clear_normalizations()
 }
 
 // Register a playback-side replacement. Use this when a committed
@@ -2602,6 +2841,15 @@ emit_one_interaction(i: int) -> string {
     req_h_out  = remove_headers_for(req_h_out, FIELD_REQUEST_HEADERS)
     resp_h_out = remove_headers_for(resp_h_out, FIELD_RESPONSE_HEADERS)
 
+    // Whole-tape normalization runs last, on the post-redaction text, so the
+    // value->token table (built across the whole tape in emit_tape) collapses
+    // every recurrence of a server-minted value to one stable token.
+    path_out   = apply_normalizations(path_out)
+    body_out   = apply_normalizations(body_out)
+    req_h_out  = apply_normalizations(req_h_out)
+    req_b_out  = apply_normalizations(req_b_out)
+    resp_h_out = apply_normalizations(resp_h_out)
+
     heading = "## Interaction ${i}: ${method} ${path_out}\n\n"
     if vcr_get_emphasize_http_verbs() == 1 {
         heading = "## Interaction ${i}: *${method}* ${path_out}\n\n"
@@ -2659,6 +2907,7 @@ emit_one_interaction(i: int) -> string {
 // Equivalent to the old C emit_tape_to_fp(fp), just delivering a
 // string instead of writing to FILE*.
 emit_tape() -> string {
+    build_normalization_map()
     n = vcr_get_tape_count()
     out = string.copy("")
     i = 0
