@@ -1,0 +1,5 @@
+nimcache/
+# compiled test binaries (Nim emits the executable next to the .nim source)
+tests/playback
+tests/*_test
+*.exe

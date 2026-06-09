@@ -1,0 +1,24 @@
+// Lua binding tests. The binding is a hand-written Lua 5.4 C EXTENSION
+// (csrc/servirtium.c — NOT LuaJIT FFI, since LuaJIT isn't installed) that
+// links the shared engine (core/.build.ae output:
+// core/native/libservirtium_vcr.so) via
+// `cc ... -L<core/native> -lservirtium_vcr -Wl,-rpath,<core/native>`, so this
+// deps the engine node, compiles servirtium_native.so, then runs the lua test.
+// The rpath makes the engine resolvable at runtime; SERVIRTIUM_VCR_LIB is also
+// passed for parity with the other bindings. The test shells out to curl
+// against the playback server (one VCR server per process).
+import build
+import std.os
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/core/native/libservirtium_vcr.so"
+    core = "${root}/core/native"
+    cc = os.system("cd \"${root}/lua\" && ./build.sh \"${core}\"")
+    if cc != 0 { println("lua: compile failed"); return 1 }
+    rc = os.system("cd \"${root}/lua\" && LUA_CPATH=\"./?.so;;\" SERVIRTIUM_VCR_LIB=\"${lib}\" lua5.4 tests/playback.lua")
+    if rc != 0 { println("lua: tests failed"); return 1 }
+    println("lua: tests passed")
+    return 0
+}

@@ -1,0 +1,13 @@
+# Gleam / rebar3 build output.
+build/
+
+# Compiled BEAM artifacts.
+*.beam
+
+# Native build artifact: the cc-built C NIF (links the engine via rpath).
+priv/*.so
+priv/*.dylib
+priv/*.dll
+
+# If the VM crashes, it generates a dump.
+erl_crash.dump

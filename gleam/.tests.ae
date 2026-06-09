@@ -1,0 +1,28 @@
+// Gleam binding tests. Gleam compiles to Erlang/BEAM and reuses the *same*
+// C NIF as the Erlang binding (ERL_NIF_INIT(servirtium_nif, ...)). Gleam
+// compiles the .erl stub from src/ and copies priv/ into the build, so the
+// NIF loads from this app's (servirtium_gleam) priv dir. The NIF links the
+// shared engine via rpath; SERVIRTIUM_VCR_LIB is set as belt-and-braces.
+import build
+import std.os
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/core/native/libservirtium_vcr.so"
+    native = "${root}/core/native"
+    gleam = "${root}/gleam"
+    inc = "/usr/lib/erlang/usr/include"
+
+    // 1. Build the C NIF .so into priv/ (links the engine; rpath-embeds core/native).
+    mk = "cd \"${gleam}\" && mkdir -p priv && cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I${inc} -shared c_src/servirtium_nif.c -L\"${native}\" -lservirtium_vcr -Wl,-rpath,\"${native}\" -o priv/servirtium_nif.so"
+    rc = os.system(mk)
+    if rc != 0 { println("gleam: NIF build failed"); return 1 }
+
+    // 2. Run gleam test (fetches gleeunit from Hex; curls the VCR; asserts ok-body + Ok).
+    run = "cd \"${gleam}\" && PATH=\"$HOME/.local/bin:$PATH\" SERVIRTIUM_VCR_LIB=\"${lib}\" gleam test"
+    rc = os.system(run)
+    if rc != 0 { println("gleam: tests failed"); return 1 }
+    println("gleam: tests passed")
+    return 0
+}

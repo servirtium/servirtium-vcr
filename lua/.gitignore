@@ -1,0 +1,5 @@
+# compiled C extension module
+*.so
+# C build artifacts
+*.o
+*.obj

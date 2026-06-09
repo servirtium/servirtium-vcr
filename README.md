@@ -23,13 +23,16 @@ servirtium-vcr/
   ruby/          # Fiddle                      javascript/# koffi (Node)
   haskell/       # foreign import ccall        elixir/    # C NIF
   php/           # ext-ffi                     pharo/     # UnifiedFFI (Smalltalk)
+  nim/           # importc (linked)            zig/       # extern C (linked)
+  lua/           # C extension (Lua 5.4)       erlang/    # C NIF (reuses Elixir's)
+  gleam/         # C NIF over the BEAM (via Erlang)
   kotlin/ scala/ clojure/ groovy/  # JVM family — thin layers over the Java jar (no 2nd FFI)
   core_tests/    # Aether-level engine tests (pure-Aether, no binding)
   integration/   # browser · subversion · climate · todobackend cross-binding tests
   <lang>/docs/   # per-binding usage docs
 ```
 
-All **12** native-FFI bindings — plus the JVM family (Kotlin/Scala/Clojure/
+All **17** native-FFI bindings — plus the JVM family (Kotlin/Scala/Clojure/
 Groovy, over the Java jar) — are wired and pass through one `aeb` run: the
 `core/` node builds `libservirtium_vcr.so` once, then each binding's
 `.tests.ae` links (go/elixir/haskell) or loads (the rest, via
@@ -54,6 +57,11 @@ folder (`usage`, `features`, `architecture`, `building`).
 | Haskell | foreign import ccall | [haskell/README.md](haskell/README.md) |
 | Elixir | C NIF | [elixir/README.md](elixir/README.md) |
 | Pharo | UnifiedFFI (Smalltalk) | [pharo/README.md](pharo/README.md) |
+| Nim | importc (linked) | [nim/README.md](nim/README.md) |
+| Zig | extern C (linked) | [zig/README.md](zig/README.md) |
+| Lua | C extension (Lua 5.4) | [lua/README.md](lua/README.md) |
+| Erlang | C NIF (reuses Elixir's) | [erlang/README.md](erlang/README.md) |
+| Gleam | C NIF over the BEAM (via Erlang) | [gleam/README.md](gleam/README.md) |
 
 **JVM family.** Kotlin, Scala, Clojure and Groovy reach the engine through the
 **Java binding's jar** via seamless JVM interop — there is *no second native

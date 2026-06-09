@@ -1,0 +1,10 @@
+# Compiled BEAM artifacts (rebuilt via the compile module — no erlc/rebar3).
+ebin/
+
+# Native build artifacts: the compiled C NIF (links the engine via rpath).
+priv/*.so
+priv/*.dylib
+priv/*.dll
+
+# If the VM crashes, it generates a dump.
+erl_crash.dump

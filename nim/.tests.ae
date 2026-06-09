@@ -1,0 +1,18 @@
+// Nim binding tests. Nim's C backend links the shared engine (core/.build.ae
+// output: core/native/libservirtium_vcr.so) via native.nim's
+// `{.passL: "-L<core/native> -lservirtium_vcr -Wl,-rpath,<core/native>".}`,
+// so this deps the engine node and passes SERVIRTIUM_VCR_LIB at compile time
+// (native.nim honors it to resolve the -L dir). The test shells out to curl
+// against the playback server (one VCR server per process).
+import build
+import std.os
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/core/native/libservirtium_vcr.so"
+    rc = os.system("cd \"${root}/nim\" && SERVIRTIUM_VCR_LIB=\"${lib}\" nim c -r --hints:off --path:src tests/playback.nim")
+    if rc != 0 { println("nim: tests failed"); return 1 }
+    println("nim: tests passed")
+    return 0
+}
