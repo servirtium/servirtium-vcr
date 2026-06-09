@@ -12,7 +12,7 @@
 import build
 import std.os
 import std.string
-main() {
+aeb(cap) {
     b = build.start()
     root = build._get(b, "root")
     td = "${root}/target/core_tests_chunked"

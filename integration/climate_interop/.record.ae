@@ -24,7 +24,7 @@
 import build
 import std.os
 
-main() {
+aeb(cap) {
     b = build.start()
     root = build._get(b, "root")
     out = "${root}/target/climate_interop"

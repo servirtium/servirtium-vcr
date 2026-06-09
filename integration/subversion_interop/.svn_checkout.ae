@@ -25,7 +25,7 @@ import std.string
 const PORT = 18142
 const PLAYBACK = "http://127.0.0.1:18142/repos/asf/synapse/tags/3.0.0/modules/distribution/src/main/conf"
 
-main() {
+aeb(cap) {
     // svn must be present; skip cleanly otherwise.
     have_svn = os.system("command -v svn >/dev/null 2>&1")
     if have_svn != 0 {

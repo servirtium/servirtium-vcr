@@ -2,7 +2,7 @@
 // SERVIRTIUM_VCR_LIB; jest --runInBand for the one-server-per-process rule.
 import build
 import std.os
-main() {
+aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")

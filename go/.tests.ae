@@ -7,7 +7,7 @@
 import build
 import go
 
-main() {
+aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     go.go_test(b) { }

@@ -5,7 +5,7 @@
 // the control must leave it unchecked. The record counterpart is .triple_record.ae.
 import build
 import std.os
-main() {
+aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
