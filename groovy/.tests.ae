@@ -1,0 +1,25 @@
+// Groovy binding tests. Groovy reaches the engine through the Java FFM binding
+// (com.paulhammant.servirtium:servirtium-vcr) via seamless interop — no second
+// FFI. So this node installs the Java binding jar to the local ~/.m2 first,
+// then runs the Groovy module's `mvn test` (JDK 25 + native access; the engine
+// .so via SERVIRTIUM_VCR_LIB). Deps the shared engine like every binding.
+import build
+import std.os
+import std.string
+main() {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/core/native/libservirtium_vcr.so"
+    jdk = os.getenv("JAVA25_HOME")
+    if string.length(jdk) == 0 { jdk = "/usr/lib/jvm/java-25-openjdk-amd64" }
+
+    // The JVM-family bindings consume the Java binding's jar; install it first.
+    inst = os.system("cd \"${root}/java\" && JAVA_HOME=\"${jdk}\" mvn -q -DskipTests install")
+    if inst != 0 { println("groovy: failed to install the java binding jar"); return 1 }
+
+    rc = os.system("cd \"${root}/groovy\" && SERVIRTIUM_VCR_LIB=\"${lib}\" JAVA_HOME=\"${jdk}\" mvn -q test")
+    if rc != 0 { println("groovy: tests failed"); return 1 }
+    println("groovy: tests passed")
+    return 0
+}

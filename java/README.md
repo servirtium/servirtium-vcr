@@ -45,9 +45,10 @@ JNI). It does **not** reimplement Servirtium in Java.
 
 ## Requirements
 
-- **JDK 25.** FFM (`java.lang.foreign`) has been stable since JDK 22, but this
-  binding compiles to and is tested on JDK 25 (its `.tests.ae` pins
-  `JAVA25_HOME`).
+- **JDK 22+.** FFM (`java.lang.foreign`) has been stable since JDK 22, so the
+  binding compiles to JDK-22 bytecode — which also lets the JVM-family bindings
+  (Kotlin/Scala/Clojure/Groovy) consume this jar. It's built and tested on
+  JDK 25 (its `.tests.ae` pins `JAVA25_HOME`).
 - The native library `libservirtium_vcr.{so,dylib}` for your OS/arch. It ships
   on the classpath under `native/<rid>/` and is extracted/loaded automatically;
   no Aether toolchain is needed to *use* it. Supported RIDs: `linux-x64`

@@ -1,0 +1,26 @@
+// Vue + Storybook + Selenium demo — RECORD leaf (on-demand).
+//
+// Records tapes/post.md by serving the built Vue page from the VCR's static
+// mount and forwarding the form's POST to a throwaway stub backend, capturing
+// the response. Run by name to (re)record:
+//   aeb integration/vue-storybook/.record.ae
+import build
+import std.os
+main() {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/core/native/libservirtium_vcr.so"
+    dir = "${root}/integration/vue-storybook"
+
+    jsb = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && npm run build")
+    if jsb != 0 { println("vue-storybook(record): failed to build the JS binding"); return 1 }
+
+    bld = os.system("cd \"${dir}\" && npm install --omit=dev --silent --no-audit --no-fund && npm run build")
+    if bld != 0 { println("vue-storybook(record): npm install/build failed"); return 1 }
+
+    rc = os.system("cd \"${dir}\" && SERVIRTIUM_VCR_LIB=\"${lib}\" node record.cjs")
+    if rc != 0 { println("vue-storybook(record): failed"); return 1 }
+    println("vue-storybook(record): wrote tapes/post.md")
+    return 0
+}

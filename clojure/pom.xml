@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.paulhammant.servirtium</groupId>
+    <artifactId>servirtium-vcr-clojure</artifactId>
+    <version>2.0.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <!--
+      Servirtium VCR for Clojure: a thin idiomatic wrapper over the Java FFM
+      binding (com.paulhammant.servirtium:servirtium-vcr), which is the actual
+      binding to the native engine. Clojure reaches the engine entirely through
+      that jar via JVM interop, so there is no second FFI here. Clojure is
+      dynamic, so there is no static compile against the Java jar; the .clj
+      sources live under src/main/clojure and src/test/clojure and are placed on
+      the classpath, and clojure.test is run under Maven (test phase) by
+      exec-maven-plugin launching `java clojure.main`. The forked JVM that runs
+      the tests is given native-access (see exec arguments below), since these
+      are FFM downcalls into the native engine; point SERVIRTIUM_VCR_LIB at
+      libservirtium_vcr.so. Run on JDK 22+, tested on JDK 25.
+    -->
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <clojure.version>1.12.0</clojure.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.clojure</groupId>
+            <artifactId>clojure</artifactId>
+            <version>${clojure.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.paulhammant.servirtium</groupId>
+            <artifactId>servirtium-vcr</artifactId>
+            <version>2.0.0-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Clojure is dynamic: no compile step. Put the .clj source roots
+                 (main + test) on the test classpath so clojure.main can require
+                 the `servirtium` and `servirtium-test` namespaces. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>add-clojure-source</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>src/main/clojure</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-clojure-test-source</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>src/test/clojure</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Make Maven copy the .clj sources into the output dirs so they
+                 are on the runtime classpath that exec uses below. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-clj-main</id>
+                        <phase>process-resources</phase>
+                        <goals><goal>copy-resources</goal></goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <resources>
+                                <resource><directory>src/main/clojure</directory></resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>copy-clj-test</id>
+                        <phase>process-test-resources</phase>
+                        <goals><goal>copy-resources</goal></goals>
+                        <configuration>
+                            <outputDirectory>${project.build.testOutputDirectory}</outputDirectory>
+                            <resources>
+                                <resource><directory>src/test/clojure</directory></resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Run clojure.test under the `test` phase by launching a JVM with
+                 clojure.main. The runner namespace calls (run-tests) and exits
+                 nonzero on any failure/error, so a failing test fails the build.
+                 The forked JVM gets native-access enabled because the engine is
+                 reached via java.lang.foreign (FFM downcalls). -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>clojure-test</id>
+                        <phase>test</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <skip>${skipTests}</skip>
+                            <executable>${java.home}/bin/java</executable>
+                            <classpathScope>test</classpathScope>
+                            <arguments>
+                                <argument>--enable-native-access=ALL-UNNAMED</argument>
+                                <argument>-classpath</argument>
+                                <classpath/>
+                                <argument>clojure.main</argument>
+                                <argument>-e</argument>
+                                <argument>(require 'servirtium-test)(let [s ((requiring-resolve 'clojure.test/run-tests) 'servirtium-test)](System/exit (if (or (pos? (:fail s)) (pos? (:error s))) 1 0)))</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

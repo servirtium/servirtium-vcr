@@ -29,7 +29,10 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.release>25</maven.compiler.release>
+        <!-- FFM (java.lang.foreign) is final since JDK 22; compile to 22 bytecode
+             so the JVM-family bindings (Kotlin/Scala/Groovy/Clojure) can consume
+             this jar. Still runs/tests on JDK 25. -->
+        <maven.compiler.release>22</maven.compiler.release>
         <junit.version>6.0.3</junit.version>
         <selenium.version>4.39.0</selenium.version>
     </properties>
@@ -59,7 +62,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <release>25</release>
+                    <release>${maven.compiler.release}</release>
                 </configuration>
             </plugin>
             <plugin>

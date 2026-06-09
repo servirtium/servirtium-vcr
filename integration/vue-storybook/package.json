@@ -1,0 +1,27 @@
+{
+  "name": "servirtium-vue-storybook-demo",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "A Vue POST control, shown in Storybook and driven under Selenium against a Servirtium 2.0 mock backend (markdown record/playback).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
+    "test:playback": "node playback.cjs",
+    "test:record": "node record.cjs"
+  },
+  "//": "vite/plugin-vue/selenium are runtime deps so CI installs them with --omit=dev (no heavy Storybook tree); Storybook is a dev-only showcase.",
+  "dependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "selenium-webdriver": "^4.28.1",
+    "vite": "^6.0.7",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@storybook/vue3": "^8.5.3",
+    "@storybook/vue3-vite": "^8.5.3",
+    "storybook": "^8.5.3"
+  }
+}

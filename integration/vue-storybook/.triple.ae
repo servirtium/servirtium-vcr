@@ -1,0 +1,25 @@
+// Good/Cheap/Fast control — PLAYBACK leaf (offline CI artifact). Selenium drives
+// the three checkboxes in real headless Chrome while a Servirtium VCR replays
+// each scenario's committed tape — including block-third, where the third
+// toggle is refused from the tape ("Impossible", the centre of the Venn) and
+// the control must leave it unchecked. The record counterpart is .triple_record.ae.
+import build
+import std.os
+main() {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    root = build._get(b, "root")
+    lib = "${root}/core/native/libservirtium_vcr.so"
+    dir = "${root}/integration/vue-storybook"
+
+    jsb = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && npm run build")
+    if jsb != 0 { println("vue-storybook(triple): failed to build the JS binding"); return 1 }
+
+    bld = os.system("cd \"${dir}\" && npm install --omit=dev --silent --no-audit --no-fund && npm run build")
+    if bld != 0 { println("vue-storybook(triple): npm install/build failed"); return 1 }
+
+    rc = os.system("cd \"${dir}\" && SERVIRTIUM_VCR_LIB=\"${lib}\" node triple-playback.cjs")
+    if rc != 0 { println("vue-storybook(triple playback): failed"); return 1 }
+    println("vue-storybook(triple playback): passed")
+    return 0
+}

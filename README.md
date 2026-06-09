@@ -23,15 +23,17 @@ servirtium-vcr/
   ruby/          # Fiddle                      javascript/# koffi (Node)
   haskell/       # foreign import ccall        elixir/    # C NIF
   php/           # ext-ffi                     pharo/     # UnifiedFFI (Smalltalk)
+  kotlin/ scala/ clojure/ groovy/  # JVM family — thin layers over the Java jar (no 2nd FFI)
   core_tests/    # Aether-level engine tests (pure-Aether, no binding)
   integration/   # browser · subversion · climate · todobackend cross-binding tests
   <lang>/docs/   # per-binding usage docs
 ```
 
-All **12** bindings are wired and pass through one `aeb` run: the `core/`
-node builds `libservirtium_vcr.so` once, then each binding's `.tests.ae`
-links (go/elixir/haskell) or loads (the rest, via `SERVIRTIUM_VCR_LIB`) that
-single artifact.
+All **12** native-FFI bindings — plus the JVM family (Kotlin/Scala/Clojure/
+Groovy, over the Java jar) — are wired and pass through one `aeb` run: the
+`core/` node builds `libservirtium_vcr.so` once, then each binding's
+`.tests.ae` links (go/elixir/haskell) or loads (the rest, via
+`SERVIRTIUM_VCR_LIB`) that single artifact.
 
 ## Bindings
 
@@ -42,7 +44,7 @@ folder (`usage`, `features`, `architecture`, `building`).
 |---|---|---|
 | Go | cgo | [go/README.md](go/README.md) |
 | Python | ctypes | [python/README.md](python/README.md) |
-| Java | FFM / Panama (JDK 25) | [java/README.md](java/README.md) |
+| Java | FFM / Panama (JDK 22+) | [java/README.md](java/README.md) |
 | .NET | P/Invoke | [dotnet/README.md](dotnet/README.md) |
 | Rust | libloading | [rust/README.md](rust/README.md) |
 | Ruby | Fiddle | [ruby/README.md](ruby/README.md) |
@@ -52,6 +54,21 @@ folder (`usage`, `features`, `architecture`, `building`).
 | Haskell | foreign import ccall | [haskell/README.md](haskell/README.md) |
 | Elixir | C NIF | [elixir/README.md](elixir/README.md) |
 | Pharo | UnifiedFFI (Smalltalk) | [pharo/README.md](pharo/README.md) |
+
+**JVM family.** Kotlin, Scala, Clojure and Groovy reach the engine through the
+**Java binding's jar** via seamless JVM interop — there is *no second native
+FFI*. Each is a thin idiomatic layer over the same API, with its own
+record→replay test:
+
+| Language | Idiomatic layer | Binding |
+|---|---|---|
+| Kotlin | trailing-lambda DSL | [kotlin/README.md](kotlin/README.md) |
+| Scala | `playback(tape)(cfg)` helpers | [scala/README.md](scala/README.md) |
+| Clojure | fns + `with-open` | [clojure/README.md](clojure/README.md) |
+| Groovy | `Closure` DSL | [groovy/README.md](groovy/README.md) |
+
+(For an independent, Kotlin-native option maintained outside this repo, see
+[http4k-testing/servirtium](https://github.com/http4k/http4k/tree/master/http4k-testing/servirtium).)
 
 ## Features
 
