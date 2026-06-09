@@ -60,6 +60,35 @@ committed tape is clean:
 `ServirtiumField` is `path`, `responseBody`, `requestHeaders`, `requestBody`,
 or `responseHeaders`.
 
+### Whole-tape normalization & redaction (byte-identical re-record)
+
+Two scrubbers operate across the **whole tape** (every field, every
+interaction) by regex, so a value that recurs — a session id minted in one
+response and echoed back in a later request path — is rewritten consistently:
+
+```smalltalk
+(Servirtium record: tape upstream: upstream)
+    "Correlated ids: each distinct match → a stable {{session-N}} token,
+     reused everywhere that same value appears, so it round-trips on playback:"
+    normalizeWholeTape: '[0-9a-f]{32}' name: 'session';
+    "Uncorrelated volatiles: collapse every match to one constant:"
+    redactWholeTape: 'Date: .*' replacement: 'Date: {{date}}';
+    start.
+```
+
+- `normalizeWholeTape:pattern:name:` — every **distinct** match across the
+  whole tape gets its own stable `{{name-N}}` token (`{{session-1}}`,
+  `{{session-2}}`, …). Because the mapping is by value, a correlated id that
+  reappears in a later request path normalizes to the same token and matches on
+  playback.
+- `redactWholeTape:pattern:replacement:` — collapse **every** match of the
+  pattern to one constant string. Use this for uncorrelated volatiles (a `Date`
+  header, a one-shot nonce) where no two occurrences need to agree.
+
+Both run at flush time, so the live test still sees real bytes. The payoff is a
+**byte-identical re-record**: re-running record over the same traffic produces
+the same tape, so `git diff` stays empty.
+
 ## Replaying a scrubbed tape (unredaction)
 
 When a committed tape holds a placeholder but the live SUT sends the real
@@ -157,10 +186,10 @@ cleanly.
 `#ok`, `#pathOrMethodDiff`, `#headerMissing`, `#headerValueDiff`,
 `#headerUnexpected`, `#tapeExhausted`, `#bodyDiff`, `#recordError`.
 
-## Gotcha: one server per image
+## Concurrency: one server per port
 
-State is process-global in v1, so configure/stop one `ServirtiumServer` at a
-time and **run tests serially** (a Pharo image is one process). See
-[architecture.md](architecture.md#one-server-per-process). `start` resets all
-process-global mutation/strict/format state first, so settings from a prior
-fixture never leak forward.
+Each `start` opens an independent VCR keyed by its own native handle, so **N
+servers can run at once in one image** — each owns its tape, replay cursor,
+mutations, and diagnostics, and nothing is shared. You don't have to run the
+suite serially, and a fixture's config can't leak into another's. See
+[architecture.md](architecture.md#concurrency-one-server-per-port).

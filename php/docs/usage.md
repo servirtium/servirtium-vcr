@@ -33,8 +33,7 @@ try {
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
-the SUT, and captures it. Chunked responses are de-chunked (native lib built
-with Aether ≥ 0.183).
+the SUT, and captures it. Chunked responses are de-chunked automatically.
 
 ### Drift detection
 
@@ -55,6 +54,31 @@ Vcr::record($tape, $upstream)
 
 `VcrField` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`,
 `ResponseHeaders`.
+
+### Whole-tape normalization (volatiles that must round-trip)
+
+`redact(...)` rewrites one field per match. For volatiles that span the **whole
+tape** — server-minted ids, timestamps — two record-time rules make a re-record
+byte-identical:
+
+```php
+Vcr::record($tape, $upstream)
+    // CORRELATED: a server-minted id that recurs in later request paths.
+    // Every distinct match across the whole tape gets a stable {{order-N}}
+    // token, so the same id maps to the same token wherever it appears and
+    // round-trips on playback.
+    ->normalizeWholeTape('/orders/([0-9a-f-]{36})', 'order')
+    // UNCORRELATED: a volatile that just needs to be constant. Every match
+    // collapses to the one replacement (no per-match numbering).
+    ->redactWholeTape('Date: .*GMT', 'Date: <NORMALIZED>')
+    ->start();
+```
+
+Use `normalizeWholeTape($pattern, $name)` when the value is generated in one
+interaction and reused in a later request (it must correlate, so playback can
+substitute it back); use `redactWholeTape($pattern, $replacement)` for
+uncorrelated volatiles (e.g. the `Date` response header) that only need to be
+pinned to a constant.
 
 ## Replaying a scrubbed tape (unredaction)
 
@@ -95,8 +119,11 @@ Vcr::record($tape, $upstream)->indentCodeBlocks()->emphasizeHttpVerbs()->start()
 `VcrOutcome`: `Ok`, `PathOrMethodDiff`, `HeaderMissing`, `HeaderValueDiff`,
 `HeaderUnexpected`, `TapeExhausted`, `BodyDiff`, `RecordError`.
 
-## One server per process
+## Concurrency: one server per port
 
-State is process-global in v1, so configure/`stop()` one `VcrServer` at a
-time and run PHPUnit serially. `start()` resets all process-global state
-first, so settings from a prior fixture never leak forward.
+Each `start()` opens its own handle; the tape, replay cursor, mutations,
+static mounts, pending note, and diagnostics are all scoped to that handle. So
+several `VcrServer`s can be alive at once in one process, each on its own port
+replaying its own tape, without their cursors or mutations bleeding into each
+other — no need to run PHPUnit serially for state-isolation reasons. See
+[architecture.md](architecture.md#concurrency-one-server-per-port).

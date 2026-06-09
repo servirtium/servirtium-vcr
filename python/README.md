@@ -24,9 +24,12 @@ with servirtium.playback("tapes/climate_api.md").port(0).start() as vcr:
 Since **2.0**, this is a thin Python layer over the **Aether VCR** core. All
 record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static bypass, gzip/chunked
-handling — lives in and is maintained as the Aether standard library
-(`std/http/server/vcr`). This package calls a precompiled native build of that
-core through **`ctypes`** (Python stdlib); it does **not** reimplement
+handling — lives in a single pure-Aether module in this repo at `core/vcr.ae`
+(plus the `core/embed.ae` C-ABI), built once to
+`core/native/libservirtium_vcr.so` on top of Aether stdlib primitives
+(`std.http`, `std.regex`, `std.zlib`, `std.cryptography`). The Servirtium logic
+is in-repo, not the stdlib. This package calls a precompiled native build of
+that core through **`ctypes`** (Python stdlib); it does **not** reimplement
 Servirtium in Python.
 
 > **Breaking from 1.x:** the old Python reimplementation (markdown
@@ -48,31 +51,40 @@ Supported platforms: linux-x64 (more in [docs/building.md](docs/building.md)).
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,
-  unredactions, header removal, notes, strict matching, static content, drift,
-  diagnostics — with code.
+  unredactions, whole-tape normalization, header removal, notes, strict
+  matching, static content, drift, diagnostics — with code.
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix and
   what's covered by tests.
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering works
-  (Python → ctypes → `embed.ae` → Aether VCR), the native loader, and the v1
-  one-server-per-process model.
+  (Python → ctypes → `embed.ae` → Aether VCR), the native loader, and the
+  one-server-per-port (handle-keyed) concurrency model.
 - **[docs/building.md](docs/building.md)** — building the native library and CI.
 - **[MIGRATION.md](MIGRATION.md)** — the 1.x → 2.0 rewrite story.
 
-## One hard rule: run tests serially
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its tape / cursor /
-mutation state is process-global). pytest runs tests serially by default — do
-**not** add `pytest-xdist` parallelism (no `-n`). `.start()` resets all
-process-global mutation/strict/format state first, so settings from a prior
-fixture never leak forward. See
-[docs/architecture.md](docs/architecture.md#one-server-per-process).
+The Aether VCR runs **one server per port**: N independent VCR servers can run
+concurrently in one process, each keyed by its own handle, with config,
+diagnostics, and tape scoped to that handle. So two
+`servirtium.playback(...).start()` servers can be alive at once on different
+ports without their cursors or mutations bleeding into each other (proven by
+`core_tests/concurrent_probe.ae` and `test/test_concurrent.py`). See
+[docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port).
 
 ## Building from source
 
+The native engine and the Python tests build together through `aeb` (needs
+`ae` ≥ v0.227.0 and `aeb` on PATH):
+
 ```sh
-./build-native.sh              # builds the native lib for your platform (needs `ae`)
-python -m pip install -e .[dev]
-python -m pytest
+aeb python/.tests.ae           # builds core/native/libservirtium_vcr.so, then the tests
+```
+
+To iterate on the Python layer against a prebuilt library:
+
+```sh
+SERVIRTIUM_VCR_LIB=core/native/libservirtium_vcr.so python -m pip install -e .[dev]
+SERVIRTIUM_VCR_LIB=core/native/libservirtium_vcr.so python -m pytest
 ```
 
 Details in [docs/building.md](docs/building.md).

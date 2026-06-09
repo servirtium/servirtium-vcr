@@ -30,10 +30,11 @@ Or auto-closing (always stops the server, flushing the tape in record mode):
 This is a thin **UnifiedFFI (uFFI)** layer over the **Aether VCR** core. All
 record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static bypass, gzip/chunked
-handling — lives in and is maintained as the Aether standard library
-(`std/http/server/vcr`). This binding FFI-calls a precompiled native build of
-that core (`native/libservirtium_vcr.so`); it does **not** reimplement
-Servirtium in Smalltalk.
+handling — lives in this repo as a pure-Aether module (`core/vcr.ae`, with the
+C-ABI seam in `core/embed.ae`), built on Aether stdlib primitives. This binding
+FFI-calls a precompiled native build of that core
+(`native/libservirtium_vcr.so`); it does **not** reimplement Servirtium in
+Smalltalk.
 
 ## Install (into a Pharo image)
 
@@ -62,19 +63,21 @@ The engine library is **not** committed — build it once with
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix and
   what's covered by tests.
 - **[docs/architecture.md](docs/architecture.md)** — how the uFFI layering
-  works (Smalltalk → uFFI → `embed.ae` → Aether VCR), how the `.so` loads,
-  string ownership/freeing, and the v1 one-server-per-process model.
+  works (Smalltalk → uFFI → `core/embed.ae` → `core/vcr.ae`), how the `.so`
+  loads, string ownership/freeing, and the one-server-per-port (handle-based) model.
 - **[docs/building.md](docs/building.md)** — building the native library and
   running the headless SUnit suite.
 
-## One hard rule: run tests serially
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its tape / cursor /
-mutation state is process-global, and a Pharo image is one process). Don't run
-two VCR servers concurrently in the same image; drive the suite serially.
-`ServirtiumBuilder>>start` resets all process-global mutation/format/strict
-state before applying a fixture's config, so settings never leak between
-tests. See [docs/architecture.md](docs/architecture.md#one-server-per-process).
+The ABI runs **one server per port**: each `start` opens an independent VCR keyed by its
+own native handle, so **N VCR servers can run concurrently in one image**
+without their tapes, replay cursors, mutations, or diagnostics bleeding into
+each other. Every config / diagnostic call is scoped to a single handle. You
+don't have to serialize fixtures — two `(Servirtium playback: …) start` servers
+can be alive at once. (The core's `core_tests/.concurrent.ae` probe proves two
+playback VCRs on two ports replaying their own tapes side by side.) See
+[docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port).
 
 ## Building from source
 
@@ -87,7 +90,8 @@ image already present, default `$HOME/.local/pharo`):
 ./bootstrap.sh
 ```
 
-Already have `ae` (≥ 0.183) and a Pharo VM/image? Drive the two steps directly:
+Already have `ae` (≥ 0.227.0, for `std.regex`) and a Pharo VM/image? Drive the
+two steps directly:
 
 ```sh
 ./build-native.sh     # builds native/libservirtium_vcr.so (needs `ae`)

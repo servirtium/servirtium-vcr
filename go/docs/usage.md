@@ -94,7 +94,7 @@ if err := srv.Close(); err != nil { t.Fatal(err) }
 
 Record forwards each request to the upstream, returns the **real** response
 to your SUT, and captures the exchange. Chunked responses are de-chunked
-(needs the native lib built with Aether ≥ 0.183.0).
+(needs the native lib built with Aether ≥ 0.227.0).
 
 ### Drift detection
 
@@ -124,6 +124,32 @@ servirtium.Record(tape, upstream).
 
 `Field` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`, or
 `ResponseHeaders`.
+
+## Whole-tape normalization (deterministic re-records)
+
+`Redact` targets one field of each interaction. Two companion record-mode
+verbs instead sweep the **whole tape** — every field of every interaction — so
+a value the server mints anew on each run stops dirtying the diff. The payoff:
+a re-record is **byte-identical**, so `FailIfChanged` drift detection fires
+only on a real upstream change.
+
+```go
+servirtium.Record(tape, upstream).
+    // CORRELATED value (an entity id echoed back in later request paths):
+    // each distinct match becomes a stable {{order-N}} token, minted in
+    // first-appearance order across the whole tape — identity preserved, so
+    // it still round-trips on playback.
+    NormalizeWholeTape(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, "order").
+    // UNCORRELATED, variable-cardinality volatile (a Date header): collapse
+    // every match to one constant — a per-value token would not be byte-stable
+    // when the number of distinct values varies run to run.
+    RedactWholeTape(`Date: .+ GMT`, "Date: <DATE>").
+    Start()
+```
+
+Use `NormalizeWholeTape(pattern, name)` for a value that recurs and must stay
+self-consistent (the same id in the POST response and a later GET path);
+use `RedactWholeTape(pattern, replacement)` for a volatile you never correlate.
 
 ## Replaying a scrubbed tape (unredaction)
 
@@ -223,10 +249,10 @@ cleanly.
 `Ok`, `PathOrMethodDiff`, `HeaderMissing`, `HeaderValueDiff`,
 `HeaderUnexpected`, `TapeExhausted`, `BodyDiff`, `RecordError`.
 
-## Gotcha: one server per process
+## Concurrency: one server per port
 
-State is process-global in v1, so configure/`Close` one `*Server` at a time
-and **run tests serially** — do NOT call `t.Parallel()` (see
-[architecture.md](architecture.md#one-server-per-process)). `Start()` resets
-all process-global mutation/strict/format state first, so settings from a
-prior fixture never leak forward.
+Each `Start()` owns its own native handle, and all of a fixture's state — tape,
+cursor, mutations, static mounts, note, diagnostics — is scoped to that handle.
+Nothing is process-global, so N `*Server`s can run at once and `t.Parallel()`
+is fine. One fixture's settings can never leak into another's. See
+[architecture.md](architecture.md#concurrency-one-server-per-port).

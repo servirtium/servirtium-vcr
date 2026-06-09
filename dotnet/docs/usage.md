@@ -36,7 +36,7 @@ await client.GetStringAsync("/api/v1/countries");
 
 Record forwards each request to the upstream, returns the **real** response
 to your SUT, and captures the exchange. Chunked responses are de-chunked
-(needs the native lib built with Aether ≥ 0.183.0).
+automatically.
 
 ### Drift detection
 
@@ -62,6 +62,32 @@ Vcr.Record(tape, upstream)
 
 `VcrField` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`, or
 `ResponseHeaders`.
+
+### Whole-tape rewrites (deterministic re-record)
+
+`Redact` targets one field of each interaction. For volatility that spans
+the **whole tape** — values that recur across fields and interactions —
+there are two tape-wide verbs, applied at flush time. The payoff is a
+**byte-identical re-record**: a tape that scrubs its non-determinism this
+way records the same bytes every run, so `git diff` stays clean.
+
+```csharp
+Vcr.Record(tape, upstream)
+    // Correlated ids: a UUID minted in a POST response that reappears in
+    // later request paths. Each distinct match becomes a stable {{id-N}}
+    // token (numbered in first-appearance order), so the same value maps to
+    // the same token everywhere — and round-trips on playback.
+    .NormalizeWholeTape(@"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "id")
+    // Uncorrelated volatiles that never need to round-trip (e.g. the Date
+    // header, whose match count can vary run to run). Every match collapses
+    // to one constant.
+    .RedactWholeTape(@"[A-Z][a-z][a-z], \d{2} [A-Z][a-z][a-z] \d{4} \d{2}:\d{2}:\d{2} GMT", "{{date}}")
+    .Start();
+```
+
+Use `NormalizeWholeTape` when the value must stay correlated (the same id
+in request and response); use `RedactWholeTape` when it just needs to
+disappear consistently.
 
 ## Replaying a scrubbed tape (unredaction)
 
@@ -157,10 +183,11 @@ load cleanly.
 `Ok`, `PathOrMethodDiff`, `HeaderMissing`, `HeaderValueDiff`,
 `HeaderUnexpected`, `TapeExhausted`, `BodyDiff`, `RecordError`.
 
-## Gotcha: one server per process
+## Concurrency: one server per port
 
-State is process-global in v1, so configure/dispose one `VcrServer` at a
-time and **run tests serially** (see
-[architecture.md](architecture.md#one-server-per-process)). `.Start()`
-resets all process-global mutation/strict/format state first, so settings
-from a prior fixture never leak forward.
+Each `.Start()` returns a `VcrServer` that owns its own native handle, with
+its own tape, cursor, mutations, and diagnostics. You can run **multiple
+`VcrServer`s concurrently** in one process — different ports, different
+tapes, independent cursors — so there's no need to run tests serially.
+Because each fixture starts from a fresh handle, its config never leaks into
+another. See [architecture.md](architecture.md#concurrency-one-server-per-port).

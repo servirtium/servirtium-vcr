@@ -12,6 +12,8 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `recRedactions` | ✅ |
+| Whole-tape normalize (correlated → `{{name-N}}`) | ✅ | ✅ | `recNormalizeWholeTape` | — |
+| Whole-tape redact (uncorrelated → constant) | ✅ | ✅ | `recRedactWholeTape` | — |
 | Unredactions | ✅ | ✅ | `pbUnredactions` | — |
 | Header removal | ✅ | ✅ | `recRemoveHeaders` / `pbRemoveHeaders` | ✅ (record/redaction tests) |
 | Notes | ✅ | ✅ | `recNote` / `note` | — |
@@ -21,7 +23,7 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Format options (indent / emphasize) | ✅ | ✅ | `recIndentCodeBlocks` / `recEmphasizeHttpVerbs` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError` / `lastKind` / `lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
-| Chunked de-chunk on record | ✅ (≥0.183.0) | ✅ | (automatic) | — |
+| Chunked de-chunk on record | ✅ | ✅ | (automatic) | — |
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `pbPort = 0` → `port vcr` | ✅ |
 
@@ -32,8 +34,9 @@ record/redaction tests (stripping client default headers).
 
 ## Not (yet) exposed through the C-ABI
 
-Present in the Aether VCR module but not surfaced by `embed.ae`, so not in the
-Haskell API. Both are small `embed.ae` additions if wanted:
+Present in the in-repo Aether VCR module (`core/vcr.ae`) but not surfaced by
+`core/embed.ae`, so not in the Haskell API. Both are small `core/embed.ae`
+additions if wanted:
 
 - **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
   `<tape>.actual` and compares, instead of overwriting). The Haskell layer has
@@ -42,8 +45,6 @@ Haskell API. Both are small `embed.ae` additions if wanted:
 
 ## Known limitations (inherited from the core)
 
-- **One active VCR server per process** in v1 — run tests serially. See
-  [architecture.md](architecture.md#one-server-per-process).
 - **Binary response bodies** rely on the tape's text/base64 path (an existing
   Aether VCR limitation).
 - **Strict matching + client default headers.** HTTP clients send `Host`,

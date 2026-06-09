@@ -12,6 +12,8 @@ the real native library.
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
+| Whole-tape normalization (correlated ids → `{{name-N}}`) | ✅ | ✅ | `.normalize_whole_tape(pattern, name)` | — |
+| Whole-tape redaction (collapse to one constant) | ✅ | ✅ | `.redact_whole_tape(pattern, replacement)` | — |
 | Unredactions | ✅ | ✅ | `.unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `.remove_header(field, name)` | ✅ |
 | Notes | ✅ | ✅ | `.note(…)` / `VcrServer.note` | ✅ |
@@ -27,8 +29,9 @@ the real native library.
 
 ## Not (yet) exposed through the C-ABI
 
-Present in the Aether VCR module but not surfaced by `embed.ae`, so not in the
-Python API. Both are small `embed.ae` additions if wanted:
+Present in the in-repo Aether VCR module (`core/vcr.ae`) but not surfaced by
+`core/embed.ae`, so not in the Python API. Both are small `core/embed.ae`
+additions if wanted:
 
 - **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
   `<tape>.actual` and compares, instead of overwriting). The Python layer has
@@ -46,8 +49,6 @@ Python API. Both are small `embed.ae` additions if wanted:
 
 ## Known limitations (inherited from the core)
 
-- **One active VCR server per process** in v1 — run tests serially. See
-  [architecture.md](architecture.md#one-server-per-process).
 - **Binary response bodies** rely on the tape's text/base64 path (an existing
   Aether VCR limitation).
 - **Default client headers + strict matching** — `urllib`/`http.client` add

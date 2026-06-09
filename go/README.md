@@ -22,12 +22,15 @@ if srv.LastKind() != servirtium.Ok { t.Fatal(srv.LastError()) }
 
 ## What this is (and isn't)
 
-Since **v2**, this is a thin Go (cgo) layer over the **Aether VCR** core. All
+Since **v2**, this is a thin Go (cgo) layer over the **Servirtium VCR** core. All
 record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static-content bypass,
-gzip/chunked handling — lives in and is maintained as the Aether standard
-library (`std/http/server/vcr`). This package cgo-binds a precompiled native
-build of that core; it does **not** reimplement Servirtium in Go.
+gzip/chunked handling — lives in this repo as a pure-Aether module
+(`core/vcr.ae`, with the `core/embed.ae` C-ABI), built once to
+`core/native/libservirtium_vcr.so`. The engine is *built on* Aether's stdlib
+primitives (`std.http` server, `std.regex`, `std.zlib`, `std.cryptography`), but
+the Servirtium logic is in-repo, not in the stdlib. This package cgo-binds that
+precompiled native build; it does **not** reimplement Servirtium in Go.
 
 > **Breaking from v1:** the old `Impl` type and its `StartPlayback` /
 > `StartRecord` / `Set*` API are gone, with no shim. The new API is below /
@@ -48,26 +51,26 @@ and a C toolchain are required to build. The native library
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,
-  unredactions, header removal, notes, strict matching, static content,
-  drift, diagnostics — with code.
+  unredactions, header removal, whole-tape normalization, notes, strict
+  matching, static content, drift, diagnostics — with code.
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering
-  works (Go → cgo → `embed.ae` → Aether VCR), and the v1
-  one-server-per-process model.
+  works (Go → cgo → `core/embed.ae` → `core/vcr.ae`), and the one-server-per-port
+  concurrency model.
+- **[docs/features.md](docs/features.md)** — the Servirtium capability matrix,
+  each feature mapped to its Go API and the test that exercises it.
 - **[docs/building.md](docs/building.md)** — building with **aeb** (the
   Aether build system).
 - **[MIGRATION.md](MIGRATION.md)** — the v1 → v2 rewrite story.
 
-## One hard rule: run tests serially
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its tape, cursor,
-and mutation state are process-global). **Do not call `t.Parallel()`** in
-tests that drive the VCR — Go test functions within a package run serially by
-default, which is exactly what's needed. Two servers in one process would
-stomp each other's state (it shows up as spurious `599` mismatches).
-
-`Start()` resets all process-global mutation/strict/format state first, so a
-setting from a prior fixture never leaks forward, even within one process.
-See [docs/architecture.md](docs/architecture.md#one-server-per-process).
+The VCR core runs **one server per port**: N independent `*Server`s can run concurrently
+in one process, each keyed by its own handle. A fixture's tape, replay cursor,
+mutations, static mounts, pending note, and diagnostics are all scoped to its
+handle, so two `*Server`s can be alive at once without bleeding into each
+other. The lifecycle is open → configure(handle) → start. You may run VCR-driven
+tests in parallel; nothing is process-global. See
+[docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port).
 
 ## Building
 
@@ -83,12 +86,12 @@ no contrib; needs `curl` — then builds everything):
 ./bootstrap.sh
 ```
 
-Already have `ae` (≥ 0.183) and `aeb` on PATH? Just run the build runner from
+Already have `ae` (≥ 0.227.0) and `aeb` on PATH? Just run the build runner from
 the repo root:
 
 ```sh
 aeb        # builds the whole DAG, in dependency order:
-           #   .native.ae            -> native/libservirtium_vcr.so (ae build --emit=lib)
+           #   core/.build.ae        -> core/native/libservirtium_vcr.so (ae build --emit=lib from core/embed.ae)
            #   cmd/vcrdemo/.build.ae -> the lifecycle demo binary (cgo links the .so)
            #   .tests.ae             -> go test (the binding's suite)
            #   demo/.up_poke_down.ae -> UP/POKE/DOWN lifecycle demo (the boast)

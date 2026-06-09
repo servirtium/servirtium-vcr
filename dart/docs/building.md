@@ -6,7 +6,7 @@
 ./bootstrap.sh        # extra args pass through to `dart test`
 ```
 
-Installs `ae` (≥ 0.183) via aether's official `get.sh` to `$HOME/.local` if
+Installs `ae` (≥ 0.227.0, for `std.regex`) via aether's official `get.sh` to `$HOME/.local` if
 missing (no sudo, no Aether test suite, no contrib; needs `curl`, no
 build-from-source fallback); checks the Dart SDK is present (does **not**
 auto-install it); runs `build-native.sh`; then `dart pub get && dart test`.
@@ -27,19 +27,20 @@ Override `PREFIX` / `AETHER_REF` (pin in CI) / `MIN_AE` via env.
 ./build-native.sh
 ```
 
-Builds `native/libservirtium_vcr.so` from the **installed** toolchain's
-`embed.ae` — no Aether source checkout needed (`AETHER_REPO` overrides for
-engine devs). `--with=fs,net` needs a `-fPIC` Aether runtime (**≥ 0.182**;
-chunked de-chunk **≥ 0.183**). The native lib is a git-ignored build artifact.
+Builds `core/native/libservirtium_vcr.so` from the in-repo `core/embed.ae`
+(C-ABI wrapper) and `core/vcr.ae` (the pure-Aether engine) using the
+**installed** toolchain — no Aether source checkout needed. `--with=fs,net`
+needs a `-fPIC` Aether runtime, and the engine uses `std.regex`, so **ae ≥
+0.227.0** is required. The native lib is a git-ignored build artifact.
 
 ## Test
 
 ```sh
-dart test -j 1        # serial: one VCR server per process (shared across isolates)
+dart test        # one server per port — independent servers per process
 ```
 
-`DynamicLibrary.open` loads `native/libservirtium_vcr.so` at runtime;
-`SERVIRTIUM_VCR_LIB` overrides the path (handy when iterating on `embed.ae`).
+`DynamicLibrary.open` loads `core/native/libservirtium_vcr.so` at runtime;
+`SERVIRTIUM_VCR_LIB` overrides the path (handy when iterating on `core/embed.ae`).
 
 ## Distributing to consumers (incl. Flutter)
 

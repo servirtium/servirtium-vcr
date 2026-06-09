@@ -24,8 +24,9 @@ assert_eq!(Outcome::Ok, vcr.last_kind());   // optional: assert a clean match
 Since **2.0**, this is a thin Rust layer over the **Aether VCR** core. All
 record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static bypass, gzip/chunked
-handling — lives in and is maintained as the Aether standard library
-(`std/http/server/vcr`). This crate `dlopen`s a precompiled native build of
+handling — lives in the in-repo, pure-Aether `core/vcr.ae` module (built on
+Aether stdlib primitives, with the Servirtium logic in this repo, *not* the
+Aether standard library). This crate `dlopen`s a precompiled native build of
 that core (via [`libloading`](https://crates.io/crates/libloading)); it does
 **not** reimplement Servirtium in Rust.
 
@@ -43,42 +44,44 @@ servirtium = { git = "https://github.com/servirtium/servirtium-rust" }
 
 The native library is loaded at runtime. The crate looks for it (in order)
 at `$SERVIRTIUM_VCR_LIB`, then `native/libservirtium_vcr.{so,dylib}` next to
-the crate, then via the OS loader. Run `./build-native.sh` once (needs the
-Aether `ae` toolchain) or set `SERVIRTIUM_VCR_LIB` to a prebuilt copy.
+the crate, then via the OS loader. Build the shared engine from `core/`
+(needs the Aether `ae` toolchain — see [docs/building.md](docs/building.md))
+or set `SERVIRTIUM_VCR_LIB` to a prebuilt copy.
 
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,
-  unredactions, header removal, notes, strict matching, static content,
-  drift, diagnostics — with code.
+  whole-tape normalize/redact, unredactions, header removal, notes, strict
+  matching, static content, drift, diagnostics — with code.
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix
   and what's covered by tests.
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering
-  works (Rust → `libloading` → `embed.ae` → Aether VCR), the native loader,
-  and the v1 one-server-per-process model.
+  works (Rust → `libloading` → `core/embed.ae` → `core/vcr.ae`), the native
+  loader, and the one server per port model.
 - **[docs/building.md](docs/building.md)** — building the native library and CI.
 - **[MIGRATION.md](MIGRATION.md)** — the 1.x → 2.0 rewrite story.
 
-## One hard rule: one server per process
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its tape /
-cursor / mutation state is process-global). `cargo test` runs tests in
-parallel threads within one process, which would corrupt that state — so
-this crate **serializes every fixture through a process-global lock** held
-for the life of each `VcrServer`. Tests therefore run safely under a plain
-`cargo test` with no `--test-threads=1` needed; they simply don't overlap.
+The Aether VCR runs **one server per port**: each `VcrServer` owns its own native
+handle with its own tape, cursor, mutations, and diagnostics, so **N
+independent servers can run concurrently in one process** without
+interfering. The crate also takes one process-wide lock for each
+`VcrServer`'s lifetime as belt-and-braces, so a plain parallel `cargo test`
+is safe with no `--test-threads=1` needed.
 
-See [docs/architecture.md](docs/architecture.md#one-server-per-process) for
-why, and `tests/` for worked examples.
+See [docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port)
+for the model, and `tests/` for worked examples.
 
 ## Building from source
 
 ```sh
-./build-native.sh     # builds the native lib for your platform (needs `ae`)
-cargo test
+# build the shared engine from core/, then point tests at it:
+SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so cargo test
 ```
 
-Details in [docs/building.md](docs/building.md).
+Details (including the `ae build --emit=lib` invocation and the ≥ 0.227.0
+toolchain floor) in [docs/building.md](docs/building.md).
 
 ## License
 

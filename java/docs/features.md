@@ -12,6 +12,8 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
+| Whole-tape normalize (correlated → `{{name-N}}`) | ✅ | ✅ | `.normalizeWholeTape(pattern, name)` | — |
+| Whole-tape redact (uncorrelated → constant) | ✅ | ✅ | `.redactWholeTape(pattern, replacement)` | — |
 | Unredactions | ✅ | ✅ | `.unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `.removeHeader(field, name)` | ✅ (record + playback) |
 | Notes | ✅ | ✅ | `.note(…)` / `VcrServer.note` | ✅ |
@@ -21,7 +23,7 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError()`/`lastKind()`/`lastIndex()` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
-| Chunked de-chunk on record | ✅ (≥0.183.0) | ✅ | (automatic) | ✅ |
+| Chunked de-chunk on record | ✅ | ✅ | (automatic) | ✅ |
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `.port(0)` → `vcr.port()` | ✅ |
 
@@ -46,9 +48,14 @@ Java API. Both are small `embed.ae` additions if wanted:
 - **No pluggable server module** (`jetty` / `undertow`). The embedded Aether
   HTTP server inside the native lib *is* the server.
 
+## Concurrency: one server per port
+
+- **Per-listener, handle-based.** N independent VCR servers can run
+  concurrently in one process, each keyed by its own handle with its own tape,
+  cursor, mutations, and diagnostics — no serial constraint. See
+  [architecture.md](architecture.md#concurrency-one-server-per-port).
+
 ## Known limitations (inherited from the core)
 
-- **One active VCR server per process** in v1 — run tests serially. See
-  [architecture.md](architecture.md#one-server-per-process).
 - **Binary response bodies** rely on the tape's text/base64 path (an existing
-  Aether VCR limitation).
+  VCR-core limitation).

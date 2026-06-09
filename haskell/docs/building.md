@@ -9,7 +9,7 @@ idempotent command:
 ./bootstrap.sh        # extra args pass through to `cabal test`
 ```
 
-It checks for `ae` (≥ 0.183) and installs it via aether's official `get.sh`
+It checks for `ae` (≥ 0.227.0) and installs it via aether's official `get.sh`
 remote installer to a user prefix (`$HOME/.local` — **no sudo, no Aether test
 suite, no contrib**; needs `curl`, no build-from-source fallback) if it's
 missing/too old; checks GHC + cabal are present (it does **not** auto-install
@@ -33,27 +33,27 @@ already have all three toolchains.
 
 ## Build the native library
 
-The native library is built from the Aether std VCR embedding module,
-`std/http/server/vcr/embed.ae`:
+The native library is built from the in-repo Aether VCR embedding module,
+`core/embed.ae` (which imports the VCR itself, `core/vcr.ae`):
 
 ```sh
 ./build-native.sh
 ```
 
-This produces the **host platform's** library into `native/`. `embed.ae` is
-sourced from the **installed** toolchain (the stdlib that ships next to `ae`) —
-no Aether source checkout needed; engine devs can point at a local HEAD with
-`AETHER_REPO=/path/to/aether`. Under the hood:
+This produces the **host platform's** library into `native/`. The VCR source
+lives in this repo (`core/`), so no Aether source checkout is needed — only the
+`ae` toolchain on PATH to compile it. Under the hood:
 
 ```sh
-ae build --emit=lib --with=fs,net <prefix>/share/aether/std/http/server/vcr/embed.ae \
+ae build --emit=lib --with=fs,net core/embed.ae \
    -o native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
 - `--with=fs,net` grants the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
-  runtime — **Aether ≥ 0.182.0**; chunked de-chunking needs **≥ 0.183.0**.
+  runtime, and the whole-tape normalization passes use `std.regex` — together
+  these need **Aether ≥ 0.227.0**.
 
 `build-native.sh` also **generates `cabal.project.local`** with the absolute
 `native/` dir and an rpath (see below). The native lib and
@@ -92,7 +92,7 @@ cabal test          # rpath makes this work with no LD_LIBRARY_PATH
 ```
 
 If you build the lib without the rpath, run
-`LD_LIBRARY_PATH=$PWD/native cabal test`. To iterate on `embed.ae`, rebuild
+`LD_LIBRARY_PATH=$PWD/native cabal test`. To iterate on `core/embed.ae`, rebuild
 with `./build-native.sh` (it overwrites `native/` and regenerates
 `cabal.project.local`).
 
@@ -110,7 +110,7 @@ Each arch is a distinct binary (no shared code between x64 and arm64).
 
 ## Supply-chain notes
 
-- Native builds are reproducible from `embed.ae` + a pinned Aether toolchain
+- Native builds are reproducible from `core/embed.ae` + a pinned Aether toolchain
   version — record the `ae --version` used so a hash can be verified from
   source.
 - The native `.so` is a discrete file (not embedded in the Haskell objects),

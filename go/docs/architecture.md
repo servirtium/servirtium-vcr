@@ -10,23 +10,26 @@ servirtium-go            ── thin Go (cgo), this repo ──
    │   • Playback / PlaybackBuilder / RecordBuilder / Server  (servirtium.go)
    │   • cgo bindings to aether_vcr_embed_*                    (the import "C" block)
    ▼   cgo
-native/libservirtium_vcr.so
-   │   built: ae build --emit=lib --with=fs,net std/http/server/vcr/embed.ae
-   │   • embed.ae  — thin Aether wrapper exposing the C-ABI
-   │   • std/http/server/vcr  — the actual VCR (parse, dispatch, record,
-   │     mutate, emit, match) + the embedded Aether HTTP server
+core/native/libservirtium_vcr.so
+   │   built: ae build --emit=lib --with=fs,net core/embed.ae (by core/.build.ae)
+   │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
+   │   • core/vcr.ae    — the actual VCR (parse, dispatch, record, mutate,
+   │     emit, match) — pure Aether, in this repo, on top of std.http's
+   │     server + std.regex / std.zlib / std.cryptography
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>
 ```
 
 The Go side owns **none** of the Servirtium semantics. It starts/stops the
 server, marshals strings, and presents an idiomatic fixture. Everything that
-defines Servirtium behaviour is the Aether core, shared with every other
-language binding built on the same `embed.ae`.
+defines Servirtium behaviour is the in-repo Aether core (`core/vcr.ae` +
+`core/embed.ae`), shared with every other language binding through the one
+`core/native/libservirtium_vcr.so` built by `core/.build.ae`. The core is
+*built on* Aether's stdlib primitives but is not itself part of the stdlib.
 
 ## The C-ABI
 
-`embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
+`core/embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
 avoids colliding with the core's own `vcr_*` runtime symbols). It adds only
 the *embedding seam* the raw VCR module lacks:
 
@@ -48,40 +51,41 @@ are `C.CString`'d and `C.free`'d.
 cgo links against the library with directives in `servirtium.go`:
 
 ```go
-// #cgo LDFLAGS: -L${SRCDIR}/native -lservirtium_vcr -Wl,-rpath,${SRCDIR}/native
+// #cgo LDFLAGS: -L${SRCDIR}/../core/native -lservirtium_vcr -Wl,-rpath,${SRCDIR}/../core/native
 ```
 
-`-L${SRCDIR}/native` finds it at link time; `-Wl,-rpath,${SRCDIR}/native`
-bakes an **absolute** rpath into the test/binary so the runtime loader finds
-`libservirtium_vcr.so` without `LD_LIBRARY_PATH`. (`${SRCDIR}` is expanded by
-cgo to this package's source directory.) Verified: a `go test -c` binary
-copied elsewhere still loads the lib.
+`-L${SRCDIR}/../core/native` finds it at link time;
+`-Wl,-rpath,${SRCDIR}/../core/native` bakes an **absolute** rpath into the
+test/binary so the runtime loader finds `libservirtium_vcr.so` without
+`LD_LIBRARY_PATH`. (`${SRCDIR}` is expanded by cgo to this package's source
+directory.) Verified: a `go test -c` binary copied elsewhere still loads the
+lib.
 
-## One server per process
+## Concurrency: one server per port
 
-v1 keeps the VCR's tape, replay cursor, mutations, static mounts, pending
-note, and diagnostics as **process-global** state (the documented v1 contract
-on the Aether side). Consequences:
+The VCR core runs **one server per port**. Each `Start()` opens a fresh native handle,
+and the VCR's tape, replay cursor, mutations, static mounts, pending note, and
+diagnostics are all scoped to **that handle** — nothing is process-global.
+Consequences:
 
-- You cannot run two `*Server`s simultaneously in one process.
-- **Run tests serially** — do NOT call `t.Parallel()` in tests that drive the
-  VCR. Go runs test functions within a package serially by default, so simply
-  not opting into parallelism is sufficient. Parallel tests would stomp each
-  other's state (spurious `599` mismatches).
-- `Playback(...).Start()` / `Record(...).Start()` call `resetGlobalState()`
-  first — clearing redactions, unredactions, header removals, static mounts,
-  format options, strict-headers, and the last-error slot — then apply the
-  current fixture's config. So a setting from a previous test never leaks
-  forward, even within one process.
-
-Per-server isolation (a real handle owning its own state) is on the Aether
-roadmap; when it lands, the wrapper drops the serial constraint without an
-API change.
+- N independent `*Server`s can be alive at once in one process, each replaying
+  or recording its own tape with its own cursor and diagnostics, without
+  bleeding into each other. (`core_tests/.concurrent.ae` proves it: two
+  playback VCRs on two ports with two tapes, served simultaneously, each
+  asserting it replays its own tape.)
+- You **may** run VCR-driven tests in parallel — `t.Parallel()` is fine,
+  because there is no shared state to stomp.
+- The lifecycle is **open → configure(handle) → start**: each builder's config
+  (redactions, unredactions, header removals, static mounts, whole-tape
+  rewrites, format options, strict-headers) is applied to its own handle
+  between open and start, so one fixture's settings can never leak into
+  another's.
 
 ## A subtle ordering rule (notes)
 
-Redactions / unredactions / header-removals / static-mounts are separate
-global lists, registered before the server starts. A **note**, however, is
-stored alongside the tape and is cleared when `start_record` (re)loads the
-tape — so the wrapper stages the builder's note *after* `start_record`
-returns, attaching it to the first interaction. (See `RecordBuilder.Start`.)
+Redactions / unredactions / header-removals / static-mounts / whole-tape
+rewrites are registered against the handle before the server starts. A
+**note**, however, is stored alongside the tape and is cleared when
+`open_record` (re)loads the tape — so the wrapper stages the builder's note
+*after* the handle is opened, attaching it to the first interaction. (See
+`RecordBuilder.Start`.)

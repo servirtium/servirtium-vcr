@@ -8,9 +8,10 @@ package:servirtium (thin Dart)
    │   • Vcr / PlaybackBuilder / RecordBuilder / VcrServer   (lib/src/vcr.dart)
    │   • Native (dart:ffi lookups of aether_vcr_embed_*, + takeString copy/free)
    ▼   dart:ffi (DynamicLibrary.open)
-libservirtium_vcr.so
-   │   built: ae build --emit=lib --with=fs,net …/embed.ae
-   │   embed.ae (C-ABI wrapper) + std/http/server/vcr (the engine + HTTP server)
+core/native/libservirtium_vcr.so
+   │   built: ae build --emit=lib --with=fs,net core/embed.ae
+   │   core/embed.ae (C-ABI wrapper) + core/vcr.ae (the in-repo pure-Aether
+   │   engine + HTTP server, on Aether stdlib primitives)
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>
 ```
@@ -28,13 +29,13 @@ strings go through `toNativeUtf8()` (package:ffi) and are freed after the call;
 returned `Pointer<Utf8>` are copied with `.toDartString()` then handed to
 `aether_vcr_embed_free_string` (`takeString`), per the caller-owned rule.
 
-## One server per process
+## Concurrency: one server per port
 
-v1 keeps the engine's tape/cursor/mutations as **process-global** state — and
-crucially, Dart isolates in one process share that native state. So: one
-active `VcrServer` at a time; run `dart test` with `concurrency: 1`.
-`PlaybackBuilder/RecordBuilder.start()` call `_resetGlobalState()` first
-(clear redactions/unredactions/header-removals/static/format, strict→off,
-clear last-error), then apply the fixture's config — so nothing leaks between
-tests. A record **note** is staged *after* `start_record` (the load clears the
-pending note), so it attaches to the first interaction.
+The ABI is **handle-based**: `open` mints a handle, every config / diagnostic
+/ lifecycle call takes that handle, and `start`/`stop` bring just that listener
+up and down. N independent servers run concurrently in one process, each with
+its own tape, cursor, mutations, and diagnostics — nothing is process-global,
+so two `VcrServer`s never bleed state into each other. Lifecycle is
+open → configure(handle) → start. A record **note** is staged after the tape
+loads (the load clears the pending note), so it attaches to the first
+interaction.

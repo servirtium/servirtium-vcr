@@ -26,10 +26,12 @@ try {
 
 A thin **PHP FFI** layer over the **Aether VCR** core: the markdown
 parse/emit, the HTTP server, request matching, redactions, notes, drift
-detection, static-content bypass, gzip/chunked handling all live in and are
-maintained as the Aether standard library (`std/http/server/vcr`), shipped as
-a precompiled native library (`libservirtium_vcr.so`). This package
-`FFI::cdef`s that library and presents an idiomatic PHP fixture; it does
+detection, static-content bypass, gzip/chunked handling all live in a single
+pure-Aether module in this repo at `core/vcr.ae` (plus the `core/embed.ae`
+C-ABI), built once to `core/native/libservirtium_vcr.so` on top of Aether
+stdlib primitives (`std.http`, `std.regex`, `std.zlib`, `std.cryptography`).
+The Servirtium logic is in-repo, not the stdlib. This package `FFI::cdef`s
+that precompiled native build and presents an idiomatic PHP fixture; it does
 **not** reimplement Servirtium in PHP.
 
 Requires **PHP 8.4+ with the `FFI` extension** (`ext-ffi`).
@@ -44,20 +46,27 @@ The native engine ships with the package (under `native/`); consumers do
 **not** need the Aether toolchain — only contributors rebuilding the engine
 do (see [docs/building.md](docs/building.md)).
 
-## Usage
+## Docs
 
-See **[docs/usage.md](docs/usage.md)** for the full surface — playback,
-record, redactions, unredactions, header removal, notes, strict matching,
-static content, drift, diagnostics — with code. The capability matrix is in
-[docs/features.md](docs/features.md); the FFI layering in
-[docs/architecture.md](docs/architecture.md).
+- **[docs/usage.md](docs/usage.md)** — playback, record, redactions,
+  unredactions, whole-tape normalization, header removal, notes, strict
+  matching, static content, drift, diagnostics — with code.
+- **[docs/features.md](docs/features.md)** — Servirtium capability matrix and
+  what's covered by tests.
+- **[docs/architecture.md](docs/architecture.md)** — how the FFI layering works
+  (PHP → FFI → `embed.ae` → Aether VCR), the native loader, and the
+  one-server-per-port (handle-keyed) concurrency model.
+- **[docs/building.md](docs/building.md)** — building the native library and CI.
 
-## One hard rule: run tests serially
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its tape / cursor /
-mutation state is process-global). Run PHPUnit serially (the default — don't
-enable parallel runners). `start()` resets all process-global mutation/strict/
-format state first, so a setting from a previous test never leaks forward.
+The Aether VCR runs **one server per port**: N independent VCR servers can run
+concurrently in one process, each keyed by its own handle, with config,
+diagnostics, and tape scoped to that handle. So two
+`Vcr::playback(...)->start()` servers can be alive at once on different ports
+without their cursors or mutations bleeding into each other (proven by
+`core_tests/concurrent_probe.ae`). PHPUnit's default serial runner is fine; the
+binding does not require it.
 
 ## Building from source
 

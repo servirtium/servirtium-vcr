@@ -21,7 +21,7 @@ Options are a keyword list. A `field` is one of `:path`, `:response_body`,
 {:ok, {{_, 200, _}, _headers, body}} =
   :httpc.request(:get, {~c"#{Servirtium.base_url(srv)}/api/v1/countries", []}, [], [])
 
-assert Servirtium.last_kind() == :ok   # optional: assert a clean match
+assert Servirtium.last_kind(srv) == :ok   # optional: assert a clean match
 :ok = Servirtium.stop(srv)
 ```
 
@@ -47,8 +47,8 @@ end)
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
-your SUT, and captures the exchange. Chunked responses are de-chunked (needs the
-native lib built with Aether ≥ 0.183.0).
+your SUT, and captures the exchange. Chunked responses are de-chunked
+automatically.
 
 ### Drift detection
 
@@ -73,6 +73,36 @@ Servirtium.record(tape, upstream,
     {:path,          "session=xyz",   "session=REDACTED"}
   ])
 ```
+
+## Whole-tape normalization and redaction (byte-identical re-record)
+
+Two record-mode opts scrub volatile values across the **whole** tape (every
+block, request and response) so a re-record produces byte-identical output:
+
+```elixir
+Servirtium.record(tape, upstream,
+  # Correlated ids: each distinct regex match becomes a stable {{name-N}}
+  # token, so the same id recurring in a later request path round-trips on
+  # playback.
+  normalize_whole_tape: [
+    {"req_[0-9a-f]{16}", "request_id"}
+  ],
+  # Uncorrelated volatiles: collapse every regex match to one constant.
+  redact_whole_tape: [
+    {"[A-Z][a-z]{2}, \\d{2} [A-Z][a-z]{2} \\d{4} [0-9:]{8} GMT", "Wed, 01 Jan 2025 00:00:00 GMT"}
+  ])
+```
+
+- `:normalize_whole_tape` takes `{pattern, name}` tuples. Every *distinct*
+  match across the whole tape is assigned a stable `{{name-N}}` token; the same
+  value mapped to the same token, so a correlated id that recurs in a later
+  request path still matches on playback.
+- `:redact_whole_tape` takes `{pattern, replacement}` tuples. Every match
+  collapses to the one constant `replacement` — for volatiles like `Date` that
+  don't need to correlate.
+
+Both run before the server starts and apply at flush time, so the live SUT
+still sees the real bytes while the committed tape is stable.
 
 ## Replaying a scrubbed tape (unredaction)
 
@@ -111,9 +141,9 @@ comparison on every interaction; mismatches return an error status to the SUT
 and populate the diagnostics:
 
 ```elixir
-Servirtium.with_playback(tape, [strict_headers: true], fn _srv ->
+Servirtium.with_playback(tape, [strict_headers: true], fn srv ->
   # ... drive SUT ...
-  if Servirtium.last_kind() != :ok, do: raise Servirtium.last_error()
+  if Servirtium.last_kind(srv) != :ok, do: raise Servirtium.last_error(srv)
 end)
 ```
 
@@ -157,24 +187,26 @@ cleanly.
 |---|---|
 | `Servirtium.base_url(srv)` | `http://host:port` for the SUT |
 | `Servirtium.port(srv)` | the resolved (possibly OS-assigned) port |
-| `Servirtium.tape_length()` | tape entries (playback) / interactions captured (record) |
-| `Servirtium.last_kind()` | outcome atom of the most recent dispatch |
-| `Servirtium.last_error()` | mismatch diagnostic, or `""` |
-| `Servirtium.last_index()` | tape index of the last matched interaction, or -1 |
+| `Servirtium.tape_length(srv)` | tape entries (playback) / interactions captured (record) |
+| `Servirtium.last_kind(srv)` | outcome atom of the most recent dispatch |
+| `Servirtium.last_error(srv)` | mismatch diagnostic, or `""` |
+| `Servirtium.last_index(srv)` | tape index of the last matched interaction, or -1 |
 | `Servirtium.note(srv, title, body)` | stage a note for the next recorded interaction |
-| `Servirtium.reset_cursor()` | rewind replay to interaction 0; clear last-* |
-| `Servirtium.clear_last_error()` | clear the last-error slot between sub-cases |
+| `Servirtium.reset_cursor(srv)` | rewind replay to interaction 0; clear last-* |
+| `Servirtium.clear_last_error(srv)` | clear the last-error slot between sub-cases |
 | `Servirtium.stop(srv)` | stop; flush tape if recording |
 
-## Outcomes (`last_kind/0`)
+## Outcomes (`last_kind/1`)
 
 `:ok`, `:path_or_method_diff`, `:header_missing`, `:header_value_diff`,
 `:header_unexpected`, `:tape_exhausted`, `:body_diff`, `:record_error`.
 
-## Gotcha: one server per process
+## Concurrency: one server per port
 
-State is process-global in v1, so configure/stop one server at a time and **run
-tests serially** (see
-[architecture.md](architecture.md#one-server-per-process)). `playback/2` /
-`record/3` reset all process-global mutation/strict/format state first, so
-settings from a prior fixture never leak forward.
+Each `Servirtium.playback/2` / `record/3` returns a `%Servirtium.Server{}` with
+its own opaque handle, and N servers can run concurrently in one BEAM. Tape,
+cursor, mutations, static mounts, pending note, and diagnostics are all scoped
+to a handle, so two live fixtures never leak into each other (see
+[architecture.md](architecture.md#concurrency-one-server-per-port)).
+All `Servirtium.*` members take the `srv` you started, so you always address the
+server you mean.

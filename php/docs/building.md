@@ -6,7 +6,7 @@
 ./bootstrap.sh        # extra args pass through to PHPUnit
 ```
 
-Installs `ae` (≥ 0.183) via aether's official `get.sh` to `$HOME/.local` if
+Installs `ae` (≥ 0.227.0) via aether's official `get.sh` to `$HOME/.local` if
 missing (no sudo, no Aether test suite, no contrib; needs `curl`, no
 build-from-source fallback); checks PHP 8.4+ with the FFI extension (does
 **not** auto-install it); runs `build-native.sh`; then runs PHPUnit (using
@@ -28,11 +28,12 @@ build-from-source fallback); checks PHP 8.4+ with the FFI extension (does
 ./build-native.sh
 ```
 
-Builds `native/libservirtium_vcr.so` from the **installed** toolchain's
-`embed.ae` (`ae build --emit=lib --with=fs,net …/share/aether/std/http/server/vcr/embed.ae`)
-— no Aether source checkout needed; `AETHER_REPO` overrides for engine devs.
-`--with=fs,net` needs a `-fPIC` Aether runtime (**≥ 0.182**; chunked de-chunk
-**≥ 0.183**). The native lib is a git-ignored build artifact.
+Builds `native/libservirtium_vcr.so` from this repo's in-repo engine
+`core/embed.ae` (the C-ABI wrapper) + `core/vcr.ae` (the pure-Aether VCR), on
+top of Aether stdlib primitives (`std.http`, `std.regex`, `std.zlib`,
+`std.cryptography`) — no Aether source checkout needed. The `--with=fs,net`
+build needs a `-fPIC` Aether runtime; the `std.regex` whole-tape mutations
+require **Aether ≥ 0.227.0**. The native lib is a git-ignored build artifact.
 
 ## Test
 

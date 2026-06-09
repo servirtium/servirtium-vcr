@@ -42,8 +42,8 @@ end   # block exit closes the server, which forwards nothing more and writes the
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
-your SUT, and captures the exchange. Chunked responses are de-chunked (needs
-the native lib built with Aether ≥ 0.183.0).
+your SUT, and captures the exchange. Chunked and gzip-encoded responses are
+decoded to the stored payload.
 
 ### Drift detection
 
@@ -69,6 +69,33 @@ Servirtium.record(tape, upstream)
 
 `Servirtium::Field` is `PATH`, `RESPONSE_BODY`, `REQUEST_HEADERS`,
 `REQUEST_BODY`, or `RESPONSE_HEADERS`.
+
+## Whole-tape normalization (byte-identical re-records)
+
+`redact` targets one field of one interaction. The whole-tape mutations instead
+sweep **every** regex match across the entire tape — all fields, all
+interactions — so a server that hands back fresh ids or timestamps on each run
+still re-records to byte-identical output (and `fail_if_changed` only fires on
+real upstream changes):
+
+```ruby
+Servirtium.record(tape, upstream)
+          # Correlated ids: each distinct match becomes a stable {{order-N}}
+          # token, numbered in first-appearance order. The same value reused in
+          # a later request path gets the same token, and the token round-trips
+          # back to the captured value on playback.
+          .normalize_whole_tape('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'order')
+          # Uncorrelated volatiles: collapse every match to one constant.
+          .redact_whole_tape('[A-Z][a-z]{2}, \d\d [A-Z][a-z]{2} \d{4} [\d:]{8} GMT', 'Mon, 01 Jan 2024 00:00:00 GMT')
+          .start { |s| ... }
+```
+
+Use `normalize_whole_tape(pattern, name)` when the value is **correlated** — an
+id minted in one response and echoed back in a later request path — because the
+`{{name-N}}` token preserves that linkage and replays it. Use
+`redact_whole_tape(pattern, replacement)` when the value is **uncorrelated**
+volatile noise (a `Date` header, a request id) that just needs to be constant
+on the tape.
 
 ## Replaying a scrubbed tape (unredaction)
 
@@ -183,10 +210,11 @@ cleanly.
 `:record_error`. The matching integer constants live on `Servirtium::Outcome`
 (`OK`, `PATH_OR_METHOD_DIFF`, …).
 
-## Gotcha: one server per process
+## Concurrency: one server per port
 
-State is process-global in v1, so configure/close one `Servirtium::Server` at a
-time and **run tests serially** (see
-[architecture.md](architecture.md#one-server-per-process)). `.start` resets all
-process-global mutation/strict/format state first, so settings from a prior
-fixture never leak forward, even within one process.
+Each `Servirtium::Server` owns its own handle, so its tape, cursor, mutations,
+and diagnostics are scoped to that listener — **N independent servers can run
+concurrently in one process**, with no cross-talk and no serial-execution
+requirement on this binding's account (see
+[architecture.md](architecture.md#concurrency-one-server-per-port)). Settings from a
+prior fixture live on its own handle and cannot leak into the next.

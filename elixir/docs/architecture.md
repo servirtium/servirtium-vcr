@@ -14,19 +14,20 @@ Servirtium                ── thin Elixir, this repo ──
 priv/servirtium_nif.so    ── hand-written C NIF (c_src/servirtium_nif.c) ──
    │   erl_nif bindings to aether_vcr_embed_*; links the engine below.
    ▼   C-ABI
-native/libservirtium_vcr.so
-   │   built: ae build --emit=lib --with=fs,net std/http/server/vcr/embed.ae
-   │   • embed.ae  — thin Aether wrapper exposing the C-ABI
-   │   • std/http/server/vcr  — the actual VCR (parse, dispatch, record,
-   │     mutate, emit, match) + the embedded Aether HTTP server
+core/native/libservirtium_vcr.so
+   │   built from core/embed.ae (with the Aether stdlib's fs/net/regex)
+   │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
+   │   • core/vcr.ae    — the actual VCR (parse, dispatch, record,
+   │     mutate, emit, match) + the embedded Aether HTTP server,
+   │     a pure-Aether module on stdlib primitives
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>
 ```
 
 The Elixir side owns **none** of the Servirtium semantics. It starts/stops the
 server, marshals strings, and presents an idiomatic fixture. Everything that
-defines Servirtium behaviour is the Aether core, shared with every other
-language binding built on the same `embed.ae`.
+defines Servirtium behaviour is the Aether core (`core/vcr.ae`), shared with
+every other language binding built on the same `core/embed.ae`.
 
 ## Why a C NIF (and not ctypes)
 
@@ -38,8 +39,10 @@ the FFI is a small hand-written **NIF** (`erl_nif`) compiled by
   and registers one NIF per function (`ERL_NIF_INIT(Elixir.Servirtium.Native,
   …)`).
 - The opaque server handle is passed back to Elixir as a **64-bit integer**
-  (`uintptr_t` → `enif_make_uint64`); `0` means failure. (A NIF resource would
-  also work; an integer is simplest for a one-server-per-process model.)
+  (`uintptr_t` → `enif_make_uint64`); `0` means failure. Each call returns a
+  distinct handle, and N handles can be live at once — `%Servirtium.Server{}`
+  carries the one it owns. (A NIF resource would also work; an integer is
+  simplest.)
 - String **in**: an Elixir binary is copied to a NUL-terminated C string
   (`enif_inspect_binary` / iolist) and freed after the call.
 - String **out**: the caller-owned `char*` is copied into an Erlang binary, then
@@ -74,9 +77,10 @@ cc -O2 -std=c11 -fPIC -I$(ERLANG_PATH)/usr/include \
 
 ## The C-ABI
 
-`embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
-avoids colliding with the core's own `vcr_*` runtime symbols). It adds only the
-*embedding seam* the raw VCR module lacks:
+`core/embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
+avoids colliding with the core's own `vcr_*` runtime symbols). Each
+`open_*` returns a fresh handle that keys all subsequent calls. It adds only the
+*embedding seam* the raw VCR module (`core/vcr.ae`) lacks:
 
 - **starts the accept loop on a background thread** — the core's `load()`
   deliberately doesn't listen, leaving that to a caller, which an FFI host can't
@@ -90,30 +94,31 @@ avoids colliding with the core's own `vcr_*` runtime symbols). It adds only the
 `Servirtium.Native` mirrors these 1:1; the NIF's `take_cstr` marshals and frees
 each returned `char*`.
 
-## One server per process
+## Concurrency: one server per port
 
-v1 keeps the VCR's tape, replay cursor, mutations, static mounts, pending note,
-and diagnostics as **process-global** state (the documented v1 contract on the
-Aether side). The BEAM is one OS process, so:
+The VCR is **one server per port** (handle-based): each `open_playback` /
+`open_record` returns its own handle, and the VCR keeps that handle's tape,
+replay cursor, mutations, static mounts, pending note, and diagnostics scoped
+to it. So:
 
-- You cannot run two servers simultaneously in one BEAM.
-- **Run tests serially** — never set `async: true`; `test/test_helper.exs`
-  starts ExUnit with `max_cases: 1` to enforce it. Parallel cases would stomp
-  each other's state (it shows up as spurious mismatch outcomes).
-- `Servirtium.playback/2` / `record/3` call `reset_global_state/0` first —
-  clearing redactions, unredactions, header removals, static mounts, format
-  options, strict-headers, and the last-error slot — then apply the current
-  fixture's config. So a setting from a previous test never leaks forward, even
-  within one BEAM.
-
-Per-server isolation (a real handle owning its own state) is on the Aether
-roadmap; when it lands, the wrapper drops the serial constraint without an API
-change.
+- N independent servers can run concurrently in one BEAM, each addressed by the
+  handle inside its `%Servirtium.Server{}`. Two live fixtures never bleed into
+  each other's cursors or mutations. The engine's `core_tests/concurrent_probe.ae`
+  proves this contract.
+- `Servirtium.playback/2` / `record/3` apply the fixture's config to *that
+  handle* between `open_*` and `start` (see `apply_shared_config/2`,
+  `apply_playback_config/2`, `apply_record_config/2`) — no global state, nothing
+  to reset, no leak between servers by construction.
+- The included `test/test_helper.exs` still starts ExUnit with `max_cases: 1`,
+  but that is a choice of this suite, not a constraint of the engine — `async`
+  is left off the cases for the same reason, not because two servers would
+  collide.
 
 ## A subtle ordering rule (notes)
 
-Redactions / unredactions / header-removals / static-mounts are separate global
+Redactions / unredactions / header-removals / static-mounts are per-handle
 lists, registered before the server starts. A **note**, however, is stored
 alongside the tape and is cleared when `start_record` (re)loads the tape — so
-the wrapper stages the builder's note *after* `start_record` returns, attaching
-it to the first interaction. (See `Servirtium.record/3`.)
+the wrapper stages the builder's note *after* `open_record` clears the tape but
+*before* serving begins, attaching it to the first interaction. (See
+`Servirtium.record/3`.)

@@ -12,25 +12,27 @@ servirtium-haskell        ── thin Haskell, this repo ──
    │   • Servirtium.Vcr.Native   — `foreign import ccall` block to aether_vcr_embed_*
    ▼   FFI (foreign import ccall, static link against libservirtium_vcr.so)
 libservirtium_vcr.{so,dylib,dll}
-   │   built: ae build --emit=lib --with=fs,net std/http/server/vcr/embed.ae
-   │   • embed.ae  — thin Aether wrapper exposing the C-ABI
-   │   • std/http/server/vcr  — the actual VCR (parse, dispatch, record,
-   │     mutate, emit, match) + the embedded Aether HTTP server
+   │   built: ae build --emit=lib --with=fs,net core/embed.ae
+   │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
+   │   • core/vcr.ae    — the actual VCR (parse, dispatch, record,
+   │     mutate, emit, match) + the embedded Aether HTTP server, a
+   │     pure-Aether module in this repo on Aether stdlib primitives
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>
 ```
 
 The Haskell side owns **none** of the Servirtium semantics. It starts/stops the
 server, marshals strings, and presents an idiomatic fixture. Everything that
-defines Servirtium behaviour is the Aether core, shared with every other
-language binding built on the same `embed.ae`
-(.NET/Go/Java/Rust/Ruby/JS/Python).
+defines Servirtium behaviour is the in-repo Aether core (`core/vcr.ae`), shared
+with every other language binding built on the same `core/embed.ae`
+(.NET/Go/Java/Rust/Ruby/JS/Python/Elixir/Pharo).
 
 ## The C-ABI
 
-`embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
+`core/embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
 avoids colliding with the core's own `vcr_*` runtime symbols). It adds only
-the *embedding seam* the raw VCR module lacks:
+the *embedding seam* the raw VCR module lacks, and threads a **handle** through
+every call so each listener is addressed independently:
 
 - **starts the accept loop on a background thread** — the core's `load()`
   deliberately doesn't listen, leaving that to a caller, which an FFI host
@@ -67,30 +69,30 @@ That makes a plain `cabal build` / `cabal test` find (linker) and load
 (loader, via `RUNPATH`) the engine with no extra flags. `bootstrap.sh` also
 sets `LD_LIBRARY_PATH=$PWD/native` as a belt-and-suspenders fallback.
 
-## One server per process
+## Concurrency: one server per port
 
-v1 keeps the VCR's tape, replay cursor, mutations, static mounts, pending
-note, and diagnostics as **process-global** state (the documented v1 contract
-on the Aether side). Consequences:
+The VCR runs **one server per port**. Each `startPlayback` / `startRecord` opens a fresh
+listener and gets back its own **handle**; the VCR's tape, replay cursor,
+mutations, static mounts, pending note, and diagnostics are all scoped to that
+handle. Consequences:
 
-- You cannot run two `VcrServer`s simultaneously in one process.
-- **Run tests serially.** `hspec` runs specs sequentially by default — which is
-  what you want. With `tasty`, set `NumThreads 1`. Parallel tests would stomp
-  each other's state (it shows up as spurious mismatches).
-- `startPlayback` / `startRecord` call `resetGlobalState` first — clearing
-  redactions, unredactions, header removals, static mounts, format options,
-  strict-headers, and the last-error slot — then apply the current fixture's
-  config. So a setting from a previous test never leaks forward, even within
-  one process.
-
-Per-server isolation (a real handle owning its own state) is on the Aether
-roadmap; when it lands, the wrapper drops the serial constraint without an API
-change.
+- You **can** run N `VcrServer`s simultaneously in one process — each is
+  addressed by its own handle, so their cursors and mutations never bleed into
+  each other. The `core_tests/.concurrent.ae` test exercises exactly this.
+- **Tests can run in parallel.** `hspec` runs specs sequentially by default,
+  which is fine; with `tasty` you may raise `NumThreads`, since separate
+  fixtures no longer share state.
+- The lifecycle is **open → configure(handle) → start**: the wrapper opens a
+  listener, registers that fixture's redactions / unredactions / header
+  removals / static mounts / format options / strict-headers against the
+  handle, then starts the accept loop. Nothing is process-global, so a setting
+  from one fixture cannot leak into another.
 
 ## A subtle ordering rule (notes)
 
-Redactions / unredactions / header-removals / static-mounts are separate global
-lists, registered **before** the server starts. A **note**, however, is stored
-alongside the tape and is cleared when `start_record` (re)loads the tape — so
-the wrapper stages the builder's note *after* `start_record` returns, attaching
-it to the first interaction. (See `startRecord` in `Servirtium.Vcr`.)
+Redactions / unredactions / header-removals / static-mounts are registered
+against the handle **before** the server starts. A **note**, however, is stored
+alongside the tape and is cleared when `open_record` loads the tape — so the
+wrapper stages the builder's note *after* the open + configure step and
+*before* `start`, attaching it to the first interaction. (See `startRecord` in
+`Servirtium.Vcr`.)

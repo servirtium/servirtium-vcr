@@ -12,18 +12,21 @@ servirtium-vcr            ── thin Java (FFM / Panama), this repo ──
    │   • native-lib loader (SymbolLookup.libraryLookup)            (NativeLoader.java)
    ▼   FFM downcall (java.lang.foreign)
 libservirtium_vcr.{so,dylib,dll}
-   │   built: ae build --emit=lib --with=fs,net std/http/server/vcr/embed.ae
-   │   • embed.ae  — thin Aether wrapper exposing the C-ABI
-   │   • std/http/server/vcr  — the actual VCR (parse, dispatch, record,
-   │     mutate, emit, match) + the embedded Aether HTTP server
+   │   built once here: ae build --emit=lib --with=fs,net core/embed.ae \
+   │     --extra _embed_strdup.c -o core/native/libservirtium_vcr.so
+   │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
+   │   • core/vcr.ae    — the actual VCR (parse, dispatch, record, mutate,
+   │     emit, match) + the embedded Aether HTTP server, on Aether stdlib
+   │     primitives — the Servirtium logic lives in this repo, not the stdlib
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>
 ```
 
 The Java side owns **none** of the Servirtium semantics. It starts/stops the
 server, marshals strings, and presents an idiomatic fixture. Everything that
-defines Servirtium behaviour is the Aether core, shared with every other
-language binding built on the same `embed.ae` (e.g. the .NET binding).
+defines Servirtium behaviour is the pure-Aether engine in this repo's `core/`,
+shared with every other language binding built on the same `core/embed.ae`
+(e.g. the .NET binding).
 
 ## Why FFM (java.lang.foreign), not JNA/JNI
 
@@ -57,9 +60,9 @@ expected to become enforced, so set it now.)
 
 ## The C-ABI
 
-`embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
+`core/embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
 avoids colliding with the core's own `vcr_*` runtime symbols). It adds only
-the *embedding seam* the raw VCR module lacks:
+the *embedding seam* the raw `core/vcr.ae` module lacks:
 
 - **starts the accept loop on a background thread** — the core's `load()`
   deliberately doesn't listen, leaving that to a caller, which an FFI host
@@ -88,31 +91,33 @@ The file name is computed per-platform: `libservirtium_vcr.so` /
 `.dylib` / `servirtium_vcr.dll`, and `<rid>` from `os.name` / `os.arch`
 (e.g. `linux-x64`, `osx-arm64`).
 
-## One server per process
+## Concurrency: one server per port
 
-v1 keeps the VCR's tape, replay cursor, mutations, static mounts, pending
-note, and diagnostics as **process-global** state (this is the documented v1
-contract on the Aether side). Consequences:
+The core runs **one server per port**: each VCR server owns an opaque handle (a
+`void*` carried as a `MemorySegment`) that keys all of its state — tape,
+replay cursor, mutations, static mounts, pending note, and diagnostics. Every
+config / diagnostic / lifecycle downcall takes that handle, so nothing is
+process-global. Consequences:
 
-- You cannot run two `VcrServer`s simultaneously in one process.
-- **Run tests serially.** JUnit 5 runs sequentially by default — do **not**
-  enable parallel execution (`junit.jupiter.execution.parallel.enabled`).
-  Parallel test classes would stomp each other's state (it shows up as
-  spurious `599` mismatches). Surefire is configured `forkCount=1`.
-- `PlaybackBuilder.start()` / `RecordBuilder.start()` call `resetGlobalState()`
-  first — clearing redactions, unredactions, header removals, static mounts,
-  format options, strict-headers, and the last-error slot — then apply the
-  current fixture's config. So a setting from a previous test never leaks
-  forward, even within one process.
-
-Per-server isolation (a real handle owning its own state) is on the Aether
-roadmap; when it lands, the wrapper drops the serial constraint without an
-API change.
+- **N independent VCR servers can run concurrently in one process.** Each
+  `VcrServer` returned from `.start()` wraps one handle and is fully isolated
+  from the others — different ports, different tapes, independent cursors and
+  diagnostics. `core_tests/.concurrent.ae` is the proof: two playback servers
+  serving at once, each asserting it replays its own tape.
+- **No serial constraint, no shared reset.** Because state is per-handle, a
+  redaction / note / strict-headers setting on one server never leaks to
+  another, and fixtures don't have to run one-at-a-time. You can let JUnit 5
+  run test classes in parallel if you want; this binding no longer requires
+  `forkCount=1` for correctness.
+- `OPEN_PLAYBACK` / `OPEN_RECORD` mint the handle; `applyConfig(...)` writes
+  this fixture's config into that handle before `START`; `close()` stops it
+  (and, in record mode, flushes the tape) and releases the handle.
 
 ## A subtle ordering rule (notes)
 
-Redactions / unredactions / header-removals / static-mounts are separate
-global lists, registered before the server starts. A **note**, however, is
-stored alongside the tape and is cleared when `start_record` (re)loads the
-tape — so the wrapper stages the builder's note *after* `start_record`
-returns, attaching it to the first interaction. (See `RecordBuilder.start()`.)
+Redactions / unredactions / header-removals / static-mounts are per-handle
+lists, registered against the handle before the server starts. A **note**,
+however, is stored alongside the tape and is cleared when `start_record`
+(re)loads the tape — so the wrapper stages the builder's note *after*
+`start_record` returns, attaching it to the first interaction. (See
+`RecordBuilder.start()`.)

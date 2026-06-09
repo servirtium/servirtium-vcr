@@ -12,6 +12,8 @@ in `test/` against the real native library.
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `redact:` opt | ✅ |
+| Whole-tape normalization (correlated ids → `{{name-N}}`) | ✅ | ✅ | `normalize_whole_tape:` opt | — |
+| Whole-tape redaction (volatile match → constant) | ✅ | ✅ | `redact_whole_tape:` opt | — |
 | Unredactions | ✅ | ✅ | `unredact:` opt | — |
 | Header removal | ✅ | ✅ | `remove_header:` opt | — |
 | Notes | ✅ | ✅ | `note:` opt / `Servirtium.note/3` | ✅ |
@@ -21,14 +23,15 @@ in `test/` against the real native library.
 | Format options (indent / emphasize) | ✅ | ✅ | `indent_code_blocks:` / `emphasize_http_verbs:` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `last_error/0`/`last_kind/0`/`last_index/0` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
-| Chunked de-chunk on record | ✅ (≥0.183.0) | ✅ | (automatic) | — |
+| Chunked de-chunk on record | ✅ | ✅ | (automatic) | — |
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `port: 0` → `Servirtium.port/1` | ✅ |
 
 The shipped tests cover: playback round-trip, mismatch diagnostics,
 record → replay against a local `:gen_tcp` upstream, redaction asserted against
 the written tape, a builder note asserted against the written tape, static
-content, dynamic port, and process-global state reset (no leak).
+content, dynamic port, and per-handle state isolation (no leak between
+servers).
 
 ## Not (yet) exposed through the C-ABI
 
@@ -42,8 +45,6 @@ Elixir API. Both are small `embed.ae` additions if wanted:
 
 ## Known limitations (inherited from the core)
 
-- **One active VCR server per process** in v1 — run tests serially. See
-  [architecture.md](architecture.md#one-server-per-process).
 - **Binary response bodies** rely on the tape's text/base64 path (an existing
   Aether VCR limitation).
 - **Strict-match default headers:** `:httpc` (the SUT client in the tests)

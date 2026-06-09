@@ -19,9 +19,11 @@ against the real native library.
 | Static-content bypass | ✅ | ✅ | `.staticContent(mount, dir)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.failIfChanged()` | — |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` | — |
+| Whole-tape normalization (correlated) | ✅ | ✅ | `.normalizeWholeTape(pattern, name)` | — |
+| Whole-tape redaction (uncorrelated) | ✅ | ✅ | `.redactWholeTape(pattern, replacement)` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError`/`lastKind`/`lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
-| Chunked de-chunk on record | ✅ (≥0.183.0) | ✅ | (automatic) | ✅ |
+| Chunked de-chunk on record | ✅ | ✅ | (automatic) | ✅ |
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `.port(0)` → `vcr.port` | ✅ |
 
@@ -45,8 +47,6 @@ JS API. Both are small `embed.ae` additions if wanted:
 
 ## Known limitations
 
-- **One active VCR server per process** in v1 — run tests serially. See
-  [architecture.md](architecture.md#one-server-per-process).
 - **Binary response bodies** rely on the tape's text/base64 path (an existing
   Aether VCR limitation).
 - **`fetch`/`undici` default request headers** must be removed under

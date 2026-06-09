@@ -9,7 +9,7 @@ idempotent command:
 ./bootstrap.sh        # extra args pass through to `dotnet test`
 ```
 
-It checks for `ae` (≥ 0.183) and installs it via aether's official `get.sh`
+It checks for `ae` (≥ 0.227.0) and installs it via aether's official `get.sh`
 remote installer to a user prefix (`$HOME/.local` — **no sudo, no Aether test
 suite, no contrib**; needs `curl`, no build-from-source fallback) if it's
 missing/too old; checks the .NET SDK is present (it does **not** auto-install
@@ -30,37 +30,30 @@ already have both toolchains.
   *native* library; `bootstrap.sh` installs it via aether's `get.sh` if
   absent (`curl -sSL https://raw.githubusercontent.com/aether-lang-org/aether/main/get.sh | sh`).
   Consumers of the NuGet package don't need it. For the from-source / HEAD
-  developer flow see aether's
-  [bootstrap-from-source.md](../../aether/docs/bootstrap-from-source.md).
+  developer flow see aether's `docs/bootstrap-from-source.md` in the
+  [Aether toolchain repo](https://github.com/aether-lang-org/aether).
 
 ## Build the native library
 
-The native library is built from the Aether std VCR embedding module,
-`std/http/server/vcr/embed.ae`:
+The native library is built from the **in-repo** Aether VCR embedding
+module, `core/embed.ae` (which imports the pure-Aether engine in
+`core/vcr.ae`) — no Aether source checkout beyond this repo is needed. The
+build is driven by `aeb` (the Aether build runner); `bootstrap.sh` installs
+`ae`/`aeb` and runs it for you. Under the hood the native step is:
 
 ```sh
-./build-native.sh
-```
-
-This produces the **host platform's** RID only, into
-`Servirtium.Vcr/runtimes/<rid>/native/`. `embed.ae` is sourced from the
-**installed** toolchain (the stdlib that ships next to `ae`) — no Aether
-source checkout needed; engine devs can point at a local HEAD with
-`AETHER_REPO=/path/to/aether`. Under the hood:
-
-```sh
-ae build --emit=lib --with=fs,net <prefix>/share/aether/std/http/server/vcr/embed.ae \
-   -o Servirtium.Vcr/runtimes/<rid>/native/libservirtium_vcr.<ext>
+ae build --emit=lib --with=fs,net core/embed.ae \
+   -o core/native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
 - `--with=fs,net` grants the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC`
-  Aether runtime — **Aether ≥ 0.182.0**; chunked de-chunking needs
-  **≥ 0.183.0**.
+  Aether runtime, and the engine's whole-tape rewrites use `std.regex` —
+  **Aether ≥ 0.227.0**.
 
-The native libs are **git-ignored build artifacts** — run `build-native.sh`
-after cloning, or let CI build them.
+This produces the **host platform's** RID only. The native libs are
+**git-ignored build artifacts** — let `aeb` / CI build them after cloning.
 
 ## Build & test
 
@@ -69,7 +62,7 @@ dotnet test
 ```
 
 `SERVIRTIUM_VCR_LIB=/path/to/libservirtium_vcr.so` overrides the native-lib
-location (handy when iterating on `embed.ae`).
+location (handy when iterating on `core/embed.ae`).
 
 ## RID matrix
 
@@ -106,7 +99,7 @@ restores only the consumer's platform.
 
 ## Supply-chain notes
 
-- Native builds are reproducible from `embed.ae` + a pinned Aether toolchain
+- Native builds are reproducible from `core/embed.ae` + a pinned Aether toolchain
   version — record the `ae --version` used so a hash can be verified from
   source.
 - Prefer the `runtimes/<rid>/native` packaging (the default) over embedding

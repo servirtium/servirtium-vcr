@@ -32,8 +32,8 @@ withRecord (recordOptions "tapes/climate_api.md" "https://climatedataapi.worldba
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
-your SUT, and captures the exchange. Chunked responses are de-chunked (needs
-the native lib built with Aether ≥ 0.183.0).
+your SUT, and captures the exchange. Chunked responses are de-chunked
+automatically.
 
 ### Drift detection
 
@@ -63,6 +63,33 @@ withRecord (recordOptions tape upstream)
 
 `Field` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`, or
 `ResponseHeaders`.
+
+### Whole-tape normalization (volatiles across the whole tape)
+
+`recRedactions` scrubs one field at a time. For volatile values that appear
+**across** the tape — often minted by the server and echoed back into later
+requests — use the two whole-tape passes. Both run a regex over the *entire*
+tape (all fields, all interactions); the payoff is a **byte-identical
+re-record**.
+
+```haskell
+withRecord (recordOptions tape upstream)
+  { -- correlated: a server-minted id seen in a POST response that then recurs
+    -- in later request paths. Each distinct match becomes a stable {{order-N}}
+    -- token, so the same value round-trips on playback.
+    recNormalizeWholeTape = [("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}", "order")]
+    -- uncorrelated: a volatile of variable value (e.g. the Date header) that
+    -- just needs pinning. Every match collapses to one constant.
+  , recRedactWholeTape    = [("Date: .*GMT", "Date: Wed, 01 Jan 2025 00:00:00 GMT")]
+  } $ \vcr -> ...
+```
+
+- `recNormalizeWholeTape` — `(pattern, name)`: every distinct match across the
+  whole tape (first-appearance order) → a stable `{{name-N}}` token. Use for
+  **correlated** ids that recur, so they round-trip on playback.
+- `recRedactWholeTape` — `(pattern, replacement)`: every match collapses to the
+  one `replacement` constant. Use for **uncorrelated** volatiles (like `Date`)
+  of variable cardinality.
 
 ## Replaying a scrubbed tape (unredaction)
 
@@ -163,10 +190,11 @@ cleanly.
 `Ok`, `PathOrMethodDiff`, `HeaderMissing`, `HeaderValueDiff`,
 `HeaderUnexpected`, `TapeExhausted`, `BodyDiff`, `RecordError`.
 
-## Gotcha: one server per process
+## Concurrency: one server per port
 
-State is process-global in v1, so configure/stop one `VcrServer` at a time and
-**run tests serially** (hspec is sequential by default; tasty: `NumThreads 1`).
-See [architecture.md](architecture.md#one-server-per-process). Each
-`startPlayback` / `startRecord` resets all process-global mutation/strict/
-format state first, so settings from a prior fixture never leak forward.
+Each `startPlayback` / `startRecord` opens its own listener with a dedicated
+**handle**; tape, cursor, mutations, and diagnostics are scoped to that handle.
+So you can run **N `VcrServer`s at once** in one process without their state
+bleeding into each other. `hspec` runs specs sequentially by default (fine);
+with `tasty` you may run them in parallel. See
+[architecture.md](architecture.md#concurrency-one-server-per-port).

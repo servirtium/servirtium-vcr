@@ -12,6 +12,8 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
+| Whole-tape normalize (correlated ids → `{{name-N}}`) | ✅ | ✅ | `.normalize_whole_tape(pattern, name)` | — |
+| Whole-tape redact (volatiles → one constant) | ✅ | ✅ | `.redact_whole_tape(pattern, replacement)` | — |
 | Unredactions | ✅ | ✅ | `.unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `.remove_header(field, name)` | ✅ |
 | Notes | ✅ | ✅ | `.note(…)` / `VcrServer::note` | ✅ |
@@ -49,8 +51,10 @@ the Rust API. Both are small `embed.ae` additions if wanted:
 
 ## Known limitations (inherited from the core)
 
-- **One active VCR server per process** in v1 — this crate serializes
-  fixtures with a process-global lock. See
-  [architecture.md](architecture.md#one-server-per-process).
 - **Binary response bodies** rely on the tape's text/base64 path (an
   existing Aether VCR limitation).
+
+The core runs **one server per port** — N independent VCR servers run concurrently in
+one process, each keyed by its own handle (the wrapper still serializes
+fixtures with one process-wide lock as belt-and-braces). See
+[architecture.md](architecture.md#concurrency-one-server-per-port).

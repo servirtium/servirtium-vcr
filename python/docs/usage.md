@@ -58,6 +58,28 @@ servirtium.record(tape, upstream) \
 `servirtium.Field` is `PATH`, `RESPONSE_BODY`, `REQUEST_HEADERS`,
 `REQUEST_BODY`, or `RESPONSE_HEADERS`.
 
+### Whole-tape normalization & redaction
+
+`redact(field, …)` scrubs one field. When a volatile value appears across the
+**whole** tape — every field, every interaction — two record-builder rules give
+you a byte-identical re-record (so drift detection only fires on real changes):
+
+```python
+servirtium.record(tape, upstream) \
+    .normalize_whole_tape(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "id") \
+    .redact_whole_tape(r"[A-Z][a-z]{2}, \d\d [A-Z][a-z]{2} \d{4} [\d:]{8} GMT", "Sat, 01 Jan 2000 00:00:00 GMT") \
+    .start()
+```
+
+- **`normalize_whole_tape(pattern, name)`** — every *distinct* regex match
+  across the whole tape (first-appearance order) becomes a stable `{{name-N}}`
+  token: `{{id-1}}`, `{{id-2}}`, … Correlated ids that recur in later request
+  paths keep the same token, so the relationship survives and the tokens
+  round-trip on playback. Use for server-minted entity ids.
+- **`redact_whole_tape(pattern, replacement)`** — collapse *every* match to the
+  one constant `replacement`. Use for uncorrelated volatiles like `Date`
+  headers, where the actual value is noise.
+
 ## Replaying a scrubbed tape (unredaction)
 
 When a committed tape holds a placeholder but the live SUT sends the real
@@ -157,10 +179,21 @@ cleanly.
 `OK`, `PATH_OR_METHOD_DIFF`, `HEADER_MISSING`, `HEADER_VALUE_DIFF`,
 `HEADER_UNEXPECTED`, `TAPE_EXHAUSTED`, `BODY_DIFF`, `RECORD_ERROR`.
 
-## Gotcha: one server per process
+## Concurrency: one server per port
 
-State is process-global in v1, so configure/close one `VcrServer` at a time and
-**run tests serially** (pytest's default; no `pytest-xdist`). `.start()` resets
-all process-global mutation/strict/format state first, so settings from a prior
-fixture never leak forward. See
-[architecture.md](architecture.md#one-server-per-process).
+The VCR runs **one server per port**: each `.start()` opens its own handle, and that
+handle's tape, cursor, mutations, and diagnostics are isolated from any other.
+So you can have several `VcrServer`s alive at once in one process — each on its
+own port, replaying its own tape — without their state bleeding into each other:
+
+```python
+with servirtium.playback("tapes/weather.md").port(0).start() as weather, \
+     servirtium.playback("tapes/payments.md").port(0).start() as payments:
+    # point the SUT at weather.base_url and payments.base_url independently
+    ...
+    assert weather.last_kind is servirtium.Outcome.OK
+    assert payments.last_kind is servirtium.Outcome.OK
+```
+
+There is no need to run tests serially for state-isolation reasons. See
+[architecture.md](architecture.md#concurrency-one-server-per-port).

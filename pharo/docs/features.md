@@ -13,6 +13,8 @@ diagnostics), mapped through the stack. "Test" = exercised by
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `redactField:pattern:replacement:` | ✅ |
+| Whole-tape normalize (correlated ids → `{{name-N}}`) | ✅ | ✅ | `normalizeWholeTape:name:` | — |
+| Whole-tape redact (volatiles → one constant) | ✅ | ✅ | `redactWholeTape:replacement:` | — |
 | Unredactions | ✅ | ✅ | `unredactField:pattern:replacement:` | ✅ |
 | Header removal | ✅ | ✅ | `removeHeaderField:name:` | ✅ (via strict) |
 | Notes | ✅ | ✅ | `noteTitle:body:` (builder + server) | ✅ |
@@ -54,8 +56,6 @@ name: …` (the documented IGNORE-A-HEADER-WHEN-MATCHING lever). The
 
 ## Known limitations (inherited from the core)
 
-- **One active VCR server per process/image** in v1 — run tests serially. See
-  [architecture.md](architecture.md#one-server-per-process).
 - **Strict matching defaults to off**; when on, the SUT's full request-header
   set is compared, so client-default headers must be removed as above.
 - **Binary response bodies** rely on the tape's text/base64 path (an existing

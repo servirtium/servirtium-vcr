@@ -9,7 +9,7 @@ idempotent command:
 ./bootstrap.sh
 ```
 
-It checks for `ae` (≥ 0.183) and installs it via aether's official `get.sh`
+It checks for `ae` (≥ 0.227.0, for `std.regex`) and installs it via aether's official `get.sh`
 remote installer to a user prefix (`$HOME/.local` — **no sudo, no Aether test
 suite, no contrib**; needs `curl`, no build-from-source fallback) if it's
 missing/too old; checks a Pharo VM + image is present (it does **not**
@@ -37,27 +37,28 @@ already have both toolchains.
 
 ## Build the native library
 
-The native engine is built from the Aether std VCR embedding module,
-`std/http/server/vcr/embed.ae`:
+The native engine is built from the in-repo pure-Aether VCR module and its
+C-ABI seam, `core/vcr.ae` + `core/embed.ae`:
 
 ```sh
 ./build-native.sh
 ```
 
-This produces the **host platform's** library into `native/`. `embed.ae` is
-sourced from the **installed** toolchain (the stdlib that ships next to `ae`)
-— no Aether source checkout needed; engine devs can point at a local HEAD with
-`AETHER_REPO=/path/to/aether`. Under the hood:
+This produces the **host platform's** library into `native/`. The engine lives
+in this repo (no Aether source checkout needed beyond the `ae` toolchain
+itself, which supplies the stdlib primitives `core/vcr.ae` builds on). Under
+the hood:
 
 ```sh
-ae build --emit=lib --with=fs,net <prefix>/share/aether/std/http/server/vcr/embed.ae \
+ae build --emit=lib --with=fs,net core/embed.ae --extra core/_embed_strdup.c \
    -o native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
 - `--with=fs,net` grants the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
-  runtime — **Aether ≥ 0.182.0**; chunked de-chunking needs **≥ 0.183.0**.
+  runtime; the whole-tape regex scrubbers need `std.regex` — **Aether ≥
+  0.227.0**.
 
 The native lib is a **git-ignored build artifact** — run `build-native.sh`
 after cloning, or let CI build it.

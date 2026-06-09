@@ -9,26 +9,27 @@
 
 ## Build the native library
 
-The native library is built from the Aether std VCR embedding module,
-`std/http/server/vcr/embed.ae`:
+The native library is built from the in-repo VCR embedding module,
+`core/embed.ae` (which wraps `core/vcr.ae`). The whole monorepo is built with
+`aeb`, which builds the `core/` node once and links/loads the resulting
+`libservirtium_vcr.so` into every binding:
 
 ```sh
-./build-native.sh
+aeb python/.tests.ae    # builds the engine it deps, then the Python tests
 ```
 
-This produces the **host platform's** library into `servirtium/native/`. It
-defaults to `../aether` for the Aether checkout; override with
-`AETHER_REPO=/path/to/aether`. Under the hood:
+Under the hood the engine build is:
 
 ```sh
-ae build --emit=lib --with=fs,net <aether>/std/http/server/vcr/embed.ae \
-   -o servirtium/native/libservirtium_vcr.<ext>
+ae build --emit=lib --with=fs,net core/embed.ae \
+   -o core/native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
 - `--with=fs,net` grants the filesystem + networking capabilities the VCR needs
-  (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether runtime
-  — **Aether ≥ 0.182.0**; chunked de-chunking needs **≥ 0.183.0**.
+  (tape I/O + the embedded HTTP server). The engine uses `std.regex`, so the
+  current toolchain floor is **Aether ≥ v0.227.0** (chunked de-chunking was
+  introduced at ≥ 0.183.0).
 
 ## Build & test
 
@@ -55,8 +56,8 @@ complete wheel for a platform bundles that platform's library under
 
 ## Supply-chain notes
 
-- Native builds are reproducible from `embed.ae` + a pinned Aether toolchain
-  version — record the `ae --version` used so a hash can be verified from
-  source.
+- Native builds are reproducible from `core/embed.ae` + `core/vcr.ae` + a pinned
+  Aether toolchain version — record the `ae --version` used so a hash can be
+  verified from source.
 - The bundled binary stays a discrete file (visible to SCA/SBOM tooling,
   individually signable) rather than being embedded inside Python bytecode.

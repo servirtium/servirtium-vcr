@@ -44,7 +44,7 @@ try (VcrServer vcr = Vcr.record("tapes/climate_api.md", "https://climatedataapi.
 
 Record forwards each request to the upstream, returns the **real** response
 to your SUT, and captures the exchange. Chunked responses are de-chunked
-(needs the native lib built with Aether ≥ 0.183.0).
+automatically.
 
 ### Drift detection
 
@@ -70,6 +70,36 @@ Vcr.record(tape, upstream)
 
 `Field` is `PATH`, `RESPONSE_BODY`, `REQUEST_HEADERS`, `REQUEST_BODY`, or
 `RESPONSE_HEADERS`.
+
+### Whole-tape normalization and redaction
+
+`redact` scrubs one field of each interaction. Two companions instead scan the
+**whole tape** (every field, every interaction) so volatile values are stable
+on re-record — the payoff being a byte-identical re-record, so
+`failIfChanged()` drift detection fires only on real upstream changes, not on
+fresh ids or timestamps.
+
+```java
+Vcr.record(tape, upstream)
+    // Correlated, server-generated value that recurs (a created entity's id
+    // echoed back in a later request path): every distinct match becomes a
+    // stable {{order-N}} token, and the SAME value maps to the SAME token
+    // everywhere — so it round-trips on playback.
+    .normalizeWholeTape("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "order")
+    // Uncorrelated volatile you never match against (a Date header, a request
+    // id): collapse every match to one constant.
+    .redactWholeTape("Date: .+ GMT", "Date: <DATE>")
+    .start();
+```
+
+- `normalizeWholeTape(pattern, name)` mints the replacement for you — each
+  distinct match across the tape, in first-appearance order, becomes
+  `{{name-1}}`, `{{name-2}}`, … Use it when the value is correlated (recurs in
+  a later request) so it must map consistently and round-trip on playback.
+- `redactWholeTape(pattern, replacement)` collapses every match to the literal
+  `replacement`. Use it when the value is uncorrelated and the number of
+  distinct values can vary run to run, where a per-value token wouldn't be
+  byte-stable.
 
 ## Replaying a scrubbed tape (unredaction)
 
@@ -187,11 +217,11 @@ cleanly.
 `OK`, `PATH_OR_METHOD_DIFF`, `HEADER_MISSING`, `HEADER_VALUE_DIFF`,
 `HEADER_UNEXPECTED`, `TAPE_EXHAUSTED`, `BODY_DIFF`, `RECORD_ERROR`.
 
-## Gotcha: one server per process
+## Concurrency: one server per port
 
-State is process-global in v1, so configure/close one `VcrServer` at a time
-and **run tests serially** (see
-[architecture.md](architecture.md#one-server-per-process)). JUnit 5 is
-sequential by default — leave it that way. `.start()` resets all
-process-global mutation/strict/format state first, so settings from a prior
-fixture never leak forward.
+Each `VcrServer` owns its own handle and all of its state — tape, replay
+cursor, mutations, strict/format settings, and diagnostics. So you can run as
+many `VcrServer`s as you like at once in one process; they don't share state
+and don't stomp each other, and there's no serial-execution requirement (see
+[architecture.md](architecture.md#concurrency-one-server-per-port)). A setting on one
+fixture never leaks to another.

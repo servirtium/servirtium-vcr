@@ -23,9 +23,11 @@ withPlayback (playbackOptions "tapes/climate_api.md") $ \vcr -> do
 Since **2.0**, this is a thin Haskell **FFI** layer over the **Aether VCR**
 core. All record/replay machinery — markdown parse/emit, the HTTP server,
 request matching, redactions, notes, drift detection, static bypass,
-gzip/chunked handling — lives in and is maintained as the Aether standard
-library (`std/http/server/vcr`). This package links a precompiled native build
-of that core (`libservirtium_vcr.so`) via `foreign import ccall`; it does
+gzip/chunked handling — lives in a pure-Aether module in this repo
+(`core/vcr.ae`, with the C-ABI seam in `core/embed.ae`), built on Aether
+stdlib primitives with the Servirtium logic kept in-repo. This package links a
+precompiled native build of that core
+(`core/native/libservirtium_vcr.so`) via `foreign import ccall`; it does
 **not** reimplement Servirtium in Haskell.
 
 > **Breaking from 1.x:** the old pure-Haskell modules and their API are gone,
@@ -41,20 +43,25 @@ of that core (`libservirtium_vcr.so`) via `foreign import ccall`; it does
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix and
   what's covered by tests.
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering
-  works (Haskell → `ccall` → `embed.ae` → Aether VCR), native linking, and the
-  v1 one-server-per-process model.
+  works (Haskell → `ccall` → `core/embed.ae` → Aether VCR), native linking, and
+  the one-server-per-port (handle-based) concurrency model.
 - **[docs/building.md](docs/building.md)** — building the native library,
   linking, and CI.
+- **[docs/usage.md](docs/usage.md)** — the full how-to (also linked above).
+- **[docs/features.md](docs/features.md)** — the capability matrix (also linked
+  above).
 - **[MIGRATION.md](MIGRATION.md)** — the 1.x → 2.0 rewrite story.
+- **[CHANGELOG.md](CHANGELOG.md)** — release notes.
 
-## One hard rule: run tests serially
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its tape / cursor /
-mutation state is process-global). `hspec` runs specs sequentially by default,
-which is what you want; if you use `tasty`, set `NumThreads 1`. Each
-`startPlayback` / `startRecord` resets all process-global mutation/strict/
-format state first, so settings from a prior fixture never leak forward. See
-[docs/architecture.md](docs/architecture.md#one-server-per-process).
+The Aether VCR runs **one server per port**: N independent servers can run concurrently
+in one process, each keyed by its own handle. A fixture's config / diagnostics
+/ tape are scoped to its handle, so two `startPlayback` / `startRecord` servers
+can be alive at once without their cursors or mutations bleeding into each
+other (the `core_tests/.concurrent.ae` test proves it). `hspec` runs specs
+sequentially by default, which is fine; with `tasty` you may run in parallel.
+See [docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port).
 
 ## Building from source
 
@@ -67,7 +74,7 @@ already present):
 ./bootstrap.sh
 ```
 
-Already have `ae` (≥ 0.183), GHC, and cabal on PATH? Drive the two steps
+Already have `ae` (≥ 0.227.0), GHC, and cabal on PATH? Drive the two steps
 directly:
 
 ```sh

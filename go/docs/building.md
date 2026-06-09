@@ -8,16 +8,18 @@ aeb, kept as a showcase of aeb driving a cross-language FFI artifact
 ## Prerequisites
 
 - The Aether toolchain (`ae`) on PATH — **≥ 0.182** for the `-fPIC` runtime
-  that `--emit=lib --with=net` needs, **≥ 0.183** for chunked de-chunking.
+  that `--emit=lib --with=net` needs, **≥ 0.227.0** for `std.regex` (the
+  engine's whole-tape rewrites) and chunked de-chunking.
 - `aeb` on PATH.
 - A C toolchain (`cgo` links the native library).
-- **No Aether source checkout needed** — `.native.ae` compiles `embed.ae`
-  straight from the installed toolchain's stdlib (the copy that ships next to
-  `ae`). Engine devs can point at a local HEAD by exporting `AETHER_REPO`.
+- **No Aether source checkout needed** — the engine is in this repo
+  (`core/vcr.ae` + `core/embed.ae`); `core/.build.ae` compiles it against the
+  installed toolchain's stdlib primitives. No separate Aether checkout is
+  required.
 
 ### Getting the Aether toolchain (casual dev)
 
-`.native.ae` shells out to `ae build --emit=lib`, so you need the toolchain
+`core/.build.ae` shells out to `ae build --emit=lib`, so you need the toolchain
 before anything else. Install it (and `aeb`) with their canonical one-line
 installers — released builds, user prefix, no sudo, no tests, no contrib:
 
@@ -28,22 +30,20 @@ curl -sSL https://raw.githubusercontent.com/aether-lang-org/aeb/main/install.sh 
 
 Notes for a casual servirtium-go developer:
 
-- **Pin in CI** with `AETHER_REF=v0.184.0` / `AEB_REF=v0.NNN` in front of the
+- **Pin in CI** with `AETHER_REF=v0.227.0` / `AEB_REF=v0.NNN` in front of the
   respective installer (reproducible builds).
-- **Version floor is real** — `ae` must be **≥ 0.183** (`-fPIC` runtime +
-  chunked de-chunk). The latest released tag satisfies it; `get.sh` installs
-  that by default.
-- **No contrib.** servirtium-go's engine imports only
-  `std.http`/`std.fs`/`std.net`/`std.string` — no `sqlite`/`host_*` — so
-  there's nothing extra to install.
-- **`-fPIC` triage.** If `aeb`/`.native.ae` fails with a link error mentioning
-  `recompile with -fPIC`, you have a stale pre-0.182 `ae` — re-run the `get.sh`
-  installer (optionally `AETHER_REF=v0.184.0`). This is the single most likely
-  first-build failure, because `--emit=lib --with=net` is exactly the path that
-  needs the PIC runtime.
-
-For the from-source / HEAD developer flow instead, see Aether's
-[bootstrap-from-source.md](../../aether/docs/bootstrap-from-source.md).
+- **Version floor is real** — `ae` must be **≥ 0.227.0** (`std.regex` for the
+  engine's whole-tape rewrites, on top of the `-fPIC` runtime + chunked
+  de-chunk). The latest released tag satisfies it; `get.sh` installs that by
+  default.
+- **No contrib.** servirtium-go's engine imports only stdlib primitives
+  (`std.http`/`std.fs`/`std.regex`/`std.zlib`/`std.cryptography`) — no
+  `sqlite`/`host_*` — so there's nothing extra to install.
+- **`-fPIC` triage.** If `aeb`/`core/.build.ae` fails with a link error
+  mentioning `recompile with -fPIC`, you have a stale pre-0.182 `ae` — re-run
+  the `get.sh` installer (optionally `AETHER_REF=v0.227.0`). This is the single
+  most likely first-build failure, because `--emit=lib --with=net` is exactly
+  the path that needs the PIC runtime.
 
 ## Turnkey: `./bootstrap.sh`
 
@@ -54,7 +54,7 @@ For a casual dev who doesn't yet have the toolchain, the repo-root
 ./bootstrap.sh
 ```
 
-It checks for `ae` (≥ 0.183) and `aeb`; if either is missing/too old it
+It checks for `ae` (≥ 0.227.0) and `aeb`; if either is missing/too old it
 installs them via the official `get.sh` / `install.sh` remote installers to a
 user prefix (`$HOME/.local` — **no sudo, no Aether test suite, no contrib**),
 then runs `aeb`. It's a no-op for the toolchain when both are already good,
@@ -77,13 +77,13 @@ edges, and runs them in dependency order:
 
 | Node | Class | What it does |
 |---|---|---|
-| `.native.ae` | build | `ae build --emit=lib --with=fs,net …/embed.ae -o native/libservirtium_vcr.so` (inline-Aether step — no SDK produces a `--emit=lib` `.so`) |
-| `cmd/vcrdemo/.build.ae` | build | `go build` the lifecycle demo binary (cgo links the `.so`); deps `.native.ae` |
-| `.tests.ae` | test | `go test .` — the binding's suite; deps `.native.ae` |
+| `core/.build.ae` | build | `ae build --emit=lib --with=fs,net core/embed.ae --extra _embed_strdup.c -o core/native/libservirtium_vcr.so` (the shared engine, built once for every binding) |
+| `cmd/vcrdemo/.build.ae` | build | `go build` the lifecycle demo binary (cgo links the `.so`); deps `core/.build.ae` |
+| `go/.tests.ae` | test | `go test .` — the binding's suite; deps `core/.build.ae` |
 | `demo/.up_poke_down.ae` | build | runs the demo: UP a playback server, POKE the recorded path, DOWN; gates the build on a live record/replay; deps the demo build |
 
 The native library is git-ignored build output — `aeb` (re)builds it via
-`.native.ae`. Override the engine source location with `AETHER_REPO`.
+`core/.build.ae` from the in-repo engine (`core/vcr.ae` + `core/embed.ae`).
 
 ## The up_poke_down showcase
 
@@ -122,12 +122,11 @@ completes, so a stray background server can't poison the build's exit code.
 ## Without aeb (fallback)
 
 The pieces are plain tools, so you can drive them by hand if needed
-(`embed.ae` comes from the installed toolchain, next to `ae`):
+(`embed.ae` is the in-repo `core/embed.ae`, run from the `core/` directory):
 
 ```sh
-ae build --emit=lib --with=fs,net \
-   "$(dirname "$(command -v ae)")/../share/aether/std/http/server/vcr/embed.ae" \
-   -o native/libservirtium_vcr.so
+( cd core && ae build --emit=lib --with=fs,net embed.ae --extra _embed_strdup.c \
+   -o native/libservirtium_vcr.so )
 CGO_ENABLED=1 go test ./...
 ```
 

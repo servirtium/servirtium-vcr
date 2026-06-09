@@ -23,11 +23,13 @@ try {
 
 A thin **`dart:ffi`** wrapper over the **Aether VCR** core: markdown
 parse/emit, the HTTP server, request matching, redactions, notes, drift
-detection, static-content bypass, gzip/chunked handling all live in and are
-maintained as the Aether standard library (`std/http/server/vcr`), shipped as
-a precompiled native library (`libservirtium_vcr.so`). This package opens that
-library with `DynamicLibrary.open` and presents an idiomatic Dart fixture; it
-does **not** reimplement Servirtium in Dart. The same binding serves Flutter.
+detection, static-content bypass, gzip/chunked handling all live in the
+in-repo pure-Aether engine (`core/vcr.ae`, with the C-ABI wrapper in
+`core/embed.ae`), built on Aether stdlib primitives and shipped as a
+precompiled native library (`core/native/libservirtium_vcr.so`). This package
+opens that library with `DynamicLibrary.open` and presents an idiomatic Dart
+fixture; it does **not** reimplement Servirtium in Dart. The same binding
+serves Flutter.
 
 ## Install
 
@@ -43,17 +45,22 @@ need the Aether toolchain — only contributors rebuilding the engine do
 
 Full surface in **[docs/usage.md](docs/usage.md)** — playback, record,
 redactions, unredactions, header removal, notes, strict matching, static
-content, drift, diagnostics. Capability matrix:
-[docs/features.md](docs/features.md). FFI layering:
-[docs/architecture.md](docs/architecture.md).
+content, drift, diagnostics.
 
-## One hard rule: run tests serially
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its state is
-process-global, shared across Dart isolates). Run `dart test` with
-`concurrency: 1` (set in `dart_test.yaml`) so suites don't run in parallel.
-`start()` resets all process-global mutation/strict/format state first, so a
-setting from a previous test never leaks forward.
+The binding uses a **one server per port** (handle-based ABI): N independent VCR
+servers can run concurrently in one process, each keyed by its own handle.
+A fixture's config, diagnostics, and tape are scoped to its handle, so two
+`Vcr.playback(...).start()` (or `.record(...)`) servers can be alive at once
+without their cursors or mutations bleeding into each other.
+
+## Docs
+
+- [docs/usage.md](docs/usage.md) — full API surface and examples
+- [docs/features.md](docs/features.md) — capability matrix vs. the core
+- [docs/architecture.md](docs/architecture.md) — FFI layering
+- [docs/building.md](docs/building.md) — building the native engine from source
 
 ## Building from source
 

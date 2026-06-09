@@ -27,14 +27,16 @@ try (VcrServer vcr = Vcr.playback("tapes/climate_api.md").port(0).start()) {
 
 ## What this is (and isn't)
 
-Since **2.0**, this is a thin Java layer over the **Aether VCR** core. All
+Since **2.0**, this is a thin Java layer over the **servirtium-vcr** core. All
 record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static bypass, gzip/chunked
-handling — lives in and is maintained as the Aether standard library
-(`std/http/server/vcr`). This module calls a precompiled native build of that
-core through the **Java Foreign Function & Memory API** (`java.lang.foreign`,
-Project Panama, **stable since JDK 22** — no JNA, no JNI). It does **not**
-reimplement Servirtium in Java.
+handling — lives in the pure-Aether engine **in this repo** at `core/vcr.ae`
+(with `core/embed.ae` exposing its C-ABI), built once to
+`core/native/libservirtium_vcr.so` on Aether standard-library primitives. The
+Servirtium logic is in-repo, not in the Aether stdlib. This module calls that
+precompiled native build through the **Java Foreign Function & Memory API**
+(`java.lang.foreign`, Project Panama, **stable since JDK 22** — no JNA, no
+JNI). It does **not** reimplement Servirtium in Java.
 
 > **Breaking from 0.x:** the old `MarkdownRecorder` / `MarkdownReplayer` /
 > `ServirtiumServer` API and the `jetty` / `undertow` server modules are gone,
@@ -43,7 +45,9 @@ reimplement Servirtium in Java.
 
 ## Requirements
 
-- **JDK 25** (or any JDK ≥ 22 where `java.lang.foreign` is stable).
+- **JDK 25.** FFM (`java.lang.foreign`) has been stable since JDK 22, but this
+  binding compiles to and is tested on JDK 25 (its `.tests.ae` pins
+  `JAVA25_HOME`).
 - The native library `libservirtium_vcr.{so,dylib}` for your OS/arch. It ships
   on the classpath under `native/<rid>/` and is extracted/loaded automatically;
   no Aether toolchain is needed to *use* it. Supported RIDs: `linux-x64`
@@ -69,24 +73,31 @@ their own test JVM args.
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix
   and what's covered by tests.
 - **[docs/architecture.md](docs/architecture.md)** — how the FFM layering
-  works (Java → downcall handles → `embed.ae` → Aether VCR), the native
-  loader, and the v1 one-server-per-process model.
+  works (Java → downcall handles → `embed.ae` → the `core/` engine), the native
+  loader, and the one-server-per-port (handle-based) concurrency model.
 - **[docs/building.md](docs/building.md)** — building the native library,
   the RID matrix, and CI.
 - **[MIGRATION.md](MIGRATION.md)** — the 0.x → 2.0 rewrite story.
 
-## One hard rule: run tests serially
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its tape /
-cursor / mutation state is process-global). **Do not enable JUnit 5 parallel
-execution** — it runs sequentially by default, which is what you want. See
-[docs/architecture.md](docs/architecture.md#one-server-per-process) for why.
+The core runs **one server per port**: N independent VCR servers can run concurrently
+in one process, each keyed by its own opaque handle, with its own tape, replay
+cursor, mutations, and diagnostics. Each `VcrServer` you start owns one handle,
+so fixtures don't share or stomp state and need no serial constraint
+(`core_tests/.concurrent.ae` proves two playback servers running at once on
+separate ports, each replaying its own tape). See
+[docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port).
 
 ## Building from source
 
+The repo is driven by [`aeb`](https://github.com/aether-lang-org/aeb): the
+`java/.tests.ae` leaf deps `core/.build.ae`, which builds the native engine
+(`core/native/libservirtium_vcr.so`) once, then runs `mvn test` against it.
+
 ```sh
-./build-native.sh                  # builds the native lib for your platform (needs `ae`)
-JAVA_HOME=/path/to/jdk25 mvn test  # JDK 25 required
+aeb java/.tests.ae   # builds the core engine (needs ae ≥ 0.227.0), then mvn test on JDK 25
 ```
 
-Details in [docs/building.md](docs/building.md).
+Details — including the raw `ae build` / `mvn` invocations — in
+[docs/building.md](docs/building.md).

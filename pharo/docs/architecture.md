@@ -13,10 +13,11 @@ Servirtium (this repo, package 'Servirtium')   ── thin Smalltalk ──
    │   • ServirtiumField / ServirtiumOutcome / ServirtiumError
    ▼   UnifiedFFI (uFFI), dlopen of native/libservirtium_vcr.so
 libservirtium_vcr.{so,dylib,dll}
-   │   built: ae build --emit=lib --with=fs,net std/http/server/vcr/embed.ae
-   │   • embed.ae  — thin Aether wrapper exposing the C-ABI
-   │   • std/http/server/vcr  — the actual VCR (parse, dispatch, record,
-   │     mutate, emit, match) + the embedded Aether HTTP server
+   │   built: ae build --emit=lib --with=fs,net core/embed.ae
+   │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
+   │   • core/vcr.ae  — the actual VCR (parse, dispatch, record,
+   │     mutate, emit, match) + the embedded Aether HTTP server,
+   │     a pure-Aether in-repo module on Aether stdlib primitives
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>
 ```
@@ -24,11 +25,11 @@ your SUT  ⇄  http://127.0.0.1:<port>
 The Smalltalk side owns **none** of the Servirtium semantics. It starts/stops
 the server, marshals strings, and presents an idiomatic fixture. Everything
 that defines Servirtium behaviour is the Aether core, shared with every other
-language binding built on the same `embed.ae`.
+language binding built on the same `core/embed.ae`.
 
 ## The C-ABI
 
-`embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
+`core/embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
 avoids colliding with the core's own `vcr_*` runtime symbols). It adds only
 the *embedding seam* the raw VCR module lacks:
 
@@ -88,24 +89,26 @@ Every accessor that returns text (`baseUrl`, `lastError`, the `stopAndFlush*`
 result, and every mutation call's error string) goes through `takeString:`.
 Calls that return `int` / `void` need no freeing.
 
-## One server per process
+## Concurrency: one server per port
 
-v1 keeps the VCR's tape, replay cursor, mutations, static mounts, pending
-note, and diagnostics as **process-global** state (the documented v1 contract
-on the Aether side). A Pharo image is one process, so:
+The ABI is **one server per port** (handle-based). `aether_vcr_embed_open_*`
+returns a `void*` handle that owns its own VCR — tape, replay cursor,
+mutations, static mounts, pending note, and diagnostics are all scoped to that
+handle — and every subsequent C call (`start`, `redact`, `last_error`, `stop`,
+…) takes the handle as its first argument. So:
 
-- You cannot run two `ServirtiumServer`s simultaneously in one image.
-- **Run tests serially.** Concurrent fixtures would stomp each other's state
-  (it shows up as spurious mismatches).
-- `ServirtiumPlaybackBuilder>>start` / `ServirtiumRecordBuilder>>start` call
-  `resetGlobalState` first — clearing redactions, unredactions, header
-  removals, static mounts, format options, strict-headers, and the last-error
-  slot — then apply the current fixture's config. So a setting from a previous
-  test never leaks forward, even within one image.
+- **N VCR servers can run concurrently in one image**, each on its own port
+  with its own tape. Two `(Servirtium playback: …) start` servers can be alive
+  at once without their cursors or mutations bleeding into each other.
+- There is **no shared/global state to reset**. `ServirtiumPlaybackBuilder>>start`
+  / `ServirtiumRecordBuilder>>start` open a fresh handle and apply this
+  fixture's config to that handle only (`applyConfig: handle`), so a setting
+  from another fixture cannot leak across — they are different handles.
+- You do **not** have to serialize the suite; fixtures are independent.
 
-Per-server isolation (a real handle owning its own state) is on the Aether
-roadmap; when it lands, the binding drops the serial constraint without an
-API change.
+The core's `core_tests/.concurrent.ae` probe is the deliverable for this model:
+two playback VCRs on two ports, two tapes, served at once, each asserting it
+replays its own tape with independent cursors and diagnostics.
 
 ## A subtle ordering rule (notes)
 

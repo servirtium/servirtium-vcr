@@ -11,22 +11,26 @@ servirtium (this package)        ── thin Python, this repo ──
    │   • ctypes bindings to aether_vcr_embed_* + native-lib loader        (_native.py)
    ▼   ctypes FFI
 libservirtium_vcr.{so,dylib,dll}
-   │   built: ae build --emit=lib --with=fs,net std/http/server/vcr/embed.ae
-   │   • embed.ae  — thin Aether wrapper exposing the C-ABI
-   │   • std/http/server/vcr  — the actual VCR (parse, dispatch, record,
-   │     mutate, emit, match) + the embedded Aether HTTP server
+   │   built: ae build --emit=lib --with=fs,net core/embed.ae
+   │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
+   │   • core/vcr.ae    — the actual VCR (parse, dispatch, record, mutate,
+   │     emit, match) + the embedded Aether HTTP server, a pure-Aether module
+   │     in this repo on top of std.http / std.regex / std.zlib /
+   │     std.cryptography
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>
 ```
 
 The Python side owns **none** of the Servirtium semantics. It starts/stops the
 server, marshals strings, and presents an idiomatic fixture. Everything that
-defines Servirtium behaviour is the Aether core, shared with every other
-language binding built on the same `embed.ae` (.NET, Go, Java, Rust, Python).
+defines Servirtium behaviour is the Aether core — the in-repo `core/vcr.ae`
+module, shared with every other language binding built on the same
+`core/embed.ae` (.NET, Go, Java, Rust, Python, …). The Servirtium logic lives in
+this repo, not the Aether standard library; it only *uses* stdlib primitives.
 
 ## The C-ABI
 
-`embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
+`core/embed.ae` exports `aether_vcr_embed_*` C symbols (the `vcr_embed_` prefix
 avoids colliding with the core's own `vcr_*` runtime symbols). It adds only the
 *embedding seam* the raw VCR module lacks:
 
@@ -59,30 +63,31 @@ the handle is a `c_void_p`.
 The file name is computed per-platform: `libservirtium_vcr.so` / `.dylib` /
 `servirtium_vcr.dll`.
 
-## One server per process
+## Concurrency: one server per port
 
-v1 keeps the VCR's tape, replay cursor, mutations, static mounts, pending note,
-and diagnostics as **process-global** state (the documented v1 contract on the
-Aether side). Consequences:
+The VCR runs **one server per port**. Each `servirtium.playback(...).start()` /
+`servirtium.record(...).start()` opens its own handle, and the VCR's tape,
+replay cursor, mutations, static mounts, pending note, and diagnostics are all
+scoped to that handle. Consequences:
 
-- You cannot run two `VcrServer`s simultaneously in one process.
-- **Run tests serially** — pytest does this by default; do not add
-  `pytest-xdist` (`-n`). Parallel test workers would stomp each other's state
-  (it shows up as spurious `599` mismatches).
-- `PlaybackBuilder.start()` / `RecordBuilder.start()` call
-  `_reset_global_state()` first — clearing redactions, unredactions, header
-  removals, static mounts, format options, strict-headers, and the last-error
-  slot — then apply the current fixture's config. So a setting from a previous
-  test never leaks forward, even within one process.
-
-Per-server isolation (a real handle owning its own state) is on the Aether
-roadmap; when it lands, the wrapper drops the serial constraint without an API
-change.
+- You **can** run several `VcrServer`s simultaneously in one process, each on
+  its own port replaying its own tape — e.g. a test that stands up a weather API
+  and a payments API at once, each with its own `base_url`. A mismatch on one
+  does not touch another's diagnostics. (`core_tests/concurrent_probe.ae` and
+  `test/test_concurrent.py` prove this.)
+- Config (redactions, unredactions, header removals, static mounts, format
+  options, strict-headers) and diagnostics never bleed between handles, so there
+  is **no need to run tests serially** for state-isolation reasons — pytest's
+  default ordering is fine, and independent fixtures don't stomp each other.
+- Every `_native` mutation / diagnostics call takes the handle as its first
+  argument; the Python wrapper holds the handle inside the builder and the
+  returned `VcrServer`.
 
 ## A subtle ordering rule (notes)
 
-Redactions / unredactions / header-removals / static-mounts are separate global
-lists, registered before the server starts. A **note**, however, is stored
-alongside the tape and is cleared when `start_record` (re)loads the tape — so
-the wrapper stages the builder's note *after* `start_record` returns, attaching
-it to the first interaction. (See `RecordBuilder.start` in `_vcr.py`.)
+Redactions / unredactions / header-removals / static-mounts / whole-tape rules
+are registered on the handle *after* `open_*` and before `start`. A **note**,
+however, is stored alongside the tape and is cleared when `open_record` (re)opens
+and clears the tape — so the wrapper stages the builder's note *after*
+`open_record` returns, attaching it to the first interaction. (See
+`RecordBuilder.start` in `_vcr.py`.)

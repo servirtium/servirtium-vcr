@@ -12,6 +12,8 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.Redact(field, …)` | ✅ |
+| Whole-tape normalize (correlated ids → `{{name-N}}`) | ✅ | ✅ | `.NormalizeWholeTape(pattern, name)` | — |
+| Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `.RedactWholeTape(pattern, replacement)` | — |
 | Unredactions | ✅ | ✅ | `.Unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `.RemoveHeader(field, name)` | ✅ |
 | Notes | ✅ | ✅ | `.Note(…)` / `VcrServer.Note` | ✅ |
@@ -21,14 +23,14 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by
 | Format options (indent / emphasize) | ✅ | ✅ | `.IndentCodeBlocks()` / `.EmphasizeHttpVerbs()` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `LastError`/`LastKind`/`LastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
-| Chunked de-chunk on record | ✅ (≥0.183.0) | ✅ | (automatic) | ✅ |
+| Chunked de-chunk on record | ✅ | ✅ | (automatic) | ✅ |
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `.Port(0)` → `vcr.Port` | ✅ |
 
 ## Not (yet) exposed through the C-ABI
 
-Present in the Aether VCR module but not surfaced by `embed.ae`, so not in
-the .NET API. Both are small `embed.ae` additions if wanted:
+Present in the Aether VCR module but not surfaced by `core/embed.ae`, so not
+in the .NET API. Both are small `core/embed.ae` additions if wanted:
 
 - **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
   `<tape>.actual` and compares, instead of overwriting). The .NET layer has
@@ -46,7 +48,9 @@ the .NET API. Both are small `embed.ae` additions if wanted:
 
 ## Known limitations (inherited from the core)
 
-- **One active VCR server per process** in v1 — run tests serially. See
-  [architecture.md](architecture.md#one-server-per-process).
 - **Binary response bodies** rely on the tape's text/base64 path (an
   existing Aether VCR limitation).
+
+Note: concurrency runs **one server per port** — N independent servers run side by
+side in one process, each keyed by its own handle, so tests need not be
+serialized. See [architecture.md](architecture.md#concurrency-one-server-per-port).

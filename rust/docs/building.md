@@ -4,46 +4,49 @@
 
 - **A current Rust toolchain** (edition 2021; tested with cargo 1.94).
 - **The Aether toolchain (`ae`) on PATH** — only needed to build the
-  *native* library. Consumers who ship a prebuilt `.so`/`.dylib` (or point
-  `SERVIRTIUM_VCR_LIB` at one) don't need it.
+  *native* library (**≥ 0.227.0**, the engine's `std.regex` floor). Consumers
+  who ship a prebuilt `.so`/`.dylib` (or point `SERVIRTIUM_VCR_LIB` at one)
+  don't need it.
 
 ## Build the native library
 
-The native library is built from the Aether std VCR embedding module,
-`std/http/server/vcr/embed.ae`:
+The native library is the shared engine for the whole monorepo, built from
+the in-repo Aether VCR embedding module, `core/embed.ae` (which imports the
+pure-Aether engine `core/vcr.ae`). The Servirtium logic lives in this repo,
+not the Aether standard library. The repo's build (`core/.build.ae`, run via
+`aeb`) produces it once into `core/native/`:
 
 ```sh
-./build-native.sh
+ae build --emit=lib --with=fs,net core/embed.ae \
+   --extra core/_embed_strdup.c -o core/native/libservirtium_vcr.so
 ```
 
-This produces the **host platform's** library into `native/`. It defaults
-to `../aether` for the Aether checkout; override with
-`AETHER_REPO=/path/to/aether`. Under the hood:
-
-```sh
-ae build --emit=lib --with=fs,net <aether>/std/http/server/vcr/embed.ae \
-   -o native/libservirtium_vcr.<ext>
-```
-
-- `--emit=lib` produces a shared library with `aether_*` exports.
+- `--emit=lib` produces a shared library with `aether_vcr_embed_*` exports.
 - `--with=fs,net` grants the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC`
   Aether runtime — **Aether ≥ 0.182.0**; chunked de-chunking needs
-  **≥ 0.183.0**. (Verified building with `ae` 0.183.0 / 0.184.0.)
+  **≥ 0.183.0**; the whole-tape `std.regex` normalize/redact path needs
+  **≥ 0.227.0**, which is the current floor for the engine.
+- `--extra core/_embed_strdup.c` links the ~12-line caller-owned-string
+  bridge (`vcr_embed_dup`/`free`) — the one malloc/free FFI primitive the
+  Aether stdlib can't express; everything else is pure Aether.
 
 ## Build & test
 
 ```sh
-cargo test
+SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so cargo test
 ```
 
-`cargo test` is safe under the default parallel runner: the crate serializes
-VCR fixtures through a process-global lock (see
-[architecture.md](architecture.md#one-server-per-process)).
+`cargo test` is safe under the default parallel runner: the core is
+one-server-per-port (each `VcrServer` owns its own handle), and the crate also takes
+one process-wide lock per `VcrServer` as belt-and-braces (see
+[architecture.md](architecture.md#concurrency-one-server-per-port)).
 
-`SERVIRTIUM_VCR_LIB=/path/to/libservirtium_vcr.so` overrides the native-lib
-location (handy when iterating on `embed.ae`). Otherwise the loader finds
-`native/libservirtium_vcr.{so,dylib}` next to the crate.
+`SERVIRTIUM_VCR_LIB=/path/to/libservirtium_vcr.so` points the loader at the
+native lib (handy when iterating on `core/embed.ae`) — the repo's
+`rust/.tests.ae` sets it to the just-built `core/native/libservirtium_vcr.so`.
+Otherwise the loader finds `native/libservirtium_vcr.{so,dylib}` next to the
+crate.
 
 ## RID matrix
 
@@ -59,15 +62,16 @@ Each arch is a distinct binary (no shared code between x64 and arm64).
 
 ## CI
 
-A per-OS matrix should build the Aether toolchain, run `build-native.sh`,
-then `cargo test`, and upload each platform's native lib as an artifact —
-mirroring the .NET binding's `dotnetcore.yml`. (Not yet wired in this repo.)
+A per-OS matrix should build the Aether toolchain, build the native lib from
+`core/embed.ae`, then `cargo test`, and upload each platform's native lib as
+an artifact — mirroring the .NET binding's `dotnetcore.yml`. (Not yet wired
+in this repo.)
 
 ## Supply-chain notes
 
-- Native builds are reproducible from `embed.ae` + a pinned Aether toolchain
-  version — record the `ae --version` used so a hash can be verified from
-  source.
+- Native builds are reproducible from `core/embed.ae` + `core/vcr.ae` + a
+  pinned Aether toolchain version — record the `ae --version` used so a hash
+  can be verified from source.
 - Distribute the native binaries as discrete files (the `native/` layout)
   rather than embedding them inside the Rust artifact: discrete files stay
   visible to SCA/SBOM tooling and are individually signable.

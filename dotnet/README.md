@@ -20,12 +20,13 @@ Assert.Equal(VcrOutcome.Ok, vcr.LastKind);   // optional: assert a clean match
 
 ## What this is (and isn't)
 
-Since **2.0**, this is a thin .NET layer over the **Aether VCR** core. All
+Since **2.0**, this is a thin .NET layer over the **servirtium-vcr** core. All
 record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static bypass, gzip/chunked
-handling — lives in and is maintained as the Aether standard library
-(`std/http/server/vcr`). This package P/Invokes a precompiled native build
-of that core; it does **not** reimplement Servirtium in C#.
+handling — lives in this repo as a pure-Aether module (`core/vcr.ae`, with the
+C-ABI seam in `core/embed.ae`), built on Aether stdlib primitives and compiled
+to `core/native/libservirtium_vcr.so`. This package P/Invokes that precompiled
+native build; it does **not** reimplement Servirtium in C#.
 
 > **Breaking from 1.x:** the `Servirtium.Core` / `Servirtium.AspNetCore`
 > packages and their APIs are gone, with no shim. The new API is below /
@@ -51,24 +52,23 @@ osx-arm64 (more in [docs/building.md](docs/building.md)).
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix
   and what's covered by tests.
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering
-  works (managed → P/Invoke → `embed.ae` → Aether VCR), the native loader,
-  and the v1 one-server-per-process model.
+  works (managed → P/Invoke → `core/embed.ae` → `core/vcr.ae`), the native
+  loader, and the one-server-per-port (handle-based) concurrency model.
 - **[docs/building.md](docs/building.md)** — building the native library,
   the RID matrix, CI, and releasing to NuGet.
 - **[MIGRATION.md](MIGRATION.md)** — the 1.x → 2.0 rewrite story.
 
-## One hard rule: run tests serially
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its tape /
-cursor / mutation state is process-global). Disable test-framework
-parallelization — for xUnit:
+Each `.Start()` returns a `VcrServer` that owns its own native handle, and
+all tape/cursor/mutation/diagnostic state is keyed by that handle. You can
+run **N independent VCR servers concurrently in one process** — different
+ports, different tapes, independent cursors — so test classes need not be
+serialized. `core_tests/.concurrent.ae` proves two playback servers
+replaying their own tapes side by side in a single process.
 
-```csharp
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
-```
-
-See [docs/architecture.md](docs/architecture.md#one-server-per-process) for
-why, and `Servirtium.Vcr.Tests/` for a worked example.
+See [docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port)
+for details, and `Servirtium.Vcr.Tests/` for a worked example.
 
 ## Building from source
 
@@ -81,7 +81,7 @@ already present):
 ./bootstrap.sh
 ```
 
-Already have `ae` (≥ 0.183) and the .NET SDK on PATH? Drive the two steps
+Already have `ae` (≥ 0.227.0) and the .NET SDK on PATH? Drive the two steps
 directly:
 
 ```sh

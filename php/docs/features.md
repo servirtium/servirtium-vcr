@@ -9,6 +9,8 @@ exercised by the PHPUnit suite against the real native library.
 | Record → flush tape | ✅ | `Vcr::record` | ✅ |
 | Custom HTTP verbs | ✅ | (automatic) | — |
 | Redactions | ✅ | `->redact(field, …)` | ✅ |
+| Whole-tape normalize (correlated → `{{name-N}}`) | ✅ | `->normalizeWholeTape(pattern, name)` | — |
+| Whole-tape redact (uncorrelated → constant) | ✅ | `->redactWholeTape(pattern, replacement)` | — |
 | Unredactions | ✅ | `->unredact(field, …)` | — |
 | Header removal | ✅ | `->removeHeader(field, name)` | — |
 | Notes | ✅ | `->note()` / `$server->note()` | — |
@@ -18,18 +20,17 @@ exercised by the PHPUnit suite against the real native library.
 | Format options (indent / emphasize) | ✅ | `->indentCodeBlocks()` / `->emphasizeHttpVerbs()` | — |
 | Diagnostics (last error/kind/index) | ✅ | `lastError`/`lastKind`/`lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | (automatic) | — |
-| Chunked de-chunk on record | ✅ (≥0.183) | (automatic) | — |
+| Chunked de-chunk on record | ✅ | (automatic) | — |
 | Dynamic (OS-assigned) port | ✅ | `->port(0)` → `port()` | ✅ |
 
 ## Not exposed through the C-ABI (same as every binding)
 
 `flush_or_check` (the `.actual`-sibling drift variant) and `load_url`
-(HTTP-fetched tape) exist in the Aether VCR module but aren't surfaced by
-`embed.ae`, so no binding reaches them. Small `embed.ae` additions.
+(HTTP-fetched tape) exist in `core/vcr.ae` but aren't surfaced by
+`core/embed.ae`, so no binding reaches them. Small `core/embed.ae` additions.
 
 ## Known limitations (inherited from the core)
 
-- **One active VCR server per process** (v1) — run PHPUnit serially.
 - Under `strictHeaders()`, PHP HTTP clients' default request headers must be
   on the recorded block or dropped via `removeHeader(RequestHeaders, …)`.
 - Binary response bodies rely on the tape's text/base64 path.

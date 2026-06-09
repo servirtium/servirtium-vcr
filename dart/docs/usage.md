@@ -32,8 +32,7 @@ try {
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
-the SUT, and captures it. Chunked responses are de-chunked (native lib built
-with Aether ≥ 0.183).
+the SUT, and captures it. Chunked responses are de-chunked automatically.
 
 ### Drift detection
 
@@ -58,6 +57,29 @@ Vcr.playback(tape)
 
 `VcrField`: `path`, `responseBody`, `requestHeaders`, `requestBody`,
 `responseHeaders`.
+
+### Whole-tape normalization
+
+`.redact()` rewrites one field at a time. The whole-tape pair scans **every
+field of every interaction** so a volatile that surfaces in a response and then
+recurs in a later request path is handled consistently — the payoff is a
+**byte-identical re-record**.
+
+```dart
+Vcr.record(tape, upstream)
+    // Correlated volatiles: every distinct match across the whole tape becomes
+    // a stable {{order-N}} token. The same minted id keeps the same token
+    // wherever it reappears, and round-trips on playback.
+    .normalizeWholeTape(r'order-[0-9a-f]{16}', 'order')
+    // Uncorrelated volatiles: every match collapses to one constant.
+    .redactWholeTape(r'\w{3}, \d\d \w{3} \d{4} [\d:]+ GMT', 'Thu, 01 Jan 1970 00:00:00 GMT')
+    .start();
+```
+
+Use `normalizeWholeTape(pattern, name)` when occurrences are correlated (an id
+minted once and referenced again); use `redactWholeTape(pattern, replacement)`
+when each occurrence is independent (e.g. a `Date` header) and a single fixed
+value suffices.
 
 ## Header removal / strict / static / notes / format
 
@@ -88,9 +110,9 @@ Vcr.record(tape, upstream).indentCodeBlocks().emphasizeHttpVerbs().start();
 `VcrOutcome`: `ok`, `pathOrMethodDiff`, `headerMissing`, `headerValueDiff`,
 `headerUnexpected`, `tapeExhausted`, `bodyDiff`, `recordError`.
 
-## One server per process
+## Concurrency: one server per port
 
-State is process-global in v1 (shared across isolates), so configure/`close()`
-one `VcrServer` at a time and run `dart test` with `concurrency: 1`. `start()`
-resets all process-global state first, so settings from a prior fixture never
-leak forward.
+The ABI is handle-based and one-server-per-port: each `start()` mints its own handle,
+and config, diagnostics, and tape are scoped to it. N `VcrServer`s can be alive
+at once in one process without their cursors or mutations bleeding into each
+other.

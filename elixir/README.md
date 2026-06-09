@@ -14,7 +14,7 @@ directions.
 {:ok, {{_, 200, _}, _headers, body}} =
   :httpc.request(:get, {~c"#{Servirtium.base_url(srv)}/api/v1/countries", []}, [], [])
 
-:ok = Servirtium.last_kind() == :ok && Servirtium.stop(srv)
+:ok = Servirtium.last_kind(srv) == :ok && Servirtium.stop(srv)
 ```
 
 …or, auto-stopping:
@@ -22,7 +22,7 @@ directions.
 ```elixir
 Servirtium.with_playback("tapes/climate_api.md", [port: 0], fn srv ->
   # ... drive the SUT against Servirtium.base_url(srv) ...
-  assert Servirtium.last_kind() == :ok
+  assert Servirtium.last_kind(srv) == :ok
 end)
 ```
 
@@ -31,10 +31,11 @@ end)
 Since **2.0**, this is a thin Elixir layer over the **Aether VCR** core. All
 record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static bypass, gzip/chunked
-handling — lives in and is maintained as the Aether standard library
-(`std/http/server/vcr`). This package drives a precompiled native build of that
-core through a hand-written **C NIF** (`erl_nif`); it does **not** reimplement
-Servirtium in Elixir.
+handling — lives in this repo as a pure-Aether module at `core/vcr.ae` (with
+the C-ABI embedding seam in `core/embed.ae`), built on Aether stdlib
+primitives and compiled to `core/native/libservirtium_vcr.so`. This package
+drives that native build through a hand-written **C NIF** (`erl_nif`); it does
+**not** reimplement Servirtium in Elixir.
 
 > **Breaking from 1.x:** the previous Elixir reimplementation (the Plug/Cowboy
 > proxy server and the markdown recorder/replayer) and its API are gone, with no
@@ -60,20 +61,23 @@ scheduler. See [docs/architecture.md](docs/architecture.md).
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix and
   what's covered by tests.
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering works
-  (Elixir → C NIF → `embed.ae` → Aether VCR), and the v1 one-server-per-process
-  model.
+  (Elixir → C NIF → `core/embed.ae` → `core/vcr.ae`), and the handle-based
+  one-server-per-port model.
 - **[docs/building.md](docs/building.md)** — building the native library + NIF.
 - **[MIGRATION.md](MIGRATION.md)** — the 1.x → 2.0 rewrite story.
 
-## One hard rule: run tests serially
+## Concurrency: one server per port
 
-The Aether VCR is **one active server per process** in v1 (its tape / cursor /
-mutation state is process-global, and the BEAM is one OS process). Never set
-`async: true` on an ExUnit case. The included `test/test_helper.exs` starts
-ExUnit with `max_cases: 1` to enforce this. `Servirtium.playback/2` and
-`Servirtium.record/3` reset all process-global mutation/strict/format state
-first, so settings from a prior fixture never leak forward. See
-[docs/architecture.md](docs/architecture.md#one-server-per-process).
+The Aether VCR is **one server per port** (handle-based): `Servirtium.playback/2`
+and `Servirtium.record/3` each return a `%Servirtium.Server{}` carrying its own
+opaque handle, and N such servers can run concurrently in one BEAM. Each
+server's tape, replay cursor, mutations, static mounts, pending note, and
+diagnostics are scoped to its handle, so two live fixtures never bleed into
+each other's state. See
+[docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port).
+
+The included `test/test_helper.exs` still starts ExUnit with `max_cases: 1`,
+but that is a property of this suite, not a constraint of the engine.
 
 ## Building from source
 
@@ -86,7 +90,7 @@ present):
 ./bootstrap.sh        # extra args pass through to `mix test`
 ```
 
-Already have `ae` (≥ 0.183) and Elixir on PATH? Drive the steps directly:
+Already have `ae` (≥ 0.227.0, for `std.regex`) and Elixir on PATH? Drive the steps directly:
 
 ```sh
 ./build-native.sh     # builds native/libservirtium_vcr.so (needs `ae`)

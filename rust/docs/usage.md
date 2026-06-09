@@ -72,6 +72,36 @@ Vcr::record(tape, upstream)
 `Field` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`, or
 `ResponseHeaders`.
 
+### Whole-tape normalization (correlated ids)
+
+`redact` works per field; `normalize_whole_tape` scans the **whole tape** (all
+fields and interactions, in first-appearance order) and tokenizes every
+distinct regex match to a stable `{{name-N}}` placeholder. Use it for a
+correlated id that the server mints in one response and the SUT echoes in a
+later request path — the same value gets the same token everywhere, so the
+link survives, and the token round-trips back to the captured value on
+playback:
+
+```rust
+Vcr::record(tape, upstream)
+    .normalize_whole_tape(r"sess-[0-9a-f]{16}", "session")
+    .start()?;
+// every distinct sess-… match → {{session-1}}, {{session-2}}, …
+```
+
+For **uncorrelated** volatiles — a `Date` header, a request timestamp — where
+each match should just collapse to one fixed string, use `redact_whole_tape`:
+
+```rust
+Vcr::record(tape, upstream)
+    .redact_whole_tape(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", "2024-01-01T00:00:00Z")
+    .start()?;
+```
+
+Both run at flush time, so the live test still sees real bytes. Stripping
+volatiles this way makes a re-record **byte-identical**, so `fail_if_changed`
+stays quiet on an unchanged upstream.
+
 ## Replaying a scrubbed tape (unredaction)
 
 When a committed tape holds a placeholder but the live SUT sends the real
@@ -173,12 +203,12 @@ load cleanly.
 `Ok`, `PathOrMethodDiff`, `HeaderMissing`, `HeaderValueDiff`,
 `HeaderUnexpected`, `TapeExhausted`, `BodyDiff`, `RecordError`.
 
-## Gotcha: one server per process
+## Concurrency: one server per port
 
-State is process-global in v1, so only one `VcrServer` can be active at a
-time. This crate enforces it with a process-global lock acquired in
-`start()` and released on drop, so parallel `cargo test` is safe — fixtures
-serialize automatically (see
-[architecture.md](architecture.md#one-server-per-process)). `start()` also
-resets all process-global mutation/strict/format state first, so settings
-from a prior fixture never leak forward.
+The core runs **one server per port**: each `VcrServer` owns its own handle with its
+own tape, cursor, mutations, and diagnostics, so N servers can run at once in
+one process without interfering (see
+[architecture.md](architecture.md#concurrency-one-server-per-port)). The
+crate still takes one process-wide lock for each `VcrServer`'s lifetime as
+belt-and-braces, so a plain parallel `cargo test` is safe with no
+`--test-threads=1` — fixtures don't trample each other regardless.

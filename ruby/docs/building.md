@@ -8,28 +8,25 @@ and is loaded automatically by `Servirtium::Native.open_library`.
 
 ## Building the native library
 
-The engine is built from the Aether VCR embedding module
-(`std/http/server/vcr/embed.ae`) with the Aether toolchain (`ae` on PATH):
+The engine is the in-repo pure-Aether module `core/vcr.ae` plus the
+`core/embed.ae` C-ABI, built once by the repo's **[aeb](https://github.com/aether-lang-org/aeb)**
+`core/` node. Building any binding deps that node, so the simplest way to get
+the native lib *and* run the Ruby tests is:
 
 ```sh
-./build-native.sh
+aeb ruby/.tests.ae
 ```
 
-This writes `lib/servirtium/native/libservirtium_vcr.{so,dylib}` for the host
-platform. Under the hood:
+`ruby/.tests.ae` deps `core/.build.ae` (which builds the engine once via
+`ae build --emit=lib` to `core/native/libservirtium_vcr.so`), then runs `rspec`
+against it with `SERVIRTIUM_VCR_LIB` pointed at that artifact. Bare `aeb` (no
+target) builds the whole monorepo.
 
-```sh
-ae build --emit=lib --with=fs,net \
-  "$AETHER_REPO/std/http/server/vcr/embed.ae" \
-  -o lib/servirtium/native/libservirtium_vcr.so
-```
+Requires the Aether toolchain (`ae`) **≥ 0.227.0** (the engine uses `std.regex`)
+and `aeb`, both on PATH. See the repo-root `README.md` and `./bootstrap.sh` for
+installing them.
 
-Point `AETHER_REPO` at an Aether checkout if the embed module isn't installed
-under `ae`'s share dir. Requires Aether ≥ 0.183.0 (for chunked-body
-de-chunking in record mode).
-
-Cross-platform builds happen in CI (one runner per OS/arch). `build-native.sh`
-only ever produces the host's library; Windows builds run in CI.
+Cross-platform builds happen in CI (one runner per OS/arch).
 
 ## Pointing at a fresh build during development
 
@@ -42,10 +39,14 @@ SERVIRTIUM_VCR_LIB=/abs/path/libservirtium_vcr.so bundle exec rspec
 
 ## Running the tests
 
+`aeb ruby/.tests.ae` runs the suite against a freshly built engine. To iterate
+on the Ruby layer alone (engine already built), run rspec directly with
+`SERVIRTIUM_VCR_LIB` pointed at the artifact:
+
 ```sh
-bundle exec rspec     # or: rspec -Ilib
+SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so bundle exec rspec
 bundle exec rubocop
 ```
 
-Keep the suite sequential (RSpec's default) — see
-[architecture.md](architecture.md#one-server-per-process).
+The engine is one-server-per-port, so the suite has no serial-execution constraint of
+its own — see [architecture.md](architecture.md#concurrency-one-server-per-port).
