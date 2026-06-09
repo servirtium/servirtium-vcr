@@ -10,8 +10,8 @@ import java.lang.invoke.MethodHandle;
 
 /**
  * Raw FFM (java.lang.foreign) downcall surface over the native VCR library.
- * 1:1 with the {@code aether_vcr_embed_*} C-ABI exported by
- * {@code std/http/server/vcr/embed.ae}.
+ * 1:1 with the {@code aether_vcr_embed_*} C-ABI exported by the in-repo
+ * {@code core/embed.ae} (built on the {@code core/vcr.ae} engine).
  *
  * <p>Per-listener contract (matching the Aether side): N independent VCR
  * servers can run concurrently in one process, each keyed by its own handle;

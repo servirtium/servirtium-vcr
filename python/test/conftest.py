@@ -1,7 +1,8 @@
 """Shared pytest fixtures and helpers.
 
-The Aether VCR is per-listener: N independent servers can run concurrently
-in one process, each keyed by its own handle (see test_concurrent.py).
+The VCR core is one-server-per-port: N independent servers can run
+concurrently, one per port, each keyed by its own handle (see
+test_concurrent.py).
 """
 
 import http.client

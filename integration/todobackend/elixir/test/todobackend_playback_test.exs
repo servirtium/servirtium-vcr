@@ -8,7 +8,7 @@ defmodule Servirtium.TodobackendPlaybackTest do
   This is the offline test wired into aeb (.elixir_playback.ae);
   TodoBackend.Record regenerates the tape.
 
-  NOT async — the VCR is one server per process (state is process-global).
+  NOT async — the VCR is one server per port (it binds a fixed port).
   """
   use ExUnit.Case, async: false
 

@@ -6,7 +6,7 @@ require 'rbconfig'
 
 module Servirtium
   # Raw Fiddle binding over the native VCR library (the
-  # +aether_vcr_embed_*+ C-ABI exported by +std/http/server/vcr/embed.ae+).
+  # +aether_vcr_embed_*+ C-ABI exported by +core/embed.ae+).
   # 1:1 with the C symbols; everything idiomatic lives a layer up in
   # {Servirtium::Vcr}/{Servirtium::Server}.
   #

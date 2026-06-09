@@ -1,6 +1,7 @@
 using Xunit;
 
-// The Aether VCR is "one active server per process" in v1 (its tape /
-// cursor / mutation state is process-global). Concurrent VCR servers in one
-// process stomp each other, so test classes must not run in parallel.
+// The VCR core is handle-based: N servers can run concurrently, one server
+// per port, each keyed by its own handle. Test classes are still kept
+// serial here for deterministic ordering and to avoid contention over the
+// fixtures' shared resources.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]

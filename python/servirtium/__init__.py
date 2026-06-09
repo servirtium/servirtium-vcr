@@ -1,9 +1,10 @@
 """Servirtium for Python — record/replay HTTP service tests in the Servirtium
 markdown tape format.
 
-Since 2.0 this is a thin Python (ctypes) wrapper over the Aether VCR core; all
-record/replay machinery lives in and is maintained as the Aether standard
-library (``std/http/server/vcr``). See README.md / docs/.
+Since 2.0 this is a thin Python (ctypes) wrapper over the in-repo VCR core; all
+record/replay machinery lives in and is maintained as the in-repo
+``core/vcr.ae`` engine (built on Aether stdlib primitives). See README.md /
+docs/.
 
     import servirtium
 

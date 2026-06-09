@@ -10,8 +10,10 @@ import (
 	servirtium "github.com/servirtium/servirtium-go"
 )
 
-// IMPORTANT: the Aether VCR is one active server per process (state is
-// process-global). Every test here runs serially — do NOT call t.Parallel().
+// The Aether VCR is handle-based: one server per port, each keyed by its own
+// handle (its own tape/cursor/state), so independent servers never collide.
+// These tests use Port(0) and, like all Go package tests, run serially by
+// default.
 
 func tapePath(name string) string { return filepath.Join("tapes", name) }
 

@@ -19,8 +19,8 @@ RSpec.configure do |config|
     c.syntax = :expect
   end
 
-  # The Aether VCR is one active server per process (its tape / cursor /
-  # mutation state is process-global). RSpec runs examples sequentially by
-  # default; keep it that way so they never stomp each other's state. Do NOT
-  # enable a parallel test runner against this suite.
+  # The VCR is handle-based: N independent servers can run concurrently, one
+  # per port, each keyed by its own handle. These specs bind dynamic ports
+  # (port 0), so they don't contend; RSpec runs examples sequentially by
+  # default and that's fine to leave as-is.
 end

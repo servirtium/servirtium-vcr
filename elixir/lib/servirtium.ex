@@ -23,18 +23,18 @@ defmodule Servirtium do
 
   All record/replay machinery — markdown parse/emit, the HTTP server, request
   matching, redactions, notes, drift detection, static bypass, gzip/chunked
-  handling — lives in and is maintained as the Aether standard library
-  (`std/http/server/vcr`). This package drives a precompiled native build of
-  that core through a C NIF; it does **not** reimplement Servirtium in Elixir.
+  handling — lives in the in-repo `core/vcr.ae` engine (built on Aether stdlib
+  primitives, with the C-ABI embedding seam in `core/embed.ae`). This package
+  drives a precompiled native build of that core through a C NIF; it does
+  **not** reimplement Servirtium in Elixir.
 
-  ## One server per process — run tests SERIALLY
+  ## One server per port
 
-  The Aether VCR is one active server per process in v1: its tape, replay
-  cursor, mutation, static-mount, and diagnostic state are process-global (the
-  BEAM is one OS process). You cannot run two servers simultaneously. Do **not**
-  set `async: true` on ExUnit cases. `playback/2` and `record/3` reset all
-  process-global mutation/strict/format state first, so a setting from a prior
-  fixture never leaks forward.
+  The ABI is handle-based: N independent VCR servers can run concurrently in one
+  process, each keyed by its own handle, ONE PER PORT, with its own tape, replay
+  cursor, mutation, static-mount, and diagnostic state. `playback/2` and
+  `record/3` reset that server's mutation/strict/format state on open, so a
+  setting from a prior fixture on the same port never leaks forward.
 
   ## Options (`opts` keyword list)
 
@@ -72,7 +72,7 @@ defmodule Servirtium do
 
   alias Servirtium.{Native, Server}
 
-  # FIELD_* constants (mirror std/http/server/vcr/module.ae).
+  # FIELD_* constants (mirror core/vcr.ae).
   @fields %{
     path: 1,
     response_body: 2,

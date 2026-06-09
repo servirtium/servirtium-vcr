@@ -2,7 +2,7 @@
 
 module Servirtium
   # Field selector for redactions / unredactions / header removals. Values
-  # mirror the FIELD_* constants in +std/http/server/vcr/module.ae+.
+  # mirror the FIELD_* constants in +core/vcr.ae+.
   module Field
     PATH             = 1
     RESPONSE_BODY    = 2

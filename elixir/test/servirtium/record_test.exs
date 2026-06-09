@@ -5,7 +5,7 @@ defmodule Servirtium.RecordTest do
   replay the same tape offline. Also covers redaction and notes asserted
   against the written tape content.
 
-  NOT async — one VCR server per process.
+  NOT async — one VCR server per port.
   """
   use ExUnit.Case, async: false
 

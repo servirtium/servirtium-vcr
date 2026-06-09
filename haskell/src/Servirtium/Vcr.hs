@@ -14,19 +14,20 @@
 -- >   k <- lastKind vcr
 -- >   k `shouldBe` Ok
 --
--- This is a __thin Haskell FFI layer over the Aether VCR core__. All
+-- This is a __thin Haskell FFI layer over the VCR core__. All
 -- record\/replay machinery — markdown parse\/emit, the HTTP server, request
 -- matching, redactions, notes, drift detection, static bypass, gzip\/chunked
--- handling — lives in and is maintained as the Aether standard library
--- (@std\/http\/server\/vcr@). This package links a precompiled native build
--- of that core (@libservirtium_vcr.so@); it does __not__ reimplement
--- Servirtium in Haskell.
+-- handling — lives in and is maintained as the in-repo @core\/vcr.ae@ engine
+-- (built on Aether stdlib primitives). This package links a precompiled
+-- native build of that core (@libservirtium_vcr.so@); it does __not__
+-- reimplement Servirtium in Haskell.
 --
--- == One server per process
+-- == One server per port
 --
--- The Aether VCR is __per-listener__: N independent servers can run
--- concurrently in one process, each keyed by its own handle. A fixture's
--- config \/ diagnostics \/ tape are scoped to its handle. Lifecycle is
+-- The VCR is __per-listener__: N independent servers can run
+-- concurrently in one process, one server per port, each keyed by its own
+-- handle. A fixture's config \/ diagnostics \/ tape are scoped to its handle.
+-- Lifecycle is
 -- open -> configure(handle) -> start. See @docs\/architecture.md@.
 module Servirtium.Vcr
   ( -- * Building a fixture

@@ -9,7 +9,7 @@ namespace Servirtium.Vcr.Tests;
 
 /// <summary>
 /// Record-mode breadth: redaction, header removal, notes, drift detection,
-/// non-GET verbs, and (critically) that process-global mutation state does
+/// non-GET verbs, and (critically) that per-handle mutation state does
 /// not leak from one fixture to the next.
 /// </summary>
 public class RecordMutationTests : IDisposable

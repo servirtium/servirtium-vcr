@@ -1,6 +1,6 @@
 //! Raw FFI surface over the native VCR library, loaded at runtime via
 //! `libloading`. 1:1 with the `aether_vcr_embed_*` C-ABI exported by
-//! `std/http/server/vcr/embed.ae`.
+//! `core/embed.ae`.
 //!
 //! Per-listener contract (matching the Aether side): N independent VCR
 //! servers can run concurrently in one process, each keyed by its own
@@ -76,8 +76,8 @@ pub(crate) struct Native {
     pub free_string: unsafe extern "C" fn(*mut c_char),
 }
 
-// The native VCR state is process-global and the wrapper serializes all
-// access through a single Mutex (see lib.rs), so sharing the table across
+// The function table is immutable once resolved, and the wrapper serializes
+// all access through a single Mutex (see lib.rs), so sharing the table across
 // threads is sound.
 unsafe impl Send for Native {}
 unsafe impl Sync for Native {}

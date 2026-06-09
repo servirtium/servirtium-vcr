@@ -1,7 +1,8 @@
 "
 I am the raw UnifiedFFI (uFFI) surface over the native VCR engine
 (libservirtium_vcr.so / .dylib), which exports the `aether_vcr_embed_*`
-C-ABI built from Aether's `std/http/server/vcr/embed.ae`.
+C-ABI built from the in-repo `core/embed.ae` (the embedding layer over
+`core/vcr.ae`, built on Aether stdlib primitives).
 
 I am a singleton FFILibrary: call `ServirtiumLibrary uniqueInstance` (uFFI
 caches one instance per library). Every method here is 1:1 with a C symbol.

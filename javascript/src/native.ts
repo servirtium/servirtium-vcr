@@ -1,15 +1,15 @@
 // Centralized koffi binding to the native VCR library.
 //
-// 1:1 with the `aether_vcr_embed_*` C-ABI exported by
-// `std/http/server/vcr/embed.ae` (Aether). The opaque server handle is a
-// `void*` pointer; NULL means failure. Every `char*` returned by the ABI is
-// caller-owned and NUL-terminated — `takeString` decodes it into a JS string
-// and then frees it via `aether_vcr_embed_free_string`, per the ABI's
-// ownership rule.
+// 1:1 with the `aether_vcr_embed_*` C-ABI exported by the in-repo
+// `core/embed.ae` (the engine itself is `core/vcr.ae`). The opaque server
+// handle is a `void*` pointer; NULL means failure. Every `char*` returned by
+// the ABI is caller-owned and NUL-terminated — `takeString` decodes it into a
+// JS string and then frees it via `aether_vcr_embed_free_string`, per the
+// ABI's ownership rule.
 //
 // Per-listener contract (matching the Aether side): N independent VCR servers
-// can run concurrently in one process, each keyed by its own handle; every
-// config / diagnostic / lifecycle call takes the handle. Lifecycle is
+// can run concurrently, one server per port, each keyed by its own handle;
+// every config / diagnostic / lifecycle call takes the handle. Lifecycle is
 // open -> configure(handle) -> start.
 
 import * as fs from 'fs'

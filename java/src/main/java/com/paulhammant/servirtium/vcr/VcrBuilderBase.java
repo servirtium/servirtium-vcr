@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Shared bind options and process-global-state handling for both builders.
+ * Shared bind options and per-handle config handling for both builders.
  *
  * @param <S> the concrete builder type, for fluent self-returns.
  */

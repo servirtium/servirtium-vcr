@@ -8,8 +8,8 @@ import (
 )
 
 // Record-mode breadth: redaction, header removal, notes, drift detection,
-// and (critically) that process-global mutation state does not leak from one
-// fixture to the next.
+// and (critically) that per-handle mutation state does not leak from one
+// fixture to the next (each server owns its own handle/state).
 
 func TestRecordRedactsResponseBody(t *testing.T) {
 	up := newFakeUpstream()

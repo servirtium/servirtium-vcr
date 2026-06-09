@@ -1,5 +1,5 @@
 """Record-mode breadth: redaction, header removal, notes, drift detection,
-and (critically) that process-global mutation state does not leak from one
+and (critically) that each handle's mutation state does not leak from one
 fixture to the next.
 """
 

@@ -1,8 +1,8 @@
 defmodule Servirtium.Native do
   @moduledoc """
   Raw NIF surface over the Aether VCR core's C-ABI (the `aether_vcr_embed_*`
-  symbols from `std/http/server/vcr/embed.ae`, linked from
-  `native/libservirtium_vcr.so` via the NIF in `c_src/servirtium_nif.c`).
+  symbols from `core/embed.ae`, linked from
+  `core/native/libservirtium_vcr.so` via the NIF in `c_src/servirtium_nif.c`).
 
   This is a 1:1 mapping, not the public API — use `Servirtium` for that.
 

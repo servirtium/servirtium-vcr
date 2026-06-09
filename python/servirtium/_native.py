@@ -1,12 +1,14 @@
 """Raw ctypes surface over the native VCR library.
 
-1:1 with the ``aether_vcr_embed_*`` C-ABI exported by
-``std/http/server/vcr/embed.ae`` (Aether). This module owns library
-location/loading, prototype declarations, and the string-ownership helper.
+1:1 with the ``aether_vcr_embed_*`` C-ABI exported by the in-repo
+``core/embed.ae`` (built on the ``core/vcr.ae`` engine). This module owns
+library location/loading, prototype declarations, and the string-ownership
+helper.
 
-v1 contract (matching the Aether side): ONE active VCR server per process —
-the tape / cursor / mutation state is process-global, so the diagnostics,
-tape-length, and mutation calls take no handle.
+Handle-based contract (matching the engine side): N independent VCR servers
+can run concurrently, ONE PER PORT, each keyed by its own handle — so the
+lifecycle, introspection, diagnostics, and mutation calls all take that handle
+to scope their tape / cursor / state.
 
 Returned ``char*`` values are caller-owned and NUL-terminated; copy them to a
 Python ``str`` and free them with ``aether_vcr_embed_free_string`` (see

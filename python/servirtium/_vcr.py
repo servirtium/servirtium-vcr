@@ -1,4 +1,5 @@
-"""Idiomatic Python record/replay fixtures over the Aether VCR core.
+"""Idiomatic Python record/replay fixtures over the in-repo VCR core
+(``core/vcr.ae``).
 
 The system-under-test talks plain HTTP to :attr:`VcrServer.base_url`; tape
 paths, mode, mutations, and diagnostics live in test setup/teardown.
@@ -9,8 +10,8 @@ paths, mode, mutations, and diagnostics live in test setup/teardown.
         # point the SUT at vcr.base_url, drive it ...
         assert vcr.last_kind is servirtium.Outcome.OK
 
-Per-listener contract (from the Aether side): N independent VCR servers can
-run concurrently in one process, each keyed by its own handle. A fixture's
+One-server-per-port contract (from the engine side): N independent VCR servers
+can run concurrently, one per port, each keyed by its own handle. A fixture's
 config / diagnostics / tape are scoped to its handle, so two
 ``servirtium.playback(...).start()`` servers can be alive at once without
 their cursors or mutations bleeding into each other.
@@ -26,7 +27,7 @@ from . import _native as N
 class Field(enum.IntEnum):
     """Field selector for redactions / unredactions / header removals.
 
-    Values mirror the FIELD_* constants in std/http/server/vcr/module.ae.
+    Values mirror the FIELD_* constants in core/vcr.ae.
     """
 
     PATH = 1

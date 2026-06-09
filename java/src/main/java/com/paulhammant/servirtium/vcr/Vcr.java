@@ -1,9 +1,10 @@
 package com.paulhammant.servirtium.vcr;
 
 /**
- * Entry point for record/replay fixtures backed by the Aether VCR core
- * (the {@code aether_vcr_embed_*} C-ABI from {@code std/http/server/vcr/embed.ae},
- * reached via Java FFM / Project Panama — {@link java.lang.foreign}). The
+ * Entry point for record/replay fixtures backed by the in-repo VCR core
+ * (the {@code aether_vcr_embed_*} C-ABI from {@code core/embed.ae}, built on
+ * the {@code core/vcr.ae} engine, reached via Java FFM / Project Panama —
+ * {@link java.lang.foreign}). The
  * system-under-test talks plain HTTP to {@link VcrServer#baseUrl()}; tape paths,
  * mode, mutations, and diagnostics live in test setup/teardown.
  *
@@ -17,11 +18,11 @@ package com.paulhammant.servirtium.vcr;
  * }
  * }</pre>
  *
- * <p>v1 contract (from the Aether side): ONE active VCR server per process.
- * The mutation/diagnostic state is process-global, so {@code start()} resets it
- * to a clean slate before applying this fixture's config — a redaction/note/strict
- * setting from a previous test never leaks forward. Run tests serially (one
- * server per process at a time).
+ * <p>Handle-based contract (matching the engine): N independent VCR servers can
+ * run concurrently in one process — one server per port — each keyed by its own
+ * handle with its own tape, cursor, and mutation/diagnostic state. Config applied
+ * via the builder lands on that handle alone, so a redaction/note/strict setting
+ * on one server never leaks into another.
  */
 public final class Vcr {
 

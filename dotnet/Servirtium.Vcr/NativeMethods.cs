@@ -5,7 +5,7 @@ namespace Servirtium.Vcr;
 
 /// <summary>
 /// Field selector for redactions / unredactions / header removals.
-/// Values mirror the FIELD_* constants in std/http/server/vcr/module.ae.
+/// Values mirror the FIELD_* constants in core/vcr.ae.
 /// </summary>
 public enum VcrField
 {
@@ -18,7 +18,7 @@ public enum VcrField
 
 /// <summary>
 /// Per-dispatch outcome. Values mirror the VCR_KIND_* constants in
-/// aether_vcr.c / module.ae. Drain after a request to assert what the
+/// core/vcr.ae. Drain after a request to assert what the
 /// dispatcher decided.
 /// </summary>
 public enum VcrOutcome
@@ -35,12 +35,15 @@ public enum VcrOutcome
 
 /// <summary>
 /// Raw P/Invoke surface over the native VCR library. 1:1 with the
-/// <c>aether_vcr_embed_*</c> C-ABI exported by
-/// <c>std/http/server/vcr/embed.ae</c> (Aether v0.182.0).
+/// <c>aether_vcr_embed_*</c> C-ABI exported by <c>core/embed.ae</c>
+/// (the embedding layer over the in-repo <c>core/vcr.ae</c> engine,
+/// built on Aether stdlib primitives), compiled to
+/// <c>core/native/libservirtium_vcr.so</c>.
 ///
-/// v1 contract (matching the Aether side): ONE active VCR server per
-/// process — the tape/cursor/mutation state is process-global, so the
-/// diagnostics, tape-length, and mutation calls take no handle.
+/// Handle-based: every call takes the handle returned by an
+/// <c>open_*</c>, so N independent VCR servers can run concurrently —
+/// one server per port, each keyed by its own handle. Tape, cursor, and
+/// mutation state are owned by that handle, not process-global.
 /// Returned <c>char*</c> values are caller-owned and NUL-terminated;
 /// free them with <see cref="FreeString"/> (see <see cref="TakeString"/>).
 /// </summary>

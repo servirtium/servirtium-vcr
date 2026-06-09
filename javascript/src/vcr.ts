@@ -1,5 +1,6 @@
-// Idiomatic TypeScript API over the Aether VCR core (the
-// `aether_vcr_embed_*` C-ABI from `std/http/server/vcr/embed.ae`).
+// Idiomatic TypeScript API over the in-repo core/vcr.ae engine (built on
+// Aether stdlib primitives), via the `aether_vcr_embed_*` C-ABI from
+// `core/embed.ae`.
 //
 // The system-under-test talks plain HTTP to `server.baseUrl`; tape paths,
 // mode, mutations, and diagnostics live in test setup/teardown.
@@ -10,16 +11,16 @@
 //   vcr.close()
 //
 // Per-listener contract (from the Aether side): N independent VCR servers can
-// run concurrently in one process, each keyed by its own handle. A fixture's
-// config / diagnostics / tape are scoped to its handle, so two `.start()`
-// servers can be alive at once without bleeding into each other. Lifecycle is
-// open -> configure(handle) -> start.
+// run concurrently, one server per port, each keyed by its own handle. A
+// fixture's config / diagnostics / tape are scoped to its handle, so two
+// `.start()` servers can be alive at once without bleeding into each other.
+// Lifecycle is open -> configure(handle) -> start.
 
 import * as N from './native'
 
 /**
  * Field selector for redactions / unredactions / header removals. Values
- * mirror the FIELD_* constants in `std/http/server/vcr/module.ae`.
+ * mirror the FIELD_* constants in `core/vcr.ae`.
  */
 export enum VcrField {
   Path = 1,

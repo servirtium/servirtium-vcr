@@ -17,20 +17,22 @@
 //! ```
 //!
 //! Since **2.0** this is a thin Rust layer over the **Aether VCR** core. All
-//! record/replay machinery lives in and is maintained as the Aether standard
-//! library (`std/http/server/vcr`); this crate dlopens a precompiled native
-//! build of that core and presents an idiomatic fixture. It does **not**
-//! reimplement Servirtium in Rust.
+//! record/replay machinery lives in the in-repo `core/vcr.ae` engine (built on
+//! Aether stdlib primitives), exposed over a C-ABI by `core/embed.ae`
+//! (`aether_vcr_embed_*`); this crate dlopens a precompiled native build of
+//! that core and presents an idiomatic fixture. It does **not** reimplement
+//! Servirtium in Rust.
 //!
-//! # One server per process
+//! # One server per port
 //!
-//! The Aether VCR is **one active server per process** in v1 (its tape /
-//! cursor / mutation state is process-global). `cargo test` runs tests in
-//! parallel threads in one process, which would corrupt that state, so this
-//! crate serializes every fixture through a process-global lock acquired in
-//! [`start`](PlaybackBuilder::start) and held by the live [`VcrServer`].
-//! Tests therefore run safely under a plain `cargo test` with no special
-//! flags — they just don't overlap. See `docs/architecture.md`.
+//! The Aether VCR is handle-based: N independent servers can run concurrently,
+//! one per port, each keyed by its own handle with its own tape / cursor /
+//! mutation state. As a belt-and-braces simplification this crate still
+//! serializes every fixture through a process-wide lock acquired in
+//! [`start`](PlaybackBuilder::start) and held by the live [`VcrServer`] — its
+//! own choice, not an engine constraint. Tests therefore run safely under a
+//! plain `cargo test` with no special flags — they just don't overlap. See
+//! `docs/architecture.md`.
 //!
 //! [Servirtium]: https://servirtium.dev
 
@@ -42,7 +44,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use native::{cstr, native, take_string, Handle, Native};
 
 /// Field selector for redactions / unredactions / header removals. Values
-/// mirror the `FIELD_*` constants in `std/http/server/vcr`.
+/// mirror the `FIELD_*` constants in `core/vcr.ae`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum Field {
@@ -110,7 +112,9 @@ impl std::fmt::Display for VcrError {
 
 impl std::error::Error for VcrError {}
 
-/// The process-global lock enforcing one-active-server-per-process. A live
+/// The wrapper's process-wide lock that serializes fixtures to one at a time
+/// (a belt-and-braces simplification, not an engine constraint — the
+/// handle-based engine supports one server per port concurrently). A live
 /// [`VcrServer`] holds this guard for its whole lifetime, so a second
 /// `start()` blocks until the first server is dropped.
 fn server_lock() -> &'static Mutex<()> {
@@ -420,9 +424,9 @@ impl RecordBuilder {
         self
     }
 
-    /// Reset process-global state, apply this fixture's config, and start the
-    /// record server. Acquires the one-server-per-process lock, held until
-    /// the returned [`VcrServer`] is dropped (which also flushes the tape).
+    /// Open a fresh record handle, apply this fixture's config, and start the
+    /// record server. Acquires the wrapper's process-wide lock, held until the
+    /// returned [`VcrServer`] is dropped (which also flushes the tape).
     pub fn start(self) -> Result<VcrServer, VcrError> {
         let n = native().map_err(VcrError::new)?;
         let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -525,7 +529,7 @@ enum Mode {
 /// on `Drop` (which can only panic on error).
 pub struct VcrServer {
     n: &'static Native,
-    // Holds the one-server-per-process lock for this server's lifetime.
+    // Holds the wrapper's process-wide serialization lock for this server's lifetime.
     _guard: MutexGuard<'static, ()>,
     handle: Handle,
     host: String,

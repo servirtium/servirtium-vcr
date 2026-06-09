@@ -1,14 +1,14 @@
 /// Raw `dart:ffi` surface over the native VCR library.
 ///
-/// 1:1 with the `aether_vcr_embed_*` C-ABI exported by
-/// `std/http/server/vcr/embed.ae` (Aether). This file owns library
-/// location/loading, the typedef/lookup declarations, and the
+/// 1:1 with the `aether_vcr_embed_*` C-ABI exported by the in-repo
+/// `core/embed.ae` engine (built on Aether stdlib primitives). This file owns
+/// library location/loading, the typedef/lookup declarations, and the
 /// string-ownership helpers.
 ///
-/// Per-listener contract (matching the Aether side): N independent VCR
-/// servers can run concurrently in one process, each keyed by its own handle;
-/// every config / diagnostic / lifecycle call takes the handle. Lifecycle is
-/// open -> configure(handle) -> start.
+/// Per-listener contract (matching the `core/vcr.ae` engine): N independent VCR
+/// servers can run concurrently, one server per port, each keyed by its own
+/// handle; every config / diagnostic / lifecycle call takes the handle.
+/// Lifecycle is open -> configure(handle) -> start.
 ///
 /// Returned `char*` values are caller-owned and NUL-terminated; copy them to a
 /// Dart [String] and free them with `aether_vcr_embed_free_string` (see

@@ -256,8 +256,9 @@ module Servirtium
     end
   end
 
-  # Entry point for record/replay fixtures backed by the Aether VCR core (the
-  # +aether_vcr_embed_*+ C-ABI from +std/http/server/vcr/embed.ae+). The
+  # Entry point for record/replay fixtures backed by the in-repo core/vcr.ae
+  # engine (built on Aether stdlib primitives), via the +aether_vcr_embed_*+
+  # C-ABI from +core/embed.ae+. The
   # system-under-test talks plain HTTP to {Server#base_url}; tape paths, mode,
   # mutations, and diagnostics live in test setup/teardown.
   #

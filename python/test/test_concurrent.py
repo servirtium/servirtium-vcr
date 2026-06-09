@@ -1,6 +1,6 @@
-"""Per-listener proof through the Python binding: TWO playback VCR servers
-alive at once in one process, each replaying its OWN tape on its OWN port,
-with independent diagnostics (no cross-bleed)."""
+"""One-server-per-port proof through the Python binding: TWO playback VCR
+servers alive at once, each replaying its OWN tape on its OWN port, with
+independent diagnostics (no cross-bleed)."""
 
 import servirtium
 from conftest import http_get, tape

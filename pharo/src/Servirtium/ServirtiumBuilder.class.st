@@ -1,12 +1,12 @@
 "
-Shared bind options + process-global state reset for both the playback and
+Shared bind options + per-handle config application for both the playback and
 record builders.
 
-v1 contract (from the Aether side): ONE active VCR server per process. The
-mutation / diagnostic state is process-global, so `start` resets it to a
-clean slate before applying this fixture's config — a redaction / note /
-strict setting from a previous test never leaks forward. Run tests serially
-(one server per process / image at a time).
+The native ABI is handle-based: `start` opens a fresh server handle and
+applies this fixture's config to that handle, so the mutation / diagnostic
+state is scoped to the handle — a redaction / note / strict setting from
+another fixture never leaks in. N independent VCR servers can run
+concurrently, one server per port, each keyed by its own handle.
 "
 Class {
 	#name : 'ServirtiumBuilder',

@@ -19,8 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * Record-mode breadth: redaction, header removal, notes, drift detection,
- * non-GET verbs, and (critically) that process-global mutation state does not
- * leak from one fixture to the next.
+ * non-GET verbs, and (critically) that a fixture's per-handle mutation state does
+ * not leak from one fixture to the next.
  */
 class RecordMutationTest {
 

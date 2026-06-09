@@ -11,7 +11,7 @@ use FFI\CData;
  * Raw PHP-FFI surface over the native VCR library.
  *
  * 1:1 with the `aether_vcr_embed_*` C-ABI exported by
- * `std/http/server/vcr/embed.ae` (Aether). This class owns library
+ * `core/embed.ae` (Aether). This class owns library
  * location/loading, the C signature declarations, and the string-ownership
  * helper.
  *

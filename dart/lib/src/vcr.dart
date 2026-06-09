@@ -1,4 +1,4 @@
-/// Idiomatic Dart record/replay fixtures over the Aether VCR core.
+/// Idiomatic Dart record/replay fixtures over the in-repo `core/vcr.ae` engine.
 ///
 /// The system-under-test talks plain HTTP to [VcrServer.baseUrl]; tape paths,
 /// mode, mutations, and diagnostics live in test setup/teardown.
@@ -15,13 +15,11 @@
 /// }
 /// ```
 ///
-/// v1 contract (from the Aether side): ONE active VCR server per process. The
-/// Per-listener: N independent servers can run at once, each keyed by its own
-/// handle (lifecycle open -> configure(handle) -> start). [PlaybackBuilder.start] /
-/// [RecordBuilder.start] reset it to a clean slate before applying this
-/// fixture's config — a redaction/note/strict setting from a previous test
-/// never leaks forward. Run tests serially (one server per process at a time;
-/// set `concurrency: 1`).
+/// Handle-based contract: N independent VCR servers can run concurrently, one
+/// server per port, each keyed by its own handle (lifecycle open ->
+/// configure(handle) -> start). [PlaybackBuilder.start] / [RecordBuilder.start]
+/// open a fresh handle before applying this fixture's config — a
+/// redaction/note/strict setting from a previous test never leaks forward.
 library;
 
 import 'dart:ffi';
@@ -31,7 +29,7 @@ import 'package:ffi/ffi.dart';
 import 'native.dart';
 
 /// Field selector for redactions / unredactions / header removals. Values
-/// mirror the `FIELD_*` constants in `std/http/server/vcr/module.ae`.
+/// mirror the `FIELD_*` constants in `core/vcr.ae`.
 enum VcrField {
   path(1),
   responseBody(2),
@@ -46,7 +44,8 @@ enum VcrField {
 }
 
 /// Per-dispatch outcome. Values mirror the `VCR_KIND_*` constants in the
-/// Aether core. Read after a request to assert what the dispatcher decided.
+/// in-repo `core/vcr.ae` engine. Read after a request to assert what the
+/// dispatcher decided.
 enum VcrOutcome {
   ok(0),
   pathOrMethodDiff(1),
@@ -95,7 +94,7 @@ String _drainStartError(Pointer<Void> handle) {
   return err.isNotEmpty ? err : '(no detail; check tape path and port availability)';
 }
 
-/// Entry point for record/replay fixtures backed by the Aether VCR core.
+/// Entry point for record/replay fixtures backed by the in-repo `core/vcr.ae` engine.
 abstract final class Vcr {
   /// Replay a Servirtium markdown tape from disk.
   static PlaybackBuilder playback(String tapePath) => PlaybackBuilder._(tapePath);

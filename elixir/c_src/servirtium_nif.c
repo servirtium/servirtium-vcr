@@ -1,7 +1,7 @@
 /*
  * servirtium_nif.c — Erlang NIF over the Aether VCR core's C-ABI
- * (the aether_vcr_embed_* symbols from std/http/server/vcr/embed.ae,
- * linked from native/libservirtium_vcr.so).
+ * (the aether_vcr_embed_* symbols from core/embed.ae,
+ * linked from core/native/libservirtium_vcr.so).
  *
  * This is the thin FFI seam: the engine, once started, is an HTTP server
  * the system-under-test talks to over HTTP; the NIF only drives the

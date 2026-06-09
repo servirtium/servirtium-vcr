@@ -1,6 +1,7 @@
--- | Test entry point. hspec runs specs sequentially by default, which is
--- required: the Aether VCR core is one-active-server-per-process in v1, so
--- the fixtures must not overlap.
+-- | Test entry point. hspec runs specs sequentially by default. The VCR
+-- core allows one server per port (N independent handle-keyed servers can
+-- run concurrently); these fixtures use OS-assigned ports, so running them
+-- in sequence keeps the suite simple and deterministic.
 module Main (main) where
 
 import Test.Hspec (hspec)

@@ -4,11 +4,12 @@ using System.Collections.Generic;
 namespace Servirtium.Vcr;
 
 /// <summary>
-/// Entry point for record/replay fixtures backed by the Aether VCR core
+/// Entry point for record/replay fixtures backed by the in-repo VCR core
 /// (the <c>aether_vcr_embed_*</c> C-ABI from
-/// <c>std/http/server/vcr/embed.ae</c>). The system-under-test talks plain
-/// HTTP to <see cref="VcrServer.BaseUrl"/>; tape paths, mode, mutations,
-/// and diagnostics live in test setup/teardown.
+/// <c>core/embed.ae</c>, the embedding layer over <c>core/vcr.ae</c>). The
+/// system-under-test talks plain HTTP to <see cref="VcrServer.BaseUrl"/>;
+/// tape paths, mode, mutations, and diagnostics live in test
+/// setup/teardown.
 ///
 /// <code>
 /// using var vcr = Vcr.Playback("tapes/my_api.md").Port(0).Start();
@@ -17,11 +18,11 @@ namespace Servirtium.Vcr;
 /// Assert.Equal(VcrOutcome.Ok, vcr.LastKind);
 /// </code>
 ///
-/// v1 contract (from the Aether side): ONE active VCR server per process.
-/// The mutation/diagnostic state is process-global, so <see cref="Start"/>
-/// resets it to a clean slate before applying this fixture's config — a
-/// redaction/note/strict setting from a previous test never leaks forward.
-/// Run tests serially (one server per process at a time).
+/// Handle-based: each <see cref="Start"/> opens its own VCR handle, so N
+/// independent servers can run concurrently — one server per port, each
+/// keyed by its own handle. Tape/cursor/mutation state is owned by the
+/// handle (not process-global), so config from one fixture never leaks into
+/// another. Tests that share a single fixed port must still run serially.
 /// </summary>
 public static class Vcr
 {

@@ -1,11 +1,11 @@
 // Package servirtium provides record/replay HTTP fixtures in the
 // Servirtium markdown tape format. Since v2 it is a thin cgo wrapper over
 // the Aether VCR core (the aether_vcr_embed_* C-ABI from
-// std/http/server/vcr/embed.ae): all record/replay machinery — markdown
+// core/embed.ae): all record/replay machinery — markdown
 // parse/emit, the HTTP server, request matching, redactions, notes, drift
 // detection, static-content bypass, gzip/chunked handling — lives in and is
-// maintained as the Aether standard library. This package does not
-// reimplement Servirtium in Go.
+// maintained as the in-repo core/vcr.ae engine (built on Aether stdlib
+// primitives). This package does not reimplement Servirtium in Go.
 //
 // You point your system-under-test at a local base URL. In playback it
 // replays a recorded markdown tape (no network); in record it forwards to
@@ -19,10 +19,10 @@
 //	// optional: assert a clean match
 //	if srv.LastKind() != servirtium.Ok { t.Fatal(srv.LastError()) }
 //
-// # One server per process
+// # One server per port
 //
 // The Aether VCR is per-listener: N independent Servers can run concurrently
-// in one process, each keyed by its own handle. A fixture's tape, replay
+// in one process, one per port, each keyed by its own handle. A fixture's tape, replay
 // cursor, mutations, static mounts, and diagnostics are scoped to its handle,
 // so two Servers can be alive at once without bleeding into each other.
 // Lifecycle is open -> configure(handle) -> start.
@@ -82,7 +82,7 @@ import (
 
 // Field selects which block of an interaction a redaction, unredaction, or
 // header removal applies to. Values mirror the FIELD_* constants in
-// std/http/server/vcr/module.ae.
+// core/vcr.ae.
 type Field int
 
 const (

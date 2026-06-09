@@ -1,5 +1,6 @@
-# The Aether VCR is ONE active server per process (its tape / cursor /
-# mutation state is process-global), so these tests MUST run serially.
-# concurrency: 1 forbids the test runner from running suites in parallel —
-# parallel suites would stomp each other's global state (spurious 599s).
+# The core/vcr.ae engine is handle-based: N independent VCR servers can run
+# concurrently, one server per port, each keyed by its own handle — so this is
+# NOT an engine limit. concurrency: 1 is a suite choice: it keeps these tests
+# serial so the shared native library load and per-test ports stay simple and
+# deterministic. Drop it if/when the suites are confirmed independent.
 concurrency: 1

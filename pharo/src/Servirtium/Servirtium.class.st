@@ -1,8 +1,9 @@
 "
-Entry point for record/replay fixtures backed by the Aether VCR core (the
-`aether_vcr_embed_*` C-ABI from `std/http/server/vcr/embed.ae`). The
-system-under-test talks plain HTTP to `ServirtiumServer>>baseUrl`; tape
-paths, mode, mutations, and diagnostics live in test setup / teardown.
+Entry point for record/replay fixtures backed by the in-repo VCR core (the
+`aether_vcr_embed_*` C-ABI from `core/embed.ae`, the embedding layer over
+`core/vcr.ae`). The system-under-test talks plain HTTP to
+`ServirtiumServer>>baseUrl`; tape paths, mode, mutations, and diagnostics
+live in test setup / teardown.
 
 	| server |
 	server := (Servirtium playback: 'tapes/my_api.md') port: 0; start.
@@ -15,9 +16,9 @@ Or auto-closing:
 	(Servirtium playback: 'tapes/my_api.md') startThenDo: [ :server |
 		"" ... drive the SUT against server baseUrl ... "" ].
 
-v1 contract (from the Aether side): ONE active VCR server per process /
-image. The mutation / diagnostic state is process-global, so `start` resets
-it before applying this fixture's config. Run tests serially.
+The native ABI is handle-based: each `start` opens its own server handle and
+applies this fixture's config to that handle. N independent VCR servers can
+run concurrently, one server per port, each keyed by its own handle.
 "
 Class {
 	#name : 'Servirtium',

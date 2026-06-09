@@ -2,10 +2,11 @@
 
 -- | Raw FFI surface over the native VCR library (@libservirtium_vcr.so@),
 -- linked at build time via @foreign import ccall@. 1:1 with the
--- @aether_vcr_embed_*@ C-ABI exported by @std\/http\/server\/vcr\/embed.ae@.
+-- @aether_vcr_embed_*@ C-ABI exported by @core\/embed.ae@.
 --
--- Per-listener contract (matching the Aether side): N independent VCR
--- servers can run concurrently in one process, each keyed by its own handle;
+-- Per-listener contract (matching the engine side): N independent VCR
+-- servers can run concurrently in one process, one server per port, each
+-- keyed by its own handle;
 -- every config / diagnostic / lifecycle call takes the handle. Returned
 -- @char*@ values are caller-owned and NUL-terminated; copy them into a
 -- Haskell 'String' via 'takeString', which frees them per the ABI.

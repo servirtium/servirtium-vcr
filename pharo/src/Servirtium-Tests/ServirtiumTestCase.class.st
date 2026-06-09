@@ -1,7 +1,7 @@
 "
 Base for the Servirtium SUnit suite. Resolves tape resources and the native
-engine path, and provides a shared single active server (v1 is one VCR
-server per process, so tests run serially).
+engine path. The handle-based ABI means each test opens and stops its own
+server (one per port), so they need no shared global server state.
 
 Tape resources live under `src/Servirtium-Tests/tapes/`. Since Tonel-loaded
 code has no source-file location at runtime, the directory is resolved from

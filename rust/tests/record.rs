@@ -1,7 +1,7 @@
 //! Record mode end-to-end and record-side breadth: forward to a live
 //! upstream, return the real response to the SUT, capture, flush a Servirtium
 //! markdown tape on drop, then replay it; plus redaction, header removal,
-//! notes, drift detection, POST bodies, and process-global state isolation.
+//! notes, drift detection, POST bodies, and per-fixture state isolation.
 
 mod common;
 
