@@ -1,6 +1,7 @@
-// Clojure binding tests — runs clojure.test (servirtium_test.clj) against the
-// main namespace + the Java binding classes (build.dep java/.build.ae) + the
-// vendored clojure runtime. Engine .so via SERVIRTIUM_VCR_LIB.
+// Clojure binding tests — runs clojure.test (servirtium_test.clj). Deps only
+// clojure/.build.ae: the Java binding classes + the clojure runtime arrive
+// transitively through that node (uniform with kotlin/scala/groovy). Engine
+// .so via SERVIRTIUM_VCR_LIB.
 import build
 import clojure
 import clojure (source_layout)
@@ -8,8 +9,7 @@ import build (env)
 aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
-    build.dep(b, "java/.build.ae")
-    build.dep(b, "libs/java/clojure/.clojure.jar.ae")
+    build.dep(b, "clojure/.build.ae")
     lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     clojure.test(b) { source_layout("maven idiomatic") env("SERVIRTIUM_VCR_LIB", lib) }
 }
