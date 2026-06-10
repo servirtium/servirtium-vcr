@@ -108,6 +108,53 @@ One engine; every binding exposes the same surface.
 - **Drift detection** — *fail-if-changed* / *flush-or-check*: a re-record
   writes the tape but flags any diff, so CI catches upstream drift.
 
+## Compared with other mocking / virtualization tools
+
+There's a rich ecosystem here, and these are all good tools — the choice mostly
+comes down to **where the canned responses come from** and **what they're stored
+as**. Servirtium's particular angle is *recorded real conversations* kept as
+*human-readable, git-diffable Markdown* that lives next to your tests, so the
+recording is itself a reviewable artifact (it renders on GitHub; a vendor's new
+header shows up as a red/green line in a PR), and the same tape replays under any
+Servirtium binding. A friendly map of the neighbourhood:
+
+- **[Prism](https://github.com/stoplightio/prism)** — spec-first: mocks and
+  validates from an OpenAPI/AsyncAPI description. Lovely when the contract is the
+  source of truth and you want responses *synthesised from the spec*. Servirtium
+  instead replays what a real backend actually sent — capturing wire quirks a
+  spec may not mention — and needs no spec to get started.
+- **[Mockoon](https://mockoon.com/)** — fast, friendly hand-authoring of mock
+  APIs in a desktop app / CLI. Great when you want to *design* responses by hand.
+  Servirtium's responses are *recorded* rather than designed, and the tape is a
+  diffable file reviewed in a PR rather than GUI-managed config.
+- **[Postman](https://www.postman.com/)** — its Mock Servers host cloud mocks
+  generated from a collection's saved example responses. Ideal if your team
+  already lives in Postman. Servirtium is local and file-based — the
+  conversation is recorded from a real backend and committed to your repo, with
+  no SaaS endpoint in the loop.
+- **[Microcks](https://microcks.io/)** — a centralized, Kubernetes-native
+  platform that turns API artifacts (OpenAPI, Postman, gRPC, AsyncAPI, SoapUI)
+  into shared mocks and contract tests across protocols and teams. Servirtium
+  sits at the opposite end of the size scale: a tiny in-process library,
+  file-based tapes, no service to deploy, focused on HTTP.
+- **[Hoverfly](https://hoverfly.io/)** — the closest in spirit, and also true
+  service virtualization: it captures and replays real HTTP traffic. The main
+  differences are storage and deployment — Hoverfly is a standalone proxy with
+  JSON simulations, whereas Servirtium embeds *in the test process* per language
+  and stores the conversation as review-friendly Markdown, portable across every
+  binding.
+- **[Mountebank](https://www.mbtest.org/)** — standalone, multi-protocol service
+  virtualization (http/https/tcp/smtp) configured as JSON "imposters" over a REST
+  API, with a proxy/record mode much like Hoverfly's. Servirtium covers only
+  HTTP, but runs in-process per language and keeps the recording as readable
+  Markdown rather than JSON imposters managed through a running server.
+
+None of this is a knock on those projects — each is strong at its own sweet spot
+(spec-driven mocking, hand-built mocks, collection-based cloud mocks, a shared
+mocking platform, proxy/record-based virtualization). Reach for Servirtium when
+you want **the recording itself to be a small, readable, version-controlled
+artifact** that tests in any language can replay.
+
 ## Build (aeb)
 
 The whole repo is built with **[aeb](https://github.com/aether-lang-org/aeb)**,
