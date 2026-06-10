@@ -1,42 +1,121 @@
--- Lua binding playback test. Loads the C extension (servirtium_native.so) via
--- the idiomatic wrapper (servirtium.lua), opens a playback server on the
--- single_get.md tape, and replays GET /ok over real HTTP with curl.
---
--- Run from lua/ with:
---   LUA_CPATH="./?.so;;" lua5.4 tests/playback.lua
--- (the C module links the engine with an rpath, so libservirtium_vcr.so is
--- found automatically; SERVIRTIUM_VCR_LIB is honored by the .tests.ae path.)
+-- playback.lua — the Lua binding's playback test suite, mirroring the Go
+-- binding's playback_test.go. Drives real HTTP with curl against playback
+-- servers (one server per port). Run from lua/ with:
+--   LUA_CPATH="./?.so;;" SERVIRTIUM_VCR_LIB=<abs>/libservirtium_vcr.so lua5.4 tests/playback.lua
 
--- Resolve paths relative to this script so the test runs from any cwd.
 local here = arg[0]:match("^(.*)[/\\]") or "."
-package.path  = here .. "/../?.lua;" .. package.path
+package.path  = here .. "/../?.lua;" .. here .. "/?.lua;" .. package.path
 package.cpath = here .. "/../?.so;" .. package.cpath
 
 local servirtium = require("servirtium")
+local h = require("helpers")
 
-local tape = here .. "/../tapes/single_get.md"
+local function tape(name) return h.tapes_dir .. "/" .. name end
 
-local srv, err = servirtium.playback(tape)   -- port 0 by default
-assert(srv, "playback() failed: " .. tostring(err))
+-- replays a recorded GET ------------------------------------------------------
+do
+    h.case("replays a recorded GET")
+    local srv = assert(servirtium.playback(tape("single_get.md"))
+        :label("replays a recorded GET"):port(0):start())
 
-local base = srv:base_url()
-assert(base ~= "" and base ~= nil, "base_url() returned empty")
-print("base_url: " .. base)
+    h.truthy(srv:port() > 0, "OS-assigned port")
+    h.eq(srv:tape_length(), 1, "tape length")
 
--- Replay GET /ok over real HTTP.
-local pipe = io.popen("curl -s " .. base .. "/ok")
-local body = pipe:read("*a")
-pipe:close()
+    local body = h.curl_get(srv:base_url(), "/ok")
+    h.eq(body, "ok-body", "body")
+    h.eq(srv:last_kind(), servirtium.OK, "last_kind")
+    h.eq(srv:last_error(), "", "last_error")
+    srv:close()
+end
 
-print("body: " .. tostring(body))
-assert(body == "ok-body",
-       string.format("expected body %q, got %q", "ok-body", tostring(body)))
+-- flags a path mismatch via diagnostics --------------------------------------
+do
+    h.case("flags a path mismatch")
+    local srv = assert(servirtium.playback(tape("single_get.md")):port(0):start())
+    h.curl_get(srv:base_url(), "/nope")
+    h.truthy(srv:last_kind() ~= servirtium.OK, "mismatch outcome (not Ok)")
+    h.truthy(srv:last_error() ~= "", "mismatch diagnostic non-empty")
+    srv:close()
+end
 
-local kind = srv:last_kind()
-assert(kind == servirtium.OK,
-       "expected last_kind Ok(0), got " .. tostring(kind) ..
-       " (last_error: " .. tostring(srv:last_error()) .. ")")
+-- unredaction lets a scrubbed tape match -------------------------------------
+do
+    h.case("unredaction lets a scrubbed tape match")
+    local srv = assert(servirtium.playback(tape("secure_get.md"))
+        :strict_headers()
+        :unredact(servirtium.FIELD_REQUEST_HEADERS, "Bearer REDACTED", "Bearer real-token")
+        :port(0):start())
 
-srv:close()
+    -- curl sends a default User-Agent; the strict tape only records
+    -- Authorization, so suppress it (-H "User-Agent:") to match the block.
+    local p = io.popen("curl -s -H 'Authorization: Bearer real-token' " ..
+        "-H 'User-Agent:' -H 'Accept:' " .. srv:base_url() .. "/secure")
+    local body = p:read("*a"); p:close()
 
-print("lua: playback test passed (body == 'ok-body', last_kind == Ok)")
+    h.eq(body, "secret-ok", "body")
+    h.eq(srv:last_kind(), servirtium.OK, "last_kind (" .. srv:last_error() .. ")")
+    srv:close()
+end
+
+-- strict matching flags a missing request header -----------------------------
+do
+    h.case("strict matching flags a missing request header")
+    local srv = assert(servirtium.playback(tape("secure_get.md"))
+        :strict_headers()
+        :unredact(servirtium.FIELD_REQUEST_HEADERS, "Bearer REDACTED", "Bearer real-token")
+        :port(0):start())
+
+    -- No Authorization header at all -> mismatch.
+    h.curl_get(srv:base_url(), "/secure")
+    h.truthy(srv:last_kind() ~= servirtium.OK, "mismatch outcome (not Ok)")
+    h.truthy(srv:last_error() ~= "", "mismatch diagnostic non-empty")
+    srv:close()
+end
+
+-- static content served from disk --------------------------------------------
+do
+    h.case("static content served from disk")
+    local dir = h.temp_tape("assets"):gsub("%.md$", "")
+    os.execute("mkdir -p " .. dir)
+    local f = assert(io.open(dir .. "/asset.txt", "w"))
+    f:write("static-asset"); f:close()
+
+    local srv = assert(servirtium.playback(tape("single_get.md"))
+        :static_content("/files", dir):port(0):start())
+
+    h.eq(h.curl_get(srv:base_url(), "/files/asset.txt"), "static-asset", "from disk")
+    h.eq(h.curl_get(srv:base_url(), "/ok"), "ok-body", "from tape (unaffected)")
+    srv:close()
+    os.execute("rm -rf " .. dir)
+end
+
+-- untaped path 404s without consuming the cursor -----------------------------
+do
+    h.case("untaped 404s without consuming the cursor")
+    local srv = assert(servirtium.playback(tape("single_get.md"))
+        :untaped("/favicon.ico"):port(0):start())
+
+    h.eq(h.curl_status(srv:base_url(), "/favicon.ico"), 404, "untaped 404")
+    -- The normal recorded interaction still replays (cursor wasn't consumed).
+    h.eq(h.curl_get(srv:base_url(), "/ok"), "ok-body", "tape still replays")
+    h.eq(srv:last_kind(), servirtium.OK, "last_kind after untaped")
+    srv:close()
+end
+
+-- two playback servers at once (one server per port) -------------------------
+do
+    h.case("two playback servers at once")
+    local a = assert(servirtium.playback(tape("single_get.md")):port(0):start())
+    local b = assert(servirtium.playback(tape("secure_get.md")):port(0):start())
+
+    h.truthy(a:port() ~= b:port(), "distinct ports")
+    h.eq(h.curl_get(a:base_url(), "/ok"), "ok-body", "server A from its tape")
+
+    local p = io.popen("curl -s -H 'Authorization: Bearer REDACTED' " ..
+        "-H 'User-Agent:' -H 'Accept:' " .. b:base_url() .. "/secure")
+    h.eq(p:read("*a"), "secret-ok", "server B from its tape"); p:close()
+
+    a:close(); b:close()
+end
+
+h.done("playback")

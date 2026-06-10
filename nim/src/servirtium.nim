@@ -33,12 +33,17 @@ import std/strformat
 import servirtium/native
 
 type
-  ## Outcome of the last interaction, mirroring the engine's outcome enum.
+  ## Outcome of the last interaction, mirroring the engine's `VCR_KIND_*`
+  ## constants. `Ok` means a clean match; anything non-zero is a mismatch.
   Outcome* = enum
     Ok = 0
-    NoMatch = 1
-    Mismatch = 2
-    Error = 3
+    PathOrMethodDiff = 1
+    HeaderMissing = 2
+    HeaderValueDiff = 3
+    HeaderUnexpected = 4
+    TapeExhausted = 5
+    BodyDiff = 6
+    RecordError = 7
 
   ## Field selector for redactions / header removal, mirroring the engine.
   Field* = enum
@@ -50,14 +55,28 @@ type
 
   ## A running VCR server. `recording` selects the close semantics: a record
   ## server flushes its tape on close, a playback server just stops.
+  ## `failIfChanged` selects the drift-detecting flush variant.
   VcrServer* = ref object
     handle: native.Handle
     recording: bool
+    failIfChanged: bool
     tapePath: string
 
   VcrError* = object of CatchableError
 
 const defaultHost = "127.0.0.1"
+
+proc `$`*(o: Outcome): string =
+  ## Human-facing name of an outcome, matching the engine's diagnostic vocab.
+  case o
+  of Ok: "Ok"
+  of PathOrMethodDiff: "PathOrMethodDiff"
+  of HeaderMissing: "HeaderMissing"
+  of HeaderValueDiff: "HeaderValueDiff"
+  of HeaderUnexpected: "HeaderUnexpected"
+  of TapeExhausted: "TapeExhausted"
+  of BodyDiff: "BodyDiff"
+  of RecordError: "RecordError"
 
 # Marshal a caller-owned native `cstring` into an owned Nim `string` and free
 # it via the ABI's free, per the ownership rule. nil -> "".
@@ -109,7 +128,18 @@ proc tapeLength*(s: VcrServer): int =
   int(native.tape_length(s.handle))
 
 proc resetCursor*(s: VcrServer) =
+  ## Rewind the replay cursor to interaction 0 and clear the last-* slots.
   native.reset_cursor(s.handle)
+
+proc clearLastError*(s: VcrServer) =
+  ## Clear the last-error slot between sub-cases.
+  native.clear_last_error(s.handle)
+
+proc failIfChanged*(s: VcrServer) =
+  ## Make `close` (record mode) flush the tape with drift detection: it still
+  ## writes the freshly recorded tape, but raises `VcrError` if it differs from
+  ## the on-disk one.
+  s.failIfChanged = true
 
 proc redact*(s: VcrServer; field: Field; pattern, replacement: string): string {.discardable.} =
   ## Replace `pattern` with `replacement` in `field` before the tape is
@@ -154,7 +184,11 @@ proc close*(s: VcrServer) =
   if s.handle == nil:
     return
   if s.recording:
-    let err = takeString(native.stop_and_flush(s.handle, cstring(s.tapePath)))
+    let err =
+      if s.failIfChanged:
+        takeString(native.stop_and_flush_fail_if_changed(s.handle, cstring(s.tapePath)))
+      else:
+        takeString(native.stop_and_flush(s.handle, cstring(s.tapePath)))
     s.handle = nil
     if err.len > 0:
       raise newException(VcrError, err)

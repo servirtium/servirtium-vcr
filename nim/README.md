@@ -34,11 +34,36 @@ reimplement Servirtium in Nim.
 ## Layout
 
 - `src/servirtium.nim` — the idiomatic wrapper: `playback` / `record` returning
-  a `VcrServer` with `start`, `baseUrl`, `lastKind`, `close`, plus mutations
-  (`redact`, `normalizeWholeTape`, `staticContent`, `untaped`, notes, …).
+  a `VcrServer` configured open → set → `start`, with `baseUrl`, `port`,
+  `tapeLength`, `lastKind`/`lastError`/`lastIndex`, `resetCursor`,
+  `clearLastError`, `close`, plus the full mutation/format set (`redact`,
+  `unredact`, `removeHeader`, `normalizeWholeTape`, `redactWholeTape`,
+  `staticContent`, `untaped`, `note`, `setStrictHeaders`, `indentCodeBlocks`,
+  `emphasizeHttpVerbs`, `failIfChanged`).
 - `src/servirtium/native.nim` — the raw FFI surface, 1:1 with the
-  `aether_vcr_embed_*` C-ABI, bound with `{.importc, cdecl.}`.
-- `tests/` — worked examples.
+  `aether_vcr_embed_*` C-ABI, bound with `{.importc, cdecl.}` and linked via
+  `{.passL.}`.
+- `tests/` — the suite (see below). `tests/upstream.nim` is a throwaway
+  `std/asynchttpserver` upstream used by the record/mutation suites.
+- `docs/` — [architecture](docs/architecture.md), [building](docs/building.md),
+  [features](docs/features.md), [usage](docs/usage.md).
+
+## What's tested
+
+Full feature/test parity with the Go binding — 15 cases across four files,
+all run against the real native engine:
+
+- **`tests/playback_test.nim`** — replays a recorded GET; flags a path mismatch
+  via diagnostics; unredaction lets a scrubbed tape match (secure_get +
+  `unredact` Authorization); strict matching flags a missing request header;
+  static content served from disk; untaped path 404s without consuming the
+  cursor; two playback servers at once (one server per port).
+- **`tests/record_test.nim`** — record then replay the same interaction;
+  record + replay a POST with a body.
+- **`tests/mutation_test.nim`** — redacts a response body before it lands on the
+  tape; attaches a note; removes a named response header; mutation state does
+  not leak between fixtures; `failIfChanged` raises on drift.
+- **`tests/playback.nim`** — the original curl-driven playback smoke test.
 
 ## Linking the native engine
 
@@ -60,14 +85,23 @@ Build the shared engine from `core/` (needs the Aether `ae` toolchain) or set
 ## Building / testing from source
 
 ```sh
-# build the shared engine from core/, then point the build at it:
-SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so \
-  nim c -r --path:src tests/playback.nim
+# build the shared engine from core/, then run the whole suite against it.
+# --threads:on is required: the record/mutation suites run their throwaway
+# upstream's async accept loop on a dedicated thread.
+cd nim
+LIB=../core/native/libservirtium_vcr.so
+for t in tests/playback.nim tests/playback_test.nim \
+         tests/record_test.nim tests/mutation_test.nim; do
+  SERVIRTIUM_VCR_LIB="$LIB" \
+    nim c -r --hints:off --threads:on --path:src --path:tests "$t" || break
+done
 ```
 
-The test opens a playback tape, starts the server, shells out to `curl`
-against the live base URL (so it pulls in no HTTP client library), and asserts
-the replayed body and a clean `Ok` match.
+Or via aeb: `aeb nim/.tests.ae` (builds the engine `.so` first, then runs all
+four files). The playback suite drives requests with `curl` via `osproc` (no
+HTTP-client dependency); the record/mutation suites use `std/httpclient` from
+the main thread, since forking `curl` while the async upstream thread is live
+is unreliable on this stdlib. See [docs/building.md](docs/building.md).
 
 ## Concurrency: one server per port
 

@@ -5,8 +5,10 @@
 // `cc ... -L<core/native> -lservirtium_vcr -Wl,-rpath,<core/native>`, so this
 // deps the engine node, compiles servirtium_native.so, then runs the lua test.
 // The rpath makes the engine resolvable at runtime; SERVIRTIUM_VCR_LIB is also
-// passed for parity with the other bindings. The test shells out to curl
-// against the playback server (one VCR server per process).
+// passed for parity with the other bindings. tests/run_all.lua drives the full
+// suite (playback + record + mutation, ~14 cases): playback shells out to curl
+// against the VCR server; record/mutation spawn a throwaway python3 upstream
+// (Lua 5.4 has no stdlib sockets) and record to temp tapes.
 import build
 import std.os
 aeb(cap) {
@@ -17,7 +19,7 @@ aeb(cap) {
     core = "${root}/core/native"
     cc = os.system("cd \"${root}/lua\" && ./build.sh \"${core}\"")
     if cc != 0 { println("lua: compile failed"); return 1 }
-    rc = os.system("cd \"${root}/lua\" && LUA_CPATH=\"./?.so;;\" SERVIRTIUM_VCR_LIB=\"${lib}\" lua5.4 tests/playback.lua")
+    rc = os.system("cd \"${root}/lua\" && LUA_CPATH=\"./?.so;;\" SERVIRTIUM_VCR_LIB=\"${lib}\" lua5.4 tests/run_all.lua")
     if rc != 0 { println("lua: tests failed"); return 1 }
     println("lua: tests passed")
     return 0

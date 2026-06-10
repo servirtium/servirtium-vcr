@@ -2,8 +2,12 @@
 // output: core/native/libservirtium_vcr.so) via native.nim's
 // `{.passL: "-L<core/native> -lservirtium_vcr -Wl,-rpath,<core/native>".}`,
 // so this deps the engine node and passes SERVIRTIUM_VCR_LIB at compile time
-// (native.nim honors it to resolve the -L dir). The test shells out to curl
-// against the playback server (one VCR server per process).
+// (native.nim honors it to resolve the -L dir). It runs the full suite — the
+// playback smoke test plus the playback/record/mutation suites (parity with
+// the Go binding) — each as a `nim c -r` unittest. --threads:on is required:
+// the record/mutation suites run a throwaway std/asynchttpserver upstream on a
+// dedicated thread. Playback drives requests with curl, record with
+// std/httpclient (one VCR server per port).
 import build
 import std.os
 aeb(cap) {
@@ -11,7 +15,7 @@ aeb(cap) {
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
     lib = "${root}/core/native/libservirtium_vcr.so"
-    rc = os.system("cd \"${root}/nim\" && SERVIRTIUM_VCR_LIB=\"${lib}\" nim c -r --hints:off --path:src tests/playback.nim")
+    rc = os.system("cd \"${root}/nim\" && for t in tests/playback.nim tests/playback_test.nim tests/record_test.nim tests/mutation_test.nim; do SERVIRTIUM_VCR_LIB=\"${lib}\" nim c -r --hints:off --threads:on --path:src --path:tests \"$t\" || exit 1; done")
     if rc != 0 { println("nim: tests failed"); return 1 }
     println("nim: tests passed")
     return 0
