@@ -38,9 +38,11 @@ the spec. To add, say, Perl:
      lives here.
    - **Link at build time**: `nim/` importc, `zig/` extern "C", `go/` cgo,
      `haskell/` ccall.
-   - **C extension / native module**: `lua/` (Lua 5.4 C API),
-     `elixir/` C NIF, `erlang/` + `gleam/` (reuse the *same* Elixir NIF C, just
-     retarget `ERL_NIF_INIT`).
+   - **C extension / native module**: `lua/` (Lua 5.4 C API).
+   - **BEAM family — one shared NIF**: `erlang/` owns the canonical C NIF (the
+     `servirtium_nif` OTP app, built once by `erlang/.build.ae`); `elixir/` and
+     `gleam/` consume that SAME compiled module over the BEAM (no copied C
+     source, no second `.so`) — see the BEAM note below.
    - **No FFI at all — over the Java jar**: `kotlin/ scala/ clojure/ groovy/`
      (JVM family; seamless interop, no second native binding).
 2. **Bind the C ABI** (next section). `rust/src/native.rs` is the canonical 1:1
@@ -129,8 +131,17 @@ reference). Quick facts:
 - **JVM family ≠ a binding.** `kotlin/scala/clojure/groovy` consume the Java
   jar via seamless interop — their `.tests.ae` installs the Java jar to `~/.m2`
   first, then runs `mvn test`. No second `.so` binding.
-- **BEAM family shares one NIF.** `erlang/` and `gleam/` reuse `elixir/`'s C NIF
-  source verbatim except the `ERL_NIF_INIT` module name — "low marginal cost".
+- **BEAM family shares one NIF (Erlang owns it).** `erlang/.build.ae` compiles
+  the canonical NIF ONCE into the OTP app `servirtium_nif`
+  (`erlang/_build/servirtium_nif/{ebin,priv}`). `elixir/` and `gleam/` `build.dep`
+  on that node and load the SAME compiled `servirtium_nif` module over the BEAM —
+  Elixir via `defdelegate` in `Servirtium.Native`, Gleam via `@external`. Erlang
+  is the BEAM's "Java" here, exactly as the one Java jar backs the JVM four.
+  Putting the shared app on a consumer's code path: `erl`/escript honor
+  **ERL_LIBS** (point it at `erlang/_build`); **mix does NOT** fold ERL_LIBS in,
+  so Elixir's `test_helper.exs` does `Code.append_path` from `SERVIRTIUM_NIF_EBIN`;
+  `gleam test` honors ERL_LIBS. The loader (`servirtium_nif.erl`) finds the `.so`
+  via `code:priv_dir(servirtium_nif)`, or a `SERVIRTIUM_NIF_DIR` override.
 - The website (`../servirtium-site`, Jekyll) publishes the Storybook demo at
   `/storybook/`; Jekyll silently drops files whose names start with `_`, and its
   `compress.html` layout collapses 2+ space runs (bites SVG/Storybook chunks).

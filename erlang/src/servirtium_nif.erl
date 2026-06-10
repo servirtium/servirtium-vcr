@@ -5,14 +5,17 @@
 %% which links the engine in core/native/libservirtium_vcr.so. Until the NIF
 %% loads, each body raises `nif_error(not_loaded)`.
 %%
-%% This reuses the *same* C NIF as the Elixir binding, retargeted from the
-%% `Elixir.Servirtium.Native` module to `servirtium_nif` in the ERL_NIF_INIT
-%% line so erlang:load_nif/2 finds the funcs under this module.
+%% This is the CANONICAL Aether VCR NIF for the whole BEAM family. It is built
+%% ONCE (as the OTP app `servirtium_nif`: this module + priv/servirtium_nif.so)
+%% and the Elixir and Gleam bindings load this SAME compiled module over the
+%% BEAM — they do not each compile their own copy of the C source. (Erlang is
+%% the BEAM's lingua franca, so it owns the shared binding, exactly as the one
+%% Java jar backs the Kotlin/Scala/Clojure/Groovy bindings.)
 %%
-%% Use `servirtium` (servirtium.erl) for the idiomatic API; this is the thin
-%% FFI seam. The opaque server handle is a 64-bit integer (uintptr_t); 0 from
-%% open_* means failure. String results come back as binaries; mutation funcs
-%% return <<>> on success or an error-message binary.
+%% Use `servirtium` (servirtium.erl) for the idiomatic Erlang API; this is the
+%% thin FFI seam. The opaque server handle is a 64-bit integer (uintptr_t); 0
+%% from open_* means failure. String results come back as binaries; mutation
+%% funcs return <<>> on success or an error-message binary.
 -module(servirtium_nif).
 
 -on_load(init/0).
@@ -56,13 +59,21 @@
 ]).
 
 init() ->
-    %% Prefer the OTP app's priv_dir when this is loaded as part of an
-    %% application; fall back to a loose ./priv/servirtium_nif when run
-    %% straight from the source tree (no .app file present).
+    %% Resolve priv/servirtium_nif.so three ways, in order: an explicit
+    %% SERVIRTIUM_NIF_DIR override (how a consumer that can't set ERL_LIBS
+    %% points at the shared build); the OTP app's priv_dir (the normal path —
+    %% the `servirtium_nif` app on the code path via ERL_LIBS, for Erlang,
+    %% Elixir and Gleam alike); else a loose ./priv when run straight from a
+    %% source tree.
     Base =
-        case code:priv_dir(servirtium) of
-            {error, bad_name} -> filename:join("priv", "servirtium_nif");
-            Dir -> filename:join(Dir, "servirtium_nif")
+        case os:getenv("SERVIRTIUM_NIF_DIR") of
+            false ->
+                case code:priv_dir(servirtium_nif) of
+                    {error, bad_name} -> filename:join("priv", "servirtium_nif");
+                    Dir -> filename:join(Dir, "servirtium_nif")
+                end;
+            EnvDir ->
+                filename:join(EnvDir, "servirtium_nif")
         end,
     erlang:load_nif(Base, 0).
 

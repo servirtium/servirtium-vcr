@@ -1,0 +1,39 @@
+// Erlang owns the canonical Servirtium NIF for the WHOLE BEAM family. This
+// node builds it ONCE as the OTP app `servirtium_nif` — the C NIF .so + the
+// `servirtium_nif` loader module + the idiomatic `servirtium` wrapper — into
+// _build/servirtium_nif/{ebin,priv}. The Elixir and Gleam bindings consume
+// this same artifact via ERL_LIBS (no second NIF, no copied C source), exactly
+// as the JVM family (Kotlin/Scala/Clojure/Groovy) layers over the one Java jar.
+//
+// Deps the shared engine (core/native/libservirtium_vcr.so); the NIF links it
+// and embeds core/native as an rpath so it resolves at runtime.
+import build
+import std.os
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    root = build._get(b, "root")
+    native = "${root}/core/native"
+    erl = "${root}/erlang"
+    app = "${erl}/_build/servirtium_nif"
+
+    _m = os.system("mkdir -p \"${app}/ebin\" \"${app}/priv\"")
+
+    // 1. The C NIF .so (links the engine; rpath core/native). erl_nif.h comes
+    //    from the running OTP root, so no hard-coded include path.
+    mk = "ERTS_INC=$(erl -noshell -eval 'io:format(\"~s/usr/include\",[code:root_dir()]),halt()') && cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I\"$ERTS_INC\" -shared \"${erl}/c_src/servirtium_nif.c\" -L\"${native}\" -lservirtium_vcr -Wl,-rpath,\"${native}\" -o \"${app}/priv/servirtium_nif.so\""
+    rc = os.system(mk)
+    if rc != 0 { println("erlang(build): NIF compile failed"); return 1 }
+
+    // 2. The BEAM modules (erlc — no rebar3 needed).
+    bc = os.system("erlc -o \"${app}/ebin\" \"${erl}/src/servirtium_nif.erl\" \"${erl}/src/servirtium.erl\"")
+    if bc != 0 { println("erlang(build): erlc failed"); return 1 }
+
+    // 3. The .app resource so `code:priv_dir(servirtium_nif)` resolves when the
+    //    app is on the path via ERL_LIBS.
+    cp = os.system("cp \"${erl}/src/servirtium_nif.app\" \"${app}/ebin/servirtium_nif.app\"")
+    if cp != 0 { println("erlang(build): .app copy failed"); return 1 }
+
+    println("erlang(build): built shared NIF app -> erlang/_build/servirtium_nif")
+    return 0
+}

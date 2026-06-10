@@ -54,21 +54,26 @@ ae build --emit=lib --with=fs,net core/embed.ae \
   runtime; the whole-tape normalization/redaction features need `std.regex`, so
   the floor is **Aether ≥ 0.227.0**.
 
-## Build the NIF + test
+## The NIF is the shared Erlang app (Elixir doesn't build one)
+
+Elixir does **not** compile a NIF. The canonical `servirtium_nif` NIF is built
+once by the **Erlang** binding (`aeb erlang/.build.ae` →
+`erlang/_build/servirtium_nif/{ebin,priv}`, which `cc`-builds
+`priv/servirtium_nif.so` linking `../core/native` with an rpath, and `erlc`s the
+loader module). `Servirtium.Native` just `defdelegate`s onto `:servirtium_nif`.
+
+Put that shared app on the BEAM code path, then test. `mix` does **not** fold
+`ERL_LIBS` in, so `test_helper.exs` does `Code.append_path` from
+`SERVIRTIUM_NIF_EBIN`:
 
 ```sh
 mix deps.get
-mix test
+SERVIRTIUM_NIF_EBIN=../erlang/_build/servirtium_nif/ebin mix test
 ```
 
-`mix compile` runs `elixir_make`, which builds `priv/servirtium_nif.so` from
-`c_src/servirtium_nif.c` via the `Makefile`, linking the engine in
-`../core/native` and baking an rpath to it so it loads without
-`LD_LIBRARY_PATH`. The NIF's include path for `erl_nif.h` is resolved from
-`code:root_dir()` (e.g. `/usr/lib/erlang`).
-
-The native lib and the compiled NIF are **git-ignored build artifacts** — run
-`build-native.sh` and `mix compile` after cloning, or let CI build them.
+Or just `aeb elixir/.tests.ae`, which builds the engine + the shared Erlang app
+(via deps) and passes `SERVIRTIUM_NIF_EBIN` for you. The engine `.so` and the
+shared NIF are **git-ignored build artifacts**.
 
 ## CI
 

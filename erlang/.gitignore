@@ -1,4 +1,7 @@
-# Compiled BEAM artifacts (rebuilt via the compile module — no erlc/rebar3).
+# Shared NIF build output (the OTP app consumed by Elixir + Gleam via ERL_LIBS).
+_build/
+
+# Legacy in-place build artifacts.
 ebin/
 
 # Native build artifacts: the compiled C NIF (links the engine via rpath).

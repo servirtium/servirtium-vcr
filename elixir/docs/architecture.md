@@ -32,12 +32,14 @@ every other language binding built on the same `core/embed.ae`.
 ## Why a C NIF (and not ctypes)
 
 Elixir/Erlang has no ctypes/Fiddle equivalent for calling a C-ABI at runtime, so
-the FFI is a small hand-written **NIF** (`erl_nif`) compiled by
-[`elixir_make`](https://hex.pm/packages/elixir_make):
+the FFI is a small hand-written **NIF** (`erl_nif`). Elixir does not compile its
+own — the canonical NIF is the `servirtium_nif` OTP app owned by the **Erlang**
+binding (the BEAM's lingua franca owns the shared binding, as the one Java jar
+backs the JVM four); `Servirtium.Native` `defdelegate`s onto `:servirtium_nif`.
+The shared NIF:
 
-- `c_src/servirtium_nif.c` declares the `aether_vcr_embed_*` symbols `extern`
-  and registers one NIF per function (`ERL_NIF_INIT(Elixir.Servirtium.Native,
-  …)`).
+- declares the `aether_vcr_embed_*` symbols `extern` and registers one NIF per
+  function (`ERL_NIF_INIT(servirtium_nif, …)`).
 - The opaque server handle is passed back to Elixir as a **64-bit integer**
   (`uintptr_t` → `enif_make_uint64`); `0` means failure. Each call returns a
   distinct handle, and N handles can be live at once — `%Servirtium.Server{}`
@@ -55,14 +57,15 @@ the FFI is a small hand-written **NIF** (`erl_nif`) compiled by
 
 ### How the NIF builds and links the engine
 
-`mix compile` runs `elixir_make`, which invokes the `Makefile`:
+The Erlang binding's `.build.ae` compiles it once (Elixir just consumes the
+result over the BEAM):
 
 ```
 cc -O2 -std=c11 -fPIC -I$(ERLANG_PATH)/usr/include \
-   c_src/servirtium_nif.c \
+   erlang/c_src/servirtium_nif.c \
    -shared -fPIC \
-   -L./native -lservirtium_vcr -Wl,-rpath,./native \
-   -o priv/servirtium_nif.so
+   -L core/native -lservirtium_vcr -Wl,-rpath,core/native \
+   -o erlang/_build/servirtium_nif/priv/servirtium_nif.so
 ```
 
 - `-I$(ERLANG_PATH)/usr/include` finds `erl_nif.h` (Erlang root from

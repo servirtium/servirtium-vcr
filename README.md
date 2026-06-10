@@ -21,11 +21,11 @@ servirtium-vcr/
   dart/          # dart:ffi (also Flutter)     dotnet/    # P/Invoke
   java/          # FFM / Panama (JDK 25)       rust/      # libloading
   ruby/          # Fiddle                      javascript/# koffi (Node)
-  haskell/       # foreign import ccall        elixir/    # C NIF
+  haskell/       # foreign import ccall        elixir/    # shares the Erlang NIF
   php/           # ext-ffi                     pharo/     # UnifiedFFI (Smalltalk)
   nim/           # importc (linked)            zig/       # extern C (linked)
-  lua/           # C extension (Lua 5.4)       erlang/    # C NIF (reuses Elixir's)
-  gleam/         # C NIF over the BEAM (via Erlang)
+  lua/           # C extension (Lua 5.4)       erlang/    # C NIF (canonical, shared)
+  gleam/         # shares the Erlang NIF (BEAM)
   kotlin/ scala/ clojure/ groovy/  # JVM family — thin layers over the Java jar (no 2nd FFI)
   core_tests/    # Aether-level engine tests (pure-Aether, no binding)
   integration/   # browser · subversion · climate · todobackend cross-binding tests
@@ -55,13 +55,13 @@ folder (`usage`, `features`, `architecture`, `building`).
 | Dart | dart:ffi (also Flutter) | [dart/README.md](dart/README.md) |
 | PHP | ext-ffi | [php/README.md](php/README.md) |
 | Haskell | foreign import ccall | [haskell/README.md](haskell/README.md) |
-| Elixir | C NIF | [elixir/README.md](elixir/README.md) |
+| Elixir | shares the Erlang NIF (BEAM) | [elixir/README.md](elixir/README.md) |
 | Pharo | UnifiedFFI (Smalltalk) | [pharo/README.md](pharo/README.md) |
 | Nim | importc (linked) | [nim/README.md](nim/README.md) |
 | Zig | extern C (linked) | [zig/README.md](zig/README.md) |
 | Lua | C extension (Lua 5.4) | [lua/README.md](lua/README.md) |
-| Erlang | C NIF (reuses Elixir's) | [erlang/README.md](erlang/README.md) |
-| Gleam | C NIF over the BEAM (via Erlang) | [gleam/README.md](gleam/README.md) |
+| Erlang | C NIF (canonical — shared across the BEAM family) | [erlang/README.md](erlang/README.md) |
+| Gleam | shares the Erlang NIF (BEAM) | [gleam/README.md](gleam/README.md) |
 
 **JVM family.** Kotlin, Scala, Clojure and Groovy reach the engine through the
 **Java binding's jar** via seamless JVM interop — there is *no second native

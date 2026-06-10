@@ -1,13 +1,19 @@
-// Elixir binding tests (C NIF). The NIF Makefile links the shared engine
-// directly (NATIVE_DIR repointed to ../core/native), so no SERVIRTIUM_VCR_LIB
-// is needed; ExUnit runs serially (max_cases: 1).
+// Elixir binding tests. Elixir does NOT build its own NIF — it consumes the
+// shared `servirtium_nif` OTP app that the Erlang binding builds once
+// (erlang/.build.ae -> erlang/_build/servirtium_nif). This node deps that
+// build and runs `mix test`, passing SERVIRTIUM_NIF_EBIN so test_helper.exs
+// Code.append_path's the shared app onto the code path (mix doesn't fold
+// ERL_LIBS in); code:priv_dir then resolves priv/servirtium_nif.so and the NIF
+// loads. The engine .so is pulled in transitively via erlang/.build.ae's dep
+// on core. ExUnit runs serially (max_cases: 1).
 import build
 import std.os
 aeb(cap) {
     b = build.start()
-    build.dep(b, "core/.build.ae")
+    build.dep(b, "erlang/.build.ae")
     root = build._get(b, "root")
-    rc = os.system("cd \"${root}/elixir\" && mix deps.get >/dev/null 2>&1 && mix test")
+    ebin = "${root}/erlang/_build/servirtium_nif/ebin"
+    rc = os.system("cd \"${root}/elixir\" && mix deps.get >/dev/null 2>&1 && SERVIRTIUM_NIF_EBIN=\"${ebin}\" mix test")
     if rc != 0 { println("elixir: tests failed"); return 1 }
     println("elixir: tests passed")
     return 0

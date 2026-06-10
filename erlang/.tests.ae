@@ -1,31 +1,19 @@
-// Erlang binding tests. Reuses the Elixir C NIF, retargeted to the
-// `servirtium_nif` module. No erlc/rebar3 in the env: the C NIF is built with
-// cc and the .erl modules are compiled via the Erlang `compile` module. The
-// NIF links the shared engine via rpath, so SERVIRTIUM_VCR_LIB is set as
-// belt-and-braces (mirrors the rust binding).
+// Erlang binding tests. Erlang owns the canonical Servirtium NIF for the BEAM
+// family — erlang/.build.ae compiles it ONCE into the OTP app
+// _build/servirtium_nif/{ebin,priv}. This node deps that build and runs the
+// escript with ERL_LIBS pointed at _build, so the `servirtium`/`servirtium_nif`
+// modules and the NIF .so resolve the standard OTP way (code:priv_dir). The
+// Elixir and Gleam leaves consume the very same _build app.
 import build
 import std.os
 aeb(cap) {
     b = build.start()
-    build.dep(b, "core/.build.ae")
+    build.dep(b, "erlang/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
-    native = "${root}/core/native"
     erl = "${root}/erlang"
-    inc = "/usr/lib/erlang/usr/include"
+    libs = "${erl}/_build"
 
-    // 1. Build the C NIF .so (links the engine; embeds its dir as rpath).
-    mk = "cd \"${erl}\" && mkdir -p priv ebin && cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I${inc} -shared c_src/servirtium_nif.c -L\"${native}\" -lservirtium_vcr -Wl,-rpath,\"${native}\" -o priv/servirtium_nif.so"
-    rc = os.system(mk)
-    if rc != 0 { println("erlang: NIF build failed"); return 1 }
-
-    // 2. Compile the two .erl modules (no erlc — use the compile module).
-    cc2 = "cd \"${erl}\" && erl -noshell -eval 'io:format(\"~p~n\",[compile:file(\"src/servirtium_nif.erl\",[{outdir,\"ebin\"},report])]), io:format(\"~p~n\",[compile:file(\"src/servirtium.erl\",[{outdir,\"ebin\"},report])]), halt().'"
-    rc = os.system(cc2)
-    if rc != 0 { println("erlang: module compile failed"); return 1 }
-
-    // 3. Run the playback smoke test (curls the VCR; asserts ok-body + Ok).
-    run = "cd \"${erl}\" && SERVIRTIUM_VCR_LIB=\"${lib}\" escript test/playback.escript"
+    run = "cd \"${erl}\" && ERL_LIBS=\"${libs}\" escript test/playback.escript"
     rc = os.system(run)
     if rc != 0 { println("erlang: tests failed"); return 1 }
     println("erlang: tests passed")

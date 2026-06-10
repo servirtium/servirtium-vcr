@@ -25,56 +25,53 @@ with the Servirtium logic in this repo, *not* the Aether standard library).
 This binding drives a precompiled native build of that core through a C NIF;
 it does **not** reimplement Servirtium in Erlang.
 
-### Reuses the Elixir C NIF
+### Owns the canonical NIF for the whole BEAM family
 
-The C NIF (`c_src/servirtium_nif.c`) is the **same** NIF as the Elixir binding,
-copied verbatim except for one line: `ERL_NIF_INIT` is retargeted from the
-`Elixir.Servirtium.Native` module to the `servirtium_nif` module, so
-`erlang:load_nif/2` finds the funcs under this binding's stub module. Everything
-else — the `aether_vcr_embed_*` FFI seam, string marshalling, the per-listener
-handle contract — is identical.
+Erlang is the BEAM's lingua franca, so it owns the **one** Servirtium NIF that
+Elixir and Gleam also use — exactly as the single Java jar backs the
+Kotlin/Scala/Clojure/Groovy bindings. The C NIF (`c_src/servirtium_nif.c`) and
+the `servirtium_nif` loader module are compiled **once** (by `.build.ae`) into
+the OTP app `servirtium_nif` (`_build/servirtium_nif/{ebin,priv}`); the Elixir
+and Gleam bindings load that **same** compiled module over the BEAM rather than
+each compiling their own copy of the C source. There is exactly one
+`servirtium_nif.c` and one `servirtium_nif.so` in the monorepo, both here.
 
 ## Layout
 
 - `c_src/servirtium_nif.c` — the C NIF over the engine's C-ABI (links
   `core/native/libservirtium_vcr.so`, embedding its dir as an rpath).
-- `src/servirtium_nif.erl` — the stub module the NIF replaces at load time;
-  one `erlang:nif_error(not_loaded)` body per `nif_funcs[]` entry.
+- `src/servirtium_nif.erl` — the loader/stub module the NIF replaces at load
+  time; one `erlang:nif_error(not_loaded)` body per `nif_funcs[]` entry.
+- `src/servirtium_nif.app` — the OTP app resource, so `code:priv_dir/1` resolves
+  the `.so` when the app is on the path (via ERL_LIBS) for any BEAM consumer.
 - `src/servirtium.erl` — the idiomatic wrapper: `playback/1,2`, `record/2,3`,
   `base_url/1`, `port/1`, `tape_length/1`, `last_kind/1`, `last_error/1`,
   `last_index/1`, `close/1`.
+- `.build.ae` — compiles the shared `servirtium_nif` OTP app into `_build/`.
 - `test/playback.escript` — smoke test (curls the VCR, asserts the body).
 - `tapes/` — sample markdown tapes.
 
-## Building and testing (no erlc / rebar3)
+## Building and testing
 
-The dev box has `erl`/`escript` (Erlang/OTP 27) and `cc`, but **not** `erlc`
-or `rebar3`. So the `.erl` modules are compiled with the Erlang `compile`
-module rather than `erlc`, and there is no build tool config.
+`.build.ae` builds the shared `servirtium_nif` OTP app once: `cc` compiles the
+C NIF `.so` (linking the engine, rpath-embedding `core/native`), `erlc` compiles
+the `.erl` modules, and the `.app` resource is staged — all under
+`_build/servirtium_nif/{ebin,priv}`. Consumers (this binding, plus Elixir and
+Gleam) put that app on the code path with **ERL_LIBS** so `code:priv_dir` finds
+the `.so`. Run it through the monorepo build (which also builds the engine):
 
 ```sh
-# from erlang/
-
-# 1. build the C NIF .so (links the engine; rpath-embeds core/native):
-cc -O2 -std=c11 -fPIC -Wno-unused-parameter \
-   -I/usr/lib/erlang/usr/include \
-   -shared c_src/servirtium_nif.c \
-   -L../core/native -lservirtium_vcr -Wl,-rpath,../core/native \
-   -o priv/servirtium_nif.so
-
-# 2. compile the two .erl modules into ebin/ via the compile module:
-erl -noshell -eval \
-  'compile:file("src/servirtium_nif.erl",[{outdir,"ebin"},report]), \
-   compile:file("src/servirtium.erl",[{outdir,"ebin"},report]), halt().'
-
-# 3. run the smoke test:
-SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so escript test/playback.escript
+aeb erlang/.tests.ae      # deps erlang/.build.ae + core; ERL_LIBS=_build escript
 ```
 
-The NIF loads from `./priv/servirtium_nif.so` when run loose from the source
-tree (the stub's `init/0` falls back to that path when no OTP app `priv_dir`
-is resolvable). Build the shared engine from `core/` (needs the Aether `ae`
-toolchain), or point `SERVIRTIUM_VCR_LIB` at a prebuilt copy.
+By hand, from `erlang/` after a `.build.ae` build:
+
+```sh
+ERL_LIBS=_build escript test/playback.escript
+```
+
+The loader resolves the `.so` via `code:priv_dir(servirtium_nif)` (the app on
+the path), or a `SERVIRTIUM_NIF_DIR` override, falling back to `./priv`.
 
 ## Concurrency: one server per port
 

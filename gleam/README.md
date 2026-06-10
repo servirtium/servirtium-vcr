@@ -29,24 +29,20 @@ with the Servirtium logic in this repo, *not* the Aether standard library).
 This binding drives a precompiled native build of that core through a C NIF;
 it does **not** reimplement Servirtium in Gleam.
 
-### Reuses the Erlang C NIF (over the BEAM)
+### Consumes the shared Erlang NIF (over the BEAM)
 
-Gleam compiles to Erlang and runs on the BEAM, so it reuses the **same** C NIF
-as the Erlang binding: `c_src/servirtium_nif.c` is copied verbatim, keeping
-`ERL_NIF_INIT(servirtium_nif, ...)`. Gleam compiles the `.erl` stub module
-placed in `src/` and copies `priv/` into the build, so the cc-built
-`priv/servirtium_nif.so` loads from this app's (`servirtium_gleam`) priv dir
-via `erlang:load_nif/2`. The Gleam API reaches the NIF with `@external`
-FFI declarations to the `servirtium_nif` module; Gleam `String`s are Erlang
-binaries on the Erlang target, which is exactly the term type the NIF
-takes and returns.
+Gleam compiles to Erlang and runs on the BEAM, so it consumes the **one**
+canonical Servirtium NIF — the `servirtium_nif` OTP app the Erlang binding
+builds once (`erlang/_build/servirtium_nif`). Gleam ships **no** C source and
+**no** NIF module of its own: `src/servirtium.gleam` binds straight to the
+shared module with `@external(erlang, "servirtium_nif", ...)`, and the app is
+put on the BEAM code path at test time via **ERL_LIBS** (so the module and its
+`priv/servirtium_nif.so` resolve the standard OTP way). Gleam `String`s are
+Erlang binaries on the Erlang target — exactly the term type the NIF takes and
+returns.
 
 ## Layout
 
-- `c_src/servirtium_nif.c` — the C NIF over the engine's C-ABI (copied from
-  the Erlang binding; links `core/native/libservirtium_vcr.so` via rpath).
-- `src/servirtium_nif.erl` — the stub module the NIF replaces at load time;
-  its `-on_load` loads `servirtium_nif.so` from `servirtium_gleam`'s priv dir.
 - `src/servirtium.gleam` — the idiomatic Gleam API: `playback`, `record`,
   `base_url`, `port`, `tape_length`, `last_kind`, `last_error`, `last_index`,
   `close`, plus a `curl` test helper.
@@ -56,25 +52,22 @@ takes and returns.
 
 ## Building and testing
 
-The dev box has `gleam` (1.17.0), `erl`/Erlang OTP 27, and `cc`.
+The dev box has `gleam` (1.17.0), `erl`/Erlang OTP 27, and `cc`. There is no
+C step here — the shared `servirtium_nif` app is built by the Erlang binding.
+
+```sh
+aeb gleam/.tests.ae    # deps erlang/.build.ae + core; ERL_LIBS=_build gleam test
+```
+
+By hand, after the Erlang binding's `.build.ae` has produced the shared app:
 
 ```sh
 # from gleam/
-
-# 1. build the C NIF .so into priv/ (links the engine; rpath-embeds core/native):
-mkdir -p priv
-cc -O2 -std=c11 -fPIC -Wno-unused-parameter \
-   -I/usr/lib/erlang/usr/include \
-   -shared c_src/servirtium_nif.c \
-   -L../core/native -lservirtium_vcr -Wl,-rpath,../core/native \
-   -o priv/servirtium_nif.so
-
-# 2. run the test (gleam fetches gleeunit from Hex on first run):
-SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so gleam test
+ERL_LIBS=../erlang/_build gleam test
 ```
 
-Build the shared engine from `core/` (needs the Aether `ae` toolchain), or
-point `SERVIRTIUM_VCR_LIB` at a prebuilt copy.
+`gleam test` honors `ERL_LIBS`, so the `servirtium_nif` module and its
+`priv/servirtium_nif.so` load over the BEAM the standard OTP way.
 
 ## Concurrency: one server per port
 

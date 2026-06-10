@@ -34,20 +34,25 @@ matching, redactions, notes, drift detection, static bypass, gzip/chunked
 handling — lives in this repo as a pure-Aether module at `core/vcr.ae` (with
 the C-ABI embedding seam in `core/embed.ae`), built on Aether stdlib
 primitives and compiled to `core/native/libservirtium_vcr.so`. This package
-drives that native build through a hand-written **C NIF** (`erl_nif`); it does
-**not** reimplement Servirtium in Elixir.
+drives that native build through a **C NIF** (`erl_nif`); it does **not**
+reimplement Servirtium in Elixir, and does **not** compile its own NIF — it
+loads the shared `servirtium_nif` NIF owned by the Erlang binding (below).
 
 > **Breaking from 1.x:** the previous Elixir reimplementation (the Plug/Cowboy
 > proxy server and the markdown recorder/replayer) and its API are gone, with no
 > shim. The new API is below / in [docs/usage.md](docs/usage.md). The tape
 > *format* is unchanged, so existing tapes replay as-is.
 
-## Why a C NIF?
+## One shared NIF for the whole BEAM family
 
 Elixir/Erlang has no ctypes/Fiddle equivalent, so the FFI to the engine's
-`aether_vcr_embed_*` C-ABI is a small hand-written NIF (`c_src/servirtium_nif.c`),
-built with [`elixir_make`](https://hex.pm/packages/elixir_make). The NIF links
-the engine shared library and only drives its *control surface*
+`aether_vcr_embed_*` C-ABI is a small hand-written NIF. There is exactly **one**
+such NIF in the monorepo — the `servirtium_nif` OTP app, owned and built by the
+**Erlang** binding (Erlang is the BEAM's lingua franca, so it owns the shared
+binding, exactly as the one Java jar backs the Kotlin/Scala/Clojure/Groovy
+bindings). Elixir does not compile its own copy: `Servirtium.Native`
+`defdelegate`s onto `:servirtium_nif`, which loads `priv/servirtium_nif.so` over
+the BEAM. The NIF only drives the engine's *control surface*
 (start/stop/diagnostics/mutations) — the engine itself is the HTTP server the
 SUT talks to over plain HTTP. The `start_*` calls return immediately (the accept
 loop runs on a detached pthread inside the engine), so no NIF blocks the BEAM
@@ -63,7 +68,8 @@ scheduler. See [docs/architecture.md](docs/architecture.md).
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering works
   (Elixir → C NIF → `core/embed.ae` → `core/vcr.ae`), and the handle-based
   one-server-per-port model.
-- **[docs/building.md](docs/building.md)** — building the native library + NIF.
+- **[docs/building.md](docs/building.md)** — building the engine + the shared
+  Erlang NIF, and how Elixir loads it.
 - **[MIGRATION.md](MIGRATION.md)** — the 1.x → 2.0 rewrite story.
 
 ## Concurrency: one server per port
@@ -90,12 +96,20 @@ present):
 ./bootstrap.sh        # extra args pass through to `mix test`
 ```
 
-Already have `ae` (≥ 0.227.0, for `std.regex`) and Elixir on PATH? Drive the steps directly:
+Through the monorepo build (recommended — builds the engine and the shared
+Erlang NIF, then runs the suite with the NIF on the code path):
 
 ```sh
-./build-native.sh     # builds native/libservirtium_vcr.so (needs `ae`)
+aeb elixir/.tests.ae   # deps erlang/.build.ae + core; passes SERVIRTIUM_NIF_EBIN
+```
+
+By hand, once the engine and the Erlang binding's shared app are built
+(`aeb erlang/.build.ae` → `erlang/_build/servirtium_nif`):
+
+```sh
 mix deps.get
-mix test              # mix compile builds priv/servirtium_nif.so first
+# mix doesn't fold ERL_LIBS in, so point test_helper.exs at the shared app:
+SERVIRTIUM_NIF_EBIN=../erlang/_build/servirtium_nif/ebin mix test
 ```
 
 Details in [docs/building.md](docs/building.md).

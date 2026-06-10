@@ -1,10 +1,10 @@
 #!/usr/bin/env escript
-%%! -pa ebin
 %%
 %% Smoke test for the Erlang Servirtium binding: start a playback VCR over a
 %% one-interaction tape (GET /ok -> 200 text/plain "ok-body"), drive it with
 %% curl, and assert the body + a clean match. Exits 0 on success, non-zero on
-%% any failure. Run from erlang/ so ./priv/servirtium_nif.so resolves.
+%% any failure. Run with ERL_LIBS=_build (so the `servirtium`/`servirtium_nif`
+%% app + its priv/servirtium_nif.so resolve) from erlang/ (so tapes/ resolves).
 
 main(_) ->
     Tape = "tapes/single_get.md",

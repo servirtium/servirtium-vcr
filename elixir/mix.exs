@@ -10,13 +10,11 @@ defmodule Servirtium.MixProject do
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
-      compilers: [:elixir_make | Mix.compilers()],
-      make_targets: ["all"],
-      make_clean: ["clean"],
       deps: deps(),
       description:
         "Record/replay HTTP service tests in the Servirtium markdown tape format — " <>
-          "a thin Elixir wrapper over the Aether VCR core via a C NIF.",
+          "a thin Elixir wrapper over the shared Aether VCR NIF (the Erlang " <>
+          "`servirtium_nif` app) on the BEAM.",
       package: package(),
       docs: [main: "readme", extras: ["README.md" | doc_extras()]]
     ]
@@ -24,7 +22,10 @@ defmodule Servirtium.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      # :inets/:ssl are the test SUT's HTTP client (:httpc). Declaring them puts
+      # their ebin on mix's code path (mix, unlike plain `erl`, doesn't surface
+      # the whole OTP lib), so :httpc / :http_util resolve.
+      extra_applications: [:logger, :inets, :ssl]
     ]
   end
 
@@ -33,7 +34,10 @@ defmodule Servirtium.MixProject do
 
   defp deps do
     [
-      {:elixir_make, "~> 0.8", runtime: false},
+      # The C NIF is the Erlang binding's shared `servirtium_nif` app (no
+      # Elixir-side compile). In the monorepo it's on the path via ERL_LIBS
+      # (erlang/_build); as a published package this would be
+      # `{:servirtium_nif, "~> 2.0"}` from Hex.
       # :inets / :httpc (Erlang built-ins) are the test SUT client — no dep.
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}
     ]
@@ -41,8 +45,7 @@ defmodule Servirtium.MixProject do
 
   defp package do
     [
-      files:
-        ~w(lib c_src native priv Makefile build-native.sh mix.exs README.md docs MIGRATION.md LICENSE),
+      files: ~w(lib mix.exs README.md docs MIGRATION.md LICENSE),
       licenses: ["Apache-2.0"],
       links: %{"Servirtium" => "https://servirtium.dev"}
     ]

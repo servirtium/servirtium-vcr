@@ -1,10 +1,20 @@
 defmodule Servirtium.Native do
   @moduledoc """
   Raw NIF surface over the Aether VCR core's C-ABI (the `aether_vcr_embed_*`
-  symbols from `core/embed.ae`, linked from
-  `core/native/libservirtium_vcr.so` via the NIF in `c_src/servirtium_nif.c`).
+  symbols from `core/embed.ae`, linked from `core/native/libservirtium_vcr.so`).
 
   This is a 1:1 mapping, not the public API — use `Servirtium` for that.
+
+  ## One shared NIF for the whole BEAM family
+
+  Elixir does **not** compile its own copy of the C NIF. The canonical NIF is
+  built once by the **Erlang** binding as the OTP app `servirtium_nif` (Erlang
+  is the BEAM's lingua franca, so it owns the shared binding — exactly as the
+  one Java jar backs the Kotlin/Scala/Clojure/Groovy bindings). This module
+  just `defdelegate`s onto that shared `:servirtium_nif` module, which loads
+  `priv/servirtium_nif.so` over the BEAM. In the monorepo the `servirtium_nif`
+  app is put on the code path via `ERL_LIBS` (pointed at `erlang/_build`); as a
+  published package it would be a Hex dependency.
 
   ## Per-listener contract (matching the Aether side)
 
@@ -20,60 +30,50 @@ defmodule Servirtium.Native do
   `""` on success or an error message.
   """
 
-  @on_load :load_nif
-
-  @doc false
-  def load_nif do
-    path = :filename.join(:code.priv_dir(:servirtium), ~c"servirtium_nif")
-    :erlang.load_nif(path, 0)
-  end
-
-  @nif_not_loaded "servirtium NIF not loaded (priv/servirtium_nif.so) — did `mix compile` build it?"
+  # `:servirtium_nif` is provided at runtime by the Erlang binding's shared OTP
+  # app (on the code path via ERL_LIBS / Code.append_path), not at compile time.
+  @compile {:no_warn_undefined, :servirtium_nif}
 
   # ---- lifecycle: open -> start -------------------------------------------
 
-  def open_playback(_label, _tape_path, _host, _port), do: :erlang.nif_error(@nif_not_loaded)
+  defdelegate open_playback(label, tape_path, host, port), to: :servirtium_nif
+  defdelegate open_record(label, tape_path, upstream_base, host, port), to: :servirtium_nif
+  defdelegate start(handle), to: :servirtium_nif
+  defdelegate stop(handle), to: :servirtium_nif
+  defdelegate stop_and_flush(handle, tape_path), to: :servirtium_nif
+  defdelegate stop_and_flush_fail_if_changed(handle, tape_path), to: :servirtium_nif
 
-  def open_record(_label, _tape_path, _upstream_base, _host, _port),
-    do: :erlang.nif_error(@nif_not_loaded)
+  # ---- introspection -------------------------------------------------------
 
-  def start(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def stop(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def stop_and_flush(_handle, _tape_path), do: :erlang.nif_error(@nif_not_loaded)
-  def stop_and_flush_fail_if_changed(_handle, _tape_path), do: :erlang.nif_error(@nif_not_loaded)
+  defdelegate port(handle), to: :servirtium_nif
+  defdelegate base_url(handle, host), to: :servirtium_nif
+  defdelegate tape_length(handle), to: :servirtium_nif
+  defdelegate reset_cursor(handle), to: :servirtium_nif
 
-  # ---- introspection (handle-based) ---------------------------------------
+  # ---- diagnostics ---------------------------------------------------------
 
-  def port(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def base_url(_handle, _host), do: :erlang.nif_error(@nif_not_loaded)
-  def tape_length(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def reset_cursor(_handle), do: :erlang.nif_error(@nif_not_loaded)
+  defdelegate last_error(handle), to: :servirtium_nif
+  defdelegate last_kind(handle), to: :servirtium_nif
+  defdelegate last_index(handle), to: :servirtium_nif
+  defdelegate clear_last_error(handle), to: :servirtium_nif
 
-  # ---- diagnostics (handle-based) -----------------------------------------
+  # ---- mutations / config --------------------------------------------------
 
-  def last_error(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def last_kind(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def last_index(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def clear_last_error(_handle), do: :erlang.nif_error(@nif_not_loaded)
-
-  # ---- mutations / config (handle 1st arg) --------------------------------
-
-  def redact(_handle, _field, _pattern, _replacement), do: :erlang.nif_error(@nif_not_loaded)
-  def unredact(_handle, _field, _pattern, _replacement), do: :erlang.nif_error(@nif_not_loaded)
-  def normalize_whole_tape(_handle, _pattern, _name), do: :erlang.nif_error(@nif_not_loaded)
-  def redact_whole_tape(_handle, _pattern, _replacement), do: :erlang.nif_error(@nif_not_loaded)
-  def remove_header(_handle, _field, _name), do: :erlang.nif_error(@nif_not_loaded)
-  def note(_handle, _title, _body), do: :erlang.nif_error(@nif_not_loaded)
-  def static_content(_handle, _mount_path, _fs_dir), do: :erlang.nif_error(@nif_not_loaded)
-  def untaped(_handle, _path), do: :erlang.nif_error(@nif_not_loaded)
-  def set_strict_headers(_handle, _on), do: :erlang.nif_error(@nif_not_loaded)
-  def indent_code_blocks(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def emphasize_http_verbs(_handle), do: :erlang.nif_error(@nif_not_loaded)
-
-  def clear_redactions(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def clear_unredactions(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def clear_header_removals(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def clear_static_content(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def clear_untaped(_handle), do: :erlang.nif_error(@nif_not_loaded)
-  def clear_format_options(_handle), do: :erlang.nif_error(@nif_not_loaded)
+  defdelegate redact(handle, field, pattern, replacement), to: :servirtium_nif
+  defdelegate unredact(handle, field, pattern, replacement), to: :servirtium_nif
+  defdelegate normalize_whole_tape(handle, pattern, name), to: :servirtium_nif
+  defdelegate redact_whole_tape(handle, pattern, replacement), to: :servirtium_nif
+  defdelegate remove_header(handle, field, name), to: :servirtium_nif
+  defdelegate note(handle, title, body), to: :servirtium_nif
+  defdelegate static_content(handle, mount_path, fs_dir), to: :servirtium_nif
+  defdelegate untaped(handle, path), to: :servirtium_nif
+  defdelegate set_strict_headers(handle, on), to: :servirtium_nif
+  defdelegate indent_code_blocks(handle), to: :servirtium_nif
+  defdelegate emphasize_http_verbs(handle), to: :servirtium_nif
+  defdelegate clear_redactions(handle), to: :servirtium_nif
+  defdelegate clear_unredactions(handle), to: :servirtium_nif
+  defdelegate clear_header_removals(handle), to: :servirtium_nif
+  defdelegate clear_static_content(handle), to: :servirtium_nif
+  defdelegate clear_untaped(handle), to: :servirtium_nif
+  defdelegate clear_format_options(handle), to: :servirtium_nif
 end
