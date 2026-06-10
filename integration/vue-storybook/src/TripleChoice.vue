@@ -77,7 +77,20 @@ svg { max-width: 100%; height: auto; }
 .lbl { font: 700 24px system-ui, sans-serif; fill: #fff; text-anchor: middle; }
 .ov  { font: 600 15px system-ui, sans-serif; fill: #1f2328; text-anchor: middle; }
 .ov.imp { font-weight: 700; }
-input[type="checkbox"] { width: 22px; height: 22px; }
+/* A native checkbox glyph does not reliably paint inside an SVG <foreignObject>
+   (the .checked property is set — Selenium's isSelected() sees it — but the tick
+   may not render). Draw the box and check ourselves so the checked state is
+   always visible; it stays a real <input> so .isSelected() still works. */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  width: 26px; height: 26px; margin: 0; box-sizing: border-box;
+  border: 3px solid #1f2328; border-radius: 5px; background: #fff; cursor: pointer;
+}
+input[type="checkbox"]:checked { background: #1a7f37; border-color: #1a7f37; }
+input[type="checkbox"]:checked::after {
+  content: ""; display: block; width: 6px; height: 12px; margin: 2px auto 0;
+  border: solid #fff; border-width: 0 3px 3px 0; transform: rotate(45deg);
+}
 .impossible { color: #cf222e; font-weight: 600; }
 .ok { color: #1a7f37; font-weight: 600; }
 </style>

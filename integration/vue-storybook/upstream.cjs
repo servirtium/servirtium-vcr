@@ -27,9 +27,12 @@ function start(port = 0) {
 // Stateful "pick two of three" backend for the Good/Cheap/Fast control, used
 // only in RECORD mode (a fresh instance per scenario, so state resets). POST
 // /api/selection {item, checked} applies the toggle and returns the new state +
-// the pair label — or refuses the third with 409 "Impossible".
-function startSelection(port = 0) {
+// the pair label. Two ways to enforce "pick two", selected by `mode`:
+//   'evict'  (default) — picking a third drops the oldest of the two (200)
+//   'refuse'           — picking a third is refused with 409 "Impossible"
+function startSelection(port = 0, mode = 'evict') {
   const state = { good: false, cheap: false, fast: false }
+  const order = []
   const labelFor = (s) => {
     const n = ['good', 'cheap', 'fast'].filter((k) => s[k]).length
     if (n < 2) return 'Pick two'
@@ -43,15 +46,24 @@ function startSelection(port = 0) {
       req.on('data', (c) => (body += c))
       req.on('end', () => {
         const { item, checked } = JSON.parse(body || '{}')
-        const next = { ...state, [item]: checked }
         const json = (code, obj) => {
           res.writeHead(code, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify(obj))
         }
-        if (['good', 'cheap', 'fast'].filter((k) => next[k]).length > 2) {
+        if (checked && state[item] === false &&
+            ['good', 'cheap', 'fast'].filter((k) => state[k]).length >= 2 &&
+            mode === 'refuse') {
           return json(409, { error: 'pick two of three', label: 'Impossible' })
         }
-        Object.assign(state, next)
+        if (checked) {
+          state[item] = true
+          order.push(item)
+          while (order.length > 2) state[order.shift()] = false // evict the oldest
+        } else {
+          state[item] = false
+          const i = order.indexOf(item)
+          if (i >= 0) order.splice(i, 1)
+        }
         json(200, { ...state, label: labelFor(state) })
       })
     } else {

@@ -16,7 +16,7 @@ const VOLATILE_REQ_HEADERS = [
 ]
 
 async function recordScenario(s) {
-  const stub = await upstream.startSelection(0)
+  const stub = await upstream.startSelection(0, s.mode)
   const stubUrl = `http://127.0.0.1:${stub.address().port}`
   let builder = Vcr.record(s.tape, stubUrl)
     .staticContent('/app', DIST)

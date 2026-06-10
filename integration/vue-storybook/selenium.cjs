@@ -45,20 +45,25 @@ const TAPES_DIR = path2.join(HERE, 'tapes')
 
 // Each scenario is an ordered sequence of toggles (playback is cursor-ordered)
 // plus the state the control should end in. `allowed` says whether the backend
-// accepts that toggle — the third in block-third is refused ("Impossible").
+// accepts that toggle. `mode` is the record-time backend behaviour: 'evict'
+// drops the oldest of the two when a third is picked; 'refuse' returns 409
+// "Impossible". `unset` on a step names the box the backend evicts in response.
 const TRIPLE_SCENARIOS = [
   {
     name: 'pick-two',
     tape: path2.join(TAPES_DIR, 'triple-pick-two.md'),
+    mode: 'evict',
     steps: [
       { item: 'good', allowed: true },
       { item: 'fast', allowed: true },
+      { item: 'cheap', allowed: true, unset: 'good' }, // third pick evicts good
     ],
-    expect: { good: true, cheap: false, fast: true, status: 'Expensive' },
+    expect: { good: false, cheap: true, fast: true, status: 'Low Quality' },
   },
   {
     name: 'block-third',
     tape: path2.join(TAPES_DIR, 'triple-block-third.md'),
+    mode: 'refuse',
     steps: [
       { item: 'good', allowed: true },
       { item: 'cheap', allowed: true },
@@ -85,6 +90,10 @@ async function driveTriple(vcrBaseUrl, steps, timeoutMs = 60000) {
       await box(step.item).click()
       if (step.allowed) {
         await driver.wait(async () => box(step.item).isSelected(), timeoutMs)
+        // "pick two" via eviction: the backend dropped one — wait for it to clear.
+        if (step.unset) {
+          await driver.wait(async () => !(await box(step.unset).isSelected()), timeoutMs)
+        }
       } else {
         await driver.wait(
           until.elementTextContains(driver.findElement(By.css('[data-testid="status"]')), 'Impossible'),

@@ -58,22 +58,28 @@ It's a choice of which script you run — the classic Servirtium split:
 `/favicon.ico` is marked `untaped` so the browser's incidental favicon fetch
 doesn't land on the tape or consume the playback cursor.
 
-## A second control: Good / Cheap / Fast (asserting a backend *refusal*)
+## A second control: Good / Cheap / Fast (the backend is the source of truth)
 
 `src/TripleChoice.vue` is the classic **pick any two** Venn — Good, Cheap, Fast,
 a checkbox per circle — and it shows what a *recorded* backend buys you that a
-faked one doesn't: **asserting the UI's handling of a server refusal, at the
-wire.** The backend owns the "pick two" rule; the control just posts each toggle
-and renders the server's answer (the pair label — Slow / Expensive / Low
-Quality — or, for the third, a `409` whose label is **Impossible**, the centre
-of the Venn).
+faked one doesn't: **the UI renders only the server's answer, at the wire** —
+never an optimistic local flip. The backend owns the "pick two" rule; the
+control just posts each toggle and reflects whatever comes back (the pair label
+— Slow / Expensive / Low Quality). There are two ways a backend can enforce
+"pick two", and a recorded tape pins each one:
 
-Each scenario is its own ordered tape:
+- `tapes/triple-pick-two.md` — **eviction.** Check Good, check Fast → "Expensive";
+  then check Cheap → the server drops the oldest (`good:false`) and returns
+  `cheap`+`fast` → "Low Quality". You watch a ticked box pop back off — the
+  control's *unchecking* path, driven entirely by the recorded response.
+- `tapes/triple-block-third.md` — **refusal.** Check Good, check Cheap, **check
+  Fast → `409`** → Fast stays unchecked, status "Impossible", the centre of the
+  Venn. The refusal is a literal `409` line in the committed Markdown.
 
-- `tapes/triple-pick-two.md` — check Good, check Fast → two `200`s → "Expensive".
-- `tapes/triple-block-third.md` — check Good, check Cheap, **check Fast → `409`**
-  → Fast stays unchecked, status "Impossible". The refusal is a literal `409`
-  line in the committed Markdown.
+The checkbox is a real `<input>` inside an SVG `<foreignObject>`, styled
+`appearance:none` with a drawn tick so the checked state paints reliably (a
+native glyph does not always render inside a foreignObject) while still being a
+genuine checkbox that Selenium's `.isSelected()` reads.
 
 ```sh
 npm run storybook        # the GoodCheapFast story is interactive (stubbed "pick two")
