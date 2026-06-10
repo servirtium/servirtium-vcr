@@ -24,7 +24,7 @@ aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     jdk = os.getenv("JAVA25_HOME")
     if string.length(jdk) == 0 { jdk = "/usr/lib/jvm/java-25-openjdk-amd64" }
     eng = _engine()

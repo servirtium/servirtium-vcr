@@ -11,7 +11,7 @@ aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     rc = os.system("cd \"${root}/integration/todobackend/ruby\" && SERVIRTIUM_VCR_LIB=\"${lib}\" RUBYLIB=\"${root}/ruby/lib\" ruby playback_test.rb")
     if rc != 0 { println("todobackend/ruby playback: failed"); return 1 }
     println("todobackend/ruby playback: passed")

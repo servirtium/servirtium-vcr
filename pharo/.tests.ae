@@ -2,17 +2,21 @@
 // throwaway image and runs SUnit headless; uFFI loads the shared engine via
 // SERVIRTIUM_VCR_LIB. Needs a Pharo VM (PHARO_DIR).
 import build
+import pharo
+import build (env)
 import std.os
 import std.string
 aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
-    pharo = os.getenv("PHARO_DIR")
-    if string.length(pharo) == 0 { pharo = "$HOME/.local/pharo" }
-    rc = os.system("cd \"${root}/pharo\" && SERVIRTIUM_VCR_LIB=\"${lib}\" PHARO_DIR=\"${pharo}\" ./run-tests.sh")
-    if rc != 0 { println("pharo: tests failed"); return 1 }
-    println("pharo: tests passed")
-    return 0
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    pharo_dir = os.getenv("PHARO_DIR")
+    if string.length(pharo_dir) == 0 {
+        home = os.getenv("HOME")
+        pharo_dir = "${home}/.local/pharo"
+    }
+    pharo.test(b) {
+        env("SERVIRTIUM_VCR_LIB", lib)
+        env("PHARO_DIR", pharo_dir)
+    }
 }

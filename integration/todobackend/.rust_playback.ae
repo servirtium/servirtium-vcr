@@ -21,7 +21,7 @@ aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     cd = _chromedriver()
     if cd == "" { println("todobackend/rust playback: no cached chromedriver found under ~/.cache/selenium"); return 1 }
     rc = os.system("cd \"${root}/integration/todobackend/rust\" && SERVIRTIUM_VCR_LIB=\"${lib}\" CHROMEDRIVER=\"${cd}\" cargo test --test playback -- --nocapture")

@@ -1,0 +1,13 @@
+// Java binding — aeb-native build (no Maven). Compiles src/main/java
+// (the FFM/Panama VCR client) with javac directly. junit-jupiter +
+// selenium are test-scope only, so the main compile has no third-party
+// deps — just the JDK (FFM is stdlib since release 22). Downstream JVM
+// bindings (kotlin/scala/clojure/groovy) build.dep this node to get the
+// servirtium-vcr classes on their compile classpath.
+import build
+import java
+import java (source_layout, release)
+aeb(cap) {
+    b = build.start()
+    java.javac(b) { source_layout("maven idiomatic") release("22") }
+}

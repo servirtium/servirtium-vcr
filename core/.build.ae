@@ -37,5 +37,9 @@ aeb(cap) {
         return 1
     }
     println("engine: built core/native/libservirtium_vcr.so (from core)")
+    // Publish the .so onto this node's dep edge: every consumer reads it
+    // back via build.dep_artifact(b, "core/.build.ae", "shared_lib") — no
+    // hardcoded path, no coupling to core/native/ as the output dir.
+    build.publish_artifact(b, "shared_lib", "${dest}/libservirtium_vcr.so")
     return 0
 }

@@ -20,7 +20,7 @@ aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     pharo = os.getenv("PHARO_DIR")
     if string.length(pharo) == 0 { pharo = "$HOME/.local/pharo" }
     rc = os.system("cd \"${root}/integration/todobackend/pharo\" && SERVIRTIUM_VCR_LIB=\"${lib}\" PHARO_DIR=\"${pharo}\" ./run.sh playback")

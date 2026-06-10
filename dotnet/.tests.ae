@@ -1,13 +1,10 @@
 // .NET binding tests. P/Invoke loads the shared engine via SERVIRTIUM_VCR_LIB.
 import build
-import std.os
+import dotnet
+import build (env)
 aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
-    rc = os.system("cd \"${root}/dotnet\" && SERVIRTIUM_VCR_LIB=\"${lib}\" dotnet test --nologo")
-    if rc != 0 { println("dotnet: tests failed"); return 1 }
-    println("dotnet: tests passed")
-    return 0
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    dotnet.test_existing(b) { env("SERVIRTIUM_VCR_LIB", lib) }
 }

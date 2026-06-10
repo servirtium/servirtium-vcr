@@ -1,0 +1,10 @@
+// Kotlin binding — aeb-native. Compiles src/main/kotlin against the Java
+// binding's classes (build.dep java/.build.ae); kotlinc supplies kotlin-stdlib.
+import build
+import kotlin
+import kotlin (source_layout)
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "java/.build.ae")
+    kotlin.kotlinc(b) { source_layout("maven idiomatic") }
+}

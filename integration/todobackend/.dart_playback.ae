@@ -11,7 +11,7 @@ aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     base = "cd \"${root}/integration/todobackend/dart\" && SERVIRTIUM_VCR_LIB=\"${lib}\""
     rc = os.system("${base} dart pub get >/dev/null 2>&1 && ${base} dart test -j 1 playback_test.dart")
     if rc != 0 { println("todobackend/dart playback: failed"); return 1 }

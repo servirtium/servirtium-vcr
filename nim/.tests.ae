@@ -9,14 +9,14 @@
 // dedicated thread. Playback drives requests with curl, record with
 // std/httpclient (one VCR server per port).
 import build
-import std.os
+import nim
+import build (env, step)
 aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
-    rc = os.system("cd \"${root}/nim\" && for t in tests/playback.nim tests/playback_test.nim tests/record_test.nim tests/mutation_test.nim; do SERVIRTIUM_VCR_LIB=\"${lib}\" nim c -r --hints:off --threads:on --path:src --path:tests \"$t\" || exit 1; done")
-    if rc != 0 { println("nim: tests failed"); return 1 }
-    println("nim: tests passed")
-    return 0
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    nim.test(b) {
+        env("SERVIRTIUM_VCR_LIB", lib)
+        step("for t in tests/playback.nim tests/playback_test.nim tests/record_test.nim tests/mutation_test.nim; do nim c -r --hints:off --threads:on --path:src --path:tests \"$t\" || exit 1; done")
+    }
 }

@@ -1,27 +1,15 @@
-// Clojure binding tests. Clojure reaches the engine through the Java FFM
-// binding (com.paulhammant.servirtium:servirtium-vcr) via JVM interop — no
-// second FFI. So this node installs the Java binding jar to the local ~/.m2
-// first, then runs the Clojure module's `mvn test` (JDK 25 + native access; the
-// engine .so via SERVIRTIUM_VCR_LIB). The `test` phase runs clojure.test (via
-// exec-maven-plugin) and fails the build (nonzero) on any test failure. Deps
-// the shared engine like every binding.
+// Clojure binding tests — runs clojure.test (servirtium_test.clj) against the
+// main namespace + the Java binding classes (build.dep java/.build.ae) + the
+// vendored clojure runtime. Engine .so via SERVIRTIUM_VCR_LIB.
 import build
-import std.os
-import std.string
+import clojure
+import clojure (source_layout)
+import build (env)
 aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
-    jdk = os.getenv("JAVA25_HOME")
-    if string.length(jdk) == 0 { jdk = "/usr/lib/jvm/java-25-openjdk-amd64" }
-
-    // The JVM-family bindings consume the Java binding's jar; install it first.
-    inst = os.system("cd \"${root}/java\" && JAVA_HOME=\"${jdk}\" mvn -q -DskipTests install")
-    if inst != 0 { println("clojure: failed to install the java binding jar"); return 1 }
-
-    rc = os.system("cd \"${root}/clojure\" && SERVIRTIUM_VCR_LIB=\"${lib}\" JAVA_HOME=\"${jdk}\" mvn -q test")
-    if rc != 0 { println("clojure: tests failed"); return 1 }
-    println("clojure: tests passed")
-    return 0
+    build.dep(b, "java/.build.ae")
+    build.dep(b, "libs/java/clojure/.clojure.jar.ae")
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    clojure.test(b) { source_layout("maven idiomatic") env("SERVIRTIUM_VCR_LIB", lib) }
 }

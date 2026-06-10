@@ -14,7 +14,7 @@ aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     rc = os.system("cd \"${root}/integration\" && SERVIRTIUM_VCR_LIB=\"${lib}\" PYTHONPATH=\"${root}/python\" python3 browser_smoke.py")
     if rc != 0 { println("integration(browser): failed"); return 1 }
     println("integration(browser): passed")

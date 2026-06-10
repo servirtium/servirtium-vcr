@@ -1,14 +1,15 @@
 // JavaScript/TS binding tests (koffi). Loads the shared engine via
 // SERVIRTIUM_VCR_LIB; jest --runInBand for the one-server-per-process rule.
 import build
-import std.os
+import javascript
+import build (env, step)
 aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
-    rc = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && SERVIRTIUM_VCR_LIB=\"${lib}\" npx jest --runInBand")
-    if rc != 0 { println("javascript: tests failed"); return 1 }
-    println("javascript: tests passed")
-    return 0
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    javascript.test(b) {
+        env("SERVIRTIUM_VCR_LIB", lib)
+        step("npm install --silent --no-audit --no-fund")
+        step("npx jest --runInBand")
+    }
 }

@@ -16,7 +16,7 @@ aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     dir = "${root}/integration/vue-storybook"
 
     // The demo loads the compiled JS binding — make sure it (and koffi) exist.

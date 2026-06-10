@@ -9,7 +9,7 @@ aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     root = build._get(b, "root")
-    lib = "${root}/core/native/libservirtium_vcr.so"
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     dir = "${root}/integration/vue-storybook"
 
     jsb = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && npm run build")

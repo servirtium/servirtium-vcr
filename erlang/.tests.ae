@@ -5,17 +5,14 @@
 // modules and the NIF .so resolve the standard OTP way (code:priv_dir). The
 // Elixir and Gleam leaves consume the very same _build app.
 import build
-import std.os
+import erlang
+import build (env, step)
 aeb(cap) {
     b = build.start()
     build.dep(b, "erlang/.build.ae")
-    root = build._get(b, "root")
-    erl = "${root}/erlang"
-    libs = "${erl}/_build"
-
-    run = "cd \"${erl}\" && ERL_LIBS=\"${libs}\" escript test/playback.escript"
-    rc = os.system(run)
-    if rc != 0 { println("erlang: tests failed"); return 1 }
-    println("erlang: tests passed")
-    return 0
+    libs = build.dep_artifact(b, "erlang/.build.ae", "erl_libs")
+    erlang.eunit(b) {
+        env("ERL_LIBS", libs)
+        step("escript test/playback.escript")
+    }
 }

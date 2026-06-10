@@ -7,17 +7,14 @@
 // the standard OTP way — code:priv_dir). Engine .so comes transitively via the
 // erlang build's dep on core.
 import build
-import std.os
+import gleam
+import build (env, step)
 aeb(cap) {
     b = build.start()
     build.dep(b, "erlang/.build.ae")
-    root = build._get(b, "root")
-    gleam = "${root}/gleam"
-    libs = "${root}/erlang/_build"
-
-    run = "cd \"${gleam}\" && PATH=\"$HOME/.local/bin:$PATH\" ERL_LIBS=\"${libs}\" gleam test"
-    rc = os.system(run)
-    if rc != 0 { println("gleam: tests failed"); return 1 }
-    println("gleam: tests passed")
-    return 0
+    libs = build.dep_artifact(b, "erlang/.build.ae", "erl_libs")
+    gleam.test_existing(b) {
+        env("ERL_LIBS", libs)
+        step("PATH=\"$HOME/.local/bin:$PATH\" gleam test")
+    }
 }

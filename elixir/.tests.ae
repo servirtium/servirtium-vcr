@@ -7,14 +7,15 @@
 // loads. The engine .so is pulled in transitively via erlang/.build.ae's dep
 // on core. ExUnit runs serially (max_cases: 1).
 import build
-import std.os
+import elixir
+import build (env, step)
 aeb(cap) {
     b = build.start()
     build.dep(b, "erlang/.build.ae")
-    root = build._get(b, "root")
-    ebin = "${root}/erlang/_build/servirtium_nif/ebin"
-    rc = os.system("cd \"${root}/elixir\" && mix deps.get >/dev/null 2>&1 && SERVIRTIUM_NIF_EBIN=\"${ebin}\" mix test")
-    if rc != 0 { println("elixir: tests failed"); return 1 }
-    println("elixir: tests passed")
-    return 0
+    ebin = build.dep_artifact(b, "erlang/.build.ae", "nif_ebin")
+    elixir.test(b) {
+        env("SERVIRTIUM_NIF_EBIN", ebin)
+        step("mix deps.get >/dev/null 2>&1")
+        step("mix test")
+    }
 }
