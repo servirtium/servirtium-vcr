@@ -3,14 +3,15 @@
 // serially (-j 1; native VCR state is process-global, shared across isolates).
 import build
 import dart
-import build (env, step)
+import build (env)
+import dart (pub_get_first, concurrency)
 aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    dart.test_existing(b) {
+    dart.test(b) {
         env("SERVIRTIUM_VCR_LIB", lib)
-        step("dart pub get >/dev/null 2>&1")
-        step("dart test -j 1")
+        pub_get_first("1")
+        concurrency(1)
     }
 }
