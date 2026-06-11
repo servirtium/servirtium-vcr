@@ -8,14 +8,14 @@
 // on core. ExUnit runs serially (max_cases: 1).
 import build
 import elixir
-import build (env, step)
+import build (env)
+import elixir (deps_get_first)
 aeb(cap) {
     b = build.start()
     build.dep(b, "erlang/.build.ae")
     ebin = build.dep_artifact(b, "erlang/.build.ae", "nif_ebin")
     elixir.test(b) {
         env("SERVIRTIUM_NIF_EBIN", ebin)
-        step("mix deps.get >/dev/null 2>&1")
-        step("mix test")
+        deps_get_first("1")
     }
 }

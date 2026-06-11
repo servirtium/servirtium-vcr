@@ -1,14 +1,16 @@
 // PHP binding tests. FFI loads the shared engine via SERVIRTIUM_VCR_LIB.
 import build
 import php
-import build (env, step)
+import build (env)
+import php (phpunit_phar, phpunit_phar_url, config)
 aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     php.test(b) {
         env("SERVIRTIUM_VCR_LIB", lib)
-        step("[ -f phpunit.phar ] || curl -fsSL https://phar.phpunit.de/phpunit-11.phar -o phpunit.phar")
-        step("php phpunit.phar --configuration phpunit.xml")
+        phpunit_phar("phpunit.phar")
+        phpunit_phar_url("https://phar.phpunit.de/phpunit-11.phar")
+        config("phpunit.xml")
     }
 }

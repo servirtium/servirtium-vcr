@@ -6,13 +6,14 @@
 // Elixir and Gleam leaves consume the very same _build app.
 import build
 import erlang
-import build (env, step)
+import build (env)
+import erlang (escript)
 aeb(cap) {
     b = build.start()
     build.dep(b, "erlang/.build.ae")
     libs = build.dep_artifact(b, "erlang/.build.ae", "erl_libs")
     erlang.eunit(b) {
         env("ERL_LIBS", libs)
-        step("escript test/playback.escript")
+        escript("test/playback.escript")
     }
 }
