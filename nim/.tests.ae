@@ -10,13 +10,21 @@
 // std/httpclient (one VCR server per port).
 import build
 import nim
-import build (env, step)
+import build (env)
+import nim (test_file, nim_flag)
 aeb(cap) {
     b = build.start()
     build.dep(b, "core/.build.ae")
     lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
     nim.test(b) {
         env("SERVIRTIUM_VCR_LIB", lib)
-        step("for t in tests/playback.nim tests/playback_test.nim tests/record_test.nim tests/mutation_test.nim; do nim c -r --hints:off --threads:on --path:src --path:tests \"$t\" || exit 1; done")
+        nim_flag("--hints:off")
+        nim_flag("--threads:on")
+        nim_flag("--path:src")
+        nim_flag("--path:tests")
+        test_file("tests/playback.nim")
+        test_file("tests/playback_test.nim")
+        test_file("tests/record_test.nim")
+        test_file("tests/mutation_test.nim")
     }
 }
