@@ -1,0 +1,140 @@
+// VCR large request body (> 16 KiB) — streaming-body regression (#626).
+//
+// Since aether 0.269.0 the std.http SERVER hands the handler a STREAMING
+// request when Content-Length > 16 KiB: http_request_body(req) returns ""
+// and the payload must be pulled via http.request_body_read. The VCR
+// engine previously read every body through the buffered accessor, so a
+// large POST was forwarded/recorded/compared as EMPTY. The fix routes all
+// body reads through read_full_request_body, which drains the stream.
+//
+// This probe drives a > 16 KiB POST through record mode against an echo
+// upstream ($UPSTREAM_PORT, echo_upstream.c) and asserts at three tiers:
+//   1. record forwards the WHOLE body  (echo equals what we sent),
+//   2. the tape stores the WHOLE body,
+//   3. replay matches the WHOLE body   (empty-vs-recorded would 599).
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+
+extern exit(code: int)
+
+const RECORD_PORT   = 18271
+const PLAYBACK_PORT = 18272
+
+tape_path() -> {
+    tmp = io.getenv("TMPDIR")
+    if tmp == 0 { tmp = "/tmp" }
+    return "${tmp}/vcr_large_body.tape"
+}
+
+// Deterministic body well over the 16 KiB streaming threshold (~32 KiB).
+// No trailing newline: the Servirtium markdown format normalises a body's
+// trailing newline inside the fenced block, which would otherwise show up
+// as a harmless 1-byte record/replay round-trip diff unrelated to #626.
+make_body() -> string {
+    out = "BODY-START"
+    i = 0
+    while string.length(out) < 32768 {
+        out = string.concat(out, "-LINE-")
+        out = string.concat(out, string.from_int(i))
+        out = string.concat(out, "-the-quick-brown-fox-jumps-over-the-lazy-dog")
+        i = i + 1
+    }
+    out = string.concat(out, "-BODY-END")
+    return out
+}
+
+post_body(url: string, body: string) -> string {
+    req = client.request("POST", url)
+    client.set_timeout(req, 10s)
+    client.set_body(req, body, string.length(body), "text/plain")
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" {
+        println("FAIL: transport ${err} for ${url}")
+        exit(1)
+    }
+    out = string.concat(client.response_body(resp), "")
+    client.response_free(resp)
+    return out
+}
+
+main() {
+    println("=== VCR large request body (#626 streaming) ===")
+
+    up_port = io.getenv("UPSTREAM_PORT")
+    if up_port == 0 {
+        println("FAIL: UPSTREAM_PORT not set")
+        exit(1)
+    }
+    upstream = "http://127.0.0.1:${up_port}"
+
+    body = make_body()
+    blen = string.length(body)
+    println("  body is ${blen} bytes (threshold is 16384)")
+    if blen <= 16384 {
+        println("FAIL: test body not over the streaming threshold")
+        exit(1)
+    }
+
+    // 1. Record: forward the full body upstream; echo must come back whole.
+    TAPE = tape_path()
+    fs.delete(TAPE)
+    recorder = vcr.load_record(TAPE, upstream, RECORD_PORT)
+    if recorder == null { println("FAIL: load_record"); exit(1) }
+    serr = http.server_start_background(recorder)
+    if serr != "" { println("FAIL: recorder start ${serr}"); exit(1) }
+    sleep(250)
+
+    echoed = post_body("http://127.0.0.1:${RECORD_PORT}/upload", body)
+    if string.equals(echoed, body) == 0 {
+        elen = string.length(echoed)
+        println("FAIL: record forwarded a truncated body — echoed ${elen} of ${blen} bytes")
+        exit(1)
+    }
+    println("  PASS: record forwarded the whole ${blen}-byte body")
+
+    ferr = vcr.eject_record(recorder, TAPE)
+    if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
+
+    // 2. The tape stored the full body.
+    tape, terr = fs.read(TAPE)
+    if terr != "" { println("FAIL: read tape ${terr}"); exit(1) }
+    if string.contains(tape, "BODY-START") != 1 || string.contains(tape, "BODY-END") != 1 {
+        println("FAIL: tape missing recorded body")
+        exit(1)
+    }
+    println("  PASS: tape stored the recorded body")
+
+    // 3. Replay: live body must match the recorded body (empty would 599).
+    playback = vcr.load(TAPE, PLAYBACK_PORT)
+    if playback == null { println("FAIL: load playback"); exit(1) }
+    serr2 = http.server_start_background(playback)
+    if serr2 != "" { println("FAIL: playback start ${serr2}"); exit(1) }
+    sleep(250)
+
+    // The recorded RESPONSE body is the echo upstream's reply = the full
+    // body. Replay returns that verbatim ONLY if the live request body
+    // matched the recorded one; a streamed-as-empty live body would 599
+    // with "request body different".
+    play_resp = post_body("http://127.0.0.1:${PLAYBACK_PORT}/upload", body)
+    if string.contains(play_resp, "request body different") == 1 {
+        println("FAIL: replay 599 — live streamed body read as empty: ${play_resp}")
+        exit(1)
+    }
+    if string.equals(play_resp, body) == 0 {
+        plen = string.length(play_resp)
+        println("FAIL: replay returned ${plen} bytes, expected the ${blen}-byte recorded body")
+        exit(1)
+    }
+    println("  PASS: replay matched the ${blen}-byte request body")
+
+    vcr.eject(playback)
+    fs.delete(TAPE)
+    println("PASS")
+    exit(0)
+}

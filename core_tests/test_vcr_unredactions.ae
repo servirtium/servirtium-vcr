@@ -108,7 +108,7 @@ main() {
     req1 = client.request("GET", "http://127.0.0.1:${PORT}/secret/actual")
     client.set_header(req1, "Authorization", "Bearer actual")
     client.set_header(req1, "X-Request-Id", "run-specific-value")
-    client.set_timeout(req1, 5)
+    client.set_timeout(req1, 5s)
     resp1, err1 = client.send_request(req1)
     client.request_free(req1)
     if err1 != "" { println("FAIL: GET transport ${err1}"); exit(1) }
@@ -122,7 +122,7 @@ main() {
 
     req2 = client.request("POST", "http://127.0.0.1:${PORT}/body")
     client.set_body(req2, "payload=actual", string.length("payload=actual"), "text/plain")
-    client.set_timeout(req2, 5)
+    client.set_timeout(req2, 5s)
     resp2, err2 = client.send_request(req2)
     client.request_free(req2)
     if err2 != "" { println("FAIL: POST transport ${err2}"); exit(1) }

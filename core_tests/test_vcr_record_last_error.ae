@@ -96,7 +96,7 @@ main() {
         println("FAIL: client.request returned null")
         exit(1)
     }
-    client.set_timeout(req, 35)
+    client.set_timeout(req, 35s)
     resp, transport_err = client.send_request(req)
     client.request_free(req)
     if transport_err != "" {

@@ -25,7 +25,7 @@ fail(msg: string) {
 
 get_status_body(url: string) -> {
     req = client.request("GET", url)
-    client.set_timeout(req, 5)
+    client.set_timeout(req, 5s)
     resp, err = client.send_request(req)
     client.request_free(req)
     if err != "" { return -1, err }
@@ -37,7 +37,7 @@ get_status_body(url: string) -> {
 
 post_status_body(url: string) -> {
     req = client.request("POST", url)
-    client.set_timeout(req, 5)
+    client.set_timeout(req, 5s)
     resp, err = client.send_request(req)
     client.request_free(req)
     if err != "" { return -1, err }

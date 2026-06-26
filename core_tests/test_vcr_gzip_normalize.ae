@@ -49,7 +49,7 @@ wait_ready(url: string) {
         sleep(25)
         req = client.request("GET", url)
         if req != null {
-            client.set_timeout(req, 1)
+            client.set_timeout(req, 1s)
             resp, err = client.send_request(req)
             client.request_free(req)
             if err == "" {
@@ -91,7 +91,7 @@ main() {
     sleep(250)
 
     req1 = client.request("GET", "http://127.0.0.1:${RECORD_PORT}/gzip")
-    client.set_timeout(req1, 5)
+    client.set_timeout(req1, 5s)
     resp1, err1 = client.send_request(req1)
     client.request_free(req1)
     if err1 != "" { println("FAIL: record request transport ${err1}"); exit(1) }
@@ -132,7 +132,7 @@ main() {
     sleep(250)
 
     req2 = client.request("GET", "http://127.0.0.1:${PLAYBACK_PORT}/gzip")
-    client.set_timeout(req2, 5)
+    client.set_timeout(req2, 5s)
     resp2, err2 = client.send_request(req2)
     client.request_free(req2)
     if err2 != "" { println("FAIL: plain playback transport ${err2}"); exit(1) }
@@ -150,7 +150,7 @@ main() {
     vcr.reset_cursor()
     req3 = client.request("GET", "http://127.0.0.1:${PLAYBACK_PORT}/gzip")
     client.set_header(req3, "Accept-Encoding", "gzip")
-    client.set_timeout(req3, 5)
+    client.set_timeout(req3, 5s)
     resp3, err3 = client.send_request(req3)
     client.request_free(req3)
     if err3 != "" { println("FAIL: gzip playback transport ${err3}"); exit(1) }

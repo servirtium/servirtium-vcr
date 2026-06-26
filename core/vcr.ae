@@ -107,6 +107,7 @@ import std.mem
 import std.zlib
 import std.cryptography
 import std.regex
+import std.bytes
 
 exports (
     vcr_load_err, vcr_tape_length,
@@ -1562,6 +1563,38 @@ serve_static_file(m: *StaticMount, req: ptr, res: ptr) {
     http_serve_file(res, filepath)
 }
 
+// Read the WHOLE request body, regardless of how std.http buffered it.
+//
+// Since aether 0.269.0 (#626) the HTTP server no longer buffers a
+// request body whole when its Content-Length exceeds one connection
+// buffer (16 KiB): such a request is handed over *streaming*, with
+// `http_request_body(req)` returning "" and the payload pulled window
+// by window off the socket via http.request_body_read. Small bodies
+// keep the legacy fully-buffered path. The engine reads each live body
+// exactly once (record: forward upstream; replay: compare against the
+// tape), so a single sequential drain is correct for both. We
+// accumulate into a std.bytes buffer (O(n), binary-safe, embedded-NUL
+// preserving) and hand back a length-bearing AetherString, exactly
+// like the gzip/base64 wrappers elsewhere in the engine. The legacy
+// accessor would silently truncate a >16 KiB body to empty — a SOAP /
+// GraphQL / JSON / file-upload POST is well within that range — so
+// every body must come through here, never http_request_body directly.
+read_full_request_body(req: ptr) -> string {
+    total = http_request_body_length(req)
+    if total <= 0 { return "" }
+    buf = bytes.new(total)
+    if buf == null { return http_request_body(req) }
+    off = 0
+    while off < total {
+        chunk, n, err = http.request_body_read(req, off, 65536)
+        if err != "" { break }
+        if n == 0 { break }
+        bytes.copy_from_string(buf, off, chunk, n)
+        off = off + n
+    }
+    return bytes.finish(buf, off)
+}
+
 // ---- record path (per-server) ----
 
 do_record(srvkey: string, req: ptr, res: ptr) {
@@ -1591,8 +1624,8 @@ do_record(srvkey: string, req: ptr, res: ptr) {
         i = i + 1
     }
 
-    body_len = http_request_body_length(req)
-    live_body = http_request_body(req)
+    live_body = read_full_request_body(req)
+    body_len = string.length(live_body)
     if body_len > 0 {
         ctype = request_header_value(req, "Content-Type")
         http_request_set_body_raw(creq, live_body, body_len, ctype)
@@ -1689,8 +1722,8 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
     if expected_path_includes_query(expected_path) == 1 {
         got_path = build_recorded_path(req)
     }
-    if string.length(got_method) == 0 || string.equals(got_method, e.method) == 0
-       || string.length(got_path) == 0 || string.equals(got_path, expected_path) == 0 {
+    if string.length(got_method) == 0 || string.equals(got_method, e.method) == 0 ||
+       string.length(got_path) == 0 || string.equals(got_path, expected_path) == 0 {
         gm = got_method
         if string.length(gm) == 0 { gm = "(null)" }
         gp = got_path
@@ -1787,7 +1820,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
 
     // Request-body comparison.
     if is_blank(expected_req_body) == 0 {
-        live_body = http_request_body(req)
+        live_body = read_full_request_body(req)
         if string.equals(live_body, expected_req_body) == 0 {
             rlen = string.length(expected_req_body)
             llen = string.length(live_body)

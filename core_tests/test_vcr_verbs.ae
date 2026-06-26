@@ -48,7 +48,7 @@ drive_case(base_url: string, method: string, body: string, content_type: string,
     if string.length(body) > 0 {
         client.set_body(req, body, string.length(body), content_type)
     }
-    client.set_timeout(req, 5)
+    client.set_timeout(req, 5s)
 
     resp, err = client.send_request(req)
     client.request_free(req)
