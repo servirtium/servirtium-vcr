@@ -185,14 +185,16 @@ exports (
 
 // ---- Runtime: tape storage, dispatchers, matching, mutation state ----
 //
-// Ported from the hand-written core/aether_vcr.c to PURE AETHER and
-// folded inline here (a separate sibling module can't be imported
-// across both build contexts — embed.ae builds from core/, the tests
-// build from repo root with `import core.vcr` — so the runtime lives
-// in this file, same as the parser/emitter). The ONLY C remaining is
-// core/_header_iter_shim.c: request-header iteration, the one accessor
-// std.http lacks (aether/vcr_request_header_iteration_wish.md). When
-// std.http ships it, delete the shim + drop --extra entirely.
+// Ported from the hand-written core/aether_vcr.c (2133 lines, now
+// deleted) to PURE AETHER and folded inline here (a separate sibling
+// module can't be imported across both build contexts — embed.ae
+// builds from core/, the tests build from repo root with
+// `import core.vcr` — so the runtime lives in this file, same as the
+// parser/emitter). Request-header iteration is now std.http's
+// http.request_header_count/_name/_value (the wish landed:
+// aether/vcr_request_header_iteration_wish.md), so the old C shim is
+// gone too. The ONLY C remaining is core/_embed_strdup.c (~12 lines,
+// in embed.ae's build): the caller-owned-string malloc/free bridge.
 //
 // Process-global mutable state lives behind std.config (a KV store
 // readable from any context, incl. the @c_callback dispatchers — the
@@ -273,10 +275,10 @@ struct StaticMount {
 extern malloc(n: int) -> ptr
 extern free(p: ptr)
 
-// ---- Header-iteration shim (the ONLY remaining C) ----
-// Provided by core/_header_iter_shim.c. Retires when std.http ships
-// these accessors (aether/vcr_request_header_iteration_wish.md), at
-// which point the --extra is dropped from the build entirely.
+// ---- std.http server accessors (all pure stdlib, no C shim) ----
+// Request-header iteration (http.request_header_count/_name/_value) now
+// ships in std.http (aether/vcr_request_header_iteration_wish.md landed),
+// so the old core/_header_iter_shim.c is gone.
 
 // std.http server request/response accessors used directly.
 extern http_request_method(req: ptr) -> string
@@ -1945,7 +1947,9 @@ find_line_start_token(haystack: string, token: string) -> int {
 
 // Kind-of-outcome enum. Returned by vcr.last_kind() after each
 // dispatch to tell the test which branch the dispatcher took.
-// The numeric values match the VCR_KIND_* defines in aether_vcr.c.
+// These numeric values are the engine's stable Outcome contract,
+// mirrored by the VCR_KIND_* / Outcome ints in the C ABI (embed.ae)
+// and every binding.
 const KIND_OK                  = 0
 const KIND_PATH_OR_METHOD_DIFF = 1
 const KIND_HEADER_MISSING      = 2

@@ -11,8 +11,8 @@ details (duplicate-keyed `DAV:` headers, custom verbs like `REPORT`/`PROPFIND`),
 so it's a stern test of the VCR's byte-faithful record/replay.
 
 No `.sh` runners — each leaf orchestrates inline in Aether (`os.system`),
-mirroring `core_tests` (Aether probes built with `--extra core/aether_vcr.c`)
-and the container-lifecycle pattern (the svn-CLI leaf brings a VCR server up,
+mirroring `core_tests` (Aether probes built against the pure-Aether engine,
+plain `ae build`, no `--extra`) and the container-lifecycle pattern (the svn-CLI leaf brings a VCR server up,
 drives `svn`, tears it down).
 
 ## Leaves

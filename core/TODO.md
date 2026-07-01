@@ -2,45 +2,34 @@
 
 Notes from scanning `/home/paul/scm/servirtium-README`, excluding the weather API walkthrough. Keep this file about the generic VCR/Servirtium implementation only.
 
-## Goal: rewrite `aether_vcr.c` in pure Aether
+## Goal: rewrite `aether_vcr.c` in pure Aether — ✅ DONE
 
-`core/aether_vcr.c` is hand-written C: it backs the `extern` declarations in
-`core/vcr.ae` — tape storage globals, the dispatcher function the HTTP server
-calls per request, `HttpRequest` field reads, and the base64/gzip/de-chunk
-helpers. `vcr.ae` (parser/emitter/embed ABI) is pure Aether; only this runtime
-layer is C. Splitting it out was a mistake — the engine should have been all
-Aether. The `--extra aether_vcr.c` in `core/.build.ae` exists *only* because
-this file is hand-authored rather than emitted from the `.ae` sources; once it
-is gone, the build is a plain `ae build --emit=lib …` with no `--extra`.
+The 2133-line hand-written `core/aether_vcr.c` (tape storage globals, the
+per-request dispatcher, `HttpRequest` field reads, base64/gzip/de-chunk
+helpers) has been folded into PURE AETHER and **deleted**. The runtime lives
+inline in `core/vcr.ae` alongside the parser/emitter (a sibling module can't be
+imported across both build contexts — `embed.ae` builds from `core/`, the tests
+build from repo root with `import core.vcr`). Process-global mutable state lives
+behind `std.config`; collection handles are `std.list` pointers stashed as
+stringified ptrs and re-fetched per call.
 
-**Target:** fold every `aether_vcr.c` symbol into `vcr.ae` (or sibling `.ae`
-files), delete the C, drop `--extra` from the build, and confirm `core_tests/`
-(all 14) + the 12 bindings stay green.
+**The former blocker cleared:** record mode needs to iterate *all* request
+headers (to capture whatever the SUT sent), which Aether couldn't do — only
+`get_header` by name. That was filed as `aether/vcr_request_header_iteration_wish.md`
+(3 accessors: `http_request_header_count/_name/_value`) and the rewrite was held
+behind it (decided 2026-05-26). **The wish landed** (needs `ae >= 0.182`; header
+iteration `>= 0.183`), the runtime was ported, and both the `aether_vcr.c` and
+the interim `_header_iter_shim.c` are gone. `core/vcr.ae` now uses
+`http.request_header_count/_name/_value` directly.
 
-**Feasibility (recon done):** ~95% is pure-Aether-doable TODAY. The prerequisites
-I'd guessed at are all already in Aether and verified:
-
-- **Dispatcher as a route handler** — ✅ `std.http` registers a plain Aether
-  function `(req, res, ud)` as a route handler (no closure needed; the VCR's
-  state is already global). Request reads: `http.request_method/path/query`,
-  `http.get_header(req, name)`, binary-safe body via `http.request_body` +
-  `http_request_body_length`. Response writes: `response_set_status`,
-  `response_set_header`, **`response_add_header`** (duplicate `DAV:` headers),
-  **`response_set_body_n`** (binary), **`response_clear_headers`**.
-- **Binary-safe buffers** — ✅ `std.bytes` (set/get/finish, embedded-NUL-safe);
-  body length via `http_request_body_length`.
-- **gzip / base64 / de-chunk** — ✅ `std.zlib` (`gzip_deflate`/`gzip_inflate`),
-  `std.cryptography.base64_encode/decode`; de-chunk already in `std.http.client`.
-- Dynamic collections (`std.list`, `std.map`), structs — ✅.
-
-**The ONE blocker:** no way to iterate *all* request headers from Aether (only
-`get_header` by name). Record mode needs it to capture whatever headers the SUT
-sent (`normalize_live_headers` walks the request's header arrays in C today).
-Playback does NOT need it. Filed as a wish to the Aether team —
-`aether/vcr_request_header_iteration_wish.md` (3 accessors:
-`http_request_header_count/name/value`). **The rewrite is staged behind that
-wish** (decided 2026-05-26: file the wish, hold the rewrite). Once it lands,
-fold `aether_vcr.c` into `vcr.ae`, delete the C, drop `--extra`.
+**Remaining C — down to ~12 lines.** The build still carries one `--extra`:
+`core/_embed_strdup.c`, the caller-owned-string `vcr_embed_dup`/`free` bridge
+(the one malloc/free FFI primitive Aether's stdlib can't express). Dropping the
+`--extra` *entirely* would need that primitive in the stdlib; not worth a wish
+for 12 lines. Everything else — dispatcher as a plain `(req, res, ud)` route
+handler, binary-safe buffers (`std.bytes`), gzip/base64/de-chunk (`std.zlib`,
+`std.cryptography`, `std.http.client`), dynamic collections (`std.list`,
+`std.map`) — is pure stdlib.
 
 ## Current Shape
 
@@ -189,7 +178,8 @@ repointed to `import core.vcr`) + `core_tests/chunked_upstream.c` (the raw-socke
 C responder, since the Aether HTTP server only emits `Content-Length`). It has
 its own leaf, `core_tests/.chunked.ae` (NOT the `test_vcr_*` run-tests.sh loop,
 since it needs the C upstream process) — inline-Aether orchestration: cc the
-upstream, read its port, build+run the probe with `--extra core/aether_vcr.c`,
+upstream, read its port, build+run the probe against the pure-Aether engine
+(plain `ae build`, no `--extra` — the runtime is inline in `core/vcr.ae` now),
 tear the upstream down. Asserts all three tiers: client de-chunks, record tape
 stores the decoded payload (not framing), replay serves it decoded.
 

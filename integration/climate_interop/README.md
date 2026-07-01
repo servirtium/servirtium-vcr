@@ -18,9 +18,9 @@ unsupported date range → "date range not supported".
 
 No `.sh` runners — each leaf orchestrates inline in Aether (`os.system`),
 mirroring `core_tests` and `subversion_interop`: the Aether probes are built
-against the local engine with `--extra core/aether_vcr.c` from the repo root
-(so `import core.vcr` resolves `core/vcr.ae` and the C runtime links in), then
-run inline.
+against the local engine from the repo root (so `import core.vcr` resolves
+`core/vcr.ae` — the runtime is pure Aether, inline in that file, no `--extra`),
+then run inline.
 
 ## Leaves
 

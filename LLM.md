@@ -10,8 +10,10 @@ Servirtium records an HTTP conversation to a human-readable **Markdown tape**
 once, then **replays** it forever — offline, deterministic, git-diffable. This
 repo is **one native engine + thin per-language bindings**. The engine
 (`core/vcr.ae`, pure Aether: parser/emitter, tape store, matcher, dispatchers,
-record) compiles via `core/embed.ae` (the C ABI) to
-`core/native/libservirtium_vcr.so`. Every language directory
+record — the old 2133-line `aether_vcr.c` was folded in and deleted) compiles
+via `core/embed.ae` (the C ABI) to `core/native/libservirtium_vcr.so`. The only
+C left is `core/_embed_strdup.c` (~12 lines: the caller-owned-string
+malloc/free bridge), linked via one `--extra` in `core/.build.ae`. Every language directory
 (`go/`, `python/`, `rust/`, …) is a **thin FFI shim** over that one `.so` — no
 re-implementation of Servirtium logic per language. That's the whole design:
 the old "each language has its own recorder/replayer/server" era is over (see
