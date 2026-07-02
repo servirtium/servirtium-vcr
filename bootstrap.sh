@@ -46,6 +46,16 @@ fetch_run() {
 
 export PATH="$PREFIX/bin:$PATH"   # so freshly-installed ae/aeb are found below
 
+# ---- 0. Preflight: a C compiler + make ----
+# Aether compiles to C and hands off to a C compiler; the source-tarball
+# installers for ae/aeb (get.sh / install.sh) also need make + cc. Check up
+# front so a missing compiler fails clearly HERE, not cryptically later inside
+# `ae build` (a --emit=lib link error) or the toolchain installer.
+command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1 \
+    || die "a C compiler (cc/gcc/clang) is required — Aether compiles to C. Install e.g. build-essential (Debian/Ubuntu) or the Xcode Command Line Tools (macOS)."
+command -v make >/dev/null 2>&1 \
+    || die "GNU make is required to build the Aether toolchain from source. Install e.g. build-essential / make."
+
 # ---- 1. Aether toolchain (ae) ----
 if command -v ae >/dev/null 2>&1 && have="$(ae_version || true)" && [ -n "$have" ] && version_ge "$have" "$MIN_AE"; then
     say "ae $have already on PATH (>= $MIN_AE) — skipping"
@@ -117,25 +127,22 @@ TOOLCHAINS
     [ -n "$skipped" ] && say "skipping (toolchain absent):$skipped"
 fi
 
-# aeb builds ONE target per invocation (extra positional args are ignored),
-# so loop — build each target, tally pass/fail, and exit non-zero if any failed.
-built=""; failed=""
-for t in $targets; do
-    say "aeb $t"
-    if aeb "$t"; then built="$built $t"; else failed="$failed $t"; fi
-done
-
-echo
-[ -n "$built" ]  && say "built:$built"
-if [ -n "$failed" ]; then
+# Build all targets in one aeb invocation: current aeb builds every positional
+# target as one DAG (independent nodes run concurrently) and exits non-zero if
+# any leaf fails — verified on aeb v0.219-4-ge76afd1. (Older aeb built only the
+# first target and could exit 0 on a failed leaf; if you see only one thing
+# build, `make install` a current aeb.)
+# shellcheck disable=SC2086  # word-splitting the sniffed target list is intentional
+say "aeb $targets"
+if ! aeb $targets; then
     cat >&2 <<EOF
-==> FAILED:$failed
 
-One or more targets failed. Common causes:
+aeb reported a failure above. Common causes:
   - A '--emit=lib ... recompile with -fPIC' link error means a stale pre-0.182
     ae. Reinstall a current one:  AETHER_REF=v0.184.0 $0
   - A binding's toolchain is present but too old / mismatched (e.g. a JDK newer
-    than kotlinc/groovyc support). Build a known-good subset:  $0 core/.build.ae
+    than kotlinc/groovyc support), or a test runner is missing (pytest, rspec).
+    Build a known-good subset:  $0 core/.build.ae
 EOF
     exit 1
 fi
