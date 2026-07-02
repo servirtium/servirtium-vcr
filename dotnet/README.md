@@ -81,8 +81,16 @@ already present):
 ./bootstrap.sh
 ```
 
-Already have `ae` (≥ 0.227.0) and the .NET SDK on PATH? Drive the two steps
-directly:
+Already have `ae` (≥ 0.227.0), `aeb`, and the .NET SDK on PATH? The build is
+aeb-native — each project's `.csproj` is generated from its `.build.ae` (never
+checked in), the engine `.so` is built and staged automatically:
+
+```sh
+aeb dotnet/Servirtium.Vcr.Tests/.tests.ae     # engine -> library -> xunit
+```
+
+Or drive the raw .NET tools directly (builds the native, then tests against a
+generated csproj):
 
 ```sh
 ./build-native.sh     # builds the native lib for your platform (needs `ae`)

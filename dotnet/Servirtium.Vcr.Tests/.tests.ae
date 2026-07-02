@@ -1,0 +1,15 @@
+// Servirtium.Vcr.Tests — run the xunit unit tests (dotnet test) against the
+// generated project built by the sibling .build.ae. The engine .so is passed
+// via SERVIRTIUM_VCR_LIB (NativeLoader also finds the native_runtime-staged
+// copy next to the assembly). Sim-style: the test leaf lives in the test
+// project dir, next to its generated csproj (dotnet.test scans source_dir).
+import build
+import dotnet
+import build (env)
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    build.dep(b, "dotnet/Servirtium.Vcr.Tests/.build.ae")
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    dotnet.test(b) { env("SERVIRTIUM_VCR_LIB", lib) }
+}

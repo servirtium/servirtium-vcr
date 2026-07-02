@@ -1,0 +1,16 @@
+// Servirtium.Vcr — produce the shippable NuGet package. Deps the library
+// .build.ae (so the managed assembly is built and the engine .so is staged
+// via native_runtime), then `dotnet pack` bundles the managed DLL + the
+// per-RID native(s) under runtimes/<rid>/native/ into Servirtium.Vcr.nupkg.
+// The .nupkg is published as an aeb `nupkg` artifact for a publish step.
+//
+// The packaging setters (package_id/description/readme/native_runtime) live
+// on the .build.ae's build_project block so the same generated csproj drives
+// both build and pack; this leaf just invokes pack against it.
+import build
+import dotnet
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "dotnet/Servirtium.Vcr/.build.ae")
+    dotnet.pack(b)
+}
