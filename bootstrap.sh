@@ -67,17 +67,76 @@ fi
 say "using aeb: $(command -v aeb)"
 
 # ---- 3. Build the project ----
-case ":$PATH:" in *":$PREFIX/bin:"*) : ;; *) say "tip: add '$PREFIX/bin' to your shell PATH permanently";; esac
-say "running aeb (native engine -> Go binding -> tests -> up_poke_down demo)"
 cd "$HERE"
-if ! aeb "$@"; then
-    rc=$?
-    cat >&2 <<EOF
+case ":$PATH:" in *":$PREFIX/bin:"*) : ;; *) say "tip: add '$PREFIX/bin' to your shell PATH permanently";; esac
 
-aeb failed (exit $rc). Common first-build cause:
-  A '--emit=lib ... recompile with -fPIC' link error means a stale pre-0.182
-  ae. Reinstall a current one, then re-run:  AETHER_REF=v0.184.0 $0
+# With explicit args, honor them verbatim. Otherwise, DON'T `aeb --scan` the
+# whole tree — that builds all 21 bindings and is guaranteed to fail on any box
+# lacking a toolchain (every box). Instead, sniff which language toolchains are
+# present and build only those leaves. `core` (the native engine) always
+# builds: it needs only `ae` + a C compiler, which we just ensured.
+#
+# Table rows: "<command-to-probe> <leaf-to-build>". If the command is on PATH,
+# the leaf is added; otherwise it's skipped (and reported). The gating command
+# is the binding's compiler/runtime, matched to each leaf's language module.
+if [ "$#" -gt 0 ]; then
+    targets="$*"
+else
+    targets="core/.build.ae"          # always — engine needs only ae + cc
+    skipped=""
+    while read -r cmd leaf; do
+        [ -n "$cmd" ] || continue
+        if command -v "$cmd" >/dev/null 2>&1; then
+            targets="$targets $leaf"
+        else
+            skipped="$skipped ${leaf%%/*}(no $cmd)"
+        fi
+    done <<'TOOLCHAINS'
+go       go/.tests.ae
+cargo    rust/.tests.ae
+python3  python/.tests.ae
+ruby     ruby/.tests.ae
+node     javascript/.tests.ae
+dotnet   dotnet/Servirtium.Vcr.Tests/.tests.ae
+javac    java/.build.ae
+kotlinc  kotlin/.build.ae
+scala    scala/.build.ae
+clojure  clojure/.build.ae
+groovy   groovy/.build.ae
+erl      erlang/.build.ae
+elixir   elixir/.tests.ae
+gleam    gleam/.tests.ae
+ghc      haskell/.tests.ae
+lua5.4   lua/.tests.ae
+nim      nim/.tests.ae
+zig      zig/.tests.ae
+php      php/.tests.ae
+dart     dart/.tests.ae
+pharo    pharo/.tests.ae
+TOOLCHAINS
+    [ -n "$skipped" ] && say "skipping (toolchain absent):$skipped"
+fi
+
+# aeb builds ONE target per invocation (extra positional args are ignored),
+# so loop — build each target, tally pass/fail, and exit non-zero if any failed.
+built=""; failed=""
+for t in $targets; do
+    say "aeb $t"
+    if aeb "$t"; then built="$built $t"; else failed="$failed $t"; fi
+done
+
+echo
+[ -n "$built" ]  && say "built:$built"
+if [ -n "$failed" ]; then
+    cat >&2 <<EOF
+==> FAILED:$failed
+
+One or more targets failed. Common causes:
+  - A '--emit=lib ... recompile with -fPIC' link error means a stale pre-0.182
+    ae. Reinstall a current one:  AETHER_REF=v0.184.0 $0
+  - A binding's toolchain is present but too old / mismatched (e.g. a JDK newer
+    than kotlinc/groovyc support). Build a known-good subset:  $0 core/.build.ae
 EOF
-    exit $rc
+    exit 1
 fi
 say "done."
