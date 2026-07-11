@@ -1,0 +1,16 @@
+# Third-party consumer example for the Rust binding.
+#
+# A standalone crate that depends on `servirtium` as a normal Cargo dependency
+# (a path dep here; a crates.io / registry dep resolves identically) and replays
+# the canonical tape. The engine .so self-locates from the servirtium crate's
+# own native/ dir (env!("CARGO_MANIFEST_DIR")/native at compile time points at
+# the consumed crate's location) — no SERVIRTIUM_VCR_LIB.
+[package]
+name = "servirtium-consumer-example"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+servirtium = { path = "../../rust" }
+ureq = "2"

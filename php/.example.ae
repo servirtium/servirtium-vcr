@@ -1,0 +1,50 @@
+// Third-party-consumer EXAMPLE test for the PHP binding.
+//
+// Stands up a CLEAN consumer project that `composer require`s the package via a
+// `path` repository (symlink:false → a real copy into vendor/), then replays
+// the canonical single_get tape from the INSTALLED package — autoloaded from
+// vendor/, not the source tree, with no SERVIRTIUM_VCR_LIB. The honest
+// "composer require and it just works" test the in-tree php/.tests.ae cannot
+// give.
+//
+// Both .so-location modes, each in its own fresh process: `explicit`
+// (first-class ->nativeLib()) and `discovery` (zero-config; the package finds
+// its own bundled native/ .so, which Composer copied along).
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "php/.package.ae")
+    _pkg = build.dep_artifact(b, "php/.package.ae", "package_dir")
+    root = build._get(b, "root")
+    exdir = "${root}/php/example"
+    consumer = "${root}/target/php-consumer"
+
+    // Fresh consumer project OUTSIDE the source tree (same depth as php/example,
+    // so the composer.json's `../../php` path repo resolves the same). Composer
+    // copies php/ (incl. native/) into vendor/servirtium/servirtium-php.
+    // NOTE: Arch ships PHP's FFI extension but does not auto-load it, so we
+    // enable it per-invocation with `-d extension=ffi -d ffi.enable=1` (no sudo,
+    // no global php.ini edit). Composer checks the ext-ffi platform req under an
+    // FFI-less CLI, so install ignores that req — the actual run enables FFI.
+    rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/tapes\" && cp \"${exdir}/composer.json\" \"${consumer}/\" && cp \"${exdir}/consumer_example.php\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\" && cd \"${consumer}\" && composer install --no-interaction --quiet --ignore-platform-req=ext-ffi")
+    if rc != 0 {
+        println("php example: composer install of the path package failed")
+        return 1
+    }
+
+    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB php -d extension=ffi -d ffi.enable=1 consumer_example.php explicit")
+    if rc2 != 0 {
+        println("php example: explicit-mode consumer run failed")
+        return 1
+    }
+    rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB php -d extension=ffi -d ffi.enable=1 consumer_example.php discovery")
+    if rc3 != 0 {
+        println("php example: discovery-mode consumer run failed")
+        return 1
+    }
+
+    println("php example: PASS — installed Composer package replayed the canonical tape (explicit + discovery)")
+    return 0
+}

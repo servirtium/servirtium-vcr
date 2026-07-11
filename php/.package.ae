@@ -1,0 +1,27 @@
+// Third-party-consumer PACKAGE stage for the PHP binding.
+//
+// PHP/Composer packages are source-consumed (no built artifact like a wheel):
+// a consumer adds this as a `path` repository and Composer copies it into
+// vendor/. So "packaging" here is just staging the freshly-built engine .so
+// into php/native/ (where the loader's bundled fallback looks, and which
+// Composer carries along in the copy). Deps core/.build.ae; publishes the php
+// package dir on the "package_dir" edge for php/.example.ae.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    root = build._get(b, "root")
+    phpdir = "${root}/php"
+
+    rc = os.system("mkdir -p \"${phpdir}/native\" && cp \"${lib}\" \"${phpdir}/native/libservirtium_vcr.so\"")
+    if rc != 0 {
+        println("php package: failed to stage engine .so into php/native/")
+        return 1
+    }
+    build.publish_artifact(b, "package_dir", "${phpdir}")
+    println("php package: staged engine .so into php/native/ (Composer path package ready)")
+    return 0
+}

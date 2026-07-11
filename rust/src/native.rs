@@ -11,7 +11,7 @@
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use libloading::{Library, Symbol};
 
@@ -84,6 +84,25 @@ unsafe impl Sync for Native {}
 
 static NATIVE: OnceLock<Result<Native, String>> = OnceLock::new();
 
+/// Explicit path pinned via `.native_lib()` / [`configure`]. Wins over
+/// discovery. Only meaningful before the library is first loaded.
+static EXPLICIT: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Pin an explicit path to the native library, used at first load. Backs the
+/// first-class `.native_lib()` builder argument; wins over the bundled
+/// `native/` default and the `SERVIRTIUM_VCR_LIB` env override. No-op once the
+/// library has already been loaded (set it before the first `.start()`).
+pub(crate) fn configure(path: Option<String>) {
+    if let Some(p) = path {
+        if !p.is_empty() {
+            let mut e = EXPLICIT.lock().unwrap_or_else(|e| e.into_inner());
+            if e.is_none() {
+                *e = Some(PathBuf::from(p));
+            }
+        }
+    }
+}
+
 /// Resolve (loading on first use) the native function table, or an error
 /// describing why the library could not be loaded.
 pub(crate) fn native() -> Result<&'static Native, String> {
@@ -96,6 +115,11 @@ pub(crate) fn native() -> Result<&'static Native, String> {
 /// Candidate paths for the native library, in priority order.
 fn candidate_paths() -> Vec<PathBuf> {
     let mut out = Vec::new();
+    // 1. explicit path pinned via .native_lib() / configure()
+    if let Some(p) = EXPLICIT.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        out.push(p);
+    }
+    // 2. SERVIRTIUM_VCR_LIB env override
     if let Ok(p) = std::env::var("SERVIRTIUM_VCR_LIB") {
         if !p.is_empty() {
             out.push(PathBuf::from(p));

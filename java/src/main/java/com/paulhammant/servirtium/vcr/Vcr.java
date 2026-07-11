@@ -35,6 +35,15 @@ public final class Vcr {
     }
 
     /**
+     * Replay a Servirtium markdown tape, pinning the engine {@code .so} path
+     * explicitly (see {@link VcrBuilderBase#nativeLib(String)}); by default the
+     * bundled library is discovered.
+     */
+    public static PlaybackBuilder playback(String tapePath, String nativeLib) {
+        return new PlaybackBuilder(tapePath).nativeLib(nativeLib);
+    }
+
+    /**
      * Record live interactions: forward to {@code upstreamBase}, return the real
      * response to the SUT, and capture the exchange. The tape is written to
      * {@code tapePath} when the server is closed.

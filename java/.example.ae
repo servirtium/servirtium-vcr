@@ -1,0 +1,29 @@
+// Third-party-consumer EXAMPLE test for the Java binding.
+//
+// Runs a standalone Maven consumer project (java/example) whose only servirtium
+// dependency is com.paulhammant.servirtium:servirtium-vcr:2.0.0-SNAPSHOT,
+// resolved from ~/.m2 (populated by java/.package.ae) — NOT the source classes.
+// Its JUnit test replays the canonical single_get tape, with the engine .so
+// discovered from the jar's own /native/linux-x64/ resource and no
+// SERVIRTIUM_VCR_LIB. The honest "add the Maven dependency and it just works"
+// test the in-tree java/.tests.ae cannot give.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "java/.package.ae")
+    _gav = build.dep_artifact(b, "java/.package.ae", "maven_gav")
+    root = build._get(b, "root")
+    exdir = "${root}/java/example"
+
+    // `mvn test` resolves servirtium-vcr + junit from ~/.m2 / central, compiles
+    // the consumer test, and runs it (surefire adds --enable-native-access).
+    rc = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB mvn -q -B test")
+    if rc != 0 {
+        println("java example: consumer `mvn test` against the installed jar failed")
+        return 1
+    }
+    println("java example: PASS — installed Maven jar replayed the canonical tape (discovery; jar-bundled .so)")
+    return 0
+}

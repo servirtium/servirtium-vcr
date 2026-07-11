@@ -1,0 +1,9 @@
+;; Third-party consumer example for the Clojure binding.
+;;
+;; Depends only on the INSTALLED servirtium-vcr-clojure jar (resolved from
+;; ~/.m2 via the standard Maven coordinates) — which transitively pulls
+;; org.clojure/clojure and the servirtium-vcr jar carrying the engine .so as a
+;; resource. `clojure -M -m consumer-example` replays the canonical tape with
+;; no SERVIRTIUM_VCR_LIB.
+{:paths ["src" "resources"]
+ :deps {com.paulhammant.servirtium/servirtium-vcr-clojure {:mvn/version "2.0.0-SNAPSHOT"}}}

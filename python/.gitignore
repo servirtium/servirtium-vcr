@@ -10,12 +10,12 @@ servirtium.egg-info/
 build/
 dist/
 
-# native build artifacts — run ./build-native.sh (or let CI build them).
-# A prebuilt copy may be committed for convenience; uncomment to treat as
-# build-only:
-# servirtium/native/*.so
-# servirtium/native/*.dylib
-# servirtium/native/*.dll
+# native build artifacts — staged fresh by python/.package.ae (copies the
+# engine .so from core/native/ into the package tree before `python -m build`).
+# Build-only; never commit the binary.
+servirtium/native/*.so
+servirtium/native/*.dylib
+servirtium/native/*.dll
 
 # editor / IDE
 .idea/

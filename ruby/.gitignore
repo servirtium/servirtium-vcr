@@ -15,3 +15,8 @@ Gemfile.lock
 
 # rspec failure tracking
 .rspec_status
+
+# native engine .so — staged fresh by ruby/.package.ae, never commit
+lib/servirtium/native/*.so
+lib/servirtium/native/*.dylib
+lib/servirtium/native/*.dll

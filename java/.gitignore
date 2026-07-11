@@ -3,3 +3,5 @@ target/
 *.idea/
 
 .servirtium_tmp/
+# native engine .so — staged fresh by java/.package.ae, never commit
+src/main/resources/native/

@@ -1,0 +1,24 @@
+// Third-party-consumer PACKAGE stage for the Zig binding.
+// A Zig consumer links the engine .so via its own build.zig, pointed at the
+// package's bundled native/ dir. Stages the freshly-built engine .so into
+// zig/native/. Deps core/.build.ae; publishes the zig package dir on
+// "package_dir".
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    root = build._get(b, "root")
+    zigdir = "${root}/zig"
+
+    rc = os.system("mkdir -p \"${zigdir}/native\" && cp \"${lib}\" \"${zigdir}/native/libservirtium_vcr.so\"")
+    if rc != 0 {
+        println("zig package: failed to stage engine .so into zig/native/")
+        return 1
+    }
+    build.publish_artifact(b, "package_dir", "${zigdir}")
+    println("zig package: staged engine .so into zig/native/ (Zig package ready)")
+    return 0
+}

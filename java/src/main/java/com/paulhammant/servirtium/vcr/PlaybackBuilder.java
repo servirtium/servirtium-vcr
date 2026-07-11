@@ -67,6 +67,7 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
 
     public VcrServer start() {
+        NativeLoader.configure(nativeLib);
         MemorySegment handle;
         try (Arena arena = Arena.ofConfined()) {
             handle = (MemorySegment) NativeMethods.OPEN_PLAYBACK.invokeExact(

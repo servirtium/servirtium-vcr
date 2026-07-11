@@ -1,0 +1,13 @@
+name: servirtium_consumer_example
+description: >-
+  Third-party consumer example: depends on the servirtium package via pub and
+  replays the canonical tape from the resolved package (its bundled .so).
+version: 0.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  servirtium:
+    path: ../../dart

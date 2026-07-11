@@ -1,0 +1,22 @@
+// Third-party-consumer PACKAGE stage for the Scala binding.
+// mvn-installs the Scala helper layer (servirtium-vcr-scala) to ~/.m2; deps
+// java/.package.ae so the Java jar (with the bundled engine .so) is in ~/.m2
+// first and rides along transitively for a Scala consumer.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "java/.package.ae")
+    root = build._get(b, "root")
+    dir = "${root}/scala"
+
+    rc = os.system("cd \"${dir}\" && mvn -q -B -Dmaven.test.skip=true install")
+    if rc != 0 {
+        println("scala package: `mvn install` of servirtium-vcr-scala failed")
+        return 1
+    }
+    build.publish_artifact(b, "maven_gav", "com.paulhammant.servirtium:servirtium-vcr-scala:2.0.0-SNAPSHOT")
+    println("scala package: installed servirtium-vcr-scala jar to ~/.m2")
+    return 0
+}

@@ -1,0 +1,23 @@
+// Third-party-consumer PACKAGE stage for the Clojure binding.
+// mvn-installs the Clojure layer (servirtium-vcr-clojure — a jar carrying
+// servirtium.clj on the classpath) to ~/.m2; deps java/.package.ae so the Java
+// jar (with the bundled engine .so) is present and rides along transitively for
+// a deps.edn consumer.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "java/.package.ae")
+    root = build._get(b, "root")
+    dir = "${root}/clojure"
+
+    rc = os.system("cd \"${dir}\" && mvn -q -B -Dmaven.test.skip=true install")
+    if rc != 0 {
+        println("clojure package: `mvn install` of servirtium-vcr-clojure failed")
+        return 1
+    }
+    build.publish_artifact(b, "maven_gav", "com.paulhammant.servirtium:servirtium-vcr-clojure:2.0.0-SNAPSHOT")
+    println("clojure package: installed servirtium-vcr-clojure jar to ~/.m2")
+    return 0
+}

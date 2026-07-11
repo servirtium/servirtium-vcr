@@ -58,6 +58,7 @@ final class PlaybackBuilder extends VcrBuilderBase
 
     public function start(): VcrServer
     {
+        Native::configure($this->nativeLibValue);
         $lib = Native::lib();
         $handle = $lib->aether_vcr_embed_open_playback(
             $this->labelValue,

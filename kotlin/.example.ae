@@ -1,0 +1,24 @@
+// Third-party-consumer EXAMPLE test for the Kotlin binding.
+//
+// A standalone Maven project that depends only on the installed Kotlin DSL jar
+// (servirtium-vcr-kotlin, from ~/.m2) and replays the canonical tape through
+// the `playback { }` DSL — the engine .so arrives transitively via the
+// servirtium-vcr jar resource, with no SERVIRTIUM_VCR_LIB.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "kotlin/.package.ae")
+    _gav = build.dep_artifact(b, "kotlin/.package.ae", "maven_gav")
+    root = build._get(b, "root")
+    exdir = "${root}/kotlin/example"
+
+    rc = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB mvn -q -B test")
+    if rc != 0 {
+        println("kotlin example: consumer `mvn test` against the installed kotlin jar failed")
+        return 1
+    }
+    println("kotlin example: PASS — installed Kotlin DSL jar replayed the canonical tape (discovery)")
+    return 0
+}

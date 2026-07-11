@@ -1,0 +1,5 @@
+
+# native engine .so — staged fresh by dart/.package.ae, never commit
+lib/native/*.so
+lib/native/*.dylib
+lib/native/*.dll

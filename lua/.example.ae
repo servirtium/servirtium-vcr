@@ -1,0 +1,33 @@
+// Third-party-consumer EXAMPLE test for the Lua binding.
+//
+// Relocates the self-contained package (lua/dist) to target/lua-pkg — proving
+// the $ORIGIN rpath, since the engine .so is now found beside the C extension
+// at a NEW location with no core/ anywhere near. A consumer script then
+// requires `servirtium` via LUA_PATH/LUA_CPATH and replays the canonical tape,
+// with no SERVIRTIUM_VCR_LIB.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "lua/.package.ae")
+    _pkg = build.dep_artifact(b, "lua/.package.ae", "package_dir")
+    root = build._get(b, "root")
+    exdir = "${root}/lua/example"
+    pkg = "${root}/target/lua-pkg"
+    consumer = "${root}/target/lua-consumer"
+
+    rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/lua/dist\" \"${pkg}\" && mkdir -p \"${consumer}/tapes\" && cp \"${exdir}/consumer_example.lua\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+    if rc != 0 {
+        println("lua example: relocating the package + staging consumer failed")
+        return 1
+    }
+
+    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB LUA_PATH=\"${pkg}/?.lua;;\" LUA_CPATH=\"${pkg}/?.so;;\" lua5.4 consumer_example.lua")
+    if rc2 != 0 {
+        println("lua example: consumer run against the relocated package failed")
+        return 1
+    }
+    println("lua example: PASS — consumer replayed the canonical tape (discovery; $ORIGIN-relocated .so)")
+    return 0
+}

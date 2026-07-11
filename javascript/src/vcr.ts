@@ -71,6 +71,7 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected hostValue = '127.0.0.1'
   protected portValue = 0 // 0 => OS-assigned (dynamic)
   protected labelValue = ''
+  protected nativeLibValue: string | null = null
   protected readonly headerRemovals: HeaderRemoval[] = []
   protected readonly staticMounts: Array<{ mount: string; dir: string }> = []
   protected readonly untapedPaths: string[] = []
@@ -78,6 +79,17 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected constructor(protected readonly tapePath: string) {}
 
   protected abstract self(): TSelf
+
+  /**
+   * Pin an explicit path to the native engine library for this run — the
+   * first-class way to say *where the `.so` is* at launch, instead of relying
+   * on discovery. Wins over the bundled-`native/` default and the
+   * `SERVIRTIUM_VCR_LIB` env override. Set before `.start()`.
+   */
+  nativeLib(path: string): TSelf {
+    this.nativeLibValue = path
+    return this.self()
+  }
 
   /** Bind host. Defaults to 127.0.0.1. */
   host(host: string): TSelf {
@@ -180,6 +192,7 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   }
 
   start(): VcrServer {
+    N.configure(this.nativeLibValue)
     const handle = N.openPlayback(this.labelValue, this.tapePath, this.hostValue, this.portValue)
     if (N.isNull(handle)) {
       throw new VcrError(`vcr playback failed to start for tape '${this.tapePath}'`)
@@ -290,6 +303,7 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   }
 
   start(): VcrServer {
+    N.configure(this.nativeLibValue)
     const handle = N.openRecord(
       this.labelValue,
       this.tapePath,

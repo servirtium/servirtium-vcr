@@ -1,0 +1,24 @@
+// Third-party-consumer PACKAGE stage for the Haskell binding.
+// The servirtium-haskell package links the engine .so via `extra-libraries:
+// servirtium_vcr` + an extra-lib-dirs/rpath a consumer supplies. This stages
+// the freshly-built engine .so into haskell/native/, where a consumer points
+// extra-lib-dirs. Deps core/.build.ae; publishes the haskell package dir.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    root = build._get(b, "root")
+    hsdir = "${root}/haskell"
+
+    rc = os.system("mkdir -p \"${hsdir}/native\" && cp \"${lib}\" \"${hsdir}/native/libservirtium_vcr.so\"")
+    if rc != 0 {
+        println("haskell package: failed to stage engine .so into haskell/native/")
+        return 1
+    }
+    build.publish_artifact(b, "package_dir", "${hsdir}")
+    println("haskell package: staged engine .so into haskell/native/ (cabal package ready)")
+    return 0
+}

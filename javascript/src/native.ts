@@ -35,148 +35,185 @@ function fileName(): string {
 //      `ae build --emit=lib` artifact during development);
 //   2. the `native/` directory next to the package;
 //   3. the bare name (let the OS loader try LD_LIBRARY_PATH / system paths).
+let explicitPath: string | null = null
+let loadedLib: ReturnType<typeof koffi.load> | null = null
+
+/**
+ * Pin an explicit path to the native library, used at first load. Backs the
+ * first-class `.nativeLib(path)` builder argument: it wins over the bundled
+ * `native/` default and the `SERVIRTIUM_VCR_LIB` env override. No-op once the
+ * library has already been loaded (set it before the first `.start()`).
+ */
+export function configure(nativeLib: string | null | undefined): void {
+  if (nativeLib && !loadedLib) explicitPath = nativeLib
+}
+
 function resolveLibraryPath(): string {
+  // 1. explicit path pinned via `.nativeLib()` / configure()
+  if (explicitPath && fs.existsSync(explicitPath)) {
+    return explicitPath
+  }
+  // 2. SERVIRTIUM_VCR_LIB env override (development)
   const override = process.env.SERVIRTIUM_VCR_LIB
   if (override && fs.existsSync(override)) {
     return override
   }
-
-  // dist/native.js -> ../native ; src/native.ts -> ../native
+  // 3. the package's bundled native/ dir (a shipped npm tarball's .so)
+  //    dist/native.js -> ../native ; src/native.ts -> ../native
   const nativeDir = path.resolve(__dirname, '..', 'native', fileName())
   if (fs.existsSync(nativeDir)) {
     return nativeDir
   }
-
+  // 4. bare name (OS loader: LD_LIBRARY_PATH / system paths)
   return fileName()
 }
 
-const lib = koffi.load(resolveLibraryPath())
+/**
+ * The koffi library handle, opened lazily on first native use so an explicit
+ * `.nativeLib()` (via configure()) can win over discovery.
+ */
+function lib(): ReturnType<typeof koffi.load> {
+  if (!loadedLib) loadedLib = koffi.load(resolveLibraryPath())
+  return loadedLib
+}
+
+/**
+ * Lazily bind a native function: koffi.load is deferred to the first call, so
+ * a pinned explicit path takes effect. Mirrors `lazy(sig)` 1:1.
+ */
+function lazy(signature: string): (...args: any[]) => any {
+  let f: ((...a: any[]) => any) | null = null
+  return (...args: any[]) => {
+    if (!f) f = lib().func(signature) as (...a: any[]) => any
+    return f(...args)
+  }
+}
 
 // An opaque, owned C string pointer. We decode it to a JS string then free it.
 type CharPtr = unknown
 
 // ---- lifecycle ------------------------------------------------------------
 
-export const openPlayback = lib.func(
+export const openPlayback = lazy(
   'void* aether_vcr_embed_open_playback(const char* label, const char* tape_path, const char* host, int port)',
 )
 
-export const openPlaybackUrl = lib.func(
+export const openPlaybackUrl = lazy(
   'void* aether_vcr_embed_open_playback_url(const char* label, const char* tape_url, const char* host, int port)',
 )
 
-export const openRecord = lib.func(
+export const openRecord = lazy(
   'void* aether_vcr_embed_open_record(const char* label, const char* tape_path, const char* upstream_base, const char* host, int port)',
 )
 
-export const start = lib.func('int aether_vcr_embed_start(void* server)')
+export const start = lazy('int aether_vcr_embed_start(void* server)')
 
-export const stop = lib.func('void aether_vcr_embed_stop(void* server)')
+export const stop = lazy('void aether_vcr_embed_stop(void* server)')
 
-export const stopAndFlush = lib.func(
+export const stopAndFlush = lazy(
   'void* aether_vcr_embed_stop_and_flush(void* server, const char* tape_path)',
 )
 
-export const stopAndFlushFailIfChanged = lib.func(
+export const stopAndFlushFailIfChanged = lazy(
   'void* aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path)',
 )
 
-export const stopAndFlushOrCheck = lib.func(
+export const stopAndFlushOrCheck = lazy(
   'void* aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path)',
 )
 
 // ---- introspection --------------------------------------------------------
 
-export const port = lib.func('int aether_vcr_embed_port(void* server)')
+export const port = lazy('int aether_vcr_embed_port(void* server)')
 
 // base_url builds "http://<host>:<port>"; the server doesn't store the host.
-export const baseUrl = lib.func(
+export const baseUrl = lazy(
   'void* aether_vcr_embed_base_url(void* server, const char* host)',
 )
 
-export const tapeLength = lib.func('int aether_vcr_embed_tape_length(void* server)')
+export const tapeLength = lazy('int aether_vcr_embed_tape_length(void* server)')
 
-export const resetCursor = lib.func('void aether_vcr_embed_reset_cursor(void* server)')
+export const resetCursor = lazy('void aether_vcr_embed_reset_cursor(void* server)')
 
 // ---- diagnostics (handle-based) -------------------------------------------
 
-export const lastError = lib.func('void* aether_vcr_embed_last_error(void* server)')
+export const lastError = lazy('void* aether_vcr_embed_last_error(void* server)')
 
-export const lastKind = lib.func('int aether_vcr_embed_last_kind(void* server)')
+export const lastKind = lazy('int aether_vcr_embed_last_kind(void* server)')
 
-export const lastIndex = lib.func('int aether_vcr_embed_last_index(void* server)')
+export const lastIndex = lazy('int aether_vcr_embed_last_index(void* server)')
 
-export const clearLastError = lib.func('void aether_vcr_embed_clear_last_error(void* server)')
+export const clearLastError = lazy('void aether_vcr_embed_clear_last_error(void* server)')
 
 // ---- mutations / config (call BEFORE start; return "" or an error) --------
 
-export const redact = lib.func(
+export const redact = lazy(
   'void* aether_vcr_embed_redact(void* server, int field, const char* pattern, const char* replacement)',
 )
 
-export const normalizeWholeTape = lib.func(
+export const normalizeWholeTape = lazy(
   'void* aether_vcr_embed_normalize_whole_tape(void* server, const char* pattern, const char* name)',
 )
 
-export const redactWholeTape = lib.func(
+export const redactWholeTape = lazy(
   'void* aether_vcr_embed_redact_whole_tape(void* server, const char* pattern, const char* replacement)',
 )
 
-export const unredact = lib.func(
+export const unredact = lazy(
   'void* aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement)',
 )
 
-export const removeHeader = lib.func(
+export const removeHeader = lazy(
   'void* aether_vcr_embed_remove_header(void* server, int field, const char* name)',
 )
 
-export const strictIgnoreCommonHeaders = lib.func(
+export const strictIgnoreCommonHeaders = lazy(
   'void* aether_vcr_embed_strict_ignore_common_headers(void* server)',
 )
 
-export const note = lib.func(
+export const note = lazy(
   'void* aether_vcr_embed_note(void* server, const char* title, const char* body)',
 )
 
-export const staticContent = lib.func(
+export const staticContent = lazy(
   'void* aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir)',
 )
 
-export const untaped = lib.func(
+export const untaped = lazy(
   'void* aether_vcr_embed_untaped(void* server, const char* path)',
 )
 
-export const setStrictHeaders = lib.func(
+export const setStrictHeaders = lazy(
   'void aether_vcr_embed_set_strict_headers(void* server, int on)',
 )
 
-export const indentCodeBlocks = lib.func('void aether_vcr_embed_indent_code_blocks(void* server)')
+export const indentCodeBlocks = lazy('void aether_vcr_embed_indent_code_blocks(void* server)')
 
-export const emphasizeHttpVerbs = lib.func(
+export const emphasizeHttpVerbs = lazy(
   'void aether_vcr_embed_emphasize_http_verbs(void* server)',
 )
 
-export const clearRedactions = lib.func('void aether_vcr_embed_clear_redactions(void* server)')
+export const clearRedactions = lazy('void aether_vcr_embed_clear_redactions(void* server)')
 
-export const clearUnredactions = lib.func('void aether_vcr_embed_clear_unredactions(void* server)')
+export const clearUnredactions = lazy('void aether_vcr_embed_clear_unredactions(void* server)')
 
-export const clearHeaderRemovals = lib.func(
+export const clearHeaderRemovals = lazy(
   'void aether_vcr_embed_clear_header_removals(void* server)',
 )
 
-export const clearStaticContent = lib.func(
+export const clearStaticContent = lazy(
   'void aether_vcr_embed_clear_static_content(void* server)',
 )
 
-export const clearUntaped = lib.func(
+export const clearUntaped = lazy(
   'void aether_vcr_embed_clear_untaped(void* server)',
 )
 
-export const clearFormatOptions = lib.func('void aether_vcr_embed_clear_format_options(void* server)')
+export const clearFormatOptions = lazy('void aether_vcr_embed_clear_format_options(void* server)')
 
 // ---- string ownership -----------------------------------------------------
 
-const freeString = lib.func('void aether_vcr_embed_free_string(void* s)')
+const freeString = lazy('void aether_vcr_embed_free_string(void* s)')
 
 /**
  * Decode a caller-owned native `char*` into a JS string and free it via

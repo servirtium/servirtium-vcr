@@ -71,9 +71,21 @@ class _BuilderBase:
         self._host = "127.0.0.1"
         self._port = 0  # 0 => OS-assigned (dynamic)
         self._label = ""
+        self._native_lib: str | None = None
         self._header_removals: list[tuple[Field, str]] = []
         self._static_content: list[tuple[str, str]] = []
         self._untaped: list[str] = []
+
+    def native_lib(self, path: str):
+        """Pin an explicit path to the native engine library for this run.
+
+        The first-class way to say *where the ``.so`` is* at launch, instead of
+        relying on discovery. Passing it here (or via the ``native_lib=`` kwarg
+        on :func:`playback`/:func:`record`) wins over the bundled-``native/``
+        default and the ``SERVIRTIUM_VCR_LIB`` env override. Must be set before
+        :meth:`start`; effective process-wide on first load."""
+        self._native_lib = path
+        return self
 
     def host(self, host: str):
         """Bind host. Defaults to 127.0.0.1."""
@@ -154,6 +166,7 @@ class PlaybackBuilder(_BuilderBase):
             )
 
     def start(self) -> "VcrServer":
+        N.configure(self._native_lib)
         handle = N.open_playback(
             N.encode(self._label),
             N.encode(self._tape_path),
@@ -252,6 +265,7 @@ class RecordBuilder(_BuilderBase):
             )
 
     def start(self) -> "VcrServer":
+        N.configure(self._native_lib)
         handle = N.open_record(
             N.encode(self._label),
             N.encode(self._tape_path),
@@ -390,13 +404,25 @@ class VcrServer:
         return False
 
 
-def playback(tape_path: str) -> PlaybackBuilder:
-    """Replay a Servirtium markdown tape from disk."""
-    return PlaybackBuilder(tape_path)
+def playback(tape_path: str, *, native_lib: str | None = None) -> PlaybackBuilder:
+    """Replay a Servirtium markdown tape from disk.
+
+    ``native_lib`` optionally pins the engine ``.so`` path explicitly (see
+    :meth:`PlaybackBuilder.native_lib`); by default the bundled library is
+    discovered."""
+    b = PlaybackBuilder(tape_path)
+    if native_lib is not None:
+        b.native_lib(native_lib)
+    return b
 
 
-def record(tape_path: str, upstream_base: str) -> RecordBuilder:
+def record(tape_path: str, upstream_base: str, *, native_lib: str | None = None) -> RecordBuilder:
     """Record live interactions: forward to ``upstream_base``, return the real
     response to the SUT, and capture the exchange. The tape is written to
-    ``tape_path`` when the server is closed."""
-    return RecordBuilder(tape_path, upstream_base)
+    ``tape_path`` when the server is closed.
+
+    ``native_lib`` optionally pins the engine ``.so`` path explicitly."""
+    b = RecordBuilder(tape_path, upstream_base)
+    if native_lib is not None:
+        b.native_lib(native_lib)
+    return b

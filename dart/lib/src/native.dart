@@ -15,6 +15,7 @@
 /// [takeString]).
 library;
 
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -29,23 +30,37 @@ String _fileName() {
   return 'lib$_libBase.so';
 }
 
+/// An explicit path pinned by the caller via `.nativeLib()` / [Native.configure].
+/// Wins over discovery. Only meaningful before the library is first loaded
+/// (`_lib` is a lazy final — initialized on first native use).
+String? _explicitPath;
+
 /// Yields candidate library paths in resolution order:
-/// 1. `SERVIRTIUM_VCR_LIB` (explicit path — point it at a fresh
-///    `ae build --emit=lib` artifact during development);
-/// 2. the package's bundled `native/` directory (resolved relative to this
-///    source file's parent-parent — i.e. the package root);
-/// 3. the bare file name (let the OS loader try).
+/// 1. an explicit path pinned via `.nativeLib()` / [Native.configure];
+/// 2. `SERVIRTIUM_VCR_LIB` (env override — a fresh dev `ae build --emit=lib`);
+/// 3. the package's own bundled `lib/native/<file>`, self-located from the
+///    consumer's `.dart_tool/package_config.json` (how an INSTALLED pub package
+///    — a `path:` or hosted dependency — finds its shipped `.so`);
+/// 4. CWD / entrypoint-relative `native/` (in-repo `dart test` from the package
+///    root);
+/// 5. the bare file name (let the OS loader try).
 Iterable<String> _candidatePaths() sync* {
+  final file = _fileName();
+
+  final explicit = _explicitPath;
+  if (explicit != null && explicit.isNotEmpty) yield explicit;
+
   final override = Platform.environment['SERVIRTIUM_VCR_LIB'];
   if (override != null && override.isNotEmpty) yield override;
 
-  final file = _fileName();
+  // The reliable self-location for an installed package: read the running
+  // project's package_config and find the `servirtium` package's own root.
+  for (final root in _servirtiumPackageRoots()) {
+    yield '$root/lib/native/$file';
+    yield '$root/native/$file';
+  }
 
-  // Resolve the package root from this library's URI: .../lib/src/native.dart
-  // -> package root is two directories up from `lib/src`.
-  final self = Platform.script; // not always this file; use a robust fallback.
-  // Best effort: walk up from the current script and the CWD looking for
-  // native/<file>. The reliable anchor in tests is the package root CWD.
+  final self = Platform.script;
   final roots = <String>{
     Directory.current.path,
     if (self.scheme == 'file') File.fromUri(self).parent.path,
@@ -56,6 +71,38 @@ Iterable<String> _candidatePaths() sync* {
   }
 
   yield file;
+}
+
+/// Resolve the on-disk root(s) of the `servirtium` package by reading the
+/// nearest `.dart_tool/package_config.json` (walking up from the CWD).
+/// Synchronous — callable from the lazy `_lib` initializer. Yields nothing when
+/// there is no package_config (e.g. full AOT / Flutter release, which bundle
+/// native assets differently).
+Iterable<String> _servirtiumPackageRoots() sync* {
+  var dir = Directory.current.absolute;
+  for (var i = 0; i < 16; i++) {
+    final cfg = File('${dir.path}/.dart_tool/package_config.json');
+    if (cfg.existsSync()) {
+      try {
+        final json = jsonDecode(cfg.readAsStringSync()) as Map<String, dynamic>;
+        final packages = (json['packages'] as List).cast<Map<String, dynamic>>();
+        // rootUri entries are relative to the .dart_tool/ directory.
+        final base = Uri.directory('${dir.path}/.dart_tool/');
+        for (final p in packages) {
+          if (p['name'] == 'servirtium') {
+            final resolved = base.resolveUri(Uri.parse(p['rootUri'] as String));
+            yield File.fromUri(resolved).path.replaceAll(RegExp(r'[/\\]$'), '');
+          }
+        }
+      } catch (_) {
+        // Ignore a malformed/absent config; other candidates still apply.
+      }
+      return;
+    }
+    final parent = dir.parent;
+    if (parent.path == dir.path) break;
+    dir = parent;
+  }
 }
 
 DynamicLibrary _openLibrary() {
@@ -156,6 +203,14 @@ typedef _FreeStringD = void Function(Pointer<Utf8> s);
 /// so the public API never touches a symbol name.
 class Native {
   Native._();
+
+  /// Pin an explicit path to the native library, used at first load. Backs the
+  /// first-class `.nativeLib()` builder argument; wins over the bundled
+  /// `lib/native/` default and the `SERVIRTIUM_VCR_LIB` env override. No-op once
+  /// the library has already been loaded (set it before the first `.start()`).
+  static void configure(String? path) {
+    if (path != null && path.isNotEmpty) _explicitPath ??= path;
+  }
 
   // ---- lifecycle ----------------------------------------------------------
   static final openPlayback = _lib.lookupFunction<_StartPlaybackC, _StartPlaybackD>(

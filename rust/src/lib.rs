@@ -41,7 +41,7 @@ mod native;
 use std::ffi::c_int;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use native::{cstr, native, take_string, Handle, Native};
+use native::{configure, cstr, native, take_string, Handle, Native};
 
 /// Field selector for redactions / unredactions / header removals. Values
 /// mirror the `FIELD_*` constants in `core/vcr.ae`.
@@ -162,6 +162,7 @@ struct Common {
     host: String,
     port: u16,
     label: String,
+    native_lib: Option<String>,
     header_removals: Vec<(Field, String)>,
     static_content: Vec<(String, String)>,
     untaped: Vec<String>,
@@ -174,6 +175,7 @@ impl Common {
             host: "127.0.0.1".to_string(),
             port: 0,
             label: String::new(),
+            native_lib: None,
             header_removals: Vec::new(),
             static_content: Vec::new(),
             untaped: Vec::new(),
@@ -215,6 +217,14 @@ pub struct PlaybackBuilder {
 }
 
 impl PlaybackBuilder {
+    /// Pin an explicit path to the native engine library for this run — the
+    /// first-class way to say *where the `.so` is* at launch, instead of
+    /// relying on discovery. Wins over the bundled-`native/` default and the
+    /// `SERVIRTIUM_VCR_LIB` env override. Set before `.start()`.
+    pub fn native_lib(mut self, path: impl Into<String>) -> Self {
+        self.common.native_lib = Some(path.into());
+        self
+    }
     /// Bind host. Defaults to `127.0.0.1`.
     pub fn host(mut self, host: impl Into<String>) -> Self {
         self.common.host = host.into();
@@ -271,6 +281,7 @@ impl PlaybackBuilder {
     /// then begin serving. Acquires the wrapper lock, held until the returned
     /// [`VcrServer`] is dropped.
     pub fn start(self) -> Result<VcrServer, VcrError> {
+        configure(self.common.native_lib.clone());
         let n = native().map_err(VcrError::new)?;
         let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
 
@@ -331,6 +342,12 @@ pub struct RecordBuilder {
 }
 
 impl RecordBuilder {
+    /// Pin an explicit path to the native engine library for this run (see
+    /// [`PlaybackBuilder::native_lib`]). Set before `.start()`.
+    pub fn native_lib(mut self, path: impl Into<String>) -> Self {
+        self.common.native_lib = Some(path.into());
+        self
+    }
     /// Bind host. Defaults to `127.0.0.1`.
     pub fn host(mut self, host: impl Into<String>) -> Self {
         self.common.host = host.into();
@@ -428,6 +445,7 @@ impl RecordBuilder {
     /// record server. Acquires the wrapper's process-wide lock, held until the
     /// returned [`VcrServer`] is dropped (which also flushes the tape).
     pub fn start(self) -> Result<VcrServer, VcrError> {
+        configure(self.common.native_lib.clone());
         let n = native().map_err(VcrError::new)?;
         let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
 

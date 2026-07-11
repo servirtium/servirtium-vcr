@@ -1,0 +1,46 @@
+// Third-party-consumer EXAMPLE test for the Rust binding.
+//
+// A standalone consumer crate that depends on `servirtium` (path dep on
+// ../../rust) and replays the canonical tape — the engine .so self-locates from
+// the servirtium crate's bundled native/ dir, with no SERVIRTIUM_VCR_LIB. The
+// honest "cargo add it and it just works" test the in-tree rust/.tests.ae
+// cannot give (that one hands the .so in via env var).
+//
+// Both .so-location modes, each its own `cargo run`: `explicit` (first-class
+// .native_lib(), pointed at the crate's staged .so) and `discovery`
+// (zero-config self-location).
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "rust/.package.ae")
+    _crate = build.dep_artifact(b, "rust/.package.ae", "crate_dir")
+    root = build._get(b, "root")
+    exdir = "${root}/rust/example"
+    consumer = "${root}/target/rust-consumer"
+    so = "${root}/rust/native/libservirtium_vcr.so"
+
+    // Fresh consumer crate OUTSIDE the source tree (same depth as rust/example
+    // so the Cargo.toml `path = "../../rust"` resolves the same). Build once
+    // (offline-ish; downloads ureq the first time), then run both modes.
+    rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/src\" \"${consumer}/tapes\" && cp \"${exdir}/Cargo.toml\" \"${consumer}/\" && cp \"${exdir}/src/main.rs\" \"${consumer}/src/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\" && cd \"${consumer}\" && cargo build --quiet")
+    if rc != 0 {
+        println("rust example: consumer `cargo build` failed")
+        return 1
+    }
+
+    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB cargo run --quiet -- explicit \"${so}\"")
+    if rc2 != 0 {
+        println("rust example: explicit-mode consumer run failed")
+        return 1
+    }
+    rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB cargo run --quiet -- discovery")
+    if rc3 != 0 {
+        println("rust example: discovery-mode consumer run failed")
+        return 1
+    }
+
+    println("rust example: PASS — consumer crate replayed the canonical tape (explicit + discovery)")
+    return 0
+}

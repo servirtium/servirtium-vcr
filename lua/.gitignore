@@ -3,3 +3,4 @@
 # C build artifacts
 *.o
 *.obj
+dist/

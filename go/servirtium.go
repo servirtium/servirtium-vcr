@@ -29,7 +29,14 @@
 package servirtium
 
 /*
-#cgo LDFLAGS: -L${SRCDIR}/../core/native -lservirtium_vcr -Wl,-rpath,${SRCDIR}/../core/native
+// Link against the engine .so from two locations, so both the in-repo build
+// and a third-party consumer work: ${SRCDIR}/../core/native is the monorepo
+// layout (this module sitting next to core/); ${SRCDIR}/native is the bundled
+// copy a consumer gets (go/.package.ae stages the .so there, and it ships in the
+// module). ${SRCDIR} expands to this package's real dir at build time — the
+// module cache / replace target for a consumer — so the rpath self-locates. A
+// -L/-rpath to a non-existent dir is harmless.
+#cgo LDFLAGS: -L${SRCDIR}/../core/native -L${SRCDIR}/native -lservirtium_vcr -Wl,-rpath,${SRCDIR}/../core/native -Wl,-rpath,${SRCDIR}/native
 
 #include <stdlib.h>
 

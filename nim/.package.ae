@@ -1,0 +1,24 @@
+// Third-party-consumer PACKAGE stage for the Nim binding.
+// Nim links the engine .so at the consumer's compile time via a baked -rpath;
+// the module now also searches <pkg>/native, so the .so must ship there. Stages
+// the freshly-built engine .so into nim/native/. Deps core/.build.ae; publishes
+// the nim package dir on "package_dir".
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    root = build._get(b, "root")
+    nimdir = "${root}/nim"
+
+    rc = os.system("mkdir -p \"${nimdir}/native\" && cp \"${lib}\" \"${nimdir}/native/libservirtium_vcr.so\"")
+    if rc != 0 {
+        println("nim package: failed to stage engine .so into nim/native/")
+        return 1
+    }
+    build.publish_artifact(b, "package_dir", "${nimdir}")
+    println("nim package: staged engine .so into nim/native/ (Nim package ready)")
+    return 0
+}

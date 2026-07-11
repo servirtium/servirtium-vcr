@@ -96,14 +96,25 @@ String _drainStartError(Pointer<Void> handle) {
 
 /// Entry point for record/replay fixtures backed by the in-repo `core/vcr.ae` engine.
 abstract final class Vcr {
-  /// Replay a Servirtium markdown tape from disk.
-  static PlaybackBuilder playback(String tapePath) => PlaybackBuilder._(tapePath);
+  /// Replay a Servirtium markdown tape from disk. [nativeLib] optionally pins
+  /// the engine `.so` path explicitly (see `BuilderBase.nativeLib`); by default
+  /// the bundled library is discovered.
+  static PlaybackBuilder playback(String tapePath, {String? nativeLib}) {
+    final b = PlaybackBuilder._(tapePath);
+    if (nativeLib != null) b.nativeLib(nativeLib);
+    return b;
+  }
 
   /// Record live interactions: forward to [upstreamBase], return the real
   /// response to the SUT, and capture the exchange. The tape is written to
-  /// [tapePath] when the server is closed.
-  static RecordBuilder record(String tapePath, String upstreamBase) =>
-      RecordBuilder._(tapePath, upstreamBase);
+  /// [tapePath] when the server is closed. [nativeLib] optionally pins the
+  /// engine `.so` path explicitly.
+  static RecordBuilder record(String tapePath, String upstreamBase,
+      {String? nativeLib}) {
+    final b = RecordBuilder._(tapePath, upstreamBase);
+    if (nativeLib != null) b.nativeLib(nativeLib);
+    return b;
+  }
 }
 
 /// Shared bind options for both builders.
@@ -114,11 +125,21 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
   String _host = '127.0.0.1';
   int _port = 0; // 0 => OS-assigned (dynamic)
   String _label = '';
+  String? _nativeLib;
   final List<(VcrField, String)> _headerRemovals = [];
   final List<(String, String)> _staticContent = [];
   final List<String> _untaped = [];
 
   T get _self;
+
+  /// Pin an explicit path to the native engine library for this run — the
+  /// first-class way to say *where the `.so` is* at launch, instead of relying
+  /// on discovery. Wins over the bundled-`lib/native/` default and the
+  /// `SERVIRTIUM_VCR_LIB` env override. Set before `.start()`.
+  T nativeLib(String path) {
+    _nativeLib = path;
+    return _self;
+  }
 
   /// Bind host. Defaults to 127.0.0.1.
   T host(String host) {
@@ -214,6 +235,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   /// Open the playback server, apply this fixture's config to its handle,
   /// then begin serving. Throws [VcrException] if it fails to bind/load.
   VcrServer start() {
+    Native.configure(_nativeLib);
     final handle = withUtf8(
         _label,
         (l) => withUtf8(
@@ -321,6 +343,7 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   /// Open the record server, apply this fixture's config to its handle, then
   /// begin serving. Throws [VcrException] if it fails to bind.
   VcrServer start() {
+    Native.configure(_nativeLib);
     final handle = withUtf8(
         _label,
         (l) => withUtf8(

@@ -25,7 +25,22 @@ final class NativeLoader {
 
     private static final Arena GLOBAL = Arena.global();
 
+    /** Explicit path pinned via {@code nativeLib()} / {@link #configure(String)}. */
+    private static volatile String explicitPath;
+
     private NativeLoader() {
+    }
+
+    /**
+     * Pin an explicit path to the native library, used at first load. Backs the
+     * first-class {@code nativeLib()} builder argument; wins over the bundled
+     * jar-resource / working-tree layouts and the {@code SERVIRTIUM_VCR_LIB} env
+     * override. Set before the first native call (i.e. before {@code start()}).
+     */
+    static void configure(String path) {
+        if (path != null && !path.isEmpty()) {
+            explicitPath = path;
+        }
     }
 
     /** Resolve and load the native VCR library, returning a symbol lookup over it. */
@@ -35,6 +50,15 @@ final class NativeLoader {
     }
 
     private static Path locate() {
+        // 0. Explicit path pinned via nativeLib() / configure().
+        if (explicitPath != null && !explicitPath.isEmpty()) {
+            Path p = Path.of(explicitPath);
+            if (Files.exists(p)) {
+                return p;
+            }
+            throw new VcrException("nativeLib() points at a missing file: " + explicitPath);
+        }
+
         // 1. Explicit override.
         String override = System.getenv("SERVIRTIUM_VCR_LIB");
         if (override != null && !override.isEmpty()) {

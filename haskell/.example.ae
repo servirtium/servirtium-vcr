@@ -1,0 +1,47 @@
+// Third-party-consumer EXAMPLE test for the Haskell binding.
+//
+// Publishes a standalone copy of the servirtium-haskell package under
+// target/haskell-pkg (with the bundled native/ .so, no core/ sibling, no stale
+// project files). A separate consumer cabal project depends on it and points
+// extra-lib-dirs + an rpath at the bundled .so (both absolute — ghc-pkg rejects
+// a relative extra-lib-dirs), then `cabal run` replays the canonical tape with
+// no SERVIRTIUM_VCR_LIB.
+import build
+import std.os
+import std.io
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "haskell/.package.ae")
+    _pkg = build.dep_artifact(b, "haskell/.package.ae", "package_dir")
+    root = build._get(b, "root")
+    exdir = "${root}/haskell/example"
+    pkg = "${root}/target/haskell-pkg"
+    nat = "${pkg}/native"
+    consumer = "${root}/target/haskell-consumer"
+
+    rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/haskell\" \"${pkg}\" && rm -rf \"${pkg}/dist-newstyle\" \"${pkg}/cabal.project\" \"${pkg}/cabal.project.local\" \"${pkg}/example\" \"${pkg}/.gitignore\" && mkdir -p \"${consumer}\" && cp \"${exdir}/Main.hs\" \"${consumer}/\" && cp \"${exdir}/consumer-example.cabal\" \"${consumer}/\" && cp \"${exdir}/single_get.md\" \"${consumer}/\"")
+    if rc != 0 {
+        println("haskell example: staging the published package + consumer failed")
+        return 1
+    }
+
+    // The consumer's project config: reference the local package and tell cabal
+    // where the engine .so lives (absolute extra-lib-dirs + baked rpath).
+    proj = "packages: .\n          ${pkg}\n"
+    _w1 = io.write_file("${consumer}/cabal.project", proj)
+    // Arch ships a dynamic-only GHC (no static libs), so cabal's default static
+    // build fails ("files missing in base"). `shared: True` +
+    // `executable-dynamic: True` build every unit dynamically. The
+    // servirtium-haskell stanza points the linker at the bundled engine .so.
+    projlocal = "library-vanilla: False\nshared: True\nexecutable-dynamic: True\n\npackage servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
+    _w2 = io.write_file("${consumer}/cabal.project.local", projlocal)
+
+    rc2 = os.system("cd \"${consumer}\" && (cabal update || true) && env -u SERVIRTIUM_VCR_LIB cabal run consumer-example")
+    if rc2 != 0 {
+        println("haskell example: consumer `cabal run` against the bundled package failed")
+        return 1
+    }
+    println("haskell example: PASS — consumer replayed the canonical tape (discovery; bundled .so via extra-lib-dirs+rpath)")
+    return 0
+}

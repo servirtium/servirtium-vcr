@@ -1,0 +1,33 @@
+// Third-party-consumer EXAMPLE test for the Erlang binding.
+//
+// Relocates the self-contained servirtium_nif app (erlang/_build_pkg) to
+// target/erlang-pkg — proving the $ORIGIN rpath, since the NIF now finds the
+// engine .so beside it in priv/ at a NEW location with no core/ near. A
+// consumer escript then uses `servirtium` via ERL_LIBS (standard OTP
+// resolution) and replays the canonical tape, with no SERVIRTIUM_VCR_LIB.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "erlang/.package.ae")
+    libs = build.dep_artifact(b, "erlang/.package.ae", "erl_libs")
+    root = build._get(b, "root")
+    exdir = "${root}/erlang/example"
+    pkg = "${root}/target/erlang-pkg"
+    consumer = "${root}/target/erlang-consumer"
+
+    rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${libs}\" \"${pkg}\" && mkdir -p \"${consumer}/tapes\" && cp \"${exdir}/consumer.escript\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+    if rc != 0 {
+        println("erlang example: relocating the app + staging consumer failed")
+        return 1
+    }
+
+    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB ERL_LIBS=\"${pkg}\" escript consumer.escript")
+    if rc2 != 0 {
+        println("erlang example: consumer escript against the relocated app failed")
+        return 1
+    }
+    println("erlang example: PASS — consumer replayed the canonical tape (discovery; $ORIGIN-relocated NIF)")
+    return 0
+}

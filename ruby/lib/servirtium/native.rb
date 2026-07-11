@@ -37,8 +37,17 @@ module Servirtium
             "could not load native VCR library (tried: #{candidates.join(', ')}): #{last_error}"
     end
 
+    # Pin an explicit path to the native library, used at first load. Backs
+    # the first-class +native_lib=+ argument; wins over the bundled-+native/+
+    # default and the +SERVIRTIUM_VCR_LIB+ env override. No-op once the library
+    # is already loaded (set it before the first +.start+).
+    def configure(path)
+      @explicit_path = path if path && !path.empty? && @lib.nil?
+    end
+
     def library_candidates
       candidates = []
+      candidates << @explicit_path if @explicit_path && !@explicit_path.empty?
       override = ENV.fetch('SERVIRTIUM_VCR_LIB', nil)
       candidates << override if override && !override.empty?
       candidates << File.join(__dir__, 'native', library_filename)
@@ -53,8 +62,6 @@ module Servirtium
       else                           'libservirtium_vcr.so'
       end
     end
-
-    LIB = open_library
 
     # Fiddle type aliases for readability.
     VOIDP = Fiddle::TYPE_VOIDP
@@ -114,13 +121,22 @@ module Servirtium
       [:free_string, 'aether_vcr_embed_free_string', VOID, [VOIDP]]
     ].freeze
 
-    FUNCTIONS = BINDINGS.each_with_object({}) do |(name, sym, ret, args), acc|
-      acc[name] = Fiddle::Function.new(LIB[sym], args, ret)
-    end.freeze
+    # The dlopen'd library handle — opened lazily on first use so an explicit
+    # native_lib= (via {.configure}) can win over discovery.
+    def lib
+      @lib ||= open_library
+    end
+
+    # Bound native functions, built lazily against {.lib} on first call.
+    def functions
+      @functions ||= BINDINGS.each_with_object({}) do |(name, sym, ret, args), acc|
+        acc[name] = Fiddle::Function.new(lib[sym], args, ret)
+      end
+    end
 
     # Invoke a bound native function by its Ruby name.
     def call(name, *)
-      FUNCTIONS.fetch(name).call(*)
+      functions.fetch(name).call(*)
     end
 
     # Copy a caller-owned native +char*+ into a Ruby String, then free the

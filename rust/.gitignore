@@ -1,2 +1,7 @@
 /target
 Cargo.lock
+
+# native engine .so — staged fresh by rust/.package.ae, never commit
+native/*.so
+native/*.dylib
+native/*.dll

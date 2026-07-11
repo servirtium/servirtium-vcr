@@ -31,19 +31,34 @@ final class Vcr
     {
     }
 
-    /** Replay a Servirtium markdown tape from disk. */
-    public static function playback(string $tapePath): PlaybackBuilder
+    /**
+     * Replay a Servirtium markdown tape from disk. `$nativeLib` optionally pins
+     * the engine `.so` path explicitly (see {@see VcrBuilderBase::nativeLib()});
+     * by default the bundled library is discovered.
+     */
+    public static function playback(string $tapePath, ?string $nativeLib = null): PlaybackBuilder
     {
-        return new PlaybackBuilder($tapePath);
+        $b = new PlaybackBuilder($tapePath);
+        if ($nativeLib !== null) {
+            $b->nativeLib($nativeLib);
+        }
+
+        return $b;
     }
 
     /**
      * Record live interactions: forward to `$upstreamBase`, return the real
      * response to the SUT, and capture the exchange. The tape is written to
-     * `$tapePath` when the server is stopped.
+     * `$tapePath` when the server is stopped. `$nativeLib` optionally pins the
+     * engine `.so` path explicitly.
      */
-    public static function record(string $tapePath, string $upstreamBase): RecordBuilder
+    public static function record(string $tapePath, string $upstreamBase, ?string $nativeLib = null): RecordBuilder
     {
-        return new RecordBuilder($tapePath, $upstreamBase);
+        $b = new RecordBuilder($tapePath, $upstreamBase);
+        if ($nativeLib !== null) {
+            $b->nativeLib($nativeLib);
+        }
+
+        return $b;
     }
 }

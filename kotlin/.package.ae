@@ -1,0 +1,25 @@
+// Third-party-consumer PACKAGE stage for the Kotlin binding.
+//
+// `mvn install`s the Kotlin DSL layer (com.paulhammant.servirtium:
+// servirtium-vcr-kotlin) to ~/.m2. It depends on the Java jar
+// (servirtium-vcr, which bundles the engine .so as a resource), so we dep
+// java/.package.ae to get that into ~/.m2 first. A Kotlin consumer then
+// resolves servirtium-vcr-kotlin and the .so rides along transitively.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "java/.package.ae")
+    root = build._get(b, "root")
+    ktdir = "${root}/kotlin"
+
+    rc = os.system("cd \"${ktdir}\" && mvn -q -B -Dmaven.test.skip=true install")
+    if rc != 0 {
+        println("kotlin package: `mvn install` of servirtium-vcr-kotlin failed")
+        return 1
+    }
+    build.publish_artifact(b, "maven_gav", "com.paulhammant.servirtium:servirtium-vcr-kotlin:2.0.0-SNAPSHOT")
+    println("kotlin package: installed servirtium-vcr-kotlin jar to ~/.m2")
+    return 0
+}

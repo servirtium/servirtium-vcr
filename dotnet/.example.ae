@@ -1,0 +1,40 @@
+// Third-party-consumer EXAMPLE test for the .NET binding.
+//
+// Consumes the Servirtium.Vcr .nupkg (built by dotnet/Servirtium.Vcr/.dist.ae)
+// the idiomatic way: publish it to a LOCAL NuGet feed, then a standalone test
+// project restores it via a normal PackageReference and replays the canonical
+// tape. The engine .so auto-deploys from the package's runtimes/linux-x64/
+// native/ asset and is discovered at AppContext.BaseDirectory — no
+// SERVIRTIUM_VCR_LIB. (.NET allows only ONE DllImportResolver per assembly,
+// registered internally, so there is no first-class native_lib= arg to add —
+// discovery is the mode, like Java's jar-resource.)
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "dotnet/Servirtium.Vcr/.dist.ae")
+    root = build._get(b, "root")
+    exdir = "${root}/dotnet/example"
+    feed = "${root}/target/dotnet-feed"
+    consumer = "${root}/target/dotnet-consumer"
+    // The pack builder writes the .nupkg here (target/dist/<module>/nupkg/).
+    nupkg_glob = "${root}/target/dist/dotnet/Servirtium.Vcr/nupkg"
+
+    // Local NuGet feed with the freshly built .nupkg; standalone consumer copy.
+    // Clear any version-cached copy of our package (version is a constant
+    // 1.0.0, so NuGet would otherwise reuse a stale cached restore).
+    rc = os.system("rm -rf \"${feed}\" \"${consumer}\" \"$HOME/.nuget/packages/servirtium.vcr\" && mkdir -p \"${feed}\" \"${consumer}/tapes\" && cp \"${nupkg_glob}\"/*.nupkg \"${feed}/\" && cp \"${exdir}/ServirtiumConsumerExample.csproj\" \"${consumer}/\" && cp \"${exdir}/PlaybackConsumerTest.cs\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\" && cd \"${consumer}\" && dotnet new nugetconfig && dotnet nuget add source \"${feed}\" --name servirtium-local")
+    if rc != 0 {
+        println("dotnet example: setting up local feed + consumer project failed")
+        return 1
+    }
+
+    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB dotnet test --verbosity quiet")
+    if rc2 != 0 {
+        println("dotnet example: consumer `dotnet test` against the installed nupkg failed")
+        return 1
+    }
+    println("dotnet example: PASS — installed NuGet package replayed the canonical tape (discovery)")
+    return 0
+}

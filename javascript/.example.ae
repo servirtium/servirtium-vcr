@@ -1,0 +1,47 @@
+// Third-party-consumer EXAMPLE test for the JavaScript/TypeScript binding.
+//
+// Installs the packaged npm tarball (from javascript/.package.ae) into a CLEAN
+// throwaway project and replays the canonical single_get tape from the
+// INSTALLED package — node resolves `@servirtium/vcr` from the consumer's own
+// node_modules (not the source tree), with no SERVIRTIUM_VCR_LIB. The honest
+// "npm install and it just works" test the in-tree javascript/.tests.ae cannot
+// give.
+//
+// Both .so-location modes, each in its own fresh process: `explicit`
+// (first-class .nativeLib()) and `discovery` (zero-config; the package finds
+// its own bundled .so).
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "javascript/.package.ae")
+    tarball_dir = build.dep_artifact(b, "javascript/.package.ae", "tarball_dir")
+    root = build._get(b, "root")
+    exdir = "${root}/javascript/example"
+    consumer = "${root}/target/js-consumer"
+
+    // Fresh consumer project OUTSIDE the source tree; copy in the example +
+    // tape, then `npm install <tgz>` (pulls koffi too) so `require
+    // ('@servirtium/vcr')` resolves to consumer/node_modules, not javascript/.
+    rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}\" && cp \"${exdir}/consumer_example.js\" \"${consumer}/\" && cp -r \"${exdir}/tapes\" \"${consumer}/tapes\" && cd \"${consumer}\" && npm init -y >/dev/null 2>&1 && npm install --silent --no-audit --no-fund \"${tarball_dir}\"/*.tgz")
+    if rc != 0 {
+        println("javascript example: fresh-project tarball install failed")
+        return 1
+    }
+
+    // Run both modes with SERVIRTIUM_VCR_LIB unset.
+    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB node consumer_example.js explicit")
+    if rc2 != 0 {
+        println("javascript example: explicit-mode consumer run failed")
+        return 1
+    }
+    rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB node consumer_example.js discovery")
+    if rc3 != 0 {
+        println("javascript example: discovery-mode consumer run failed")
+        return 1
+    }
+
+    println("javascript example: PASS — installed npm package replayed the canonical tape (explicit + discovery)")
+    return 0
+}

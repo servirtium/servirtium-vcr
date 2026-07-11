@@ -1,0 +1,46 @@
+// Third-party-consumer EXAMPLE test for the Dart binding.
+//
+// Stands up a CLEAN consumer project that depends on `servirtium` via pub (a
+// `path:` dep), then replays the canonical single_get tape from the RESOLVED
+// package — imported as `package:servirtium/...`, self-locating its bundled
+// lib/native/.so, with no SERVIRTIUM_VCR_LIB. The honest "add it to pubspec and
+// it just works" test the in-tree dart/.tests.ae cannot give (that one runs
+// `dart test` from the package root with the .so handed in via env var).
+//
+// Both .so-location modes, each in its own fresh process: `explicit`
+// (first-class nativeLib:) and `discovery` (zero-config; self-located via
+// package_config.json).
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "dart/.package.ae")
+    _pkg = build.dep_artifact(b, "dart/.package.ae", "package_dir")
+    root = build._get(b, "root")
+    exdir = "${root}/dart/example"
+    consumer = "${root}/target/dart-consumer"
+
+    // Fresh consumer project OUTSIDE the source tree (same depth as dart/example
+    // so the pubspec's `path: ../../dart` resolves the same). `dart pub get`
+    // writes .dart_tool/package_config.json mapping servirtium -> dart/.
+    rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/tapes\" && cp \"${exdir}/pubspec.yaml\" \"${consumer}/\" && cp \"${exdir}/consumer_example.dart\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\" && cd \"${consumer}\" && dart pub get")
+    if rc != 0 {
+        println("dart example: `dart pub get` of the path package failed")
+        return 1
+    }
+
+    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB dart run consumer_example.dart explicit")
+    if rc2 != 0 {
+        println("dart example: explicit-mode consumer run failed")
+        return 1
+    }
+    rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB dart run consumer_example.dart discovery")
+    if rc3 != 0 {
+        println("dart example: discovery-mode consumer run failed")
+        return 1
+    }
+
+    println("dart example: PASS — resolved pub package replayed the canonical tape (explicit + discovery)")
+    return 0
+}

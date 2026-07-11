@@ -1,0 +1,12 @@
+name = "consumer_example"
+version = "0.0.1"
+target = "erlang"
+
+# Third-party consumer example for the Gleam binding: depends on the
+# servirtium_gleam package (path dep). The shared servirtium_nif OTP app (built
+# $ORIGIN-relocatable by erlang/.package.ae) is on the code path via ERL_LIBS;
+# the engine .so loads through the NIF's $ORIGIN rpath — no SERVIRTIUM_VCR_LIB.
+
+[dependencies]
+gleam_stdlib = ">= 0.34.0 and < 2.0.0"
+servirtium_gleam = { path = "../../gleam" }

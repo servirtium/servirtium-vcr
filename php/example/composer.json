@@ -1,0 +1,19 @@
+{
+    "name": "servirtium/consumer-example",
+    "description": "Third-party consumer example: depends on servirtium/servirtium-php as an installed Composer package.",
+    "type": "project",
+    "require": {
+        "php": ">=8.4",
+        "ext-ffi": "*",
+        "servirtium/servirtium-php": "*"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../php",
+            "options": { "symlink": false }
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

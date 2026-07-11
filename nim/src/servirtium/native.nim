@@ -20,13 +20,20 @@ export os  # currentSourcePath/`/`/dirname are only used in one compile-time `wh
 # back to core/native next to this source tree. An -rpath is baked in so the
 # OS loader finds it at run time without LD_LIBRARY_PATH.
 const envLib = staticExec("printf %s \"$SERVIRTIUM_VCR_LIB\"")
+# Bundled copy shipped INSIDE the package at <pkg>/native (nim/.package.ae stages
+# the .so there). A third-party consumer with no repo `core/` still links and
+# self-locates the engine via this dir's baked -rpath. -L/-rpath to a missing
+# dir is harmless, so we always pass both the monorepo core/native and the
+# bundled native dir.
+const bundledDir = currentSourcePath().parentDir().parentDir().parentDir() / "native"
 when envLib.len > 0:
   # Strip the trailing /libservirtium_vcr.so to get the directory to -L.
   const libDir = staticExec("dirname \"" & envLib & "\"")
 else:
   const libDir = currentSourcePath().parentDir().parentDir().parentDir().parentDir() / "core" / "native"
 
-{.passL: "-L" & libDir & " -lservirtium_vcr -Wl,-rpath," & libDir.}
+{.passL: "-L" & libDir & " -L" & bundledDir &
+  " -lservirtium_vcr -Wl,-rpath," & libDir & " -Wl,-rpath," & bundledDir.}
 
 ## Opaque server handle from the native side. `nil` means failure.
 type Handle* = pointer

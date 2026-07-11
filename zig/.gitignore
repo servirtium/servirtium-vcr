@@ -1,2 +1,6 @@
 zig-out/
 .zig-cache/
+# native engine .so — staged fresh by zig/.package.ae, never commit
+native/*.so
+native/*.dylib
+native/*.dll

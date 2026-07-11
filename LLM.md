@@ -117,6 +117,35 @@ reference). Quick facts:
 - **Never run two top-level `aeb` invocations concurrently** — they clobber the
   shared `target/_ae_build_all` workspace. Run leaves sequentially.
 
+## Third-party-consumer tests (`.package.ae` + `.example.ae`)
+
+The in-tree `<lang>/.tests.ae` runs each binding's own suite against the source
+tree with the engine `.so` handed in via `SERVIRTIUM_VCR_LIB` — it proves the
+binding works, **not** that a downstream user can install and use it. That gap
+is covered by a second layer every binding now has:
+
+- **`<lang>/.package.ae`** builds the idiomatic distributable the way a consumer
+  receives it, with the engine `.so` bundled inside — wheel/gem/npm-tgz/nupkg/
+  jar-to-`~/.m2`/crate/Composer-copy/pub, or (for the compiled/linked group) the
+  `.so` staged where the binding's linker/loader finds it.
+- **`<lang>/.example.ae`** installs that artifact into a **clean** environment
+  (`target/<lang>-consumer`, a fresh venv / isolated gem dir / local NuGet feed /
+  relocated package) and runs `<lang>/example/` — a real consumer project that
+  imports the **installed** package and replays the canonical `single_get` tape,
+  **with `SERVIRTIUM_VCR_LIB` unset** (`env -u`), so only the bundled `.so`
+  satisfies the load. Green = a naive `pip install` / `gem install` / … works.
+
+Two `.so`-location modes (per the design decision): **explicit** — a first-class
+`native_lib=`-style arg pins the path (Ruby `.native_lib`, Python `native_lib=`,
+…; Pharo's `ServirtiumLibrary libPath:`); **discovery** — zero-config, the
+installed package finds its own bundled `.so`. Java/.NET are discovery-only (the
+`.so` ships as a jar/nupkg *resource* — no loose file to point at); the
+compiled/linked group (go/rust/nim/zig/lua/haskell + the BEAM NIF) relies on a
+relocatable rpath (`$ORIGIN` or a bundled `native/`), proven by publishing a
+package copy with **no `core/` sibling** so the repo layout can't accidentally
+satisfy the link. Run the whole set with `aeb <lang>/.example.ae …` (shared deps
+— engine `.so`, the Java jar, the Erlang NIF — build once across the DAG).
+
 ## Gotchas / hard-won
 
 - **Two normalization verbs, don't confuse them.** `normalize_whole_tape(pat,
@@ -131,8 +160,10 @@ reference). Quick facts:
   `untaped(path)` keeps incidental fetches (e.g. `/favicon.ico`) off the tape
   and out of the playback cursor.
 - **JVM family ≠ a binding.** `kotlin/scala/clojure/groovy` consume the Java
-  jar via seamless interop — their `.tests.ae` installs the Java jar to `~/.m2`
-  first, then runs `mvn test`. No second `.so` binding.
+  jar via seamless interop — their `.tests.ae` compiles + runs JUnit aeb-native
+  (no Maven, `.so` via `SERVIRTIUM_VCR_LIB`). No second `.so` binding. (The
+  `~/.m2` install only happens in the third-party-consumer `.example.ae` layer
+  below, not the in-tree `.tests.ae`.)
 - **BEAM family shares one NIF (Erlang owns it).** `erlang/.build.ae` compiles
   the canonical NIF ONCE into the OTP app `servirtium_nif`
   (`erlang/_build/servirtium_nif/{ebin,priv}`). `elixir/` and `gleam/` `build.dep`

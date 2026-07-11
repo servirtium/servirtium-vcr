@@ -131,6 +131,7 @@ final class RecordBuilder extends VcrBuilderBase
 
     public function start(): VcrServer
     {
+        Native::configure($this->nativeLibValue);
         $lib = Native::lib();
         $handle = $lib->aether_vcr_embed_open_record(
             $this->labelValue,

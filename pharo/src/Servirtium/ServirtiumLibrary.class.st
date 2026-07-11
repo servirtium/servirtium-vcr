@@ -43,10 +43,13 @@ Class {
 
 { #category : 'configuration' }
 ServirtiumLibrary class >> defaultLibPath [
-	"The committed fallback absolute path to the native engine, used when
-	 neither SERVIRTIUM_VCR_LIB nor #libPath: provides one."
+	"Last-resort fallback when neither SERVIRTIUM_VCR_LIB nor #libPath:
+	 provides one: a bundled native/ copy next to the image's working
+	 directory, else the bare library name (the OS loader then resolves it
+	 via LD_LIBRARY_PATH / rpath). A consumer normally pins the engine
+	 explicitly with `ServirtiumLibrary libPath: anAbsolutePath`."
 
-	^ '/home/paul/scm/AetherThings/servirtium-pharo/native/libservirtium_vcr.so'
+	^ 'libservirtium_vcr.so'
 ]
 
 { #category : 'configuration' }
@@ -94,7 +97,9 @@ ServirtiumLibrary >> takeString: aRawPointer [
 
 	| str |
 	(aRawPointer isNil or: [ aRawPointer isNull ]) ifTrue: [ ^ '' ].
-	str := aRawPointer readString.
+	"readString can hand back a ByteArray for a void* char* under uFFI; force
+	 a Pharo String so callers (ZnClient URLs, comparisons) behave."
+	str := aRawPointer readString asString.
 	self freeString: aRawPointer.
 	^ str
 ]

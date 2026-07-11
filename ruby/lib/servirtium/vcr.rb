@@ -16,9 +16,19 @@ module Servirtium
       @host = '127.0.0.1'
       @port = 0 # 0 => OS-assigned (dynamic)
       @label = ''
+      @native_lib = nil
       @header_removals = []
       @static_content = []
       @untaped = []
+    end
+
+    # Pin an explicit path to the native engine library for this run — the
+    # first-class way to say *where the +.so+ is* at launch, instead of
+    # relying on discovery. Wins over the bundled-+native/+ default and the
+    # +SERVIRTIUM_VCR_LIB+ env override. Set before {#start}.
+    def native_lib(path)
+      @native_lib = path
+      self
     end
 
     # Bind host. Defaults to 127.0.0.1.
@@ -126,6 +136,7 @@ module Servirtium
 
     # Start the server. With a block, yields the {Server} and closes it after.
     def start(&)
+      Native.configure(@native_lib)
       handle = Native.call(:open_playback, @label, @tape_path, @host, @port)
       if handle.null?
         raise Servirtium::Error,
@@ -215,6 +226,7 @@ module Servirtium
     # Start the server. With a block, yields the {Server} and closes it after
     # (which flushes the tape).
     def start(&)
+      Native.configure(@native_lib)
       handle = open_handle
       apply_config(handle)
       # Stage the note now (open_record cleared the tape) so it attaches to
@@ -273,15 +285,22 @@ module Servirtium
   #   end
   module_function
 
-  # Replay a Servirtium markdown tape from disk.
-  def playback(tape_path)
-    PlaybackBuilder.new(tape_path)
+  # Replay a Servirtium markdown tape from disk. +native_lib+ optionally pins
+  # the engine +.so+ path explicitly (see {BuilderBase#native_lib}); by default
+  # the bundled library is discovered.
+  def playback(tape_path, native_lib: nil)
+    b = PlaybackBuilder.new(tape_path)
+    b.native_lib(native_lib) if native_lib
+    b
   end
 
   # Record live interactions: forward to +upstream_base+, return the real
   # response to the SUT, and capture the exchange. The tape is written to
-  # +tape_path+ when the server is closed.
-  def record(tape_path, upstream_base)
-    RecordBuilder.new(tape_path, upstream_base)
+  # +tape_path+ when the server is closed. +native_lib+ optionally pins the
+  # engine +.so+ path explicitly.
+  def record(tape_path, upstream_base, native_lib: nil)
+    b = RecordBuilder.new(tape_path, upstream_base)
+    b.native_lib(native_lib) if native_lib
+    b
   end
 end

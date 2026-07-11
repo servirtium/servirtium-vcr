@@ -17,6 +17,7 @@ abstract class VcrBuilderBase
     protected string $hostValue = '127.0.0.1';
     protected int $portValue = 0;          // 0 => OS-assigned (dynamic)
     protected string $labelValue = '';
+    protected ?string $nativeLibValue = null;
 
     /** @var list<array{0: VcrField, 1: string}> */
     private array $headerRemovals = [];
@@ -30,6 +31,19 @@ abstract class VcrBuilderBase
     protected function __construct(string $tapePath)
     {
         $this->tapePath = $tapePath;
+    }
+
+    /**
+     * Pin an explicit path to the native engine library for this run — the
+     * first-class way to say *where the `.so` is* at launch, instead of relying
+     * on discovery. Wins over the bundled-`native/` default and the
+     * `SERVIRTIUM_VCR_LIB` env override. Set before `start()`.
+     */
+    public function nativeLib(string $path): static
+    {
+        $this->nativeLibValue = $path;
+
+        return $this;
     }
 
     /** Bind host. Defaults to 127.0.0.1. */

@@ -67,9 +67,23 @@ final class Native
         C;
 
     private static ?FFI $ffi = null;
+    private static ?string $explicitPath = null;
 
     private function __construct()
     {
+    }
+
+    /**
+     * Pin an explicit path to the native library, used at first load. Backs the
+     * first-class `nativeLib()` builder argument; wins over the bundled
+     * `native/` default and the `SERVIRTIUM_VCR_LIB` env override. No-op once
+     * the library has already been loaded (set it before the first `start()`).
+     */
+    public static function configure(?string $path): void
+    {
+        if ($path !== null && $path !== '' && self::$ffi === null) {
+            self::$explicitPath = $path;
+        }
     }
 
     /** Lazily `FFI::cdef()` the native library and cache the binding. */
@@ -92,6 +106,16 @@ final class Native
      */
     private static function resolveLibraryPath(): string
     {
+        if (self::$explicitPath !== null && self::$explicitPath !== '') {
+            if (!is_file(self::$explicitPath)) {
+                throw new VcrException(
+                    'nativeLib() points at a missing file: ' . self::$explicitPath
+                );
+            }
+
+            return self::$explicitPath;
+        }
+
         $override = getenv('SERVIRTIUM_VCR_LIB');
         if (is_string($override) && $override !== '') {
             if (!is_file($override)) {

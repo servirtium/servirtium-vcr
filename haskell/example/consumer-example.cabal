@@ -1,0 +1,14 @@
+cabal-version:      2.4
+name:               servirtium-consumer-example
+version:            0.0.1
+synopsis:           Third-party consumer of the servirtium-haskell package.
+build-type:         Simple
+
+executable consumer-example
+  main-is:          Main.hs
+  -- Only GHC boot libraries (base, process) + the local package, so cabal
+  -- needs no Hackage downloads — just the engine .so linked via extra-lib-dirs.
+  build-depends:    base
+                  , process
+                  , servirtium-haskell
+  default-language: Haskell2010

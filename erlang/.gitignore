@@ -11,3 +11,4 @@ priv/*.dll
 
 # If the VM crashes, it generates a dump.
 erl_crash.dump
+_build_pkg/

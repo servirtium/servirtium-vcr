@@ -1,0 +1,28 @@
+// Third-party-consumer PACKAGE stage for the Erlang binding (and the BEAM
+// family). Builds a RELOCATABLE, self-contained copy of the servirtium_nif OTP
+// app under erlang/_build_pkg/servirtium_nif/{ebin,priv}: the engine
+// libservirtium_vcr.so ships in priv/ beside the NIF, and the NIF is linked
+// `-Wl,-rpath,$ORIGIN` so it finds the engine next to itself wherever the app
+// is placed — no SERVIRTIUM_VCR_LIB, no core/ reference. elixir/gleam consume
+// this same app. Deps core/.build.ae; publishes erl_libs.
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    root = build._get(b, "root")
+    erl = "${root}/erlang"
+    pkg = "${erl}/_build_pkg"
+    app = "${pkg}/servirtium_nif"
+
+    rc = os.system("rm -rf \"${pkg}\" && mkdir -p \"${app}/ebin\" \"${app}/priv\" && cp \"${lib}\" \"${app}/priv/libservirtium_vcr.so\" && ERTS_INC=$(erl -noshell -eval 'io:format(\"~s/usr/include\",[code:root_dir()]),halt()') && cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I\"$ERTS_INC\" -shared \"${erl}/c_src/servirtium_nif.c\" -L\"${app}/priv\" -lservirtium_vcr -Wl,-rpath,'$ORIGIN' -o \"${app}/priv/servirtium_nif.so\" && erlc -o \"${app}/ebin\" \"${erl}/src/servirtium_nif.erl\" \"${erl}/src/servirtium.erl\" && cp \"${erl}/src/servirtium_nif.app\" \"${app}/ebin/servirtium_nif.app\"")
+    if rc != 0 {
+        println("erlang package: building the relocatable servirtium_nif app failed")
+        return 1
+    }
+    build.publish_artifact(b, "erl_libs", "${pkg}")
+    println("erlang package: built relocatable servirtium_nif OTP app ($ORIGIN priv/) → erlang/_build_pkg")
+    return 0
+}

@@ -22,6 +22,7 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     String host = "127.0.0.1";
     int port;            // 0 => OS-assigned (dynamic)
     String label = "";
+    String nativeLib;
 
     private final List<HeaderRemoval> headerRemovals = new ArrayList<>();
     private final List<StaticMount> staticContent = new ArrayList<>();
@@ -32,6 +33,18 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     }
 
     abstract S self();
+
+    /**
+     * Pin an explicit path to the native engine library for this run — the
+     * first-class way to say <em>where the {@code .so} is</em> at launch,
+     * instead of relying on discovery. Wins over the bundled jar-resource
+     * default and the {@code SERVIRTIUM_VCR_LIB} env override. Set before
+     * {@code start()}.
+     */
+    public S nativeLib(String path) {
+        this.nativeLib = path;
+        return self();
+    }
 
     /** Bind host. Defaults to 127.0.0.1. */
     public S host(String host) {

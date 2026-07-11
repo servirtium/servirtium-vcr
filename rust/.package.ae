@@ -1,0 +1,27 @@
+// Third-party-consumer PACKAGE stage for the Rust binding.
+//
+// Rust consumes `servirtium` as a Cargo dependency (source-consumed like a
+// crates.io crate). The binding loads its .so at runtime via libloading, from
+// env!("CARGO_MANIFEST_DIR")/native — which, for a dependent crate, resolves to
+// the servirtium crate's OWN dir. So "packaging" stages the freshly-built
+// engine .so into rust/native/, where a consumer's build of the crate finds it.
+// Deps core/.build.ae; publishes the rust crate dir on "crate_dir".
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    build.dep(b, "core/.build.ae")
+    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
+    root = build._get(b, "root")
+    rustdir = "${root}/rust"
+
+    rc = os.system("mkdir -p \"${rustdir}/native\" && cp \"${lib}\" \"${rustdir}/native/libservirtium_vcr.so\"")
+    if rc != 0 {
+        println("rust package: failed to stage engine .so into rust/native/")
+        return 1
+    }
+    build.publish_artifact(b, "crate_dir", "${rustdir}")
+    println("rust package: staged engine .so into rust/native/ (Cargo crate ready)")
+    return 0
+}

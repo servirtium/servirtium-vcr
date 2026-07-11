@@ -1,0 +1,31 @@
+<!--
+  Third-party consumer example for the .NET binding.
+
+  A standalone test project whose only Servirtium dependency is a PackageReference
+  to Servirtium.Vcr, restored from a LOCAL NuGet feed holding the .nupkg that
+  dotnet/Servirtium.Vcr/.dist.ae produced. The engine .so is auto-deployed from
+  the package's runtimes/linux-x64/native/ asset and discovered at
+  AppContext.BaseDirectory — no SERVIRTIUM_VCR_LIB. The idiomatic "dotnet add
+  package and it just works" test.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Servirtium.Vcr" Version="1.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="tapes/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
