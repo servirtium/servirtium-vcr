@@ -146,6 +146,33 @@ package copy with **no `core/` sibling** so the repo layout can't accidentally
 satisfy the link. Run the whole set with `aeb <lang>/.example.ae …` (shared deps
 — engine `.so`, the Java jar, the Erlang NIF — build once across the DAG).
 
+**Record-and-compare (the `record` mode).** Playback-only consumer tests prove
+the *player* works; they say nothing about whether the installed package's
+*recorder* emits a tape that's interchangeable with the canonical one. Three
+representative bindings — **Python** (FFI-loader), **Rust** (link-time), **Java**
+(JVM/jar) — additionally record and assert **byte-identity** with the golden:
+they record against a **tiny raw-socket HTTP upstream** (200 `text/plain`
+`ok-body`), strip the volatile request headers the client injects *and* the
+volatile response headers the upstream adds (Content-Length/Connection/Date/…),
+flush, and compare the fresh tape to `single_get.md` byte-for-byte — then replay
+the recording to prove recorder+player round-trip. A **raw socket, not a second
+VCR playback server**, is the upstream on purpose: the Rust wrapper (and possibly
+others) **serialize VCR servers process-wide** (`server_lock()` — a second
+`start()` blocks until the first is dropped), so recording *against* an in-process
+playback server would deadlock. Keeping the recorder the only live VCR server
+sidesteps that and is uniform across bindings. The other 18 bindings do the
+structural argument only (one engine, one recorder, no per-binding record logic).
+
+**Tape format is compact/tight, and that is canonical here.** The emitter writes
+the next `### …` section heading directly after a closing code fence — **no blank
+line between fence and heading** (blank lines separate *interactions*, and one
+trailing blank ends the tape). The `single_get.md` goldens under `*/example/` are
+byte-identical to this emitter output (regenerate by recording, don't hand-edit).
+The parser stays lenient and also accepts the looser "blank line after every
+fence" style other Servirtium tools emit — so cross-impl *playback* still works;
+only our *emitted* bytes are compact. See the format spec comment atop
+`core/vcr.ae`.
+
 ## Gotchas / hard-won
 
 - **Two normalization verbs, don't confuse them.** `normalize_whole_tape(pat,

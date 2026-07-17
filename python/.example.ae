@@ -41,6 +41,14 @@ aeb(cap) {
         return 1
     }
 
-    println("python example: PASS — installed wheel replayed the canonical tape (explicit + discovery)")
+    // Record mode: prove the installed wheel's recorder emits a byte-identical
+    // canonical tape (and that recorder + player round-trip).
+    rc4 = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB \"${venv}/bin/python\" consumer_example.py record")
+    if rc4 != 0 {
+        println("python example: record-mode consumer run failed")
+        return 1
+    }
+
+    println("python example: PASS — installed wheel replayed AND recorded the canonical tape (explicit + discovery + record)")
     return 0
 }

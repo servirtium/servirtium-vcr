@@ -27,18 +27,15 @@
 //   ```
 //   Host: 127.0.0.1:18091
 //   ```
-//
 //   ### Request body recorded for playback ():
 //
 //   ```
 //   ```
-//
 //   ### Response headers recorded for playback:
 //
 //   ```
 //   Content-Type: text/plain
 //   ```
-//
 //   ### Response body recorded for playback (200: text/plain):
 //
 //   ```
@@ -47,7 +44,11 @@
 //
 // Format compatibility with other Servirtium implementations (Java,
 // Python, Kotlin, Go, ...) is the design goal — tapes recorded by any
-// of them should be replayable by us.
+// of them should be replayable by us. Note the compact spacing above:
+// our emitter writes the next `###` heading directly after a closing
+// code fence (no blank line between), and that is the canonical form
+// this engine produces. The parser is lenient and also accepts the
+// looser "blank line after every fence" style other tools may emit.
 //
 // Matching is ordered. The dispatcher always checks method/path; it
 // also checks request headers and request body when the tape carries

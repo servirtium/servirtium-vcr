@@ -18,12 +18,14 @@ aeb(cap) {
     exdir = "${root}/java/example"
 
     // `mvn test` resolves servirtium-vcr + junit from ~/.m2 / central, compiles
-    // the consumer test, and runs it (surefire adds --enable-native-access).
+    // the consumer tests, and runs them (surefire adds --enable-native-access):
+    // PlaybackConsumerTest (replay) and RecordConsumerTest (record a
+    // byte-identical canonical tape + round-trip).
     rc = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB mvn -q -B test")
     if rc != 0 {
         println("java example: consumer `mvn test` against the installed jar failed")
         return 1
     }
-    println("java example: PASS — installed Maven jar replayed the canonical tape (discovery; jar-bundled .so)")
+    println("java example: PASS — installed Maven jar replayed AND recorded the canonical tape (discovery; jar-bundled .so)")
     return 0
 }

@@ -41,6 +41,14 @@ aeb(cap) {
         return 1
     }
 
-    println("rust example: PASS — consumer crate replayed the canonical tape (explicit + discovery)")
+    // Record mode: prove the crate's recorder emits a byte-identical canonical
+    // tape (and that recorder + player round-trip).
+    rc4 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB cargo run --quiet -- record")
+    if rc4 != 0 {
+        println("rust example: record-mode consumer run failed")
+        return 1
+    }
+
+    println("rust example: PASS — consumer crate replayed AND recorded the canonical tape (explicit + discovery + record)")
     return 0
 }
