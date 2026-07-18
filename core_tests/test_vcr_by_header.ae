@@ -1,0 +1,93 @@
+// Opt-in ByHeader matching (RulesMatcher.ByHeader equivalent; portions
+// copyright Giannis Georgopoulos — MIT). Match playback on a SPECIFIC named
+// request header's value, ignoring the rest of the recorded header block —
+// unlike strict-headers (all-or-nothing).
+//
+// Tape (by_header.tape): GET /data with a recorded block carrying
+// Accept / User-Agent / X-Api-Version:2 -> "data-v2".
+//
+// With match_header("X-Api-Version"), the full-block match is suppressed (the
+// recorded Accept/User-Agent are ignored — the live client sends different
+// ones), and matching keys ONLY on X-Api-Version:
+//   X-Api-Version: 2  -> 200 data-v2  (matches recorded value)
+//   X-Api-Version: 9  -> 599          (header value differs)
+
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+import std.json
+
+extern exit(code: int)
+extern http_server_start_raw(server: ptr) -> int
+
+const PORT = 18117
+
+message StartVCR { raw: ptr }
+message Noop {}
+
+actor VCRActor {
+    state s = 0
+    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
+}
+
+actor SchedHelper {
+    state x = 0
+    receive { Noop() -> { x = 1 } }
+}
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+// GET /data with X-Api-Version: `ver`; return (status, body).
+get_with_version(ver: string) -> (int, string) {
+    creq = client.request("GET", "http://127.0.0.1:${PORT}/data")
+    if creq == null { return -1, "" }
+    _h = client.set_header(creq, "X-Api-Version", ver)
+    cresp, cerr = client.send_request(creq)
+    client.request_free(creq)
+    if cerr != "" { return -2, "" }
+    st = client.response_status(cresp)
+    bd = client.response_body(cresp)
+    client.response_free(cresp)
+    return st, bd
+}
+
+main() {
+    println("=== VCR ByHeader (surgical header matching) ===\n")
+
+    raw = vcr.load("core_tests/tapes/by_header.tape", PORT)
+    if raw == null { fail("vcr.load returned null") }
+    vcr.add_match_header_h(raw, "X-Api-Version")
+
+    spawn(SchedHelper())
+    a = spawn(VCRActor())
+    a ! StartVCR { raw: raw }
+    sleep(500)
+
+    // Matching value — succeeds even though the client's Accept / User-Agent
+    // differ from the recorded block (full-block match suppressed by ByHeader).
+    vcr.clear_last_error_h(raw)
+    vcr.reset_cursor_h(raw)
+    stA, bdA = get_with_version("2")
+    if stA != 200 { fail("Case A (X-Api-Version: 2): expected 200, got ${stA} (err='${vcr.last_error()}')") }
+    if string.contains(bdA, "data-v2") != 1 { fail("Case A body: expected 'data-v2', got '${bdA}'") }
+    println("  ok: X-Api-Version: 2 -> 200 data-v2 (other recorded headers ignored)")
+
+    // Wrong value — the named header must match, so this is rejected.
+    vcr.clear_last_error_h(raw)
+    vcr.reset_cursor_h(raw)
+    stB, bdB = get_with_version("9")
+    if stB != 599 { fail("Case B (X-Api-Version: 9): expected 599, got ${stB} (body='${bdB}')") }
+    if string.contains(vcr.last_error(), "X-Api-Version") != 1 {
+        fail("Case B: last_error should name X-Api-Version, got '${vcr.last_error()}'")
+    }
+    println("  ok: X-Api-Version: 9 -> 599 (value differs)")
+
+    vcr.eject(raw)
+    println("\n=== ByHeader subtest passed ===")
+    exit(0)
+}

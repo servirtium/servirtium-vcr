@@ -259,6 +259,23 @@ vcr_embed_set_match_json_body(s: ptr, on: int) {
     vcr.set_match_json_body_h(s, on)
 }
 
+// Opt-in: match playback by searching all interactions (reusable, order-
+// independent) instead of consuming them in strict recorded order. Off by
+// default (strict ordered playback).
+vcr_embed_set_match_multiple(s: ptr, on: int) {
+    vcr.set_match_multiple_h(s, on)
+}
+
+// ByHeader: require a specific named request header's live value to equal the
+// recorded interaction's value during playback matching (opt-in, additive to
+// any other rules). Call once per header name; clear resets the set.
+vcr_embed_match_header(s: ptr, name: string) {
+    vcr.add_match_header_h(s, name)
+}
+vcr_embed_clear_match_headers(s: ptr) {
+    vcr.clear_match_headers_h(s)
+}
+
 vcr_embed_indent_code_blocks(s: ptr) {
     vcr.indent_code_blocks_h(s)
 }

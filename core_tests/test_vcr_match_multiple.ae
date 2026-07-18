@@ -1,0 +1,90 @@
+// Opt-in match-multiple playback (RulesMatcher.MatchMultiple equivalent;
+// portions copyright Giannis Georgopoulos — MIT). Default playback is strictly
+// ordered + consuming; match_multiple makes interactions reusable and matched
+// by search (order-independent).
+//
+// Tape (multi_match.tape): interaction 0 = GET /a -> "body-a",
+//                          interaction 1 = GET /b -> "body-b".
+//
+// With match_multiple ON, one process drives:
+//   GET /b  (out of order — would fail the ordered cursor) -> body-b
+//   GET /a  (also fine)                                    -> body-a
+//   GET /a  again (reuse — ordered play would be exhausted)-> body-a
+//   GET /zz (no such interaction)                          -> 599
+
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+import std.json
+
+extern exit(code: int)
+extern http_server_start_raw(server: ptr) -> int
+
+const PORT = 18116
+
+message StartVCR { raw: ptr }
+message Noop {}
+
+actor VCRActor {
+    state s = 0
+    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
+}
+
+actor SchedHelper {
+    state x = 0
+    receive { Noop() -> { x = 1 } }
+}
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+// GET `path`, return (status, body).
+do_get(path: string) -> (int, string) {
+    creq = client.request("GET", "http://127.0.0.1:${PORT}${path}")
+    if creq == null { return -1, "" }
+    cresp, cerr = client.send_request(creq)
+    client.request_free(creq)
+    if cerr != "" { return -2, "" }
+    st = client.response_status(cresp)
+    bd = client.response_body(cresp)
+    client.response_free(cresp)
+    return st, bd
+}
+
+expect(path: string, want_status: int, want_body: string) {
+    st, bd = do_get(path)
+    if st != want_status {
+        fail("GET ${path}: expected status ${want_status}, got ${st} (body='${bd}')")
+    }
+    if want_status == 200 && string.contains(bd, want_body) != 1 {
+        fail("GET ${path}: expected body '${want_body}', got '${bd}'")
+    }
+    println("  ok: GET ${path} -> ${st} ${want_body}")
+}
+
+main() {
+    println("=== VCR match-multiple (reusable, order-independent) ===\n")
+
+    raw = vcr.load("core_tests/tapes/multi_match.tape", PORT)
+    if raw == null { fail("vcr.load returned null") }
+    vcr.set_match_multiple_h(raw, 1)
+
+    spawn(SchedHelper())
+    a = spawn(VCRActor())
+    a ! StartVCR { raw: raw }
+    sleep(500)
+
+    expect("/b", 200, "body-b")     // out of order
+    expect("/a", 200, "body-a")
+    expect("/a", 200, "body-a")     // reused (ordered play would be exhausted)
+    expect("/b", 200, "body-b")     // reused again
+    expect("/zz", 599, "")          // no matching interaction
+
+    vcr.eject(raw)
+    println("\n=== match-multiple subtest passed ===")
+    exit(0)
+}

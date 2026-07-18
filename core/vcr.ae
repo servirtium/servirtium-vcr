@@ -117,6 +117,7 @@ exports (
     vcr_add_redaction, vcr_clear_redactions,
     vcr_add_unredaction, vcr_clear_unredactions,
     vcr_add_header_removal, vcr_clear_header_removals,
+    vcr_add_match_header, vcr_clear_match_headers,
     vcr_add_note,
     vcr_record_interaction_full, vcr_last_error, vcr_clear_last_error,
     vcr_add_static_content, vcr_clear_static_content,
@@ -173,6 +174,7 @@ exports (
     redact_h, unredact_h, remove_header_h, note_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
+    set_match_multiple_h, add_match_header_h, clear_match_headers_h,
     indent_code_blocks_h, emphasize_http_verbs_h,
     clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
     clear_static_content_h, clear_untaped_h, clear_format_options_h,
@@ -265,6 +267,12 @@ struct NormToken {
 
 struct HeaderRemoval {
     field: int
+    name: string
+}
+
+// A request header name the fixture opted to match on (ByHeader). Playback then
+// requires this header's live value to equal the recorded interaction's value.
+struct MatchHeaderName {
     name: string
 }
 
@@ -427,6 +435,7 @@ unredactions_k(key: string) -> ptr     { return list_handle(slot(key, "unredacti
 normalizations_k(key: string) -> ptr   { return list_handle(slot(key, "normalizations")) }
 normtokens_k(key: string) -> ptr       { return list_handle(slot(key, "normtokens")) }
 header_removals_k(key: string) -> ptr  { return list_handle(slot(key, "header_removals")) }
+match_headers_k(key: string) -> ptr    { return list_handle(slot(key, "match_headers")) }
 mounts_k(key: string) -> ptr           { return list_handle(slot(key, "mounts")) }
 untaped_list_k(key: string) -> ptr     { return list_handle(slot(key, "untaped")) }
 
@@ -437,6 +446,7 @@ unredactions() -> ptr     { return unredactions_k(cur_key()) }
 normalizations() -> ptr   { return normalizations_k(cur_key()) }
 normtokens() -> ptr       { return normtokens_k(cur_key()) }
 header_removals() -> ptr  { return header_removals_k(cur_key()) }
+match_headers() -> ptr    { return match_headers_k(cur_key()) }
 mounts() -> ptr           { return mounts_k(cur_key()) }
 untaped_list() -> ptr     { return untaped_list_k(cur_key()) }
 
@@ -505,6 +515,20 @@ vcr_set_match_json_body_k(key: string, on: int) {
 vcr_set_match_json_body(on: int) { vcr_set_match_json_body_k(cur_key(), on) }
 vcr_get_match_json_body_k(key: string) -> int { return cfg_get_int(slot(key, "match_json_body"), 0) }
 vcr_get_match_json_body() -> int { return vcr_get_match_json_body_k(cur_key()) }
+
+// Opt-in: when on, playback matches by SEARCHING all recorded interactions for
+// one that fits the request (method/path + any enabled header/body rules) rather
+// than consuming them in strict recorded order — and a matched interaction is
+// REUSABLE (not consumed), so repeated identical requests all replay it and
+// out-of-order requests still match. Off by default: the engine stays strictly
+// ordered ("the tape is a conversation"), which is the right model for most
+// tapes; turn this on for polling/retry or non-deterministic request order.
+vcr_set_match_multiple_k(key: string, on: int) {
+    if on != 0 { cfg_set_int(slot(key, "match_multiple"), 1) } else { cfg_set_int(slot(key, "match_multiple"), 0) }
+}
+vcr_set_match_multiple(on: int) { vcr_set_match_multiple_k(cur_key(), on) }
+vcr_get_match_multiple_k(key: string) -> int { return cfg_get_int(slot(key, "match_multiple"), 0) }
+vcr_get_match_multiple() -> int { return vcr_get_match_multiple_k(cur_key()) }
 
 vcr_set_indent_code_blocks(on: int) {
     if on != 0 { cfg_set_int(slot(cur_key(), "indent"), 1) } else { cfg_set_int(slot(cur_key(), "indent"), 0) }
@@ -983,6 +1007,66 @@ header_removed_for_field_k(key: string, field: int, name: string) -> int {
 }
 header_removed_for_field(field: int, name: string) -> int {
     return header_removed_for_field_k(cur_key(), field, name)
+}
+
+// ---- ByHeader: match on specific named request headers (opt-in) ----
+
+vcr_add_match_header(name: string) -> int {
+    if string.length(name) == 0 {
+        set_load_err("match-header requires a header name")
+        return 0
+    }
+    h = malloc(24) as *MatchHeaderName
+    h.name = string.copy(name)
+    list_add_raw(match_headers(), h)
+    return 1
+}
+vcr_clear_match_headers() { list_reset(slot(cur_key(), "match_headers")) }
+
+// The value of header `name` in a recorded "Name: value\n..." block, or "" if
+// the block doesn't carry it. Case-insensitive on the name.
+header_value_in_block(block: string, name: string) -> string {
+    blen = string.length(block)
+    cursor = 0
+    while cursor < blen {
+        nl = string.index_of_from(block, "\n", cursor)
+        line_end = blen
+        if nl >= 0 { line_end = nl }
+        line = string.substring(block, cursor, line_end)
+        ll = string.length(line)
+        if ll > 0 && string.char_at(line, ll - 1) == 13 { line = string.substring(line, 0, ll - 1) }
+        colon = string.index_of(line, ":")
+        if colon > 0 {
+            hn = string.substring(line, 0, colon)
+            if icmp_rt(hn, name) == 0 {
+                return trim_leading_ws(string.substring(line, colon + 1, string.length(line)))
+            }
+        }
+        if nl < 0 { break }
+        cursor = nl + 1
+    }
+    return ""
+}
+
+// For each ByHeader-registered name, require the live request's value to equal
+// the recorded interaction's value (`block`). Returns "" when all match (or none
+// registered), else a diagnostic naming the first mismatch. A header the tape
+// didn't record reads as "" — so a request that carries it won't match, exactly
+// like matching on any other recorded value.
+match_headers_diff_k(srvkey: string, block: string, req: ptr) -> string {
+    l = match_headers_k(srvkey)
+    n = list_size(l)
+    i = 0
+    while i < n {
+        name = (list_get_raw(l, i) as *MatchHeaderName).name
+        recorded_v = header_value_in_block(block, name)
+        live_v = request_header_value(req, name)
+        if string.equals(recorded_v, live_v) == 0 {
+            return "request header '${name}' differs — recorded '${recorded_v}', live '${live_v}'"
+        }
+        i = i + 1
+    }
+    return ""
 }
 
 // ---- static mounts ----
@@ -1797,7 +1881,150 @@ do_record(srvkey: string, req: ptr, res: ptr) {
 
 // ---- playback path (per-server) ----
 
+// Emit a matched interaction's recorded response (status + headers + body,
+// with the base64/gzip handling) onto `res`. Shared by the ordered and the
+// match-multiple playback paths. Does NOT touch cursor / last_* — the caller
+// owns those.
+emit_playback_response(srvkey: string, e: *Interaction, req: ptr, res: ptr) {
+    http_response_set_status(res, e.status)
+    http_response_clear_headers(res)
+
+    // Emit recorded response headers verbatim.
+    emitted_ct = 0
+    if string.length(e.resp_headers) > 0 {
+        cursor2 = 0
+        rh_len = string.length(e.resp_headers)
+        while cursor2 < rh_len {
+            nl = string.index_of_from(e.resp_headers, "\n", cursor2)
+            line_end = rh_len
+            if nl >= 0 { line_end = nl }
+            line = string.substring(e.resp_headers, cursor2, line_end)
+            ll = string.length(line)
+            if ll > 0 && string.char_at(line, ll - 1) == 13 {
+                line = string.substring(line, 0, ll - 1)
+            }
+            colon = string.index_of(line, ":")
+            if colon > 0 {
+                name = string.substring(line, 0, colon)
+                val = string.substring(line, colon + 1, string.length(line))
+                val = trim_leading_ws(val)
+                if icmp_rt(name, "Content-Type") == 0 { emitted_ct = 1 }
+                if icmp_rt(name, "Content-Length") != 0 && icmp_rt(name, "Content-Encoding") != 0 {
+                    http_response_add_header(res, name, val)
+                }
+            }
+            if nl < 0 { break }
+            cursor2 = nl + 1
+        }
+    }
+    if emitted_ct == 0 && e.has_content_type == 1 && string.length(e.content_type) > 0 {
+        http_response_add_header(res, "Content-Type", e.content_type)
+    }
+
+    if ascii_ci_contains(e.content_type, "base64 below") == 1 {
+        decoded, dlen, dok = decode_base64_body(e.body)
+        if dok == 1 {
+            http_response_set_body_n(res, decoded, dlen)
+        } else {
+            http_response_set_body(res, e.body)
+        }
+    } else {
+        if request_accepts_gzip(req) == 1 && zlib_backend_available() == 1 {
+            gz_owned, gz_len, gerr = zlib.gzip_deflate(e.body, string.length(e.body), -1)
+            if gerr == "" {
+                http_response_set_body_n(res, gz_owned, gz_len)
+                http_response_set_header(res, "Content-Encoding", "gzip")
+                http_response_set_header(res, "Vary", "Accept-Encoding")
+            } else {
+                http_response_set_body(res, e.body)
+            }
+        } else {
+            http_response_set_body(res, e.body)
+        }
+    }
+}
+
+// Boolean "does this interaction satisfy the request?" — the same method/path
+// (+ optional header / body / json rules) the ordered path checks, but as a
+// pure predicate with no diagnostics. Live values are pre-read once by the
+// caller so the request body isn't consumed per candidate.
+interaction_matches_pre(srvkey: string, e: *Interaction, req: ptr, got_method: string,
+                        got_path_plain: string, got_path_q: string,
+                        live_headers: string, live_body: string) -> int {
+    expected_path = rt_apply_unredactions_for_k(srvkey, e.path, FIELD_PATH)
+    got_path = got_path_plain
+    if expected_path_includes_query(expected_path) == 1 { got_path = got_path_q }
+    if string.equals(got_method, e.method) == 0 { return 0 }
+    if string.length(got_path) == 0 || string.equals(got_path, expected_path) == 0 { return 0 }
+
+    expected_req_headers = rt_apply_unredactions_for_k(srvkey, e.req_headers, FIELD_REQUEST_HEADERS)
+    expected_req_headers = remove_headers_from_block_k(srvkey, expected_req_headers, FIELD_REQUEST_HEADERS)
+    // Full-block header match applies when strict is on, or when the tape
+    // carries request headers AND the fixture didn't opt into surgical ByHeader
+    // matching (which matches only the named headers, ignoring the rest).
+    have_by_header = list_size(match_headers_k(srvkey)) > 0
+    if vcr_get_strict_headers_k(srvkey) == 1 || (is_blank(expected_req_headers) == 0 && have_by_header == 0) {
+        if string.equals(live_headers, expected_req_headers) == 0 { return 0 }
+    }
+    if match_headers_diff_k(srvkey, expected_req_headers, req) != "" { return 0 }
+
+    expected_req_body = rt_apply_unredactions_for_k(srvkey, e.req_body, FIELD_REQUEST_BODY)
+    if is_blank(expected_req_body) == 0 {
+        bm = string.equals(live_body, expected_req_body)
+        if bm == 0 && vcr_get_match_json_body_k(srvkey) == 1 {
+            bm = json_bodies_equal(live_body, expected_req_body)
+        }
+        if bm == 0 { return 0 }
+    }
+    return 1
+}
+
+// Match-multiple playback: search ALL interactions for the first that fits the
+// request, replay it WITHOUT consuming it (reusable, order-independent).
+do_playback_multiple(srvkey: string, req: ptr, res: ptr) {
+    n = list_size(tape_list_k(srvkey))
+    got_method = http_request_method(req)
+    got_path_plain = http_request_path(req)
+    got_path_q = build_recorded_path(req)
+    live_headers = normalize_live_headers_k(srvkey, req)
+    live_body = read_full_request_body(req)          // read once, reused per candidate
+
+    found = -1
+    i = 0
+    while i < n {
+        e = tape_get_k(srvkey, i)
+        if interaction_matches_pre(srvkey, e, req, got_method, got_path_plain, got_path_q, live_headers, live_body) == 1 {
+            found = i
+            break
+        }
+        i = i + 1
+    }
+
+    if found < 0 {
+        gp = got_path_q
+        if string.length(gp) == 0 { gp = "(null)" }
+        msg = "no recorded interaction matches ${got_method} ${gp}"
+        set_last_error_k(srvkey, msg)
+        set_last_kind_k(srvkey, KIND_PATH_OR_METHOD_DIFF)
+        set_last_index_k(srvkey, -1)
+        http_response_set_status(res, 599)
+        http_response_set_body(res, msg)
+        return
+    }
+
+    e2 = tape_get_k(srvkey, found)
+    emit_playback_response(srvkey, e2, req, res)
+    set_last_error_k(srvkey, "")
+    set_last_kind_k(srvkey, KIND_OK)
+    set_last_index_k(srvkey, found)
+    // Deliberately no cursor advance — the interaction stays available.
+}
+
 do_playback(srvkey: string, req: ptr, res: ptr) {
+    if vcr_get_match_multiple_k(srvkey) == 1 {
+        do_playback_multiple(srvkey, req, res)
+        return
+    }
     cur = cursor_k(srvkey)
     n = list_size(tape_list_k(srvkey))
     if cur >= n {
@@ -1835,8 +2062,22 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         return
     }
 
+    // ByHeader: opt-in match on specific named request headers (independent of
+    // strict-header mode).
+    bh_diff = match_headers_diff_k(srvkey, expected_req_headers, req)
+    if bh_diff != "" {
+        msg = "interaction ${cur}: ${bh_diff}"
+        set_last_error_k(srvkey, msg)
+        set_last_kind_k(srvkey, KIND_HEADER_VALUE_DIFF)
+        set_last_index_k(srvkey, cur)
+        http_response_set_status(res, 599)
+        http_response_set_body(res, msg)
+        return
+    }
+
     strict = vcr_get_strict_headers_k(srvkey)
-    if is_blank(expected_req_headers) == 0 || strict == 1 {
+    have_by_header = list_size(match_headers_k(srvkey)) > 0
+    if strict == 1 || (is_blank(expected_req_headers) == 0 && have_by_header == 0) {
         live = normalize_live_headers_k(srvkey, req)
         if string.equals(live, expected_req_headers) == 0 {
             diag_ok = 0
@@ -1938,62 +2179,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         }
     }
 
-    http_response_set_status(res, e.status)
-    http_response_clear_headers(res)
-
-    // Emit recorded response headers verbatim.
-    emitted_ct = 0
-    if string.length(e.resp_headers) > 0 {
-        cursor2 = 0
-        rh_len = string.length(e.resp_headers)
-        while cursor2 < rh_len {
-            nl = string.index_of_from(e.resp_headers, "\n", cursor2)
-            line_end = rh_len
-            if nl >= 0 { line_end = nl }
-            line = string.substring(e.resp_headers, cursor2, line_end)
-            ll = string.length(line)
-            if ll > 0 && string.char_at(line, ll - 1) == 13 {
-                line = string.substring(line, 0, ll - 1)
-            }
-            colon = string.index_of(line, ":")
-            if colon > 0 {
-                name = string.substring(line, 0, colon)
-                val = string.substring(line, colon + 1, string.length(line))
-                val = trim_leading_ws(val)
-                if icmp_rt(name, "Content-Type") == 0 { emitted_ct = 1 }
-                if icmp_rt(name, "Content-Length") != 0 && icmp_rt(name, "Content-Encoding") != 0 {
-                    http_response_add_header(res, name, val)
-                }
-            }
-            if nl < 0 { break }
-            cursor2 = nl + 1
-        }
-    }
-    if emitted_ct == 0 && e.has_content_type == 1 && string.length(e.content_type) > 0 {
-        http_response_add_header(res, "Content-Type", e.content_type)
-    }
-
-    if ascii_ci_contains(e.content_type, "base64 below") == 1 {
-        decoded, dlen, dok = decode_base64_body(e.body)
-        if dok == 1 {
-            http_response_set_body_n(res, decoded, dlen)
-        } else {
-            http_response_set_body(res, e.body)
-        }
-    } else {
-        if request_accepts_gzip(req) == 1 && zlib_backend_available() == 1 {
-            gz_owned, gz_len, gerr = zlib.gzip_deflate(e.body, string.length(e.body), -1)
-            if gerr == "" {
-                http_response_set_body_n(res, gz_owned, gz_len)
-                http_response_set_header(res, "Content-Encoding", "gzip")
-                http_response_set_header(res, "Vary", "Accept-Encoding")
-            } else {
-                http_response_set_body(res, e.body)
-            }
-        } else {
-            http_response_set_body(res, e.body)
-        }
-    }
+    emit_playback_response(srvkey, e, req, res)
 
     set_last_error_k(srvkey, "")
     set_last_kind_k(srvkey, KIND_OK)
@@ -2264,6 +2450,9 @@ untaped_h(server: ptr, path: string) -> string {
 }
 set_strict_headers_h(server: ptr, on: int) { vcr_set_strict_headers_k(key_for(server), on) }
 set_match_json_body_h(server: ptr, on: int) { vcr_set_match_json_body_k(key_for(server), on) }
+set_match_multiple_h(server: ptr, on: int) { vcr_set_match_multiple_k(key_for(server), on) }
+add_match_header_h(server: ptr, name: string) { set_cur_key(key_for(server)); vcr_add_match_header(name) }
+clear_match_headers_h(server: ptr) { set_cur_key(key_for(server)); vcr_clear_match_headers() }
 indent_code_blocks_h(server: ptr) { set_cur_key(key_for(server)); indent_code_blocks() }
 emphasize_http_verbs_h(server: ptr) { set_cur_key(key_for(server)); emphasize_http_verbs() }
 clear_redactions_h(server: ptr) { set_cur_key(key_for(server)); clear_redactions() }
