@@ -151,7 +151,7 @@ exports (
     set_quiet, load_error,
     load_record, eject_record,
     record, clear_recording, flush, flush_or_check, flush_and_fail_if_changed,
-    har_import,
+    har_import, har_export,
     redact, clear_redactions, unredact, clear_unredactions,
     normalize_whole_tape, redact_whole_tape, clear_normalizations,
     apply_normalizations, build_normalization_map,
@@ -2532,6 +2532,146 @@ har_import(har_path: string, tape_path: string) -> string {
     werr = fs.write(tape_path, blob)
     list_reset(slot(key, "tape"))                       // leave the scratch key clean
     if werr != "" { return string_concat("har import: cannot write tape: ", werr) }
+    return ""
+}
+
+// ---- HAR export (Servirtium markdown tape -> HTTP Archive JSON) ----
+//
+// The inverse of har_import: parse a tape (reusing the record/playback parser)
+// and serialise its interactions as a HAR 1.2 log via std.json — so a tape can
+// be opened in a HAR viewer / DevTools / Postman or fed to HAR-based tooling.
+// A tape carries only the path (not an absolute URL) and no timings, so those
+// are synthesised (host `localhost`, zero timings) — HAR consumers key off
+// method / path / headers / body, which round-trip faithfully.
+
+// A HAR headers[] array built from a "Name: value\n..." block.
+har_headers_to_json(block: string) -> ptr {
+    a = json.arr()
+    blen = string.length(block)
+    cursor = 0
+    while cursor < blen {
+        nl = string.index_of_from(block, "\n", cursor)
+        line_end = blen
+        if nl >= 0 { line_end = nl }
+        line = string.substring(block, cursor, line_end)
+        if string.length(line) > 0 {
+            colon = string.index_of(line, ":")
+            if colon > 0 {
+                name = string.substring(line, 0, colon)
+                vstart = colon + 1
+                if vstart < string.length(line) && string.char_at(line, vstart) == 32 {
+                    vstart = vstart + 1                 // skip the ": " space
+                }
+                value = string.substring(line, vstart, string.length(line))
+                h = json.obj()
+                json.set(h, "name", json.str(name))
+                json.set(h, "value", json.str(value))
+                json.push(a, h)
+            }
+        }
+        if nl < 0 { break }
+        cursor = nl + 1
+    }
+    return a
+}
+
+// Strip the engine's " base64 below" marker off a content-type, yielding the
+// bare MIME type for HAR's content.mimeType.
+strip_base64_marker(ctype: string) -> string {
+    idx = string.index_of(ctype, " base64 below")
+    if idx < 0 { idx = string.index_of(ctype, "base64 below") }
+    if idx < 0 { return ctype }
+    return rtrim(string.substring(ctype, 0, idx))
+}
+
+// Export the tape at `tape_path` as a HAR file at `har_path`. Returns "" on
+// success, else a human-readable error.
+har_export(tape_path: string, har_path: string) -> string {
+    key = "__har_export__"
+    set_cur_key(key)
+    list_reset(slot(key, "tape"))
+    perr = parse_tape_file(tape_path)
+    if perr != "" { return string_concat("har export: cannot parse tape: ", perr) }
+
+    entries = json.arr()
+    n = vcr_get_tape_count()
+    i = 0
+    while i < n {
+        method = vcr_get_method(i)
+        path = vcr_get_path(i)
+        status = vcr_get_status(i)
+        ctype = vcr_get_content_type(i)
+        body = vcr_get_body(i)
+        req_headers = vcr_get_req_headers(i)
+        req_body = vcr_get_req_body(i)
+        resp_headers = vcr_get_resp_headers(i)
+
+        reqo = json.obj()
+        json.set(reqo, "method", json.str(method))
+        json.set(reqo, "url", json.str(string_concat("http://localhost", path)))
+        json.set(reqo, "httpVersion", json.str("HTTP/1.1"))
+        json.set(reqo, "headers", har_headers_to_json(req_headers))
+        json.set(reqo, "queryString", json.arr())
+        json.set(reqo, "headersSize", json.from_int(-1))
+        json.set(reqo, "bodySize", json.from_int(string.length(req_body)))
+        if string.length(req_body) > 0 {
+            pd = json.obj()
+            json.set(pd, "mimeType", json.str(""))
+            json.set(pd, "text", json.str(req_body))
+            json.set(reqo, "postData", pd)
+        }
+
+        is_b64 = ascii_ci_contains(ctype, "base64 below")
+        mime = ctype
+        if is_b64 == 1 { mime = strip_base64_marker(ctype) }
+        content = json.obj()
+        json.set(content, "size", json.from_int(string.length(body)))
+        json.set(content, "mimeType", json.str(mime))
+        json.set(content, "text", json.str(body))
+        if is_b64 == 1 { json.set(content, "encoding", json.str("base64")) }
+
+        respo = json.obj()
+        json.set(respo, "status", json.from_int(status))
+        json.set(respo, "statusText", json.str(""))
+        json.set(respo, "httpVersion", json.str("HTTP/1.1"))
+        json.set(respo, "headers", har_headers_to_json(resp_headers))
+        json.set(respo, "content", content)
+        json.set(respo, "redirectURL", json.str(""))
+        json.set(respo, "headersSize", json.from_int(-1))
+        json.set(respo, "bodySize", json.from_int(string.length(body)))
+
+        tim = json.obj()
+        json.set(tim, "send", json.from_int(0))
+        json.set(tim, "wait", json.from_int(0))
+        json.set(tim, "receive", json.from_int(0))
+
+        entry = json.obj()
+        json.set(entry, "startedDateTime", json.str("1970-01-01T00:00:00.000Z"))
+        json.set(entry, "time", json.from_int(0))
+        json.set(entry, "request", reqo)
+        json.set(entry, "response", respo)
+        json.set(entry, "cache", json.obj())
+        json.set(entry, "timings", tim)
+        json.push(entries, entry)
+        i = i + 1
+    }
+
+    creator = json.obj()
+    json.set(creator, "name", json.str("servirtium-vcr"))
+    json.set(creator, "version", json.str("1"))
+    log = json.obj()
+    json.set(log, "version", json.str("1.2"))
+    json.set(log, "creator", creator)
+    json.set(log, "entries", entries)
+    root = json.obj()
+    json.set(root, "log", log)
+
+    text, eerr = json.encode(root)
+    json.json_free(root)
+    list_reset(slot(key, "tape"))
+    if eerr != "" { return string_concat("har export: JSON encode failed: ", eerr) }
+    werr = fs.write(har_path, text)
+    if werr != "" { return string_concat("har export: cannot write har file: ", werr) }
     return ""
 }
 

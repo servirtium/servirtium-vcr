@@ -1,0 +1,57 @@
+// HAR export — serialise a Servirtium tape as HTTP Archive JSON (the inverse of
+// har_import), then prove the bridge round-trips: a tape exported to HAR and
+// re-imported yields a byte-identical tape.
+//
+// Pipeline: sample.har --import--> tapeA --export--> harB --import--> tapeC,
+// and assert tapeA == tapeC. tapeA is already curated (import drops request
+// headers / hop-by-hop), so the export->import round trip must be stable.
+
+import core.vcr
+import std.string
+import std.fs
+
+extern exit(code: int)
+
+const HAR_IN   = "core_tests/tapes/sample.har"
+const TAPE_A   = "target/core_tests/har_export_a.md"
+const HAR_B    = "target/core_tests/har_export_b.har"
+const TAPE_C   = "target/core_tests/har_export_c.md"
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+main() {
+    println("=== HAR export + round-trip ===\n")
+
+    e1 = vcr.har_import(HAR_IN, TAPE_A)
+    if e1 != "" { fail("import sample.har: ${e1}") }
+
+    e2 = vcr.har_export(TAPE_A, HAR_B)
+    if e2 != "" { fail("export tapeA -> harB: ${e2}") }
+
+    // The exported HAR must be readable and carry the essentials.
+    har, herr = fs.read(HAR_B)
+    if herr != "" { fail("could not read exported har: ${herr}") }
+    if string.contains(har, "\"method\":\"GET\"") != 1 { fail("har missing GET method:\n${har}") }
+    if string.contains(har, "http://localhost/ok?x=1") != 1 { fail("har missing synthesised url with query:\n${har}") }
+    if string.contains(har, "\"status\":201") != 1 { fail("har missing POST status 201:\n${har}") }
+    if string.contains(har, "ok-body") != 1 { fail("har missing response body") }
+    if string.contains(har, "\"log\"") != 1 { fail("har missing log root") }
+
+    e3 = vcr.har_import(HAR_B, TAPE_C)
+    if e3 != "" { fail("re-import harB -> tapeC: ${e3}") }
+
+    a, aerr = fs.read(TAPE_A)
+    if aerr != "" { fail("read tapeA: ${aerr}") }
+    c, cerr = fs.read(TAPE_C)
+    if cerr != "" { fail("read tapeC: ${cerr}") }
+    if string.equals(a, c) == 0 {
+        fail("round-trip not stable — tapeA != tapeC\n--- tapeA ---\n${a}\n--- tapeC ---\n${c}")
+    }
+
+    println("PASS: tape -> HAR -> tape round-trips byte-identically")
+    println("\n=== HAR export subtest passed ===")
+    exit(0)
+}

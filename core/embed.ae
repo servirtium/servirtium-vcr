@@ -190,6 +190,11 @@ vcr_embed_har_import(har_path: string, tape_path: string) -> string {
     return vcr_embed_dup(vcr.har_import(har_path, tape_path))
 }
 
+// Inverse of vcr_embed_har_import: a Servirtium tape -> HAR 1.2 JSON file.
+vcr_embed_har_export(tape_path: string, har_path: string) -> string {
+    return vcr_embed_dup(vcr.har_export(tape_path, har_path))
+}
+
 vcr_embed_unredact(s: ptr, field: int, pattern: string, replacement: string) -> string {
     return vcr_embed_dup(vcr.unredact_h(s, field, pattern, replacement))
 }
