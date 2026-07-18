@@ -187,6 +187,10 @@ export const setStrictHeaders = lazy(
   'void aether_vcr_embed_set_strict_headers(void* server, int on)',
 )
 
+export const setMatchJsonBody = lazy(
+  'void aether_vcr_embed_set_match_json_body(void* server, int on)',
+)
+
 export const indentCodeBlocks = lazy('void aether_vcr_embed_indent_code_blocks(void* server)')
 
 export const emphasizeHttpVerbs = lazy(

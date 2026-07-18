@@ -68,6 +68,7 @@ defmodule Servirtium.Native do
   defdelegate static_content(handle, mount_path, fs_dir), to: :servirtium_nif
   defdelegate untaped(handle, path), to: :servirtium_nif
   defdelegate set_strict_headers(handle, on), to: :servirtium_nif
+  defdelegate set_match_json_body(handle, on), to: :servirtium_nif
   defdelegate indent_code_blocks(handle), to: :servirtium_nif
   defdelegate emphasize_http_verbs(handle), to: :servirtium_nif
   defdelegate clear_redactions(handle), to: :servirtium_nif

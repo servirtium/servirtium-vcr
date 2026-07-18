@@ -15,6 +15,8 @@ final class PlaybackBuilder extends VcrBuilderBase
 
     private bool $strictHeadersOn = false;
 
+    private bool $matchJsonBodyOn = false;
+
     public function __construct(string $tapePath)
     {
         parent::__construct($tapePath);
@@ -28,6 +30,18 @@ final class PlaybackBuilder extends VcrBuilderBase
     public function strictHeaders(bool $on = true): static
     {
         $this->strictHeadersOn = $on;
+
+        return $this;
+    }
+
+    /**
+     * Opt in to matching request bodies by semantic JSON equality (key order /
+     * whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back
+     * to byte-exact.
+     */
+    public function matchJsonBody(bool $on = true): static
+    {
+        $this->matchJsonBodyOn = $on;
 
         return $this;
     }
@@ -50,6 +64,9 @@ final class PlaybackBuilder extends VcrBuilderBase
         $lib = Native::lib();
         if ($this->strictHeadersOn) {
             $lib->aether_vcr_embed_set_strict_headers($handle, 1);
+        }
+        if ($this->matchJsonBodyOn) {
+            $lib->aether_vcr_embed_set_match_json_body($handle, 1);
         }
         foreach ($this->unredactions as [$field, $pattern, $replacement]) {
             self::check($lib->aether_vcr_embed_unredact($handle, $field->value, $pattern, $replacement), 'unredact');

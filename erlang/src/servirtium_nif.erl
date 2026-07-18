@@ -48,6 +48,7 @@
     static_content/3,
     untaped/2,
     set_strict_headers/2,
+    set_match_json_body/2,
     indent_code_blocks/1,
     emphasize_http_verbs/1,
     clear_redactions/1,
@@ -111,6 +112,7 @@ note(_Handle, _Title, _Body) -> erlang:nif_error(not_loaded).
 static_content(_Handle, _MountPath, _FsDir) -> erlang:nif_error(not_loaded).
 untaped(_Handle, _Path) -> erlang:nif_error(not_loaded).
 set_strict_headers(_Handle, _On) -> erlang:nif_error(not_loaded).
+set_match_json_body(_Handle, _On) -> erlang:nif_error(not_loaded).
 indent_code_blocks(_Handle) -> erlang:nif_error(not_loaded).
 emphasize_http_verbs(_Handle) -> erlang:nif_error(not_loaded).
 clear_redactions(_Handle) -> erlang:nif_error(not_loaded).

@@ -131,6 +131,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
 {
     private readonly List<(VcrField field, string pattern, string replacement)> _unredactions = new();
     private bool _strictHeaders;
+    private bool _matchJsonBody;
 
     internal PlaybackBuilder(string tapePath) : base(tapePath) { }
     private protected override PlaybackBuilder Self => this;
@@ -143,6 +144,17 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     public PlaybackBuilder StrictHeaders(bool on = true)
     {
         _strictHeaders = on;
+        return this;
+    }
+
+    /// <summary>
+    /// Opt in to matching request bodies by semantic JSON equality (key
+    /// order / whitespace ignored) instead of byte-for-byte. Non-JSON
+    /// bodies fall back to byte-exact.
+    /// </summary>
+    public PlaybackBuilder MatchJsonBody(bool on = true)
+    {
+        _matchJsonBody = on;
         return this;
     }
 
@@ -161,6 +173,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     {
         base.ApplyConfig(handle);
         if (_strictHeaders) NativeMethods.SetStrictHeaders(handle, 1);
+        if (_matchJsonBody) NativeMethods.SetMatchJsonBody(handle, 1);
         foreach ((VcrField field, string pattern, string replacement) in _unredactions)
         {
             Check(NativeMethods.Unredact(handle, (int)field, pattern, replacement), nameof(Unredact));

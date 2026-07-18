@@ -173,6 +173,12 @@ proc strictIgnoreCommonHeaders*(s: VcrServer): string {.discardable.} =
 proc setStrictHeaders*(s: VcrServer; on: bool) =
   native.set_strict_headers(s.handle, cint(if on: 1 else: 0))
 
+proc setMatchJsonBody*(s: VcrServer; on: bool) =
+  ## Opt in to matching request bodies by semantic JSON equality (key order /
+  ## whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back to
+  ## byte-exact.
+  native.set_match_json_body(s.handle, cint(if on: 1 else: 0))
+
 proc indentCodeBlocks*(s: VcrServer) =
   native.indent_code_blocks(s.handle)
 

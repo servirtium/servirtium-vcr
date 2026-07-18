@@ -8,7 +8,8 @@ Class {
 	#superclass : 'ServirtiumBuilder',
 	#instVars : [
 		'unredactions',
-		'strictHeaders'
+		'strictHeaders',
+		'matchJsonBody'
 	],
 	#category : 'Servirtium',
 	#package : 'Servirtium'
@@ -19,7 +20,8 @@ ServirtiumPlaybackBuilder >> initializeTape: aTapePath [
 
 	super initializeTape: aTapePath.
 	unredactions := OrderedCollection new.
-	strictHeaders := false
+	strictHeaders := false.
+	matchJsonBody := false
 ]
 
 { #category : 'configuring' }
@@ -38,6 +40,22 @@ ServirtiumPlaybackBuilder >> strictHeaders: aBoolean [
 ]
 
 { #category : 'configuring' }
+ServirtiumPlaybackBuilder >> matchJsonBody [
+	"Opt in to matching request bodies by semantic JSON equality (key order /
+	 whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back
+	 to byte-exact."
+
+	^ self matchJsonBody: true
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> matchJsonBody: aBoolean [
+
+	matchJsonBody := aBoolean.
+	^ self
+]
+
+{ #category : 'configuring' }
 ServirtiumPlaybackBuilder >> unredactField: aField pattern: aPattern replacement: aReplacement [
 	"Replace a redacted placeholder in the recorded expectation with the real
 	 value the live SUT sends, so a committed (scrubbed) tape still matches."
@@ -51,6 +69,7 @@ ServirtiumPlaybackBuilder >> applyConfig: handle [
 
 	super applyConfig: handle.
 	strictHeaders ifTrue: [ self library setStrictHeaders: handle on: 1 ].
+	matchJsonBody ifTrue: [ self library setMatchJsonBody: handle on: 1 ].
 	unredactions do: [ :tuple |
 		self
 			check: (self library unredact: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))

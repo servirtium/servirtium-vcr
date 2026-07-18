@@ -156,6 +156,7 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
 export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   private readonly unredactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
   private strictHeadersOn = false
+  private matchJsonBodyOn = false
 
   constructor(tapePath: string) {
     super(tapePath)
@@ -175,6 +176,16 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   }
 
   /**
+   * Opt in to matching request bodies by semantic JSON equality (key order /
+   * whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back to
+   * byte-exact.
+   */
+  matchJsonBody(on = true): PlaybackBuilder {
+    this.matchJsonBodyOn = on
+    return this
+  }
+
+  /**
    * Replace a redacted placeholder in the recorded expectation with the real
    * value the live SUT sends, so a committed (scrubbed) tape still matches.
    */
@@ -186,6 +197,7 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   protected applyConfig(handle: unknown): void {
     super.applyConfig(handle)
     if (this.strictHeadersOn) N.setStrictHeaders(handle, 1)
+    if (this.matchJsonBodyOn) N.setMatchJsonBody(handle, 1)
     for (const { field, pattern, replacement } of this.unredactions) {
       check(N.unredact(handle, field, pattern, replacement), 'unredact')
     }

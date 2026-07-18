@@ -55,6 +55,7 @@ final class Native
         char*  aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir);
         char*  aether_vcr_embed_untaped(void* server, const char* path);
         void   aether_vcr_embed_set_strict_headers(void* server, int on);
+        void   aether_vcr_embed_set_match_json_body(void* server, int on);
         void   aether_vcr_embed_indent_code_blocks(void* server);
         void   aether_vcr_embed_emphasize_http_verbs(void* server);
         void   aether_vcr_embed_clear_redactions(void* server);

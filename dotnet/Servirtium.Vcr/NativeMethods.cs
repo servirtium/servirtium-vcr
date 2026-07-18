@@ -144,6 +144,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_strict_headers")]
     internal static extern void SetStrictHeaders(IntPtr server, int on);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_match_json_body")]
+    internal static extern void SetMatchJsonBody(IntPtr server, int on);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_indent_code_blocks")]
     internal static extern void IndentCodeBlocks(IntPtr server);
 

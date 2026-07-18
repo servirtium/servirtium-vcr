@@ -169,6 +169,14 @@ function PlaybackBuilder:strict_headers()
     return self
 end
 
+-- Opt in to matching request bodies by semantic JSON equality (key order /
+-- whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back to
+-- byte-exact.
+function PlaybackBuilder:match_json_body()
+    self._match_json_body = true
+    return self
+end
+
 function PlaybackBuilder:remove_header(field, name)
     table.insert(self._header_removals, { field = field, name = name })
     return self
@@ -199,6 +207,9 @@ function PlaybackBuilder:start()
         apply_base(self, handle)
         if self._strict_headers then
             C.set_strict_headers(handle, true)
+        end
+        if self._match_json_body then
+            C.set_match_json_body(handle, true)
         end
         for _, u in ipairs(self._unredactions) do
             check(C.unredact(handle, u.field, u.pattern, u.repl), "unredact")
@@ -359,6 +370,7 @@ function M.playback(tapePath, opts)
     local b = base_builder(tapePath, opts and opts.host)
     b._unredactions = {}
     b._strict_headers = false
+    b._match_json_body = false
     if opts then
         if opts.port  ~= nil then b._port  = opts.port  end
         if opts.label ~= nil then b._label = opts.label end

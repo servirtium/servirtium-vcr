@@ -69,6 +69,7 @@ char*  aether_vcr_embed_note(void* server, const char* title, const char* body);
 char*  aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir);
 char*  aether_vcr_embed_untaped(void* server, const char* path);
 void   aether_vcr_embed_set_strict_headers(void* server, int on);
+void   aether_vcr_embed_set_match_json_body(void* server, int on);
 void   aether_vcr_embed_indent_code_blocks(void* server);
 void   aether_vcr_embed_emphasize_http_verbs(void* server);
 void   aether_vcr_embed_clear_redactions(void* server);
@@ -229,6 +230,7 @@ func Playback(tapePath string) *PlaybackBuilder {
 type PlaybackBuilder struct {
 	baseBuilder
 	strictHeaders bool
+	matchJSONBody bool
 	unredactions  []replacement
 }
 
@@ -245,6 +247,11 @@ func (b *PlaybackBuilder) Label(label string) *PlaybackBuilder { b.label = label
 // block on every interaction (Servirtium step 10), surfacing mismatches via
 // Server.LastError.
 func (b *PlaybackBuilder) StrictHeaders() *PlaybackBuilder { b.strictHeaders = true; return b }
+
+// MatchJSONBody opts in to matching request bodies by semantic JSON equality
+// (key order / whitespace ignored) instead of byte-for-byte. Non-JSON bodies
+// fall back to byte-exact.
+func (b *PlaybackBuilder) MatchJSONBody() *PlaybackBuilder { b.matchJSONBody = true; return b }
 
 // RemoveHeader removes a header by name from the given block (case-insensitive).
 func (b *PlaybackBuilder) RemoveHeader(field Field, name string) *PlaybackBuilder {
@@ -281,6 +288,9 @@ func (b *PlaybackBuilder) applyConfig(handle unsafe.Pointer) error {
 	}
 	if b.strictHeaders {
 		C.aether_vcr_embed_set_strict_headers(handle, 1)
+	}
+	if b.matchJSONBody {
+		C.aether_vcr_embed_set_match_json_body(handle, 1)
 	}
 	for _, u := range b.unredactions {
 		cPat, cRep := C.CString(u.pattern), C.CString(u.replacem)

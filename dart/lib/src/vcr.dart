@@ -204,6 +204,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
 
   final List<(VcrField, String, String)> _unredactions = [];
   bool _strictHeaders = false;
+  bool _matchJsonBody = false;
 
   @override
   PlaybackBuilder get _self => this;
@@ -212,6 +213,14 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   /// interaction, surfacing mismatches via [VcrServer.lastError].
   PlaybackBuilder strictHeaders([bool on = true]) {
     _strictHeaders = on;
+    return this;
+  }
+
+  /// Opt in to matching request bodies by semantic JSON equality (key order /
+  /// whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back to
+  /// byte-exact.
+  PlaybackBuilder matchJsonBody([bool on = true]) {
+    _matchJsonBody = on;
     return this;
   }
 
@@ -226,6 +235,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   void _applyConfig(Pointer<Void> handle) {
     super._applyConfig(handle);
     if (_strictHeaders) Native.setStrictHeaders(handle, 1);
+    if (_matchJsonBody) Native.setMatchJsonBody(handle, 1);
     for (final (field, pattern, replacement) in _unredactions) {
       withUtf8(pattern, (p) => withUtf8(replacement,
           (r) => _check(Native.unredact(handle, field.value, p, r), 'unredact')));

@@ -57,6 +57,7 @@ pub extern "c" fn aether_vcr_embed_note(handle: Handle, a: [*c]const u8, b: [*c]
 pub extern "c" fn aether_vcr_embed_static_content(handle: Handle, mount: [*c]const u8, dir: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_untaped(handle: Handle, path: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_set_strict_headers(handle: Handle, on: c_int) void;
+pub extern "c" fn aether_vcr_embed_set_match_json_body(handle: Handle, on: c_int) void;
 pub extern "c" fn aether_vcr_embed_indent_code_blocks(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_emphasize_http_verbs(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_redactions(handle: Handle) void;
@@ -263,6 +264,7 @@ pub const Playback = struct {
     listen_port: c_int = 0,
     label_str: [:0]const u8 = "",
     strict_headers: bool = false,
+    match_json_body: bool = false,
     header_removals: std.ArrayList(HeaderRemoval) = .empty,
     static_content: std.ArrayList(Mount) = .empty,
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
@@ -329,6 +331,15 @@ pub const Playback = struct {
         return b;
     }
 
+    /// Opt in to matching request bodies by semantic JSON equality (key order /
+    /// whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back
+    /// to byte-exact.
+    pub fn matchJsonBody(self: Playback) Playback {
+        var b = self;
+        b.match_json_body = true;
+        return b;
+    }
+
     /// Replace a redacted placeholder in the recorded expectation with the
     /// real value the live SUT sends, so a scrubbed tape still matches.
     pub fn unredact(self: Playback, field: Field, pattern: [:0]const u8, repl: [:0]const u8) Playback {
@@ -353,6 +364,7 @@ pub const Playback = struct {
 
         try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items);
         if (self.strict_headers) aether_vcr_embed_set_strict_headers(handle, 1);
+        if (self.match_json_body) aether_vcr_embed_set_match_json_body(handle, 1);
         for (self.unredactions.items) |u| {
             try checkErr(self.allocator, aether_vcr_embed_unredact(handle, @intFromEnum(u.field), u.pattern.ptr, u.repl.ptr));
         }

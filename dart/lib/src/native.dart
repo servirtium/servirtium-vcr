@@ -266,6 +266,8 @@ class Native {
       _lib.lookupFunction<_UntapedC, _UntapedD>('aether_vcr_embed_untaped');
   static final setStrictHeaders =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_strict_headers');
+  static final setMatchJsonBody =
+      _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_match_json_body');
   static final indentCodeBlocks = _lib
       .lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_indent_code_blocks');
   static final emphasizeHttpVerbs = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(

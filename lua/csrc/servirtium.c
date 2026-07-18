@@ -69,6 +69,7 @@ extern char *aether_vcr_embed_static_content(void *h, const char *mount,
                                              const char *dir);
 extern char *aether_vcr_embed_untaped(void *h, const char *path);
 extern void  aether_vcr_embed_set_strict_headers(void *h, int on);
+extern void  aether_vcr_embed_set_match_json_body(void *h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(void *h);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *h);
 extern void  aether_vcr_embed_clear_redactions(void *h);
@@ -350,6 +351,15 @@ static int l_set_strict_headers(lua_State *L)
     return 0;
 }
 
+/* set_match_json_body(handle, on) */
+static int l_set_match_json_body(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int on = lua_toboolean(L, 2);
+    aether_vcr_embed_set_match_json_body(h, on);
+    return 0;
+}
+
 /* indent_code_blocks(handle) */
 static int l_indent_code_blocks(lua_State *L)
 {
@@ -394,6 +404,7 @@ static const luaL_Reg servirtium_funcs[] = {
     {"note",                            l_note},
     {"untaped",                         l_untaped},
     {"set_strict_headers",              l_set_strict_headers},
+    {"set_match_json_body",             l_set_match_json_body},
     {"indent_code_blocks",              l_indent_code_blocks},
     {"emphasize_http_verbs",            l_emphasize_http_verbs},
     {NULL, NULL},

@@ -117,6 +117,7 @@ module Servirtium
       super
       @unredactions = []
       @strict_headers = false
+      @match_json_body = false
     end
 
     # Compare the SUT's request headers against the recorded block on every
@@ -124,6 +125,14 @@ module Servirtium
     # {Server#last_error}.
     def strict_headers(on: true)
       @strict_headers = on
+      self
+    end
+
+    # Opt in to matching request bodies by semantic JSON equality (key order /
+    # whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back
+    # to byte-exact.
+    def match_json_body(on: true)
+      @match_json_body = on
       self
     end
 
@@ -155,6 +164,7 @@ module Servirtium
     def apply_config(handle)
       super
       Native.call(:set_strict_headers, handle, 1) if @strict_headers
+      Native.call(:set_match_json_body, handle, 1) if @match_json_body
       @unredactions.each do |field, pattern, replacement|
         check(Native.call(:unredact, handle, field, pattern, replacement), 'unredact')
       end

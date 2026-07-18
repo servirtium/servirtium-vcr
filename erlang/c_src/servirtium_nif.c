@@ -58,6 +58,7 @@ extern char *aether_vcr_embed_note(void *server, const char *title, const char *
 extern char *aether_vcr_embed_static_content(void *server, const char *mount_path, const char *fs_dir);
 extern char *aether_vcr_embed_untaped(void *server, const char *path);
 extern void  aether_vcr_embed_set_strict_headers(void *server, int on);
+extern void  aether_vcr_embed_set_match_json_body(void *server, int on);
 extern void  aether_vcr_embed_indent_code_blocks(void *server);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *server);
 extern void  aether_vcr_embed_clear_redactions(void *server);
@@ -413,6 +414,17 @@ static ERL_NIF_TERM nif_set_strict_headers(ErlNifEnv *env, int argc, const ERL_N
     return enif_make_atom(env, "ok");
 }
 
+static ERL_NIF_TERM nif_set_match_json_body(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    int on;
+    if (!enif_get_int(env, argv[1], &on)) return enif_make_badarg(env);
+    aether_vcr_embed_set_match_json_body(h, on);
+    return enif_make_atom(env, "ok");
+}
+
 static ERL_NIF_TERM nif_indent_code_blocks(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -478,6 +490,7 @@ static ErlNifFunc nif_funcs[] = {
     {"static_content", 3, nif_static_content, 0},
     {"untaped",        2, nif_untaped,        0},
     {"set_strict_headers",   2, nif_set_strict_headers,   0},
+    {"set_match_json_body",  2, nif_set_match_json_body,  0},
     {"indent_code_blocks",   1, nif_indent_code_blocks,   0},
     {"emphasize_http_verbs", 1, nif_emphasize_http_verbs, 0},
 

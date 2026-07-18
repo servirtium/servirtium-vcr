@@ -133,6 +133,10 @@ data PlaybackOptions = PlaybackOptions
   , pbStrictHeaders  :: Bool
     -- ^ Compare the SUT's request headers against the recorded block on
     -- every interaction (default 'False').
+  , pbMatchJsonBody  :: Bool
+    -- ^ Opt in to matching request bodies by semantic JSON equality (key order
+    -- \/ whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall
+    -- back to byte-exact (default 'False').
   , pbUnredactions   :: [(Field, String, String)]
     -- ^ @(field, pattern, replacement)@: rewrite a recorded placeholder to
     -- the real value the live SUT sends, so a scrubbed tape still matches.
@@ -202,6 +206,7 @@ playbackOptions tape = PlaybackOptions
   , pbPort          = 0
   , pbLabel         = ""
   , pbStrictHeaders = False
+  , pbMatchJsonBody = False
   , pbUnredactions  = []
   , pbRemoveHeaders = []
   , pbStaticContent = []
@@ -300,6 +305,7 @@ startPlayback opts = do
     else do
       applyRemoveHeaders handle (pbRemoveHeaders opts)
       when (pbStrictHeaders opts) $ N.aether_vcr_embed_set_strict_headers handle 1
+      when (pbMatchJsonBody opts) $ N.aether_vcr_embed_set_match_json_body handle 1
       mapM_ (\(f, pat, repl) ->
                 check "unredact" $
                   withCString pat $ \cPat ->

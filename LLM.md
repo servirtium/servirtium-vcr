@@ -221,8 +221,13 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   on+non-JSON→reject. Modelled on Vcr.HttpRecorder's `RulesMatcher.ByJsonContent`
   (portions © Giannis Georgopoulos, MIT — see the `LICENSE` attribution line).
   Binding surface follows the `strict_headers` pattern exactly (a
-  `PlaybackBuilder.match_json_body()` toggle): wired in **python / rust / java**
-  so far; the remaining 18 are the same one-liner-per-binding.
+  `PlaybackBuilder.match_json_body()` toggle), wired across the bindings that
+  expose `strict_headers`: python/rust/java/ruby/javascript/php/dart/go/nim/zig/
+  lua/haskell/elixir/dotnet/pharo, plus the shared BEAM NIF; kotlin/scala/groovy/
+  clojure inherit it free from the Java `PlaybackBuilder`. **erlang's and gleam's
+  idiomatic wrappers deliberately don't surface it** — they stage no playback
+  config at all (no `strict_headers` either), so parity means not adding it;
+  it's still reachable via `servirtium_nif:set_match_json_body/2`.
 - **Two normalization verbs, don't confuse them.** `normalize_whole_tape(pat,
   name)` correlates matches into `{{name-N}}` tokens (use for things that recur
   and must stay consistent — UUIDs, CSRF tokens). `redact_whole_tape(pat, repl)`

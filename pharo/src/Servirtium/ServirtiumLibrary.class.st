@@ -242,6 +242,12 @@ ServirtiumLibrary >> setStrictHeaders: server on: on [
 	^ self ffiCall: #( void aether_vcr_embed_set_strict_headers ( void* server, int on ) )
 ]
 
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> setMatchJsonBody: server on: on [
+
+	^ self ffiCall: #( void aether_vcr_embed_set_match_json_body ( void* server, int on ) )
+]
+
 { #category : 'ffi - format' }
 ServirtiumLibrary >> indentCodeBlocks: server [
 

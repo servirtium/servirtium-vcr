@@ -107,6 +107,7 @@ module Servirtium
       [:untaped,        'aether_vcr_embed_untaped',        VOIDP, [VOIDP, VOIDP]],
 
       [:set_strict_headers,  'aether_vcr_embed_set_strict_headers',  VOID, [VOIDP, INT]],
+      [:set_match_json_body, 'aether_vcr_embed_set_match_json_body', VOID, [VOIDP, INT]],
       [:indent_code_blocks,  'aether_vcr_embed_indent_code_blocks',  VOID, [VOIDP]],
       [:emphasize_http_verbs, 'aether_vcr_embed_emphasize_http_verbs', VOID, [VOIDP]],
 

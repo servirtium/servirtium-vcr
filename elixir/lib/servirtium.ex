@@ -52,6 +52,9 @@ defmodule Servirtium do
   Playback only:
 
     * `:strict_headers` — `true` to compare request headers on every interaction
+    * `:match_json_body` — `true` to match request bodies by semantic JSON
+      equality (key order / whitespace ignored) instead of byte-for-byte;
+      non-JSON bodies fall back to byte-exact
     * `:unredact` — list of `{field, pattern, replacement}`
 
   Record only:
@@ -329,6 +332,7 @@ defmodule Servirtium do
 
   defp apply_playback_config(handle, opts) do
     if Keyword.get(opts, :strict_headers, false), do: Native.set_strict_headers(handle, 1)
+    if Keyword.get(opts, :match_json_body, false), do: Native.set_match_json_body(handle, 1)
 
     for {field, pat, repl} <- Keyword.get(opts, :unredact, []) do
       check!(Native.unredact(handle, field!(field), pat, repl), "unredact")
