@@ -106,10 +106,10 @@ import std.config
 import std.list
 import std.mem
 import std.zlib
-import std.cryptography
 import std.regex
 import std.bytes
 import std.json
+import std.encoding
 
 exports (
     vcr_load_err, vcr_tape_length,
@@ -314,11 +314,11 @@ extern http_response_error(response: ptr) -> string
 extern http_response_free(response: ptr)
 
 // gzip / base64: use the high-level std wrappers — zlib.gzip_inflate /
-// zlib.gzip_deflate / cryptography.base64_decode — which each return
-// (string, length, err) where the returned string is a length-bearing
+// zlib.gzip_deflate / encoding.base64_decode — returning a length-bearing
 // AetherString (binary-safe, carries embedded NULs), exactly like the
-// buffer the old C path memcpy'd out. zlib_backend_available is the one
-// raw probe still used directly.
+// buffer the old C path memcpy'd out. (base64 moved from std.cryptography to
+// std.encoding as of ae 0.4x.) zlib_backend_available is the one raw probe
+// still used directly.
 extern zlib_backend_available() -> int
 
 
@@ -1519,9 +1519,9 @@ trim_leading_ws(s: string) -> string {
 // ---- base64 decode (binary-safe via std.cryptography) ----
 
 decode_base64_body(src: string) -> {
-    decoded, n, err = cryptography.base64_decode(src)
+    decoded, err = encoding.base64_decode(src)
     if err != "" { return "", 0, 0 }
-    return decoded, n, 1
+    return decoded, string.length(decoded), 1
 }
 
 // Public base64 decode helper (the subversion_interop byte-faithful
