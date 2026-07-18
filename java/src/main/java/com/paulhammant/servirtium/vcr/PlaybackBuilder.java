@@ -12,8 +12,10 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
 
     private final List<Unredaction> unredactions = new ArrayList<>();
+    private final List<String> matchHeaders = new ArrayList<>();
     private boolean strictHeaders;
     private boolean matchJsonBody;
+    private boolean matchMultiple;
 
     PlaybackBuilder(String tapePath) {
         super(tapePath);
@@ -54,6 +56,29 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
 
     /**
+     * Opt in to reusable, order-independent playback: matches any recorded
+     * interaction (not just the next in sequence) and doesn't consume it — for
+     * polling/retries or non-deterministic request order.
+     */
+    public PlaybackBuilder matchMultiple() {
+        return matchMultiple(true);
+    }
+
+    public PlaybackBuilder matchMultiple(boolean on) {
+        this.matchMultiple = on;
+        return this;
+    }
+
+    /**
+     * Match playback on this specific request header's value (ignoring the rest
+     * of the recorded header block); repeatable.
+     */
+    public PlaybackBuilder matchHeader(String name) {
+        matchHeaders.add(name);
+        return this;
+    }
+
+    /**
      * Replace a redacted placeholder in the recorded expectation with the real
      * value the live SUT sends, so a committed (scrubbed) tape still matches.
      */
@@ -71,6 +96,12 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
             }
             if (matchJsonBody) {
                 NativeMethods.SET_MATCH_JSON_BODY.invokeExact(handle, 1);
+            }
+            if (matchMultiple) {
+                NativeMethods.SET_MATCH_MULTIPLE.invokeExact(handle, 1);
+            }
+            for (String name : matchHeaders) {
+                NativeMethods.MATCH_HEADER.invokeExact(handle, NativeMethods.cString(arena, name));
             }
             for (Unredaction u : unredactions) {
                 MemorySegment r = (MemorySegment) NativeMethods.UNREDACT.invokeExact(

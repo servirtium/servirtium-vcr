@@ -248,6 +248,18 @@ ServirtiumLibrary >> setMatchJsonBody: server on: on [
 	^ self ffiCall: #( void aether_vcr_embed_set_match_json_body ( void* server, int on ) )
 ]
 
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> setMatchMultiple: server on: on [
+
+	^ self ffiCall: #( void aether_vcr_embed_set_match_multiple ( void* server, int on ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> matchHeader: server name: name [
+
+	^ self ffiCall: #( void aether_vcr_embed_match_header ( void* server, String name ) )
+]
+
 { #category : 'ffi - format' }
 ServirtiumLibrary >> indentCodeBlocks: server [
 

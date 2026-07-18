@@ -44,16 +44,19 @@
     normalize_whole_tape/3,
     redact_whole_tape/3,
     remove_header/3,
+    match_header/2,
     note/3,
     static_content/3,
     untaped/2,
     set_strict_headers/2,
     set_match_json_body/2,
+    set_match_multiple/2,
     indent_code_blocks/1,
     emphasize_http_verbs/1,
     clear_redactions/1,
     clear_unredactions/1,
     clear_header_removals/1,
+    clear_match_headers/1,
     clear_static_content/1,
     clear_untaped/1,
     clear_format_options/1
@@ -108,16 +111,19 @@ unredact(_Handle, _Field, _Pattern, _Replacement) -> erlang:nif_error(not_loaded
 normalize_whole_tape(_Handle, _Pattern, _Name) -> erlang:nif_error(not_loaded).
 redact_whole_tape(_Handle, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).
 remove_header(_Handle, _Field, _Name) -> erlang:nif_error(not_loaded).
+match_header(_Handle, _Name) -> erlang:nif_error(not_loaded).
 note(_Handle, _Title, _Body) -> erlang:nif_error(not_loaded).
 static_content(_Handle, _MountPath, _FsDir) -> erlang:nif_error(not_loaded).
 untaped(_Handle, _Path) -> erlang:nif_error(not_loaded).
 set_strict_headers(_Handle, _On) -> erlang:nif_error(not_loaded).
 set_match_json_body(_Handle, _On) -> erlang:nif_error(not_loaded).
+set_match_multiple(_Handle, _On) -> erlang:nif_error(not_loaded).
 indent_code_blocks(_Handle) -> erlang:nif_error(not_loaded).
 emphasize_http_verbs(_Handle) -> erlang:nif_error(not_loaded).
 clear_redactions(_Handle) -> erlang:nif_error(not_loaded).
 clear_unredactions(_Handle) -> erlang:nif_error(not_loaded).
 clear_header_removals(_Handle) -> erlang:nif_error(not_loaded).
+clear_match_headers(_Handle) -> erlang:nif_error(not_loaded).
 clear_static_content(_Handle) -> erlang:nif_error(not_loaded).
 clear_untaped(_Handle) -> erlang:nif_error(not_loaded).
 clear_format_options(_Handle) -> erlang:nif_error(not_loaded).

@@ -133,6 +133,8 @@ impl Vcr {
             unredactions: Vec::new(),
             strict_headers: false,
             match_json_body: false,
+            match_multiple: false,
+            match_headers: Vec::new(),
         }
     }
 
@@ -216,6 +218,8 @@ pub struct PlaybackBuilder {
     unredactions: Vec<(Field, String, String)>,
     strict_headers: bool,
     match_json_body: bool,
+    match_multiple: bool,
+    match_headers: Vec<String>,
 }
 
 impl PlaybackBuilder {
@@ -259,6 +263,19 @@ impl PlaybackBuilder {
     /// matching for non-JSON payloads.
     pub fn match_json_body(mut self) -> Self {
         self.match_json_body = true;
+        self
+    }
+    /// Opt in to reusable, order-independent playback: matches any recorded
+    /// interaction (not just the next in sequence) and doesn't consume it — for
+    /// polling/retries or non-deterministic request order.
+    pub fn match_multiple(mut self) -> Self {
+        self.match_multiple = true;
+        self
+    }
+    /// Match playback on this specific request header's value (ignoring the
+    /// rest of the recorded header block); repeatable.
+    pub fn match_header(mut self, name: impl Into<String>) -> Self {
+        self.match_headers.push(name.into());
         self
     }
     /// Replace a redacted placeholder in the recorded expectation with the
@@ -318,6 +335,12 @@ impl PlaybackBuilder {
         }
         if self.match_json_body {
             unsafe { (n.set_match_json_body)(handle, 1) };
+        }
+        if self.match_multiple {
+            unsafe { (n.set_match_multiple)(handle, 1) };
+        }
+        for name in &self.match_headers {
+            unsafe { (n.match_header)(handle, cstr(name)?.as_ptr()) };
         }
         for (field, pattern, replacement) in &self.unredactions {
             check(

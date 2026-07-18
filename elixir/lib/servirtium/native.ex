@@ -64,16 +64,19 @@ defmodule Servirtium.Native do
   defdelegate normalize_whole_tape(handle, pattern, name), to: :servirtium_nif
   defdelegate redact_whole_tape(handle, pattern, replacement), to: :servirtium_nif
   defdelegate remove_header(handle, field, name), to: :servirtium_nif
+  defdelegate match_header(handle, name), to: :servirtium_nif
   defdelegate note(handle, title, body), to: :servirtium_nif
   defdelegate static_content(handle, mount_path, fs_dir), to: :servirtium_nif
   defdelegate untaped(handle, path), to: :servirtium_nif
   defdelegate set_strict_headers(handle, on), to: :servirtium_nif
   defdelegate set_match_json_body(handle, on), to: :servirtium_nif
+  defdelegate set_match_multiple(handle, on), to: :servirtium_nif
   defdelegate indent_code_blocks(handle), to: :servirtium_nif
   defdelegate emphasize_http_verbs(handle), to: :servirtium_nif
   defdelegate clear_redactions(handle), to: :servirtium_nif
   defdelegate clear_unredactions(handle), to: :servirtium_nif
   defdelegate clear_header_removals(handle), to: :servirtium_nif
+  defdelegate clear_match_headers(handle), to: :servirtium_nif
   defdelegate clear_static_content(handle), to: :servirtium_nif
   defdelegate clear_untaped(handle), to: :servirtium_nif
   defdelegate clear_format_options(handle), to: :servirtium_nif

@@ -130,8 +130,10 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
 public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
 {
     private readonly List<(VcrField field, string pattern, string replacement)> _unredactions = new();
+    private readonly List<string> _matchHeaders = new();
     private bool _strictHeaders;
     private bool _matchJsonBody;
+    private bool _matchMultiple;
 
     internal PlaybackBuilder(string tapePath) : base(tapePath) { }
     private protected override PlaybackBuilder Self => this;
@@ -159,6 +161,27 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     }
 
     /// <summary>
+    /// Opt in to reusable, order-independent playback: matches any recorded
+    /// interaction (not just the next in sequence) and doesn't consume it —
+    /// for polling/retries or non-deterministic request order.
+    /// </summary>
+    public PlaybackBuilder MatchMultiple(bool on = true)
+    {
+        _matchMultiple = on;
+        return this;
+    }
+
+    /// <summary>
+    /// Match playback on this specific request header's value (ignoring the
+    /// rest of the recorded header block); repeatable.
+    /// </summary>
+    public PlaybackBuilder MatchHeader(string name)
+    {
+        _matchHeaders.Add(name);
+        return this;
+    }
+
+    /// <summary>
     /// Replace a redacted placeholder in the recorded expectation with the
     /// real value the live SUT sends, so a committed (scrubbed) tape still
     /// matches.
@@ -174,6 +197,11 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         base.ApplyConfig(handle);
         if (_strictHeaders) NativeMethods.SetStrictHeaders(handle, 1);
         if (_matchJsonBody) NativeMethods.SetMatchJsonBody(handle, 1);
+        if (_matchMultiple) NativeMethods.SetMatchMultiple(handle, 1);
+        foreach (string name in _matchHeaders)
+        {
+            NativeMethods.MatchHeader(handle, name);
+        }
         foreach ((VcrField field, string pattern, string replacement) in _unredactions)
         {
             Check(NativeMethods.Unredact(handle, (int)field, pattern, replacement), nameof(Unredact));

@@ -147,6 +147,15 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_match_json_body")]
     internal static extern void SetMatchJsonBody(IntPtr server, int on);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_match_multiple")]
+    internal static extern void SetMatchMultiple(IntPtr server, int on);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_match_header", CharSet = CharSet.Ansi)]
+    internal static extern void MatchHeader(IntPtr server, string name);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_match_headers")]
+    internal static extern void ClearMatchHeaders(IntPtr server);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_indent_code_blocks")]
     internal static extern void IndentCodeBlocks(IntPtr server);
 

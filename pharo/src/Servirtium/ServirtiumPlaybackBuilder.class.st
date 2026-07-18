@@ -9,7 +9,9 @@ Class {
 	#instVars : [
 		'unredactions',
 		'strictHeaders',
-		'matchJsonBody'
+		'matchJsonBody',
+		'matchMultiple',
+		'matchHeaders'
 	],
 	#category : 'Servirtium',
 	#package : 'Servirtium'
@@ -21,7 +23,9 @@ ServirtiumPlaybackBuilder >> initializeTape: aTapePath [
 	super initializeTape: aTapePath.
 	unredactions := OrderedCollection new.
 	strictHeaders := false.
-	matchJsonBody := false
+	matchJsonBody := false.
+	matchMultiple := false.
+	matchHeaders := OrderedCollection new
 ]
 
 { #category : 'configuring' }
@@ -56,6 +60,31 @@ ServirtiumPlaybackBuilder >> matchJsonBody: aBoolean [
 ]
 
 { #category : 'configuring' }
+ServirtiumPlaybackBuilder >> matchMultiple [
+	"Opt in to reusable, order-independent playback: matches any recorded
+	 interaction (not just the next in sequence) and doesn't consume it — for
+	 polling/retries or non-deterministic request order."
+
+	^ self matchMultiple: true
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> matchMultiple: aBoolean [
+
+	matchMultiple := aBoolean.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> matchHeader: aName [
+	"Match playback on this specific request header's value (ignoring the rest
+	 of the recorded header block); repeatable."
+
+	matchHeaders add: aName.
+	^ self
+]
+
+{ #category : 'configuring' }
 ServirtiumPlaybackBuilder >> unredactField: aField pattern: aPattern replacement: aReplacement [
 	"Replace a redacted placeholder in the recorded expectation with the real
 	 value the live SUT sends, so a committed (scrubbed) tape still matches."
@@ -70,6 +99,9 @@ ServirtiumPlaybackBuilder >> applyConfig: handle [
 	super applyConfig: handle.
 	strictHeaders ifTrue: [ self library setStrictHeaders: handle on: 1 ].
 	matchJsonBody ifTrue: [ self library setMatchJsonBody: handle on: 1 ].
+	matchMultiple ifTrue: [ self library setMatchMultiple: handle on: 1 ].
+	matchHeaders do: [ :name |
+		self library matchHeader: handle name: name ].
 	unredactions do: [ :tuple |
 		self
 			check: (self library unredact: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))

@@ -70,6 +70,8 @@ char*  aether_vcr_embed_static_content(void* server, const char* mount_path, con
 char*  aether_vcr_embed_untaped(void* server, const char* path);
 void   aether_vcr_embed_set_strict_headers(void* server, int on);
 void   aether_vcr_embed_set_match_json_body(void* server, int on);
+void   aether_vcr_embed_set_match_multiple(void* server, int on);
+void   aether_vcr_embed_match_header(void* server, const char* name);
 void   aether_vcr_embed_indent_code_blocks(void* server);
 void   aether_vcr_embed_emphasize_http_verbs(void* server);
 void   aether_vcr_embed_clear_redactions(void* server);
@@ -231,6 +233,8 @@ type PlaybackBuilder struct {
 	baseBuilder
 	strictHeaders bool
 	matchJSONBody bool
+	matchMultiple bool
+	matchHeaders  []string
 	unredactions  []replacement
 }
 
@@ -252,6 +256,18 @@ func (b *PlaybackBuilder) StrictHeaders() *PlaybackBuilder { b.strictHeaders = t
 // (key order / whitespace ignored) instead of byte-for-byte. Non-JSON bodies
 // fall back to byte-exact.
 func (b *PlaybackBuilder) MatchJSONBody() *PlaybackBuilder { b.matchJSONBody = true; return b }
+
+// MatchMultiple opts in to reusable, order-independent playback: matches any
+// recorded interaction (not just the next in sequence) and doesn't consume it —
+// for polling/retries or non-deterministic request order.
+func (b *PlaybackBuilder) MatchMultiple() *PlaybackBuilder { b.matchMultiple = true; return b }
+
+// MatchHeader matches playback on this specific request header's value
+// (ignoring the rest of the recorded header block); repeatable.
+func (b *PlaybackBuilder) MatchHeader(name string) *PlaybackBuilder {
+	b.matchHeaders = append(b.matchHeaders, name)
+	return b
+}
 
 // RemoveHeader removes a header by name from the given block (case-insensitive).
 func (b *PlaybackBuilder) RemoveHeader(field Field, name string) *PlaybackBuilder {
@@ -291,6 +307,14 @@ func (b *PlaybackBuilder) applyConfig(handle unsafe.Pointer) error {
 	}
 	if b.matchJSONBody {
 		C.aether_vcr_embed_set_match_json_body(handle, 1)
+	}
+	if b.matchMultiple {
+		C.aether_vcr_embed_set_match_multiple(handle, 1)
+	}
+	for _, name := range b.matchHeaders {
+		cName := C.CString(name)
+		C.aether_vcr_embed_match_header(handle, cName)
+		C.free(unsafe.Pointer(cName))
 	}
 	for _, u := range b.unredactions {
 		cPat, cRep := C.CString(u.pattern), C.CString(u.replacem)

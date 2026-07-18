@@ -179,6 +179,17 @@ proc setMatchJsonBody*(s: VcrServer; on: bool) =
   ## byte-exact.
   native.set_match_json_body(s.handle, cint(if on: 1 else: 0))
 
+proc setMatchMultiple*(s: VcrServer; on: bool) =
+  ## Opt in to reusable, order-independent playback: matches any recorded
+  ## interaction (not just the next in sequence) and doesn't consume it — for
+  ## polling/retries or non-deterministic request order.
+  native.set_match_multiple(s.handle, cint(if on: 1 else: 0))
+
+proc matchHeader*(s: VcrServer; name: string) =
+  ## Match playback on this specific request header's value (ignoring the rest
+  ## of the recorded header block); repeatable.
+  native.match_header(s.handle, cstring(name))
+
 proc indentCodeBlocks*(s: VcrServer) =
   native.indent_code_blocks(s.handle)
 

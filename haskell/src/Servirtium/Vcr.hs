@@ -137,6 +137,13 @@ data PlaybackOptions = PlaybackOptions
     -- ^ Opt in to matching request bodies by semantic JSON equality (key order
     -- \/ whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall
     -- back to byte-exact (default 'False').
+  , pbMatchMultiple  :: Bool
+    -- ^ Opt in to reusable, order-independent playback: matches any recorded
+    -- interaction (not just the next in sequence) and doesn't consume it — for
+    -- polling\/retries or non-deterministic request order (default 'False').
+  , pbMatchHeaders   :: [String]
+    -- ^ Match playback on this specific request header's value (ignoring the
+    -- rest of the recorded header block); repeatable.
   , pbUnredactions   :: [(Field, String, String)]
     -- ^ @(field, pattern, replacement)@: rewrite a recorded placeholder to
     -- the real value the live SUT sends, so a scrubbed tape still matches.
@@ -207,6 +214,8 @@ playbackOptions tape = PlaybackOptions
   , pbLabel         = ""
   , pbStrictHeaders = False
   , pbMatchJsonBody = False
+  , pbMatchMultiple = False
+  , pbMatchHeaders  = []
   , pbUnredactions  = []
   , pbRemoveHeaders = []
   , pbStaticContent = []
@@ -306,6 +315,11 @@ startPlayback opts = do
       applyRemoveHeaders handle (pbRemoveHeaders opts)
       when (pbStrictHeaders opts) $ N.aether_vcr_embed_set_strict_headers handle 1
       when (pbMatchJsonBody opts) $ N.aether_vcr_embed_set_match_json_body handle 1
+      when (pbMatchMultiple opts) $ N.aether_vcr_embed_set_match_multiple handle 1
+      mapM_ (\name ->
+                withCString name $ \cName ->
+                  N.aether_vcr_embed_match_header handle cName)
+            (pbMatchHeaders opts)
       mapM_ (\(f, pat, repl) ->
                 check "unredact" $
                   withCString pat $ \cPat ->

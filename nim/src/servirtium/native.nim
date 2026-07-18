@@ -99,6 +99,10 @@ proc set_strict_headers*(h: Handle, on: cint)
   {.importc: "aether_vcr_embed_set_strict_headers", cdecl.}
 proc set_match_json_body*(h: Handle, on: cint)
   {.importc: "aether_vcr_embed_set_match_json_body", cdecl.}
+proc set_match_multiple*(h: Handle, on: cint)
+  {.importc: "aether_vcr_embed_set_match_multiple", cdecl.}
+proc match_header*(h: Handle, name: cstring)
+  {.importc: "aether_vcr_embed_match_header", cdecl.}
 proc indent_code_blocks*(h: Handle)
   {.importc: "aether_vcr_embed_indent_code_blocks", cdecl.}
 proc emphasize_http_verbs*(h: Handle)

@@ -194,6 +194,9 @@ typedef _UntapedD = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> p
 typedef _SetIntC = Void Function(Pointer<Void> server, Int32 on);
 typedef _SetIntD = void Function(Pointer<Void> server, int on);
 
+typedef _MatchHeaderC = Void Function(Pointer<Void> server, Pointer<Utf8> name);
+typedef _MatchHeaderD = void Function(Pointer<Void> server, Pointer<Utf8> name);
+
 typedef _FreeStringC = Void Function(Pointer<Utf8> s);
 typedef _FreeStringD = void Function(Pointer<Utf8> s);
 
@@ -268,6 +271,10 @@ class Native {
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_strict_headers');
   static final setMatchJsonBody =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_match_json_body');
+  static final setMatchMultiple =
+      _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_match_multiple');
+  static final matchHeader = _lib
+      .lookupFunction<_MatchHeaderC, _MatchHeaderD>('aether_vcr_embed_match_header');
   static final indentCodeBlocks = _lib
       .lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_indent_code_blocks');
   static final emphasizeHttpVerbs = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(

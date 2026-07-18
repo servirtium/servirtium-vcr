@@ -151,6 +151,18 @@ final class NativeMethods {
             "aether_vcr_embed_set_match_json_body",
             FunctionDescriptor.ofVoid(C_PTR, C_INT));
 
+    static final MethodHandle SET_MATCH_MULTIPLE = down(
+            "aether_vcr_embed_set_match_multiple",
+            FunctionDescriptor.ofVoid(C_PTR, C_INT));
+
+    static final MethodHandle MATCH_HEADER = down(
+            "aether_vcr_embed_match_header",
+            FunctionDescriptor.ofVoid(C_PTR, C_PTR));
+
+    static final MethodHandle CLEAR_MATCH_HEADERS = down(
+            "aether_vcr_embed_clear_match_headers",
+            FunctionDescriptor.ofVoid(C_PTR));
+
     static final MethodHandle INDENT_CODE_BLOCKS = down(
             "aether_vcr_embed_indent_code_blocks",
             FunctionDescriptor.ofVoid(C_PTR));

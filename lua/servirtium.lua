@@ -177,8 +177,23 @@ function PlaybackBuilder:match_json_body()
     return self
 end
 
+-- Opt in to reusable, order-independent playback: matches any recorded
+-- interaction (not just the next in sequence) and doesn't consume it — for
+-- polling/retries or non-deterministic request order.
+function PlaybackBuilder:match_multiple()
+    self._match_multiple = true
+    return self
+end
+
 function PlaybackBuilder:remove_header(field, name)
     table.insert(self._header_removals, { field = field, name = name })
+    return self
+end
+
+-- Match playback on this specific request header's value (ignoring the rest of
+-- the recorded header block); repeatable.
+function PlaybackBuilder:match_header(name)
+    table.insert(self._match_headers, name)
     return self
 end
 
@@ -210,6 +225,12 @@ function PlaybackBuilder:start()
         end
         if self._match_json_body then
             C.set_match_json_body(handle, true)
+        end
+        if self._match_multiple then
+            C.set_match_multiple(handle, true)
+        end
+        for _, name in ipairs(self._match_headers) do
+            C.match_header(handle, name)
         end
         for _, u in ipairs(self._unredactions) do
             check(C.unredact(handle, u.field, u.pattern, u.repl), "unredact")
@@ -371,6 +392,8 @@ function M.playback(tapePath, opts)
     b._unredactions = {}
     b._strict_headers = false
     b._match_json_body = false
+    b._match_multiple = false
+    b._match_headers = {}
     if opts then
         if opts.port  ~= nil then b._port  = opts.port  end
         if opts.label ~= nil then b._label = opts.label end

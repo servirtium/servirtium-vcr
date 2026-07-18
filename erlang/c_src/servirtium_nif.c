@@ -51,6 +51,8 @@ extern void  aether_vcr_embed_clear_last_error(void *server);
 extern char *aether_vcr_embed_redact(void *server, int field, const char *pattern, const char *replacement);
 extern char *aether_vcr_embed_unredact(void *server, int field, const char *pattern, const char *replacement);
 extern char *aether_vcr_embed_remove_header(void *server, int field, const char *name);
+extern void  aether_vcr_embed_match_header(void *server, const char *name);
+extern void  aether_vcr_embed_clear_match_headers(void *server);
 extern char *aether_vcr_embed_strict_ignore_common_headers(void *server);
 extern char *aether_vcr_embed_normalize_whole_tape(void *server, const char *pattern, const char *name);
 extern char *aether_vcr_embed_redact_whole_tape(void *server, const char *pattern, const char *replacement);
@@ -59,6 +61,7 @@ extern char *aether_vcr_embed_static_content(void *server, const char *mount_pat
 extern char *aether_vcr_embed_untaped(void *server, const char *path);
 extern void  aether_vcr_embed_set_strict_headers(void *server, int on);
 extern void  aether_vcr_embed_set_match_json_body(void *server, int on);
+extern void  aether_vcr_embed_set_match_multiple(void *server, int on);
 extern void  aether_vcr_embed_indent_code_blocks(void *server);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *server);
 extern void  aether_vcr_embed_clear_redactions(void *server);
@@ -323,6 +326,18 @@ static ERL_NIF_TERM nif_remove_header(ErlNifEnv *env, int argc, const ERL_NIF_TE
     return take_cstr(env, res);
 }
 
+static ERL_NIF_TERM nif_match_header(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    char *name = term_to_cstr(env, argv[1]);
+    if (!name) return enif_make_badarg(env);
+    aether_vcr_embed_match_header(h, name);
+    enif_free(name);
+    return enif_make_atom(env, "ok");
+}
+
 static ERL_NIF_TERM nif_note(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -425,6 +440,17 @@ static ERL_NIF_TERM nif_set_match_json_body(ErlNifEnv *env, int argc, const ERL_
     return enif_make_atom(env, "ok");
 }
 
+static ERL_NIF_TERM nif_set_match_multiple(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    int on;
+    if (!enif_get_int(env, argv[1], &on)) return enif_make_badarg(env);
+    aether_vcr_embed_set_match_multiple(h, on);
+    return enif_make_atom(env, "ok");
+}
+
 static ERL_NIF_TERM nif_indent_code_blocks(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -457,6 +483,7 @@ static ERL_NIF_TERM nif_emphasize_http_verbs(ErlNifEnv *env, int argc, const ERL
 CLEAR_NIF(nif_clear_redactions,      aether_vcr_embed_clear_redactions)
 CLEAR_NIF(nif_clear_unredactions,    aether_vcr_embed_clear_unredactions)
 CLEAR_NIF(nif_clear_header_removals, aether_vcr_embed_clear_header_removals)
+CLEAR_NIF(nif_clear_match_headers,   aether_vcr_embed_clear_match_headers)
 CLEAR_NIF(nif_clear_static_content,  aether_vcr_embed_clear_static_content)
 CLEAR_NIF(nif_clear_untaped,         aether_vcr_embed_clear_untaped)
 CLEAR_NIF(nif_clear_format_options,  aether_vcr_embed_clear_format_options)
@@ -486,17 +513,20 @@ static ErlNifFunc nif_funcs[] = {
     {"normalize_whole_tape", 3, nif_normalize_whole_tape, 0},
     {"redact_whole_tape",    3, nif_redact_whole_tape,    0},
     {"remove_header",  3, nif_remove_header,  0},
+    {"match_header",   2, nif_match_header,   0},
     {"note",           3, nif_note,           0},
     {"static_content", 3, nif_static_content, 0},
     {"untaped",        2, nif_untaped,        0},
     {"set_strict_headers",   2, nif_set_strict_headers,   0},
     {"set_match_json_body",  2, nif_set_match_json_body,  0},
+    {"set_match_multiple",   2, nif_set_match_multiple,   0},
     {"indent_code_blocks",   1, nif_indent_code_blocks,   0},
     {"emphasize_http_verbs", 1, nif_emphasize_http_verbs, 0},
 
     {"clear_redactions",      1, nif_clear_redactions,      0},
     {"clear_unredactions",    1, nif_clear_unredactions,    0},
     {"clear_header_removals", 1, nif_clear_header_removals, 0},
+    {"clear_match_headers",   1, nif_clear_match_headers,   0},
     {"clear_static_content",  1, nif_clear_static_content,  0},
     {"clear_untaped",         1, nif_clear_untaped,         0},
     {"clear_format_options",  1, nif_clear_format_options,  0},

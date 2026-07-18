@@ -167,6 +167,10 @@ export const removeHeader = lazy(
   'void* aether_vcr_embed_remove_header(void* server, int field, const char* name)',
 )
 
+export const matchHeader = lazy(
+  'void aether_vcr_embed_match_header(void* server, const char* name)',
+)
+
 export const strictIgnoreCommonHeaders = lazy(
   'void* aether_vcr_embed_strict_ignore_common_headers(void* server)',
 )
@@ -191,6 +195,10 @@ export const setMatchJsonBody = lazy(
   'void aether_vcr_embed_set_match_json_body(void* server, int on)',
 )
 
+export const setMatchMultiple = lazy(
+  'void aether_vcr_embed_set_match_multiple(void* server, int on)',
+)
+
 export const indentCodeBlocks = lazy('void aether_vcr_embed_indent_code_blocks(void* server)')
 
 export const emphasizeHttpVerbs = lazy(
@@ -203,6 +211,10 @@ export const clearUnredactions = lazy('void aether_vcr_embed_clear_unredactions(
 
 export const clearHeaderRemovals = lazy(
   'void aether_vcr_embed_clear_header_removals(void* server)',
+)
+
+export const clearMatchHeaders = lazy(
+  'void aether_vcr_embed_clear_match_headers(void* server)',
 )
 
 export const clearStaticContent = lazy(

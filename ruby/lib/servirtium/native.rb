@@ -101,6 +101,7 @@ module Servirtium
       [:redact_whole_tape,    'aether_vcr_embed_redact_whole_tape',    VOIDP, [VOIDP, VOIDP, VOIDP]],
       [:unredact,       'aether_vcr_embed_unredact',       VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
       [:remove_header,  'aether_vcr_embed_remove_header',  VOIDP, [VOIDP, INT, VOIDP]],
+      [:match_header,   'aether_vcr_embed_match_header',   VOID,  [VOIDP, VOIDP]],
       [:strict_ignore_common_headers, 'aether_vcr_embed_strict_ignore_common_headers', VOIDP, [VOIDP]],
       [:note,           'aether_vcr_embed_note',           VOIDP, [VOIDP, VOIDP, VOIDP]],
       [:static_content, 'aether_vcr_embed_static_content', VOIDP, [VOIDP, VOIDP, VOIDP]],
@@ -108,12 +109,14 @@ module Servirtium
 
       [:set_strict_headers,  'aether_vcr_embed_set_strict_headers',  VOID, [VOIDP, INT]],
       [:set_match_json_body, 'aether_vcr_embed_set_match_json_body', VOID, [VOIDP, INT]],
+      [:set_match_multiple,  'aether_vcr_embed_set_match_multiple',  VOID, [VOIDP, INT]],
       [:indent_code_blocks,  'aether_vcr_embed_indent_code_blocks',  VOID, [VOIDP]],
       [:emphasize_http_verbs, 'aether_vcr_embed_emphasize_http_verbs', VOID, [VOIDP]],
 
       [:clear_redactions,      'aether_vcr_embed_clear_redactions',      VOID, [VOIDP]],
       [:clear_unredactions,    'aether_vcr_embed_clear_unredactions',    VOID, [VOIDP]],
       [:clear_header_removals, 'aether_vcr_embed_clear_header_removals', VOID, [VOIDP]],
+      [:clear_match_headers,   'aether_vcr_embed_clear_match_headers',   VOID, [VOIDP]],
       [:clear_static_content,  'aether_vcr_embed_clear_static_content',  VOID, [VOIDP]],
       [:clear_untaped,         'aether_vcr_embed_clear_untaped',         VOID, [VOIDP]],
       [:clear_format_options,  'aether_vcr_embed_clear_format_options',  VOID, [VOIDP]],

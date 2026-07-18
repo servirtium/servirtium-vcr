@@ -143,6 +143,8 @@ class PlaybackBuilder(_BuilderBase):
         self._unredactions: list[tuple[Field, str, str]] = []
         self._strict_headers = False
         self._match_json_body = False
+        self._match_multiple = False
+        self._match_headers: list[str] = []
 
     def strict_headers(self, on: bool = True):
         """Compare the SUT's request headers against the recorded block on
@@ -158,6 +160,19 @@ class PlaybackBuilder(_BuilderBase):
         self._match_json_body = on
         return self
 
+    def match_multiple(self, on: bool = True):
+        """Opt in to reusable, order-independent playback: matches any recorded
+        interaction (not just the next in sequence) and doesn't consume it — for
+        polling/retries or non-deterministic request order."""
+        self._match_multiple = on
+        return self
+
+    def match_header(self, name: str):
+        """Match playback on this specific request header's value (ignoring the
+        rest of the recorded header block); repeatable."""
+        self._match_headers.append(name)
+        return self
+
     def unredact(self, field: Field, pattern: str, replacement: str):
         """Replace a redacted placeholder in the recorded expectation with the
         real value the live SUT sends, so a scrubbed tape still matches."""
@@ -170,6 +185,10 @@ class PlaybackBuilder(_BuilderBase):
             N.set_strict_headers(handle, 1)
         if self._match_json_body:
             N.set_match_json_body(handle, 1)
+        if self._match_multiple:
+            N.set_match_multiple(handle, 1)
+        for name in self._match_headers:
+            N.match_header(handle, N.encode(name))
         for field, pattern, replacement in self._unredactions:
             _check(
                 N.unredact(handle, int(field), N.encode(pattern), N.encode(replacement)),

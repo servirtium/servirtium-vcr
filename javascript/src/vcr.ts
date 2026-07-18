@@ -157,6 +157,8 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   private readonly unredactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
   private strictHeadersOn = false
   private matchJsonBodyOn = false
+  private matchMultipleOn = false
+  private readonly matchHeaders: string[] = []
 
   constructor(tapePath: string) {
     super(tapePath)
@@ -186,6 +188,25 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   }
 
   /**
+   * Opt in to reusable, order-independent playback: matches any recorded
+   * interaction (not just the next in sequence) and doesn't consume it — for
+   * polling/retries or non-deterministic request order.
+   */
+  matchMultiple(on = true): PlaybackBuilder {
+    this.matchMultipleOn = on
+    return this
+  }
+
+  /**
+   * Match playback on this specific request header's value (ignoring the rest
+   * of the recorded header block); repeatable.
+   */
+  matchHeader(name: string): PlaybackBuilder {
+    this.matchHeaders.push(name)
+    return this
+  }
+
+  /**
    * Replace a redacted placeholder in the recorded expectation with the real
    * value the live SUT sends, so a committed (scrubbed) tape still matches.
    */
@@ -198,6 +219,10 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     super.applyConfig(handle)
     if (this.strictHeadersOn) N.setStrictHeaders(handle, 1)
     if (this.matchJsonBodyOn) N.setMatchJsonBody(handle, 1)
+    if (this.matchMultipleOn) N.setMatchMultiple(handle, 1)
+    for (const name of this.matchHeaders) {
+      N.matchHeader(handle, name)
+    }
     for (const { field, pattern, replacement } of this.unredactions) {
       check(N.unredact(handle, field, pattern, replacement), 'unredact')
     }

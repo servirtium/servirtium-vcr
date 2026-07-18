@@ -55,6 +55,12 @@ defmodule Servirtium do
     * `:match_json_body` — `true` to match request bodies by semantic JSON
       equality (key order / whitespace ignored) instead of byte-for-byte;
       non-JSON bodies fall back to byte-exact
+    * `:match_multiple` — `true` to opt in to reusable, order-independent
+      playback: matches any recorded interaction (not just the next in sequence)
+      and doesn't consume it — for polling/retries or non-deterministic request
+      order
+    * `:match_header` — list of request header names; match playback on each
+      header's value (ignoring the rest of the recorded header block)
     * `:unredact` — list of `{field, pattern, replacement}`
 
   Record only:
@@ -333,6 +339,11 @@ defmodule Servirtium do
   defp apply_playback_config(handle, opts) do
     if Keyword.get(opts, :strict_headers, false), do: Native.set_strict_headers(handle, 1)
     if Keyword.get(opts, :match_json_body, false), do: Native.set_match_json_body(handle, 1)
+    if Keyword.get(opts, :match_multiple, false), do: Native.set_match_multiple(handle, 1)
+
+    for name <- Keyword.get(opts, :match_header, []) do
+      Native.match_header(handle, name)
+    end
 
     for {field, pat, repl} <- Keyword.get(opts, :unredact, []) do
       check!(Native.unredact(handle, field!(field), pat, repl), "unredact")

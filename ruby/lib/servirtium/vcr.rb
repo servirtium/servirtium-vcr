@@ -118,6 +118,8 @@ module Servirtium
       @unredactions = []
       @strict_headers = false
       @match_json_body = false
+      @match_multiple = false
+      @match_headers = []
     end
 
     # Compare the SUT's request headers against the recorded block on every
@@ -133,6 +135,21 @@ module Servirtium
     # to byte-exact.
     def match_json_body(on: true)
       @match_json_body = on
+      self
+    end
+
+    # Opt in to reusable, order-independent playback: matches any recorded
+    # interaction (not just the next in sequence) and doesn't consume it — for
+    # polling/retries or non-deterministic request order.
+    def match_multiple(on: true)
+      @match_multiple = on
+      self
+    end
+
+    # Match playback on this specific request header's value (ignoring the rest
+    # of the recorded header block); repeatable.
+    def match_header(name)
+      @match_headers << name
       self
     end
 
@@ -165,6 +182,10 @@ module Servirtium
       super
       Native.call(:set_strict_headers, handle, 1) if @strict_headers
       Native.call(:set_match_json_body, handle, 1) if @match_json_body
+      Native.call(:set_match_multiple, handle, 1) if @match_multiple
+      @match_headers.each do |name|
+        Native.call(:match_header, handle, name)
+      end
       @unredactions.each do |field, pattern, replacement|
         check(Native.call(:unredact, handle, field, pattern, replacement), 'unredact')
       end

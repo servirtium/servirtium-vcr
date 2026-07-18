@@ -58,6 +58,8 @@ pub extern "c" fn aether_vcr_embed_static_content(handle: Handle, mount: [*c]con
 pub extern "c" fn aether_vcr_embed_untaped(handle: Handle, path: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_set_strict_headers(handle: Handle, on: c_int) void;
 pub extern "c" fn aether_vcr_embed_set_match_json_body(handle: Handle, on: c_int) void;
+pub extern "c" fn aether_vcr_embed_set_match_multiple(handle: Handle, on: c_int) void;
+pub extern "c" fn aether_vcr_embed_match_header(handle: Handle, name: [*c]const u8) void;
 pub extern "c" fn aether_vcr_embed_indent_code_blocks(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_emphasize_http_verbs(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_redactions(handle: Handle) void;
@@ -265,10 +267,12 @@ pub const Playback = struct {
     label_str: [:0]const u8 = "",
     strict_headers: bool = false,
     match_json_body: bool = false,
+    match_multiple: bool = false,
     header_removals: std.ArrayList(HeaderRemoval) = .empty,
     static_content: std.ArrayList(Mount) = .empty,
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
     unredactions: std.ArrayList(Replacement) = .empty,
+    match_headers: std.ArrayList([:0]const u8) = .empty,
 
     /// Begin a playback fixture for `tape_path`. Configure fluently, then
     /// call `start`. The builder uses value semantics: each method consumes
@@ -321,6 +325,7 @@ pub const Playback = struct {
         self.static_content.deinit(self.allocator);
         self.untaped_paths.deinit(self.allocator);
         self.unredactions.deinit(self.allocator);
+        self.match_headers.deinit(self.allocator);
     }
 
     /// Compare the SUT's request headers against the recorded block on every
@@ -337,6 +342,23 @@ pub const Playback = struct {
     pub fn matchJsonBody(self: Playback) Playback {
         var b = self;
         b.match_json_body = true;
+        return b;
+    }
+
+    /// Opt in to reusable, order-independent playback: matches any recorded
+    /// interaction (not just the next in sequence) and doesn't consume it — for
+    /// polling/retries or non-deterministic request order.
+    pub fn matchMultiple(self: Playback) Playback {
+        var b = self;
+        b.match_multiple = true;
+        return b;
+    }
+
+    /// Match playback on this specific request header's value (ignoring the
+    /// rest of the recorded header block); repeatable.
+    pub fn matchHeader(self: Playback, name: [:0]const u8) Playback {
+        var b = self;
+        b.match_headers.append(b.allocator, name) catch {};
         return b;
     }
 
@@ -365,6 +387,10 @@ pub const Playback = struct {
         try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items);
         if (self.strict_headers) aether_vcr_embed_set_strict_headers(handle, 1);
         if (self.match_json_body) aether_vcr_embed_set_match_json_body(handle, 1);
+        if (self.match_multiple) aether_vcr_embed_set_match_multiple(handle, 1);
+        for (self.match_headers.items) |name| {
+            aether_vcr_embed_match_header(handle, name.ptr);
+        }
         for (self.unredactions.items) |u| {
             try checkErr(self.allocator, aether_vcr_embed_unredact(handle, @intFromEnum(u.field), u.pattern.ptr, u.repl.ptr));
         }

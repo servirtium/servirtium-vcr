@@ -205,6 +205,8 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   final List<(VcrField, String, String)> _unredactions = [];
   bool _strictHeaders = false;
   bool _matchJsonBody = false;
+  bool _matchMultiple = false;
+  final List<String> _matchHeaders = [];
 
   @override
   PlaybackBuilder get _self => this;
@@ -224,6 +226,21 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     return this;
   }
 
+  /// Opt in to reusable, order-independent playback: matches any recorded
+  /// interaction (not just the next in sequence) and doesn't consume it — for
+  /// polling/retries or non-deterministic request order.
+  PlaybackBuilder matchMultiple([bool on = true]) {
+    _matchMultiple = on;
+    return this;
+  }
+
+  /// Match playback on this specific request header's value (ignoring the rest
+  /// of the recorded header block); repeatable.
+  PlaybackBuilder matchHeader(String name) {
+    _matchHeaders.add(name);
+    return this;
+  }
+
   /// Replace a redacted placeholder in the recorded expectation with the real
   /// value the live SUT sends, so a scrubbed tape still matches.
   PlaybackBuilder unredact(VcrField field, String pattern, String replacement) {
@@ -236,6 +253,10 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     super._applyConfig(handle);
     if (_strictHeaders) Native.setStrictHeaders(handle, 1);
     if (_matchJsonBody) Native.setMatchJsonBody(handle, 1);
+    if (_matchMultiple) Native.setMatchMultiple(handle, 1);
+    for (final name in _matchHeaders) {
+      withUtf8(name, (n) => Native.matchHeader(handle, n));
+    }
     for (final (field, pattern, replacement) in _unredactions) {
       withUtf8(pattern, (p) => withUtf8(replacement,
           (r) => _check(Native.unredact(handle, field.value, p, r), 'unredact')));

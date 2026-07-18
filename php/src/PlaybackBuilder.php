@@ -17,6 +17,11 @@ final class PlaybackBuilder extends VcrBuilderBase
 
     private bool $matchJsonBodyOn = false;
 
+    private bool $matchMultipleOn = false;
+
+    /** @var list<string> */
+    private array $matchHeaders = [];
+
     public function __construct(string $tapePath)
     {
         parent::__construct($tapePath);
@@ -47,6 +52,29 @@ final class PlaybackBuilder extends VcrBuilderBase
     }
 
     /**
+     * Opt in to reusable, order-independent playback: matches any recorded
+     * interaction (not just the next in sequence) and doesn't consume it — for
+     * polling/retries or non-deterministic request order.
+     */
+    public function matchMultiple(bool $on = true): static
+    {
+        $this->matchMultipleOn = $on;
+
+        return $this;
+    }
+
+    /**
+     * Match playback on this specific request header's value (ignoring the rest
+     * of the recorded header block); repeatable.
+     */
+    public function matchHeader(string $name): static
+    {
+        $this->matchHeaders[] = $name;
+
+        return $this;
+    }
+
+    /**
      * Replace a redacted placeholder in the recorded expectation with the
      * real value the live SUT sends, so a committed (scrubbed) tape still
      * matches.
@@ -67,6 +95,12 @@ final class PlaybackBuilder extends VcrBuilderBase
         }
         if ($this->matchJsonBodyOn) {
             $lib->aether_vcr_embed_set_match_json_body($handle, 1);
+        }
+        if ($this->matchMultipleOn) {
+            $lib->aether_vcr_embed_set_match_multiple($handle, 1);
+        }
+        foreach ($this->matchHeaders as $name) {
+            $lib->aether_vcr_embed_match_header($handle, $name);
         }
         foreach ($this->unredactions as [$field, $pattern, $replacement]) {
             self::check($lib->aether_vcr_embed_unredact($handle, $field->value, $pattern, $replacement), 'unredact');
