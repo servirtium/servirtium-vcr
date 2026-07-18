@@ -13,6 +13,7 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 
     private final List<Unredaction> unredactions = new ArrayList<>();
     private boolean strictHeaders;
+    private boolean matchJsonBody;
 
     PlaybackBuilder(String tapePath) {
         super(tapePath);
@@ -38,6 +39,21 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
 
     /**
+     * Opt in to matching request bodies by <em>semantic</em> JSON equality (key
+     * order and insignificant whitespace ignored) instead of byte-for-byte.
+     * Non-JSON bodies fall back to the byte-exact comparison, so this never
+     * loosens matching for non-JSON payloads.
+     */
+    public PlaybackBuilder matchJsonBody() {
+        return matchJsonBody(true);
+    }
+
+    public PlaybackBuilder matchJsonBody(boolean on) {
+        this.matchJsonBody = on;
+        return this;
+    }
+
+    /**
      * Replace a redacted placeholder in the recorded expectation with the real
      * value the live SUT sends, so a committed (scrubbed) tape still matches.
      */
@@ -52,6 +68,9 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
         try {
             if (strictHeaders) {
                 NativeMethods.SET_STRICT_HEADERS.invokeExact(handle, 1);
+            }
+            if (matchJsonBody) {
+                NativeMethods.SET_MATCH_JSON_BODY.invokeExact(handle, 1);
             }
             for (Unredaction u : unredactions) {
                 MemorySegment r = (MemorySegment) NativeMethods.UNREDACT.invokeExact(

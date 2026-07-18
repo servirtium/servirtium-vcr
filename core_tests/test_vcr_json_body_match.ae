@@ -1,0 +1,114 @@
+// Opt-in JSON-semantic request-body matching (RulesMatcher.ByJsonContent
+// equivalent; portions copyright Giannis Georgopoulos — MIT).
+//
+// The tape records a POST /json interaction whose request body is a JSON
+// object with a specific key order. Three cases, one process (cursor reset
+// between them so each retries interaction 0):
+//
+//   A. match_json_body OFF (default): a key-reordered but semantically equal
+//      body must still 599 — the engine stays byte-exact by default.
+//   B. match_json_body ON: the same reordered body must now match (200).
+//   C. match_json_body ON but a NON-JSON body: must still 599 — unparseable
+//      bodies fall back to the byte-exact verdict, never loosened.
+//
+// Mirrors the actor architecture of test_vcr_strict_match_body.ae (the VCR's
+// server-actor blocks on accept and there's no clean per-test teardown, so we
+// keep a single server and drive sequential requests against it).
+
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+import std.json
+
+extern exit(code: int)
+extern http_server_start_raw(server: ptr) -> int
+
+const PORT = 18113
+
+const RECORDED   = "{\"a\":1,\"b\":2,\"nested\":{\"x\":10,\"y\":20},\"list\":[1,2,3]}"
+// Same value, keys reordered and whitespace added — byte-different, JSON-equal.
+const REORDERED  = "{ \"list\": [1, 2, 3], \"b\": 2, \"a\": 1, \"nested\": { \"y\": 20, \"x\": 10 } }"
+const NOT_JSON   = "this is not json at all"
+
+message StartVCR { raw: ptr }
+message Noop {}
+
+actor VCRActor {
+    state s = 0
+    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
+}
+
+actor SchedHelper {
+    state x = 0
+    receive { Noop() -> { x = 1 } }
+}
+
+// POST `body` (as application/json) to /json and return the response status.
+post_json(url: string, body: string) -> int {
+    creq = client.request("POST", url)
+    if creq == null { return -1 }
+    berr = client.set_body(creq, body, string.length(body), "application/json")
+    if berr != "" { client.request_free(creq); return -2 }
+    cresp, cerr = client.send_request(creq)
+    client.request_free(creq)
+    if cerr != "" { return -3 }
+    s = client.response_status(cresp)
+    client.response_free(cresp)
+    return s
+}
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+main() {
+    println("=== VCR opt-in JSON request-body matching ===\n")
+
+    raw = vcr.load("core_tests/tapes/json_body_match.tape", PORT)
+    if raw == null { fail("vcr.load returned null") }
+
+    spawn(SchedHelper())
+    a = spawn(VCRActor())
+    a ! StartVCR { raw: raw }
+    sleep(500)
+
+    url = "http://127.0.0.1:${PORT}/json"
+
+    // Case A — default (byte-exact): reordered JSON must be rejected.
+    vcr.clear_last_error_h(raw)
+    vcr.reset_cursor_h(raw)
+    statusA = post_json(url, REORDERED)
+    if statusA != 599 {
+        fail("Case A (match off): expected 599 for reordered body, got ${statusA}")
+    }
+    if string.contains(vcr.last_error(), "request body different") != 1 {
+        fail("Case A: last_error did not mention 'request body different': '${vcr.last_error()}'")
+    }
+    println("PASS Case A: byte-exact default rejects key-reordered JSON (599)")
+
+    // Case B — opt-in on: the same reordered JSON now matches semantically.
+    vcr.set_match_json_body_h(raw, 1)
+    vcr.clear_last_error_h(raw)
+    vcr.reset_cursor_h(raw)
+    statusB = post_json(url, REORDERED)
+    if statusB != 200 {
+        fail("Case B (match on): expected 200 for JSON-equal body, got ${statusB} (last_error='${vcr.last_error()}')")
+    }
+    println("PASS Case B: match_json_body accepts key-reordered / re-spaced JSON (200)")
+
+    // Case C — opt-in on, but a non-JSON body: fall back to byte-exact → reject.
+    vcr.clear_last_error_h(raw)
+    vcr.reset_cursor_h(raw)
+    statusC = post_json(url, NOT_JSON)
+    if statusC != 599 {
+        fail("Case C (match on, non-JSON): expected 599 fallback, got ${statusC}")
+    }
+    println("PASS Case C: non-JSON body falls back to byte-exact (599)")
+
+    println("\n=== JSON body-match subtests passed ===")
+    vcr.eject(raw)
+    exit(0)
+}

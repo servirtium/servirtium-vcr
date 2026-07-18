@@ -109,6 +109,7 @@ import std.zlib
 import std.cryptography
 import std.regex
 import std.bytes
+import std.json
 
 exports (
     vcr_load_err, vcr_tape_length,
@@ -170,7 +171,7 @@ exports (
     use_handle,
     redact_h, unredact_h, remove_header_h, note_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
-    static_content_h, untaped_h, set_strict_headers_h,
+    static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
     indent_code_blocks_h, emphasize_http_verbs_h,
     clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
     clear_static_content_h, clear_untaped_h, clear_format_options_h,
@@ -490,6 +491,19 @@ vcr_set_strict_headers_k(key: string, on: int) {
 vcr_set_strict_headers(on: int) { vcr_set_strict_headers_k(cur_key(), on) }
 vcr_get_strict_headers_k(key: string) -> int { return cfg_get_int(slot(key, "strict"), 0) }
 vcr_get_strict_headers() -> int { return vcr_get_strict_headers_k(cur_key()) }
+
+// Opt-in: when on, a request body that differs byte-for-byte from the recorded
+// one is re-checked for *semantic* JSON equality (key order and insignificant
+// whitespace ignored) before being called a mismatch. Off by default so the
+// engine stays byte-exact; a fixture turns it on when its bodies are JSON whose
+// serialization it doesn't control. Non-JSON bodies fall back to the byte-exact
+// result, so enabling it never loosens matching for non-JSON payloads.
+vcr_set_match_json_body_k(key: string, on: int) {
+    if on != 0 { cfg_set_int(slot(key, "match_json_body"), 1) } else { cfg_set_int(slot(key, "match_json_body"), 0) }
+}
+vcr_set_match_json_body(on: int) { vcr_set_match_json_body_k(cur_key(), on) }
+vcr_get_match_json_body_k(key: string) -> int { return cfg_get_int(slot(key, "match_json_body"), 0) }
+vcr_get_match_json_body() -> int { return vcr_get_match_json_body_k(cur_key()) }
 
 vcr_set_indent_code_blocks(on: int) {
     if on != 0 { cfg_set_int(slot(cur_key(), "indent"), 1) } else { cfg_set_int(slot(cur_key(), "indent"), 0) }
@@ -1510,6 +1524,77 @@ vcr_decode_base64_body_raw(body: string) -> string {
     return decoded
 }
 
+// ---- JSON-semantic request-body matching (opt-in) ----
+//
+// Deep structural equality over two parsed JSON trees. Objects compare
+// key-by-key regardless of key order; arrays compare element-by-element in
+// order (JSON array order is significant). Numbers compare by value, so
+// 1 == 1.0. Mirrors the intent of Vcr.HttpRecorder's RulesMatcher.ByJsonContent.
+// (Portions copyright Giannis Georgopoulos — MIT.)
+json_deep_equal(a: ptr, b: ptr) -> int {
+    ta = json.json_type(a)
+    tb = json.json_type(b)
+    if ta != tb { return 0 }
+    if ta == 0 { return 1 }                                    // JSON_NULL
+    if ta == 1 {                                               // JSON_BOOL
+        if json.json_get_bool(a) == json.json_get_bool(b) { return 1 }
+        return 0
+    }
+    if ta == 2 {                                               // JSON_NUMBER
+        if json.json_get_number(a) == json.json_get_number(b) { return 1 }
+        return 0
+    }
+    if ta == 3 {                                               // JSON_STRING
+        return string.equals(json.json_get_string_raw(a), json.json_get_string_raw(b))
+    }
+    if ta == 4 {                                               // JSON_ARRAY
+        na = json.json_array_size(a)
+        nb = json.json_array_size(b)
+        if na != nb { return 0 }
+        i = 0
+        while i < na {
+            if json_deep_equal(json.json_array_get_raw(a, i), json.json_array_get_raw(b, i)) == 0 {
+                return 0
+            }
+            i = i + 1
+        }
+        return 1
+    }
+    if ta == 5 {                                               // JSON_OBJECT
+        na = json.json_object_size_raw(a)
+        nb = json.json_object_size_raw(b)
+        if na != nb { return 0 }
+        i = 0
+        while i < na {
+            k = json.json_object_key_at(a, i)
+            if json.json_object_has(b, k) == 0 { return 0 }
+            if json_deep_equal(json.json_object_get_raw(a, k), json.json_object_get_raw(b, k)) == 0 {
+                return 0
+            }
+            i = i + 1
+        }
+        return 1
+    }
+    return 0
+}
+
+// Parse both bodies as JSON and compare semantically. Returns 1 only if BOTH
+// parse and are deep-equal; 0 otherwise (including when either side isn't valid
+// JSON), so the caller safely falls back to the byte-exact verdict.
+json_bodies_equal(live: string, recorded: string) -> int {
+    va, _ = json.parse(live)
+    if va == null { return 0 }
+    vb, _ = json.parse(recorded)
+    if vb == null {
+        json.json_free(va)
+        return 0
+    }
+    result = json_deep_equal(va, vb)
+    json.json_free(va)
+    json.json_free(vb)
+    return result
+}
+
 // ---- error helper for record dispatch ----
 
 record_dispatch_error_k(srvkey: string, res: ptr, status: int, msg: string) {
@@ -1821,10 +1906,16 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         }
     }
 
-    // Request-body comparison.
+    // Request-body comparison. Byte-exact by default; if the fixture opted into
+    // JSON matching, a byte-differing body gets a second chance at semantic
+    // equality (key order / whitespace ignored) before being called a mismatch.
     if is_blank(expected_req_body) == 0 {
         live_body = read_full_request_body(req)
-        if string.equals(live_body, expected_req_body) == 0 {
+        bodies_match = string.equals(live_body, expected_req_body)
+        if bodies_match == 0 && vcr_get_match_json_body_k(srvkey) == 1 {
+            bodies_match = json_bodies_equal(live_body, expected_req_body)
+        }
+        if bodies_match == 0 {
             rlen = string.length(expected_req_body)
             llen = string.length(live_body)
             msg = "interaction ${cur}: request body different to expectation — recorded=${rlen} bytes, live=${llen} bytes"
@@ -2162,6 +2253,7 @@ untaped_h(server: ptr, path: string) -> string {
     return untaped(path)
 }
 set_strict_headers_h(server: ptr, on: int) { vcr_set_strict_headers_k(key_for(server), on) }
+set_match_json_body_h(server: ptr, on: int) { vcr_set_match_json_body_k(key_for(server), on) }
 indent_code_blocks_h(server: ptr) { set_cur_key(key_for(server)); indent_code_blocks() }
 emphasize_http_verbs_h(server: ptr) { set_cur_key(key_for(server)); emphasize_http_verbs() }
 clear_redactions_h(server: ptr) { set_cur_key(key_for(server)); clear_redactions() }

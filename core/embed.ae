@@ -241,6 +241,13 @@ vcr_embed_set_strict_headers(s: ptr, on: int) {
     vcr.set_strict_headers_h(s, on)
 }
 
+// Opt-in: match request bodies by semantic JSON equality (key order /
+// whitespace ignored) instead of byte-for-byte. Off by default; non-JSON
+// bodies always fall back to the byte-exact comparison.
+vcr_embed_set_match_json_body(s: ptr, on: int) {
+    vcr.set_match_json_body_h(s, on)
+}
+
 vcr_embed_indent_code_blocks(s: ptr) {
     vcr.indent_code_blocks_h(s)
 }

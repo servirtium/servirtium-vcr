@@ -142,11 +142,20 @@ class PlaybackBuilder(_BuilderBase):
         super().__init__(tape_path)
         self._unredactions: list[tuple[Field, str, str]] = []
         self._strict_headers = False
+        self._match_json_body = False
 
     def strict_headers(self, on: bool = True):
         """Compare the SUT's request headers against the recorded block on
         every interaction, surfacing mismatches via :attr:`VcrServer.last_error`."""
         self._strict_headers = on
+        return self
+
+    def match_json_body(self, on: bool = True):
+        """Opt in to matching request bodies by *semantic* JSON equality (key
+        order and insignificant whitespace ignored) instead of byte-for-byte.
+        Non-JSON bodies fall back to the byte-exact comparison, so enabling this
+        never loosens matching for non-JSON payloads."""
+        self._match_json_body = on
         return self
 
     def unredact(self, field: Field, pattern: str, replacement: str):
@@ -159,6 +168,8 @@ class PlaybackBuilder(_BuilderBase):
         super()._apply_config(handle)
         if self._strict_headers:
             N.set_strict_headers(handle, 1)
+        if self._match_json_body:
+            N.set_match_json_body(handle, 1)
         for field, pattern, replacement in self._unredactions:
             _check(
                 N.unredact(handle, int(field), N.encode(pattern), N.encode(replacement)),

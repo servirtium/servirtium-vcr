@@ -132,6 +132,7 @@ impl Vcr {
             common: Common::new(tape_path.into()),
             unredactions: Vec::new(),
             strict_headers: false,
+            match_json_body: false,
         }
     }
 
@@ -214,6 +215,7 @@ pub struct PlaybackBuilder {
     common: Common,
     unredactions: Vec<(Field, String, String)>,
     strict_headers: bool,
+    match_json_body: bool,
 }
 
 impl PlaybackBuilder {
@@ -249,6 +251,14 @@ impl PlaybackBuilder {
     /// interaction, surfacing mismatches via [`VcrServer::last_error`].
     pub fn strict_headers(mut self) -> Self {
         self.strict_headers = true;
+        self
+    }
+    /// Opt in to matching request bodies by *semantic* JSON equality (key order
+    /// and insignificant whitespace ignored) instead of byte-for-byte. Non-JSON
+    /// bodies fall back to the byte-exact comparison, so this never loosens
+    /// matching for non-JSON payloads.
+    pub fn match_json_body(mut self) -> Self {
+        self.match_json_body = true;
         self
     }
     /// Replace a redacted placeholder in the recorded expectation with the
@@ -305,6 +315,9 @@ impl PlaybackBuilder {
         // ... then playback-specific config (before serving starts).
         if self.strict_headers {
             unsafe { (n.set_strict_headers)(handle, 1) };
+        }
+        if self.match_json_body {
+            unsafe { (n.set_match_json_body)(handle, 1) };
         }
         for (field, pattern, replacement) in &self.unredactions {
             check(

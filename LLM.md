@@ -84,6 +84,7 @@ Config: `redact(h, field, pat, repl)` / `unredact(...)`;
 `normalize_whole_tape(h, pat, name)` vs `redact_whole_tape(h, pat, repl)`
 (see Gotchas); `remove_header(h, field, name)`;
 `strict_ignore_common_headers(h)`; `set_strict_headers(h, int)`;
+`set_match_json_body(h, int)` (opt-in JSON-semantic request-body matching, below);
 `note(h, k, v)`; `static_content(h, mount, dir)`; `untaped(h, path)`;
 `indent_code_blocks(h)` / `emphasize_http_verbs(h)`; plus `clear_*` resets.
 
@@ -175,6 +176,19 @@ only our *emitted* bytes are compact. See the format spec comment atop
 
 ## Gotchas / hard-won
 
+- **JSON request-body matching is opt-in and lives in the engine.**
+  `set_match_json_body(h, 1)` makes a request body that differs byte-for-byte
+  get a second chance at *semantic* JSON equality (object key order + whitespace
+  ignored; array order significant) before it's a `BodyDiff`. Off by default —
+  the engine stays byte-exact — and a **non-JSON body always falls back to the
+  byte-exact verdict**, so enabling it never loosens non-JSON matching. Logic is
+  `json_deep_equal` / `json_bodies_equal` in `core/vcr.ae` (via `std.json`); the
+  `core_tests/test_vcr_json_body_match.ae` proves off→reject / on→match /
+  on+non-JSON→reject. Modelled on Vcr.HttpRecorder's `RulesMatcher.ByJsonContent`
+  (portions © Giannis Georgopoulos, MIT — see the `LICENSE` attribution line).
+  Binding surface follows the `strict_headers` pattern exactly (a
+  `PlaybackBuilder.match_json_body()` toggle): wired in **python / rust / java**
+  so far; the remaining 18 are the same one-liner-per-binding.
 - **Two normalization verbs, don't confuse them.** `normalize_whole_tape(pat,
   name)` correlates matches into `{{name-N}}` tokens (use for things that recur
   and must stay consistent — UUIDs, CSRF tokens). `redact_whole_tape(pat, repl)`
