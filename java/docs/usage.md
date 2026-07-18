@@ -159,6 +159,10 @@ try (VcrServer vcr = Vcr.playback(tape).strictHeaders().start()) {
 > `HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()`, or
 > `removeHeader` them.
 
+For request bodies, `matchJsonBody()` is an opt-in matcher that compares by
+semantic JSON equality (object key order and insignificant whitespace ignored,
+array order significant); non-JSON bodies fall back to byte-exact.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches

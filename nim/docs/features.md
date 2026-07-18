@@ -19,6 +19,7 @@ library, unless noted as a core probe (the shared engine's `core_tests/`).
 | Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `redactWholeTape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `note(title, body)` (builder + running server) | ✅ |
 | Strict request matching | ✅ | ✅ | `setStrictHeaders(true)` | ✅ pass + fail |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `setMatchJsonBody(true)` | — |
 | Static-content bypass | ✅ | ✅ | `staticContent(mount, dir)` | ✅ |
 | Untaped (incidental paths, no cursor consume) | ✅ | ✅ | `untaped(path)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `failIfChanged()` | ✅ |

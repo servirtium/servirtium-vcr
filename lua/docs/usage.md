@@ -141,6 +141,11 @@ if srv:last_kind() ~= servirtium.OK then error(srv:last_error()) end
 > `:strict_headers()` those must appear on the recorded request block, or be
 > suppressed on the request (`curl -H 'User-Agent:' -H 'Accept:'`).
 
+For request bodies, `:match_json_body()` opts into semantic JSON matching: JSON
+request bodies match when equal as JSON (object key order and insignificant
+whitespace ignored; array order still significant), while non-JSON bodies fall
+back to byte-exact matching.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches to

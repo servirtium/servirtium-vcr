@@ -19,6 +19,7 @@ unless noted as a core probe (the shared engine's `core_tests/`).
 | Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `:redact_whole_tape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `:note(…)` (builder) / `Server:note` | ✅ |
 | Strict request matching | ✅ | ✅ | `:strict_headers()` | ✅ pass + fail |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `:match_json_body()` | — |
 | Static-content bypass | ✅ | ✅ | `:static_content(mount, dir)` | ✅ |
 | Untaped (incidental paths, no cursor consume) | ✅ | ✅ | `:untaped(path)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `:fail_if_changed()` | ✅ |

@@ -147,6 +147,10 @@ Servirtium.with_playback(tape, [strict_headers: true], fn srv ->
 end)
 ```
 
+Add `match_json_body: true` to match request bodies by semantic JSON equality —
+object key order and insignificant whitespace are ignored (array order still
+matters), and non-JSON bodies fall back to byte-exact matching.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches to

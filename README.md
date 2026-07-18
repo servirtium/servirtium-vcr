@@ -89,8 +89,10 @@ One engine; every binding exposes the same surface.
   implementations; fenced or 4-space-indented code blocks; optional emphasized
   HTTP verbs; gzip + chunked transfer decoded to the stored payload.
 - **Matching & diagnostics** — strict method+path matching, opt-in
-  header/body matching, an optional strict-header mode, and a per-request
-  outcome + mismatch diagnostic (last kind / error / index).
+  header/body matching, an optional strict-header mode, an opt-in
+  *semantic JSON body* matcher (key order & whitespace ignored, non-JSON bodies
+  fall back to byte-exact), and a per-request outcome + mismatch diagnostic
+  (last kind / error / index).
 - **Redaction** — scrub a value out of a field before it lands on the tape
   (`redact`), and restore it on playback so a committed tape still matches
   (`unredact`).
@@ -107,6 +109,13 @@ One engine; every binding exposes the same surface.
   each with its own tape, cursor, and diagnostics.
 - **Drift detection** — *fail-if-changed* / *flush-or-check*: a re-record
   writes the tape but flags any diff, so CI catches upstream drift.
+- **HAR bridge** — convert between the HTTP Archive format (Chrome DevTools /
+  Fiddler / Charles / Postman exports) and Servirtium tapes with the standalone
+  `servirtium-har` CLI (`import` / `export`). Capture real traffic in a browser
+  or proxy, convert the `.har` once, and replay it as a tape under any binding.
+  (A CLI rather than a per-binding call: it's a convert-once-offline step, not a
+  test-time operation — though `har_import`/`har_export` are also in the C ABI
+  for any binding that wants to wrap them.)
 
 ## Compared with other mocking / virtualization tools
 

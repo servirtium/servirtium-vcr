@@ -126,6 +126,11 @@ if (vcr.LastKind != VcrOutcome.Ok)
     throw new Exception(vcr.LastError);   // e.g. "<name> request header ..."
 ```
 
+Opt in to `.MatchJsonBody()` alongside (or instead of) `StrictHeaders()` to
+match request bodies by semantic JSON equality — object key order and
+insignificant whitespace are ignored (array order still matters), and non-JSON
+bodies fall back to byte-exact matching.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note

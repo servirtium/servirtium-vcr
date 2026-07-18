@@ -18,6 +18,7 @@ the real native library.
 | Header removal | ✅ | ✅ | `.remove_header(field, name)` | ✅ |
 | Notes | ✅ | ✅ | `.note(…)` / `VcrServer.note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.strict_headers()` | ✅ pass + fail |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.match_json_body()` | — |
 | Static-content bypass | ✅ | ✅ | `.static_content(mount, dir)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.fail_if_changed()` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indent_code_blocks()` / `.emphasize_http_verbs()` | — |

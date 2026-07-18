@@ -19,6 +19,7 @@ unless noted as a core probe (the shared engine's `core_tests/`).
 | Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `.RedactWholeTape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `.Note(…)` / `Server.Note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.StrictHeaders()` | ✅ pass + fail |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.MatchJSONBody()` | — |
 | Static-content bypass | ✅ | ✅ | `.StaticContent(mount, dir)` | ✅ |
 | Untaped (incidental paths, no cursor consume) | ✅ | ✅ | `.Untaped(path)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.FailIfChanged()` | ✅ |

@@ -125,6 +125,10 @@ with servirtium.playback(tape).strict_headers().start() as vcr:
 > `test/test_playback_match.py`), or record the tape with those headers
 > present.
 
+For request bodies, `.match_json_body()` opts into semantic JSON comparison —
+object key order and insignificant whitespace are ignored (array order still
+matters), and non-JSON bodies fall back to byte-exact matching.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches

@@ -18,6 +18,7 @@ in `test/` against the real native library.
 | Header removal | ✅ | ✅ | `remove_header:` opt | — |
 | Notes | ✅ | ✅ | `note:` opt / `Servirtium.note/3` | ✅ |
 | Strict request matching | ✅ | ✅ | `strict_headers:` opt | ✅ (reset/leak) |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `match_json_body:` opt | — |
 | Static-content bypass | ✅ | ✅ | `static_content:` opt | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `fail_if_changed:` opt | — |
 | Format options (indent / emphasize) | ✅ | ✅ | `indent_code_blocks:` / `emphasize_http_verbs:` | — |

@@ -18,6 +18,7 @@ noted as a core probe (the shared engine's `core_tests/`).
 | Whole-tape redact (uncorrelated → constant) | ✅ | ✅ | `.redactWholeTape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `.note(…)` / `Server.note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.strictHeaders()` | ✅ pass + fail |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.matchJsonBody()` | — |
 | Static-content bypass | ✅ | ✅ | `.staticContent(mount, dir)` | ✅ |
 | Untaped (incidental paths, no cursor consume) | ✅ | ✅ | `.untaped(path)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.failIfChanged()` | ✅ |

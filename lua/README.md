@@ -51,6 +51,7 @@ A fixture is a builder; configure it fluently, then `:start()` it for a
 servirtium.playback(tape)
     :host("127.0.0.1") :port(0) :label("my fixture")
     :strict_headers()
+    :match_json_body()
     :remove_header(servirtium.FIELD_REQUEST_HEADERS, "User-Agent")
     :unredact(servirtium.FIELD_REQUEST_HEADERS, "Bearer REDACTED", realToken)
     :static_content("/assets", "build/static")

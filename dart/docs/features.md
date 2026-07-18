@@ -15,6 +15,7 @@ exercised by `dart test` against the real native library.
 | Header removal | ✅ | `.removeHeader(field, name)` | — |
 | Notes | ✅ | `.note()` / `server.note()` | — |
 | Strict request matching | ✅ | `.strictHeaders()` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | `.matchJsonBody()` | — |
 | Static-content bypass | ✅ | `.staticContent(mount, dir)` | — |
 | Drift (overwrite + fail-if-changed) | ✅ | `.failIfChanged()` | — |
 | Format options (indent / emphasize) | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` | — |

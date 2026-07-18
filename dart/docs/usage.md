@@ -101,6 +101,10 @@ Vcr.record(tape, upstream).indentCodeBlocks().emphasizeHttpVerbs().start();
 > those must be on the recorded block, or dropped via
 > `removeHeader(VcrField.requestHeaders, ...)`.
 
+> Note: `matchJsonBody()` is an opt-in request-body matcher that compares by
+> semantic JSON equality (object key order and insignificant whitespace
+> ignored, array order significant); non-JSON bodies fall back to byte-exact.
+
 ## `VcrServer` members
 
 `baseUrl`, `port`, `tapeLength`, `lastError`, `lastKind` (→ `VcrOutcome`),

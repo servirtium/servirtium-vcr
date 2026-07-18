@@ -19,6 +19,7 @@ diagnostics), mapped through the stack. "Test" = exercised by
 | Header removal | ✅ | ✅ | `removeHeaderField:name:` | ✅ (via strict) |
 | Notes | ✅ | ✅ | `noteTitle:body:` (builder + server) | ✅ |
 | Strict request matching | ✅ | ✅ | `strictHeaders` | ✅ pass + fail |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `matchJsonBody` | — |
 | Static-content bypass | ✅ | ✅ | `staticContentMount:dir:` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `failIfChanged` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `indentCodeBlocks` / `emphasizeHttpVerbs` | — |

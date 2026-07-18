@@ -143,6 +143,11 @@ if srv.lastKind() != Ok:
 > `setStrictHeaders(true)` these must appear on the recorded request block, or
 > be suppressed on the request (curl: `-H 'User-Agent:' -H 'Accept:'`).
 
+For request bodies, `setMatchJsonBody(true)` opts into semantic JSON matching:
+JSON request bodies match when equal as JSON (object key order and insignificant
+whitespace ignored; array order still significant), while non-JSON bodies fall
+back to byte-exact matching.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). A note staged before

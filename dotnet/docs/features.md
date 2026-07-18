@@ -18,6 +18,7 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by
 | Header removal | ✅ | ✅ | `.RemoveHeader(field, name)` | ✅ |
 | Notes | ✅ | ✅ | `.Note(…)` / `VcrServer.Note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.StrictHeaders()` | ✅ pass + fail |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.MatchJsonBody()` | — |
 | Static-content bypass | ✅ | ✅ | `.StaticContent(mount, dir)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.FailIfChanged()` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `.IndentCodeBlocks()` / `.EmphasizeHttpVerbs()` | — |

@@ -149,6 +149,10 @@ builder.start { |server| ... }
 
 (See `spec/servirtium/strict_headers_spec.rb`.)
 
+For request bodies, `.match_json_body` opts into semantic JSON comparison —
+object key order and insignificant whitespace are ignored (array order still
+matters), and non-JSON bodies fall back to byte-exact matching.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches to

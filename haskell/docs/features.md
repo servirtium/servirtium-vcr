@@ -18,6 +18,7 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Header removal | ✅ | ✅ | `recRemoveHeaders` / `pbRemoveHeaders` | ✅ (record/redaction tests) |
 | Notes | ✅ | ✅ | `recNote` / `note` | — |
 | Strict request matching | ✅ | ✅ | `pbStrictHeaders` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `pbMatchJsonBody = True` | — |
 | Static-content bypass | ✅ | ✅ | `pbStaticContent` | — |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `recFailIfChanged` | — |
 | Format options (indent / emphasize) | ✅ | ✅ | `recIndentCodeBlocks` / `recEmphasizeHttpVerbs` | — |

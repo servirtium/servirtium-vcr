@@ -135,6 +135,11 @@ withPlayback (playbackOptions tape) { pbStrictHeaders = True } $ \vcr -> do
   if k /= Ok then lastError vcr >>= error else pure ()
 ```
 
+For request bodies, `pbMatchJsonBody = True` opts into semantic JSON matching:
+JSON request bodies match when equal as JSON (object key order and insignificant
+whitespace ignored; array order still significant), while non-JSON bodies fall
+back to byte-exact matching.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches

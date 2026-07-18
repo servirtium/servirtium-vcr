@@ -38,7 +38,8 @@ reimplement Servirtium in Nim.
   `tapeLength`, `lastKind`/`lastError`/`lastIndex`, `resetCursor`,
   `clearLastError`, `close`, plus the full mutation/format set (`redact`,
   `unredact`, `removeHeader`, `normalizeWholeTape`, `redactWholeTape`,
-  `staticContent`, `untaped`, `note`, `setStrictHeaders`, `indentCodeBlocks`,
+  `staticContent`, `untaped`, `note`, `setStrictHeaders`, `setMatchJsonBody`,
+  `indentCodeBlocks`,
   `emphasizeHttpVerbs`, `failIfChanged`).
 - `src/servirtium/native.nim` — the raw FFI surface, 1:1 with the
   `aether_vcr_embed_*` C-ABI, bound with `{.importc, cdecl.}` and linked via
