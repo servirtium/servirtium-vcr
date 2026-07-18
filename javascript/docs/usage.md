@@ -140,6 +140,12 @@ For request bodies, `.matchJsonBody()` opts into semantic JSON comparison —
 object key order and insignificant whitespace are ignored (array order still
 matters), and non-JSON bodies fall back to byte-exact matching.
 
+Two further opt-in matchers relax the default strict-ordered playback:
+`.matchMultiple()` matches any recorded interaction (order-independent) and does
+not consume it, for polling/retries or non-deterministic request order, while
+`.matchHeader(name)` matches on just that one named request header's value and
+ignores the rest of the recorded header block.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches to

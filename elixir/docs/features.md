@@ -19,6 +19,8 @@ in `test/` against the real native library.
 | Notes | ✅ | ✅ | `note:` opt / `Servirtium.note/3` | ✅ |
 | Strict request matching | ✅ | ✅ | `strict_headers:` opt | ✅ (reset/leak) |
 | JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `match_json_body:` opt | — |
+| Reusable / order-independent matching (opt-in) | ✅ | ✅ | `match_multiple:` opt | — |
+| Match on a specific request header (opt-in) | ✅ | ✅ | `match_header:` opt | — |
 | Static-content bypass | ✅ | ✅ | `static_content:` opt | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `fail_if_changed:` opt | — |
 | Format options (indent / emphasize) | ✅ | ✅ | `indent_code_blocks:` / `emphasize_http_verbs:` | — |

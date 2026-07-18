@@ -21,6 +21,8 @@ library.
 | Notes | ✅ | ✅ | `.note(…)` / `Server#note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.strict_headers` | ✅ |
 | JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.match_json_body` | — |
+| Reusable / order-independent matching (opt-in) | ✅ | ✅ | `.match_multiple` | — |
+| Match on a specific request header (opt-in) | ✅ | ✅ | `.match_header(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.static_content(mount, dir)` | — |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.fail_if_changed` | — |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indent_code_blocks` / `.emphasize_http_verbs` | — |

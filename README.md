@@ -89,10 +89,13 @@ One engine; every binding exposes the same surface.
   implementations; fenced or 4-space-indented code blocks; optional emphasized
   HTTP verbs; gzip + chunked transfer decoded to the stored payload.
 - **Matching & diagnostics** — strict method+path matching, opt-in
-  header/body matching, an optional strict-header mode, an opt-in
-  *semantic JSON body* matcher (key order & whitespace ignored, non-JSON bodies
-  fall back to byte-exact), and a per-request outcome + mismatch diagnostic
-  (last kind / error / index).
+  header/body matching, an optional strict-header mode, and a per-request
+  outcome + mismatch diagnostic (last kind / error / index). Several opt-in
+  matchers refine it: a *semantic JSON body* matcher (key order & whitespace
+  ignored, non-JSON falls back to byte-exact); *ByHeader* — match on a specific
+  named request header, ignoring the rest of the block; and *MatchMultiple* —
+  reusable, order-independent replay (an interaction can match repeatedly and
+  out of sequence), for polling / retries / non-deterministic request order.
 - **Redaction** — scrub a value out of a field before it lands on the tape
   (`redact`), and restore it on playback so a committed tape still matches
   (`unredact`).

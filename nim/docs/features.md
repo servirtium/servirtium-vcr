@@ -20,6 +20,8 @@ library, unless noted as a core probe (the shared engine's `core_tests/`).
 | Notes | ✅ | ✅ | `note(title, body)` (builder + running server) | ✅ |
 | Strict request matching | ✅ | ✅ | `setStrictHeaders(true)` | ✅ pass + fail |
 | JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `setMatchJsonBody(true)` | — |
+| Reusable / order-independent matching (opt-in) | ✅ | ✅ | `setMatchMultiple(true)` | — |
+| Match on a specific request header (opt-in) | ✅ | ✅ | `matchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `staticContent(mount, dir)` | ✅ |
 | Untaped (incidental paths, no cursor consume) | ✅ | ✅ | `untaped(path)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `failIfChanged()` | ✅ |

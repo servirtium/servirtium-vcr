@@ -140,6 +140,13 @@ JSON request bodies match when equal as JSON (object key order and insignificant
 whitespace ignored; array order still significant), while non-JSON bodies fall
 back to byte-exact matching.
 
+Two further opt-in matchers relax interaction selection: `pbMatchMultiple = True`
+switches from strict ordered replay to reusable, order-independent matching (any
+recorded interaction may match, and a match is not consumed — handy for
+polling/retries or non-deterministic order), while `pbMatchHeaders = ["Name"]`
+matches on just those named request headers' values, ignoring the rest of the
+recorded header block.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches

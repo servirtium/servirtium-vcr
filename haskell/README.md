@@ -39,6 +39,7 @@ precompiled native build of that core
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,
   unredactions, header removal, notes, strict matching, JSON body matching,
+  reusable matching / header matching,
   static content, drift,
   diagnostics — with code.
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix and

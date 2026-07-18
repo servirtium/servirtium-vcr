@@ -19,6 +19,8 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Notes | ✅ | ✅ | `.note(…)` / `VcrServer.note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.strictHeaders()` | ✅ pass + fail |
 | JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.matchJsonBody()` | — |
+| Reusable / order-independent matching (opt-in) | ✅ | ✅ | `.matchMultiple()` | — |
+| Match on a specific request header (opt-in) | ✅ | ✅ | `.matchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.staticContent(mount, dir)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.failIfChanged()` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` | — |

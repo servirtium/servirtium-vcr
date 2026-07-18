@@ -50,7 +50,7 @@ same across all bindings, so existing tapes replay as-is.
 - a thin low-level **`Vcr`** handle wrapper.
 
 **Playback** builder: `init(alloc, tape)`, `.host`, `.port`, `.label`,
-`.strictHeaders`, `.matchJsonBody`, `.removeHeader(field, name)`, `.unredact(field, pat, repl)`,
+`.strictHeaders`, `.matchJsonBody`, `.matchMultiple`, `.matchHeader(name)`, `.removeHeader(field, name)`, `.unredact(field, pat, repl)`,
 `.staticContent(mount, dir)`, `.untaped(path)`, `.start`.
 
 **Record** builder: `init(alloc, tape, upstream)`, `.host`, `.port`, `.label`,

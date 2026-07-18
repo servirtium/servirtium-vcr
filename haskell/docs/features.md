@@ -19,6 +19,8 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Notes | ✅ | ✅ | `recNote` / `note` | — |
 | Strict request matching | ✅ | ✅ | `pbStrictHeaders` | — |
 | JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `pbMatchJsonBody = True` | — |
+| Reusable / order-independent matching (opt-in) | ✅ | ✅ | `pbMatchMultiple = True` | — |
+| Match on a specific request header (opt-in) | ✅ | ✅ | `pbMatchHeaders = ["Name"]` | — |
 | Static-content bypass | ✅ | ✅ | `pbStaticContent` | — |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `recFailIfChanged` | — |
 | Format options (indent / emphasize) | ✅ | ✅ | `recIndentCodeBlocks` / `recEmphasizeHttpVerbs` | — |

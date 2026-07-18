@@ -39,6 +39,7 @@ reimplement Servirtium in Nim.
   `clearLastError`, `close`, plus the full mutation/format set (`redact`,
   `unredact`, `removeHeader`, `normalizeWholeTape`, `redactWholeTape`,
   `staticContent`, `untaped`, `note`, `setStrictHeaders`, `setMatchJsonBody`,
+  `setMatchMultiple`, `matchHeader`,
   `indentCodeBlocks`,
   `emphasizeHttpVerbs`, `failIfChanged`).
 - `src/servirtium/native.nim` — the raw FFI surface, 1:1 with the

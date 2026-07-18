@@ -140,6 +140,13 @@ request bodies match when equal as JSON (object key order and insignificant
 whitespace ignored; array order still significant), while non-JSON bodies fall
 back to byte-exact matching.
 
+Two further opt-in matchers relax interaction selection: `.matchMultiple()`
+switches from strict ordered replay to reusable, order-independent matching (any
+recorded interaction may match, and a match is not consumed — handy for
+polling/retries or non-deterministic order), while `.matchHeader(name)` matches
+on just that one named request header's value, ignoring the rest of the recorded
+header block (repeatable for several headers).
+
 ## Notes
 
 The builder note attaches to the first interaction; stage later ones on the

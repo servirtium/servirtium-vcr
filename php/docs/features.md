@@ -16,6 +16,8 @@ exercised by the PHPUnit suite against the real native library.
 | Notes | ✅ | `->note()` / `$server->note()` | — |
 | Strict request matching | ✅ | `->strictHeaders()` | — |
 | JSON request-body matching (semantic, opt-in) | ✅ | `->matchJsonBody()` | — |
+| Reusable / order-independent matching (opt-in) | ✅ | `->matchMultiple()` | — |
+| Match on a specific request header (opt-in) | ✅ | `->matchHeader($name)` | — |
 | Static-content bypass | ✅ | `->staticContent(mount, dir)` | — |
 | Drift (overwrite + fail-if-changed) | ✅ | `->failIfChanged()` | — |
 | Format options (indent / emphasize) | ✅ | `->indentCodeBlocks()` / `->emphasizeHttpVerbs()` | — |

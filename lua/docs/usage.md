@@ -146,6 +146,13 @@ request bodies match when equal as JSON (object key order and insignificant
 whitespace ignored; array order still significant), while non-JSON bodies fall
 back to byte-exact matching.
 
+Two further opt-in matchers relax interaction selection: `:match_multiple()`
+switches from strict ordered replay to reusable, order-independent matching (any
+recorded interaction may match, and a match is not consumed — handy for
+polling/retries or non-deterministic order), while `:match_header(name)` matches
+on just that one named request header's value, ignoring the rest of the recorded
+header block (repeatable for several headers).
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches to

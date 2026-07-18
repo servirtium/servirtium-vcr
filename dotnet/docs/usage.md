@@ -131,6 +131,12 @@ match request bodies by semantic JSON equality — object key order and
 insignificant whitespace are ignored (array order still matters), and non-JSON
 bodies fall back to byte-exact matching.
 
+Two further opt-in matchers relax the default strict ordered playback:
+`.MatchMultiple()` matches any recorded interaction (not just the next in
+sequence) without consuming it — reusable and order-independent, for polling or
+non-deterministic request order — and `.MatchHeader(name)` matches on a single
+named request header's value, ignoring the rest of the recorded header block.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note

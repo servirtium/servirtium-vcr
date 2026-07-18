@@ -85,6 +85,9 @@ Config: `redact(h, field, pat, repl)` / `unredact(...)`;
 (see Gotchas); `remove_header(h, field, name)`;
 `strict_ignore_common_headers(h)`; `set_strict_headers(h, int)`;
 `set_match_json_body(h, int)` (opt-in JSON-semantic request-body matching, below);
+`set_match_multiple(h, int)` (reusable/order-independent playback) and
+`match_header(h, name)` / `clear_match_headers(h)` (ByHeader — match a specific
+request header), both below;
 `note(h, k, v)`; `static_content(h, mount, dir)`; `untaped(h, path)`;
 `indent_code_blocks(h)` / `emphasize_http_verbs(h)`; plus `clear_*` resets.
 
@@ -235,6 +238,27 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   idiomatic wrappers deliberately don't surface it** — they stage no playback
   config at all (no `strict_headers` either), so parity means not adding it;
   it's still reachable via `servirtium_nif:set_match_json_body/2`.
+- **Two more opt-in matchers, same engine home + rollout as the JSON one.**
+  `set_match_multiple(h,1)` — **MatchMultiple**: playback searches ALL
+  interactions for one that fits (not just the cursor) and replays it WITHOUT
+  consuming it, so repeated identical requests and out-of-order requests both
+  match (polling / retries / non-deterministic order). Default stays strictly
+  ordered + consuming. `match_header(h, name)` — **ByHeader**: require that
+  named request header's live value to equal the recorded one, and (crucially)
+  registering any match-header **suppresses the automatic full-block header
+  match** unless `strict_headers` is explicitly on — so it's surgical, not
+  all-or-nothing. Logic: `do_playback_multiple` / `interaction_matches_pre` (a
+  shared `emit_playback_response` was factored out of `do_playback`) and
+  `match_headers_diff_k` in `core/vcr.ae`; tests
+  `test_vcr_match_multiple.ae` / `test_vcr_by_header.ae`. Modelled on
+  Vcr.HttpRecorder's `RulesMatcher.MatchMultiple` / `ByHeader`. Binding surface
+  (`match_multiple()` toggle, repeatable `match_header(name)`) swept the same set
+  as `match_json_body`.
+- **base64 lives in `std.encoding`, not `std.cryptography` (ae 0.4x).** ae 0.413
+  moved it and changed `base64_decode` to a `string!` error-union; the engine's
+  `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
+  with "Undefined function 'cryptography.base64_decode'", something reintroduced
+  the old import.
 - **Two normalization verbs, don't confuse them.** `normalize_whole_tape(pat,
   name)` correlates matches into `{{name-N}}` tokens (use for things that recur
   and must stay consistent — UUIDs, CSRF tokens). `redact_whole_tape(pat, repl)`

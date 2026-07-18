@@ -20,6 +20,8 @@ unless noted as a core probe (the shared engine's `core_tests/`).
 | Notes | ✅ | ✅ | `.Note(…)` / `Server.Note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.StrictHeaders()` | ✅ pass + fail |
 | JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.MatchJSONBody()` | — |
+| Reusable / order-independent matching (opt-in) | ✅ | ✅ | `.MatchMultiple()` | — |
+| Match on a specific request header (opt-in) | ✅ | ✅ | `.MatchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.StaticContent(mount, dir)` | ✅ |
 | Untaped (incidental paths, no cursor consume) | ✅ | ✅ | `.Untaped(path)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.FailIfChanged()` | ✅ |

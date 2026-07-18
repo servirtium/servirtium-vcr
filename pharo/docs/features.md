@@ -20,6 +20,8 @@ diagnostics), mapped through the stack. "Test" = exercised by
 | Notes | ✅ | ✅ | `noteTitle:body:` (builder + server) | ✅ |
 | Strict request matching | ✅ | ✅ | `strictHeaders` | ✅ pass + fail |
 | JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `matchJsonBody` | — |
+| Reusable / order-independent matching (opt-in) | ✅ | ✅ | `matchMultiple` | — |
+| Match on a specific request header (opt-in) | ✅ | ✅ | `matchHeader:` | — |
 | Static-content bypass | ✅ | ✅ | `staticContentMount:dir:` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `failIfChanged` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `indentCodeBlocks` / `emphasizeHttpVerbs` | — |

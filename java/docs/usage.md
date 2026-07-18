@@ -163,6 +163,12 @@ For request bodies, `matchJsonBody()` is an opt-in matcher that compares by
 semantic JSON equality (object key order and insignificant whitespace ignored,
 array order significant); non-JSON bodies fall back to byte-exact.
 
+Two further opt-in matchers relax strict ordered playback: `matchMultiple()`
+matches any recorded interaction without consuming it (reusable, order-independent
+— for polling/retries or non-deterministic order), and `matchHeader(name)` matches
+on a specific named request header's value, ignoring the rest of the recorded
+header block.
+
 ## Notes
 
 Annotate the tape for humans (ignored on playback). The builder note attaches
