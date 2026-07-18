@@ -1,0 +1,53 @@
+// servirtium-har — a tiny standalone converter between the HTTP Archive (HAR
+// 1.2) format and Servirtium markdown tapes. Both directions are pure file->file
+// transforms implemented in core/vcr.ae (har_import / har_export), so this CLI
+// is a thin argv shim over them.
+//
+//   servirtium-har import <in.har> <out.md>    # HAR capture  -> Servirtium tape
+//   servirtium-har export <in.md>  <out.har>   # Servirtium tape -> HAR capture
+//
+// Build:  ae build core/har_cli.ae -o servirtium-har
+// (aeb builds it via core/.har_cli.ae)
+
+import core.vcr
+import std.os
+import std.string
+
+extern exit(code: int)
+
+usage() {
+    println("servirtium-har — convert between HAR 1.2 and Servirtium tapes")
+    println("")
+    println("usage:")
+    println("  servirtium-har import <in.har> <out.md>    HAR capture -> Servirtium tape")
+    println("  servirtium-har export <in.md>  <out.har>   Servirtium tape -> HAR capture")
+}
+
+main() {
+    // aether_args_get(0) is argv0; the sub-command and its two paths follow.
+    argc = os.aether_args_count()
+    if argc < 4 {
+        usage()
+        exit(2)
+    }
+    cmd = os.aether_args_get(1)
+    src = os.aether_args_get(2)
+    dst = os.aether_args_get(3)
+
+    if string.equals(cmd, "import") == 1 {
+        err = vcr.har_import(src, dst)
+        if err != "" { println("servirtium-har: ${err}"); exit(1) }
+        println("servirtium-har: imported ${src} -> ${dst}")
+        exit(0)
+    }
+    if string.equals(cmd, "export") == 1 {
+        err = vcr.har_export(src, dst)
+        if err != "" { println("servirtium-har: ${err}"); exit(1) }
+        println("servirtium-har: exported ${src} -> ${dst}")
+        exit(0)
+    }
+
+    println("servirtium-har: unknown command '${cmd}'")
+    usage()
+    exit(2)
+}

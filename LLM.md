@@ -184,7 +184,14 @@ converts a **HAR 1.2** capture — Chrome DevTools / Fiddler / Charles / mitmpro
 Postman export — into a Servirtium markdown tape. It's a pure file→file transform
 (no server handle). The workflow it unlocks: capture real traffic you can't easily
 route through a record-proxy (a browser SPA, a mobile app behind a proxy) →
-`.har` → tape → deterministic replay across all 21 bindings. Implementation:
+`.har` → tape → deterministic replay across all 21 bindings. There's also a **standalone CLI** — `core/har_cli.ae` (built to `target/servirtium-har`
+by `core/.har_cli.ae`, or `ae build core/har_cli.ae -o servirtium-har`): a thin argv
+shim doing `servirtium-har import <in.har> <out.md>` / `export <in.md> <out.har>`.
+It statically links the pure-Aether `vcr` module, so it's a self-contained binary
+(no `.so`, no env var). The reverse direction, **`har_export(tape_path, har_path)`**
+(ABI `aether_vcr_embed_har_export`), serialises a tape back to HAR 1.2 JSON via
+`std.json`; `test_vcr_har_export.ae` round-trips tape→HAR→tape byte-identically.
+Implementation:
 `core/vcr.ae` parses the HAR JSON via `std.json` and feeds each entry through the
 same `tape_append_k` + `emit_tape` path record mode uses, so output is
 byte-consistent with a natively recorded tape. Field mapping mirrors
