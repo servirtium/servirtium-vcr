@@ -184,6 +184,12 @@ vcr_embed_redact(s: ptr, field: int, pattern: string, replacement: string) -> st
     return vcr_embed_dup(vcr.redact_h(s, field, pattern, replacement))
 }
 
+// Convert a HAR 1.2 capture to a Servirtium markdown tape (no server handle —
+// this is a pure file->file transform). Returns "" on success, else an error.
+vcr_embed_har_import(har_path: string, tape_path: string) -> string {
+    return vcr_embed_dup(vcr.har_import(har_path, tape_path))
+}
+
 vcr_embed_unredact(s: ptr, field: int, pattern: string, replacement: string) -> string {
     return vcr_embed_dup(vcr.unredact_h(s, field, pattern, replacement))
 }

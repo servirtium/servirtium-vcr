@@ -1,0 +1,123 @@
+// HAR import — convert an HTTP Archive (HAR 1.2) capture to a Servirtium
+// markdown tape via core.vcr.har_import, reusing the record-mode emitter.
+//
+// Fixture core_tests/tapes/sample.har has two entries: a GET /ok?x=1 -> 200
+// text/plain "ok-body", and a POST /submit (JSON body) -> 201 JSON. The import
+// must:
+//   - produce a tape with both interactions, path+query preserved;
+//   - OMIT request headers (browser volatiles would break Servirtium's default
+//     header matching) — no User-Agent / :authority in the tape;
+//   - keep the request BODY (matters for POST matching);
+//   - keep meaningful response headers (Content-Type) but DROP hop-by-hop ones
+//     (Content-Length) and transport noise;
+//   - be a VALID tape that loads for playback.
+
+import core.vcr
+import std.string
+import std.fs
+import std.http
+import std.http.client
+
+extern exit(code: int)
+extern http_server_start_raw(server: ptr) -> int
+
+const HAR_PATH  = "core_tests/tapes/sample.har"
+const TAPE_PATH = "target/core_tests/har_imported.md"
+const PORT      = 18115
+
+message StartVCR { raw: ptr }
+message Noop {}
+
+actor VCRActor {
+    state s = 0
+    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
+}
+
+actor SchedHelper {
+    state x = 0
+    receive { Noop() -> { x = 1 } }
+}
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+want(tape: string, needle: string, label: string) {
+    if string.contains(tape, needle) != 1 {
+        fail("${label}: expected to find '${needle}' in:\n${tape}")
+    }
+}
+
+reject(tape: string, needle: string, label: string) {
+    if string.contains(tape, needle) == 1 {
+        fail("${label}: '${needle}' should NOT be in the tape:\n${tape}")
+    }
+}
+
+main() {
+    println("=== HAR import -> Servirtium tape ===\n")
+
+    ierr = vcr.har_import(HAR_PATH, TAPE_PATH)
+    if ierr != "" { fail("har_import returned error: ${ierr}") }
+
+    tape, rerr = fs.read(TAPE_PATH)
+    if rerr != "" { fail("could not read imported tape: ${rerr}") }
+
+    // Interaction 0 — GET with query preserved in the path, text response.
+    want(tape, "## Interaction 0: GET /ok?x=1", "GET interaction header")
+    want(tape, "ok-body", "GET response body")
+    want(tape, "(200: text/plain)", "GET response status/content-type line")
+
+    // Interaction 1 — POST with JSON body retained.
+    want(tape, "## Interaction 1: POST /submit", "POST interaction header")
+    want(tape, "{\"a\":1,\"b\":2}", "POST request body")
+    want(tape, "{\"id\":\"abc-1\"}", "POST response body")
+    want(tape, "(201: application/json)", "POST response status/content-type line")
+
+    // Request headers must be omitted (both request blocks empty).
+    reject(tape, "User-Agent", "request header leak")
+    reject(tape, ":authority", "pseudo-header leak")
+    reject(tape, "Accept: */*", "request header leak")
+
+    // Response headers are preserved faithfully (name casing as the HAR gives
+    // it — an HTTP/2 capture lower-cases them; HTTP is case-insensitive and the
+    // "(200: text/plain)" line comes from content.mimeType, not the header).
+    want(tape, "content-type: text/plain", "GET response content-type kept (as-is)")
+    want(tape, "Content-Type: application/json", "POST response Content-Type kept (as-is)")
+    // Hop-by-hop / transport headers are dropped so the body stays coherent.
+    reject(tape, "Content-Length", "hop-by-hop Content-Length dropped")
+    reject(tape, "content-length", "hop-by-hop content-length dropped")
+
+    // The imported tape must REPLAY: load it, drive the recorded GET /ok?x=1
+    // (the query round-trips — a regression guard for the path?query matcher),
+    // and assert the recorded response comes back with an Ok outcome.
+    raw = vcr.load(TAPE_PATH, PORT)
+    if raw == null { fail("imported tape did not load as a valid Servirtium tape") }
+
+    spawn(SchedHelper())
+    a = spawn(VCRActor())
+    a ! StartVCR { raw: raw }
+    sleep(500)
+
+    creq = client.request("GET", "http://127.0.0.1:${PORT}/ok?x=1")
+    if creq == null { fail("client.request returned null") }
+    cresp, cerr = client.send_request(creq)
+    client.request_free(creq)
+    if cerr != "" { fail("client transport: ${cerr}") }
+    status = client.response_status(cresp)
+    rbody = client.response_body(cresp)
+    client.response_free(cresp)
+
+    if status != 200 {
+        fail("replay of imported GET /ok?x=1: expected 200, got ${status} (last_error='${vcr.last_error()}')")
+    }
+    if string.contains(rbody, "ok-body") != 1 {
+        fail("replay body: expected 'ok-body', got '${rbody}'")
+    }
+    vcr.eject(raw)
+
+    println("PASS: HAR import produced a tape that replays (query round-trips)")
+    println("\n=== HAR import subtest passed ===")
+    exit(0)
+}

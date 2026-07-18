@@ -151,6 +151,7 @@ exports (
     set_quiet, load_error,
     load_record, eject_record,
     record, clear_recording, flush, flush_or_check, flush_and_fail_if_changed,
+    har_import,
     redact, clear_redactions, unredact, clear_unredactions,
     normalize_whole_tape, redact_whole_tape, clear_normalizations,
     apply_normalizations, build_normalization_map,
@@ -1356,7 +1357,12 @@ build_recorded_path(req: ptr) -> string {
     if string.length(path) == 0 { path = "/" }
     query = http_request_query(req)
     out = string.copy(path)
-    if string.length(query) > 0 { out = string_concat(out, query) }
+    if string.length(query) > 0 {
+        // http_request_query returns the query WITHOUT its leading '?'; restore
+        // it so the recorded/matched path is a canonical "path?query".
+        if string.char_at(query, 0) != 63 { out = string_concat(out, "?") }  // 63 == '?'
+        out = string_concat(out, query)
+    }
     return out
 }
 
@@ -1369,7 +1375,11 @@ build_upstream_url(base: string, req: ptr) -> string {
         out = string_concat(out, "/")
     }
     out = string_concat(out, path)
-    if string.length(query) > 0 { out = string_concat(out, query) }
+    if string.length(query) > 0 {
+        // Restore the '?' the accessor strips (see build_recorded_path).
+        if string.char_at(query, 0) != 63 { out = string_concat(out, "?") }  // 63 == '?'
+        out = string_concat(out, query)
+    }
     return out
 }
 
@@ -2371,6 +2381,157 @@ flush(tape_path: string) -> string {
     blob = emit_tape()
     werr = fs.write(tape_path, blob)
     if werr != "" { return werr }
+    return ""
+}
+
+// ---- HAR import (HTTP Archive JSON -> Servirtium markdown tape) ----
+//
+// Convert a HAR 1.2 capture (Chrome DevTools / Fiddler / Charles / mitmproxy /
+// Postman export) into a Servirtium markdown tape, reusing the SAME emitter as
+// record mode so the output is byte-consistent with a natively recorded tape.
+// The field mapping mirrors Vcr.HttpRecorder's HAR model (portions copyright
+// Giannis Georgopoulos, MIT).
+//
+// Deliberate choices for a *replayable* tape: Servirtium matches a non-empty
+// recorded request-headers block by default, and a browser's volatile headers
+// (User-Agent, Cookie, sec-ch-*) would never match a test client's — so request
+// headers are NOT imported; matching is method + path (+ request body). The
+// request BODY is imported (it distinguishes POSTs to one path; pair it with
+// set_match_json_body for JSON APIs). The full response — status, headers (minus
+// hop-by-hop / Content-Encoding, since the body is stored decoded), and body
+// (base64-marked when the HAR entry is base64-encoded) — is imported.
+
+// A JSON string field of `obj`, or "" when absent / wrong type / null container.
+har_str(obj: ptr, key: string) -> string {
+    if obj == null { return "" }
+    v = json.json_object_get_raw(obj, key)
+    if v == null { return "" }
+    if json.json_type(v) != 3 { return "" }             // 3 == JSON_STRING
+    return string.copy(json.json_get_string_raw(v))
+}
+
+// A JSON integer field of `obj`, or 0 when absent / wrong type.
+har_int(obj: ptr, key: string) -> int {
+    if obj == null { return 0 }
+    v = json.json_object_get_raw(obj, key)
+    if v == null { return 0 }
+    if json.json_type(v) != 2 { return 0 }              // 2 == JSON_NUMBER
+    return json.json_get_int(v)
+}
+
+// Path (+query) of an absolute URL: "https://h/a/b?x=1" -> "/a/b?x=1".
+har_url_path(url: string) -> string {
+    if string.length(url) == 0 { return "/" }
+    scheme = string.index_of(url, "://")
+    if scheme >= 0 {
+        rest = scheme + 3
+        slash = string.index_of_from(url, "/", rest)
+        if slash < 0 { return "/" }
+        return string.substring(url, slash, string.length(url))
+    }
+    return url
+}
+
+// Headers that must not land in a tape: HTTP/2 pseudo-headers (":authority",
+// ...) and hop-by-hop / transport headers the recorder also omits.
+har_skip_header(name: string) -> int {
+    if string.length(name) == 0 { return 1 }
+    if string.char_at(name, 0) == 58 { return 1 }       // 58 == ':'
+    if icmp_rt(name, "Connection") == 0 { return 1 }
+    if icmp_rt(name, "Content-Length") == 0 { return 1 }
+    if icmp_rt(name, "Transfer-Encoding") == 0 { return 1 }
+    if icmp_rt(name, "Content-Encoding") == 0 { return 1 }  // body stored decoded
+    if icmp_rt(name, "Keep-Alive") == 0 { return 1 }
+    return 0
+}
+
+// "Name: value\n..." block from a HAR message's headers[] array (filtered).
+har_headers_block(msg: ptr) -> string {
+    if msg == null { return "" }
+    arr = json.json_object_get_raw(msg, "headers")
+    if arr == null { return "" }
+    if json.json_type(arr) != 4 { return "" }           // 4 == JSON_ARRAY
+    out = string.copy("")
+    n = json.json_array_size(arr)
+    i = 0
+    while i < n {
+        h = json.json_array_get_raw(arr, i)
+        name = har_str(h, "name")
+        if har_skip_header(name) == 0 {
+            line = string_concat(name, ": ")
+            line = string_concat(line, har_str(h, "value"))
+            out = string_concat(out, line)
+            out = string_concat(out, "\n")
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// request.postData.text verbatim, or "".
+har_post_body(req: ptr) -> string {
+    if req == null { return "" }
+    pd = json.json_object_get_raw(req, "postData")
+    if pd == null { return "" }
+    return har_str(pd, "text")
+}
+
+// Import `har_path` and write the equivalent tape to `tape_path`. Returns "" on
+// success, else a human-readable error.
+har_import(har_path: string, tape_path: string) -> string {
+    src, rerr = fs.read(har_path)
+    if rerr != "" { return string_concat("har import: cannot read har file: ", rerr) }
+    root, perr = json.parse(src)
+    if root == null { return string_concat("har import: invalid JSON: ", perr) }
+
+    log = json.json_object_get_raw(root, "log")
+    if log == null { json.json_free(root); return "har import: missing 'log' object" }
+    entries = json.json_object_get_raw(log, "entries")
+    if entries == null || json.json_type(entries) != 4 {
+        json.json_free(root)
+        return "har import: missing 'log.entries' array"
+    }
+
+    key = "__har_import__"
+    list_reset(slot(key, "tape"))
+
+    n = json.json_array_size(entries)
+    i = 0
+    while i < n {
+        entry = json.json_array_get_raw(entries, i)
+        req = json.json_object_get_raw(entry, "request")
+        resp = json.json_object_get_raw(entry, "response")
+
+        method = har_str(req, "method")
+        path = har_url_path(har_str(req, "url"))
+        req_body = har_post_body(req)
+
+        status = har_int(resp, "status")
+        content = json.json_object_get_raw(resp, "content")
+        mime = har_str(content, "mimeType")
+        enc = har_str(content, "encoding")
+        body = har_str(content, "text")
+        ctype = mime
+        if string.equals(enc, "base64") == 1 {
+            base = mime
+            if string.length(base) == 0 { base = "application/octet-stream" }
+            ctype = string_concat(base, " base64 below")
+        }
+        has_ct = 0
+        if string.length(ctype) > 0 { has_ct = 1 }
+
+        // Request headers intentionally omitted (see the header note above).
+        tape_append_k(key, method, path, status, body, ctype, has_ct, "", req_body)
+        set_resp_headers_k(key, i, har_headers_block(resp))
+        i = i + 1
+    }
+    json.json_free(root)
+
+    set_cur_key(key)
+    blob = emit_tape()
+    werr = fs.write(tape_path, blob)
+    list_reset(slot(key, "tape"))                       // leave the scratch key clean
+    if werr != "" { return string_concat("har import: cannot write tape: ", werr) }
     return ""
 }
 

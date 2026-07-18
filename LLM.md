@@ -98,6 +98,9 @@ RecordError=7`. Anything non-zero = a mismatch; the test should assert `0`.
 The `.so` is found via `SERVIRTIUM_VCR_LIB` (abs path, set by every `.tests.ae`),
 else `native/` next to the binding, else the OS loader.
 
+Converter (no handle): `har_import(har_path, tape_path)` — turns a HAR 1.2 capture
+into a Servirtium markdown tape (see the HAR section below).
+
 ## Build/test (aeb)
 
 The build runner is **aeb** (sibling repo `../aeb`; its `LLM.md` is the deep
@@ -173,6 +176,37 @@ The parser stays lenient and also accepts the looser "blank line after every
 fence" style other Servirtium tools emit — so cross-impl *playback* still works;
 only our *emitted* bytes are compact. See the format spec comment atop
 `core/vcr.ae`.
+
+## HAR import (`har_import`)
+
+`aether_vcr_embed_har_import(har_path, tape_path)` (Aether: `vcr.har_import`)
+converts a **HAR 1.2** capture — Chrome DevTools / Fiddler / Charles / mitmproxy /
+Postman export — into a Servirtium markdown tape. It's a pure file→file transform
+(no server handle). The workflow it unlocks: capture real traffic you can't easily
+route through a record-proxy (a browser SPA, a mobile app behind a proxy) →
+`.har` → tape → deterministic replay across all 21 bindings. Implementation:
+`core/vcr.ae` parses the HAR JSON via `std.json` and feeds each entry through the
+same `tape_append_k` + `emit_tape` path record mode uses, so output is
+byte-consistent with a natively recorded tape. Field mapping mirrors
+Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
+`LICENSE`). Deliberate mapping choices (all in the `har_import` comment):
+- **Request headers are dropped.** Servirtium matches a non-empty recorded
+  request-headers block by default, and a browser's volatile headers would never
+  match a test client — so imported tapes match on **method + path (+ request
+  body)**, like the `single_get` golden.
+- **Request body is kept** (distinguishes POSTs to one path; pair with
+  `set_match_json_body` for JSON APIs).
+- **Response** status/headers/body kept; hop-by-hop + `Content-Encoding` dropped
+  (the body is stored decoded). Header-name casing is preserved as-is (HTTP/2 HARs
+  lower-case them; HTTP is case-insensitive and the `(200: type)` line comes from
+  `content.mimeType`). base64 HAR content → the engine's `"<mime> base64 below"`
+  convention.
+- Guarded by `core_tests/test_vcr_har_import.ae` (import → assert tape → replay).
+- **Latent bug this surfaced + fixed:** `http_request_query` returns the query
+  *without* its leading `?`, but `build_recorded_path` / `build_upstream_url`
+  concatenated `path + query` directly → malformed `/okx=1` (record-mode upstream
+  forwarding with a query was also broken). Now both re-insert the `?`. No
+  existing tape had a query string, so no back-compat impact.
 
 ## Gotchas / hard-won
 
