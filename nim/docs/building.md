@@ -48,7 +48,7 @@ Each file is a `std/unittest` suite and exits non-zero if any check fails.
 
 ## With aeb
 
-The whole monorepo builds with **[aeb](https://github.com/aether-lang-org/aeb)**.
+The whole monorepo builds with **[aeb](https://github.com/aether-lang-dev/aeb)**.
 This binding's leaf is `nim/.tests.ae`:
 
 | Node | Class | What it does |

@@ -27,7 +27,7 @@ jobs:
       - name: Checkout Aether
         uses: actions/checkout@v4
         with:
-          repository: aether-lang-org/aether
+          repository: aether-lang-dev/aether
           path: aether
 
       - name: Build & install the Aether toolchain

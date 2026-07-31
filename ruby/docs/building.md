@@ -9,7 +9,7 @@ and is loaded automatically by `Servirtium::Native.open_library`.
 ## Building the native library
 
 The engine is the in-repo pure-Aether module `core/vcr.ae` plus the
-`core/embed.ae` C-ABI, built once by the repo's **[aeb](https://github.com/aether-lang-org/aeb)**
+`core/embed.ae` C-ABI, built once by the repo's **[aeb](https://github.com/aether-lang-dev/aeb)**
 `core/` node. Building any binding deps that node, so the simplest way to get
 the native lib *and* run the Ruby tests is:
 

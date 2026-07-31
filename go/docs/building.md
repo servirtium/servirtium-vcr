@@ -1,6 +1,6 @@
 # Building (with aeb)
 
-This binding's build system is **[aeb](https://github.com/aether-lang-org/aeb)**,
+This binding's build system is **[aeb](https://github.com/aether-lang-dev/aeb)**,
 the polyglot Aether build runner — it's the one Servirtium binding wholly on
 aeb, kept as a showcase of aeb driving a cross-language FFI artifact
 (native Aether `--emit=lib` → cgo → Go) plus a server lifecycle demo.
@@ -24,8 +24,8 @@ before anything else. Install it (and `aeb`) with their canonical one-line
 installers — released builds, user prefix, no sudo, no tests, no contrib:
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/aether-lang-org/aether/main/get.sh | sh
-curl -sSL https://raw.githubusercontent.com/aether-lang-org/aeb/main/install.sh | sh
+curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh | sh
+curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/install.sh | sh
 ```
 
 Notes for a casual servirtium-go developer:

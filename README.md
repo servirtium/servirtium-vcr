@@ -179,7 +179,7 @@ artifact** that tests in any language can replay.
 
 ## Build (aeb)
 
-The whole repo is built with **[aeb](https://github.com/aether-lang-org/aeb)**,
+The whole repo is built with **[aeb](https://github.com/aether-lang-dev/aeb)**,
 the polyglot Aether build runner — the natural fit for a one-engine,
 many-language monorepo. You point `aeb` at the node you want (a dot-prefixed
 `.ae` script, e.g. `java/.tests.ae`); it follows that node's `build.dep(...)`

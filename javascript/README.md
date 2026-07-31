@@ -74,7 +74,7 @@ fixed test port across files, not because the engine is single-server. See
 
 ## Building from source
 
-The whole repo is built with [`aeb`](https://github.com/aether-lang-org/aeb),
+The whole repo is built with [`aeb`](https://github.com/aether-lang-dev/aeb),
 which builds the `core/` native lib once and then runs this binding's tests:
 
 ```sh

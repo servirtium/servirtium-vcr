@@ -47,7 +47,7 @@ maintained outside this monorepo, see
 
 ## Build
 
-Built with **[aeb](https://github.com/aether-lang-org/aeb)** like the rest of
+Built with **[aeb](https://github.com/aether-lang-dev/aeb)** like the rest of
 the monorepo: `aeb kotlin/.tests.ae` builds the engine, installs the Java
 binding jar, and runs the Kotlin test (`mvn test`). Standalone:
 `mvn install` the Java binding, then `mvn test` here.

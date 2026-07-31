@@ -29,7 +29,7 @@ already have all three toolchains.
   cabal 3.10.3.0). `bootstrap.sh` checks for them but does not install them.
 - **The Aether toolchain (`ae`) on PATH** — only needed to build the *native*
   library; `bootstrap.sh` installs it via aether's `get.sh` if absent
-  (`curl -sSL https://raw.githubusercontent.com/aether-lang-org/aether/main/get.sh | sh`).
+  (`curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh | sh`).
 
 ## Build the native library
 

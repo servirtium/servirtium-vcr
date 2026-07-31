@@ -21,7 +21,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$PREFIX/bin"
-          curl -fsSL "https://raw.githubusercontent.com/aether-lang-org/aether/main/get.sh" -o /tmp/get.sh
+          curl -fsSL "https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh" -o /tmp/get.sh
           AETHER_REF="$AETHER_REF" sh /tmp/get.sh
           echo "$PREFIX/bin" >> "$GITHUB_PATH"
 

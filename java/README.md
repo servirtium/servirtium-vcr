@@ -92,7 +92,7 @@ separate ports, each replaying its own tape). See
 
 ## Building from source
 
-The repo is driven by [`aeb`](https://github.com/aether-lang-org/aeb): the
+The repo is driven by [`aeb`](https://github.com/aether-lang-dev/aeb): the
 `java/.tests.ae` leaf deps `core/.build.ae`, which builds the native engine
 (`core/native/libservirtium_vcr.so`) once, then runs `mvn test` against it.
 

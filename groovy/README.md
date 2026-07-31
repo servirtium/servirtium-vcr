@@ -45,7 +45,7 @@ without a separate native FFI to maintain.
 
 ## Build
 
-Built with **[aeb](https://github.com/aether-lang-org/aeb)** like the rest of
+Built with **[aeb](https://github.com/aether-lang-dev/aeb)** like the rest of
 the monorepo: `aeb groovy/.tests.ae` builds the engine, installs the Java
 binding jar, and runs the Groovy test (`mvn test`). Standalone:
 `mvn install` the Java binding, then `mvn test` here.

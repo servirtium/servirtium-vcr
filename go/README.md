@@ -74,7 +74,7 @@ tests in parallel; nothing is process-global. See
 
 ## Building
 
-This binding is built with **[aeb](https://github.com/aether-lang-org/aeb)**,
+This binding is built with **[aeb](https://github.com/aether-lang-dev/aeb)**,
 the Aether build system — it's the only Servirtium binding wholly on aeb, as
 a showcase.
 

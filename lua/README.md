@@ -146,7 +146,7 @@ suite spawns a throwaway one-process `python3` HTTP server
 method+body, then kills it. Recorded tapes are written to the OS temp dir, never
 into `tapes/`.
 
-With [aeb](https://github.com/aether-lang-org/aeb): `aeb lua/.tests.ae` builds
+With [aeb](https://github.com/aether-lang-dev/aeb): `aeb lua/.tests.ae` builds
 the engine `.so`, compiles the extension, and runs the whole suite.
 
 ## Concurrency: one server per port

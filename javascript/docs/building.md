@@ -13,7 +13,7 @@
 
 The native library is built from the in-repo Aether VCR core — `core/vcr.ae`
 with its C-ABI seam `core/embed.ae` — into `core/native/`. The whole repo is
-driven by [`aeb`](https://github.com/aether-lang-org/aeb); building this binding
+driven by [`aeb`](https://github.com/aether-lang-dev/aeb); building this binding
 builds the engine once first:
 
 ```sh

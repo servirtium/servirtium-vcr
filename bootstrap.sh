@@ -8,8 +8,8 @@
 # The toolchains are installed via their canonical remote installers — they
 # work from a bare clone (no sibling checkouts), install released builds to a
 # user prefix, run no tests, build no contrib:
-#     aether: https://raw.githubusercontent.com/aether-lang-org/aether/main/get.sh
-#     aeb:    https://raw.githubusercontent.com/aether-lang-org/aeb/main/install.sh
+#     aether: https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh
+#     aeb:    https://raw.githubusercontent.com/aether-lang-dev/aeb/main/install.sh
 #
 # Idempotent: a no-op for the toolchain when `ae`/`aeb` are already good.
 # Requires `curl` to install them; no build-from-source fallback.
@@ -26,8 +26,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX
 MIN_AE="${MIN_AE:-0.183.0}"
-AETHER_GET_URL="https://raw.githubusercontent.com/aether-lang-org/aether/main/get.sh"
-AEB_INSTALL_URL="https://raw.githubusercontent.com/aether-lang-org/aeb/main/install.sh"
+AETHER_GET_URL="https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh"
+AEB_INSTALL_URL="https://raw.githubusercontent.com/aether-lang-dev/aeb/main/install.sh"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }

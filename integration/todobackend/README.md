@@ -101,6 +101,6 @@ polls).
 [spec]: https://github.com/TodoBackend/todo-backend-js-spec
 [sut]: https://github.com/servirtium/todobackend-for-compatibility-kit
 [http4k]: https://www.http4k.org/
-[cl]: https://github.com/aether-lang-org/aeb/blob/main/docs/examples/container-lifecycle/.up_poke_down.ae
+[cl]: https://github.com/aether-lang-dev/aeb/blob/main/docs/examples/container-lifecycle/.up_poke_down.ae
 [hswd]: https://hackage.haskell.org/package/webdriver
 [parasol]: https://github.com/SeasideSt/Parasol

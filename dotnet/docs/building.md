@@ -28,10 +28,10 @@ already have both toolchains.
   install it.
 - **The Aether toolchain (`ae`) on PATH** — only needed to build the
   *native* library; `bootstrap.sh` installs it via aether's `get.sh` if
-  absent (`curl -sSL https://raw.githubusercontent.com/aether-lang-org/aether/main/get.sh | sh`).
+  absent (`curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh | sh`).
   Consumers of the NuGet package don't need it. For the from-source / HEAD
   developer flow see aether's `docs/bootstrap-from-source.md` in the
-  [Aether toolchain repo](https://github.com/aether-lang-org/aether).
+  [Aether toolchain repo](https://github.com/aether-lang-dev/aether).
 
 ## Build the native library
 

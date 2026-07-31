@@ -27,7 +27,7 @@ Everything from here down is what `bootstrap.sh` automates.
 - **A C compiler** (`cc`/`gcc`/`clang`) and `make` — to build the NIF.
 - **The Aether toolchain (`ae`) on PATH** — only needed to build the *native*
   library; `bootstrap.sh` installs it via aether's `get.sh` if absent
-  (`curl -sSL https://raw.githubusercontent.com/aether-lang-org/aether/main/get.sh | sh`).
+  (`curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh | sh`).
 
 ## Build the native library (the engine)
 
