@@ -153,6 +153,7 @@ exports (
     load_record, eject_record,
     record, clear_recording, flush, flush_or_check, flush_and_fail_if_changed,
     har_import, har_export,
+    check_tape, canonical_check_tape,
     redact, clear_redactions, unredact, clear_unredactions,
     normalize_whole_tape, redact_whole_tape, clear_normalizations,
     apply_normalizations, build_normalization_map,
@@ -2862,6 +2863,45 @@ har_export(tape_path: string, har_path: string) -> string {
     werr = fs.write(har_path, text)
     if werr != "" { return string_concat("har export: cannot write har file: ", werr) }
     return ""
+}
+
+// ---- Tape lint (the standalone CLI's `servirtium check`) ----
+//
+// Parse-check a tape without binding a server: (interactions, "") when
+// the tape parses clean, else (0, error). Same scratch-key pattern as
+// har_export, so no listener state is touched.
+check_tape(tape_path: string) -> (int, string) {
+    key = "__check__"
+    set_cur_key(key)
+    list_reset(slot(key, "tape"))
+    perr = parse_tape_file(tape_path)
+    if perr != "" { return 0, perr }
+    n = vcr_get_tape_count()
+    list_reset(slot(key, "tape"))
+    return n, ""
+}
+
+// Canonical-form check: "" when the on-disk bytes are exactly what this
+// engine's emitter writes for the tape's content (the compact/tight
+// canonical form, default format options), else a description. A tape
+// can parse clean yet not be canonical — the parser is deliberately
+// lenient and accepts other Servirtium implementations' looser spacing.
+// Normalize by re-recording, or by round-tripping the tape through the
+// emitter (e.g. the CLI's HAR export/import).
+canonical_check_tape(tape_path: string) -> string {
+    key = "__check__"
+    set_cur_key(key)
+    list_reset(slot(key, "tape"))
+    perr = parse_tape_file(tape_path)
+    if perr != "" { return perr }
+    blob = emit_tape()
+    list_reset(slot(key, "tape"))
+    existing, eerr = fs.read(tape_path)
+    if eerr != "" { return eerr }
+    if existing == blob { return "" }
+    canonical_len = string.length(blob)
+    file_len = string.length(existing)
+    return "not canonical: emitter form is ${canonical_len} bytes, file is ${file_len} bytes"
 }
 
 // Re-record check (Servirtium roadmap step 4). If `tape_path`

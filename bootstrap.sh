@@ -92,7 +92,7 @@ case ":$PATH:" in *":$PREFIX/bin:"*) : ;; *) say "tip: add '$PREFIX/bin' to your
 if [ "$#" -gt 0 ]; then
     targets="$*"
 else
-    targets="core/.build.ae"          # always — engine needs only ae + cc
+    targets="core/.build.ae core/.cli.ae"  # always — engine + CLI need only ae + cc
     skipped=""
     while read -r cmd leaf; do
         [ -n "$cmd" ] || continue

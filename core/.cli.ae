@@ -1,0 +1,24 @@
+// Build the standalone `servirtium` CLI (core/cli.ae) — serve a tape as a
+// live stub server, lint tapes (check / check --canonical), and convert
+// to/from HAR 1.2 (import/export — the old `servirtium-har` binary, absorbed).
+// It statically links the pure-Aether `vcr` module (no .so, no
+// SERVIRTIUM_VCR_LIB), so it's a self-contained binary.
+//
+// Output: target/servirtium
+
+import build
+import std.os
+
+aeb(cap) {
+    b = build.start()
+    root = build._get(b, "root")
+    dest = "${root}/target"
+    _m = os.system("mkdir -p \"${dest}\"")
+    rc = os.system("cd \"${root}\" && ae build core/cli.ae -o \"${dest}/servirtium\"")
+    if rc != 0 {
+        println("servirtium-cli: build failed")
+        return 1
+    }
+    println("servirtium-cli: built target/servirtium")
+    return 0
+}

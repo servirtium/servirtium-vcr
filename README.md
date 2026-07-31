@@ -112,13 +112,23 @@ One engine; every binding exposes the same surface.
   each with its own tape, cursor, and diagnostics.
 - **Drift detection** — *fail-if-changed* / *flush-or-check*: a re-record
   writes the tape but flags any diff, so CI catches upstream drift.
-- **HAR bridge** — convert between the HTTP Archive format (Chrome DevTools /
-  Fiddler / Charles / Postman exports) and Servirtium tapes with the standalone
-  `servirtium-har` CLI (`import` / `export`). Capture real traffic in a browser
-  or proxy, convert the `.har` once, and replay it as a tape under any binding.
-  (A CLI rather than a per-binding call: it's a convert-once-offline step, not a
-  test-time operation — though `har_import`/`har_export` are also in the C ABI
-  for any binding that wants to wrap them.)
+- **Standalone `servirtium` CLI** — a self-contained binary (no `.so`, no
+  bindings) for working with tapes from the shell:
+  - `servirtium serve <tape.md> [port]` replays a tape as a live stub server —
+    zero code: curl it, point a frontend dev server at it, demo against it.
+    Serving is repeatable and order-independent by default (`--ordered`
+    restores strict one-shot tape order).
+  - `servirtium check [--canonical] <tape.md> ...` lints tapes — parse-clean
+    (exit 0/1, pre-commit friendly), and `--canonical` additionally requires
+    the engine emitter's compact byte-form (what the goldens are).
+  - `servirtium import <in.har> <out.md>` / `export <in.md> <out.har>` — the
+    **HAR bridge**: convert between the HTTP Archive format (Chrome DevTools /
+    Fiddler / Charles / Postman exports) and Servirtium tapes. Capture real
+    traffic in a browser or proxy, convert the `.har` once, and replay it as a
+    tape under any binding. (A CLI rather than a per-binding call: it's a
+    convert-once-offline step, not a test-time operation — though
+    `har_import`/`har_export` are also in the C ABI for any binding that wants
+    to wrap them.)
 
 ## Compared with other mocking / virtualization tools
 

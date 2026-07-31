@@ -1,0 +1,170 @@
+// servirtium — the standalone tape CLI. A pure-Aether static binary over
+// core/vcr.ae (no .so, no SERVIRTIUM_VCR_LIB): serve a tape as a live stub
+// server, lint tapes, and convert to/from HAR 1.2. Everything smart lives
+// in the engine (the one rule); this file is argv parsing and printlns.
+//
+//   servirtium serve  <tape.md> [port] [--ordered]   replay a tape as a live server (default port 8080)
+//   servirtium check  [--canonical] <tape.md> ...    lint tapes: parse clean? (exit 0/1)
+//   servirtium import <in.har> <out.md>              HAR capture -> Servirtium tape
+//   servirtium export <in.md>  <out.har>             Servirtium tape -> HAR capture
+//
+// `serve` defaults to MatchMultiple playback (order-independent and
+// non-consuming, so repeated identical requests keep answering) because a
+// hand-driven stub server is exactly the demo/polling case; `--ordered`
+// restores the engine default (strictly ordered, each interaction consumed
+// once, then 599 tape-exhausted).
+//
+// `check` exits 0 only if every tape parses; `--canonical` additionally
+// requires byte-identity with this engine's compact emitter form (what the
+// */example/tapes goldens are). The parser itself stays lenient.
+//
+// (`import`/`export` absorbed the old `servirtium-har` binary — same
+// vcr.har_import / vcr.har_export underneath.)
+//
+// Build:  ae build core/cli.ae -o servirtium
+// (aeb builds it via core/.cli.ae -> target/servirtium)
+
+import core.vcr
+import std.os
+import std.string
+
+extern exit(code: int)
+extern http_server_start_raw(server: ptr) -> int
+
+usage() {
+    println("servirtium — serve, lint, and convert Servirtium markdown tapes")
+    println("")
+    println("usage:")
+    println("  servirtium serve  <tape.md> [port] [--ordered]   replay tape as a live server (default port 8080)")
+    println("  servirtium check  [--canonical] <tape.md> ...    lint: tapes parse clean (exit 0/1)")
+    println("  servirtium import <in.har> <out.md>              HAR capture -> Servirtium tape")
+    println("  servirtium export <in.md>  <out.har>             Servirtium tape -> HAR capture")
+    println("")
+    println("serve replays repeatably and order-independently (MatchMultiple);")
+    println("--ordered restores strict one-shot tape order. check --canonical also")
+    println("requires the file to be byte-identical to the engine's emitter form.")
+}
+
+// serve <tape.md> [port] [--ordered] — bind a playback server and block in
+// the accept loop until killed (Ctrl-C). Flags and positionals may mix.
+run_serve(argc: int) {
+    tape = ""
+    port = 0
+    ordered = 0
+    i = 2
+    while i < argc {
+        a = os.aether_args_get(i)
+        if string.equals(a, "--ordered") == 1 {
+            ordered = 1
+        } else {
+            if tape == "" {
+                tape = a
+            } else {
+                p, perr = string.to_int(a)
+                if perr != "" || p <= 0 || p > 65535 {
+                    println("servirtium serve: bad port '${a}'")
+                    exit(2)
+                }
+                port = p
+            }
+        }
+        i = i + 1
+    }
+    if tape == "" { usage(); exit(2) }
+    if port == 0 { port = 8080 }
+
+    raw = vcr.load(tape, port)
+    if raw == null {
+        println("servirtium serve: ${vcr.load_error()}")
+        exit(1)
+    }
+    if ordered == 0 { vcr.set_match_multiple_h(raw, 1) }
+
+    n = vcr.tape_length_h(raw)
+    mode = "repeatable, order-independent (--ordered for strict tape order)"
+    if ordered == 1 { mode = "strict tape order, each interaction consumed once" }
+    println("servirtium: serving ${tape} on http://127.0.0.1:${port}")
+    println("servirtium: ${n} interaction(s); ${mode}")
+    println("servirtium: Ctrl-C to stop")
+
+    rc = http_server_start_raw(raw)
+    vcr.eject(raw)
+    if rc != 0 { exit(1) }
+    exit(0)
+}
+
+// check [--canonical] <tape.md> ... — exit 0 only if every tape passes.
+run_check(argc: int) {
+    canonical = 0
+    checked = 0
+    fails = 0
+    i = 2
+    while i < argc {
+        a = os.aether_args_get(i)
+        if string.equals(a, "--canonical") == 1 {
+            canonical = 1
+        } else {
+            checked = checked + 1
+            n, err = vcr.check_tape(a)
+            if err != "" {
+                println("servirtium check: ${a}: FAIL — ${err}")
+                fails = fails + 1
+            } else {
+                if canonical == 1 {
+                    cerr = vcr.canonical_check_tape(a)
+                    if cerr != "" {
+                        println("servirtium check: ${a}: FAIL — ${cerr}")
+                        fails = fails + 1
+                    } else {
+                        println("servirtium check: ${a}: ok — ${n} interaction(s), canonical")
+                    }
+                } else {
+                    println("servirtium check: ${a}: ok — ${n} interaction(s)")
+                }
+            }
+        }
+        i = i + 1
+    }
+    if checked == 0 { usage(); exit(2) }
+    if fails > 0 {
+        println("servirtium check: ${fails} of ${checked} tape(s) failed")
+        exit(1)
+    }
+    exit(0)
+}
+
+main() {
+    // aether_args_get(0) is argv0; the sub-command and its args follow.
+    argc = os.aether_args_count()
+    if argc < 2 {
+        usage()
+        exit(2)
+    }
+    cmd = os.aether_args_get(1)
+
+    if string.equals(cmd, "serve") == 1 { run_serve(argc) }
+    if string.equals(cmd, "check") == 1 { run_check(argc) }
+
+    if string.equals(cmd, "import") == 1 {
+        if argc < 4 { usage(); exit(2) }
+        src = os.aether_args_get(2)
+        dst = os.aether_args_get(3)
+        err = vcr.har_import(src, dst)
+        if err != "" { println("servirtium: ${err}"); exit(1) }
+        println("servirtium: imported ${src} -> ${dst}")
+        exit(0)
+    }
+    if string.equals(cmd, "export") == 1 {
+        if argc < 4 { usage(); exit(2) }
+        src = os.aether_args_get(2)
+        dst = os.aether_args_get(3)
+        err = vcr.har_export(src, dst)
+        if err != "" { println("servirtium: ${err}"); exit(1) }
+        println("servirtium: exported ${src} -> ${dst}")
+        exit(0)
+    }
+
+    println("servirtium: unknown command '${cmd}'")
+    usage()
+    exit(2)
+}

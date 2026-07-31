@@ -187,11 +187,18 @@ converts a **HAR 1.2** capture — Chrome DevTools / Fiddler / Charles / mitmpro
 Postman export — into a Servirtium markdown tape. It's a pure file→file transform
 (no server handle). The workflow it unlocks: capture real traffic you can't easily
 route through a record-proxy (a browser SPA, a mobile app behind a proxy) →
-`.har` → tape → deterministic replay across all 21 bindings. There's also a **standalone CLI** — `core/har_cli.ae` (built to `target/servirtium-har`
-by `core/.har_cli.ae`, or `ae build core/har_cli.ae -o servirtium-har`): a thin argv
-shim doing `servirtium-har import <in.har> <out.md>` / `export <in.md> <out.har>`.
-It statically links the pure-Aether `vcr` module, so it's a self-contained binary
-(no `.so`, no env var). The reverse direction, **`har_export(tape_path, har_path)`**
+`.har` → tape → deterministic replay across all 21 bindings. There's also a **standalone CLI** — `core/cli.ae` (built to `target/servirtium` by
+`core/.cli.ae`, or `ae build core/cli.ae -o servirtium`): a thin argv shim,
+statically linking the pure-Aether `vcr` module (self-contained: no `.so`, no
+env var). Subcommands: `serve <tape.md> [port] [--ordered]` (replay a tape as a
+live stub server — blocks in `http_server_start_raw`; defaults to MatchMultiple
+so repeated/out-of-order requests keep answering, `--ordered` restores the
+engine's strict consuming order), `check [--canonical] <tape.md> ...` (lint:
+`vcr.check_tape` parse-check, plus `vcr.canonical_check_tape` byte-comparison
+against the emitter's canonical form), and `import <in.har> <out.md>` /
+`export <in.md> <out.har>` (absorbed the old `servirtium-har` binary).
+Black-box tested by `core_tests/cli-tests.sh` via the `core_tests/.cli.ae`
+leaf (deps `core/.cli.ae`). The reverse direction, **`har_export(tape_path, har_path)`**
 (ABI `aether_vcr_embed_har_export`), serialises a tape back to HAR 1.2 JSON via
 `std.json`; `test_vcr_har_export.ae` round-trips tape→HAR→tape byte-identically.
 Implementation:
