@@ -148,7 +148,7 @@ exports (
     last_kind, last_index, set_strict_headers, reset_cursor,
     FIELD_PATH, FIELD_RESPONSE_BODY, FIELD_REQUEST_HEADERS,
     FIELD_REQUEST_BODY, FIELD_RESPONSE_HEADERS,
-    load, load_url, eject, tape_length,
+    load, load_url, load_append_h, eject, tape_length,
     set_quiet, load_error,
     load_record, eject_record,
     record, clear_recording, flush, flush_or_check, flush_and_fail_if_changed,
@@ -4025,6 +4025,15 @@ parse_one_interaction(chunk: string) -> string {
 // Label is for error messages (e.g., "http-sourced" or a file path).
 parse_tape_text(label: string, contents: string) -> string {
     vcr_aether_clear_tape()
+    return parse_tape_text_append(label, contents)
+}
+
+// Append-parse: like parse_tape_text but WITHOUT clearing the in-memory
+// tape first, so several markdown files concatenate into one interaction
+// list (the multi-tape loader, load_append_h). Ordered playback then
+// treats the result as one long script; MatchMultiple as one union store.
+parse_tape_text_append(label: string, contents: string) -> string {
+    start_count = vcr_get_tape_count()
 
     delim = "\n## Interaction "
     cursor = 0
@@ -4055,7 +4064,7 @@ parse_tape_text(label: string, contents: string) -> string {
         cursor = next_idx + string.length(delim)
     }
 
-    if vcr_get_tape_count() == 0 {
+    if vcr_get_tape_count() == start_count {
         return "tape (${label}) parsed but yielded zero interactions"
     }
     return ""
@@ -4065,4 +4074,16 @@ parse_tape_file(tape_path: string) -> string {
     contents, rerr = fs.read(tape_path)
     if rerr != "" { return rerr }
     return parse_tape_text(tape_path, contents)
+}
+
+// Append another tape's interactions to an already-loaded server (the
+// CLI's comma-separated `serve a.md,b.md,...`): parse `tape_path` without
+// clearing, concatenating onto the server's existing in-memory tape.
+// Returns "" on success, else the parse/read error. The playback cursor
+// and all config are untouched.
+load_append_h(server: ptr, tape_path: string) -> string {
+    set_cur_key(key_for(server))
+    contents, rerr = fs.read(tape_path)
+    if rerr != "" { return rerr }
+    return parse_tape_text_append(tape_path, contents)
 }

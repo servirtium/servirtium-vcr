@@ -114,10 +114,12 @@ One engine; every binding exposes the same surface.
   writes the tape but flags any diff, so CI catches upstream drift.
 - **Standalone `servirtium` CLI** — a self-contained binary (no `.so`, no
   bindings) for working with tapes from the shell:
-  - `servirtium serve <tape.md> [port]` replays a tape as a live stub server —
-    zero code: curl it, point a frontend dev server at it, demo against it.
-    Serving is repeatable and order-independent by default (`--ordered`
-    restores strict one-shot tape order).
+  - `servirtium serve <tape.md>[,more.md...] [port]` replays a tape — or a
+    comma-separated list of tapes, concatenated — as a live stub server. Zero
+    code: curl it, point a frontend dev server at it, demo against it. Serving
+    is repeatable and order-independent by default (a union store across the
+    tapes; `--ordered` restores strict one-shot tape order — the concatenation
+    played as one script).
   - `servirtium check [--canonical] <tape.md> ...` lints tapes — parse-clean
     (exit 0/1, pre-commit friendly), and `--canonical` additionally requires
     the engine emitter's compact byte-form (what the goldens are).

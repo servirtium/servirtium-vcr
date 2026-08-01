@@ -110,6 +110,48 @@ else
 fi
 serve_stop
 
+# ---- serve with a comma-separated tape list (concatenated) ----
+# Second tape: the golden with path/body renamed (same canonical shape).
+sed 's|/ok|/two|; s|ok-body|two-body|' "$GOLDEN" >"$TMP/two.md"
+
+# Default mode: union k/v store — both tapes answer, repeatably.
+if serve_bg "$GOLDEN,$TMP/two.md" "$PORT"; then
+  b1="$(curl -s "http://127.0.0.1:$PORT/ok")"
+  b2="$(curl -s "http://127.0.0.1:$PORT/two")"
+  b3="$(curl -s "http://127.0.0.1:$PORT/ok")"
+  if [ "$b1" = "ok-body" ] && [ "$b2" = "two-body" ] && [ "$b3" = "ok-body" ]; then
+    ok "serve a,b: union store — /ok and /two both answer, repeatably"
+  else
+    bad "serve a,b: got '$b1' '$b2' '$b3', wanted ok-body two-body ok-body"
+  fi
+else
+  bad "serve a,b: server did not come up"
+fi
+serve_stop
+
+# Ordered mode: one long script — a's interactions then b's, each consumed once.
+if serve_bg "$GOLDEN,$TMP/two.md" "$PORT" --ordered; then
+  b1="$(curl -s "http://127.0.0.1:$PORT/ok")"
+  b2="$(curl -s "http://127.0.0.1:$PORT/two")"
+  s3="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/two")"
+  if [ "$b1" = "ok-body" ] && [ "$b2" = "two-body" ] && [ "$s3" = "599" ]; then
+    ok "serve a,b --ordered: concatenated script — /ok, /two, then 599"
+  else
+    bad "serve a,b --ordered: got '$b1' '$b2' status $s3, wanted ok-body two-body 599"
+  fi
+else
+  bad "serve a,b --ordered: server did not come up"
+fi
+serve_stop
+
+# A bad tape anywhere in the list refuses to start.
+if serve_bg "$GOLDEN,$TMP/garbage.md" "$PORT"; then
+  bad "serve a,garbage: should refuse to start"
+else
+  ok "serve a,garbage: refuses to start (bad tape in list)"
+fi
+serve_stop
+
 # ---- import / export (HAR bridge, absorbed from servirtium-har) ----
 cat >"$TMP/mini.har" <<'HAR'
 {"log":{"version":"1.2","entries":[{"request":{"method":"GET","url":"http://x/ok","headers":[]},"response":{"status":200,"headers":[{"name":"Content-Type","value":"text/plain"}],"content":{"mimeType":"text/plain","text":"ok-body"}}}]}}

@@ -3,7 +3,7 @@
 // server, lint tapes, and convert to/from HAR 1.2. Everything smart lives
 // in the engine (the one rule); this file is argv parsing and printlns.
 //
-//   servirtium serve  <tape.md> [port] [--ordered]   replay a tape as a live server (default port 8080)
+//   servirtium serve  <tape.md>[,more.md...] [port] [--ordered]   replay tape(s) as a live server (default port 8080)
 //   servirtium check  [--canonical] <tape.md> ...    lint tapes: parse clean? (exit 0/1)
 //   servirtium import <in.har> <out.md>              HAR capture -> Servirtium tape
 //   servirtium export <in.md>  <out.har>             Servirtium tape -> HAR capture
@@ -35,7 +35,8 @@ usage() {
     println("servirtium — serve, lint, and convert Servirtium markdown tapes")
     println("")
     println("usage:")
-    println("  servirtium serve  <tape.md> [port] [--ordered]   replay tape as a live server (default port 8080)")
+    println("  servirtium serve  <tape.md>[,more.md...] [port] [--ordered]")
+    println("                                                   replay tape(s) as a live server (default port 8080)")
     println("  servirtium check  [--canonical] <tape.md> ...    lint: tapes parse clean (exit 0/1)")
     println("  servirtium import <in.har> <out.md>              HAR capture -> Servirtium tape")
     println("  servirtium export <in.md>  <out.har>             Servirtium tape -> HAR capture")
@@ -45,8 +46,9 @@ usage() {
     println("requires the file to be byte-identical to the engine's emitter form.")
 }
 
-// serve <tape.md> [port] [--ordered] — bind a playback server and block in
-// the accept loop until killed (Ctrl-C). Flags and positionals may mix.
+// serve <tape.md>[,more.md...] [port] [--ordered] — bind a playback server
+// and block in the accept loop until killed (Ctrl-C). Flags and positionals
+// may mix. A comma-separated tape list concatenates into one tape.
 run_serve(argc: int) {
     tape = ""
     port = 0
@@ -73,10 +75,41 @@ run_serve(argc: int) {
     if tape == "" { usage(); exit(2) }
     if port == 0 { port = 8080 }
 
-    raw = vcr.load(tape, port)
+    // `tape` may be a comma-separated list: load the first tape (binds the
+    // server), then append the rest onto the same interaction list. Ordered
+    // mode plays the concatenation as one long script; the default
+    // MatchMultiple mode treats it as one union store (first match wins).
+    remaining = tape
+    first = remaining
+    c = string.index_of(remaining, ",")
+    if c >= 0 {
+        first = string.substring(remaining, 0, c)
+        remaining = string.substring(remaining, c + 1, string.length(remaining))
+    } else {
+        remaining = ""
+    }
+
+    raw = vcr.load(first, port)
     if raw == null {
         println("servirtium serve: ${vcr.load_error()}")
         exit(1)
+    }
+    while remaining != "" {
+        nxt = remaining
+        c = string.index_of(remaining, ",")
+        if c >= 0 {
+            nxt = string.substring(remaining, 0, c)
+            remaining = string.substring(remaining, c + 1, string.length(remaining))
+        } else {
+            remaining = ""
+        }
+        if nxt != "" {
+            aerr = vcr.load_append_h(raw, nxt)
+            if aerr != "" {
+                println("servirtium serve: ${nxt}: ${aerr}")
+                exit(1)
+            }
+        }
     }
     if ordered == 0 { vcr.set_match_multiple_h(raw, 1) }
 

@@ -190,10 +190,13 @@ route through a record-proxy (a browser SPA, a mobile app behind a proxy) →
 `.har` → tape → deterministic replay across all 21 bindings. There's also a **standalone CLI** — `core/cli.ae` (built to `target/servirtium` by
 `core/.cli.ae`, or `ae build core/cli.ae -o servirtium`): a thin argv shim,
 statically linking the pure-Aether `vcr` module (self-contained: no `.so`, no
-env var). Subcommands: `serve <tape.md> [port] [--ordered]` (replay a tape as a
-live stub server — blocks in `http_server_start_raw`; defaults to MatchMultiple
-so repeated/out-of-order requests keep answering, `--ordered` restores the
-engine's strict consuming order), `check [--canonical] <tape.md> ...` (lint:
+env var). Subcommands: `serve <tape.md>[,more.md...] [port] [--ordered]`
+(replay a tape — or a comma-separated list, concatenated via
+`vcr.load_append_h` / `parse_tape_text_append` — as a live stub server; blocks
+in `http_server_start_raw`; defaults to MatchMultiple so repeated/out-of-order
+requests keep answering across the union of the tapes, `--ordered` restores the
+engine's strict consuming order over the concatenation),
+`check [--canonical] <tape.md> ...` (lint:
 `vcr.check_tape` parse-check, plus `vcr.canonical_check_tape` byte-comparison
 against the emitter's canonical form), and `import <in.har> <out.md>` /
 `export <in.md> <out.har>` (absorbed the old `servirtium-har` binary).
