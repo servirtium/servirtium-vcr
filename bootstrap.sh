@@ -16,16 +16,33 @@
 #
 # Env overrides:
 #   PREFIX        install prefix                 (default: $HOME/.local; no sudo)
-#   AETHER_REF    ae tag/branch/SHA to install   (default: latest tag) — pin in CI
+#   AETHER_REF    ae tag/branch/SHA to install   (default: $AE_FETCH below)
 #   AEB_REF       aeb tag/branch/SHA to install  (default: latest tag) — pin in CI
-#   MIN_AE        minimum acceptable ae version  (default: 0.183.0)
+#   MIN_AE        minimum acceptable ae version  (default: $AE_PIN below)
 #   AEB_TIMEOUT   passed through to aeb (seconds)  (optional)
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
 set -euo pipefail
 
+# ---- Aether pin: two numbers on two clocks (pattern borrowed from the aeb
+# repo's AETHER_PIN / AETHER_FETCH files — see ../aeb for the long rationale).
+#
+#   AE_PIN    is a FLOOR: the oldest ae that can compile this repo's engine.
+#             An already-installed ae >= AE_PIN is accepted as-is (no fetch).
+#             Move it ONLY when the code starts using a primitive an older
+#             ae lacks, in the same commit — never speculatively.
+#             Current evidence: core/vcr.ae uses std.encoding.base64_decode,
+#             which moved there (as a string! error-union) in ae 0.413.
+#   AE_FETCH  is the KNOWN-GOOD release get.sh installs when the floor is
+#             not met. MUST be >= AE_PIN. Bump it deliberately after a
+#             successful build+test on the new release — a newer number is
+#             not automatically better, it is another thing to have tested.
+#             Aether cuts releases fast; do not chase HEAD by hand.
+AE_PIN="0.413.0"
+AE_FETCH="v0.543.0"    # verified: engine + CLI + core_tests green on 0.543.0
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX
-MIN_AE="${MIN_AE:-0.183.0}"
+MIN_AE="${MIN_AE:-$AE_PIN}"
 AETHER_GET_URL="https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh"
 AEB_INSTALL_URL="https://raw.githubusercontent.com/aether-lang-dev/aeb/main/install.sh"
 
@@ -60,8 +77,8 @@ command -v make >/dev/null 2>&1 \
 if command -v ae >/dev/null 2>&1 && have="$(ae_version || true)" && [ -n "$have" ] && version_ge "$have" "$MIN_AE"; then
     say "ae $have already on PATH (>= $MIN_AE) — skipping"
 else
-    say "installing ae via get.sh (AETHER_REF=${AETHER_REF:-latest}, PREFIX=$PREFIX)"
-    AETHER_REF="${AETHER_REF:-}" fetch_run "$AETHER_GET_URL" || die "ae install failed (get.sh)."
+    say "installing ae via get.sh (AETHER_REF=${AETHER_REF:-$AE_FETCH}, PREFIX=$PREFIX)"
+    AETHER_REF="${AETHER_REF:-$AE_FETCH}" fetch_run "$AETHER_GET_URL" || die "ae install failed (get.sh)."
     command -v ae >/dev/null 2>&1 || die "ae installed but not on PATH — ensure $PREFIX/bin is on PATH."
     say "ae $(ae_version) ready"
 fi
@@ -139,7 +156,7 @@ if ! aeb $targets; then
 
 aeb reported a failure above. Common causes:
   - A '--emit=lib ... recompile with -fPIC' link error means a stale pre-0.182
-    ae. Reinstall a current one:  AETHER_REF=v0.184.0 $0
+    ae. Reinstall the pinned one:  AETHER_REF=$AE_FETCH $0
   - A binding's toolchain is present but too old / mismatched (e.g. a JDK newer
     than kotlinc/groovyc support), or a test runner is missing (pytest, rspec).
     Build a known-good subset:  $0 core/.build.ae
