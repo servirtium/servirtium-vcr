@@ -7,7 +7,7 @@
 // Chrome with its own WebDriver client (thirtyfour, async/tokio) connecting to
 // a chromedriver the test starts on an ephemeral port. No SUT, no network —
 // proves the full record/replay loop for the Rust binding.
-import build
+import bldr
 import std.os
 import std.string
 
@@ -18,14 +18,15 @@ _chromedriver() {
 }
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    cd = _chromedriver()
-    if cd == "" { println("todobackend/rust playback: no cached chromedriver found under ~/.cache/selenium"); return 1 }
-    rc = os.system("cd \"${root}/integration/todobackend/rust\" && SERVIRTIUM_VCR_LIB=\"${lib}\" CHROMEDRIVER=\"${cd}\" cargo test --test playback -- --nocapture")
-    if rc != 0 { println("todobackend/rust playback: failed"); return 1 }
-    println("todobackend/rust playback: passed")
-    return 0
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        cd = _chromedriver()
+        if cd == "" { println("todobackend/rust playback: no cached chromedriver found under ~/.cache/selenium"); return 1 }
+        rc = os.system("cd \"${root}/integration/todobackend/rust\" && SERVIRTIUM_VCR_LIB=\"${lib}\" CHROMEDRIVER=\"${cd}\" cargo test --test playback -- --nocapture")
+        if rc != 0 { println("todobackend/rust playback: failed"); return 1 }
+        println("todobackend/rust playback: passed")
+        return 0
+    }
 }

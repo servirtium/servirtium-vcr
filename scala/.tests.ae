@@ -1,16 +1,17 @@
 // Scala binding tests — compile *Test.scala, run via JUnit 5 (the runner is
 // language-agnostic). Engine .so via SERVIRTIUM_VCR_LIB.
-import build
+import bldr
 import scala
 import java
 import scala (scala_version)
-import build (env)
+import bldr (env)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    build.dep(b, "scala/.build.ae")
-    build.dep(b, "libs/java/junit-jupiter/.junit-jupiter.jar.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    scala.scalac_test(b) { scala_version("3.3.4") }
-    java.junit5(b) { env("SERVIRTIUM_VCR_LIB", lib) }
+    bldr.build() {
+        dep("core/.build.ae")
+        dep("scala/.build.ae")
+        dep("libs/java/junit-jupiter/.junit-jupiter.jar.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        scala.scalac_test() { scala_version("3.3.4") }
+        java.junit5() { env("SERVIRTIUM_VCR_LIB", lib) }
+    }
 }

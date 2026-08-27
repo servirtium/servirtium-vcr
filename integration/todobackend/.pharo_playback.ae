@@ -13,18 +13,19 @@
 // pharo/.tests.ae invocation (PHARO_DIR, SERVIRTIUM_VCR_LIB via run.sh); also
 // needs a Selenium 4.x server jar (SELENIUM_SERVER_JAR, default
 // $HOME/.cache/selenium/selenium-server.jar).
-import build
+import bldr
 import std.os
 import std.string
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    pharo = os.getenv("PHARO_DIR")
-    if string.length(pharo) == 0 { pharo = "$HOME/.local/pharo" }
-    rc = os.system("cd \"${root}/integration/todobackend/pharo\" && SERVIRTIUM_VCR_LIB=\"${lib}\" PHARO_DIR=\"${pharo}\" ./run.sh playback")
-    if rc != 0 { println("todobackend/pharo playback: failed"); return 1 }
-    println("todobackend/pharo playback: passed")
-    return 0
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        pharo = os.getenv("PHARO_DIR")
+        if string.length(pharo) == 0 { pharo = "$HOME/.local/pharo" }
+        rc = os.system("cd \"${root}/integration/todobackend/pharo\" && SERVIRTIUM_VCR_LIB=\"${lib}\" PHARO_DIR=\"${pharo}\" ./run.sh playback")
+        if rc != 0 { println("todobackend/pharo playback: failed"); return 1 }
+        println("todobackend/pharo playback: passed")
+        return 0
+    }
 }

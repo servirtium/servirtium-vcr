@@ -4,16 +4,17 @@
 // resolves each pinned() from the cache, ~/.m2, or the declared repos
 // (Central by default), verifying the sha256 fail-closed before use. Add
 // repo("https://your-mirror/maven") lines for an internal proxy.
-import build
+import bldr
 import java
 import java (central, repo, pinned)
 
 aeb(cap) {
-    b = build.start()
-    java.mvn_repo(b) {
-        central()
-        pinned("org.clojure:clojure:1.12.0", "c45333006441a059ea9fdb1341fc6c1f40b921a10dccd82665311e48a0384763")
-        pinned("org.clojure:core.specs.alpha:0.4.74", "eb73ac08cf49ba840c88ba67beef11336ca554333d9408808d78946e0feb9ddb")
-        pinned("org.clojure:spec.alpha:0.5.238", "94cd99b6ea639641f37af4860a643b6ed399ee5a8be5d717cff0b663c8d75077")
+    bldr.build() {
+        java.mvn_repo() {
+            central()
+            pinned("org.clojure:clojure:1.12.0", "c45333006441a059ea9fdb1341fc6c1f40b921a10dccd82665311e48a0384763")
+            pinned("org.clojure:core.specs.alpha:0.4.74", "eb73ac08cf49ba840c88ba67beef11336ca554333d9408808d78946e0feb9ddb")
+            pinned("org.clojure:spec.alpha:0.5.238", "94cd99b6ea639641f37af4860a643b6ed399ee5a8be5d717cff0b663c8d75077")
+        }
     }
 }

@@ -21,45 +21,46 @@
 // split (offline .tests.ae vs on-demand .svn_checkout.ae).
 //
 // Run:  aeb integration/climate_interop/.record.ae
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    root = build._get(b, "root")
-    out = "${root}/target/climate_interop"
-    _mk = os.system("mkdir -p \"${out}\"")
-
-    fails = 0
-
-    // --- probe 1: record-then-replay (replays committed tape by default; ---
-    // --- records from the live mirror when the tape is absent) ---
-    bin1 = "${out}/test_climate_record_then_replay"
-    log1 = "${out}/test_climate_record_then_replay.log"
-    rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_record_then_replay.ae -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
-    if rc1 != 0 {
-        println("climate_interop(record): test_climate_record_then_replay FAILED (see ${log1})")
-        fails = fails + 1
-    } else {
-        grep1 = os.system("grep -qE \"All 5 record-then-replay tests passed|SKIP test_climate_record_then_replay\" \"${log1}\"")
-        if grep1 != 0 { println("climate_interop(record): record_then_replay missing pass/skip summary"); fails = fails + 1 }
-        else { println("climate_interop(record): test_climate_record_then_replay PASS (see ${log1})") }
+    bldr.build() {
+        root = _get("root")
+        out = "${root}/target/climate_interop"
+        _mk = os.system("mkdir -p \"${out}\"")
+    
+        fails = 0
+    
+        // --- probe 1: record-then-replay (replays committed tape by default; ---
+        // --- records from the live mirror when the tape is absent) ---
+        bin1 = "${out}/test_climate_record_then_replay"
+        log1 = "${out}/test_climate_record_then_replay.log"
+        rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_record_then_replay.ae -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
+        if rc1 != 0 {
+            println("climate_interop(record): test_climate_record_then_replay FAILED (see ${log1})")
+            fails = fails + 1
+        } else {
+            grep1 = os.system("grep -qE \"All 5 record-then-replay tests passed|SKIP test_climate_record_then_replay\" \"${log1}\"")
+            if grep1 != 0 { println("climate_interop(record): record_then_replay missing pass/skip summary"); fails = fails + 1 }
+            else { println("climate_interop(record): test_climate_record_then_replay PASS (see ${log1})") }
+        }
+    
+        // --- probe 2: real-network assertions (no VCR); skips under AETHER_SKIP_NETWORK ---
+        bin2 = "${out}/test_climate_real"
+        log2 = "${out}/test_climate_real.log"
+        rc2 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_real.ae -o \"${bin2}\" >\"${log2}\" 2>&1 && \"${bin2}\" >>\"${log2}\" 2>&1")
+        if rc2 != 0 {
+            println("climate_interop(record): test_climate_real FAILED (see ${log2})")
+            fails = fails + 1
+        } else {
+            grep2 = os.system("grep -qE \"All 5 climate API tests passed|SKIP test_climate_api_real\" \"${log2}\"")
+            if grep2 != 0 { println("climate_interop(record): test_climate_real missing pass/skip summary"); fails = fails + 1 }
+            else { println("climate_interop(record): test_climate_real PASS (see ${log2})") }
+        }
+    
+        if fails != 0 { println("climate_interop(record): ${fails} test(s) failed"); return 1 }
+        println("climate_interop(record): live/record probes passed")
+        return 0
     }
-
-    // --- probe 2: real-network assertions (no VCR); skips under AETHER_SKIP_NETWORK ---
-    bin2 = "${out}/test_climate_real"
-    log2 = "${out}/test_climate_real.log"
-    rc2 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_real.ae -o \"${bin2}\" >\"${log2}\" 2>&1 && \"${bin2}\" >>\"${log2}\" 2>&1")
-    if rc2 != 0 {
-        println("climate_interop(record): test_climate_real FAILED (see ${log2})")
-        fails = fails + 1
-    } else {
-        grep2 = os.system("grep -qE \"All 5 climate API tests passed|SKIP test_climate_api_real\" \"${log2}\"")
-        if grep2 != 0 { println("climate_interop(record): test_climate_real missing pass/skip summary"); fails = fails + 1 }
-        else { println("climate_interop(record): test_climate_real PASS (see ${log2})") }
-    }
-
-    if fails != 0 { println("climate_interop(record): ${fails} test(s) failed"); return 1 }
-    println("climate_interop(record): live/record probes passed")
-    return 0
 }

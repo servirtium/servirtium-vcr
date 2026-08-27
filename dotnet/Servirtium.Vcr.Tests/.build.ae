@@ -1,20 +1,21 @@
 // Servirtium.Vcr.Tests — xunit unit tests for the .NET binding. Generated
 // .csproj (git-ignored). ProjectReference to the library comes from the
-// build.dep on Servirtium.Vcr/.build.ae; tapes/ fixtures are copied to the
+// bldr.dep on Servirtium.Vcr/.build.ae; tapes/ fixtures are copied to the
 // output dir via content_files (tests load them from AppContext.BaseDirectory).
-import build
+import bldr
 import dotnet
 import dotnet (target_framework, nullable, test_project, nuget, content_files)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "dotnet/Servirtium.Vcr/.build.ae")
-    dotnet.build_project(b) {
-        target_framework("net10.0")
-        nullable()
-        test_project()
-        nuget("Microsoft.NET.Test.Sdk:17.11.1")
-        nuget("xunit:2.9.2")
-        nuget("xunit.runner.visualstudio:2.8.2")
-        content_files("tapes/**/*")
+    bldr.build() {
+        dep("dotnet/Servirtium.Vcr/.build.ae")
+        dotnet.build_project() {
+            target_framework("net10.0")
+            nullable()
+            test_project()
+            nuget("Microsoft.NET.Test.Sdk:17.11.1")
+            nuget("xunit:2.9.2")
+            nuget("xunit.runner.visualstudio:2.8.2")
+            content_files("tapes/**/*")
+        }
     }
 }

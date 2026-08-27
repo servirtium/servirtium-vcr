@@ -6,16 +6,17 @@
 // ERL_LIBS in); code:priv_dir then resolves priv/servirtium_nif.so and the NIF
 // loads. The engine .so is pulled in transitively via erlang/.build.ae's dep
 // on core. ExUnit runs serially (max_cases: 1).
-import build
+import bldr
 import elixir
-import build (env)
+import bldr (env)
 import elixir (deps_get_first)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "erlang/.build.ae")
-    ebin = build.dep_artifact(b, "erlang/.build.ae", "nif_ebin")
-    elixir.test(b) {
-        env("SERVIRTIUM_NIF_EBIN", ebin)
-        deps_get_first("1")
+    bldr.build() {
+        dep("erlang/.build.ae")
+        ebin = dep_artifact("erlang/.build.ae", "nif_ebin")
+        elixir.test() {
+            env("SERVIRTIUM_NIF_EBIN", ebin)
+            deps_get_first("1")
+        }
     }
 }

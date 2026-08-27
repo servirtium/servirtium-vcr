@@ -6,15 +6,16 @@
 // code path via ERL_LIBS (the `servirtium_nif` module + its priv .so resolve
 // the standard OTP way — code:priv_dir). Engine .so comes transitively via the
 // erlang build's dep on core.
-import build
+import bldr
 import gleam
-import build (env, step)
+import bldr (env, step)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "erlang/.build.ae")
-    libs = build.dep_artifact(b, "erlang/.build.ae", "erl_libs")
-    gleam.test_existing(b) {
-        env("ERL_LIBS", libs)
-        step("PATH=\"$HOME/.local/bin:$PATH\" gleam test")
+    bldr.build() {
+        dep("erlang/.build.ae")
+        libs = dep_artifact("erlang/.build.ae", "erl_libs")
+        gleam.test_existing() {
+            env("ERL_LIBS", libs)
+            step("PATH=\"$HOME/.local/bin:$PATH\" gleam test")
+        }
     }
 }

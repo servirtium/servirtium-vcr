@@ -3,18 +3,19 @@
 // at the monorepo core/native (ghc-pkg rejects a relative extra-lib-dirs),
 // then `cabal test` with LD_LIBRARY_PATH for the runtime loader. The engine
 // dir is derived from the dep's published shared_lib artifact, not hardcoded.
-import build
+import bldr
 import haskell
-import build (env)
+import bldr (env)
 import std.io
 import std.path
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    nat = path.dirname(lib)
-    cfg = "package servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
-    _w = io.write_file("${root}/haskell/cabal.project.local", cfg)
-    haskell.test(b) { env("LD_LIBRARY_PATH", nat) }
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        nat = path.dirname(lib)
+        cfg = "package servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
+        _w = io.write_file("${root}/haskell/cabal.project.local", cfg)
+        haskell.test() { env("LD_LIBRARY_PATH", nat) }
+    }
 }

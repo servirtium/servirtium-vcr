@@ -9,46 +9,47 @@
 // Runs the example in both supported .so-location modes, each in its own fresh
 // process: `explicit` (first-class native_lib= argument) and `discovery`
 // (zero-config; the wheel finds its own bundled .so).
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "python/.package.ae")
-    wheel_dir = build.dep_artifact(b, "python/.package.ae", "wheel_dir")
-    root = build._get(b, "root")
-    exdir = "${root}/python/example"
-    venv = "${root}/target/python-consumer-venv"
-
-    // Fresh venv; install ONLY the wheel (install_requires=[] → no network).
-    rc = os.system("rm -rf \"${venv}\" && python3 -m venv \"${venv}\" && \"${venv}/bin/pip\" install -q --disable-pip-version-check \"${wheel_dir}\"/*.whl")
-    if rc != 0 {
-        println("python example: fresh-venv wheel install failed")
-        return 1
+    bldr.build() {
+        dep("python/.package.ae")
+        wheel_dir = dep_artifact("python/.package.ae", "wheel_dir")
+        root = _get("root")
+        exdir = "${root}/python/example"
+        venv = "${root}/target/python-consumer-venv"
+    
+        // Fresh venv; install ONLY the wheel (install_requires=[] → no network).
+        rc = os.system("rm -rf \"${venv}\" && python3 -m venv \"${venv}\" && \"${venv}/bin/pip\" install -q --disable-pip-version-check \"${wheel_dir}\"/*.whl")
+        if rc != 0 {
+            println("python example: fresh-venv wheel install failed")
+            return 1
+        }
+    
+        // Run from example/ so `import servirtium` resolves to the venv's installed
+        // package (site-packages), NOT python/servirtium/. SERVIRTIUM_VCR_LIB is
+        // explicitly unset so only the bundled .so can satisfy the load.
+        rc2 = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB \"${venv}/bin/python\" consumer_example.py explicit")
+        if rc2 != 0 {
+            println("python example: explicit-mode consumer run failed")
+            return 1
+        }
+        rc3 = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB \"${venv}/bin/python\" consumer_example.py discovery")
+        if rc3 != 0 {
+            println("python example: discovery-mode consumer run failed")
+            return 1
+        }
+    
+        // Record mode: prove the installed wheel's recorder emits a byte-identical
+        // canonical tape (and that recorder + player round-trip).
+        rc4 = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB \"${venv}/bin/python\" consumer_example.py record")
+        if rc4 != 0 {
+            println("python example: record-mode consumer run failed")
+            return 1
+        }
+    
+        println("python example: PASS — installed wheel replayed AND recorded the canonical tape (explicit + discovery + record)")
+        return 0
     }
-
-    // Run from example/ so `import servirtium` resolves to the venv's installed
-    // package (site-packages), NOT python/servirtium/. SERVIRTIUM_VCR_LIB is
-    // explicitly unset so only the bundled .so can satisfy the load.
-    rc2 = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB \"${venv}/bin/python\" consumer_example.py explicit")
-    if rc2 != 0 {
-        println("python example: explicit-mode consumer run failed")
-        return 1
-    }
-    rc3 = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB \"${venv}/bin/python\" consumer_example.py discovery")
-    if rc3 != 0 {
-        println("python example: discovery-mode consumer run failed")
-        return 1
-    }
-
-    // Record mode: prove the installed wheel's recorder emits a byte-identical
-    // canonical tape (and that recorder + player round-trip).
-    rc4 = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB \"${venv}/bin/python\" consumer_example.py record")
-    if rc4 != 0 {
-        println("python example: record-mode consumer run failed")
-        return 1
-    }
-
-    println("python example: PASS — installed wheel replayed AND recorded the canonical tape (explicit + discovery + record)")
-    return 0
 }

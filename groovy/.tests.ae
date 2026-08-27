@@ -1,16 +1,17 @@
 // Groovy binding tests — compile src/test/groovy, run via JUnit 5 (the
 // runner is language-agnostic). Engine .so via SERVIRTIUM_VCR_LIB.
-import build
+import bldr
 import groovy
 import java
 import groovy (source_layout, target_bytecode)
-import build (env)
+import bldr (env)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    build.dep(b, "groovy/.build.ae")
-    build.dep(b, "libs/java/junit-jupiter/.junit-jupiter.jar.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    groovy.groovyc_test(b) { source_layout("maven idiomatic") target_bytecode("22") }
-    java.junit5(b) { env("SERVIRTIUM_VCR_LIB", lib) }
+    bldr.build() {
+        dep("core/.build.ae")
+        dep("groovy/.build.ae")
+        dep("libs/java/junit-jupiter/.junit-jupiter.jar.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        groovy.groovyc_test() { source_layout("maven idiomatic") target_bytecode("22") }
+        java.junit5() { env("SERVIRTIUM_VCR_LIB", lib) }
+    }
 }

@@ -1,11 +1,12 @@
 // Groovy binding — aeb-native. Compiles src/main/groovy against the Java
-// binding's classes (build.dep java/.build.ae); the groovy SDK supplies the
+// binding's classes (bldr.dep java/.build.ae); the groovy SDK supplies the
 // Groovy runtime jars.
-import build
+import bldr
 import groovy
 import groovy (source_layout, target_bytecode)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "java/.build.ae")
-    groovy.groovyc(b) { source_layout("maven idiomatic") target_bytecode("22") }
+    bldr.build() {
+        dep("java/.build.ae")
+        groovy.groovyc() { source_layout("maven idiomatic") target_bytecode("22") }
+    }
 }

@@ -6,31 +6,32 @@
 // native/ .so satisfies the link). A separate consumer program compiles against
 // it (via --path) and runs, replaying the canonical tape with no
 // SERVIRTIUM_VCR_LIB.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "nim/.package.ae")
-    _pkg = build.dep_artifact(b, "nim/.package.ae", "package_dir")
-    root = build._get(b, "root")
-    exdir = "${root}/nim/example"
-    pkg = "${root}/target/nim-pkg"
-    consumer = "${root}/target/nim-consumer"
-
-    rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/nim\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/tests\" \"${pkg}/.gitignore\" && mkdir -p \"${consumer}/tapes\" && cp \"${exdir}/consumer_example.nim\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
-    if rc != 0 {
-        println("nim example: staging the published package + consumer failed")
-        return 1
+    bldr.build() {
+        dep("nim/.package.ae")
+        _pkg = dep_artifact("nim/.package.ae", "package_dir")
+        root = _get("root")
+        exdir = "${root}/nim/example"
+        pkg = "${root}/target/nim-pkg"
+        consumer = "${root}/target/nim-consumer"
+    
+        rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/nim\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/tests\" \"${pkg}/.gitignore\" && mkdir -p \"${consumer}/tapes\" && cp \"${exdir}/consumer_example.nim\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("nim example: staging the published package + consumer failed")
+            return 1
+        }
+    
+        // Compile the consumer against the published package's src (--path), then
+        // run it (binary lands in the consumer dir, next to tapes/).
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB nim c -r --hints:off --path:\"${pkg}/src\" consumer_example.nim")
+        if rc2 != 0 {
+            println("nim example: consumer compile/run against the bundled package failed")
+            return 1
+        }
+        println("nim example: PASS — consumer replayed the canonical tape (discovery; bundled .so via rpath)")
+        return 0
     }
-
-    // Compile the consumer against the published package's src (--path), then
-    // run it (binary lands in the consumer dir, next to tapes/).
-    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB nim c -r --hints:off --path:\"${pkg}/src\" consumer_example.nim")
-    if rc2 != 0 {
-        println("nim example: consumer compile/run against the bundled package failed")
-        return 1
-    }
-    println("nim example: PASS — consumer replayed the canonical tape (discovery; bundled .so via rpath)")
-    return 0
 }

@@ -3,21 +3,22 @@
 // the canonical tape via `servirtium/playback`. The engine .so is transitive
 // from the servirtium-vcr jar resource; no SERVIRTIUM_VCR_LIB. Clojure needs the
 // FFM flag passed to its JVM (-J--enable-native-access).
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "clojure/.package.ae")
-    _gav = build.dep_artifact(b, "clojure/.package.ae", "maven_gav")
-    root = build._get(b, "root")
-    exdir = "${root}/clojure/example"
-
-    rc = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB clojure -J--enable-native-access=ALL-UNNAMED -M -m consumer-example")
-    if rc != 0 {
-        println("clojure example: consumer run against the installed clojure jar failed")
-        return 1
+    bldr.build() {
+        dep("clojure/.package.ae")
+        _gav = dep_artifact("clojure/.package.ae", "maven_gav")
+        root = _get("root")
+        exdir = "${root}/clojure/example"
+    
+        rc = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB clojure -J--enable-native-access=ALL-UNNAMED -M -m consumer-example")
+        if rc != 0 {
+            println("clojure example: consumer run against the installed clojure jar failed")
+            return 1
+        }
+        println("clojure example: PASS — installed Clojure jar replayed the canonical tape (discovery)")
+        return 0
     }
-    println("clojure example: PASS — installed Clojure jar replayed the canonical tape (discovery)")
-    return 0
 }

@@ -18,7 +18,7 @@
 // here that transform is baked into tapes/svn_checkout_scrubbed.tape once.
 //
 // Run:  aeb integration/subversion_interop/.svn_checkout.ae
-import build
+import bldr
 import std.os
 import std.string
 
@@ -33,8 +33,8 @@ aeb(cap) {
         return 0
     }
 
-    b = build.start()
-    root = build._get(b, "root")
+    b = bldr.start()
+    root = bldr._get(b, "root")
     out = "${root}/target/subversion_interop"
     tape = "${root}/integration/subversion_interop/tapes/svn_checkout_scrubbed.tape"
     srv_bin = "${out}/checkout_server"

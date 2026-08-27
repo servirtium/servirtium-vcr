@@ -3,21 +3,22 @@
 // servirtium.clj on the classpath) to ~/.m2; deps java/.package.ae so the Java
 // jar (with the bundled engine .so) is present and rides along transitively for
 // a deps.edn consumer.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "java/.package.ae")
-    root = build._get(b, "root")
-    dir = "${root}/clojure"
-
-    rc = os.system("cd \"${dir}\" && mvn -q -B -Dmaven.test.skip=true install")
-    if rc != 0 {
-        println("clojure package: `mvn install` of servirtium-vcr-clojure failed")
-        return 1
+    bldr.build() {
+        dep("java/.package.ae")
+        root = _get("root")
+        dir = "${root}/clojure"
+    
+        rc = os.system("cd \"${dir}\" && mvn -q -B -Dmaven.test.skip=true install")
+        if rc != 0 {
+            println("clojure package: `mvn install` of servirtium-vcr-clojure failed")
+            return 1
+        }
+        publish_artifact("maven_gav", "com.paulhammant.servirtium:servirtium-vcr-clojure:2.0.0-SNAPSHOT")
+        println("clojure package: installed servirtium-vcr-clojure jar to ~/.m2")
+        return 0
     }
-    build.publish_artifact(b, "maven_gav", "com.paulhammant.servirtium:servirtium-vcr-clojure:2.0.0-SNAPSHOT")
-    println("clojure package: installed servirtium-vcr-clojure jar to ~/.m2")
-    return 0
 }

@@ -9,32 +9,33 @@
 // Deps core/.build.ae for the engine .so. Downstream JVM consumer example
 // leaves (java + kotlin/scala/clojure/groovy) dep this node and then resolve
 // com.paulhammant.servirtium:servirtium-vcr:2.0.0-SNAPSHOT from ~/.m2.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    root = build._get(b, "root")
-    javadir = "${root}/java"
-
-    // 1. Bundle the engine .so as the jar resource /native/linux-x64/<file>.
-    rc = os.system("mkdir -p \"${javadir}/src/main/resources/native/linux-x64\" && cp \"${lib}\" \"${javadir}/src/main/resources/native/linux-x64/libservirtium_vcr.so\"")
-    if rc != 0 {
-        println("java package: failed to stage engine .so into src/main/resources/native/linux-x64/")
-        return 1
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        root = _get("root")
+        javadir = "${root}/java"
+    
+        // 1. Bundle the engine .so as the jar resource /native/linux-x64/<file>.
+        rc = os.system("mkdir -p \"${javadir}/src/main/resources/native/linux-x64\" && cp \"${lib}\" \"${javadir}/src/main/resources/native/linux-x64/libservirtium_vcr.so\"")
+        if rc != 0 {
+            println("java package: failed to stage engine .so into src/main/resources/native/linux-x64/")
+            return 1
+        }
+    
+        // 2. Build the jar (with the .so resource) and install it to ~/.m2.
+        //    -Dmaven.test.skip=true: don't compile/run the binding's own tests here
+        //    (that's java/.tests.ae's job) — the main sources are JDK-only.
+        rc2 = os.system("cd \"${javadir}\" && mvn -q -B -Dmaven.test.skip=true install")
+        if rc2 != 0 {
+            println("java package: `mvn install` failed")
+            return 1
+        }
+        publish_artifact("maven_gav", "com.paulhammant.servirtium:servirtium-vcr:2.0.0-SNAPSHOT")
+        println("java package: installed servirtium-vcr jar (engine .so bundled) to ~/.m2")
+        return 0
     }
-
-    // 2. Build the jar (with the .so resource) and install it to ~/.m2.
-    //    -Dmaven.test.skip=true: don't compile/run the binding's own tests here
-    //    (that's java/.tests.ae's job) — the main sources are JDK-only.
-    rc2 = os.system("cd \"${javadir}\" && mvn -q -B -Dmaven.test.skip=true install")
-    if rc2 != 0 {
-        println("java package: `mvn install` failed")
-        return 1
-    }
-    build.publish_artifact(b, "maven_gav", "com.paulhammant.servirtium:servirtium-vcr:2.0.0-SNAPSHOT")
-    println("java package: installed servirtium-vcr jar (engine .so bundled) to ~/.m2")
-    return 0
 }

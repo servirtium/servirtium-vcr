@@ -5,21 +5,22 @@
 // (servirtium-vcr, which bundles the engine .so as a resource), so we dep
 // java/.package.ae to get that into ~/.m2 first. A Kotlin consumer then
 // resolves servirtium-vcr-kotlin and the .so rides along transitively.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "java/.package.ae")
-    root = build._get(b, "root")
-    ktdir = "${root}/kotlin"
-
-    rc = os.system("cd \"${ktdir}\" && mvn -q -B -Dmaven.test.skip=true install")
-    if rc != 0 {
-        println("kotlin package: `mvn install` of servirtium-vcr-kotlin failed")
-        return 1
+    bldr.build() {
+        dep("java/.package.ae")
+        root = _get("root")
+        ktdir = "${root}/kotlin"
+    
+        rc = os.system("cd \"${ktdir}\" && mvn -q -B -Dmaven.test.skip=true install")
+        if rc != 0 {
+            println("kotlin package: `mvn install` of servirtium-vcr-kotlin failed")
+            return 1
+        }
+        publish_artifact("maven_gav", "com.paulhammant.servirtium:servirtium-vcr-kotlin:2.0.0-SNAPSHOT")
+        println("kotlin package: installed servirtium-vcr-kotlin jar to ~/.m2")
+        return 0
     }
-    build.publish_artifact(b, "maven_gav", "com.paulhammant.servirtium:servirtium-vcr-kotlin:2.0.0-SNAPSHOT")
-    println("kotlin package: installed servirtium-vcr-kotlin jar to ~/.m2")
-    return 0
 }

@@ -7,25 +7,26 @@
 // discovered from the jar's own /native/linux-x64/ resource and no
 // SERVIRTIUM_VCR_LIB. The honest "add the Maven dependency and it just works"
 // test the in-tree java/.tests.ae cannot give.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "java/.package.ae")
-    _gav = build.dep_artifact(b, "java/.package.ae", "maven_gav")
-    root = build._get(b, "root")
-    exdir = "${root}/java/example"
-
-    // `mvn test` resolves servirtium-vcr + junit from ~/.m2 / central, compiles
-    // the consumer tests, and runs them (surefire adds --enable-native-access):
-    // PlaybackConsumerTest (replay) and RecordConsumerTest (record a
-    // byte-identical canonical tape + round-trip).
-    rc = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB mvn -q -B test")
-    if rc != 0 {
-        println("java example: consumer `mvn test` against the installed jar failed")
-        return 1
+    bldr.build() {
+        dep("java/.package.ae")
+        _gav = dep_artifact("java/.package.ae", "maven_gav")
+        root = _get("root")
+        exdir = "${root}/java/example"
+    
+        // `mvn test` resolves servirtium-vcr + junit from ~/.m2 / central, compiles
+        // the consumer tests, and runs them (surefire adds --enable-native-access):
+        // PlaybackConsumerTest (replay) and RecordConsumerTest (record a
+        // byte-identical canonical tape + round-trip).
+        rc = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB mvn -q -B test")
+        if rc != 0 {
+            println("java example: consumer `mvn test` against the installed jar failed")
+            return 1
+        }
+        println("java example: PASS — installed Maven jar replayed AND recorded the canonical tape (discovery; jar-bundled .so)")
+        return 0
     }
-    println("java example: PASS — installed Maven jar replayed AND recorded the canonical tape (discovery; jar-bundled .so)")
-    return 0
 }

@@ -6,22 +6,23 @@
 // into php/native/ (where the loader's bundled fallback looks, and which
 // Composer carries along in the copy). Deps core/.build.ae; publishes the php
 // package dir on the "package_dir" edge for php/.example.ae.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    root = build._get(b, "root")
-    phpdir = "${root}/php"
-
-    rc = os.system("mkdir -p \"${phpdir}/native\" && cp \"${lib}\" \"${phpdir}/native/libservirtium_vcr.so\"")
-    if rc != 0 {
-        println("php package: failed to stage engine .so into php/native/")
-        return 1
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        root = _get("root")
+        phpdir = "${root}/php"
+    
+        rc = os.system("mkdir -p \"${phpdir}/native\" && cp \"${lib}\" \"${phpdir}/native/libservirtium_vcr.so\"")
+        if rc != 0 {
+            println("php package: failed to stage engine .so into php/native/")
+            return 1
+        }
+        publish_artifact("package_dir", "${phpdir}")
+        println("php package: staged engine .so into php/native/ (Composer path package ready)")
+        return 0
     }
-    build.publish_artifact(b, "package_dir", "${phpdir}")
-    println("php package: staged engine .so into php/native/ (Composer path package ready)")
-    return 0
 }

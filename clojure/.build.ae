@@ -1,14 +1,15 @@
 // Clojure binding — aeb-native build node. Load-checks the servirtium
 // namespace (src/main/clojure) against the Java binding's classes
-// (build.dep java/.build.ae) + the vendored clojure runtime, and republishes
+// (bldr.dep java/.build.ae) + the vendored clojure runtime, and republishes
 // that classpath so the test node deps only THIS node (java + runtime arrive
 // transitively, the same shape as kotlin/scala/groovy).
-import build
+import bldr
 import clojure
 import clojure (source_layout)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "java/.build.ae")
-    build.dep(b, "libs/java/clojure/.clojure.jar.ae")
-    clojure.compile(b) { source_layout("maven idiomatic") }
+    bldr.build() {
+        dep("java/.build.ae")
+        dep("libs/java/clojure/.clojure.jar.ae")
+        clojure.compile() { source_layout("maven idiomatic") }
+    }
 }

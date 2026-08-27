@@ -9,41 +9,42 @@
 // start it, read its port, build+run the probe with the pure-Aether engine,
 // tear the upstream down. Name it to run:
 //   aeb core_tests/.chunked.ae
-import build
+import bldr
 import std.os
 import std.string
 aeb(cap) {
-    b = build.start()
-    root = build._get(b, "root")
-    td = "${root}/target/core_tests_chunked"
-    _mk = os.system("mkdir -p \"${td}\"")
-
-    cc = os.system("cc \"${root}/core_tests/chunked_upstream.c\" -o \"${td}/chunked_upstream\"")
-    if cc != 0 { println("core_tests/chunked: failed to compile chunked_upstream.c"); return 1 }
-
-    bp = os.system("cd \"${root}\" && ae build core_tests/chunked_record_probe.ae -o \"${td}/probe\"")
-    if bp != 0 { println("core_tests/chunked: failed to build probe"); return 1 }
-
-    // UP: start the chunked upstream; it prints its OS-assigned port to stdout.
-    _start = os.system("\"${td}/chunked_upstream\" > \"${td}/port.txt\" 2>/dev/null &")
-    port = ""
-    i = 0
-    while i < 100 {
-        p, _ = os.exec("head -n1 \"${td}/port.txt\" 2>/dev/null")
-        port = string.trim(p)
-        if string.length(port) > 0 { i = 100 } else { _s = os.system("sleep 0.05")  i = i + 1 }
+    bldr.build() {
+        root = _get("root")
+        td = "${root}/target/core_tests_chunked"
+        _mk = os.system("mkdir -p \"${td}\"")
+    
+        cc = os.system("cc \"${root}/core_tests/chunked_upstream.c\" -o \"${td}/chunked_upstream\"")
+        if cc != 0 { println("core_tests/chunked: failed to compile chunked_upstream.c"); return 1 }
+    
+        bp = os.system("cd \"${root}\" && ae build core_tests/chunked_record_probe.ae -o \"${td}/probe\"")
+        if bp != 0 { println("core_tests/chunked: failed to build probe"); return 1 }
+    
+        // UP: start the chunked upstream; it prints its OS-assigned port to stdout.
+        _start = os.system("\"${td}/chunked_upstream\" > \"${td}/port.txt\" 2>/dev/null &")
+        port = ""
+        i = 0
+        while i < 100 {
+            p, _ = os.exec("head -n1 \"${td}/port.txt\" 2>/dev/null")
+            port = string.trim(p)
+            if string.length(port) > 0 { i = 100 } else { _s = os.system("sleep 0.05")  i = i + 1 }
+        }
+    
+        result = 1
+        if string.length(port) == 0 {
+            println("core_tests/chunked: chunked upstream did not report a port")
+        } else {
+            result = os.system("cd \"${root}\" && UPSTREAM_PORT=${port} \"${td}/probe\"")
+        }
+    
+        // DOWN: unconditional teardown of the upstream.
+        _k = os.system("pkill -x chunked_upstream >/dev/null 2>&1")
+        if result != 0 { println("core_tests/chunked: failed"); return 1 }
+        println("core_tests/chunked: passed")
+        return 0
     }
-
-    result = 1
-    if string.length(port) == 0 {
-        println("core_tests/chunked: chunked upstream did not report a port")
-    } else {
-        result = os.system("cd \"${root}\" && UPSTREAM_PORT=${port} \"${td}/probe\"")
-    }
-
-    // DOWN: unconditional teardown of the upstream.
-    _k = os.system("pkill -x chunked_upstream >/dev/null 2>&1")
-    if result != 0 { println("core_tests/chunked: failed"); return 1 }
-    println("core_tests/chunked: passed")
-    return 0
 }

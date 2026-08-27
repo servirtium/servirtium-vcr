@@ -2,23 +2,24 @@
 // tapes by driving the checkboxes against a fresh "pick two" stub backend per
 // scenario (the third toggle in block-third gets a 409 "Impossible"). Run by
 // name to (re)record:  aeb integration/vue-storybook/.triple_record.ae
-import build
+import bldr
 import std.os
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    dir = "${root}/integration/vue-storybook"
-
-    jsb = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && npm run build")
-    if jsb != 0 { println("vue-storybook(triple record): failed to build the JS binding"); return 1 }
-
-    bld = os.system("cd \"${dir}\" && npm install --omit=dev --silent --no-audit --no-fund && npm run build")
-    if bld != 0 { println("vue-storybook(triple record): npm install/build failed"); return 1 }
-
-    rc = os.system("cd \"${dir}\" && SERVIRTIUM_VCR_LIB=\"${lib}\" node triple-record.cjs")
-    if rc != 0 { println("vue-storybook(triple record): failed"); return 1 }
-    println("vue-storybook(triple record): wrote tapes/triple-*.md")
-    return 0
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        dir = "${root}/integration/vue-storybook"
+    
+        jsb = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && npm run build")
+        if jsb != 0 { println("vue-storybook(triple record): failed to build the JS binding"); return 1 }
+    
+        bld = os.system("cd \"${dir}\" && npm install --omit=dev --silent --no-audit --no-fund && npm run build")
+        if bld != 0 { println("vue-storybook(triple record): npm install/build failed"); return 1 }
+    
+        rc = os.system("cd \"${dir}\" && SERVIRTIUM_VCR_LIB=\"${lib}\" node triple-record.cjs")
+        if rc != 0 { println("vue-storybook(triple record): failed"); return 1 }
+        println("vue-storybook(triple record): wrote tapes/triple-*.md")
+        return 0
+    }
 }

@@ -4,28 +4,29 @@
 // never checked in — matching google-monorepo-sim's csharp components
 // (a .build.ae per project dir).
 //
-// build.dep on core/.build.ae builds the engine .so first; native_runtime
+// bldr.dep on core/.build.ae builds the engine .so first; native_runtime
 // stages it under runtimes/<rid>/native/ so it's packed into the NuGet and
 // copied next to the assembly for dev/test (NativeLoader probes there).
 // Only the host RID (linux-x64) is wired here; the full per-RID grid feeds
 // the other native_runtime() calls at CI pack time.
-import build
+import bldr
 import dotnet
 import dotnet (target_framework, root_namespace, nullable, package_id, package_description, native_runtime)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    dotnet.build_project(b) {
-        target_framework("net8.0")
-        root_namespace("Servirtium.Vcr")
-        nullable()
-        package_id("Servirtium.Vcr")
-        package_description("Idiomatic .NET record/replay (Servirtium) over the Aether VCR core, via P/Invoke to a precompiled native library.")
-        // NOTE: no package_readme — the binding README is at dotnet/README.md
-        // (parent dir), and the aeb setter uses one value for both
-        // <PackageReadmeFile> (needs a bare filename) and <None Include>
-        // (needs ../README.md). Filed as an aeb follow-up; omit for now.
-        native_runtime("linux-x64", lib)
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        dotnet.build_project() {
+            target_framework("net8.0")
+            root_namespace("Servirtium.Vcr")
+            nullable()
+            package_id("Servirtium.Vcr")
+            package_description("Idiomatic .NET record/replay (Servirtium) over the Aether VCR core, via P/Invoke to a precompiled native library.")
+            // NOTE: no package_readme — the binding README is at dotnet/README.md
+            // (parent dir), and the aeb setter uses one value for both
+            // <PackageReadmeFile> (needs a bare filename) and <None Include>
+            // (needs ../README.md). Filed as an aeb follow-up; omit for now.
+            native_runtime("linux-x64", lib)
+        }
     }
 }

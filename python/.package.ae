@@ -9,40 +9,41 @@
 //
 // Deps core/.build.ae for the engine .so; publishes the built wheel on the
 // "wheel" artifact edge, which python/.example.ae consumes.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    root = build._get(b, "root")
-    pydir = "${root}/python"
-
-    // 1. Bundle the engine .so into the package tree (what the wheel ships).
-    rc = os.system("mkdir -p \"${pydir}/servirtium/native\" && cp \"${lib}\" \"${pydir}/servirtium/native/libservirtium_vcr.so\"")
-    if rc != 0 {
-        println("python package: failed to stage engine .so into servirtium/native/")
-        return 1
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        root = _get("root")
+        pydir = "${root}/python"
+    
+        // 1. Bundle the engine .so into the package tree (what the wheel ships).
+        rc = os.system("mkdir -p \"${pydir}/servirtium/native\" && cp \"${lib}\" \"${pydir}/servirtium/native/libservirtium_vcr.so\"")
+        if rc != 0 {
+            println("python package: failed to stage engine .so into servirtium/native/")
+            return 1
+        }
+    
+        // 2. Build the wheel from the existing setup.py (isolated build backend).
+        rc2 = os.system("cd \"${pydir}\" && rm -rf dist build servirtium.egg-info && python3 -m build --wheel")
+        if rc2 != 0 {
+            println("python package: `python3 -m build --wheel` failed (is python-build installed?)")
+            return 1
+        }
+    
+        // 3. Publish the dist/ dir (holds exactly one wheel — dist was wiped above).
+        //    We can't rename the wheel to a fixed name: pip validates wheel
+        //    filenames strictly (name-version-python-abi-platform). The consumer
+        //    leaf globs dist/*.whl.
+        rc3 = os.system("ls \"${pydir}/dist\"/*.whl >/dev/null 2>&1")
+        if rc3 != 0 {
+            println("python package: no wheel produced under python/dist/")
+            return 1
+        }
+        publish_artifact("wheel_dir", "${pydir}/dist")
+        println("python package: built wheel with engine .so bundled → python/dist/")
+        return 0
     }
-
-    // 2. Build the wheel from the existing setup.py (isolated build backend).
-    rc2 = os.system("cd \"${pydir}\" && rm -rf dist build servirtium.egg-info && python3 -m build --wheel")
-    if rc2 != 0 {
-        println("python package: `python3 -m build --wheel` failed (is python-build installed?)")
-        return 1
-    }
-
-    // 3. Publish the dist/ dir (holds exactly one wheel — dist was wiped above).
-    //    We can't rename the wheel to a fixed name: pip validates wheel
-    //    filenames strictly (name-version-python-abi-platform). The consumer
-    //    leaf globs dist/*.whl.
-    rc3 = os.system("ls \"${pydir}/dist\"/*.whl >/dev/null 2>&1")
-    if rc3 != 0 {
-        println("python package: no wheel produced under python/dist/")
-        return 1
-    }
-    build.publish_artifact(b, "wheel_dir", "${pydir}/dist")
-    println("python package: built wheel with engine .so bundled → python/dist/")
-    return 0
 }

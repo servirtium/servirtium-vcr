@@ -6,53 +6,54 @@
 // first-class native-lib override), then replays the canonical tape over
 // in-image HTTP (ZnClient) — with no SERVIRTIUM_VCR_LIB. The honest "load the
 // package into my image and it just works" test.
-import build
+import bldr
 import std.os
 import std.io
 import std.string
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "pharo/.package.ae")
-    _pkg = build.dep_artifact(b, "pharo/.package.ae", "package_dir")
-    root = build._get(b, "root")
-    home = os.getenv("HOME")
-    pharo_dir = os.getenv("PHARO_DIR")
-    if string.length(pharo_dir) == 0 {
-        pharo_dir = "${home}/.local/pharo"
+    bldr.build() {
+        dep("pharo/.package.ae")
+        _pkg = dep_artifact("pharo/.package.ae", "package_dir")
+        root = _get("root")
+        home = os.getenv("HOME")
+        pharo_dir = os.getenv("PHARO_DIR")
+        if string.length(pharo_dir) == 0 {
+            pharo_dir = "${home}/.local/pharo"
+        }
+        pkg = "${root}/target/pharo-pkg"
+        consumer = "${root}/target/pharo-consumer"
+        so = "${pkg}/native/libservirtium_vcr.so"
+        tape = "${consumer}/single_get.md"
+    
+        // Published package copy (src + bundled .so, no core sibling) + a fresh
+        // throwaway image so we never mutate the developer's base image.
+        rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && mkdir -p \"${pkg}/native\" \"${consumer}\" && cp -r \"${root}/pharo/src\" \"${pkg}/src\" && cp \"${root}/pharo/native/libservirtium_vcr.so\" \"${pkg}/native/\" && cp \"${root}/pharo/src/Servirtium-Tests/tapes/single_get.md\" \"${tape}\" && cp \"${pharo_dir}/Pharo.image\" \"${consumer}/Consumer.image\" && (cp \"${pharo_dir}/Pharo.changes\" \"${consumer}/Consumer.changes\" 2>/dev/null || true) && (for s in \"${pharo_dir}\"/*.sources; do ln -sf \"$s\" \"${consumer}/$(basename \"$s\")\"; done)")
+        if rc != 0 {
+            println("pharo example: staging the published package + fresh image failed")
+            return 1
+        }
+    
+        // 1. Load only the Servirtium package (not the tests) from the published src.
+        loadst = "[ Metacello new baseline: 'Servirtium'; repository: 'tonel://${pkg}/src'; load: 'Servirtium'. Stdio stdout nextPutAll: 'LOADED'; lf ] on: Error do: [ :e | Stdio stdout nextPutAll: 'LOAD FAILED: '; nextPutAll: e messageText; lf. Smalltalk exitFailure ]"
+        _w1 = io.write_file("${consumer}/load.st", loadst)
+    
+        // 2. Pin the engine explicitly (first-class native-lib override), replay
+        //    the canonical tape, and assert body + a clean #ok outcome.
+        runst = "[ | server body kind | ServirtiumLibrary libPath: '${so}'. server := (Servirtium playback: '${tape}') port: 0; start. body := ZnClient new get: server baseUrl, '/ok'. kind := server lastKind. server stop. (body = 'ok-body' and: [ kind = #ok ]) ifTrue: [ Stdio stdout nextPutAll: 'PASS[explicit]: consumer replayed the canonical tape via the loaded Servirtium package'; lf. Smalltalk exitSuccess ] ifFalse: [ Stdio stdout nextPutAll: 'FAIL: body='; print: body; nextPutAll: ' kind='; print: kind; lf. Smalltalk exitFailure ] ] on: Error do: [ :e | Stdio stdout nextPutAll: 'ERROR: '; nextPutAll: e messageText; lf. Smalltalk exitFailure ]"
+        _w2 = io.write_file("${consumer}/run.st", runst)
+    
+        rc2 = os.system("cd \"${consumer}\" && \"${pharo_dir}/pharo\" Consumer.image eval --save \"$(cat load.st)\"")
+        if rc2 != 0 {
+            println("pharo example: Metacello load of the Servirtium package failed")
+            return 1
+        }
+        rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB \"${pharo_dir}/pharo\" Consumer.image eval \"$(cat run.st)\"")
+        if rc3 != 0 {
+            println("pharo example: consumer playback against the loaded package failed")
+            return 1
+        }
+        println("pharo example: PASS — loaded Servirtium package replayed the canonical tape (explicit libPath:)")
+        return 0
     }
-    pkg = "${root}/target/pharo-pkg"
-    consumer = "${root}/target/pharo-consumer"
-    so = "${pkg}/native/libservirtium_vcr.so"
-    tape = "${consumer}/single_get.md"
-
-    // Published package copy (src + bundled .so, no core sibling) + a fresh
-    // throwaway image so we never mutate the developer's base image.
-    rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && mkdir -p \"${pkg}/native\" \"${consumer}\" && cp -r \"${root}/pharo/src\" \"${pkg}/src\" && cp \"${root}/pharo/native/libservirtium_vcr.so\" \"${pkg}/native/\" && cp \"${root}/pharo/src/Servirtium-Tests/tapes/single_get.md\" \"${tape}\" && cp \"${pharo_dir}/Pharo.image\" \"${consumer}/Consumer.image\" && (cp \"${pharo_dir}/Pharo.changes\" \"${consumer}/Consumer.changes\" 2>/dev/null || true) && (for s in \"${pharo_dir}\"/*.sources; do ln -sf \"$s\" \"${consumer}/$(basename \"$s\")\"; done)")
-    if rc != 0 {
-        println("pharo example: staging the published package + fresh image failed")
-        return 1
-    }
-
-    // 1. Load only the Servirtium package (not the tests) from the published src.
-    loadst = "[ Metacello new baseline: 'Servirtium'; repository: 'tonel://${pkg}/src'; load: 'Servirtium'. Stdio stdout nextPutAll: 'LOADED'; lf ] on: Error do: [ :e | Stdio stdout nextPutAll: 'LOAD FAILED: '; nextPutAll: e messageText; lf. Smalltalk exitFailure ]"
-    _w1 = io.write_file("${consumer}/load.st", loadst)
-
-    // 2. Pin the engine explicitly (first-class native-lib override), replay
-    //    the canonical tape, and assert body + a clean #ok outcome.
-    runst = "[ | server body kind | ServirtiumLibrary libPath: '${so}'. server := (Servirtium playback: '${tape}') port: 0; start. body := ZnClient new get: server baseUrl, '/ok'. kind := server lastKind. server stop. (body = 'ok-body' and: [ kind = #ok ]) ifTrue: [ Stdio stdout nextPutAll: 'PASS[explicit]: consumer replayed the canonical tape via the loaded Servirtium package'; lf. Smalltalk exitSuccess ] ifFalse: [ Stdio stdout nextPutAll: 'FAIL: body='; print: body; nextPutAll: ' kind='; print: kind; lf. Smalltalk exitFailure ] ] on: Error do: [ :e | Stdio stdout nextPutAll: 'ERROR: '; nextPutAll: e messageText; lf. Smalltalk exitFailure ]"
-    _w2 = io.write_file("${consumer}/run.st", runst)
-
-    rc2 = os.system("cd \"${consumer}\" && \"${pharo_dir}/pharo\" Consumer.image eval --save \"$(cat load.st)\"")
-    if rc2 != 0 {
-        println("pharo example: Metacello load of the Servirtium package failed")
-        return 1
-    }
-    rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB \"${pharo_dir}/pharo\" Consumer.image eval \"$(cat run.st)\"")
-    if rc3 != 0 {
-        println("pharo example: consumer playback against the loaded package failed")
-        return 1
-    }
-    println("pharo example: PASS — loaded Servirtium package replayed the canonical tape (explicit libPath:)")
-    return 0
 }

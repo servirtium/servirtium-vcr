@@ -19,27 +19,28 @@
 // Needs ae with the -fPIC runtime (>= 0.182), chunked de-chunk (>= 0.183),
 // and std.http request-header iteration (http.request_header_count/_name/_value).
 
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    root = build._get(b, "root")
-    dest = "${root}/core/native"
-    _m = os.system("mkdir -p \"${dest}\"")
-    // Pure-Aether runtime + the ~12-line vcr_embed_dup/free FFI string bridge
-    // (_embed_strdup.c) via --extra. The recorder's request-header iteration
-    // is std.http's http.request_header_count/_name/_value (the wish in
-    // aether/vcr_request_header_iteration_wish.md landed).
-    rc = os.system("cd \"${root}/core\" && ae build --emit=lib --with=fs,net embed.ae --extra _embed_strdup.c -o \"${dest}/libservirtium_vcr.so\"")
-    if rc != 0 {
-        println("engine: failed to build libservirtium_vcr.so from core (is `ae` >= 0.182 installed?)")
-        return 1
+    bldr.build() {
+        root = _get("root")
+        dest = "${root}/core/native"
+        _m = os.system("mkdir -p \"${dest}\"")
+        // Pure-Aether runtime + the ~12-line vcr_embed_dup/free FFI string bridge
+        // (_embed_strdup.c) via --extra. The recorder's request-header iteration
+        // is std.http's http.request_header_count/_name/_value (the wish in
+        // aether/vcr_request_header_iteration_wish.md landed).
+        rc = os.system("cd \"${root}/core\" && ae build --emit=lib --with=fs,net embed.ae --extra _embed_strdup.c -o \"${dest}/libservirtium_vcr.so\"")
+        if rc != 0 {
+            println("engine: failed to build libservirtium_vcr.so from core (is `ae` >= 0.182 installed?)")
+            return 1
+        }
+        println("engine: built core/native/libservirtium_vcr.so (from core)")
+        // Publish the .so onto this node's dep edge: every consumer reads it
+        // back via dep_artifact("core/.build.ae", "shared_lib") — no
+        // hardcoded path, no coupling to core/native/ as the output dir.
+        publish_artifact("shared_lib", "${dest}/libservirtium_vcr.so")
+        return 0
     }
-    println("engine: built core/native/libservirtium_vcr.so (from core)")
-    // Publish the .so onto this node's dep edge: every consumer reads it
-    // back via build.dep_artifact(b, "core/.build.ae", "shared_lib") — no
-    // hardcoded path, no coupling to core/native/ as the output dir.
-    build.publish_artifact(b, "shared_lib", "${dest}/libservirtium_vcr.so")
-    return 0
 }

@@ -8,14 +8,15 @@
 // record/replay loop for the Elixir binding. The binding's C NIF links the
 // shared engine directly (NATIVE_DIR -> ../core/native), so no
 // SERVIRTIUM_VCR_LIB is needed; ExUnit runs serially (max_cases: 1).
-import build
+import bldr
 import std.os
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    rc = os.system("cd \"${root}/integration/todobackend/elixir\" && mix deps.get >/dev/null 2>&1 && mix test")
-    if rc != 0 { println("todobackend/elixir playback: failed"); return 1 }
-    println("todobackend/elixir playback: passed")
-    return 0
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        rc = os.system("cd \"${root}/integration/todobackend/elixir\" && mix deps.get >/dev/null 2>&1 && mix test")
+        if rc != 0 { println("todobackend/elixir playback: failed"); return 1 }
+        println("todobackend/elixir playback: passed")
+        return 0
+    }
 }

@@ -2,21 +2,22 @@
 // project depending only on the installed servirtium-vcr-scala jar (~/.m2);
 // replays the canonical tape via the Scala helpers, engine .so transitive from
 // the servirtium-vcr jar resource, no SERVIRTIUM_VCR_LIB.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "scala/.package.ae")
-    _gav = build.dep_artifact(b, "scala/.package.ae", "maven_gav")
-    root = build._get(b, "root")
-    exdir = "${root}/scala/example"
-
-    rc = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB mvn -q -B test")
-    if rc != 0 {
-        println("scala example: consumer `mvn test` against the installed scala jar failed")
-        return 1
+    bldr.build() {
+        dep("scala/.package.ae")
+        _gav = dep_artifact("scala/.package.ae", "maven_gav")
+        root = _get("root")
+        exdir = "${root}/scala/example"
+    
+        rc = os.system("cd \"${exdir}\" && env -u SERVIRTIUM_VCR_LIB mvn -q -B test")
+        if rc != 0 {
+            println("scala example: consumer `mvn test` against the installed scala jar failed")
+            return 1
+        }
+        println("scala example: PASS — installed Scala jar replayed the canonical tape (discovery)")
+        return 0
     }
-    println("scala example: PASS — installed Scala jar replayed the canonical tape (discovery)")
-    return 0
 }

@@ -1,11 +1,12 @@
 // Scala binding — aeb-native. Compiles src/main/scala against the Java
-// binding classes (build.dep java/.build.ae); the scala SDK resolves the
+// binding classes (bldr.dep java/.build.ae); the scala SDK resolves the
 // scala3 compiler + library via maven coords.
-import build
+import bldr
 import scala
 import scala (scala_version)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "java/.build.ae")
-    scala.scalac(b) { scala_version("3.3.4") }
+    bldr.build() {
+        dep("java/.build.ae")
+        scala.scalac() { scala_version("3.3.4") }
+    }
 }

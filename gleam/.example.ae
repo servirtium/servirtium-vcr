@@ -5,28 +5,29 @@
 // OTP app (built $ORIGIN-relocatable by erlang/.package.ae) is on the code path
 // via ERL_LIBS; the engine .so loads through the NIF's $ORIGIN rpath, with no
 // SERVIRTIUM_VCR_LIB.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "erlang/.package.ae")
-    erl_libs = build.dep_artifact(b, "erlang/.package.ae", "erl_libs")
-    root = build._get(b, "root")
-    exdir = "${root}/gleam/example"
-    consumer = "${root}/target/gleam-consumer"
-
-    rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/src\" \"${consumer}/tapes\" && cp \"${exdir}/gleam.toml\" \"${consumer}/\" && cp \"${exdir}/src/consumer_example.gleam\" \"${consumer}/src/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
-    if rc != 0 {
-        println("gleam example: staging the consumer project failed")
-        return 1
+    bldr.build() {
+        dep("erlang/.package.ae")
+        erl_libs = dep_artifact("erlang/.package.ae", "erl_libs")
+        root = _get("root")
+        exdir = "${root}/gleam/example"
+        consumer = "${root}/target/gleam-consumer"
+    
+        rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/src\" \"${consumer}/tapes\" && cp \"${exdir}/gleam.toml\" \"${consumer}/\" && cp \"${exdir}/src/consumer_example.gleam\" \"${consumer}/src/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("gleam example: staging the consumer project failed")
+            return 1
+        }
+    
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB ERL_LIBS=\"${erl_libs}\" PATH=\"$HOME/.local/bin:$PATH\" gleam run")
+        if rc2 != 0 {
+            println("gleam example: consumer `gleam run` against the installed package failed")
+            return 1
+        }
+        println("gleam example: PASS — installed Gleam package replayed the canonical tape (discovery)")
+        return 0
     }
-
-    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB ERL_LIBS=\"${erl_libs}\" PATH=\"$HOME/.local/bin:$PATH\" gleam run")
-    if rc2 != 0 {
-        println("gleam example: consumer `gleam run` against the installed package failed")
-        return 1
-    }
-    println("gleam example: PASS — installed Gleam package replayed the canonical tape (discovery)")
-    return 0
 }

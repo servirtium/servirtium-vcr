@@ -8,15 +8,16 @@
 // chromedriver). No SUT, no network — proves the full record/replay loop for the
 // .NET binding. The record-phase test is gated on TODOBACKEND_UPSTREAM, so the
 // filter below excludes it (it would otherwise just skip).
-import build
+import bldr
 import std.os
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    rc = os.system("cd \"${root}/dotnet\" && SERVIRTIUM_VCR_LIB=\"${lib}\" TODOBACKEND_FIXTURES=\"${root}/integration/todobackend\" dotnet test Servirtium.Vcr.Integration.TodoBackend --nologo --filter \"FullyQualifiedName!~TodoBackendRecord\"")
-    if rc != 0 { println("todobackend/dotnet playback: failed"); return 1 }
-    println("todobackend/dotnet playback: passed")
-    return 0
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        rc = os.system("cd \"${root}/dotnet\" && SERVIRTIUM_VCR_LIB=\"${lib}\" TODOBACKEND_FIXTURES=\"${root}/integration/todobackend\" dotnet test Servirtium.Vcr.Integration.TodoBackend --nologo --filter \"FullyQualifiedName!~TodoBackendRecord\"")
+        if rc != 0 { println("todobackend/dotnet playback: failed"); return 1 }
+        println("todobackend/dotnet playback: passed")
+        return 0
+    }
 }

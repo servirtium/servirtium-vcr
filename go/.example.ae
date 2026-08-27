@@ -7,29 +7,30 @@
 // A separate consumer module then `go run`s against it, replaying the canonical
 // tape with no SERVIRTIUM_VCR_LIB. The honest "go get it and it just works"
 // test the in-tree go/.tests.ae cannot give.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "go/.package.ae")
-    _m = build.dep_artifact(b, "go/.package.ae", "module_dir")
-    root = build._get(b, "root")
-    exdir = "${root}/go/example"
-    pkg = "${root}/target/go-pkg"
-    consumer = "${root}/target/go-consumer"
-
-    rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/go\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/.gitignore\" && mkdir -p \"${consumer}/tapes\" && cp \"${exdir}/go.mod\" \"${consumer}/\" && cp \"${exdir}/main.go\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
-    if rc != 0 {
-        println("go example: staging the published module + consumer failed")
-        return 1
+    bldr.build() {
+        dep("go/.package.ae")
+        _m = dep_artifact("go/.package.ae", "module_dir")
+        root = _get("root")
+        exdir = "${root}/go/example"
+        pkg = "${root}/target/go-pkg"
+        consumer = "${root}/target/go-consumer"
+    
+        rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/go\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/.gitignore\" && mkdir -p \"${consumer}/tapes\" && cp \"${exdir}/go.mod\" \"${consumer}/\" && cp \"${exdir}/main.go\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("go example: staging the published module + consumer failed")
+            return 1
+        }
+    
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB GOFLAGS=-mod=mod go run .")
+        if rc2 != 0 {
+            println("go example: consumer `go run` against the bundled module failed")
+            return 1
+        }
+        println("go example: PASS — consumer module replayed the canonical tape (discovery; bundled .so via cgo rpath)")
+        return 0
     }
-
-    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB GOFLAGS=-mod=mod go run .")
-    if rc2 != 0 {
-        println("go example: consumer `go run` against the bundled module failed")
-        return 1
-    }
-    println("go example: PASS — consumer module replayed the canonical tape (discovery; bundled .so via cgo rpath)")
-    return 0
 }

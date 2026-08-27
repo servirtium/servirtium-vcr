@@ -6,23 +6,24 @@
 // extension is linked with `-Wl,-rpath,$ORIGIN`, so it finds the engine .so
 // sitting beside it wherever the package dir is placed — no SERVIRTIUM_VCR_LIB,
 // no LD_LIBRARY_PATH, no reference to the repo's core/. Deps core/.build.ae.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    root = build._get(b, "root")
-    luadir = "${root}/lua"
-    dist = "${luadir}/dist"
-
-    rc = os.system("rm -rf \"${dist}\" && mkdir -p \"${dist}\" && cp \"${luadir}/servirtium.lua\" \"${dist}/\" && cp \"${lib}\" \"${dist}/libservirtium_vcr.so\" && cc -O2 -shared -fPIC $(pkg-config --cflags lua5.4) \"${luadir}/csrc/servirtium.c\" -L\"${dist}\" -lservirtium_vcr -Wl,-rpath,'$ORIGIN' -o \"${dist}/servirtium_native.so\"")
-    if rc != 0 {
-        println("lua package: building the self-contained package failed")
-        return 1
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        root = _get("root")
+        luadir = "${root}/lua"
+        dist = "${luadir}/dist"
+    
+        rc = os.system("rm -rf \"${dist}\" && mkdir -p \"${dist}\" && cp \"${luadir}/servirtium.lua\" \"${dist}/\" && cp \"${lib}\" \"${dist}/libservirtium_vcr.so\" && cc -O2 -shared -fPIC $(pkg-config --cflags lua5.4) \"${luadir}/csrc/servirtium.c\" -L\"${dist}\" -lservirtium_vcr -Wl,-rpath,'$ORIGIN' -o \"${dist}/servirtium_native.so\"")
+        if rc != 0 {
+            println("lua package: building the self-contained package failed")
+            return 1
+        }
+        publish_artifact("package_dir", "${dist}")
+        println("lua package: built self-contained package (lua + C ext + engine, $ORIGIN rpath) → lua/dist")
+        return 0
     }
-    build.publish_artifact(b, "package_dir", "${dist}")
-    println("lua package: built self-contained package (lua + C ext + engine, $ORIGIN rpath) → lua/dist")
-    return 0
 }

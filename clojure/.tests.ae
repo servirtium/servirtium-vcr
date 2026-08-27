@@ -2,14 +2,15 @@
 // clojure/.build.ae: the Java binding classes + the clojure runtime arrive
 // transitively through that node (uniform with kotlin/scala/groovy). Engine
 // .so via SERVIRTIUM_VCR_LIB.
-import build
+import bldr
 import clojure
 import clojure (source_layout)
-import build (env)
+import bldr (env)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    build.dep(b, "clojure/.build.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    clojure.test(b) { source_layout("maven idiomatic") env("SERVIRTIUM_VCR_LIB", lib) }
+    bldr.build() {
+        dep("core/.build.ae")
+        dep("clojure/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        clojure.test() { source_layout("maven idiomatic") env("SERVIRTIUM_VCR_LIB", lib) }
+    }
 }

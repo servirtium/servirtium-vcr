@@ -1,33 +1,34 @@
 // Third-party-consumer EXAMPLE test for the Zig binding.
 //
 // Publishes a standalone copy of the Zig package under target/zig-pkg (with the
-// bundled native/ .so). A separate consumer project (its own build.zig) imports
+// bundled native/ .so). A separate consumer project (its own bldr.zig) imports
 // the `servirtium` module from there and links the bundled .so — pointed at
 // $SERVIRTIUM_PKG/native, with no reference to the repo's core/ and no
 // SERVIRTIUM_VCR_LIB. `zig build run` replays the canonical tape.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "zig/.package.ae")
-    _pkg = build.dep_artifact(b, "zig/.package.ae", "package_dir")
-    root = build._get(b, "root")
-    exdir = "${root}/zig/example"
-    pkg = "${root}/target/zig-pkg"
-    consumer = "${root}/target/zig-consumer"
-
-    rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/zig\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/.gitignore\" && mkdir -p \"${consumer}/src\" \"${consumer}/tapes\" && cp \"${exdir}/build.zig\" \"${consumer}/\" && cp \"${exdir}/src/main.zig\" \"${consumer}/src/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
-    if rc != 0 {
-        println("zig example: staging the published package + consumer failed")
-        return 1
+    bldr.build() {
+        dep("zig/.package.ae")
+        _pkg = dep_artifact("zig/.package.ae", "package_dir")
+        root = _get("root")
+        exdir = "${root}/zig/example"
+        pkg = "${root}/target/zig-pkg"
+        consumer = "${root}/target/zig-consumer"
+    
+        rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/zig\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/.gitignore\" && mkdir -p \"${consumer}/src\" \"${consumer}/tapes\" && cp \"${exdir}/build.zig\" \"${consumer}/\" && cp \"${exdir}/src/main.zig\" \"${consumer}/src/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("zig example: staging the published package + consumer failed")
+            return 1
+        }
+    
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB zig build run -Dpkg=\"${pkg}\"")
+        if rc2 != 0 {
+            println("zig example: consumer `zig build run` against the bundled package failed")
+            return 1
+        }
+        println("zig example: PASS — consumer replayed the canonical tape (discovery; bundled .so via rpath)")
+        return 0
     }
-
-    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB zig build run -Dpkg=\"${pkg}\"")
-    if rc2 != 0 {
-        println("zig example: consumer `zig build run` against the bundled package failed")
-        return 1
-    }
-    println("zig example: PASS — consumer replayed the canonical tape (discovery; bundled .so via rpath)")
-    return 0
 }

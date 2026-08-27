@@ -1,13 +1,14 @@
 // Aether-level engine tests: the test_vcr_*.ae suite (vendored from the Aether
 // stdlib) compiled against the LOCAL engine (core/vcr.ae, pure Aether),
 // not the .so the bindings use. run-tests.sh builds + runs each as a binary.
-import build
+import bldr
 import std.os
 aeb(cap) {
-    b = build.start()
-    root = build._get(b, "root")
-    rc = os.system("cd \"${root}/core_tests\" && ./run-tests.sh")
-    if rc != 0 { println("core_tests: engine tests failed"); return 1 }
-    println("core_tests: engine tests passed")
-    return 0
+    bldr.build() {
+        root = _get("root")
+        rc = os.system("cd \"${root}/core_tests\" && ./run-tests.sh")
+        if rc != 0 { println("core_tests: engine tests failed"); return 1 }
+        println("core_tests: engine tests passed")
+        return 0
+    }
 }

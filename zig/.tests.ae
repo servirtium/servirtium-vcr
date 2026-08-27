@@ -1,15 +1,16 @@
 // Zig binding tests. `zig build test` links the shared engine
 // (core/.build.ae output: core/native/libservirtium_vcr.so) at build time via
-// build.zig's addLibraryPath + linkSystemLibrary("servirtium_vcr") + rpath, so
+// bldr.zig's addLibraryPath + linkSystemLibrary("servirtium_vcr") + rpath, so
 // this deps the engine node and points the build at it through
 // SERVIRTIUM_VCR_LIB. The test shells out to curl against a playback server
 // (one VCR server per process; tests run serially).
-import build
+import bldr
 import zig
-import build (env)
+import bldr (env)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    zig.test_existing(b) { env("SERVIRTIUM_VCR_LIB", lib) }
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        zig.test_existing() { env("SERVIRTIUM_VCR_LIB", lib) }
+    }
 }

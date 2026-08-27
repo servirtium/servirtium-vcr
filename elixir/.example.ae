@@ -6,29 +6,30 @@
 // is put on the code path via SERVIRTIUM_NIF_EBIN — the local stand-in for a Hex
 // {:servirtium_nif} dep. The engine .so loads via the NIF's $ORIGIN rpath, with
 // no SERVIRTIUM_VCR_LIB.
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "erlang/.package.ae")
-    erl_libs = build.dep_artifact(b, "erlang/.package.ae", "erl_libs")
-    root = build._get(b, "root")
-    exdir = "${root}/elixir/example"
-    consumer = "${root}/target/elixir-consumer"
-    ebin = "${erl_libs}/servirtium_nif/ebin"
-
-    rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/test\" \"${consumer}/tapes\" && cp \"${exdir}/mix.exs\" \"${consumer}/\" && cp \"${exdir}/test/test_helper.exs\" \"${consumer}/test/\" && cp \"${exdir}/test/consumer_test.exs\" \"${consumer}/test/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
-    if rc != 0 {
-        println("elixir example: staging the consumer mix project failed")
-        return 1
+    bldr.build() {
+        dep("erlang/.package.ae")
+        erl_libs = dep_artifact("erlang/.package.ae", "erl_libs")
+        root = _get("root")
+        exdir = "${root}/elixir/example"
+        consumer = "${root}/target/elixir-consumer"
+        ebin = "${erl_libs}/servirtium_nif/ebin"
+    
+        rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/test\" \"${consumer}/tapes\" && cp \"${exdir}/mix.exs\" \"${consumer}/\" && cp \"${exdir}/test/test_helper.exs\" \"${consumer}/test/\" && cp \"${exdir}/test/consumer_test.exs\" \"${consumer}/test/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("elixir example: staging the consumer mix project failed")
+            return 1
+        }
+    
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB SERVIRTIUM_NIF_EBIN=\"${ebin}\" MIX_ENV=test mix deps.get && cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB SERVIRTIUM_NIF_EBIN=\"${ebin}\" mix test")
+        if rc2 != 0 {
+            println("elixir example: consumer `mix test` against the installed package failed")
+            return 1
+        }
+        println("elixir example: PASS — installed Elixir package replayed the canonical tape (discovery)")
+        return 0
     }
-
-    rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB SERVIRTIUM_NIF_EBIN=\"${ebin}\" MIX_ENV=test mix deps.get && cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB SERVIRTIUM_NIF_EBIN=\"${ebin}\" mix test")
-    if rc2 != 0 {
-        println("elixir example: consumer `mix test` against the installed package failed")
-        return 1
-    }
-    println("elixir example: PASS — installed Elixir package replayed the canonical tape (discovery)")
-    return 0
 }

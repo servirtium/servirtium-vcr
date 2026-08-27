@@ -1,22 +1,23 @@
 // Pharo binding tests (UnifiedFFI). run-tests.sh loads the Tonel src into a
 // throwaway image and runs SUnit headless; uFFI loads the shared engine via
 // SERVIRTIUM_VCR_LIB. Needs a Pharo VM (PHARO_DIR).
-import build
+import bldr
 import pharo
-import build (env)
+import bldr (env)
 import std.os
 import std.string
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    pharo_dir = os.getenv("PHARO_DIR")
-    if string.length(pharo_dir) == 0 {
-        home = os.getenv("HOME")
-        pharo_dir = "${home}/.local/pharo"
-    }
-    pharo.test(b) {
-        env("SERVIRTIUM_VCR_LIB", lib)
-        env("PHARO_DIR", pharo_dir)
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        pharo_dir = os.getenv("PHARO_DIR")
+        if string.length(pharo_dir) == 0 {
+            home = os.getenv("HOME")
+            pharo_dir = "${home}/.local/pharo"
+        }
+        pharo.test() {
+            env("SERVIRTIUM_VCR_LIB", lib)
+            env("PHARO_DIR", pharo_dir)
+        }
     }
 }

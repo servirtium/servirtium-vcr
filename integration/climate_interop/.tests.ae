@@ -17,31 +17,32 @@
 // sibling on-demand leaf .record.ae — NOT run here.
 //
 // Run:  aeb integration/climate_interop/.tests.ae
-import build
+import bldr
 import std.os
 
 aeb(cap) {
-    b = build.start()
-    root = build._get(b, "root")
-    out = "${root}/target/climate_interop"
-    _mk = os.system("mkdir -p \"${out}\"")
-
-    fails = 0
-
-    // --- probe: offline 5-interaction replay (port 18099) ---
-    bin1 = "${out}/test_climate_via_vcr"
-    log1 = "${out}/test_climate_via_vcr.log"
-    rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_via_vcr.ae -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
-    if rc1 != 0 {
-        println("climate_interop: test_climate_via_vcr FAILED (see ${log1})")
-        fails = fails + 1
-    } else {
-        grep1 = os.system("grep -q \"All 5 climate-via-VCR tests passed\" \"${log1}\"")
-        if grep1 != 0 { println("climate_interop: test_climate_via_vcr missing pass summary"); fails = fails + 1 }
-        else { println("climate_interop: test_climate_via_vcr PASS (5 assertions, offline replay on :18099)") }
+    bldr.build() {
+        root = _get("root")
+        out = "${root}/target/climate_interop"
+        _mk = os.system("mkdir -p \"${out}\"")
+    
+        fails = 0
+    
+        // --- probe: offline 5-interaction replay (port 18099) ---
+        bin1 = "${out}/test_climate_via_vcr"
+        log1 = "${out}/test_climate_via_vcr.log"
+        rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_via_vcr.ae -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
+        if rc1 != 0 {
+            println("climate_interop: test_climate_via_vcr FAILED (see ${log1})")
+            fails = fails + 1
+        } else {
+            grep1 = os.system("grep -q \"All 5 climate-via-VCR tests passed\" \"${log1}\"")
+            if grep1 != 0 { println("climate_interop: test_climate_via_vcr missing pass summary"); fails = fails + 1 }
+            else { println("climate_interop: test_climate_via_vcr PASS (5 assertions, offline replay on :18099)") }
+        }
+    
+        if fails != 0 { println("climate_interop: ${fails} test(s) failed"); return 1 }
+        println("climate_interop: offline probe passed")
+        return 0
     }
-
-    if fails != 0 { println("climate_interop: ${fails} test(s) failed"); return 1 }
-    println("climate_interop: offline probe passed")
-    return 0
 }

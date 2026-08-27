@@ -6,15 +6,16 @@
 // TodoBackend Mocha spec against it in headless Chrome (JS's own
 // selenium-webdriver). No SUT, no network — proves the full record/replay loop
 // for the JavaScript binding.
-import build
+import bldr
 import std.os
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    rc = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && npm run --silent build && cd \"${root}/integration/todobackend/javascript\" && SERVIRTIUM_VCR_LIB=\"${lib}\" NODE_PATH=\"${root}/javascript/node_modules\" node playback.js")
-    if rc != 0 { println("todobackend/javascript playback: failed"); return 1 }
-    println("todobackend/javascript playback: passed")
-    return 0
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        rc = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && npm run --silent build && cd \"${root}/integration/todobackend/javascript\" && SERVIRTIUM_VCR_LIB=\"${lib}\" NODE_PATH=\"${root}/javascript/node_modules\" node playback.js")
+        if rc != 0 { println("todobackend/javascript playback: failed"); return 1 }
+        println("todobackend/javascript playback: passed")
+        return 0
+    }
 }

@@ -7,10 +7,11 @@
 // The packaging setters (package_id/description/readme/native_runtime) live
 // on the .build.ae's build_project block so the same generated csproj drives
 // both build and pack; this leaf just invokes pack against it.
-import build
+import bldr
 import dotnet
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "dotnet/Servirtium.Vcr/.build.ae")
-    dotnet.pack(b)
+    bldr.build() {
+        dep("dotnet/Servirtium.Vcr/.build.ae")
+        dotnet.pack()
+    }
 }

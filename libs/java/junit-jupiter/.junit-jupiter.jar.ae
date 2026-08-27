@@ -1,21 +1,22 @@
 // .junit-jupiter.jar.ae — JUnit 5 (Jupiter) + console launcher, pinned by
-// sha256 (no jar bytes). build.dep from any JVM test node running java.junit5.
-import build
+// sha256 (no jar bytes). bldr.dep from any JVM test node running java.junit5.
+import bldr
 import java
 import java (central, repo, pinned)
 
 aeb(cap) {
-    b = build.start()
-    java.mvn_repo(b) {
-        central()
-        pinned("org.apiguardian:apiguardian-api:1.1.2", "b509448ac506d607319f182537f0b35d71007582ec741832a1f111e5b5b70b38")
-        pinned("org.junit.jupiter:junit-jupiter:6.0.3", "784b65815f479a0c99a9d3a573b142e2a525efb6025d97f751b19e72f90aeda3")
-        pinned("org.junit.jupiter:junit-jupiter-api:6.0.3", "d655d7e6f0c7ae07f10a2f3bbaaebb6d30e9b26204a068ad9e9b3950aa28792c")
-        pinned("org.junit.jupiter:junit-jupiter-engine:6.0.3", "1e2fab61ad27ea08fc7c70dd9677cf8c6d1ae5434d42dcfdd633b12c7e7c04d0")
-        pinned("org.junit.jupiter:junit-jupiter-params:6.0.3", "cf2947e2302b9f8c8a059259a277881c1cadae8fbc2514c16a925cfeb7beb2e5")
-        pinned("org.junit.platform:junit-platform-commons:6.0.3", "39f262d09c3d52719fe0b77f080e90a3695e285d779a41b232e17963ae5da200")
-        pinned("org.junit.platform:junit-platform-console-standalone:6.0.3", "3ba0d6150af79214a1411f9ea2fbef864eef68b68c89a17f672c0b89bff9d3a2")
-        pinned("org.junit.platform:junit-platform-engine:6.0.3", "491e9e4f745f161b8a8e4186a1a7c6a450ea12c70930c9aedae427215301d947")
-        pinned("org.opentest4j:opentest4j:1.3.0", "48e2df636cab6563ced64dcdff8abb2355627cb236ef0bf37598682ddf742f1b")
+    bldr.build() {
+        java.mvn_repo() {
+            central()
+            pinned("org.apiguardian:apiguardian-api:1.1.2", "b509448ac506d607319f182537f0b35d71007582ec741832a1f111e5b5b70b38")
+            pinned("org.junit.jupiter:junit-jupiter:6.0.3", "784b65815f479a0c99a9d3a573b142e2a525efb6025d97f751b19e72f90aeda3")
+            pinned("org.junit.jupiter:junit-jupiter-api:6.0.3", "d655d7e6f0c7ae07f10a2f3bbaaebb6d30e9b26204a068ad9e9b3950aa28792c")
+            pinned("org.junit.jupiter:junit-jupiter-engine:6.0.3", "1e2fab61ad27ea08fc7c70dd9677cf8c6d1ae5434d42dcfdd633b12c7e7c04d0")
+            pinned("org.junit.jupiter:junit-jupiter-params:6.0.3", "cf2947e2302b9f8c8a059259a277881c1cadae8fbc2514c16a925cfeb7beb2e5")
+            pinned("org.junit.platform:junit-platform-commons:6.0.3", "39f262d09c3d52719fe0b77f080e90a3695e285d779a41b232e17963ae5da200")
+            pinned("org.junit.platform:junit-platform-console-standalone:6.0.3", "3ba0d6150af79214a1411f9ea2fbef864eef68b68c89a17f672c0b89bff9d3a2")
+            pinned("org.junit.platform:junit-platform-engine:6.0.3", "491e9e4f745f161b8a8e4186a1a7c6a450ea12c70930c9aedae427215301d947")
+            pinned("org.opentest4j:opentest4j:1.3.0", "48e2df636cab6563ced64dcdff8abb2355627cb236ef0bf37598682ddf742f1b")
+        }
     }
 }

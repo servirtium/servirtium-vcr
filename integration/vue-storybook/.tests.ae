@@ -10,26 +10,27 @@
 // Needs: node, a Chrome/Chromium (Selenium Manager fetches the matching
 // chromedriver), and the JS binding built (../../javascript/dist). Deps the
 // shared engine. CI installs lean (--omit=dev: no Storybook tree).
-import build
+import bldr
 import std.os
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    dir = "${root}/integration/vue-storybook"
-
-    // The demo loads the compiled JS binding — make sure it (and koffi) exist.
-    jsb = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && npm run build")
-    if jsb != 0 { println("vue-storybook: failed to build the JS binding"); return 1 }
-
-    // Install the demo's runtime deps (Vue/Vite/Selenium, not Storybook) and
-    // build the Vue page the VCR will serve.
-    bld = os.system("cd \"${dir}\" && npm install --omit=dev --silent --no-audit --no-fund && npm run build")
-    if bld != 0 { println("vue-storybook: npm install/build failed"); return 1 }
-
-    rc = os.system("cd \"${dir}\" && SERVIRTIUM_VCR_LIB=\"${lib}\" node playback.cjs")
-    if rc != 0 { println("vue-storybook(playback): failed"); return 1 }
-    println("vue-storybook(playback): passed")
-    return 0
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        dir = "${root}/integration/vue-storybook"
+    
+        // The demo loads the compiled JS binding — make sure it (and koffi) exist.
+        jsb = os.system("cd \"${root}/javascript\" && npm install --silent --no-audit --no-fund && npm run build")
+        if jsb != 0 { println("vue-storybook: failed to build the JS binding"); return 1 }
+    
+        // Install the demo's runtime deps (Vue/Vite/Selenium, not Storybook) and
+        // build the Vue page the VCR will serve.
+        bld = os.system("cd \"${dir}\" && npm install --omit=dev --silent --no-audit --no-fund && npm run build")
+        if bld != 0 { println("vue-storybook: npm install/build failed"); return 1 }
+    
+        rc = os.system("cd \"${dir}\" && SERVIRTIUM_VCR_LIB=\"${lib}\" node playback.cjs")
+        if rc != 0 { println("vue-storybook(playback): failed"); return 1 }
+        println("vue-storybook(playback): passed")
+        return 0
+    }
 }

@@ -3,19 +3,20 @@
 // unit run (Servirtium.Vcr.Tests) stays fast and Selenium-free. Generated
 // .csproj (git-ignored). Selenium.WebDriver ships Selenium Manager, which
 // auto-fetches a matching chromedriver.
-import build
+import bldr
 import dotnet
 import dotnet (target_framework, nullable, test_project, nuget)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "dotnet/Servirtium.Vcr/.build.ae")
-    dotnet.build_project(b) {
-        target_framework("net10.0")
-        nullable()
-        test_project()
-        nuget("Microsoft.NET.Test.Sdk:17.11.1")
-        nuget("xunit:2.9.2")
-        nuget("xunit.runner.visualstudio:2.8.2")
-        nuget("Selenium.WebDriver:4.44.0")
+    bldr.build() {
+        dep("dotnet/Servirtium.Vcr/.build.ae")
+        dotnet.build_project() {
+            target_framework("net10.0")
+            nullable()
+            test_project()
+            nuget("Microsoft.NET.Test.Sdk:17.11.1")
+            nuget("xunit:2.9.2")
+            nuget("xunit.runner.visualstudio:2.8.2")
+            nuget("Selenium.WebDriver:4.44.0")
+        }
     }
 }

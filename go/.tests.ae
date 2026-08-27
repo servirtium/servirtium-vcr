@@ -4,11 +4,12 @@
 // the engine node. No pkg() — go.mod lives in this dir (go/), so go_test must
 // run from source_dir; pkg() would make the SDK run from the repo root (which
 // has no go.mod). Tests run serially (one VCR server per process).
-import build
+import bldr
 import go
 
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    go.go_test(b) { }
+    bldr.build() {
+        dep("core/.build.ae")
+        go.go_test() { }
+    }
 }

@@ -9,19 +9,20 @@
 // suite (playback + record + mutation, ~14 cases): playback shells out to curl
 // against the VCR server; record/mutation spawn a throwaway python3 upstream
 // (Lua 5.4 has no stdlib sockets) and record to temp tapes.
-import build
+import bldr
 import lua
-import build (env, step)
+import bldr (env, step)
 import std.path
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    core = path.dirname(lib)
-    lua.test(b) {
-        env("LUA_CPATH", "./?.so;;")
-        env("SERVIRTIUM_VCR_LIB", lib)
-        step("./build.sh \"${core}\"")
-        step("lua5.4 tests/run_all.lua")
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        core = path.dirname(lib)
+        lua.test() {
+            env("LUA_CPATH", "./?.so;;")
+            env("SERVIRTIUM_VCR_LIB", lib)
+            step("./build.sh \"${core}\"")
+            step("lua5.4 tests/run_all.lua")
+        }
     }
 }

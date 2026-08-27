@@ -8,36 +8,37 @@
 // Deps the shared engine; the NIF links it and embeds the engine dir as an
 // rpath so it resolves at runtime. The engine dir is derived from the dep's
 // published shared_lib artifact, not hardcoded.
-import build
+import bldr
 import erlang
-import build (step)
+import bldr (step)
 import std.path
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    root = build._get(b, "root")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    native = path.dirname(lib)
-    erl = "${root}/erlang"
-    app = "${erl}/_build/servirtium_nif"
-
-    // The C NIF .so (links the engine; rpath the engine dir). erl_nif.h comes
-    // from the running OTP root, so no hard-coded include path.
-    mk = "ERTS_INC=$(erl -noshell -eval 'io:format(\"~s/usr/include\",[code:root_dir()]),halt()') && cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I\"$ERTS_INC\" -shared \"${erl}/c_src/servirtium_nif.c\" -L\"${native}\" -lservirtium_vcr -Wl,-rpath,\"${native}\" -o \"${app}/priv/servirtium_nif.so\""
-
-    erlang.compile(b) {
-        step("mkdir -p \"${app}/ebin\" \"${app}/priv\"")
-        step(mk)
-        // The BEAM modules (erlc — no rebar3 needed).
-        step("erlc -o \"${app}/ebin\" \"${erl}/src/servirtium_nif.erl\" \"${erl}/src/servirtium.erl\"")
-        // The .app resource so code:priv_dir(servirtium_nif) resolves via ERL_LIBS.
-        step("cp \"${erl}/src/servirtium_nif.app\" \"${app}/ebin/servirtium_nif.app\"")
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        native = path.dirname(lib)
+        erl = "${root}/erlang"
+        app = "${erl}/_build/servirtium_nif"
+    
+        // The C NIF .so (links the engine; rpath the engine dir). erl_nif.h comes
+        // from the running OTP root, so no hard-coded include path.
+        mk = "ERTS_INC=$(erl -noshell -eval 'io:format(\"~s/usr/include\",[code:root_dir()]),halt()') && cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I\"$ERTS_INC\" -shared \"${erl}/c_src/servirtium_nif.c\" -L\"${native}\" -lservirtium_vcr -Wl,-rpath,\"${native}\" -o \"${app}/priv/servirtium_nif.so\""
+    
+        erlang.compile() {
+            step("mkdir -p \"${app}/ebin\" \"${app}/priv\"")
+            step(mk)
+            // The BEAM modules (erlc — no rebar3 needed).
+            step("erlc -o \"${app}/ebin\" \"${erl}/src/servirtium_nif.erl\" \"${erl}/src/servirtium.erl\"")
+            // The .app resource so code:priv_dir(servirtium_nif) resolves via ERL_LIBS.
+            step("cp \"${erl}/src/servirtium_nif.app\" \"${app}/ebin/servirtium_nif.app\"")
+        }
+    
+        // Publish the derived NIF artifact onto this node's dep edge — the BEAM
+        // consumers (elixir/gleam) read these back via bldr.dep_artifact rather
+        // than reconstructing erlang/_build paths. Same idiom as core's shared_lib.
+        publish_artifact("nif_ebin", "${app}/ebin")
+        publish_artifact("erl_libs", "${erl}/_build")
+        return 0
     }
-
-    // Publish the derived NIF artifact onto this node's dep edge — the BEAM
-    // consumers (elixir/gleam) read these back via build.dep_artifact rather
-    // than reconstructing erlang/_build paths. Same idiom as core's shared_lib.
-    build.publish_artifact(b, "nif_ebin", "${app}/ebin")
-    build.publish_artifact(b, "erl_libs", "${erl}/_build")
-    return 0
 }

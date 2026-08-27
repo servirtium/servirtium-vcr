@@ -1,17 +1,18 @@
 // Kotlin binding tests — compile src/test/kotlin, run via JUnit 5 (the
 // runner is language-agnostic: it scans the compiled .class files). The
 // engine .so is supplied via SERVIRTIUM_VCR_LIB.
-import build
+import bldr
 import kotlin
 import java
 import kotlin (source_layout)
-import build (env)
+import bldr (env)
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.build.ae")
-    build.dep(b, "kotlin/.build.ae")
-    build.dep(b, "libs/java/junit-jupiter/.junit-jupiter.jar.ae")
-    lib = build.dep_artifact(b, "core/.build.ae", "shared_lib")
-    kotlin.kotlinc_test(b) { source_layout("maven idiomatic") }
-    java.junit5(b) { env("SERVIRTIUM_VCR_LIB", lib) }
+    bldr.build() {
+        dep("core/.build.ae")
+        dep("kotlin/.build.ae")
+        dep("libs/java/junit-jupiter/.junit-jupiter.jar.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        kotlin.kotlinc_test() { source_layout("maven idiomatic") }
+        java.junit5() { env("SERVIRTIUM_VCR_LIB", lib) }
+    }
 }

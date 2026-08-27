@@ -1,14 +1,15 @@
 // Black-box tests for the standalone `servirtium` CLI: serve / check /
 // import / export driven through the built binary with curl (cli-tests.sh).
 // Deps core/.cli.ae so target/servirtium exists first.
-import build
+import bldr
 import std.os
 aeb(cap) {
-    b = build.start()
-    build.dep(b, "core/.cli.ae")
-    root = build._get(b, "root")
-    rc = os.system("cd \"${root}\" && ./core_tests/cli-tests.sh")
-    if rc != 0 { println("cli_tests: CLI tests failed"); return 1 }
-    println("cli_tests: CLI tests passed")
-    return 0
+    bldr.build() {
+        dep("core/.cli.ae")
+        root = _get("root")
+        rc = os.system("cd \"${root}\" && ./core_tests/cli-tests.sh")
+        if rc != 0 { println("cli_tests: CLI tests failed"); return 1 }
+        println("cli_tests: CLI tests passed")
+        return 0
+    }
 }
