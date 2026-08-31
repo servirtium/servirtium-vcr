@@ -41,11 +41,10 @@ main() {
         exit(1)
     }
 
-    ka = http.server_set_keepalive(raw, 1, 30, 60000)
-    if ka != "" {
-        println("FAIL: server_set_keepalive: ${ka}")
-        exit(1)
-    }
+    // NOTE: no server_set_keepalive — same reasoning as checkout_via_vcr.ae:
+    // the tape's recorded Keep-Alive headers replay verbatim; the server's
+    // own keepalive header emission would fight them. Defaults were in
+    // effect all along (the old call's bare-int idle was a silent no-op).
 
     access_log = os_getenv("ACCESS_LOG")
     if access_log != 0 {

@@ -69,7 +69,7 @@ get_ave_annual_rainfall_from(base_url: string, from_year: int, to_year: int, cou
 
     req = client.request("GET", url)
     if req == null { return 0.0, "could not build request" }
-    client.set_timeout(req, 30)
+    client.set_timeout(req, 30s)
     resp, terr = client.send_request(req)
     client.request_free(req)
     if terr != "" { return 0.0, terr }

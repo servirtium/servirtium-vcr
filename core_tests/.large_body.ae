@@ -6,25 +6,29 @@
 // forwarded / recorded / compared as EMPTY. read_full_request_body
 // (core/vcr.ae) drains the stream; this leaf proves it end to end.
 //
-// Like .chunked.ae it needs a C upstream process (echo_upstream.c echoes
-// the request body back so a truncated forward is visible), so it lives
-// in its own leaf rather than the test_vcr_* run-tests.sh loop. Run:
+// aether.program builds the probe (lib("..") resolves `import core.vcr`);
+// like .chunked.ae the UP -> use -> DOWN choreography around the C echo
+// upstream (echoes the request body back so a truncated forward is
+// visible) is genuinely imperative and stays inline. Run:
 //   aeb core_tests/.large_body.ae
 import bldr
+import aether
+import aether (source, output, lib)
 import std.os
 import std.string
 aeb(cap) {
     bldr.build() {
+        aether.program() {
+            source("large_body_probe.ae")
+            output("large_body_probe")
+            lib("..")
+        }
         root = _get("root")
-        td = "${root}/target/core_tests_large_body"
-        _mk = os.system("mkdir -p \"${td}\"")
-    
+        td = _get("target_dir")
+
         cc = os.system("cc \"${root}/core_tests/echo_upstream.c\" -o \"${td}/echo_upstream\"")
         if cc != 0 { println("core_tests/large_body: failed to compile echo_upstream.c"); return 1 }
-    
-        bp = os.system("cd \"${root}\" && ae build core_tests/large_body_probe.ae -o \"${td}/probe\"")
-        if bp != 0 { println("core_tests/large_body: failed to build probe"); return 1 }
-    
+
         // UP: start the echo upstream; it prints its OS-assigned port to stdout.
         _start = os.system("\"${td}/echo_upstream\" > \"${td}/port.txt\" 2>/dev/null &")
         port = ""
@@ -34,14 +38,14 @@ aeb(cap) {
             port = string.trim(p)
             if string.length(port) > 0 { i = 100 } else { _s = os.system("sleep 0.05")  i = i + 1 }
         }
-    
+
         result = 1
         if string.length(port) == 0 {
             println("core_tests/large_body: echo upstream did not report a port")
         } else {
-            result = os.system("cd \"${root}\" && UPSTREAM_PORT=${port} \"${td}/probe\"")
+            result = os.system("cd \"${root}\" && UPSTREAM_PORT=${port} \"${td}/bin/large_body_probe\"")
         }
-    
+
         // DOWN: unconditional teardown of the upstream.
         _k = os.system("pkill -x echo_upstream >/dev/null 2>&1")
         if result != 0 { println("core_tests/large_body: failed"); return 1 }

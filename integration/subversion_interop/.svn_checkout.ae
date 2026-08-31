@@ -4,10 +4,11 @@
 //
 // Inline UP -> use -> DOWN, modelled on integration/todobackend/.python_record.ae:
 // the "service" is the VCR replay server process (checkout_server.ae, built
-// against the local engine (pure Aether)), torn down unconditionally.
+// by aether.program against the local engine — lib("../..") resolves
+// `import core.vcr`), torn down unconditionally.
 //
-//   UP    build checkout_server.ae, start it on :18142 reading the vendored
-//         pre-scrubbed tape (tapes/svn_checkout_scrubbed.tape), poll for READY
+//   UP    start checkout_server on :18142 reading the vendored pre-scrubbed
+//         tape (tapes/svn_checkout_scrubbed.tape), poll for READY
 //   USE   `svn checkout --non-interactive <playback-url> target/.../conf`
 //   ASSERT rc==0 and exactly 4 working-tree files (providers.xml, identity.jks,
 //         trust.jks, log4j.properties) materialised — the recorded checkout
@@ -19,6 +20,8 @@
 //
 // Run:  aeb integration/subversion_interop/.svn_checkout.ae
 import bldr
+import aether
+import aether (source, output, lib)
 import std.os
 import std.string
 
@@ -33,58 +36,57 @@ aeb(cap) {
         return 0
     }
 
-    b = bldr.start()
-    root = bldr._get(b, "root")
-    out = "${root}/target/subversion_interop"
-    tape = "${root}/integration/subversion_interop/tapes/svn_checkout_scrubbed.tape"
-    srv_bin = "${out}/checkout_server"
-    srv_log = "${out}/checkout_server.log"
-    co_dir = "${out}/svn_checkout/conf"
-    co_log = "${out}/svn_checkout.log"
-    _mk = os.system("mkdir -p \"${out}\" && rm -rf \"${out}/svn_checkout\"")
-
-    // --- build the VCR replay server against the local engine ---
-    bld = os.system("cd \"${root}\" && ae build integration/subversion_interop/checkout_server.ae -o \"${srv_bin}\" 2>\"${srv_log}\"")
-    if bld != 0 {
-        println("subversion_interop(svn_checkout): server build failed (see ${srv_log})")
-        return 1
-    }
-
-    // --- UP: start the server in the background, poll for READY ---
-    _start = os.system("TAPE_PATH=\"${tape}\" \"${srv_bin}\" >\"${srv_log}\" 2>&1 &")
-    ready = 0
-    i = 0
-    while i < 60 {
-        seen = os.system("grep -q '^READY' \"${srv_log}\" 2>/dev/null")
-        if seen == 0 { ready = 1  i = 60 } else { _s = os.system("sleep 0.25")  i = i + 1 }
-    }
-
-    // --- USE: drive a real svn checkout against the VCR; assert file count ---
-    result = 1
-    if ready == 1 {
-        println("subversion_interop(svn_checkout): VCR up on :${PORT}")
-        co = os.system("svn checkout --non-interactive \"${PLAYBACK}\" \"${co_dir}\" >\"${co_log}\" 2>&1")
-        if co != 0 {
-            println("subversion_interop(svn_checkout): svn checkout failed (see ${co_log})")
-        } else {
-            cnt_s, _ = os.exec("find \"${co_dir}\" -path '*/.svn/*' -prune -o -type f -print | wc -l")
-            cnt = string.trim(cnt_s)
-            if cnt == "4" {
-                println("subversion_interop(svn_checkout): PASS — svn checkout replayed cleanly, ${cnt} working-tree files")
-                result = 0
-            } else {
-                println("subversion_interop(svn_checkout): FAIL — expected 4 working-tree files, got ${cnt}")
-            }
+    bldr.build() {
+        aether.program() {
+            source("checkout_server.ae")
+            output("checkout_server")
+            lib("../..")
         }
-    } else {
-        println("subversion_interop(svn_checkout): VCR server never reported READY (see ${srv_log})")
+        root = _get("root")
+        td = _get("target_dir")
+        tape = "${root}/integration/subversion_interop/tapes/svn_checkout_scrubbed.tape"
+        srv_bin = "${td}/bin/checkout_server"
+        srv_log = "${td}/checkout_server.log"
+        co_dir = "${td}/svn_checkout/conf"
+        co_log = "${td}/svn_checkout.log"
+        _mk = os.system("rm -rf \"${td}/svn_checkout\"")
+
+        // --- UP: start the server in the background, poll for READY ---
+        _start = os.system("TAPE_PATH=\"${tape}\" \"${srv_bin}\" >\"${srv_log}\" 2>&1 &")
+        ready = 0
+        i = 0
+        while i < 60 {
+            seen = os.system("grep -q '^READY' \"${srv_log}\" 2>/dev/null")
+            if seen == 0 { ready = 1  i = 60 } else { _s = os.system("sleep 0.25")  i = i + 1 }
+        }
+
+        // --- USE: drive a real svn checkout against the VCR; assert file count ---
+        result = 1
+        if ready == 1 {
+            println("subversion_interop(svn_checkout): VCR up on :${PORT}")
+            co = os.system("svn checkout --non-interactive \"${PLAYBACK}\" \"${co_dir}\" >\"${co_log}\" 2>&1")
+            if co != 0 {
+                println("subversion_interop(svn_checkout): svn checkout failed (see ${co_log})")
+            } else {
+                cnt_s, _ = os.exec("find \"${co_dir}\" -path '*/.svn/*' -prune -o -type f -print | wc -l")
+                cnt = string.trim(cnt_s)
+                if cnt == "4" {
+                    println("subversion_interop(svn_checkout): PASS — svn checkout replayed cleanly, ${cnt} working-tree files")
+                    result = 0
+                } else {
+                    println("subversion_interop(svn_checkout): FAIL — expected 4 working-tree files, got ${cnt}")
+                }
+            }
+        } else {
+            println("subversion_interop(svn_checkout): VCR server never reported READY (see ${srv_log})")
+        }
+
+        // --- DOWN: unconditional teardown + cleanup ---
+        _kill = os.system("pkill -x checkout_server >/dev/null 2>&1")
+        _rm = os.system("rm -rf \"${td}/svn_checkout\"")
+        println("subversion_interop(svn_checkout): tore down VCR server")
+
+        if result != 0 { return 1 }
+        return 0
     }
-
-    // --- DOWN: unconditional teardown + cleanup ---
-    _kill = os.system("pkill -x checkout_server >/dev/null 2>&1")
-    _rm = os.system("rm -rf \"${out}/svn_checkout\"")
-    println("subversion_interop(svn_checkout): tore down VCR server")
-
-    if result != 0 { return 1 }
-    return 0
 }

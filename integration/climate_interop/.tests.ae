@@ -2,8 +2,8 @@
 // "weather" walkthrough, ported from the Aether engine's
 // contrib/climate_http_tests/ into the monorepo so it rides on core/ (the
 // engine now lives here). One probe, compiled against the LOCAL engine
-// (core/vcr.ae, pure Aether, the same idiom as core_tests/
-// and integration/subversion_interop/) and run inline here — no .sh runner:
+// (core/vcr.ae, pure Aether — aether.program with lib("../..") resolves
+// `import core.vcr` from the repo root) and run inline here — no .sh runner:
 //
 //   test_climate_via_vcr.ae — replays the committed 5-interaction tape
 //     (tapes/climate_5_endpoints.tape) through the VCR on port 18099 and
@@ -18,30 +18,29 @@
 //
 // Run:  aeb integration/climate_interop/.tests.ae
 import bldr
+import aether
+import aether (source, output, lib)
 import std.os
 
 aeb(cap) {
     bldr.build() {
+        aether.program() {
+            source("test_climate_via_vcr.ae")
+            output("test_climate_via_vcr")
+            lib("../..")
+        }
         root = _get("root")
-        out = "${root}/target/climate_interop"
-        _mk = os.system("mkdir -p \"${out}\"")
-    
-        fails = 0
-    
-        // --- probe: offline 5-interaction replay (port 18099) ---
-        bin1 = "${out}/test_climate_via_vcr"
-        log1 = "${out}/test_climate_via_vcr.log"
-        rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_via_vcr.ae -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
+        td = _get("target_dir")
+
+        log1 = "${td}/test_climate_via_vcr.log"
+        rc1 = os.system("cd \"${root}\" && \"${td}/bin/test_climate_via_vcr\" >\"${log1}\" 2>&1")
         if rc1 != 0 {
             println("climate_interop: test_climate_via_vcr FAILED (see ${log1})")
-            fails = fails + 1
-        } else {
-            grep1 = os.system("grep -q \"All 5 climate-via-VCR tests passed\" \"${log1}\"")
-            if grep1 != 0 { println("climate_interop: test_climate_via_vcr missing pass summary"); fails = fails + 1 }
-            else { println("climate_interop: test_climate_via_vcr PASS (5 assertions, offline replay on :18099)") }
+            return 1
         }
-    
-        if fails != 0 { println("climate_interop: ${fails} test(s) failed"); return 1 }
+        grep1 = os.system("grep -q \"All 5 climate-via-VCR tests passed\" \"${log1}\"")
+        if grep1 != 0 { println("climate_interop: test_climate_via_vcr missing pass summary"); return 1 }
+        println("climate_interop: test_climate_via_vcr PASS (5 assertions, offline replay on :18099)")
         println("climate_interop: offline probe passed")
         return 0
     }

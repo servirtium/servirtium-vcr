@@ -4,8 +4,9 @@
 // want to re-record the tape or sanity-check against the live upstream.
 //
 // Both probes honor AETHER_SKIP_NETWORK (set it and they skip / replay-only),
-// and both are built against the LOCAL engine (core/vcr.ae (pure Aether),
-// same idiom as .tests.ae) so they build cleanly even on offline runners.
+// and both are built against the LOCAL engine (core/vcr.ae, pure Aether —
+// aether.program with lib("../..") resolves `import core.vcr`) so they
+// build cleanly even on offline runners.
 //
 //   1. test_climate_record_then_replay.ae — Servirtium roadmap step 3.
 //      Tape present (the default — it's committed) → replays it offline.
@@ -22,21 +23,31 @@
 //
 // Run:  aeb integration/climate_interop/.record.ae
 import bldr
+import aether
+import aether (source, output, lib)
 import std.os
 
 aeb(cap) {
     bldr.build() {
+        aether.program() {
+            source("test_climate_record_then_replay.ae")
+            output("test_climate_record_then_replay")
+            lib("../..")
+        }
+        aether.program() {
+            source("test_climate_real.ae")
+            output("test_climate_real")
+            lib("../..")
+        }
         root = _get("root")
-        out = "${root}/target/climate_interop"
-        _mk = os.system("mkdir -p \"${out}\"")
-    
+        td = _get("target_dir")
+
         fails = 0
-    
+
         // --- probe 1: record-then-replay (replays committed tape by default; ---
         // --- records from the live mirror when the tape is absent) ---
-        bin1 = "${out}/test_climate_record_then_replay"
-        log1 = "${out}/test_climate_record_then_replay.log"
-        rc1 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_record_then_replay.ae -o \"${bin1}\" >\"${log1}\" 2>&1 && \"${bin1}\" >>\"${log1}\" 2>&1")
+        log1 = "${td}/test_climate_record_then_replay.log"
+        rc1 = os.system("cd \"${root}\" && \"${td}/bin/test_climate_record_then_replay\" >\"${log1}\" 2>&1")
         if rc1 != 0 {
             println("climate_interop(record): test_climate_record_then_replay FAILED (see ${log1})")
             fails = fails + 1
@@ -45,11 +56,10 @@ aeb(cap) {
             if grep1 != 0 { println("climate_interop(record): record_then_replay missing pass/skip summary"); fails = fails + 1 }
             else { println("climate_interop(record): test_climate_record_then_replay PASS (see ${log1})") }
         }
-    
+
         // --- probe 2: real-network assertions (no VCR); skips under AETHER_SKIP_NETWORK ---
-        bin2 = "${out}/test_climate_real"
-        log2 = "${out}/test_climate_real.log"
-        rc2 = os.system("cd \"${root}\" && ae build integration/climate_interop/test_climate_real.ae -o \"${bin2}\" >\"${log2}\" 2>&1 && \"${bin2}\" >>\"${log2}\" 2>&1")
+        log2 = "${td}/test_climate_real.log"
+        rc2 = os.system("cd \"${root}\" && \"${td}/bin/test_climate_real\" >\"${log2}\" 2>&1")
         if rc2 != 0 {
             println("climate_interop(record): test_climate_real FAILED (see ${log2})")
             fails = fails + 1
@@ -58,7 +68,7 @@ aeb(cap) {
             if grep2 != 0 { println("climate_interop(record): test_climate_real missing pass/skip summary"); fails = fails + 1 }
             else { println("climate_interop(record): test_climate_real PASS (see ${log2})") }
         }
-    
+
         if fails != 0 { println("climate_interop(record): ${fails} test(s) failed"); return 1 }
         println("climate_interop(record): live/record probes passed")
         return 0

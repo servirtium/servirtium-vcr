@@ -329,11 +329,14 @@ main() {
         println("FAIL: vcr.load returned null")
         exit(1)
     }
-    ka = http.server_set_keepalive(srv, 1, 30, 60000)
-    if ka != "" {
-        println("FAIL: server_set_keepalive: ${ka}")
-        exit(1)
-    }
+    // NOTE: no server_set_keepalive here — deliberately. This probe asserts
+    // BYTE-equality of the recorded response headers, which include the
+    // upstream's own "Keep-Alive: timeout=15, max=NNN" lines replayed
+    // verbatim off the tape. Enabling the aether server's keepalive makes it
+    // emit ITS OWN Keep-Alive header (its live timeout/countdown), which
+    // fights the tape's recorded bytes. (The call that used to sit here
+    // passed a bare-int idle of 60000ns — a silent no-op — so defaults were
+    // in effect all along; ae 0.6xx's Duration enforcement exposed it.)
     n_interactions = vcr.tape_length()
     println("Loaded ${n_interactions} interactions from tape")
 

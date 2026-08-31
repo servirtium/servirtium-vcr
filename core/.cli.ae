@@ -4,22 +4,26 @@
 // It statically links the pure-Aether `vcr` module (no .so, no
 // SERVIRTIUM_VCR_LIB), so it's a self-contained binary.
 //
-// Output: target/servirtium
-
+// aether.program compiles from core/ with --lib <root> (the lib("..")) so
+// cli.ae's `import core.vcr` resolves. COMPAT: the binary is also copied to
+// target/servirtium — the documented path (README, cli-tests.sh, LLM.md).
 import bldr
+import aether
+import aether (source, output, lib)
 import std.os
 
 aeb(cap) {
     bldr.build() {
-        root = _get("root")
-        dest = "${root}/target"
-        _m = os.system("mkdir -p \"${dest}\"")
-        rc = os.system("cd \"${root}\" && ae build core/cli.ae -o \"${dest}/servirtium\"")
-        if rc != 0 {
-            println("servirtium-cli: build failed")
-            return 1
+        aether.program() {
+            source("cli.ae")
+            output("servirtium")
+            lib("..")
         }
-        println("servirtium-cli: built target/servirtium")
+        root = _get("root")
+        td = _get("target_dir")
+        rc = os.system("cp \"${td}/bin/servirtium\" \"${root}/target/servirtium\"")
+        if rc != 0 { println("servirtium-cli: failed to stage target/servirtium"); return 1 }
+        println("servirtium-cli: built target/servirtium (aether.program)")
         return 0
     }
 }

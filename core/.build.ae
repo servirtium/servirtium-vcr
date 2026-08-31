@@ -1,46 +1,46 @@
 // The shared Servirtium VCR engine, built ONCE for the whole monorepo from
-// the engine source that now lives IN this repo (core/), no longer in
-// the Aether stdlib.
+// the engine source that lives IN this repo (core/).
 //
-// Output: core/native/libservirtium_vcr.so — every binding's .tests.ae deps
-// this node and then links (cgo/NIF/cabal) or loads (ctypes/ffi/koffi/Fiddle/
-// FFM/uFFI, via SERVIRTIUM_VCR_LIB) that single artifact.
+// Output: libservirtium_vcr.so — every binding's .tests.ae deps this node
+// and then links (cgo/NIF/cabal) or loads (ctypes/ffi/koffi/Fiddle/FFM/uFFI,
+// via SERVIRTIUM_VCR_LIB) that single artifact. Consumers read it back via
+// dep_artifact("core/.build.ae", "shared_lib") — no hardcoded path.
 //
 // Source: core/embed.ae (the aether_vcr_embed_* C-ABI) imports the local
 // `vcr` module (core/vcr.ae) — the WHOLE engine RUNTIME (Servirtium markdown
-// parser / emitter + tape storage + dispatchers + matching + record) is now
+// parser / emitter + tape storage + dispatchers + matching + record) is
 // PURE AETHER (was the 2133-line core/aether_vcr.c). The only C left is
 // core/_embed_strdup.c (~12 lines): the embed ABI's vcr_embed_dup/free
 // caller-owned-string bridge — the one malloc/free FFI primitive Aether's
-// stdlib can't express — linked via `--extra`. The engine uses std.http's
-// server + request-header iteration, std.http.client, std.zlib,
-// std.cryptography, std.bytes, std.fs, std.string.
+// stdlib can't express — linked in via extra_source.
 //
-// Needs ae with the -fPIC runtime (>= 0.182), chunked de-chunk (>= 0.183),
-// and std.http request-header iteration (http.request_header_count/_name/_value).
-
+// aeb-native since the Shape A rework: aether.shared_lib runs
+// `ae build --emit=lib` (cwd = core/, so `import vcr` resolves) and ALSO
+// publishes the transitive-link artifacts (shared_library_deps_including_
+// transitive, ldlibdeps) that let JVM/Go/Rust consumer nodes auto-wire.
+//
+// COMPAT: the .so is also copied to core/native/ — go/servirtium.go's cgo
+// LDFLAGS (`-L${SRCDIR}/../core/native -rpath ...`), lua/haskell link lines,
+// and third-party-consumer docs bake that path in. The dep_artifact path
+// (target/build/core/lib/) and core/native/ are the same bytes.
 import bldr
+import aether
+import aether (source, output, extra_source, caps)
 import std.os
 
 aeb(cap) {
     bldr.build() {
-        root = _get("root")
-        dest = "${root}/core/native"
-        _m = os.system("mkdir -p \"${dest}\"")
-        // Pure-Aether runtime + the ~12-line vcr_embed_dup/free FFI string bridge
-        // (_embed_strdup.c) via --extra. The recorder's request-header iteration
-        // is std.http's http.request_header_count/_name/_value (the wish in
-        // aether/vcr_request_header_iteration_wish.md landed).
-        rc = os.system("cd \"${root}/core\" && ae build --emit=lib --with=fs,net embed.ae --extra _embed_strdup.c -o \"${dest}/libservirtium_vcr.so\"")
-        if rc != 0 {
-            println("engine: failed to build libservirtium_vcr.so from core (is `ae` >= 0.182 installed?)")
-            return 1
+        aether.shared_lib() {
+            source("embed.ae")
+            extra_source("_embed_strdup.c")
+            caps("fs,net")
+            output("libservirtium_vcr.so")
         }
-        println("engine: built core/native/libservirtium_vcr.so (from core)")
-        // Publish the .so onto this node's dep edge: every consumer reads it
-        // back via dep_artifact("core/.build.ae", "shared_lib") — no
-        // hardcoded path, no coupling to core/native/ as the output dir.
-        publish_artifact("shared_lib", "${dest}/libservirtium_vcr.so")
+        root = _get("root")
+        td = _get("target_dir")
+        rc = os.system("mkdir -p \"${root}/core/native\" && cp \"${td}/lib/libservirtium_vcr.so\" \"${root}/core/native/\"")
+        if rc != 0 { println("engine: failed to stage core/native/libservirtium_vcr.so"); return 1 }
+        println("engine: built libservirtium_vcr.so (aether.shared_lib; staged to core/native/)")
         return 0
     }
 }

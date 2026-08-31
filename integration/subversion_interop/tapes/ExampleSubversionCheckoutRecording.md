@@ -75,7 +75,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 DAV  : http://subversion.tigris.org/xmlns/dav/svn/log-revprops
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 DAV: http://subversion.tigris.org/xmlns/dav/svn/depth
@@ -129,7 +128,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 DAV  : http://subversion.tigris.org/xmlns/dav/svn/log-revprops
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 DAV: http://subversion.tigris.org/xmlns/dav/svn/depth
@@ -200,7 +198,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 Host: svn.apache.org
 Accept-Encoding: gzip
@@ -248,7 +245,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 Host: svn.apache.org
 Accept-Encoding: gzip
@@ -308,7 +304,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 Host: svn.apache.org
 Accept-Encoding: gzip
@@ -368,7 +363,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 Host: svn.apache.org
 Accept-Encoding: gzip
@@ -438,7 +432,6 @@ target
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 Host: svn.apache.org
 Accept-Encoding: gzip
@@ -498,7 +491,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 Host: svn.apache.org
 Accept-Encoding: gzip
@@ -574,7 +566,6 @@ projectFilesBackup
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 Host: svn.apache.org
 Accept-Encoding: gzip
@@ -634,7 +625,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 Host: svn.apache.org
 Accept-Encoding: gzip
@@ -694,7 +684,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 Host: svn.apache.org
 Accept-Encoding: gzip
@@ -754,7 +743,6 @@ Content-Type: text/xml; charset="utf-8"
 ### Request headers recorded for playback:
 
 ```
-Transfer-Encoding: chunked
 User-Agent: SVN/1.10.0 (x86_64-apple-darwin17.0.0) serf/1.3.9
 DAV: http://subversion.tigris.org/xmlns/dav/svn/depth
 Host: svn.apache.org
@@ -787,7 +775,6 @@ Server: Apache
 Vary: Accept-Encoding
 Keep-Alive: timeout=15, max=988
 Connection: Keep-Alive
-Transfer-Encoding: chunked
 Content-Type: text/xml; charset="utf-8"
 ```
 

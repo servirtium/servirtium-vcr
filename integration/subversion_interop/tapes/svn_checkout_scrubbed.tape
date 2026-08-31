@@ -275,7 +275,6 @@ Server: Apache
 Vary: Accept-Encoding
 Keep-Alive: timeout=15, max=988
 Connection: Keep-Alive
-Transfer-Encoding: chunked
 Content-Type: text/xml; charset="utf-8"
 ```
 

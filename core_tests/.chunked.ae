@@ -4,26 +4,28 @@
 // on an OS-assigned port; the probe records through a VCR and asserts the tape
 // stores the DECODED payload (not chunk framing) and replays it decoded.
 //
-// Its own leaf (not the test_vcr_* run-tests.sh loop) because it needs the C
-// upstream process. Orchestration is inline-Aether (no .sh): cc the upstream,
-// start it, read its port, build+run the probe with the pure-Aether engine,
-// tear the upstream down. Name it to run:
-//   aeb core_tests/.chunked.ae
+// aether.program builds the probe (lib("..") resolves `import core.vcr`);
+// the UP -> use -> DOWN choreography (cc the C upstream, start it, read its
+// port, run the probe, tear down) is genuinely imperative and stays inline.
+// Name it to run:  aeb core_tests/.chunked.ae
 import bldr
+import aether
+import aether (source, output, lib)
 import std.os
 import std.string
 aeb(cap) {
     bldr.build() {
+        aether.program() {
+            source("chunked_record_probe.ae")
+            output("chunked_record_probe")
+            lib("..")
+        }
         root = _get("root")
-        td = "${root}/target/core_tests_chunked"
-        _mk = os.system("mkdir -p \"${td}\"")
-    
+        td = _get("target_dir")
+
         cc = os.system("cc \"${root}/core_tests/chunked_upstream.c\" -o \"${td}/chunked_upstream\"")
         if cc != 0 { println("core_tests/chunked: failed to compile chunked_upstream.c"); return 1 }
-    
-        bp = os.system("cd \"${root}\" && ae build core_tests/chunked_record_probe.ae -o \"${td}/probe\"")
-        if bp != 0 { println("core_tests/chunked: failed to build probe"); return 1 }
-    
+
         // UP: start the chunked upstream; it prints its OS-assigned port to stdout.
         _start = os.system("\"${td}/chunked_upstream\" > \"${td}/port.txt\" 2>/dev/null &")
         port = ""
@@ -33,14 +35,14 @@ aeb(cap) {
             port = string.trim(p)
             if string.length(port) > 0 { i = 100 } else { _s = os.system("sleep 0.05")  i = i + 1 }
         }
-    
+
         result = 1
         if string.length(port) == 0 {
             println("core_tests/chunked: chunked upstream did not report a port")
         } else {
-            result = os.system("cd \"${root}\" && UPSTREAM_PORT=${port} \"${td}/probe\"")
+            result = os.system("cd \"${root}\" && UPSTREAM_PORT=${port} \"${td}/bin/chunked_record_probe\"")
         }
-    
+
         // DOWN: unconditional teardown of the upstream.
         _k = os.system("pkill -x chunked_upstream >/dev/null 2>&1")
         if result != 0 { println("core_tests/chunked: failed"); return 1 }

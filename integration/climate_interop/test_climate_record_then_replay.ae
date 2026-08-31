@@ -102,7 +102,7 @@ proxy_to(req: ptr, res: ptr, path: string) {
         http.response_set_body(res, "recorder: could not build upstream request")
         return
     }
-    client.set_timeout(creq, 30)
+    client.set_timeout(creq, 30s)
     cresp, cerr = client.send_request(creq)
     client.request_free(creq)
     if cerr != "" {

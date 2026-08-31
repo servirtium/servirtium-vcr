@@ -3,20 +3,26 @@
 // replays ITS OWN tape with independent cursors/diagnostics. The
 // deliverable for the per-listener refactor.
 //
+// aether.program builds the probe (lib("..") resolves `import core.vcr`
+// from the repo root); the run stays imperative (cwd must be the root so
+// the probe's relative tape paths resolve).
+//
 // Its own leaf (not the test_vcr_* run-tests.sh loop) so it can be run on
 // its own:  aeb core_tests/.concurrent.ae
 import bldr
+import aether
+import aether (source, output, lib)
 import std.os
 aeb(cap) {
     bldr.build() {
+        aether.program() {
+            source("concurrent_probe.ae")
+            output("concurrent_probe")
+            lib("..")
+        }
         root = _get("root")
-        td = "${root}/target/core_tests_concurrent"
-        _mk = os.system("mkdir -p \"${td}\"")
-    
-        bp = os.system("cd \"${root}\" && ae build core_tests/concurrent_probe.ae -o \"${td}/probe\"")
-        if bp != 0 { println("core_tests/concurrent: failed to build probe"); return 1 }
-    
-        result = os.system("cd \"${root}\" && \"${td}/probe\"")
+        td = _get("target_dir")
+        result = os.system("cd \"${root}\" && \"${td}/bin/concurrent_probe\"")
         if result != 0 { println("core_tests/concurrent: failed"); return 1 }
         println("core_tests/concurrent: passed")
         return 0
