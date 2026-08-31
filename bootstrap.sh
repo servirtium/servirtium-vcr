@@ -38,7 +38,11 @@ set -euo pipefail
 #             not automatically better, it is another thing to have tested.
 #             Aether cuts releases fast; do not chase HEAD by hand.
 AE_PIN="0.413.0"
-AE_FETCH="v0.543.0"    # verified: engine + CLI + core_tests green on 0.543.0
+AE_FETCH="v0.613.0"    # verified: engine + CLI + core_tests 20/20 + cli-tests 18/18
+                       # + go/rust/js/java/dotnet bindings green on 0.613.0
+# aeb floor: the Shape A (b-free bldr.build{}) leaves in this repo need
+# aeb >= 0.290. install.sh fetches latest, which satisfies that; an older
+# aeb already on PATH fails loudly on `import bldr` rather than silently.
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX

@@ -9,7 +9,11 @@ aeb(cap) {
     bldr.build() {
         dep("dotnet/Servirtium.Vcr/.build.ae")
         dotnet.build_project() {
-            target_framework("net10.0")
+            // net8.0 to MATCH the library leaf (Servirtium.Vcr targets net8.0
+            // LTS). Tests were net10.0, which broke on SDK 10.0.302 with
+            // NETSDK1226 (prune-package data missing for .NETCoreApp 10.0);
+            // net8.0 has stable prune data on every SDK that can build this.
+            target_framework("net8.0")
             nullable()
             test_project()
             nuget("Microsoft.NET.Test.Sdk:17.11.1")
