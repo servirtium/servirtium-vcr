@@ -11,9 +11,12 @@ once, then **replays** it forever — offline, deterministic, git-diffable. This
 repo is **one native engine + thin per-language bindings**. The engine
 (`core/vcr.ae`, pure Aether: parser/emitter, tape store, matcher, dispatchers,
 record — the old 2133-line `aether_vcr.c` was folded in and deleted) compiles
-via `core/embed.ae` (the C ABI) to `core/native/libservirtium_vcr.so`. The only
-C left is `core/_embed_strdup.c` (~12 lines: the caller-owned-string
-malloc/free bridge), linked via one `--extra` in `core/.build.ae`. Every language directory
+via `core/embed.ae` (the C ABI) to `libservirtium_vcr.so` (built by
+`aether.shared_lib` in `core/.build.ae` to `target/build/core/lib/`, with a
+compat copy at `core/native/` — go's cgo LDFLAGS and other link lines bake that
+path in). The only C left is `core/_embed_strdup.c` (~12 lines: the
+caller-owned-string malloc/free bridge), linked via the node's
+`extra_source(...)`. Every language directory
 (`go/`, `python/`, `rust/`, …) is a **thin FFI shim** over that one `.so` — no
 re-implementation of Servirtium logic per language. That's the whole design:
 the old "each language has its own recorder/replayer/server" era is over (see
@@ -53,9 +56,9 @@ the spec. To add, say, Perl:
    (`<lang>/.../tapes/single_get.md`: `GET /ok` → `200 text/plain` body
    `ok-body`). Assert the body is `ok-body` and `last_kind == 0` (Ok). Most
    bindings just curl the playback server.
-4. **Add a `.tests.ae` leaf** (see Build/test). It `build.dep`s
+4. **Add a `.tests.ae` leaf** (see Build/test). It `dep()`s
    `core/.build.ae`, then compiles + runs the test with `SERVIRTIUM_VCR_LIB`
-   pointed at the engine `.so`.
+   pointed at the engine `.so` (via `dep_artifact(..., "shared_lib")`).
 5. **Verify**: `aeb <lang>/.tests.ae` → exit 0, `test: <lang>`.
 
 That's it. I added Nim/Zig/Lua/Erlang/Gleam this way with no guide — just the
@@ -111,14 +114,24 @@ reference). Quick facts:
 
 - **Not on `PATH`** in a fresh shell — it's at `~/.local/bin/aeb`. Prefix
   `export PATH="$HOME/.local/bin:$PATH"` or call it by full path.
-- A build leaf is a **dot-prefixed `.ae`** with entrypoint `aeb(cap) { b =
-  build.start() … }` (the old `main()` was migrated; don't migrate ordinary
-  Aether *programs* like `core_tests/*_probe.ae` / `test_vcr_*.ae` — those keep
-  `main()`).
+- A build leaf is a **dot-prefixed `.ae`** with the Shape A ("b-free")
+  entrypoint: `import bldr` + `aeb(cap) { bldr.build() { … } }` — `dep()`,
+  `dep_artifact()`, `publish_artifact()`, `_get("root"/"target_dir")` and the
+  SDK builders are all context-injected inside the `bldr.build()` block; no
+  `b` handle anywhere (the whole repo was swept in `89e327e`; needs aeb >=
+  0.290). Don't migrate ordinary Aether *programs* like
+  `core_tests/*_probe.ae` / `test_vcr_*.ae` — those keep `main()`.
 - `.tests.ae` classifies as a **test** node; any other custom name
-  (`.record.ae`, `.triple.ae`, …) is a generic leaf, run by name.
-- Edges are literal strings: `build.dep(b, "core/.build.ae")` — every binding
-  deps the engine node so the `.so` is built first.
+  (`.record.ae`, `.triple.ae`, …) is a generic leaf, run by name. Node output
+  lands under `target/<buildtype>/<module>/` (buildtype = the leaf name).
+- Edges are literal strings: `dep("core/.build.ae")` — every binding deps the
+  engine node so the `.so` is built first.
+- Engine + CLI + the pure-Aether probes build via the **`aether` SDK
+  builders** (`aether.shared_lib` for the engine, `aether.program` for
+  `core/cli.ae` and the core_tests/integration probes — `lib("..")`-style
+  setters resolve root-relative imports like `import core.vcr`, since the
+  compile cwd is the leaf's dir). Only genuinely-imperative test choreography
+  (spawn upstream / poll / run / teardown) stays as inline `os.system`.
 - **Per-node output goes to `target/.aeb/logs/<label>.log`**, not stdout. When
   a leaf "passes silently", read the log for the body's `println`.
 - **Never run two top-level `aeb` invocations concurrently** — they clobber the
@@ -287,7 +300,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   below, not the in-tree `.tests.ae`.)
 - **BEAM family shares one NIF (Erlang owns it).** `erlang/.build.ae` compiles
   the canonical NIF ONCE into the OTP app `servirtium_nif`
-  (`erlang/_build/servirtium_nif/{ebin,priv}`). `elixir/` and `gleam/` `build.dep`
+  (`erlang/_build/servirtium_nif/{ebin,priv}`). `elixir/` and `gleam/` `dep()`
   on that node and load the SAME compiled `servirtium_nif` module over the BEAM —
   Elixir via `defdelegate` in `Servirtium.Native`, Gleam via `@external`. Erlang
   is the BEAM's "Java" here, exactly as the one Java jar backs the JVM four.
