@@ -596,7 +596,7 @@ vcr_get_tape_count() -> int { return list_size(tape_list()) }
 tape_append_k(srvkey: string, method: string, path: string, status: int, body: string,
               content_type: string, has_ct: int,
               req_headers: string, req_body: string) -> int {
-    e = malloc(128) as *Interaction
+    e = malloc(sizeof(Interaction)) as *Interaction
     e.method = string.copy(method)
     e.path = string.copy(path)
     e.status = status
@@ -759,7 +759,7 @@ redaction_add(l: ptr, field: int, pattern: string, replacement: string, api: str
         set_load_err("unsupported field selector")
         return 0
     }
-    r = malloc(64) as *Redaction
+    r = malloc(sizeof(Redaction)) as *Redaction
     r.field = field
     r.pattern = string.copy(pattern)
     r.replacement = string.copy(replacement)
@@ -816,7 +816,7 @@ vcr_add_normalization(pattern: string, name: string, replacement: string) -> int
         return 0
     }
     regex.free(re)
-    r = malloc(64) as *Normalization
+    r = malloc(sizeof(Normalization)) as *Normalization
     r.pattern = string.copy(pattern)
     r.name = string.copy(name)
     r.replacement = string.copy(replacement)
@@ -852,7 +852,7 @@ norm_token_for(val: string) -> string {
 }
 
 norm_token_add(value: string, token: string) {
-    e = malloc(64) as *NormToken
+    e = malloc(sizeof(NormToken)) as *NormToken
     e.value = string.copy(value)
     e.token = string.copy(token)
     list_add_raw(normtokens(), e)
@@ -977,7 +977,7 @@ vcr_add_header_removal(field: int, name: string) -> int {
         set_load_err("header removal requires a header name")
         return 0
     }
-    h = malloc(48) as *HeaderRemoval
+    h = malloc(sizeof(HeaderRemoval)) as *HeaderRemoval
     h.field = field
     h.name = string.copy(name)
     list_add_raw(header_removals(), h)
@@ -1017,7 +1017,7 @@ vcr_add_match_header(name: string) -> int {
         set_load_err("match-header requires a header name")
         return 0
     }
-    h = malloc(24) as *MatchHeaderName
+    h = malloc(sizeof(MatchHeaderName)) as *MatchHeaderName
     h.name = string.copy(name)
     list_add_raw(match_headers(), h)
     return 1
@@ -1089,7 +1089,7 @@ vcr_add_static_content(mount_path: string, fs_dir: string) -> int {
         set_load_err("vcr_add_static_content: mount_path must start with '/'")
         return 0
     }
-    m = malloc(48) as *StaticMount
+    m = malloc(sizeof(StaticMount)) as *StaticMount
     m.mount_path = string.copy(strip_trailing_slash(mount_path))
     m.fs_dir = string.copy(strip_trailing_slash(fs_dir))
     list_add_raw(mounts(), m)
@@ -1106,7 +1106,7 @@ vcr_add_untaped(path: string) -> int {
     }
     // store path strings; std.list of heap strings. Wrap in a 1-field
     // struct so the element is a stable ptr.
-    s = malloc(16) as *StaticMount
+    s = malloc(sizeof(StaticMount)) as *StaticMount
     s.mount_path = string.copy(path)
     s.fs_dir = string.copy("")
     list_add_raw(untaped_list(), s)
