@@ -11,6 +11,8 @@
 // "wheel" artifact edge, which python/.example.ae consumes.
 import bldr
 import std.os
+import copy
+import copy (from, to)
 
 aeb(cap) {
     bldr.build() {
@@ -18,14 +20,15 @@ aeb(cap) {
         lib = dep_artifact("core/.build.ae", "shared_lib")
         root = _get("root")
         pydir = "${root}/python"
-    
+
         // 1. Bundle the engine .so into the package tree (what the wheel ships).
-        rc = os.system("mkdir -p \"${pydir}/servirtium/native\" && cp \"${lib}\" \"${pydir}/servirtium/native/libservirtium_vcr.so\"")
-        if rc != 0 {
-            println("python package: failed to stage engine .so into servirtium/native/")
-            return 1
+        //    copy.file auto-creates the dest parent; `to` resolves against the
+        //    leaf's source_dir (python/).
+        copy.file() {
+            from(lib)
+            to("servirtium/native/libservirtium_vcr.so")
         }
-    
+
         // 2. Build the wheel from the existing setup.py (isolated build backend).
         rc2 = os.system("cd \"${pydir}\" && rm -rf dist build servirtium.egg-info && python3 -m build --wheel")
         if rc2 != 0 {

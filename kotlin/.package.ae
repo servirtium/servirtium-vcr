@@ -6,19 +6,16 @@
 // java/.package.ae to get that into ~/.m2 first. A Kotlin consumer then
 // resolves servirtium-vcr-kotlin and the .so rides along transitively.
 import bldr
-import std.os
+import maven
 
 aeb(cap) {
     bldr.build() {
         dep("java/.package.ae")
-        root = _get("root")
-        ktdir = "${root}/kotlin"
-    
-        rc = os.system("cd \"${ktdir}\" && mvn -q -B -Dmaven.test.skip=true install")
-        if rc != 0 {
-            println("kotlin package: `mvn install` of servirtium-vcr-kotlin failed")
-            return 1
-        }
+
+        // maven.install runs `mvn -q -DskipTests install` in this leaf's
+        // module_dir (kotlin/) — no ${root}/kotlin hardcode.
+        maven.install()
+
         publish_artifact("maven_gav", "com.paulhammant.servirtium:servirtium-vcr-kotlin:2.0.0-SNAPSHOT")
         println("kotlin package: installed servirtium-vcr-kotlin jar to ~/.m2")
         return 0

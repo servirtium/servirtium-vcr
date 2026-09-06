@@ -3,19 +3,16 @@
 // java/.package.ae so the Java jar (with the bundled engine .so) is present and
 // rides along transitively for a Groovy consumer.
 import bldr
-import std.os
+import maven
 
 aeb(cap) {
     bldr.build() {
         dep("java/.package.ae")
-        root = _get("root")
-        dir = "${root}/groovy"
-    
-        rc = os.system("cd \"${dir}\" && mvn -q -B -Dmaven.test.skip=true install")
-        if rc != 0 {
-            println("groovy package: `mvn install` of servirtium-vcr-groovy failed")
-            return 1
-        }
+
+        // maven.install runs `mvn -q -DskipTests install` in this leaf's
+        // module_dir (groovy/) — no ${root}/groovy hardcode.
+        maven.install()
+
         publish_artifact("maven_gav", "com.paulhammant.servirtium:servirtium-vcr-groovy:2.0.0-SNAPSHOT")
         println("groovy package: installed servirtium-vcr-groovy jar to ~/.m2")
         return 0

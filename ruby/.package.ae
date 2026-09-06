@@ -9,6 +9,8 @@
 // "gem" artifact edge, which ruby/.example.ae consumes.
 import bldr
 import std.os
+import copy
+import copy (from, to)
 
 aeb(cap) {
     bldr.build() {
@@ -16,14 +18,15 @@ aeb(cap) {
         lib = dep_artifact("core/.build.ae", "shared_lib")
         root = _get("root")
         rbdir = "${root}/ruby"
-    
+
         // 1. Bundle the engine .so into lib/ (what `Dir['lib/**/*']` ships).
-        rc = os.system("mkdir -p \"${rbdir}/lib/servirtium/native\" && cp \"${lib}\" \"${rbdir}/lib/servirtium/native/libservirtium_vcr.so\"")
-        if rc != 0 {
-            println("ruby package: failed to stage engine .so into lib/servirtium/native/")
-            return 1
+        //    copy.file auto-creates the dest parent; `to` resolves against the
+        //    leaf's source_dir (ruby/).
+        copy.file() {
+            from(lib)
+            to("lib/servirtium/native/libservirtium_vcr.so")
         }
-    
+
         // 2. Build the gem to a stable filename (gem install accepts any name).
         rc2 = os.system("cd \"${rbdir}\" && mkdir -p pkg && gem build servirtium.gemspec --output pkg/servirtium.gem")
         if rc2 != 0 {

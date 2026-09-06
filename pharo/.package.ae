@@ -6,21 +6,22 @@
 // pharo/native/ so there is a bundled path to point at. Deps core/.build.ae;
 // publishes the pharo package dir.
 import bldr
-import std.os
+import copy
+import copy (from, to)
 
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
-        root = _get("root")
-        phdir = "${root}/pharo"
-    
-        rc = os.system("mkdir -p \"${phdir}/native\" && cp \"${lib}\" \"${phdir}/native/libservirtium_vcr.so\"")
-        if rc != 0 {
-            println("pharo package: failed to stage engine .so into pharo/native/")
-            return 1
+
+        // copy.file auto-creates the dest parent; `to` resolves against this
+        // leaf's source_dir (pharo/), so no ${root}/pharo hardcode.
+        copy.file() {
+            from(lib)
+            to("native/libservirtium_vcr.so")
         }
-        publish_artifact("package_dir", "${phdir}")
+
+        publish_artifact("package_dir", "${_get("root")}/pharo")
         println("pharo package: staged engine .so into pharo/native/ (Pharo package ready)")
         return 0
     }

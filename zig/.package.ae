@@ -4,21 +4,22 @@
 // zig/native/. Deps core/.build.ae; publishes the zig package dir on
 // "package_dir".
 import bldr
-import std.os
+import copy
+import copy (from, to)
 
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
-        root = _get("root")
-        zigdir = "${root}/zig"
-    
-        rc = os.system("mkdir -p \"${zigdir}/native\" && cp \"${lib}\" \"${zigdir}/native/libservirtium_vcr.so\"")
-        if rc != 0 {
-            println("zig package: failed to stage engine .so into zig/native/")
-            return 1
+
+        // copy.file auto-creates the dest parent; `to` resolves against this
+        // leaf's source_dir (zig/), so no ${root}/zig hardcode for the stage.
+        copy.file() {
+            from(lib)
+            to("native/libservirtium_vcr.so")
         }
-        publish_artifact("package_dir", "${zigdir}")
+
+        publish_artifact("package_dir", "${_get("root")}/zig")
         println("zig package: staged engine .so into zig/native/ (Zig package ready)")
         return 0
     }

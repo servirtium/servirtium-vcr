@@ -7,21 +7,22 @@
 // engine .so into rust/native/, where a consumer's build of the crate finds it.
 // Deps core/.build.ae; publishes the rust crate dir on "crate_dir".
 import bldr
-import std.os
+import copy
+import copy (from, to)
 
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
-        root = _get("root")
-        rustdir = "${root}/rust"
-    
-        rc = os.system("mkdir -p \"${rustdir}/native\" && cp \"${lib}\" \"${rustdir}/native/libservirtium_vcr.so\"")
-        if rc != 0 {
-            println("rust package: failed to stage engine .so into rust/native/")
-            return 1
+
+        // copy.file auto-creates the dest parent; `to` resolves against this
+        // leaf's source_dir (rust/), so no ${root}/rust hardcode.
+        copy.file() {
+            from(lib)
+            to("native/libservirtium_vcr.so")
         }
-        publish_artifact("crate_dir", "${rustdir}")
+
+        publish_artifact("crate_dir", "${_get("root")}/rust")
         println("rust package: staged engine .so into rust/native/ (Cargo crate ready)")
         return 0
     }
