@@ -184,18 +184,54 @@ artifact** that tests in any language can replay.
 The whole repo is built with **[aeb](https://github.com/aether-lang-dev/aeb)**,
 the polyglot Aether build runner — the natural fit for a one-engine,
 many-language monorepo. You point `aeb` at the node you want (a dot-prefixed
-`.ae` script, e.g. `java/.tests.ae`); it follows that node's `build.dep(...)`
-edges and builds just its transitive dependencies, in order. Because every
-binding deps the `core/` node, asking for any one binding first builds the
-native lib once, then links or loads that single artifact — nothing else gets
-built. Bare `aeb` (no target) builds the whole repo: it collects every `.ae`
-node in the tree and builds the full graph in dependency order.
+`.ae` script, e.g. `java/.tests.ae`); it follows that node's `dep(...)` edges
+and builds just its transitive dependencies, in order. Because every binding
+deps the `core/` node, asking for any one binding first builds the native lib
+once, then links or loads that single artifact — nothing else gets built. Bare
+`aeb` (no target) builds the whole repo: it collects every `.ae` node in the
+tree and builds the full graph in dependency order.
+
+### Installing the toolchain (`ae` + `aeb`)
+
+aeb needs the Aether toolchain (`ae`) — and `aeb`'s installer needs an `ae` to
+target, so they install in that order. aeb's
+[`get.sh`](https://github.com/aether-lang-dev/aeb/blob/main/get.sh) ensures both
+from a bare clone: prebuilt-binary-first per platform (source fallback), and it
+fetches the pinned Aether via Aether's own `get.sh`. Aether compiles to C, so
+the only prerequisites for a source fallback are a C compiler and GNU make. The
+authoritative pins live in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` is the ae
+*floor* (the oldest ae that can build the engine), `AE_FETCH` the known-good ae
+release it installs (currently `v0.645.0`), and the aeb floor is `>= 0.297`. The
+one-liner below pins that known-good pair; keep its numbers in step with
+`bootstrap.sh`.
+
+The zero-dependency path is just `./bootstrap.sh` — it wraps exactly this, and a
+no-op when `ae`/`aeb` are already good. To drive the installer directly, one line
+installs a pinned `ae` (>= `AE_PIN`) THEN a pinned `aeb`, into `~/.local` (no
+sudo; `PREFIX=` to override):
 
 ```sh
-./bootstrap.sh        # installs the Aether toolchain + aeb if missing, then `aeb`
-# or, if you already have ae (needs v0.227.0 or above) and aeb on PATH:
+curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh \
+  | AE_PIN=0.645.0 AEB_REF=v0.297 sh
+```
+
+`get.sh` is also a sourceable library — a CI step can source it (set
+`AEBGET_SOURCE_ONLY=1` so sourcing only *defines* the functions, without
+auto-installing) then drive it:
+
+```bash
+AEBGET_SOURCE_ONLY=1 . <(curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh)
+AE_PIN=0.645.0 AEB_REF=v0.297 aeb_bootstrap        # ensures ae (>= AE_PIN) THEN aeb
+```
+
+### Building
+
+```sh
+./bootstrap.sh        # installs the toolchain if missing, then builds the engine + present bindings
+# or, with ae (>= AE_PIN) and aeb (>= 0.297) already on PATH:
 aeb                   # whole repo: every node, in dependency order
-aeb go/.tests.ae      # just one binding (builds the engine it deps, then tests)
+aeb core/.build.ae    # just the engine -> libservirtium_vcr.so (needs only ae + a C compiler)
+aeb go/.tests.ae      # one binding (builds the engine it deps, then tests — needs Go)
 ```
 
 See each binding's own `docs/`, and [`integration/`](integration/) for the
