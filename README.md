@@ -221,22 +221,25 @@ a pinned `aeb` into `~/.local` (no sudo; `PREFIX=` to override), then builds. It
 also preflights the C-compiler/make prerequisites and fails with a clear message
 if they are missing — which the raw `get.sh` one-liner does not. Prefer it.
 
-To drive the installer directly instead (no repo clone), prefer `sh -c "$(curl
-…)"` over `curl … | sh`: the fetched script runs as its own argument rather than
-on stdin, so its progress and any error (e.g. the `make`-missing one above) print
-to your terminal instead of racing through the pipe. Pins go **before** `curl`:
-
-```sh
-AE_PIN=0.645.0 AEB_REF=v0.297 sh -c \
-  "$(curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh)"
-```
-
-`get.sh` is also a sourceable library — a CI step can source it (set
-`AEBGET_SOURCE_ONLY=1` so sourcing only *defines* the functions, without
-auto-installing) then drive it:
+To drive the installer directly instead (no repo clone), **download it to a file
+named `get.sh` and run that file** — do not pipe it into `sh` or wrap it in
+`sh -c "$(curl …)"`. `get.sh` only auto-installs when it is invoked *as a file*
+(it keys on `$0` ending in `get.sh`, so it can double as a sourceable library);
+piped or `-c`'d, `$0` is the bare shell name and it exits silently having done
+nothing — a 1-second no-op. Downloading first also means a fetch error is visible
+and the pinned run prints its progress to your terminal:
 
 ```bash
-AEBGET_SOURCE_ONLY=1 . <(curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh)
+curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh -o get.sh
+AE_PIN=0.645.0 AEB_REF=v0.297 bash get.sh        # installs ae (>= AE_PIN) THEN aeb
+```
+
+`get.sh` is also a sourceable library — sourced (rather than run as a file) it
+just *defines* the functions without installing, so a CI step can source it once
+and drive the bootstrap against its own pin:
+
+```bash
+. <(curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh)
 AE_PIN=0.645.0 AEB_REF=v0.297 aeb_bootstrap        # ensures ae (>= AE_PIN) THEN aeb
 ```
 
