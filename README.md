@@ -193,18 +193,27 @@ tree and builds the full graph in dependency order.
 
 ### Installing the toolchain (`ae` + `aeb`)
 
-**Prerequisites first.** Aether compiles to C, and the toolchain installers fall
-back to a source build (`aeb`'s bundle installer always runs `make`), so you need
-a **C compiler and GNU make** before anything below. On a fresh box they are
-often absent — a bare Debian/Ubuntu VM has neither, and `get.sh` will stop with
-`GNU make is required`. Install them once:
+**Prerequisites first.** Aether compiles to C, and installing `aeb` from the
+current release still runs a `make` step that links against a handful of system
+libraries, so a fresh box needs a **C compiler, GNU make, and a few `-dev`
+libraries** before anything below. A bare Debian/Ubuntu VM has none of them and
+`get.sh` will stop (`GNU make is required`, or `ld: cannot find -lssl …`).
+Install them once — this exact set is verified on a clean `debian:13` to take the
+install all the way through:
 
 ```sh
 # Debian/Ubuntu
-sudo apt-get update && sudo apt-get install -y build-essential curl
-# Fedora/RHEL:  sudo dnf install -y gcc make curl
-# macOS:        xcode-select --install
+sudo apt-get update && sudo apt-get install -y \
+    build-essential curl git \
+    libssl-dev zlib1g-dev libpcre2-dev libbrotli-dev libzstd-dev
+# Fedora/RHEL:  sudo dnf install -y gcc make curl git \
+#                   openssl-devel zlib-devel pcre2-devel libzstd-devel brotli-devel
+# macOS:        xcode-select --install   # (Homebrew: openssl pcre2 zstd brotli)
 ```
+
+(Once a newer `aeb` release ships — its bundle installer is now copy-only, no
+`make`, no linking — the `-dev` libraries drop away and only a compiler is needed
+for the rare source fallback. Until then, install the full set above.)
 
 aeb needs the Aether toolchain (`ae`) — and `aeb`'s installer needs an `ae` to
 target, so they install in that order. aeb's
@@ -233,6 +242,28 @@ also surfaces a fetch error and prints install progress to your terminal:
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh -o get.sh
 AE_PIN=0.645.0 AEB_REF=v0.297 bash get.sh        # installs ae (>= AE_PIN) THEN aeb
 ```
+
+### Optionally: `aeo` (only for the containerized integration tests)
+
+The `integration/todobackend/` suite stands its service-under-test up in a
+container. That standup is moving to **[aeo](https://github.com/aether-lang-dev/aeo)**,
+the ecosystem's infrastructure orchestrator (health-gated bring-up, verified
+teardown). You do **not** need `aeo` for the engine, the bindings, or `aeb
+go/.tests.ae` — only for that container integration tier, and only once it lands.
+Its `get.sh` follows the same download-to-file shape:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh -o get.sh
+AE_PIN=0.645.0 bash get.sh        # ensures ae + aeb, then the aeo CLI
+```
+
+> **Not installable yet.** The first `aeo` CLI release has not been cut — until a
+> `v*` release is published, the command above fails at "could not resolve an aeo
+> release tag." In the meantime, install from a clone (needs only `ae` + `make`,
+> both already present after the aeb step):
+> ```bash
+> git clone https://github.com/aether-lang-dev/aeo && cd aeo && make install
+> ```
 
 Other ways — sourcing `get.sh` as a CI library, forcing a from-source build, or
 installing from a clone — are in
