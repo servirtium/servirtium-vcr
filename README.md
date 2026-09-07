@@ -193,26 +193,42 @@ tree and builds the full graph in dependency order.
 
 ### Installing the toolchain (`ae` + `aeb`)
 
+**Prerequisites first.** Aether compiles to C, and the toolchain installers fall
+back to a source build (`aeb`'s bundle installer always runs `make`), so you need
+a **C compiler and GNU make** before anything below. On a fresh box they are
+often absent — a bare Debian/Ubuntu VM has neither, and `get.sh` will stop with
+`GNU make is required`. Install them once:
+
+```sh
+# Debian/Ubuntu
+sudo apt-get update && sudo apt-get install -y build-essential curl
+# Fedora/RHEL:  sudo dnf install -y gcc make curl
+# macOS:        xcode-select --install
+```
+
 aeb needs the Aether toolchain (`ae`) — and `aeb`'s installer needs an `ae` to
 target, so they install in that order. aeb's
 [`get.sh`](https://github.com/aether-lang-dev/aeb/blob/main/get.sh) ensures both
-from a bare clone: prebuilt-binary-first per platform (source fallback), and it
-fetches the pinned Aether via Aether's own `get.sh`. Aether compiles to C, so
-the only prerequisites for a source fallback are a C compiler and GNU make. The
-authoritative pins live in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` is the ae
-*floor* (the oldest ae that can build the engine), `AE_FETCH` the known-good ae
-release it installs (currently `v0.645.0`), and the aeb floor is `>= 0.297`. The
-one-liner below pins that known-good pair; keep its numbers in step with
-`bootstrap.sh`.
+from a bare clone: prebuilt-binary-first per platform, source fallback otherwise,
+fetching the pinned Aether via Aether's own `get.sh`. The authoritative pins live
+in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` is the ae *floor* (the oldest ae that
+can build the engine), `AE_FETCH` the known-good ae release it installs (currently
+`v0.645.0`), and the aeb floor is `>= 0.297`. The commands below pin that
+known-good pair; keep their numbers in step with `bootstrap.sh`.
 
-The zero-dependency path is just `./bootstrap.sh` — it wraps exactly this, and a
-no-op when `ae`/`aeb` are already good. To drive the installer directly, one line
-installs a pinned `ae` (>= `AE_PIN`) THEN a pinned `aeb`, into `~/.local` (no
-sudo; `PREFIX=` to override):
+**Recommended — `./bootstrap.sh`.** It installs a pinned `ae` (>= `AE_PIN`) THEN
+a pinned `aeb` into `~/.local` (no sudo; `PREFIX=` to override), then builds. It
+also preflights the C-compiler/make prerequisites and fails with a clear message
+if they are missing — which the raw `get.sh` one-liner does not. Prefer it.
+
+To drive the installer directly instead (no repo clone), prefer `sh -c "$(curl
+…)"` over `curl … | sh`: the fetched script runs as its own argument rather than
+on stdin, so its progress and any error (e.g. the `make`-missing one above) print
+to your terminal instead of racing through the pipe. Pins go **before** `curl`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh \
-  | AE_PIN=0.645.0 AEB_REF=v0.297 sh
+AE_PIN=0.645.0 AEB_REF=v0.297 sh -c \
+  "$(curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh)"
 ```
 
 `get.sh` is also a sourceable library — a CI step can source it (set
