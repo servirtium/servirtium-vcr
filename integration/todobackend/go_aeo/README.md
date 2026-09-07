@@ -34,67 +34,71 @@ aeo: dry-run — would bring up 1 resource(s) in this order:
 aeo: teardown would be the reverse of the above
 ```
 
-## What was verified on this box (podman 4.3.1, aeo 0.2.0 from a clone)
+## What was verified on this box (podman 4.3.1, aeo 0.2.0)
 
-Against the **real vendored http4k SUT** (`integration/todobackend/sut/`, built to
-`todobackend-sut:latest` via `Containerfile.sut`):
+Against the **real vendored http4k SUT** (`integration/todobackend/sut/`),
+**workaround-free** as of aeo v0.2.0 — the composition now mirrors the shell
+leaf's real invocation exactly, and aeo owns the whole flow including the build:
 
-- The composition **parses and validates** under `aeo dry-run` (exit 0).
-- `aeo up … --no-supervisor` stands the **real SUT** up, health-gated, and it
-  serves: **`GET / → HTTP 200`** on the mapped host port. `aeo down … ` tears it
-  down: `[sut] gone (verified …)`, `podman ps -a` shows **no leaked container**.
-  Reproduced cleanly across repeated runs (up_exit=0 each time).
-- The **teardown-on-failure guarantee** was proven directly (earlier, with a
-  deliberately never-ready node): `bring-up failed — tearing down partial tree`
-  → `[sut] gone (verified …)` — the exact correctness gap the shell leaf has (its
-  best-effort `rm -f` never runs on that path).
+- `aeo dry-run` validates the composition (exit 0).
+- `aeo up … --no-supervisor` (with **no pre-built image** — the tag deleted
+  first) **builds the SUT itself** from `Containerfile.sut` + the `sut/` context,
+  then stands it up health-gated. Verified from `podman inspect`:
+  - `Entrypoint=/app/bin/http4k-todo-backend`  ← `exec_entrypoint()` → real `--entrypoint`
+  - `Ports=0.0.0.0:54321->8000/tcp`            ← `publish_map(54321, 8000)` → asymmetric
+  - `GET /:54321 → HTTP 200` body `[]`         ← the real SUT serving on the mapped port
+- `aeo down …` tears down: `[sut] gone (verified …)`, `podman ps -a` shows **no
+  leaked container**. `aeo up` exit 0.
+- The **teardown-on-failure guarantee** was proven directly (a deliberately
+  never-ready node): `bring-up failed — tearing down partial tree` → `[sut] gone
+  (verified …)` — the exact correctness gap the shell leaf has (its best-effort
+  `rm -f` never runs on that path).
 
-Three real gotchas the spike surfaced (all now handled in the composition):
+Two gotchas still worth knowing:
 
-- **The SUT defaults to `:54321`** when given no port arg — so the composition
-  runs it on 54321 (both sides) and health-probes 54321, sidestepping aeo's
-  symmetric-`expose` limit rather than fighting it.
 - **aeo runs `health()` INSIDE the container** (`<engine> exec sut /bin/sh -c
   "…"`), so the probe must use a tool the image ships. The JRE-alpine image has
   busybox `wget` but no `curl` — hence `wget -qO- …`, not `curl`.
-- **`--no-supervisor` is arg #3** — it goes *after* the compose file
-  (`aeo up <file> --no-supervisor`), else aeo reads it as the filename.
+- **`containerfile()`/`build_context()` paths resolve relative to the INVOCATION
+  cwd** (run `aeo` from the repo root), not the composition file's dir — despite
+  aeo's code comments citing `AEO_COMPOSE_DIR`. Flagged to the aeo maintainer.
+- **`--no-supervisor` is arg #3** — after the compose file (`aeo up <file>
+  --no-supervisor`), else aeo reads it as the filename.
 
-## Findings that gate a real conversion (why this stays a spike)
+## The three original aeo DSL gaps — all CLOSED in v0.2.0
 
-1. **aeo's linux container driver runs `IMAGE /bin/sh -c "<command>"` and does
-   NOT emit podman `--entrypoint`.** The `entrypoint()` compose setter isn't
-   wired to `--entrypoint` in this aeo version. Here it's a non-issue because the
-   image bakes `ENTRYPOINT /app/bin/http4k-todo-backend` (Containerfile.sut), so
-   `command("/app/bin/http4k-todo-backend 54321 …")` under `sh -c` just runs the
-   binary. But a SUT image *without* a baked entrypoint would need the aeo fix.
-   (Filed as a note for the aeo maintainer.)
-2. **`expose(N)` publishes `N:N` (symmetric).** The leaf's asymmetric
-   `54321:8000` isn't expressible; here the SUT runs on `8000` both sides and the
-   spec targets `:8000`. A `publish(ext, inn)` form on `container` would close
-   this.
-3. **The record "test" is a `go test`, not an HTTP assertion**, so the suite
-   spec shells `go test` via `os.system` rather than using the `httptest`
-   matchers. That works, but means the spec is a thin wrapper, not idiomatic
-   std.spec.
-4. **CI cost**: adopting aeo adds a second orchestration dependency (aeo built +
-   on PATH atop ae/aeb/toolchains), and there is **no `aeo` CLI release yet** —
-   so CI can only get aeo from a clone until the first `v*` release ships.
+The first pass of this spike hit three compose-DSL gaps and filed them
+(`aeo/asks/container-entrypoint-and-asymmetric-publish.md`). The aeo maintainer
+implemented all three in **v0.2.0**, and this composition now uses them directly
+— proven live above:
+
+1. `exec_entrypoint("/app/bin/http4k-todo-backend")` → podman `--entrypoint`,
+   `command()` passed as real args (not `/bin/sh -c`). ✅
+2. `publish_map(54321, 8000)` → `-p 54321:8000` (asymmetric). ✅
+3. `containerfile()` + `build_context()` → aeo builds the real Containerfile
+   against the source-tree context *before boot* — no manual `podman build`. ✅
+
+## What still stands between this spike and converting all 24 leaves
+
+1. **The record "test" is a `go test`**, so the suite spec shells it via
+   `os.system` rather than using `httptest` matchers — a thin wrapper, not
+   idiomatic std.spec. (Intrinsic: the record driver is Go, not HTTP assertions.)
+2. **CI-on-a-bare-box is gated on an aeb release, not aeo.** aeo v0.2.0's own
+   bundle installs copy-only (no make) — but `aeo/get.sh` pulls **aeb**, and the
+   *published* aeb v0.297 bundle still has the old make-calling installer (the
+   fix is on aeb `main`, unreleased). Verified: on a virginal `debian:13-slim`,
+   `aeo/get.sh` installs `ae` then **fails at the aeb step**. So until aeb
+   re-releases, CI needs the `-dev` libs (see the top-level README) or a clone.
 
 ## Verdict
 
-The orchestration mechanic is a clear win, now proven **against the real SUT**:
-health-gated bring-up (no poll loop) and **guaranteed** verified teardown are
-strictly better than the leaf's poll loop + best-effort `rm -f`. The container
-standup half of `.go_record.ae` maps onto aeo cleanly.
+Proven end-to-end against the real SUT, **workaround-free**: one declarative
+composition now owns **build → up (real entrypoint, asymmetric port,
+health-gated) → verified teardown**, replacing ~45 lines of `podman build` /
+`podman run` / curl-poll / best-effort `rm -f` per leaf. The mechanic is a clear
+win and the DSL gaps are gone.
 
-What still stands between this spike and converting all 24 leaves:
-- the record step itself is a `go test` the suite spec shells out to (works, but
-  the spec is a thin wrapper, not idiomatic std.spec / `httptest`);
-- the aeo `entrypoint()` / asymmetric-`publish` gaps matter for SUT images
-  without a baked entrypoint (not this one) and for exact port parity;
-- **no aeo CLI release yet**, so CI can only get aeo from a clone.
-
-Recommendation: keep this spike as the reference and template; do the full
-12-language fan-out once aeo cuts a `v*` release, so CI can install it the same
-binary-first way it installs aeb.
+Recommendation: this composition is the workaround-free **template** for the
+12-language fan-out. Do the fan-out now (each `.<lang>_record.ae` → an `aeo suite`
+composition, differing only in the record test invoked); pin aeo in CI via
+`get.sh` with `AEO_REF=v0.2.0` once the aeb-release CI caveat above is resolved.

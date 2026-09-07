@@ -28,7 +28,7 @@ main() {
             root = _root()
             lib = os.getenv("SERVIRTIUM_VCR_LIB")   // set by the harness (dep_artifact path)
             cmd = "cd \"${root}/integration/todobackend/go\" && " +
-                  "SERVIRTIUM_VCR_LIB=\"${lib}\" TODOBACKEND_UPSTREAM=http://127.0.0.1:8000 " +
+                  "SERVIRTIUM_VCR_LIB=\"${lib}\" TODOBACKEND_UPSTREAM=http://127.0.0.1:54321 " +
                   "go test -run TestRecordTheCrudSuiteAgainstTheLiveSut -v"
             rc = os.system(cmd)
             spec.expect_int(rc).to_equal(0)

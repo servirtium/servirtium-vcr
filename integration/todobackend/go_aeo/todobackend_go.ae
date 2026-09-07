@@ -1,31 +1,28 @@
 // SPIKE — the Go todobackend RECORD standup, expressed as an aeo composition.
 //
-// This is a side-by-side experiment (see ../.go_record.ae for the shell version
-// it mirrors). It does NOT replace that leaf yet — it exists to measure whether
-// aeo expresses the container UP -> record -> VERIFIED-teardown lifecycle more
-// cleanly than the hand-rolled `podman run` / curl-poll / `rm -f` in the leaf.
+// Side-by-side experiment (see ../.go_record.ae for the shell version it
+// mirrors). Measures whether aeo expresses the container BUILD -> UP -> record ->
+// VERIFIED-teardown lifecycle more cleanly than the hand-rolled `podman build` /
+// `podman run` / curl-poll / `rm -f` in the leaf.
 //
-// What the shell leaf does imperatively, aeo does declaratively:
-//   * UP the SUT container on host :54321 -> container :8000, health-gated
-//     (aeo polls until the health() command passes, replacing the 50x/0.3s
-//     curl-poll loop).
-//   * RECORD: the suite() spec (checks/go_record_suite.spec.ae) drives the Go
-//     record test through a record-mode VCR while the SUT is up.
+// As of aeo v0.2.0 this mirrors the leaf's REAL invocation with NO workarounds:
+//   * BUILD the SUT image from the real Containerfile + source-tree context
+//     (containerfile()/build_context()), so there is no manual `podman build`
+//     pre-step — aeo builds it before boot.
+//   * UP on host :54321 -> container :8000 (publish_map — asymmetric, exactly
+//     the leaf's `-p 54321:8000`), with the SUT's real entrypoint + args
+//     (exec_entrypoint() -> `--entrypoint`, command() as real args, not sh -c).
+//   * health-gated bring-up (aeo polls health() until 0-exit — no poll loop).
+//   * RECORD: the suite() spec drives the Go record test while the SUT is up.
 //   * DOWN: `aeo suite` tears the container down AFTER the spec — GUARANTEED,
-//     even if the spec fails. The shell leaf's `rm -f` only runs if control
-//     reaches it; a crashed record leaks the container.
+//     even if it fails. The leaf's `rm -f` only runs if control reaches it.
 //
-// Run:  aeo suite integration/todobackend/go_aeo/todobackend_go.ae   (deploy + record + teardown)
-//       aeo up    ...                                                (just stand it up)
-//       aeo down  ...                                                (tear down)
-//
-// The SUT image (todobackend-sut:latest) is built out-of-band exactly as the
-// shell leaf builds it (Containerfile.sut from the sibling source). aeo is not a
-// build tool — it references the prebuilt tag, matching the ecosystem rule that
-// image-building shells out to aeb / the container engine, not aeo.
+// Run:  aeo suite integration/todobackend/go_aeo/todobackend_go.ae   (build + deploy + record + teardown)
+//       aeo up    ...  --no-supervisor                               (just build + stand it up)
+//       aeo down  ...  --no-supervisor                               (tear down)
 
 import compose (system, container)
-import compose (image, expose, health, command)
+import compose (containerfile, build_context, exec_entrypoint, command, publish_map, health)
 import compose (health_retry, every, up_within, down_within)
 import compose (suite)
 
@@ -35,39 +32,38 @@ aeo_orchestration() {
     system("todobackend_go_record") {
         health_retry() {
             every(500ms)
-            up_within(60s)       // the http4k SUT is a JVM (Undertow) — slow first boot;
-                                 // give it headroom (the leaf's 15s budget is too tight here)
+            up_within(60s)       // the http4k SUT is a JVM (Undertow) — give first boot headroom
             down_within(10s)
         }
 
-        // The SUT: the http4k TodoBackend, host :54321 -> container :8000, with
-        // baseUrl pointed at the VCR origin (:51080) so the todo URLs it mints
-        // point back at the VCR and get recorded — same args the shell leaf's
-        // `--entrypoint /app/bin/http4k-todo-backend ... 8000 http://127.0.0.1:51080`
-        // passes.
-        // NOTE 1: aeo's expose(N) publishes N:N (symmetric host:container), so we
-        // run the SUT on 8000 both sides rather than the leaf's 54321:8000; the
-        // record spec targets :8000 to match. (A future asymmetric publish(ext,
-        // inn) form on `container` would let this mirror the leaf exactly.)
-        // NOTE 2: aeo's linux driver runs `IMAGE /bin/sh -c "<command>"` and does
-        // not emit --entrypoint, so we fold the SUT binary into command() rather
-        // than using entrypoint(). Works because the image ALSO bakes
-        // `ENTRYPOINT /app/bin/http4k-todo-backend` (Containerfile.sut) — sh -c
-        // just runs the full invocation. baseUrl = VCR origin :51080 so the todo
-        // URLs the SUT mints point back at the VCR and get recorded.
         sut = container("sut") {
-            image("todobackend-sut:latest")
-            expose(54321)                                  // host 54321 -> container 54321 (the SUT's own default port)
-            command("/app/bin/http4k-todo-backend 54321 http://127.0.0.1:51080")
+            // Out-of-line build: the real multi-stage gradle Containerfile against
+            // the vendored SUT source tree. aeo builds it before boot — no manual
+            // `podman build`, no image() tag to pre-stage.
+            // NB: in aeo v0.2.0 these paths resolve relative to the INVOCATION cwd
+            // (run aeo from the repo root), not the composition file's dir — the
+            // code comments say AEO_COMPOSE_DIR but observed behavior anchors at
+            // cwd. Flagged to the aeo maintainer. Hence the repo-root-relative
+            // paths here rather than "../Containerfile.sut".
+            containerfile("integration/todobackend/Containerfile.sut")
+            build_context("integration/todobackend/sut")
+
+            // Real invocation, matching the leaf: --entrypoint + args, host
+            // 54321 -> container 8000. baseUrl = VCR origin :51080 so the todo
+            // URLs the SUT mints point back at the VCR and get recorded.
+            exec_entrypoint("/app/bin/http4k-todo-backend")
+            command("8000 http://127.0.0.1:51080")
+            publish_map(54321, 8000)
+
             // health: aeo runs this via `<engine> exec sut /bin/sh -c "…"` INSIDE
-            // the container, so it must use a tool the image has — the JRE-alpine
-            // image ships busybox wget (no curl). A 0 exit = ready, replacing the
-            // leaf's host-side curl-poll loop.
-            health("wget -qO- http://127.0.0.1:54321/ >/dev/null 2>&1")
+            // the container, so it uses a tool the JRE-alpine image ships (busybox
+            // wget; no curl). Probe the CONTAINER port (8000). 0 exit = ready.
+            health("wget -qO- http://127.0.0.1:8000/ >/dev/null 2>&1")
         }
 
         // The record step: a std.spec suite that runs the Go record test against
-        // the live SUT. aeo runs it after health passes, then tears the tree down.
+        // the live SUT (host :54321). aeo runs it after health passes, then tears
+        // the tree down.
         suite("checks/go_record_suite.spec.ae")
     }
 }
