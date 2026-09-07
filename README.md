@@ -193,27 +193,26 @@ tree and builds the full graph in dependency order.
 
 ### Installing the toolchain (`ae` + `aeb`)
 
-**Prerequisites first.** Aether compiles to C, and installing `aeb` from the
-current release still runs a `make` step that links against a handful of system
-libraries, so a fresh box needs a **C compiler, GNU make, and a few `-dev`
-libraries** before anything below. A bare Debian/Ubuntu VM has none of them and
-`get.sh` will stop (`GNU make is required`, or `ld: cannot find -lssl …`).
-Install them once — this exact set is verified on a clean `debian:13` to take the
-install all the way through:
+**Prerequisites first.** Two separate needs, don't conflate them:
+
+- **Installing `ae` + `aeb`** needs only `curl` — as of aeb v0.298 the toolchain
+  installs binary-first with no compiler and no `make` (verified on a clean
+  `debian:13-slim`).
+- **Building this repo's engine** (`core/` → `libservirtium_vcr.so`) is what needs
+  a **C compiler and a few `-dev` libraries**: the engine links OpenSSL, zlib,
+  PCRE2, brotli and zstd, so without their headers the build stops at
+  `ld: cannot find -lssl …`. Plus `git` to clone. Install once — this exact set is
+  verified on a clean `debian:13` to build the engine and pass `aeb go/.tests.ae`:
 
 ```sh
 # Debian/Ubuntu
 sudo apt-get update && sudo apt-get install -y \
-    build-essential curl git \
+    curl git build-essential \
     libssl-dev zlib1g-dev libpcre2-dev libbrotli-dev libzstd-dev
 # Fedora/RHEL:  sudo dnf install -y gcc make curl git \
 #                   openssl-devel zlib-devel pcre2-devel libzstd-devel brotli-devel
 # macOS:        xcode-select --install   # (Homebrew: openssl pcre2 zstd brotli)
 ```
-
-(Once a newer `aeb` release ships — its bundle installer is now copy-only, no
-`make`, no linking — the `-dev` libraries drop away and only a compiler is needed
-for the rare source fallback. Until then, install the full set above.)
 
 aeb needs the Aether toolchain (`ae`) — and `aeb`'s installer needs an `ae` to
 target, so they install in that order. aeb's
@@ -222,7 +221,7 @@ from a bare clone: prebuilt-binary-first per platform, source fallback otherwise
 fetching the pinned Aether via Aether's own `get.sh`. The authoritative pins live
 in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` is the ae *floor* (the oldest ae that
 can build the engine), `AE_FETCH` the known-good ae release it installs (currently
-`v0.645.0`), and the aeb floor is `>= 0.297`. The commands below pin that
+`v0.645.0`), and the aeb floor is `>= 0.298` (the release whose bundle installs make-free). The commands below pin that
 known-good pair; keep their numbers in step with `bootstrap.sh`.
 
 **Recommended — `./bootstrap.sh`.** It installs a pinned `ae` (>= `AE_PIN`) THEN
@@ -240,7 +239,7 @@ also surfaces a fetch error and prints install progress to your terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh -o get.sh
-AE_PIN=0.645.0 AEB_REF=v0.297 bash get.sh        # installs ae (>= AE_PIN) THEN aeb
+AE_PIN=0.645.0 AEB_REF=v0.298 bash get.sh        # installs ae (>= AE_PIN) THEN aeb (binary, no make)
 ```
 
 ### Optionally: `aeo` (only for the containerized integration tests)
@@ -273,7 +272,7 @@ installing from a clone — are in
 
 ```sh
 ./bootstrap.sh        # installs the toolchain if missing, then builds the engine + present bindings
-# or, with ae (>= AE_PIN) and aeb (>= 0.297) already on PATH:
+# or, with ae (>= AE_PIN) and aeb (>= 0.298) already on PATH:
 aeb                   # whole repo: every node, in dependency order
 aeb core/.build.ae    # just the engine -> libservirtium_vcr.so (needs only ae + a C compiler)
 aeb go/.tests.ae      # one binding (builds the engine it deps, then tests — needs Go)
