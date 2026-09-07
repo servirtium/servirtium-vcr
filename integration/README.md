@@ -33,9 +33,9 @@ The TodoBackend Mocha spec (`../../todo-backend-js-spec`, 17 CRUD `it`s) is the
 real believability showcase. It's the same shape as the smoke:
 
 1. **Record once** — run a VCR in record mode forwarding to a real TodoBackend
-   (`../../todobackend-for-compatibility-kit`, http4k) while the browser drives
-   the Mocha spec → captures the CRUD tape. (This is the one remaining
-   dependency: standing up the http4k backend to record against.)
+   (the http4k SUT vendored at `todobackend/sut/`) while the browser drives
+   the Mocha spec → captures the CRUD tape. (Standing up the http4k backend to
+   record against — now in-repo, no external checkout.)
 2. **Replay (offline, committed)** — mount the Mocha spec
    (`index.html` + `js/`) as static content on a playback VCR, point Mocha at
    the VCR root (`?<vcr-base>`), load it in Chrome, wait for `mocha.run()` to

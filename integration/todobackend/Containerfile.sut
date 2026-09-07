@@ -1,11 +1,12 @@
 # Builds the Servirtium TodoBackend SUT (Kotlin + http4k) used to RECORD the
-# CRUD tape. Mirrors the sibling repo's Dockerfile but with fully-qualified
-# image names (podman here has no unqualified-search registry). Build context
-# is the todobackend-for-compatibility-kit checkout:
+# CRUD tape. Mirrors the SUT source's own Dockerfile but with fully-qualified
+# image names (podman here has no unqualified-search registry). Build context is
+# the VENDORED SUT source at integration/todobackend/sut/ (was an external
+# sibling checkout; vendored into this monorepo — see sut/README.md):
 #
 #   podman build -t todobackend-sut:latest \
 #     -f integration/todobackend/Containerfile.sut \
-#     ../todobackend-for-compatibility-kit
+#     integration/todobackend/sut
 #
 # Only needed to (re)record the tape — the playback browser test replays the
 # committed tape with no SUT.

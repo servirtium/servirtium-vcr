@@ -28,3 +28,6 @@
 /integration/todobackend/*/_build/
 /integration/todobackend/*/deps/
 /integration/todobackend/*/.dart_tool/
+# vendored todobackend SUT (Kotlin/gradle) build outputs — never commit
+/integration/todobackend/sut/build/
+/integration/todobackend/sut/.gradle/

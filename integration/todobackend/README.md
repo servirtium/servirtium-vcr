@@ -88,10 +88,12 @@ Containerfile.sut      builds the Kotlin/http4k SUT image (gradle7.5.1/JDK11)
   tapes would need `remove_header(RESPONSE_HEADERS, "Date")` plus regex
   redaction of the UUIDs (the latter pending a regex story — see core/TODO.md).
 
-Re-recording needs `podman`/`docker` and the [`todobackend-for-compatibility-kit`][sut]
-Kotlin source as a sibling checkout (or `TODOBACKEND_SRC=/path`); the record
-leaf builds `todobackend-sut:latest` from it via [`Containerfile.sut`](Containerfile.sut)
-(in-container gradle 7.5.1/JDK 11, so it builds regardless of the host JDK).
+Re-recording needs `podman`/`docker` and the http4k SUT Kotlin source, now
+**vendored in-repo** at [`sut/`](sut/) (see [`sut/README.md`](sut/README.md) for
+provenance — it was the external [`todobackend-for-compatibility-kit`][sut]
+repo, archived upstream). The record leaf builds `todobackend-sut:latest` from
+`sut/` via [`Containerfile.sut`](Containerfile.sut) (in-container gradle
+7.5.1/JDK 11, so it builds regardless of the host JDK).
 
 The vendored spec under `suite/` is the upstream [todo-backend-js-spec][spec]
 assets verbatim, driven by `suite/js/runner.js` + `suite/runner.html` (which add
