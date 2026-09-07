@@ -58,3 +58,58 @@ sha256-verified) — relevant if servirtium ever wants aeo in its CI to run thes
 compositions. Its make-less bundle install is fixed + verified on debian:13-slim.
 The first `aeo v0.2.0` release (agent + CLI together, lockstep) hasn't been cut
 yet — it's a gated maintainer action.
+
+---
+
+## UPDATE 2026-09-07 (later same day) — the blockers are GONE, aeo v0.2.0 is live
+
+Everything the "blocker" and "not cut yet" notes above waited on has landed. The
+path is now open end-to-end.
+
+### 1. aeo v0.2.0 is PUBLISHED
+https://github.com/aether-lang-dev/aeo/releases/tag/v0.2.0 (it's `releases/latest`).
+One unified, lockstep release — agent binaries AND the aeo CLI bundles together.
+So `curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh | sh`
+installs the aeo CLI now (binary-first, sha256-verified, copy-only install — works
+on a bare debian-slim CI box, no `make`/compiler needed for the CLI itself; note
+aeo shells `ae` at RUNTIME, which get.sh also installs).
+- Linux x86_64 + aarch64 CLI bundles: PUBLISHED (the CI target — you're covered).
+- FreeBSD CLI bundle: MISSING from v0.2.0 — a flaky upstream `zlib.net` download
+  in aether-crossbuild (non-deterministic sha mismatch) skipped it; the release
+  degraded gracefully rather than failing. Not needed for Linux-based integration
+  CI; a later re-tag will likely include it.
+
+### 2. Both DSL "blockers" are IMPLEMENTED (aeo main + shipped in v0.2.0)
+The two gaps in "The blocker" section above — plus a third and a grammar upgrade:
+- **exec_entrypoint("/app/bin/…")** → podman `--entrypoint`, command() as ARGS
+  (not sh -c). (The naming collision noted above was resolved: `entrypoint()` is
+  the script-form; the run-time flag verb is `exec_entrypoint()`.)
+- **publish_map(ext, inn)** on a plain container → `-p ext:inn` (asymmetric). So
+  the SUT's real `54321:8000` is now expressible (single-arg publish(p) == expose).
+- **containerfile("path") + build_context("dir")** → aeo builds the real
+  Containerfile against a source-tree context BEFORE boot. So a composition can
+  own build→up→record→down with NO manual `podman build` pre-step — the SUT image
+  builds from `integration/todobackend/Containerfile.sut` + `sut/` declaratively.
+- **entrypoint(){ <lang>(<src>) }** block grammar for one-file SUTs (python /
+  ruby / javascript / perl / php), if you ever want an inline SUT instead of a
+  Containerfile. (Heredoc close marker must be alone on its line, `)` on the next.)
+
+All proven live against the vendored SUT: a real `aeo up` gave
+`Entrypoint=/app/bin/http4k-todo-backend`, `-p 54321:8000`, image built from the
+Containerfile. aeo suite (fanning `spec_container_run_argv` etc.) is green.
+
+### 3. So the go_aeo spike's two workarounds can be dropped
+The spike (`integration/todobackend/go_aeo/todobackend_go.ae`) had NOTE 1 (used
+symmetric 8000:8000 because publish was symmetric) and NOTE 2 (folded the binary
+into command() because there was no --entrypoint). BOTH are now removable — the
+composition can mirror the leaf's real invocation exactly. The go_aeo README's
+"referenced a prebuilt tag" caveat is also gone: use containerfile()+build_context().
+
+### Recommended next step for this line
+Convert the 12 hand-rolled `.<lang>_record.ae` leaves to `aeo suite` compositions
+using the go_aeo spike (now workaround-free) as the template — health-gated
+bring-up + guaranteed teardown, ~45 lines of podman/poll/rm-f per leaf replaced by
+a declaration. Pin aeo in CI via get.sh with AEO_REF=v0.2.0 for reproducibility.
+
+Full aeo-side detail: aeo/asks/container-entrypoint-and-asymmetric-publish.md
+(all 5 items marked implemented).
