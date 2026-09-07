@@ -1,0 +1,38 @@
+// SPIKE — the RECORD step for the aeo go todobackend composition.
+//
+// Declared by suite("checks/go_record_suite.spec.ae") in ../todobackend_go.ae.
+// `aeo suite ../todobackend_go.ae` stands the SUT container up, waits for its
+// health() to pass, then runs THIS spec, then tears the container down (even if
+// this fails). So this spec is exactly the leaf's RECORD phase — no UP, no DOWN,
+// no poll loop; aeo owns the lifecycle around it.
+//
+// It shells the Go record test (the same one .go_record.ae runs), pointing it at
+// the health-gated SUT on :8000 (aeo's expose is symmetric — see the composition
+// note). SERVIRTIUM_VCR_LIB and REPO_ROOT come from the environment aeo/the
+// runner passes through; a spike harness can also set them before `aeo suite`.
+
+import std.spec
+import std.os
+import std.string (string_length)
+
+_root() -> string {
+    r = os.getenv("REPO_ROOT")
+    if string_length(r) == 0 { r = "." }   // default: run aeo from the repo root
+    return r
+}
+
+main() {
+    fw = spec.init()
+    spec.describe(fw, "todobackend/go — record against the health-gated SUT") {
+        spec.it("go record test records the CRUD suite through a record-mode VCR") callback {
+            root = _root()
+            lib = os.getenv("SERVIRTIUM_VCR_LIB")   // set by the harness (dep_artifact path)
+            cmd = "cd \"${root}/integration/todobackend/go\" && " +
+                  "SERVIRTIUM_VCR_LIB=\"${lib}\" TODOBACKEND_UPSTREAM=http://127.0.0.1:8000 " +
+                  "go test -run TestRecordTheCrudSuiteAgainstTheLiveSut -v"
+            rc = os.system(cmd)
+            spec.expect_int(rc).to_equal(0)
+        }
+    }
+    return spec.run_summary(fw)
+}

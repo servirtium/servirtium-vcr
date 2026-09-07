@@ -1,0 +1,65 @@
+// SPIKE — the Go todobackend RECORD standup, expressed as an aeo composition.
+//
+// This is a side-by-side experiment (see ../.go_record.ae for the shell version
+// it mirrors). It does NOT replace that leaf yet — it exists to measure whether
+// aeo expresses the container UP -> record -> VERIFIED-teardown lifecycle more
+// cleanly than the hand-rolled `podman run` / curl-poll / `rm -f` in the leaf.
+//
+// What the shell leaf does imperatively, aeo does declaratively:
+//   * UP the SUT container on host :54321 -> container :8000, health-gated
+//     (aeo polls until the health() command passes, replacing the 50x/0.3s
+//     curl-poll loop).
+//   * RECORD: the suite() spec (checks/go_record_suite.spec.ae) drives the Go
+//     record test through a record-mode VCR while the SUT is up.
+//   * DOWN: `aeo suite` tears the container down AFTER the spec — GUARANTEED,
+//     even if the spec fails. The shell leaf's `rm -f` only runs if control
+//     reaches it; a crashed record leaks the container.
+//
+// Run:  aeo suite integration/todobackend/go_aeo/todobackend_go.ae   (deploy + record + teardown)
+//       aeo up    ...                                                (just stand it up)
+//       aeo down  ...                                                (tear down)
+//
+// The SUT image (todobackend-sut:latest) is built out-of-band exactly as the
+// shell leaf builds it (Containerfile.sut from the sibling source). aeo is not a
+// build tool — it references the prebuilt tag, matching the ecosystem rule that
+// image-building shells out to aeb / the container engine, not aeo.
+
+import compose (system, container)
+import compose (image, expose, health, command, entrypoint)
+import compose (health_retry, every, up_within, down_within)
+import compose (suite)
+
+exports ( aeo_orchestration )
+
+aeo_orchestration() {
+    system("todobackend_go_record") {
+        health_retry() {
+            every(300ms)
+            up_within(30s)       // matches the leaf's 50 x 0.3s = 15s budget, with headroom
+            down_within(10s)
+        }
+
+        // The SUT: the http4k TodoBackend, host :54321 -> container :8000, with
+        // baseUrl pointed at the VCR origin (:51080) so the todo URLs it mints
+        // point back at the VCR and get recorded — same args the shell leaf's
+        // `--entrypoint /app/bin/http4k-todo-backend ... 8000 http://127.0.0.1:51080`
+        // passes.
+        // NOTE: aeo's expose(N) publishes N:N (symmetric host:container), so we
+        // run the SUT on 8000 both sides rather than the leaf's 54321:8000; the
+        // record spec targets :8000 to match. (A future asymmetric publish(ext,
+        // inn) form on `container` would let this mirror the leaf exactly.)
+        sut = container("sut") {
+            image("todobackend-sut:latest")
+            expose(8000)                                   // host 8000 -> container 8000
+            entrypoint("/app/bin/http4k-todo-backend")
+            command("8000 http://127.0.0.1:51080")
+            // health: the SUT answers on its root once up. aeo runs this inside
+            // the container; a 0 exit means ready (replaces the curl-poll loop).
+            health("wget -qO- http://127.0.0.1:8000/ >/dev/null 2>&1 || curl -fsS -o /dev/null http://127.0.0.1:8000/")
+        }
+
+        // The record step: a std.spec suite that runs the Go record test against
+        // the live SUT. aeo runs it after health passes, then tears the tree down.
+        suite("checks/go_record_suite.spec.ae")
+    }
+}
