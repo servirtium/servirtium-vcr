@@ -31,3 +31,6 @@
 # vendored todobackend SUT (Kotlin/gradle) build outputs — never commit
 /integration/todobackend/sut/build/
 /integration/todobackend/sut/.gradle/
+
+# aeo per-dev runtime scratch (audit log, sticky-IP bindings) from `aeo up`
+.aeo/
