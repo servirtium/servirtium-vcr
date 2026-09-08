@@ -195,7 +195,7 @@ tree and builds the full graph in dependency order.
 
 **Prerequisites first.** Two separate needs, don't conflate them:
 
-- **Installing `ae` + `aeb`** needs only `curl` — as of aeb v0.298 the toolchain
+- **Installing `ae` + `aeb`** needs only `curl` — as of aeb v0.299 the toolchain
   installs binary-first with no compiler and no `make` (verified on a clean
   `debian:13-slim`).
 - **Building this repo's engine** (`core/` → `libservirtium_vcr.so`) is what needs
@@ -221,7 +221,7 @@ from a bare clone: prebuilt-binary-first per platform, source fallback otherwise
 fetching the pinned Aether via Aether's own `get.sh`. The authoritative pins live
 in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` is the ae *floor* (the oldest ae that
 can build the engine), `AE_FETCH` the known-good ae release it installs (currently
-`v0.645.0`), and the aeb floor is `>= 0.298` (the release whose bundle installs make-free). The commands below pin that
+`v0.650.0`), and the aeb floor is `>= 0.299` (v0.298 made the bundle installer make-free; v0.299 is current). The commands below pin that
 known-good pair; keep their numbers in step with `bootstrap.sh`.
 
 **Recommended — `./bootstrap.sh`.** It installs a pinned `ae` (>= `AE_PIN`) THEN
@@ -239,7 +239,7 @@ also surfaces a fetch error and prints install progress to your terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh -o get.sh
-AE_PIN=0.645.0 AEB_REF=v0.298 bash get.sh        # installs ae (>= AE_PIN) THEN aeb (binary, no make)
+AE_PIN=0.650.0 AEB_REF=v0.299 bash get.sh        # installs ae (>= AE_PIN) THEN aeb (binary, no make)
 ```
 
 ### Optionally: `aeo` (only for the containerized integration tests)
@@ -253,7 +253,7 @@ Its `get.sh` follows the same download-to-file shape:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh -o get.sh
-AE_PIN=0.645.0 bash get.sh        # ensures ae + aeb, then the aeo CLI
+AE_PIN=0.650.0 bash get.sh        # ensures ae + aeb, then the aeo CLI
 ```
 
 > **Not installable yet.** The first `aeo` CLI release has not been cut — until a
@@ -272,7 +272,7 @@ installing from a clone — are in
 
 ```sh
 ./bootstrap.sh        # installs the toolchain if missing, then builds the engine + present bindings
-# or, with ae (>= AE_PIN) and aeb (>= 0.298) already on PATH:
+# or, with ae (>= AE_PIN) and aeb (>= 0.299) already on PATH:
 aeb                   # whole repo: every node, in dependency order
 aeb core/.build.ae    # just the engine -> libservirtium_vcr.so (needs only ae + a C compiler)
 aeb go/.tests.ae      # one binding (builds the engine it deps, then tests — needs Go)

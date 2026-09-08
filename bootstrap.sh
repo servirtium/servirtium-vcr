@@ -38,16 +38,18 @@ set -euo pipefail
 #             not automatically better, it is another thing to have tested.
 #             Aether cuts releases fast; do not chase HEAD by hand.
 AE_PIN="0.413.0"
-AE_FETCH="v0.645.0"    # verified: engine + CLI + core_tests 4/4 + cli-tests 18/18
-                       # + go/rust/js/java/dotnet(13/13) + erlang/elixir/gleam
-                       # (OTP 27, Elixir 1.20.4) bindings + climate/svn integration
-                       # green on 0.645.0. (The earlier 0.643 ratchet first tripped
-                       # a latent Interaction-struct under-alloc in core/vcr.ae — a
-                       # real heap bug, not a toolchain regression; fixed by
-                       # malloc(sizeof(T)) and valgrind-clean since.)
+AE_FETCH="v0.650.0"    # verified: engine + CLI + core_tests 4/4 + cli-tests 18/18
+                       # + go 1/1 green on 0.650.0. Ratcheted to match the sibling
+                       # toolchains (aeb v0.299 + aeo v0.2.2 both floor Aether at
+                       # 0.650.0), so servirtium builds against the same ae they
+                       # ship. (AE_PIN stays 0.413.0 — the genuine floor; nothing
+                       # in the engine needs a 0.650 primitive, this is a
+                       # known-good ratchet, not a floor bump.)
 # aeb floor: the Shape A (b-free bldr.build{}) leaves in this repo need
-# aeb >= 0.297. install.sh fetches latest, which satisfies that; an older
-# aeb already on PATH fails loudly on `import bldr` rather than silently.
+# aeb >= 0.299 (v0.298 made the bundle installer make-free; v0.299 is the current
+# release, Aether-floored at 0.650.0). install.sh fetches latest, which satisfies
+# that; an older aeb already on PATH fails loudly on `import bldr` rather than
+# silently.
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX
