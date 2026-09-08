@@ -6,31 +6,26 @@
 // this fails). So this spec is exactly the leaf's RECORD phase — no UP, no DOWN,
 // no poll loop; aeo owns the lifecycle around it.
 //
-// It shells the Go record test (the same one .go_record.ae runs), pointing it at
-// the health-gated SUT on host :54321 (the composition's publish_map(54321,8000)).
-// SERVIRTIUM_VCR_LIB and REPO_ROOT come from the environment aeo/the runner passes
-// through; a spike harness can also set them before `aeo suite`.
+// It invokes the CANONICAL aeb record leaf (../../go/.record.ae) — NOT a
+// hand-built `cd … && ENV=… go test` shell string. That leaf declares the whole
+// go-test invocation via go.go_test() { env_var(...) run_filter(...) }, gets the
+// engine .so through dep_artifact, and runs from the go.mod dir. So the only
+// thing this spec does is ask the build runner to run it: `aeb <leaf>`.
+//
+// The record test itself drives the Mocha CRUD suite in headless Chrome through a
+// record-mode VCR against the health-gated SUT (host :54321, from the
+// composition's publish_map(54321,8000)) and flushes the tape.
 
 import std.spec
 import std.os
-import std.string (string_length)
-
-_root() -> string {
-    r = os.getenv("REPO_ROOT")
-    if string_length(r) == 0 { r = "." }   // default: run aeo from the repo root
-    return r
-}
 
 main() {
     fw = spec.init()
     spec.describe(fw, "todobackend/go — record against the health-gated SUT") {
-        spec.it("go record test records the CRUD suite through a record-mode VCR") callback {
-            root = _root()
-            lib = os.getenv("SERVIRTIUM_VCR_LIB")   // set by the harness (dep_artifact path)
-            cmd = "cd \"${root}/integration/todobackend/go\" && " +
-                  "SERVIRTIUM_VCR_LIB=\"${lib}\" TODOBACKEND_UPSTREAM=http://127.0.0.1:54321 " +
-                  "go test -run TestRecordTheCrudSuiteAgainstTheLiveSut -v"
-            rc = os.system(cmd)
+        spec.it("aeb record leaf records the CRUD suite through a record-mode VCR") callback {
+            // One build-runner invocation — the leaf owns lib-wiring, env, and the
+            // -run selector declaratively. (aeb is on PATH in this ecosystem.)
+            rc = os.system("aeb integration/todobackend/go/.record.ae")
             spec.expect_int(rc).to_equal(0)
         }
     }

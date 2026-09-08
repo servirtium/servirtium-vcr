@@ -1,0 +1,31 @@
+// TodoBackend Go RECORD — the record-phase test, as a canonical aeb leaf.
+//
+// Declaratively runs TestRecordTheCrudSuiteAgainstTheLiveSut against an
+// ALREADY-RUNNING SUT (the aeo composition ../go_aeo/todobackend_go.ae stands
+// the SUT up, health-gates it, then invokes this leaf, then tears the SUT down).
+// This exists to eliminate the bash-alike the aeo suite spec used to shell:
+//   cd .../go && SERVIRTIUM_VCR_LIB=… TODOBACKEND_UPSTREAM=… go test -run … -v
+// — replaced by go.go_test() with env_var()/run_filter(), no cd, no string-concat.
+//
+// The record test drives the Mocha CRUD suite in headless Chrome through a
+// record-mode VCR; each call is forwarded to TODOBACKEND_UPSTREAM and recorded,
+// then flushed to the tape. It Skips unless TODOBACKEND_UPSTREAM is set, so a
+// bare `aeb go/.tests.ae` never triggers it.
+//
+// go.mod lives in this dir, so go_test runs from source_dir (no pkg()).
+import bldr
+import go
+import go (env_var, run_filter, timeout)
+
+aeb(cap) {
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        go.go_test() {
+            env_var("SERVIRTIUM_VCR_LIB=${lib}")
+            env_var("TODOBACKEND_UPSTREAM=http://127.0.0.1:54321")
+            run_filter("TestRecordTheCrudSuiteAgainstTheLiveSut")
+            timeout("300s")
+        }
+    }
+}
