@@ -5,7 +5,7 @@
 // VERIFIED-teardown lifecycle more cleanly than the hand-rolled `podman build` /
 // `podman run` / curl-poll / `rm -f` in the leaf.
 //
-// As of aeo v0.2.0 this mirrors the leaf's REAL invocation with NO workarounds:
+// As of aeo v0.2.2 this mirrors the leaf's REAL invocation with NO workarounds:
 //   * BUILD the SUT image from the real Containerfile + source-tree context
 //     (containerfile()/build_context()), so there is no manual `podman build`
 //     pre-step — aeo builds it before boot.
@@ -39,14 +39,10 @@ aeo_orchestration() {
         sut = container("sut") {
             // Out-of-line build: the real multi-stage gradle Containerfile against
             // the vendored SUT source tree. aeo builds it before boot — no manual
-            // `podman build`, no image() tag to pre-stage.
-            // NB: in aeo v0.2.0 these paths resolve relative to the INVOCATION cwd
-            // (run aeo from the repo root), not the composition file's dir — the
-            // code comments say AEO_COMPOSE_DIR but observed behavior anchors at
-            // cwd. Flagged to the aeo maintainer. Hence the repo-root-relative
-            // paths here rather than "../Containerfile.sut".
-            containerfile("integration/todobackend/Containerfile.sut")
-            build_context("integration/todobackend/sut")
+            // `podman build`, no image() tag to pre-stage. Paths are relative to
+            // THIS composition file's dir (go_aeo/), so ../ = integration/todobackend/.
+            containerfile("../Containerfile.sut")
+            build_context("../sut")
 
             // Real invocation, matching the leaf: --entrypoint + args, host
             // 54321 -> container 8000. baseUrl = VCR origin :51080 so the todo

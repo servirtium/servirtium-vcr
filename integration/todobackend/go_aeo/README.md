@@ -59,9 +59,12 @@ Two gotchas still worth knowing:
 - **aeo runs `health()` INSIDE the container** (`<engine> exec sut /bin/sh -c
   "…"`), so the probe must use a tool the image ships. The JRE-alpine image has
   busybox `wget` but no `curl` — hence `wget -qO- …`, not `curl`.
-- **`containerfile()`/`build_context()` paths resolve relative to the INVOCATION
-  cwd** (run `aeo` from the repo root), not the composition file's dir — despite
-  aeo's code comments citing `AEO_COMPOSE_DIR`. Flagged to the aeo maintainer.
+- **`containerfile()`/`build_context()` paths are relative to the composition
+  file's dir** (so `../Containerfile.sut` from `go_aeo/` = `integration/todobackend/`),
+  as documented. (During the spike an earlier aeo build anchored them at the
+  invocation cwd instead — that was a stale-front-door install-hygiene issue,
+  fixed in aeo v0.2.2's Makefile; run `rm -f bin/aeo && make build && make install`
+  after pulling an aeo front-door change.)
 - **`--no-supervisor` is arg #3** — after the compose file (`aeo up <file>
   --no-supervisor`), else aeo reads it as the filename.
 

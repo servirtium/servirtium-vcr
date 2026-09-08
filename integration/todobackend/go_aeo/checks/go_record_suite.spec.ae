@@ -7,9 +7,9 @@
 // no poll loop; aeo owns the lifecycle around it.
 //
 // It shells the Go record test (the same one .go_record.ae runs), pointing it at
-// the health-gated SUT on :8000 (aeo's expose is symmetric — see the composition
-// note). SERVIRTIUM_VCR_LIB and REPO_ROOT come from the environment aeo/the
-// runner passes through; a spike harness can also set them before `aeo suite`.
+// the health-gated SUT on host :54321 (the composition's publish_map(54321,8000)).
+// SERVIRTIUM_VCR_LIB and REPO_ROOT come from the environment aeo/the runner passes
+// through; a spike harness can also set them before `aeo suite`.
 
 import std.spec
 import std.os
