@@ -83,16 +83,28 @@ implemented all three in **v0.2.0**, and this composition now uses them directly
 
 ## What still stands between this spike and converting all 24 leaves
 
-1. **The record "test" is a `go test`**, so the suite spec shells it via
-   `os.system` rather than using `httptest` matchers — a thin wrapper, not
-   idiomatic std.spec. (Intrinsic: the record driver is Go, not HTTP assertions.)
+1. **The record "test" is a `go test`**, so the suite spec invokes it through a
+   canonical aeb leaf (`../../go/.record.ae`, a `go.go_test() { env_var(…)
+   run_filter(…) }` — no `cd`/env-string/`go test` bash-alike) rather than using
+   `httptest` matchers. That's the intrinsic floor: the record driver is a real
+   browser via WebDriver, not HTTP assertions, so something language-specific has
+   to run it.
 
-That's it — the earlier CI-on-a-bare-box blocker is **RESOLVED**. It was: aeo's
+**`aeo suite` runs the whole thing end-to-end now.** aeo v0.2.3 fixed the earlier
+"specs don't run from an installed CLI" gap (the `test/run-spec.sh` trampoline
+wasn't bundled; filed as `aeo/asks/suite-run-spec-sh-not-in-installed-bundle.md`,
+fixed in aeo commit 43953c1 — specs run directly). Verified: `aeo suite
+todobackend_go.ae` builds the SUT image → health-gated up → runs the spec, which
+runs the aeb record leaf (`record: integration/todobackend/go: running Go tests`)
+→ verified teardown, no leak. (On this box the go test then fails only on a local
+chromedriver-vs-Chrome version mismatch — environmental, not the pipeline.)
+
+The earlier CI-on-a-bare-box blocker is also **RESOLVED**. It was: aeo's
 `get.sh` pulls aeb, and the then-published aeb bundle `make install`ed (failing on
 a box with no make). Fixed across the ecosystem: aeb **v0.298** made the bundle
-installer copy-only, aeb **v0.299** + aeo **v0.2.2** ship it, and the get.sh
+installer copy-only, aeb **v0.300** + aeo **v0.2.3** ship it, and the get.sh
 make-gate was dropped in both installers. Verified on a virginal `debian:13-slim`:
-`ae` + `aeb v0.299` + `aeo v0.2.2` all install binary-first with no make. (Note:
+`ae` + `aeb v0.300` + `aeo v0.2.3` all install binary-first with no make. (Note:
 building *this repo's engine* still needs the C `-dev` libs — that's the engine
 link, not the toolchain install; see the top-level README.)
 
@@ -102,11 +114,11 @@ Proven end-to-end against the real SUT, **workaround-free**: one declarative
 composition now owns **build → up (real entrypoint, asymmetric port,
 health-gated) → verified teardown**, replacing ~45 lines of `podman build` /
 `podman run` / curl-poll / best-effort `rm -f` per leaf. The mechanic is a clear
-win and the DSL gaps are gone. (Re-verified on aeo **v0.2.2** / ae 0.650.0; the
+win and the DSL gaps are gone. (Re-verified on aeo **v0.2.3** / ae 0.650.0; the
 aeo path-anchor wrinkle logged during the spike was an install-hygiene issue —
 a stale front-door binary — fixed in aeo v0.2.2's Makefile, not a DSL problem.)
 
 Recommendation: this composition is the workaround-free **template** for the
 12-language fan-out. Do the fan-out now (each `.<lang>_record.ae` → an `aeo suite`
 composition, differing only in the record test invoked); pin aeo in CI via
-`get.sh` with `AEO_REF=v0.2.2` (alongside `AEB_REF=v0.299`).
+`get.sh` with `AEO_REF=v0.2.3` (alongside `AEB_REF=v0.300`).
