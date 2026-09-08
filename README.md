@@ -229,18 +229,20 @@ a pinned `aeb` into `~/.local` (no sudo; `PREFIX=` to override), then builds. It
 also preflights the C-compiler/make prerequisites and fails with a clear message
 if they are missing — which the raw `get.sh` one-liner does not. Prefer it.
 
-**Manual — download `get.sh` and run the file.** If you'd rather drive the
-installer yourself (no repo clone), download it to a file named `get.sh` and run
-*that file* — do not pipe it into `sh` or wrap it in `sh -c "$(curl …)"`.
-`get.sh` only auto-installs when invoked as a file (it keys on `$0` ending in
-`get.sh`, so it can double as a sourceable library); piped or `-c`'d, `$0` is the
-bare shell name and it can exit silently having done nothing. Downloading first
-also surfaces a fetch error and prints install progress to your terminal:
+**Manual — one line.** If you'd rather drive the installer yourself (no repo
+clone), pipe `get.sh` into `sh` with the pins after the pipe. It installs a
+pinned `ae` (>= `AE_PIN`) THEN a pinned `aeb`, binary-first, into `~/.local`:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh -o get.sh
-AE_PIN=0.650.0 AEB_REF=v0.300 bash get.sh        # installs ae (>= AE_PIN) THEN aeb (binary, no make)
+```sh
+curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh \
+  | AE_PIN=0.650.0 AEB_REF=v0.300 sh
 ```
+
+(Prefer this to `sh -c "$(curl …)"` — the piped form is what `get.sh`'s
+executed-mode guard is built for. If you want a fetch error and install progress
+on your own terminal rather than through the pipe, download first and run the
+file: `curl … -o get.sh && AE_PIN=0.650.0 AEB_REF=v0.300 bash get.sh` — same
+result.)
 
 ### Optionally: `aeo` (only for the containerized integration tests)
 
@@ -248,21 +250,17 @@ The `integration/todobackend/` suite stands its service-under-test up in a
 container. That standup is moving to **[aeo](https://github.com/aether-lang-dev/aeo)**,
 the ecosystem's infrastructure orchestrator (health-gated bring-up, verified
 teardown). You do **not** need `aeo` for the engine, the bindings, or `aeb
-go/.tests.ae` — only for that container integration tier, and only once it lands.
-Its `get.sh` follows the same download-to-file shape:
+go/.tests.ae` — only for that container integration tier. Its `get.sh` installs
+the same way, and ensures `ae` + `aeb` first (aeo shells them at runtime):
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh -o get.sh
-AE_PIN=0.650.0 bash get.sh        # ensures ae + aeb, then the aeo CLI
+```sh
+curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh \
+  | AE_PIN=0.650.0 AEB_REF=v0.300 AEO_REF=v0.2.3 sh
 ```
 
-> **Not installable yet.** The first `aeo` CLI release has not been cut — until a
-> `v*` release is published, the command above fails at "could not resolve an aeo
-> release tag." In the meantime, install from a clone (needs only `ae` + `make`,
-> both already present after the aeb step):
-> ```bash
-> git clone https://github.com/aether-lang-dev/aeo && cd aeo && make install
-> ```
+(Verified binary-first on a clean `debian:13-slim` — no compiler, no `make`.
+Or from a clone for development: `git clone https://github.com/aether-lang-dev/aeo
+&& cd aeo && make install`.)
 
 Other ways — sourcing `get.sh` as a CI library, forcing a from-source build, or
 installing from a clone — are in
