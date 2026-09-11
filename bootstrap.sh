@@ -46,7 +46,7 @@ AE_FETCH="v0.650.0"    # verified: engine + CLI + core_tests 4/4 + cli-tests 18/
                        # in the engine needs a 0.650 primitive, this is a
                        # known-good ratchet, not a floor bump.)
 # aeb floor: the Shape A (b-free bldr.build{}) leaves in this repo need
-# aeb >= 0.303 (v0.298 made the bundle installer make-free; v0.303 is the current
+# aeb >= 0.304 (v0.298 made the bundle installer make-free; v0.304 is the current
 # release, Aether-floored at 0.650.0). install.sh fetches latest, which satisfies
 # that; an older aeb already on PATH fails loudly on `import bldr` rather than
 # silently.
