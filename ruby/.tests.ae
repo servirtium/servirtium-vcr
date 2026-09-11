@@ -1,11 +1,11 @@
 // Ruby binding tests. Fiddle loads the shared engine via SERVIRTIUM_VCR_LIB.
 import bldr
 import ruby
-import bldr (env)
+import ruby (rspec, env)
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
-        ruby.rspec() { env("SERVIRTIUM_VCR_LIB", lib) }
+        ruby.bundle() { rspec() env("SERVIRTIUM_VCR_LIB", lib) }
     }
 }
