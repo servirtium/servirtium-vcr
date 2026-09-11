@@ -12,7 +12,7 @@ your platform, and aeb's bundle installer always runs `make`). Install them firs
 equivalent). Everything installs into `~/.local` (no sudo); set `PREFIX=` to
 override, and make sure `$PREFIX/bin` is on your `PATH`.
 
-The pins below (`AE_PIN=0.650.0`, `AEB_REF=v0.304`) mirror this repo's
+The pins below (`AE_PIN=0.650.0`, `AEB_REF=v0.306`) mirror this repo's
 [`bootstrap.sh`](../bootstrap.sh) — keep them in step with it.
 
 ## `get.sh` as a sourceable library (CI)
@@ -24,7 +24,7 @@ temp file, no second script:
 
 ```bash
 . <(curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh)
-AE_PIN=0.650.0 AEB_REF=v0.304 aeb_bootstrap        # ensures ae (>= AE_PIN) THEN aeb
+AE_PIN=0.650.0 AEB_REF=v0.306 aeb_bootstrap        # ensures ae (>= AE_PIN) THEN aeb
 ```
 
 `aeb_bootstrap` ensures `ae` (>= `AE_PIN`) and then `aeb` (they install in that
@@ -62,7 +62,7 @@ platform with no asset), set `AEB_FROM_SOURCE=1`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh -o get.sh
-AE_PIN=0.650.0 AEB_REF=v0.304 AEB_FROM_SOURCE=1 bash get.sh
+AE_PIN=0.650.0 AEB_REF=v0.306 AEB_FROM_SOURCE=1 bash get.sh
 ```
 
 The source path builds `ae` via Aether's own `get.sh` (`make install`) and `aeb`
