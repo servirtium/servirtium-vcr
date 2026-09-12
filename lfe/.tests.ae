@@ -1,0 +1,31 @@
+// LFE (Lisp Flavoured Erlang) binding tests. LFE is a BEAM-family binding: it
+// consumes the SAME shared NIF the Erlang binding owns (servirtium_nif) — no
+// second FFI, no second .so, no copied C source. One Erlang NIF backs the BEAM
+// family (Erlang, Elixir, Gleam, LFE), exactly as one Java jar backs the JVM
+// family (Java, Kotlin, Scala, Clojure, Groovy).
+//
+// This node deps erlang/.build.ae for the NIF app and runs the playback facts
+// (src/servirtium_lfe.lfe + test/playback_test.lfe) via lfec + `lfe -eval
+// '(playback_test:main (list))'` with ERL_LIBS pointed at the NIF _build and
+// -pa at its ebin, so servirtium_nif + its priv/servirtium_nif.so resolve the
+// standard OTP way (code:priv_dir). The engine .so arrives transitively via
+// the erlang build's dep on core.
+//
+// Skipped loudly by the lfe SDK's toolchain gate when lfec/lfe are absent.
+import bldr
+import lfe
+import lfe (src, test_src, run_main, pa)
+aeb(cap) {
+    bldr.build() {
+        dep("erlang/.build.ae")
+        libs = dep_artifact("erlang/.build.ae", "erl_libs")
+        ebin = dep_artifact("erlang/.build.ae", "nif_ebin")
+        lfe.test() {
+            env("ERL_LIBS", libs)
+            src("src/servirtium_lfe.lfe")
+            test_src("test/playback_test.lfe")
+            pa(ebin)
+            run_main("playback_test")
+        }
+    }
+}

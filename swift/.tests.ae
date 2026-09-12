@@ -1,0 +1,30 @@
+// Swift binding tests. Swift calls the engine's flat C ABI (aether_vcr_embed_*)
+// DIRECTLY via the CServirtiumVcr module map — no glue .c, no second copy of
+// the marshalling rules. The idiomatic Swift surface (the Vcr class with a
+// scoped withPlayback/withRecord form, Field/Outcome enums, throws instead of
+// NULL, automatic caller-owned-string handling) is in Sources/Servirtium.
+//
+// The engine .so is staged into native/ (copy.file) so Package.swift's
+// -L native -lservirtium_vcr + rpath resolve it at link and run time.
+// swift.build_pkg compiles the SwiftPM package; swift.test runs the XCTest
+// playback facts.
+//
+// Skipped by preflight when Swift is absent (prereq swift).
+import bldr
+import swift
+import copy
+aeb(cap) {
+    bldr.build() {
+        prereq("swift")
+        dep("core/.build.ae")
+        native_lib = dep_artifact("core/.build.ae", "shared_lib")
+        copy.file() {
+            from(native_lib)
+            to("native/libservirtium_vcr.so")
+        }
+        swift.build_pkg() {
+        }
+        swift.test() {
+        }
+    }
+}

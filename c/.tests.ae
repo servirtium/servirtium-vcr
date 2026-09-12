@@ -1,0 +1,21 @@
+// C client tests: run the test binary built by c/.build.ae. playback_test.c
+// replays the canonical tape (GET /ok -> 200 text/plain "ok-body") and asserts
+// the body, a clean match, the diagnostics, and the ergonomic layer's own
+// contracts (owned strings, a failed open reporting why, cursor reset).
+// c.tests runs the dep's program_binary and treats a non-zero exit as failure.
+// Skipped by preflight when a C compiler is absent (prereq gcc).
+import bldr
+import c
+import c (run)
+aeb(cap) {
+    bldr.build() {
+        prereq("gcc")
+        dep("c/.build.ae")
+        root = _get("root")
+        c.tests() {
+            // The tape by ABSOLUTE path: c.tests runs the binary from the repo
+            // root, not from c/, so a relative tapes/ path would misresolve.
+            run("c/.build.ae", "${root}/c/tapes/single_get.md")
+        }
+    }
+}

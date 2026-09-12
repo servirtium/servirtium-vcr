@@ -1,0 +1,41 @@
+// Third-party-consumer PACKAGE stage for the Elixir binding.
+//
+// Elixir consumes `servirtium` as a Hex-style package: mix.exs + lib/, compiled
+// by the consumer's own `mix`. So the Elixir half of the package is SOURCE (no
+// compile step here) — what packaging must actually produce is the other half:
+// the shared servirtium_nif OTP app, staged so a consumer needs nothing from
+// this repo.
+//
+// That app is not rebuilt here; it is copied from erlang/.package.ae's
+// RELOCATABLE build (engine .so in priv/, NIF linked `-Wl,-rpath,$ORIGIN`)
+// into elixir/_build_pkg, so the Elixir package is self-contained — one engine,
+// one NIF, one rpath story for the whole BEAM family. A consumer puts it on the
+// code path with SERVIRTIUM_NIF_EBIN (mix does NOT fold ERL_LIBS in — see the
+// BEAM note in LLM.md) and needs no SERVIRTIUM_VCR_LIB.
+//
+// No tests run here; packaging is a build step (elixir/.tests.ae is the test
+// node). Deps erlang/.package.ae; publishes "package_dir", "erl_libs" and
+// "nif_ebin".
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("erlang/.package.ae")
+        nif_libs = dep_artifact("erlang/.package.ae", "erl_libs")
+        root = _get("root")
+        exdir = "${root}/elixir"
+        pkg = "${exdir}/_build_pkg"
+
+        rc = os.system("rm -rf \"${pkg}\" && mkdir -p \"${pkg}\" && cp -r \"${nif_libs}/servirtium_nif\" \"${pkg}/servirtium_nif\"")
+        if rc != 0 {
+            println("elixir package: staging the shared servirtium_nif app failed")
+            return 1
+        }
+
+        publish_artifact("package_dir", "${exdir}")
+        publish_artifact("erl_libs", "${pkg}")
+        publish_artifact("nif_ebin", "${pkg}/servirtium_nif/ebin")
+        println("elixir package: mix package source + relocatable servirtium_nif app → elixir/_build_pkg")
+        return 0
+    }
+}

@@ -1,0 +1,30 @@
+// The C client's test binary: compiles test/playback_test.c, links the C
+// client's object (from c/.objects.ae) and the engine .so with an rpath.
+// Publishes the binary on the program_binary edge for c/.tests.ae to run.
+//
+// C is the one binding with no FFI bridge at all — the engine's ABI is already
+// C (aether_vcr_embed_*, from core/embed.ae), so this "binding" is a header,
+// an ergonomic layer over the caller-owned-string discipline, and a link line.
+// Skipped by preflight when a C compiler is absent (prereq gcc).
+import bldr
+import c
+import c (sources, include, link_flag, output_file)
+aeb(cap) {
+    bldr.build() {
+        prereq("gcc")
+        dep("core/.build.ae")
+        dep("c/.objects.ae")
+        // Link the engine .so by its ABSOLUTE artifact path (the c.program link
+        // step runs from the repo root, so a relative -L would misresolve);
+        // rpath its dir so the test binary finds it at run time.
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        libdir = bldr._dirname(lib)
+        c.program() {
+            sources("test/playback_test.c")
+            include("include")
+            link_flag(lib)
+            link_flag("-Wl,-rpath,${libdir}")
+            output_file("servirtium_c_test")
+        }
+    }
+}

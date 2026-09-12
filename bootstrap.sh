@@ -38,8 +38,20 @@ set -euo pipefail
 #             not automatically better, it is another thing to have tested.
 #             Aether cuts releases fast; do not chase HEAD by hand.
 AE_PIN="0.413.0"
-AE_FETCH="v0.650.0"    # verified: engine + CLI + core_tests 4/4 + cli-tests 18/18
-                       # + go 1/1 green on 0.650.0. Ratcheted to match the sibling
+AE_FETCH="v0.650.0"    # verified on ae 0.650.0 + aeb v0.307: engine + CLI +
+                       # core_tests (all 6 leaves) + cli-tests, and 23 of the 29
+                       # language leaves green in one sequential sweep. The 6
+                       # that are not green are NOT toolchain regressions:
+                       # python/ruby/haskell lack dev deps on this box (no
+                       # pytest, no rspec gem, cabal can't build its dep set) —
+                       # each PROVEN fine by its own .example.ae consumer layer,
+                       # which builds the distributable and replays the tape in
+                       # a clean env; scala pulls its example/ consumer test
+                       # into the in-tree suite (scalac_test globs both source
+                       # roots) so an "expected the installed jar" assert fires;
+                       # groovy's JUnit run finds 0 tests; pharo errors 6/12
+                       # (every record-mode test + static content, playback
+                       # fine). Ratcheted to match the sibling
                        # toolchains (aeb v0.299 + aeo v0.2.2 both floor Aether at
                        # 0.650.0), so servirtium builds against the same ae they
                        # ship. (AE_PIN stays 0.413.0 — the genuine floor; nothing

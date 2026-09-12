@@ -1,0 +1,39 @@
+// F# binding tests. F# is a CLR-family binding: it consumes the ONE C#
+// P/Invoke binding's classes over .NET interop — no second FFI, no second .so.
+// One C# assembly backs the CLR family (C#, F#), exactly as one Java jar backs
+// the JVM five and one Erlang NIF backs the BEAM four.
+//
+// Two projects, mirroring dotnet/: Servirtium.Vcr.FSharp is the shippable
+// library (what .package.ae packs), Servirtium.Vcr.FSharp.Tests holds the
+// xUnit facts. Split so the nupkg carries no test code and the two don't share
+// an obj/ dir. The test project ProjectReferences the library, which
+// ProjectReferences dotnet/Servirtium.Vcr's GENERATED csproj — hence the dep
+// on that leaf. SERVIRTIUM_VCR_LIB points the C# NativeLoader at the engine's
+// shared_lib artifact; roll_forward lets the net8.0 test host launch on a box
+// carrying only a newer runtime (see the sibling dotnet test leaf).
+import bldr
+import dotnet
+import bldr (env, workdir)
+aeb(cap) {
+    bldr.build() {
+        dep("core/.build.ae")
+        dep("dotnet/Servirtium.Vcr/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        // workdir, not csproj_path: dotnet.test_existing ignores csproj_path
+        // and simply runs `dotnet test` in the leaf's own directory — which
+        // holds no project now that the library and tests are split. workdir()
+        // threads through _run_project, so the run happens in the test
+        // project's dir — spelled REPO-ROOT-RELATIVE, because workdir() is
+        // always joined onto the root (an absolute path there yields
+        // "<root>//<root>/…" and fails).
+        // And DOTNET_ROLL_FORWARD goes through env() here: the
+        // dedicated roll_forward() setter only applies to dotnet.test(), so on
+        // test_existing it would be silently ignored (the fsproj's own
+        // <RollForward> covers this too — this is the belt to that braces).
+        dotnet.test_existing() {
+            workdir("fsharp/Servirtium.Vcr.FSharp.Tests")
+            env("SERVIRTIUM_VCR_LIB", lib)
+            env("DOTNET_ROLL_FORWARD", "LatestMajor")
+        }
+    }
+}

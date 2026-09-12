@@ -1,0 +1,43 @@
+// Third-party-consumer PACKAGE stage for the LFE binding.
+//
+// LFE is a BEAM rider: it needs the shared servirtium_nif app (which Erlang
+// owns) plus its own compiled module. This stage assembles BOTH as OTP apps
+// under lfe/_build_pkg, so a consumer points ERL_LIBS at ONE directory:
+//
+//   _build_pkg/servirtium_nif/{ebin,priv}   the shared NIF + engine .so
+//   _build_pkg/servirtium_lfe/ebin          servirtium_lfe.beam + .app
+//
+// The NIF half is not rebuilt here — it is copied from erlang/.package.ae's
+// RELOCATABLE app (engine .so in priv/, NIF linked `-Wl,-rpath,$ORIGIN`), so
+// there is exactly one place that compiles the NIF and one rpath story for the
+// whole BEAM family. A consumer needs no SERVIRTIUM_VCR_LIB, no
+// SERVIRTIUM_NIF_DIR and no reference to this repo: `code:priv_dir/1` finds the
+// engine beside the NIF wherever _build_pkg is placed.
+//
+// No tests run here; packaging is a build step (lfe/.tests.ae is the test node,
+// and it needs lfec/lfe — packaging needs lfec only).
+// Deps erlang/.package.ae; publishes "erl_libs" and "lfe_ebin".
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        prereq("lfe")
+        dep("erlang/.package.ae")
+        nif_libs = dep_artifact("erlang/.package.ae", "erl_libs")
+        root = _get("root")
+        lfedir = "${root}/lfe"
+        pkg = "${lfedir}/_build_pkg"
+        app = "${pkg}/servirtium_lfe"
+
+        rc = os.system("rm -rf \"${pkg}\" && mkdir -p \"${app}/ebin\" && cp -r \"${nif_libs}/servirtium_nif\" \"${pkg}/servirtium_nif\" && lfec -o \"${app}/ebin\" \"${lfedir}/src/servirtium_lfe.lfe\" && cp \"${lfedir}/src/servirtium_lfe.app\" \"${app}/ebin/servirtium_lfe.app\"")
+        if rc != 0 {
+            println("lfe package: assembling the servirtium_lfe + servirtium_nif apps failed")
+            return 1
+        }
+
+        publish_artifact("erl_libs", "${pkg}")
+        publish_artifact("lfe_ebin", "${app}/ebin")
+        println("lfe package: built relocatable servirtium_lfe + servirtium_nif OTP apps → lfe/_build_pkg")
+        return 0
+    }
+}

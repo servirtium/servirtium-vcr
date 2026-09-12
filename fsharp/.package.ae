@@ -1,0 +1,55 @@
+// Third-party-consumer PACKAGE stage for the F# binding.
+//
+// F# consumes `Servirtium.Vcr.FSharp` as a NuGet package. It is managed-only
+// and small on purpose: the engine .so travels in the Servirtium.Vcr package
+// (built by dotnet/Servirtium.Vcr/.dist.ae), which this one takes as a NuGet
+// DEPENDENCY — the CLR family rides ONE native assembly, so bundling a second
+// copy of the .so here would be exactly the duplication this repo's one rule
+// forbids. A consumer restores both nupkgs; both are produced by this node's
+// dep graph, so one `aeb fsharp/.package.ae` yields a complete installable set.
+//
+// `dotnet pack` is invoked directly rather than through aeb's dotnet.pack
+// builder: that builder locates its project by globbing `*.csproj` in the
+// leaf's own source_dir, so it cannot see an .fsproj in a subdirectory. Same
+// call the builder would make, made explicitly — the precedent is python/ and
+// ruby/, which likewise drive their idiomatic packaging tool directly.
+//
+// No tests run here: the xUnit facts live in a SEPARATE fsproj
+// (Servirtium.Vcr.FSharp.Tests), which pack never touches.
+// Deps dotnet/Servirtium.Vcr/.dist.ae for the companion nupkg; publishes the
+// directory holding BOTH nupkgs on "nupkg_dir" — a ready-made local NuGet feed.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("dotnet/Servirtium.Vcr/.dist.ae")
+        root = _get("root")
+        // Where aeb's pack builder writes the companion .nupkg
+        // (target/dist/<module>/nupkg/) — the same path dotnet/.example.ae
+        // reads, and for the same reason: the node's artifact edge comes back
+        // empty here, so the documented output dir is the contract.
+        dep_nupkg_dir = "${root}/target/dist/dotnet/Servirtium.Vcr/nupkg"
+        fsdir = "${root}/fsharp"
+        proj = "${fsdir}/Servirtium.Vcr.FSharp/Servirtium.Vcr.FSharp.fsproj"
+        out = "${fsdir}/pkg"
+
+        // Pack into a clean dir, then drop the companion Servirtium.Vcr.nupkg
+        // beside it so `out` is directly usable as a local feed
+        // (`dotnet nuget add source <out>`).
+        rc = os.system("rm -rf \"${out}\" && mkdir -p \"${out}\" && dotnet pack \"${proj}\" -c Release -o \"${out}\" --nologo -v quiet && cp \"${dep_nupkg_dir}\"/*.nupkg \"${out}/\"")
+        if rc != 0 {
+            println("fsharp package: `dotnet pack` of Servirtium.Vcr.FSharp failed")
+            return 1
+        }
+
+        rc2 = os.system("ls \"${out}\"/Servirtium.Vcr.FSharp.*.nupkg >/dev/null 2>&1")
+        if rc2 != 0 {
+            println("fsharp package: no Servirtium.Vcr.FSharp nupkg produced under fsharp/pkg/")
+            return 1
+        }
+
+        publish_artifact("nupkg_dir", "${out}")
+        println("fsharp package: packed Servirtium.Vcr.FSharp + companion Servirtium.Vcr nupkg → fsharp/pkg (a local NuGet feed)")
+        return 0
+    }
+}

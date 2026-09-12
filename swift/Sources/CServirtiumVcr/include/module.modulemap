@@ -1,0 +1,6 @@
+// Exposes the engine's flat C ABI header as a Swift-importable module. Swift
+// `import CServirtiumVcr` then calls the aether_vcr_embed_* symbols directly.
+module CServirtiumVcr {
+    header "servirtium_vcr.h"
+    export *
+}

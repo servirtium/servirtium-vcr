@@ -1,0 +1,32 @@
+// C++ client tests: run the test binary built by cpp/.build.ae. The facts
+// cover the canonical tape (GET /ok -> 200 text/plain "ok-body") plus what C++
+// specifically adds over the C client — RAII shutdown, move semantics,
+// std::string in/out (no sv_free in user code), and exceptions instead of NULL
+// returns.
+//
+// Deliberately uses c.tests, NOT cpp.tests, as the runner. c.tests documents
+// itself as a generic binary runner (bldr.program_binary_of — "prog may be a
+// c.program OR an aether.program (or any future binary builder)") and checks
+// the binary's exit code directly. cpp.tests instead runs
+// `binary 2>&1 | tee log`, and a shell pipeline reports the exit status of its
+// LAST command — so tee's 0 masks a failing test binary and the leaf goes
+// green on a red suite (observed: "FAILED: 1 cpp test(s)" reported as PASS).
+// Until that is fixed in aeb's cpp SDK, the C++ suite rides the runner that
+// tells the truth — and gets argv, so the tape path can be passed in rather
+// than baked in with a compile-time define.
+import bldr
+import c
+import c (run)
+aeb(cap) {
+    bldr.build() {
+        prereq("gcc")
+        dep("cpp/.build.ae")
+        root = _get("root")
+        c.tests() {
+            // The tape by ABSOLUTE path: the runner runs the binary from the
+            // repo root, not from cpp/, so a relative tapes/ path would
+            // misresolve.
+            run("cpp/.build.ae", "${root}/cpp/tapes/single_get.md")
+        }
+    }
+}

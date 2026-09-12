@@ -5,9 +5,34 @@
 /core/native/*.dylib
 /core/native/*.dll
 
+# the engine .so staged next to a binding for its linker/loader to find
+# (crystal's CRYSTAL_LIBRARY_PATH, swift's -L/-rpath, julia's bundled-path
+# discovery, dub's $PACKAGE_DIR/native lflags) — a build artifact, as
+# core/native/ above
+/crystal/native/*.so
+/swift/native/*.so
+/julia/native/*.so
+/d/native/*.so
+
+# package-step outputs (aeb <lang>/.package.ae — rebuildable, never committed)
+/c/dist/
+/cpp/dist/
+/c/servirtium-c-*.tar.gz
+/cpp/servirtium-cpp-*.tar.gz
+/dotnet/pkg/
+/fsharp/pkg/
+**/_build_pkg/
+
+# get-package.sh's copy-out dir
+/out/
+
 # per-language build artifacts
 **/bin/
 **/obj/
+/swift/.build/
+
+# BEAM crash dumps (a halting escript/lfe run can drop one in the cwd)
+erl_crash.dump
 **/.dart_tool/
 **/dist-newstyle/
 **/.stack-work/

@@ -25,18 +25,25 @@ servirtium-vcr/
   php/           # ext-ffi                     pharo/     # UnifiedFFI (Smalltalk)
   nim/           # importc (linked)            zig/       # extern C (linked)
   lua/           # C extension (Lua 5.4)       erlang/    # C NIF (canonical, shared)
-  gleam/         # shares the Erlang NIF (BEAM)
+  gleam/         # shares the Erlang NIF (BEAM) lfe/       # shares the Erlang NIF (BEAM)
+  c/             # the C ABI directly          cpp/       # header-only RAII over c/
+  crystal/       # @[Link] + lib (linked)      d/         # extern(C) (linked)
+  julia/         # ccall                       swift/     # C interop via a module map
   kotlin/ scala/ clojure/ groovy/  # JVM family — thin layers over the Java jar (no 2nd FFI)
+  fsharp/        # CLR family — thin layer over the .NET assembly (no 2nd FFI)
   core_tests/    # Aether-level engine tests (pure-Aether, no binding)
   integration/   # browser · subversion · climate · todobackend cross-binding tests
   <lang>/docs/   # per-binding usage docs
 ```
 
-All **17** native-FFI bindings — plus the JVM family (Kotlin/Scala/Clojure/
-Groovy, over the Java jar) — are wired and pass through one `aeb` run: the
-`core/` node builds `libservirtium_vcr.so` once, then each binding's
-`.tests.ae` links (go/elixir/haskell) or loads (the rest, via
-`SERVIRTIUM_VCR_LIB`) that single artifact.
+All **24** native-FFI bindings — plus the JVM family (Kotlin/Scala/Clojure/
+Groovy, over the Java jar) and F# (over the .NET assembly) — are wired and pass
+through one `aeb` run: the `core/` node builds `libservirtium_vcr.so` once, then
+each binding's `.tests.ae` links (go/elixir/haskell/c/cpp/crystal/d/nim/zig/
+swift) or loads (the rest, via `SERVIRTIUM_VCR_LIB`) that single artifact.
+**Twenty-nine languages** in all, because a runtime family only has to be
+bridged once: one Erlang NIF carries Erlang/Elixir/Gleam/LFE, one Java jar
+carries Java/Kotlin/Scala/Clojure/Groovy, and one .NET assembly carries C#/F#.
 
 ## Bindings
 
@@ -62,6 +69,13 @@ folder (`usage`, `features`, `architecture`, `building`).
 | Lua | C extension (Lua 5.4) | [lua/README.md](lua/README.md) |
 | Erlang | C NIF (canonical — shared across the BEAM family) | [erlang/README.md](erlang/README.md) |
 | Gleam | shares the Erlang NIF (BEAM) | [gleam/README.md](gleam/README.md) |
+| LFE | shares the Erlang NIF (BEAM) | [lfe/README.md](lfe/README.md) |
+| C | the C ABI directly (header + link) | [c/README.md](c/README.md) |
+| C++ | header-only RAII wrapper over the C client | [cpp/README.md](cpp/README.md) |
+| Crystal | `@[Link]` + `lib` (linked) | [crystal/README.md](crystal/README.md) |
+| D | `extern(C)` (linked) | [d/README.md](d/README.md) |
+| Julia | `ccall` | [julia/README.md](julia/README.md) |
+| Swift | C interop via a module map | [swift/README.md](swift/README.md) |
 
 **JVM family.** Kotlin, Scala, Clojure and Groovy reach the engine through the
 **Java binding's jar** via seamless JVM interop — there is *no second native
@@ -77,6 +91,17 @@ record→replay test:
 
 (For an independent, Kotlin-native option maintained outside this repo, see
 [http4k-testing/servirtium](https://github.com/http4k/http4k/tree/master/http4k-testing/servirtium).)
+
+**CLR family.** F# reaches the engine through the **.NET binding's assembly**
+via ordinary .NET interop — again *no second native FFI*:
+
+| Language | Idiomatic layer | Binding |
+|---|---|---|
+| F# | loan-pattern combinators + members as functions | [fsharp/README.md](fsharp/README.md) |
+
+**BEAM family.** Erlang owns the one canonical NIF; Elixir, Gleam and **LFE**
+load that same compiled module over the BEAM — no second NIF, no copied C
+source.
 
 ## Features
 
@@ -178,6 +203,39 @@ None of this is a knock on those projects — each is strong at its own sweet sp
 mocking platform, proxy/record-based virtualization). Reach for Servirtium when
 you want **the recording itself to be a small, readable, version-controlled
 artifact** that tests in any language can replay.
+
+## Getting a package for your language
+
+Nothing here is published to a registry — but you don't have to build from
+source by hand either. One script, one language name, and you get the artifact
+your tooling expects with the native engine already inside it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/servirtium/servirtium-vcr/main/get-package.sh | sh -s -- ruby
+# -> out/ruby/servirtium.gem   +   "gem install /…/out/ruby/servirtium.gem"
+```
+
+From a checkout, or if you already have `aeb`:
+
+```sh
+./get-package.sh ruby       # build it, copy it to ./out, print how to install it
+./get-package.sh            # list the 29 languages
+aeb ruby/.package.ae        # the underlying target — one per language
+aeb .packages.ae            # every language's package, one command (~50s)
+```
+
+**Packaging runs no tests.** It compiles what must be compiled, bundles the
+engine `.so` where that language's loader or linker finds it, and stops — so
+the wheel builds on a box with no `pytest`, the gem with no `rspec`. Testing is
+the separate `<lang>/.tests.ae` set; "can a stranger install this?" is the
+separate `<lang>/.example.ae` set.
+
+You get a real archive (wheel, gem, npm tgz, nupkg feed, jar in `~/.m2`, or a
+relocatable `tar.gz` prefix with a pkg-config file for C/C++), a source package
+with the `.so` staged inside (Rust, Go, Nim, Zig, Haskell, Crystal, Julia,
+Swift, D, PHP, Dart, Pharo), or one relocatable `servirtium_nif` OTP app for
+all four BEAM languages. Full table, consumption commands and the rules for
+adding a new one: **[docs/packaging.md](docs/packaging.md)**.
 
 ## Build (aeb)
 

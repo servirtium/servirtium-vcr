@@ -1,0 +1,28 @@
+// Third-party-consumer PACKAGE stage for the D binding.
+//
+// D consumes `servirtium` as a dub package (source-consumed from a path or the
+// dub registry): dub.json + src/. dub.json's lflags point the linker at
+// $PACKAGE_DIR/native and bake an rpath there, so the engine .so must ship
+// INSIDE the package, in native/. This stages the freshly-built engine .so
+// there.
+//
+// No tests run here; packaging is a build step (d/.tests.ae is the test node).
+// Deps core/.build.ae; publishes the package dir on "package_dir".
+import bldr
+import copy
+import copy (from, to)
+aeb(cap) {
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+
+        copy.file() {
+            from(lib)
+            to("native/libservirtium_vcr.so")
+        }
+
+        publish_artifact("package_dir", "${_get("root")}/d")
+        println("d package: staged engine .so into d/native/ (dub package ready)")
+        return 0
+    }
+}

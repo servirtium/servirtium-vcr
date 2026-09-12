@@ -1,0 +1,80 @@
+// Aggregate target set: build the distributable for EVERY language binding.
+// A named set is just dep() edges — bldr.build() with no builders, only
+// prerequisites (the same idiom as the sibling selenium repo's .presubmit.ae).
+//
+//     aeb .packages.ae          # all 29 languages' packages, one command
+//     aeb <lang>/.package.ae    # just the one you want
+//     ./get-package.sh <lang>   # or let the script install aeb and do it
+//
+// PACKAGING RUNS NO TESTS. Every leaf here is a build step: it compiles what
+// has to be compiled, bundles the engine .so where that language's loader or
+// linker will find it, and stops. The test nodes are the separate
+// `<lang>/.tests.ae` set, and the "can a stranger install this?" proofs are the
+// separate `<lang>/.example.ae` set. Keeping them apart is what lets a consumer
+// build a gem on a box with no rspec, or a wheel with no pytest.
+//
+// The engine .so is built ONCE by core/.build.ae and every leaf below deps it
+// (directly, or transitively via erlang/ or dotnet/), so the shared DAG means
+// this whole set costs one engine build.
+//
+// What each language yields (see docs/packaging.md for the full table):
+//   a real archive     python (wheel) · ruby (gem) · javascript (npm tgz) ·
+//                      dotnet + fsharp (nupkg feed) · java + the JVM four
+//                      (jar installed to ~/.m2) · php (Composer copy) ·
+//                      dart (pub) · c + cpp (relocatable tar.gz prefix)
+//   a source package   rust (crate) · go (module) · nim · crystal (shard) ·
+//                      julia (Pkg) · swift (SwiftPM) · d (dub) — each with the
+//                      engine .so staged inside, found by a baked rpath
+//   a relocatable app  erlang/elixir/gleam/lfe (one servirtium_nif OTP app,
+//                      $ORIGIN rpath) · lua (Lua module + C ext + engine) ·
+//                      haskell · pharo
+import bldr
+aeb(cap) {
+    bldr.build() {
+        // Runtime-loader bindings (the .so is bundled inside the artifact).
+        dep("python/.package.ae")
+        dep("ruby/.package.ae")
+        dep("javascript/.package.ae")
+        dep("php/.package.ae")
+        dep("dart/.package.ae")
+        dep("pharo/.package.ae")
+        dep("julia/.package.ae")
+
+        // Link-time bindings (the .so ships in the package; rpath finds it).
+        dep("rust/.package.ae")
+        dep("go/.package.ae")
+        dep("nim/.package.ae")
+        dep("zig/.package.ae")
+        dep("haskell/.package.ae")
+        dep("crystal/.package.ae")
+        dep("swift/.package.ae")
+        dep("d/.package.ae")
+
+        // No FFI bridge at all — the ABI is already C.
+        dep("c/.package.ae")
+        dep("cpp/.package.ae")
+
+        // C extension / native module.
+        dep("lua/.package.ae")
+
+        // BEAM family — one shared, relocatable servirtium_nif OTP app.
+        dep("erlang/.package.ae")
+        dep("elixir/.package.ae")
+        dep("gleam/.package.ae")
+        dep("lfe/.package.ae")
+
+        // JVM family — one jar, installed to ~/.m2 for all five.
+        dep("java/.package.ae")
+        dep("kotlin/.package.ae")
+        dep("scala/.package.ae")
+        dep("clojure/.package.ae")
+        dep("groovy/.package.ae")
+
+        // CLR family — one P/Invoke assembly, plus the F# layer over it.
+        dep("dotnet/.package.ae")
+        dep("fsharp/.package.ae")
+
+        println("all packages: 29 languages built — see docs/packaging.md for where each artifact lands and how to consume it")
+        return 0
+    }
+}

@@ -1,0 +1,59 @@
+// Third-party-consumer PACKAGE stage for the C++ binding.
+//
+// The C++ client is header-only over the C client, so its distributable is the
+// C prefix PLUS servirtium.hpp — one prefix a consumer points -I/-L at:
+//
+//   dist/include/servirtium.hpp            the C++ client (header-only)
+//   dist/include/servirtium.h              the C client it wraps
+//   dist/lib/libservirtium_c.so            the C client
+//   dist/lib/libservirtium_vcr.so          the engine
+//   dist/lib/pkgconfig/servirtium-cpp.pc   requires servirtium, adds -std=c++17
+//   ../servirtium-cpp-2.0.0.tar.gz         the whole prefix, one file
+//
+// Rather than rebuild the native pieces, this copies c/.package.ae's finished
+// prefix (its `package_dir` artifact) and adds the C++ header — so there is
+// exactly one place that compiles the C client and one $ORIGIN rpath story to
+// reason about. Its .pc anchors at ${pcfiledir}/../.. for the same reason c's
+// does: an absolute bake-time prefix would send a consumer's link back to this
+// repo. `Requires: servirtium` resolves within the same prefix because the two
+// .pc files ship side by side.
+//
+// No tests run here; packaging is a build step (cpp/.tests.ae is the test node).
+// Deps c/.package.ae; publishes "package_dir" and "tarball".
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("c/.package.ae")
+        cprefix = dep_artifact("c/.package.ae", "package_dir")
+        root = _get("root")
+        cppdir = "${root}/cpp"
+        dist = "${cppdir}/dist"
+        tarball = "${cppdir}/servirtium-cpp-2.0.0.tar.gz"
+
+        rc = os.system("rm -rf \"${dist}\" \"${tarball}\" && mkdir -p \"${dist}\" && cp -r \"${cprefix}/.\" \"${dist}/\" && cp \"${cppdir}/include/servirtium.hpp\" \"${dist}/include/\"")
+        if rc != 0 {
+            println("cpp package: staging the C prefix + C++ header failed")
+            return 1
+        }
+
+        // `\0044` is a literal '$' once printf '%b' runs — see c/.package.ae.
+        pc = "prefix=\\0044{pcfiledir}/../..\nexec_prefix=\\0044{prefix}\nlibdir=\\0044{prefix}/lib\nincludedir=\\0044{prefix}/include\n\nName: servirtium-cpp\nDescription: Record/replay for HTTP service tests (Servirtium markdown tapes) — header-only C++ client over the pure-Aether VCR engine\nVersion: 2.0.0\nRequires: servirtium\nCflags: -I\\0044{includedir} -std=c++17\n"
+        rc2 = os.system("printf '%b' \"${pc}\" > \"${dist}/lib/pkgconfig/servirtium-cpp.pc\"")
+        if rc2 != 0 {
+            println("cpp package: writing servirtium-cpp.pc failed")
+            return 1
+        }
+
+        rc3 = os.system("cd \"${cppdir}\" && tar czf \"${tarball}\" dist")
+        if rc3 != 0 {
+            println("cpp package: tarring the prefix failed")
+            return 1
+        }
+
+        publish_artifact("package_dir", "${dist}")
+        publish_artifact("tarball", "${tarball}")
+        println("cpp package: built relocatable prefix (C++ header + C client + engine) → cpp/dist, tarball → cpp/servirtium-cpp-2.0.0.tar.gz")
+        return 0
+    }
+}

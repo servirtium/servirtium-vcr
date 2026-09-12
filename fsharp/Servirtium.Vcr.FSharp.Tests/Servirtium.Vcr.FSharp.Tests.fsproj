@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- F# binding tests. Real xUnit facts over the canonical tape; the engine
+       .so is resolved by the C# NativeLoader (SERVIRTIUM_VCR_LIB, or the copy
+       the referenced projects stage next to the assembly). Separate from the
+       library project so the shipped nupkg carries no test code or xunit
+       dependency — and so the two projects don't share one obj/ dir. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- net8.0 is the shipped floor (matching dotnet/Servirtium.Vcr). LatestMajor
+         lets the test host launch on a box that has only a newer runtime. -->
+    <RollForward>LatestMajor</RollForward>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="PlaybackTest.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Servirtium.Vcr.FSharp/Servirtium.Vcr.FSharp.fsproj" />
+  </ItemGroup>
+
+  <!-- The canonical tape, from the language dir, copied next to the test
+       assembly so the relative path in the facts resolves. -->
+  <ItemGroup>
+    <None Include="../tapes/single_get.md" Link="tapes/single_get.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

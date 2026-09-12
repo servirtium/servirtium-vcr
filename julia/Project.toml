@@ -1,0 +1,7 @@
+name = "Servirtium"
+uuid = "9b1c4d3e-5a82-4f6b-8d31-7e2a6c4f1b93"
+authors = ["Paul Hammant"]
+version = "2.0.0"
+
+[compat]
+julia = "1.6"

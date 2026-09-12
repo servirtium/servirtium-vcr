@@ -1,0 +1,35 @@
+// Third-party-consumer PACKAGE stage for the .NET binding.
+//
+// The nupkg itself is built by dotnet/Servirtium.Vcr/.dist.ae (which owns the
+// `dotnet pack` invocation, next to the project). This leaf exists so that
+// EVERY language in the repo answers to the same `<lang>/.package.ae` entry
+// point — what the root .packages.ae aggregate and the get-package.sh
+// curl-to-bash both dispatch on — and so the output lands somewhere a consumer
+// can use directly: dotnet/pkg/ is a ready-made local NuGet feed
+// (`dotnet nuget add source <path>`).
+//
+// No tests run here; packaging is a build step
+// (dotnet/Servirtium.Vcr.Tests/.tests.ae is the test node).
+// Deps dotnet/Servirtium.Vcr/.dist.ae; publishes "nupkg_dir".
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("dotnet/Servirtium.Vcr/.dist.ae")
+        root = _get("root")
+        // Where aeb's pack builder writes the .nupkg (target/dist/<module>/nupkg/)
+        // — the same path dotnet/.example.ae reads.
+        packed = "${root}/target/dist/dotnet/Servirtium.Vcr/nupkg"
+        out = "${root}/dotnet/pkg"
+
+        rc = os.system("rm -rf \"${out}\" && mkdir -p \"${out}\" && cp \"${packed}\"/*.nupkg \"${out}/\"")
+        if rc != 0 {
+            println("dotnet package: staging the nupkg into dotnet/pkg failed")
+            return 1
+        }
+
+        publish_artifact("nupkg_dir", "${out}")
+        println("dotnet package: staged Servirtium.Vcr nupkg (engine .so bundled per-RID) → dotnet/pkg (a local NuGet feed)")
+        return 0
+    }
+}

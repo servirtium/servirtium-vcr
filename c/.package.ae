@@ -1,0 +1,71 @@
+// Third-party-consumer PACKAGE stage for the C binding.
+//
+// A C consumer doesn't install from a registry — it wants a PREFIX: headers to
+// -I, libraries to -L/-l, and a pkg-config file so a build system finds both.
+// This stage builds exactly that under c/dist/, then tars it:
+//
+//   dist/include/servirtium.h              the public header
+//   dist/lib/libservirtium_c.so            the C client (this binding)
+//   dist/lib/libservirtium_vcr.so          the engine it links
+//   dist/lib/pkgconfig/servirtium.pc       `pkg-config --cflags --libs servirtium`
+//   ../servirtium-c-2.0.0.tar.gz           the whole prefix, one file
+//
+// RELOCATABLE, two ways that have to hold together:
+//   * libservirtium_c.so is linked `-Wl,-rpath,$ORIGIN`, so it finds the engine
+//     .so beside it wherever the prefix is unpacked;
+//   * the .pc anchors its prefix at `${pcfiledir}/../..` — pkg-config's own
+//     "directory holding this .pc" variable — so the -I/-L/-rpath a consumer
+//     gets point at the UNPACKED copy, not at wherever the tarball was built.
+//     An absolute bake-time prefix would silently send a consumer's link back
+//     to this repo, which is exactly the bug a package stage exists to catch.
+// Together: no LD_LIBRARY_PATH, no SERVIRTIUM_VCR_LIB, no core/ reference.
+//
+// The C client is compiled here with -fPIC rather than reusing c/.objects.ae's
+// object, which is built for static linking into the test binary.
+//
+// No tests run here; packaging is a build step (c/.tests.ae is the test node).
+// Deps core/.build.ae; publishes "package_dir" and "tarball".
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        root = _get("root")
+        cdir = "${root}/c"
+        dist = "${cdir}/dist"
+        tarball = "${cdir}/servirtium-c-2.0.0.tar.gz"
+
+        rc = os.system("rm -rf \"${dist}\" \"${tarball}\" && mkdir -p \"${dist}/include\" \"${dist}/lib/pkgconfig\" && cp \"${cdir}/include/servirtium.h\" \"${dist}/include/\" && cp \"${lib}\" \"${dist}/lib/libservirtium_vcr.so\" && cc -O2 -std=c99 -fPIC -shared -I\"${cdir}/include\" \"${cdir}/src/servirtium.c\" -L\"${dist}/lib\" -lservirtium_vcr -Wl,-rpath,'$ORIGIN' -o \"${dist}/lib/libservirtium_c.so\"")
+        if rc != 0 {
+            println("c package: building the prefix (headers + shared libs) failed")
+            return 1
+        }
+
+        // The pkg-config file. `\0044` is a literal '$' once printf '%b' runs:
+        // an Aether string cannot carry a bare ${...} (the build language
+        // interpolates it first), and these have to reach the file UNexpanded
+        // so pkg-config resolves them at use time. The rpath goes in Libs, NOT
+        // Libs.private — pkg-config only emits Libs.private for --static, so a
+        // normally-linked consumer would get -L/-l with no rpath and its binary
+        // would fail at startup ("libservirtium_c.so: cannot open shared object
+        // file") even with a complete prefix.
+        pc = "prefix=\\0044{pcfiledir}/../..\nexec_prefix=\\0044{prefix}\nlibdir=\\0044{prefix}/lib\nincludedir=\\0044{prefix}/include\n\nName: servirtium\nDescription: Record/replay for HTTP service tests (Servirtium markdown tapes) over the pure-Aether VCR engine\nVersion: 2.0.0\nLibs: -L\\0044{libdir} -lservirtium_c -lservirtium_vcr -Wl,-rpath,\\0044{libdir}\nCflags: -I\\0044{includedir}\n"
+        rc2 = os.system("printf '%b' \"${pc}\" > \"${dist}/lib/pkgconfig/servirtium.pc\"")
+        if rc2 != 0 {
+            println("c package: writing servirtium.pc failed")
+            return 1
+        }
+
+        rc3 = os.system("cd \"${cdir}\" && tar czf \"${tarball}\" dist")
+        if rc3 != 0 {
+            println("c package: tarring the prefix failed")
+            return 1
+        }
+
+        publish_artifact("package_dir", "${dist}")
+        publish_artifact("tarball", "${tarball}")
+        println("c package: built relocatable prefix (include + lib + pkgconfig) → c/dist, tarball → c/servirtium-c-2.0.0.tar.gz")
+        return 0
+    }
+}

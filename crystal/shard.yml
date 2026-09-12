@@ -1,0 +1,16 @@
+name: servirtium
+version: 2.0.0
+description: |
+  Record/replay for HTTP service tests in the Servirtium markdown tape format —
+  a thin Crystal binding over the shared pure-Aether VCR engine.
+authors:
+  - Paul Hammant
+
+crystal: ">= 1.0.0"
+license: MIT
+
+# Consumed as a source shard. The engine's shared library ships in native/ and
+# is found two ways: the @[Link] ldflags carry a self-locating -L/-rpath off
+# __DIR__, and CRYSTAL_LIBRARY_PATH=native works for a bare `crystal build`.
+libraries:
+  libservirtium_vcr: "2.0.0"

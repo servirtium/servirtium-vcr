@@ -39,17 +39,29 @@ the spec. To add, say, Perl:
    The README's Bindings table is the registry; the taxonomy:
    - **Load the `.so` at runtime** (most languages): `python/` ctypes,
      `ruby/` Fiddle, `javascript/` koffi, `rust/` libloading, `dotnet/` P/Invoke,
-     `php/` ext-ffi, `dart/` dart:ffi, `pharo/` UnifiedFFI. ← Perl (FFI::Platypus)
-     lives here.
+     `php/` ext-ffi, `dart/` dart:ffi, `pharo/` UnifiedFFI, `julia/` ccall
+     (by absolute path from `SERVIRTIUM_VCR_LIB` — nothing to stage). ← Perl
+     (FFI::Platypus) lives here.
    - **Link at build time**: `nim/` importc, `zig/` extern "C", `go/` cgo,
-     `haskell/` ccall.
+     `haskell/` ccall, `crystal/` `@[Link]` + `lib`, `d/` `extern(C)`,
+     `swift/` C interop via a clang module map.
    - **C extension / native module**: `lua/` (Lua 5.4 C API).
+   - **No FFI bridge at all — the ABI is already C**: `c/` is a header
+     (`include/servirtium.h`) + a thin ergonomic layer (`sv_str` ownership,
+     enums, open+start folded into one call). `cpp/` is a header-only RAII
+     wrapper over THAT, linking the C client's object compiled AS C (so its
+     `extern "C"` symbols aren't mangled) — the `c_objects` artifact from
+     `c/.objects.ae`, which exists precisely so neither target recompiles it.
    - **BEAM family — one shared NIF**: `erlang/` owns the canonical C NIF (the
-     `servirtium_nif` OTP app, built once by `erlang/.build.ae`); `elixir/` and
-     `gleam/` consume that SAME compiled module over the BEAM (no copied C
-     source, no second `.so`) — see the BEAM note below.
+     `servirtium_nif` OTP app, built once by `erlang/.build.ae`); `elixir/`,
+     `gleam/` and `lfe/` consume that SAME compiled module over the BEAM (no
+     copied C source, no second `.so`) — see the BEAM note below.
    - **No FFI at all — over the Java jar**: `kotlin/ scala/ clojure/ groovy/`
      (JVM family; seamless interop, no second native binding).
+   - **No FFI at all — over the .NET assembly**: `fsharp/` (CLR family; ordinary
+     .NET interop over `dotnet/Servirtium.Vcr`'s P/Invoke classes). Its leaf
+     ProjectReferences the GENERATED `.Servirtium.Vcr.generated.csproj`, so it
+     must `dep("dotnet/Servirtium.Vcr/.build.ae")` to make that file exist.
 2. **Bind the C ABI** (next section). `rust/src/native.rs` is the canonical 1:1
    reference for the full symbol table and signatures.
 3. **Write one playback test** of the canonical tape
@@ -62,7 +74,12 @@ the spec. To add, say, Perl:
 5. **Verify**: `aeb <lang>/.tests.ae` → exit 0, `test: <lang>`.
 
 That's it. I added Nim/Zig/Lua/Erlang/Gleam this way with no guide — just the
-17 existing bindings + the ABI table.
+existing bindings + the ABI table; then LFE/F#/C/C++/Crystal/Julia/Swift/D the
+same way, by reading the sibling `../selenium` repo's equivalents for the
+FFI mechanism and this repo's `erlang`/`dotnet`/`core` leaves for the wiring.
+**29 languages** now: 24 rows in the README's Bindings table, plus the JVM four
+and F#. Only the family riders are free; each genuinely new FFI mechanism is
+a day's care, mostly in the leaf.
 
 ## The C ABI (`aether_vcr_embed_*`)
 
@@ -277,6 +294,109 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   Vcr.HttpRecorder's `RulesMatcher.MatchMultiple` / `ByHeader`. Binding surface
   (`match_multiple()` toggle, repeatable `match_header(name)`) swept the same set
   as `match_json_body`.
+- **Packaging gotchas that cost real debugging (all in `docs/packaging.md`).**
+  (a) A pkg-config `.pc` with an absolute bake-time `prefix` silently points a
+  consumer's `-I/-L` back at THIS repo — c/ and cpp/ anchor on
+  `${pcfiledir}/../..` instead, so an unpacked tarball resolves to itself.
+  (b) An rpath in `Libs.private` reaches only `pkg-config --static`, so a
+  normally-linked consumer died with `libservirtium_c.so: cannot open shared
+  object file` from a COMPLETE prefix; it belongs in `Libs`.
+  (c) An Aether string can't carry a literal `${...}` (the build language
+  interpolates first), so the `.pc` generators emit `\0044{pcfiledir}` and let
+  `printf '%b'` turn `\0044` into `$`.
+  (d) `strdup` is POSIX, not ISO C99 — it compiled under aeb's `c.compile`
+  default flags but not under the package step's `-std=c99`, so `c/src` uses a
+  4-line `dup_string` instead. Same class of trap: `popen` in the tests needs
+  gnu/POSIX flags.
+- **aeb's dotnet SDK: three setters that silently do nothing where you'd
+  expect them.** `dotnet.pack()` locates its project by globbing `*.csproj` in
+  the LEAF's own source_dir — it cannot see an `.fsproj`, or anything in a
+  subdirectory, so `fsharp/.package.ae` calls `dotnet pack` directly (the same
+  precedent as python/ and ruby/ driving their own packers).
+  `dotnet.test_existing()` ignores `csproj_path` entirely (it just runs
+  `dotnet test` in the leaf dir) and ignores the `roll_forward()` setter (which
+  only applies to `dotnet.test()`); use `workdir(...)` + `env("DOTNET_ROLL_FORWARD",
+  …)` there, as `fsharp/.tests.ae` does. And **`workdir()` is always joined onto
+  the repo root** — pass it root-relative, never absolute
+  (`"<root>//<root>/…: No such file or directory"`).
+- **F# is two projects, on purpose.** `fsharp/Servirtium.Vcr.FSharp/` is the
+  shippable library; `fsharp/Servirtium.Vcr.FSharp.Tests/` holds the xUnit
+  facts. Split so the nupkg carries no test code or xunit dependency, and so
+  the two don't share one `obj/` (two projects in one directory collide on
+  `project.assets.json`). The library's nupkg is managed-only and depends on
+  `Servirtium.Vcr` — the CLR family rides ONE native assembly.
+- **`gem install` ignores `GEM_HOME` on Arch** (patched rubygems); use
+  `--install-dir` to isolate, which is what `ruby/.example.ae` already
+  documents. Worth knowing before you "verify" a gem into your own gem dir by
+  accident — and `gem uninstall servirtium -x` to undo it.
+- **TWO aeb SDKs report PASS on a failing test. Do not trust them.** Both
+  `cpp.tests` (aeb `lib/cpp/module.ae`) and `d.test` (`lib/d/module.ae`) run the
+  test binary as `<cmd> 2>&1 | tee <log>`, and a shell pipeline exits with the
+  status of its LAST command — so `tee`'s 0 masks a failing binary AND a
+  compile error. Observed twice, for real, while adding these bindings:
+  (a) the C++ suite printed `FAILED: 1 cpp test(s)` and the leaf said
+  `1/1 PASS`; (b) the D binding did not compile at all (an `extern(C)`
+  function-pointer linkage error) and the leaf still said `1/1 PASS`, the dmd
+  errors sitting unread in the tee'd log under `target/tests/d/`. Both suites
+  are therefore driven through runners that check the exit code directly:
+  `cpp/.tests.ae` uses **`c.tests`** (documented as a generic binary runner over
+  `bldr.program_binary_of` — "prog may be a `c.program` OR an `aether.program`",
+  and it gives argv back, so the tape path is passed in), and `d/.tests.ae` uses
+  **`bash.test`** + `d/tests/test_playback.sh` (`bash <script>`, no pipe). Both
+  were verified to redden by breaking an assertion on purpose. **When you touch
+  either leaf, re-prove it can fail** — and if you ever add a leaf on an aeb
+  builder you haven't seen redden, break a test once and check. The fix belongs
+  in `../aeb` (drop the `tee`, or `set -o pipefail`); revisit these two leaves
+  after that lands.
+- **LFE: `record` is a CORE FORM, and exported names must use underscores.**
+  `(record …)` inside `lfe/src/servirtium_lfe.lfe` parses as LFE's Erlang-record
+  form, not as this module's function — so the exported `record/2` and `record/3`
+  cannot call each other and both delegate to a hyphenated internal
+  `open-recording`. The public name stays `record` for parity with the
+  Erlang/Elixir/Gleam twins (a *remote* `servirtium_lfe:record/2,3` resolves to
+  the function, not the form). lfec prints one **expected, unsuppressable**
+  warning every build — `redefining core function record/3`; LFE offers only
+  `-Werror` and `nowarn_unused_vars`, so don't "fix" it by renaming. Separately:
+  LFE allows hyphens in a local def, but a remote call `mod:base-url` does not
+  resolve to the exported `'base-url'` atom, so the whole cross-module API is
+  underscore-named. Internal helpers stay hyphenated. Also: LFE has no
+  standalone `when` expression (it's a guard keyword) — use `if`/`case`.
+- **The LFE runner needs `(halt 1)` on failure.** The `lfe` SDK runs
+  `lfe -noshell … -eval '(mod:main (list))' -eval '(halt 0)'` — that trailing
+  `(halt 0)` fires whatever `main` returned, so a test that merely *returns* on
+  failure goes green. `playback_test.lfe` halts explicitly with the right code;
+  verified reddening.
+- **D: an `extern (C)` function pointer must be an ALIAS.** A D
+  function-pointer type defaults to D linkage, so dmd refuses an ABI symbol
+  ("cannot pass argument … of type `extern (C) char* function …`"); and
+  `extern (C)` is not accepted inline in a parameter's type. Hence
+  `private alias FlushFn = extern (C) char* function(void*, const(char)*) nothrow @nogc;`
+  which the three `stop_and_flush*` variants share via one `flushVia`.
+- **Julia backticks brace-expand.** A literal `%{http_code}` inside a `` `…` ``
+  command is a parse error (`shell_parse`), so the curl format string lives in a
+  `String` variable and is interpolated. Bit me in `julia/test/playback_test.jl`.
+- **aeb's cpp SDK single-quotes every raw flag.** `_join_raw` wraps each
+  `cxxflag`/`link_flag` in `'…'` for the shell, so a string-literal define needs
+  BARE double quotes (`-DFOO=\"/abs/path\"`); adding your own single quotes
+  cancels the inner ones and the macro expands to unparseable path tokens.
+  (Moot in `cpp/.tests.ae` now that argv is available, but true of any cxxflag.)
+- **Swift on this box needs two user-local shims.** The installed Swift 6.0.3
+  links `libncurses.so.6` and `libxml2.so.2`; Arch/CachyOS ships
+  `libncursesw.so.6` and `libxml2.so.16`, so `swift` won't even start
+  ("error while loading shared libraries"). `ln -sf` both into `~/.local/lib`
+  and run with `LD_LIBRARY_PATH=$HOME/.local/lib`. Deliberately NOT baked into
+  `swift/.tests.ae` — it's a broken local toolchain, not a repo concern. Note
+  `swift.test` printed "tests PASSED" when swift couldn't launch at all; only
+  the sibling `swift.build_pkg` failing reddened the leaf.
+- **`dmd` is not on `PATH`** after `dlang.org/install.sh` (it lands in
+  `~/dlang/dmd-<ver>/linux/bin64/`); it's symlinked into `~/.local/bin` beside
+  `ae`/`aeb`. `prereq("dmd")` finds it there.
+- **.NET targets net8.0 but this box has only the net10 runtime.** Both
+  `dotnet/Servirtium.Vcr.Tests/.tests.ae` and `fsharp/.tests.ae` therefore set
+  `roll_forward("LatestMajor")` (aeb's `dotnet` SDK threads it in as
+  `DOTNET_ROLL_FORWARD`), which is a no-op where net8 is installed. Keeps the
+  TFM honest instead of retargeting the shipped floor. Without it the .NET
+  suite fails with a bare "tests FAILED" and no reason in the log.
 - **base64 lives in `std.encoding`, not `std.cryptography` (ae 0.4x).** ae 0.413
   moved it and changed `base64_decode` to a `string!` error-union; the engine's
   `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
@@ -320,3 +440,22 @@ per-language source of truth). `core_tests/` pure-Aether engine probes.
 `integration/` end-to-end demos (subversion checkout, climate API, the
 Vue+Storybook+Selenium component-test demo). Root `README.md` has the Bindings
 table (the registry) and the layout block.
+
+**Packaging is complete; the consumer-example layer is not.** Every one of the
+29 languages now has a `<lang>/.package.ae` (dotnet's wraps its own
+`.dist.ae`), elixir and gleam included — they had none before. The root
+**`.packages.ae`** aggregate builds all 29 in one command (~50s; dep edges
+only, the selenium `.presubmit.ae` idiom), and **`get-package.sh`** is the
+curl-to-bash front door: `./get-package.sh ruby` builds the gem, copies it to
+`./out`, and prints the `gem install …` line. Full table + the rules for adding
+one: `docs/packaging.md`. **Packaging runs no tests** — that is the point: the
+wheel builds where there is no pytest.
+
+Still missing for the eight newest bindings (`lfe fsharp c cpp crystal julia
+swift d`): a `.example.ae` consumer-install proof as a LEAF. Each was verified
+by hand this session (the C and C++ prefixes untarred elsewhere and linked with
+zero repo paths in the binary; the LFE apps run from a relocated copy with only
+ERL_LIBS; the F# nupkg restored from its local feed by a real consumer project;
+julia's bundled `.so` found with SERVIRTIUM_VCR_LIB unset) — but a hand-check
+is not a regression test. Copy the nearest existing `.example.ae` when filling
+these in.
