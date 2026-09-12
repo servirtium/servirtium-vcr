@@ -1,8 +1,16 @@
 // PHP binding tests. FFI loads the shared engine via SERVIRTIUM_VCR_LIB.
+//
+// ext-ffi is compiled as a shared module on many distros (Arch:
+// /usr/lib/php/modules/ffi.so) but NOT enabled in php.ini, so a bare `php`
+// has no FFI class and every test errors with `Class "FFI" not found`. The
+// ini() setters below enable it per-invocation — no sudo, no php.ini edit —
+// exactly as php/.example.ae already does for the consumer run
+// (`php -d extension=ffi -d ffi.enable=1`). A no-op where the distro enables
+// ffi by default.
 import bldr
 import php
 import bldr (env)
-import php (phpunit_phar_url, config)
+import php (phpunit_phar_url, config, ini)
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
@@ -11,6 +19,8 @@ aeb(cap) {
             env("SERVIRTIUM_VCR_LIB", lib)
             phpunit_phar_url("https://phar.phpunit.de/phpunit-11.phar")
             config("phpunit.xml")
+            ini("extension", "ffi")
+            ini("ffi.enable", "1")
         }
     }
 }

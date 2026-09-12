@@ -6,11 +6,20 @@
 import bldr
 import dotnet
 import bldr (env)
+import dotnet (roll_forward)
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
         dep("dotnet/Servirtium.Vcr.Tests/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
-        dotnet.test() { env("SERVIRTIUM_VCR_LIB", lib) }
+        // roll_forward: the projects target net8.0, and a box that has only a
+        // NEWER runtime (e.g. SDK 10 / net10 runtime, no net8 runtime) would
+        // otherwise fail to launch the test host. LatestMajor runs the net8.0
+        // test assembly on the newest installed runtime; a no-op where net8 is
+        // present. Keeps the TFM honest (net8.0 stays the shipped floor).
+        dotnet.test() {
+            env("SERVIRTIUM_VCR_LIB", lib)
+            roll_forward("LatestMajor")
+        }
     }
 }
