@@ -38,21 +38,33 @@ set -euo pipefail
 #             not automatically better, it is another thing to have tested.
 #             Aether cuts releases fast; do not chase HEAD by hand.
 AE_PIN="0.413.0"
-AE_FETCH="v0.650.0"    # verified on ae 0.650.0 + the RELEASED aeb v0.308:
+AE_FETCH="v0.666.0"    # verified on ae 0.666.0 + the RELEASED aeb v0.309:
                        # engine + CLI + core_tests (all 6 leaves) + cli-tests,
                        # 28 of the 29 language leaves, all 29 .package.ae, and
-                       # all 29 .example.ae — green in sequential sweeps. The one that is
+                       # all 29 .example.ae — green in sequential sweeps.
+                       # 0.666.0 is also what aeb v0.309 pins internally, so
+                       # this repo and the build runner now agree on one
+                       # Aether. MIND THE SPLIT TOOLCHAIN: `ae` and `aetherc`
+                       # are separate binaries and aetherc does the codegen, so
+                       # a half-upgrade silently mixes versions — installing
+                       # 0.666 into ~/.local/bin while a version-managed
+                       # ~/.aether stayed on 0.650 made every core_tests leaf
+                       # fail with "Unknown option: --emit-deps" (0.666's ae
+                       # passing a flag only 0.666's aetherc knows). `ae
+                       # --version` prints both and warns when they disagree;
+                       # `ae install <v> && ae use <v>` moves the managed
+                       # install so they don't. The one that is
                        # not green is pharo (6/12 error: every record-mode test
                        # + static content; playback fine) — a real open
                        # question, not a missing tool. python/ruby/haskell need
                        # a one-time dev-dep setup that is NOT obvious on a
                        # PEP-668 distro with a dynamic-only GHC: see
                        # docs/dev-setup.md. Ratcheted to match the sibling
-                       # toolchains (aeb v0.299 + aeo v0.2.2 both floor Aether at
-                       # 0.650.0), so servirtium builds against the same ae they
-                       # ship. (AE_PIN stays 0.413.0 — the genuine floor; nothing
-                       # in the engine needs a 0.650 primitive, this is a
-                       # known-good ratchet, not a floor bump.)
+                       # toolchains (aeb v0.309 pins Aether 0.666.0), so
+                       # servirtium builds against the same ae the build runner
+                       # ships. (AE_PIN stays 0.413.0 — the genuine floor;
+                       # nothing in the engine needs a 0.666 primitive, this is
+                       # a known-good ratchet, not a floor bump.)
 # aeb floor: aeb >= 0.308 — a REAL floor, not a ratchet. Two leaves here now
 # require it: scala/.tests.ae calls scala's source_layout("maven idiomatic"),
 # a setter that does not exist before 0.308 (on 0.307 the leaf dies with

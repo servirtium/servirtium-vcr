@@ -344,6 +344,25 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   `--install-dir` to isolate, which is what `ruby/.example.ae` already
   documents. Worth knowing before you "verify" a gem into your own gem dir by
   accident — and `gem uninstall servirtium -x` to undo it.
+- **`ae` and `aetherc` are SEPARATE binaries, and aetherc does the codegen —
+  a half-upgraded Aether fails in a way that looks like a compiler regression.**
+  Installing 0.666.0 into `~/.local/bin` while this box's version-managed
+  `~/.aether` install stayed on 0.650.0 made **every** `core_tests` leaf and the
+  CLI fail with `Unknown option: --emit-deps`. Nothing was wrong with either
+  version: 0.666's `ae` passes `--emit-deps`, which only 0.666's `aetherc`
+  accepts, and `ae` resolved `aetherc` from `~/.aether/current/bin` (0.650).
+  The engine `.so` still built, which made it look like a test-only problem.
+  **`ae --version` prints both and warns when they disagree** — read it first
+  whenever a build breaks right after a toolchain change:
+
+      aetherc:  /home/paul/.aether/current/bin/aetherc (0.650.0)
+      WARNING: this ae is 0.666.0 but the aetherc it would run is 0.650.0.
+
+  The fix is to move the MANAGED install, which owns aetherc:
+  `ae install <v> && ae use <v>` (it keeps `~/.aether/versions/*`,
+  `current` and `active_version` consistent). A bare `get.sh` into
+  `~/.local` only lands `ae`+`aetherc` there and does not touch `~/.aether`,
+  so it can leave exactly this split behind.
 - **python/ruby/haskell need a one-time dev-dep setup — see
   `docs/dev-setup.md`.** None of it needs root, and none of it is obvious:
   PEP 668 blocks `pip install` (use `--user --break-system-packages pytest`,
