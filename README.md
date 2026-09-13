@@ -239,6 +239,12 @@ adding a new one: **[docs/packaging.md](docs/packaging.md)**.
 
 ## Build (aeb)
 
+> Running a binding's tests needs that language's **test runner** as well as its
+> compiler. Three (Python, Ruby, Haskell) need a one-time, root-free setup that
+> isn't obvious on a PEP-668 distro with a dynamic-only GHC —
+> **[docs/dev-setup.md](docs/dev-setup.md)**. Packaging needs none of it.
+
+
 The whole repo is built with **[aeb](https://github.com/aether-lang-dev/aeb)**,
 the polyglot Aether build runner — the natural fit for a one-engine,
 many-language monorepo. You point `aeb` at the node you want (a dot-prefixed

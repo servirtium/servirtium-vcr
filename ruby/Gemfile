@@ -5,6 +5,11 @@ source 'https://rubygems.org'
 # Specify your gem's dependencies in servirtium.gemspec
 gemspec
 
+# Ruby 3.4 moved erb from a DEFAULT gem to a BUNDLED one, so under bundler it
+# is no longer on the load path unless declared. rspec-core requires it
+# (configuration_options.rb), so without this the suite dies at startup with
+# "cannot load such file -- erb (LoadError)" on any Ruby >= 3.4.
+gem 'erb'
 gem 'rake', '~> 13.0'
 gem 'rspec', '~> 3.0'
 gem 'rubocop'

@@ -39,18 +39,15 @@ set -euo pipefail
 #             Aether cuts releases fast; do not chase HEAD by hand.
 AE_PIN="0.413.0"
 AE_FETCH="v0.650.0"    # verified on ae 0.650.0 + aeb v0.307: engine + CLI +
-                       # core_tests (all 6 leaves) + cli-tests, and 25 of the 29
-                       # language leaves green in one sequential sweep. The 6
-                       # that are not green are NOT toolchain regressions:
-                       # python/ruby/haskell lack dev deps on this box (no
-                       # pytest, no rspec gem, cabal can't build its dep set) —
-                       # each PROVEN fine by its own .example.ae consumer layer,
-                       # which builds the distributable and replays the tape in
-                       # a clean env; (scala's example-test leak and groovy's
-                       # "0 tests found" are both FIXED — see LLM.md); pharo
-                       # errors 6/12
-                       # (every record-mode test + static content, playback
-                       # fine). Ratcheted to match the sibling
+                       # core_tests (all 6 leaves) + cli-tests, and 28 of the 29
+                       # language leaves green in one sequential sweep, plus all
+                       # 29 .package.ae and all 29 .example.ae. The one that is
+                       # not green is pharo (6/12 error: every record-mode test
+                       # + static content; playback fine) — a real open
+                       # question, not a missing tool. python/ruby/haskell need
+                       # a one-time dev-dep setup that is NOT obvious on a
+                       # PEP-668 distro with a dynamic-only GHC: see
+                       # docs/dev-setup.md. Ratcheted to match the sibling
                        # toolchains (aeb v0.299 + aeo v0.2.2 both floor Aether at
                        # 0.650.0), so servirtium builds against the same ae they
                        # ship. (AE_PIN stays 0.413.0 — the genuine floor; nothing

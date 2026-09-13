@@ -344,6 +344,22 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   `--install-dir` to isolate, which is what `ruby/.example.ae` already
   documents. Worth knowing before you "verify" a gem into your own gem dir by
   accident — and `gem uninstall servirtium -x` to undo it.
+- **python/ruby/haskell need a one-time dev-dep setup — see
+  `docs/dev-setup.md`.** None of it needs root, and none of it is obvious:
+  PEP 668 blocks `pip install` (use `--user --break-system-packages pytest`,
+  because the leaf runs the SYSTEM `python3 -m pytest`, so a venv elsewhere is
+  invisible); RubyGems puts `bundle`/`rspec` in
+  `~/.local/share/gem/ruby/<ver>/bin`, which nothing adds to PATH, and bundler
+  then defaults to the system gem dir and dies with `Bundler::PermissionError`
+  (fix: `bundle config set --global path ~/.gem/bundle`); and Arch ships GHC
+  **dynamic-only** (`ghc-libs`, no `ghc-static`), so cabal's default static
+  library build fails with "files missing in the 'base' package" — set
+  `library-vanilla: False` / `shared: True` / `executable-dynamic: True` in
+  `~/.config/cabal/config`. That last one explains a puzzle worth remembering:
+  `haskell/.example.ae` passed the whole time, because executables already
+  default to dynamic on Arch — only COMPILED dependencies hit the missing
+  archives. Ruby's `Gemfile` also declares `erb` because Ruby 3.4 demoted it
+  from a default to a bundled gem and `rspec-core` requires it.
 - **Scala's in-tree suite was compiling the CONSUMER example.**
   `scala.scalac_test` used to `find` `*Test.scala` across the whole module dir,
   so `scala/example/src/test/scala/.../PlaybackConsumerTest.scala` — a
