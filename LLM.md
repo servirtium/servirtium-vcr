@@ -344,6 +344,26 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   `--install-dir` to isolate, which is what `ruby/.example.ae` already
   documents. Worth knowing before you "verify" a gem into your own gem dir by
   accident — and `gem uninstall servirtium -x` to undo it.
+- **Scala's in-tree suite was compiling the CONSUMER example.**
+  `scala.scalac_test` used to `find` `*Test.scala` across the whole module dir,
+  so `scala/example/src/test/scala/.../PlaybackConsumerTest.scala` — a
+  third-party consumer test that asserts it was loaded from the INSTALLED jar —
+  was compiled into the in-tree run and failed there by design ("expected the
+  installed scala jar, got target/build/scala/classes/"). The binding was fine
+  the whole time. Fixed by adding `source_layout("maven idiomatic")` to
+  `scala/.tests.ae` (opt-in upstream, aeb `938faa9`, mirroring kotlin/groovy),
+  which roots discovery at `src/test/scala`. The consumer test still runs where
+  it belongs: `scala/.example.ae`. **If a suite fails on an assertion about
+  installed artifacts, check what it actually compiled before doubting the
+  binding.**
+- **`make install` in ../aeb used to delete `tools/aeb-resolve.jar`.** It is
+  built out-of-band (`aeb tools/resolver/.dist.ae`), gitignored, and absent
+  from aeb's dev `tools/` tree, so install's `rm -rf`+`cp -R` wiped it and put
+  nothing back — after which every maven/java/scala/kotlin build here dies with
+  `Unable to access jarfile .../aeb-resolve.jar` and `Could not find or load
+  main class dotty.tools.dotc.Main`. Fixed upstream in aeb `938faa9`. If you
+  ever see that pair, rebuild with `aeb tools/resolver/.dist.ae` and copy
+  `target/dist/tools/resolver/bin/*.jar` into `~/.local/share/aeb/tools/`.
 - **Groovy was red for two stacked reasons, and neither mentioned Groovy.**
   Symptom: `[ 0 tests found ]`, then a FAILED leaf (`--fail-if-no-tests`).
   (a) The **Groovy runtime jar was missing from the JUnit classpath**. groovyc

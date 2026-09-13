@@ -1,9 +1,19 @@
 // Scala binding tests — compile *Test.scala, run via JUnit 5 (the runner is
 // language-agnostic). Engine .so via SERVIRTIUM_VCR_LIB.
+//
+// source_layout("maven idiomatic") roots test discovery at src/test/scala, as
+// the kotlin and groovy leaves already do. Without it, scalac_test `find`s
+// *Test.scala across the WHOLE module dir and sweeps in
+// scala/example/src/test/scala — the third-party CONSUMER test, which asserts
+// it was loaded from the INSTALLED jar. Run inside the in-tree suite it fails
+// by design ("expected the installed scala jar, got target/build/scala/classes/")
+// and reddened this leaf while the binding itself was fine. The example is
+// exercised by scala/.example.ae, which installs the jar first; it has no
+// business being compiled here.
 import bldr
 import scala
 import java
-import scala (scala_version)
+import scala (scala_version, source_layout)
 import bldr (env)
 aeb(cap) {
     bldr.build() {
@@ -11,7 +21,7 @@ aeb(cap) {
         dep("scala/.build.ae")
         dep("libs/java/junit-jupiter/.junit-jupiter.jar.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
-        scala.scalac_test() { scala_version("3.3.4") }
+        scala.scalac_test() { scala_version("3.3.4") source_layout("maven idiomatic") }
         java.junit5() { env("SERVIRTIUM_VCR_LIB", lib) }
     }
 }
