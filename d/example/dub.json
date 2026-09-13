@@ -1,0 +1,10 @@
+{
+    "name": "servirtium-consumer-example",
+    "description": "Third-party consumer of the packaged servirtium D binding.",
+    "targetType": "executable",
+    "dependencies": {
+        "servirtium": {
+            "path": "../../d"
+        }
+    }
+}

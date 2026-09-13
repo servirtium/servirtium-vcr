@@ -1,0 +1,44 @@
+// Third-party-consumer EXAMPLE test for the Julia binding.
+//
+// Publishes a standalone copy of the Julia package under target/julia-pkg
+// (carrying the bundled native/ .so, but WITHOUT this repo's core/ as a
+// sibling), `Pkg.develop`s it into a throwaway depot, and runs
+// example/consumer.jl with SERVIRTIUM_VCR_LIB UNSET.
+//
+// That last part is the point. `ccall` needs a real library path, and with the
+// env var gone the only thing left is the module's bundled-path discovery:
+// native/libservirtium_vcr.so beside the installed package. A throwaway
+// JULIA_DEPOT_PATH keeps the developer's real depot untouched and proves the
+// install works from nothing.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("julia/.package.ae")
+        _pkg = dep_artifact("julia/.package.ae", "package_dir")
+        root = _get("root")
+        exdir = "${root}/julia/example"
+        pkg = "${root}/target/julia-pkg"
+        consumer = "${root}/target/julia-consumer"
+
+        rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/julia\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/test\" && mkdir -p \"${consumer}/tapes\" \"${consumer}/depot\" && cp \"${exdir}/consumer.jl\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("julia example: staging the published package + consumer failed")
+            return 1
+        }
+
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB JULIA_DEPOT_PATH=\"${consumer}/depot\" julia --color=no --project=\"${consumer}\" -e 'using Pkg; Pkg.develop(path=\"${pkg}\")'")
+        if rc2 != 0 {
+            println("julia example: Pkg.develop of the published package failed")
+            return 1
+        }
+
+        rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB JULIA_DEPOT_PATH=\"${consumer}/depot\" julia --color=no --project=\"${consumer}\" consumer.jl")
+        if rc3 != 0 {
+            println("julia example: consumer run against the installed package failed")
+            return 1
+        }
+        println("julia example: PASS — consumer replayed the canonical tape (discovery; bundled native/ .so)")
+        return 0
+    }
+}

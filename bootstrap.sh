@@ -121,7 +121,7 @@ cd "$HERE"
 case ":$PATH:" in *":$PREFIX/bin:"*) : ;; *) say "tip: add '$PREFIX/bin' to your shell PATH permanently";; esac
 
 # With explicit args, honor them verbatim. Otherwise, DON'T `aeb --scan` the
-# whole tree — that builds all 21 bindings and is guaranteed to fail on any box
+# whole tree — that builds all 29 bindings and is guaranteed to fail on any box
 # lacking a toolchain (every box). Instead, sniff which language toolchains are
 # present and build only those leaves. `core` (the native engine) always
 # builds: it needs only `ae` + a C compiler, which we just ensured.
@@ -163,6 +163,14 @@ zig      zig/.tests.ae
 php      php/.tests.ae
 dart     dart/.tests.ae
 pharo    pharo/.tests.ae
+lfec     lfe/.tests.ae
+dotnet   fsharp/.tests.ae
+cc       c/.tests.ae
+c++      cpp/.tests.ae
+crystal  crystal/.tests.ae
+julia    julia/.tests.ae
+swift    swift/.tests.ae
+dmd      d/.tests.ae
 TOOLCHAINS
     [ -n "$skipped" ] && say "skipping (toolchain absent):$skipped"
 fi

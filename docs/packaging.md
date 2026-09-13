@@ -35,6 +35,12 @@ The three layers, kept separate on purpose:
 | `<lang>/.tests.ae` | does the binding work? | its compiler **+ test runner** |
 | `<lang>/.example.ae` | can a stranger install and use it? | a clean env + the package |
 
+All three exist for **all 29 languages**, and each `.example.ae` installs the
+way that ecosystem really does — unpacked tarball + pkg-config, a dub or
+SwiftPM path dependency, `Pkg.develop`, a shards-style `lib/` tree, a local
+NuGet feed, relocated OTP apps on `ERL_LIBS` — always with
+`SERVIRTIUM_VCR_LIB` unset, so only the bundled engine can satisfy the load.
+
 ## What each language yields
 
 The engine `.so` travels **inside** every artifact below, found either by a

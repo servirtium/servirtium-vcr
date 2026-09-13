@@ -1,12 +1,22 @@
 {
     "name": "servirtium",
     "version": "2.0.0",
-    "description": "Record/replay for HTTP service tests in the Servirtium markdown tape format — a thin D binding over the shared pure-Aether VCR engine.",
-    "authors": ["Paul Hammant"],
+    "description": "Record/replay for HTTP service tests in the Servirtium markdown tape format \u2014 a thin D binding over the shared pure-Aether VCR engine.",
+    "authors": [
+        "Paul Hammant"
+    ],
     "license": "MIT",
     "targetType": "library",
-    "importPaths": ["src"],
-    "sourcePaths": ["src"],
-    "comment-native": "The engine .so ships in native/ next to the package; lflags point the linker and the runtime loader there via an $ORIGIN-relative rpath, so a consumer needs no LD_LIBRARY_PATH and no SERVIRTIUM_VCR_LIB.",
-    "lflags": ["-L$PACKAGE_DIR/native", "-lservirtium_vcr", "-rpath", "$PACKAGE_DIR/native"]
+    "importPaths": [
+        "src"
+    ],
+    "sourcePaths": [
+        "src"
+    ],
+    "lflags": [
+        "-L$PACKAGE_DIR/native",
+        "-lservirtium_vcr",
+        "-rpath",
+        "$PACKAGE_DIR/native"
+    ]
 }

@@ -22,6 +22,13 @@ detection, static bypass, gzip/chunked handling — lives in the in-repo,
 pure-Aether `core/vcr.ae` module. This binding does **not** reimplement
 Servirtium in D.
 
+`dub.json` carries the link line: its `lflags` point at `$PACKAGE_DIR/native`
+and bake an rpath there, so a consumer resolving this package by path or from
+the registry needs no `LD_LIBRARY_PATH` and no `SERVIRTIUM_VCR_LIB`. (That
+explanation lives here rather than in the manifest: `dub.json` is strict JSON
+with no comment syntax, and dub emits a warning — an empty-bodied one, which
+costs a minute to trace — for any key it does not recognise.)
+
 D declares the engine's flat C ABI (`aether_vcr_embed_*`) with `extern (C)` and
 **links** it — like Nim, Zig, Go-cgo and Rust, not a runtime `dlopen`. The
 `.tests.ae` leaf passes `-L-L../core/native -L-lservirtium_vcr -L-rpath …` to

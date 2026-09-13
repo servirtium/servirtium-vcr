@@ -1,0 +1,55 @@
+// Third-party-consumer EXAMPLE test for the Swift binding.
+//
+// Publishes a standalone copy of the SwiftPM package under target/swift-pkg
+// (carrying the bundled native/ .so, but WITHOUT this repo's core/ as a
+// sibling), then has SwiftPM build and run example/ against it as a PATH
+// DEPENDENCY, with SERVIRTIUM_VCR_LIB UNSET.
+//
+// What that proves beyond swift/.tests.ae: the package resolves and links as a
+// dependency of someone else's Package.swift — its -L/-rpath are relative to
+// the package, not to this checkout — and the engine .so travels with it.
+//
+// Note this leaf needs a WORKING swift toolchain, which is not the same as
+// `swift` being on PATH: the build installed on this dev box is linked against
+// libncurses.so.6 / libxml2.so.2, which Arch/CachyOS does not ship, so swift
+// cannot start without the user-local shims described in swift/README.md.
+// Those are deliberately not baked in here — they are a broken local
+// toolchain, not a property of this repo.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        prereq("swift")
+        dep("swift/.package.ae")
+        _pkg = dep_artifact("swift/.package.ae", "package_dir")
+        root = _get("root")
+        exdir = "${root}/swift/example"
+        // The staged copy must keep the directory name `swift`: SwiftPM derives
+        // a path package's IDENTITY from its last path component, and the
+        // consumer's Package.swift asks for .product(package: "swift"). A dir
+        // named swift-pkg yields identity "swift-pkg" and SwiftPM rejects it
+        // with "unknown package 'swift' in dependencies". Nesting it one level
+        // down also keeps the checked-in example (path ../../swift) valid.
+        pkg = "${root}/target/swift-pkg/swift"
+        consumer = "${root}/target/swift-consumer"
+
+        rc = os.system("rm -rf \"${root}/target/swift-pkg\" \"${consumer}\" && mkdir -p \"${root}/target/swift-pkg\" && cp -r \"${root}/swift\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/Tests\" \"${pkg}/.build\" && mkdir -p \"${consumer}/tapes\" \"${consumer}/Sources/ConsumerExample\" && cp \"${exdir}/Sources/ConsumerExample/main.swift\" \"${consumer}/Sources/ConsumerExample/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\" && sed 's|\\.package(path: \"../../swift\")|.package(path: \"${pkg}\")|' \"${exdir}/Package.swift\" > \"${consumer}/Package.swift\"")
+        if rc != 0 {
+            println("swift example: staging the published package + consumer failed")
+            return 1
+        }
+
+        // No pipeline here on purpose. Filtering swift's output through grep
+        // would make the exit status grep's, not swift's — the exact
+        // false-green this repo just had fixed upstream in aeb. The dev box's
+        // libxml2-shim "no version information" lines stay in the log; noise
+        // is cheaper than a suite that cannot fail.
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB swift run")
+        if rc2 != 0 {
+            println("swift example: `swift run` against the installed package failed")
+            return 1
+        }
+        println("swift example: PASS — consumer replayed the canonical tape (discovery; SwiftPM path dep, bundled native/ .so)")
+        return 0
+    }
+}

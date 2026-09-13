@@ -1,0 +1,44 @@
+// Third-party-consumer EXAMPLE test for the C++ binding.
+//
+// Unpacks the TARBALL that cpp/.package.ae produced into a clean directory —
+// deliberately NOT next to this repo's core/ — then compiles and runs
+// example/consumer.cpp against it using nothing but the prefix's own
+// pkg-config file, with SERVIRTIUM_VCR_LIB and LD_LIBRARY_PATH UNSET.
+//
+// `pkg-config servirtium-cpp` must pull the C client and the engine in through
+// `Requires: servirtium`, which only resolves because both .pc files ship side
+// by side in the same prefix — the thing this layer exists to check. The
+// header-only C++ client then links the C client, which finds the engine
+// beside itself through its $ORIGIN rpath.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        prereq("gcc")
+        dep("cpp/.package.ae")
+        tarball = dep_artifact("cpp/.package.ae", "tarball")
+        root = _get("root")
+        exdir = "${root}/cpp/example"
+        consumer = "${root}/target/cpp-consumer"
+
+        rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/tapes\" && tar xzf \"${tarball}\" -C \"${consumer}\" && cp \"${exdir}/consumer.cpp\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("cpp example: staging the unpacked prefix + consumer failed")
+            return 1
+        }
+
+        rc2 = os.system("cd \"${consumer}\" && c++ consumer.cpp $(PKG_CONFIG_PATH=\"${consumer}/dist/lib/pkgconfig\" pkg-config --cflags --libs servirtium-cpp) -o consumer")
+        if rc2 != 0 {
+            println("cpp example: compiling the consumer against the unpacked prefix failed")
+            return 1
+        }
+
+        rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB -u LD_LIBRARY_PATH ./consumer")
+        if rc3 != 0 {
+            println("cpp example: consumer run against the unpacked prefix failed")
+            return 1
+        }
+        println("cpp example: PASS — consumer replayed the canonical tape (discovery; unpacked tarball, pkg-config Requires:, $ORIGIN rpath)")
+        return 0
+    }
+}

@@ -1,0 +1,49 @@
+// Third-party-consumer EXAMPLE test for the C binding.
+//
+// Unpacks the TARBALL that c/.package.ae produced into a clean directory —
+// deliberately NOT next to this repo's core/ — then compiles and runs
+// example/consumer.c against it using nothing but the prefix's own
+// pkg-config file, with SERVIRTIUM_VCR_LIB and LD_LIBRARY_PATH UNSET.
+//
+// That combination is the whole point. It proves three things a passing
+// c/.tests.ae does not: the tarball is complete (header + both libs + .pc);
+// the .pc resolves to the UNPACKED copy rather than the build tree (it anchors
+// on ${pcfiledir}, so an absolute bake-time prefix would silently send the
+// link back here — a bug this layer caught for real); and the consumer's
+// binary finds libservirtium_c.so, which finds the engine beside itself
+// through its $ORIGIN rpath.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        prereq("gcc")
+        dep("c/.package.ae")
+        tarball = dep_artifact("c/.package.ae", "tarball")
+        root = _get("root")
+        exdir = "${root}/c/example"
+        consumer = "${root}/target/c-consumer"
+
+        rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/tapes\" && tar xzf \"${tarball}\" -C \"${consumer}\" && cp \"${exdir}/consumer.c\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("c example: staging the unpacked prefix + consumer failed")
+            return 1
+        }
+
+        // Compile using ONLY what pkg-config reports from the unpacked prefix.
+        rc2 = os.system("cd \"${consumer}\" && PKG_CONFIG_PATH=\"${consumer}/dist/lib/pkgconfig\" cc consumer.c $(PKG_CONFIG_PATH=\"${consumer}/dist/lib/pkgconfig\" pkg-config --cflags --libs servirtium) -o consumer")
+        if rc2 != 0 {
+            println("c example: compiling the consumer against the unpacked prefix failed")
+            return 1
+        }
+
+        // No SERVIRTIUM_VCR_LIB, no LD_LIBRARY_PATH: the bundled .so + rpath
+        // must carry it alone.
+        rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB -u LD_LIBRARY_PATH ./consumer")
+        if rc3 != 0 {
+            println("c example: consumer run against the unpacked prefix failed")
+            return 1
+        }
+        println("c example: PASS — consumer replayed the canonical tape (discovery; unpacked tarball, pkg-config, $ORIGIN rpath)")
+        return 0
+    }
+}

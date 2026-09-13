@@ -294,6 +294,21 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   Vcr.HttpRecorder's `RulesMatcher.MatchMultiple` / `ByHeader`. Binding surface
   (`match_multiple()` toggle, repeatable `match_header(name)`) swept the same set
   as `match_json_body`.
+- **A relative `-L` in a package manifest works in-tree and fails for every
+  consumer.** `swift/Package.swift` linked with `.unsafeFlags(["-L", "native",
+  …])`. That is resolved by the LINKER's working directory, which is the
+  package's own only while you build the package itself; the moment someone
+  depends on it, it resolves against THEIR directory and the build dies with
+  `cannot find -lservirtium_vcr`. `swift/.tests.ae` was green throughout — only
+  `swift/.example.ae` caught it. The manifest now computes an absolute
+  `nativeDir` from `#filePath` at manifest-evaluation time, so every copy of
+  the package (in-tree, staged, installed) locates its own `native/`. Check any
+  new binding's manifest for the same shape before trusting a green test leaf.
+- **`dub.json` is strict JSON: no comments, and unknown keys warn.** Adding a
+  `"comment-native"` key to document the link line made dub print a bare
+  `Warning` with an EMPTY message — a minute to trace to its source. Explanations
+  go in `d/README.md`; the manifest carries only keys dub knows. (`dub.sdl`
+  would allow comments, but the package is JSON.)
 - **Packaging gotchas that cost real debugging (all in `docs/packaging.md`).**
   (a) A pkg-config `.pc` with an absolute bake-time `prefix` silently points a
   consumer's `-I/-L` back at THIS repo — c/ and cpp/ anchor on
@@ -455,11 +470,15 @@ curl-to-bash front door: `./get-package.sh ruby` builds the gem, copies it to
 one: `docs/packaging.md`. **Packaging runs no tests** — that is the point: the
 wheel builds where there is no pytest.
 
-Still missing for the eight newest bindings (`lfe fsharp c cpp crystal julia
-swift d`): a `.example.ae` consumer-install proof as a LEAF. Each was verified
-by hand this session (the C and C++ prefixes untarred elsewhere and linked with
-zero repo paths in the binary; the LFE apps run from a relocated copy with only
-ERL_LIBS; the F# nupkg restored from its local feed by a real consumer project;
-julia's bundled `.so` found with SERVIRTIUM_VCR_LIB unset) — but a hand-check
-is not a regression test. Copy the nearest existing `.example.ae` when filling
-these in.
+**All three layers now cover all 29 languages.** The eight newest bindings got
+their `.example.ae` consumer-install leaves too, so every language has
+`.tests.ae` + `.package.ae` + `.example.ae`, and all 29 examples pass. Each
+installs the way that ecosystem really does — unpacked tarball + pkg-config
+(c, cpp), relocated OTP apps with only ERL_LIBS (lfe), `Pkg.develop` into a
+throwaway depot (julia), a shards-style `lib/<name>/` tree (crystal), a dub
+path dependency (d), a SwiftPM path dependency (swift), a local NuGet feed
+(fsharp) — always with `SERVIRTIUM_VCR_LIB` unset, so only the bundled engine
+can satisfy the load.
+
+That layer immediately earned itself: see the Swift `-L` and dub.json notes in
+Gotchas. Both bugs were invisible to a green `.tests.ae`.

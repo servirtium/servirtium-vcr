@@ -1,0 +1,39 @@
+// Third-party-consumer EXAMPLE test for the Crystal binding.
+//
+// Stages the shard that crystal/.package.ae produced into a consumer's
+// ./lib/servirtium — the exact on-disk layout `shards install` creates — with
+// this repo's core/ deliberately NOT a sibling, then builds and runs
+// example/consumer.cr with SERVIRTIUM_VCR_LIB and CRYSTAL_LIBRARY_PATH UNSET.
+//
+// The consumer says `require "servirtium"`, resolving the shard BY NAME rather
+// than by path, so this checks the same thing a `shards install` consumer
+// would hit. The `shards` binary itself is not required (and is absent on this
+// box): copying the package into lib/<name> is precisely what it would do. The
+// engine .so is found only through the @[Link] ldflags' __DIR__-relative -L
+// and baked rpath, pointing at the shard's own bundled native/.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("crystal/.package.ae")
+        _pkg = dep_artifact("crystal/.package.ae", "package_dir")
+        root = _get("root")
+        exdir = "${root}/crystal/example"
+        consumer = "${root}/target/crystal-consumer"
+        shard = "${consumer}/lib/servirtium"
+
+        rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/tapes\" \"${consumer}/lib\" && cp -r \"${root}/crystal\" \"${shard}\" && rm -rf \"${shard}/example\" \"${shard}/spec\" && cp \"${exdir}/consumer.cr\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("crystal example: staging the installed shard + consumer failed")
+            return 1
+        }
+
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB -u CRYSTAL_LIBRARY_PATH crystal run --no-color consumer.cr")
+        if rc2 != 0 {
+            println("crystal example: consumer run against the installed shard failed")
+            return 1
+        }
+        println("crystal example: PASS — consumer replayed the canonical tape (discovery; shards-style lib/ layout, bundled native/ .so)")
+        return 0
+    }
+}

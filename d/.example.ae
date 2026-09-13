@@ -1,0 +1,40 @@
+// Third-party-consumer EXAMPLE test for the D binding.
+//
+// Publishes a standalone copy of the D package under target/d-pkg (carrying
+// the bundled native/ .so, but WITHOUT this repo's core/ as a sibling — so the
+// package's own `../core/native` path cannot resolve and only the bundled copy
+// can satisfy the link), then has `dub` build and run example/ against it as a
+// PATH DEPENDENCY, with SERVIRTIUM_VCR_LIB UNSET.
+//
+// The consumer's dub.json dependency path is rewritten to the staged copy, so
+// what is exercised is dub's own dependency resolution plus dub.json's
+// $PACKAGE_DIR-relative lflags and baked rpath — the two things a downstream
+// user actually relies on. DUB_HOME is redirected into the consumer dir to
+// keep the developer's real ~/.dub cache out of it.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        prereq("dmd")
+        dep("d/.package.ae")
+        _pkg = dep_artifact("d/.package.ae", "package_dir")
+        root = _get("root")
+        exdir = "${root}/d/example"
+        pkg = "${root}/target/d-pkg"
+        consumer = "${root}/target/d-consumer"
+
+        rc = os.system("rm -rf \"${pkg}\" \"${consumer}\" && cp -r \"${root}/d\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/tests\" && mkdir -p \"${consumer}/tapes\" \"${consumer}/source\" && cp \"${exdir}/source/app.d\" \"${consumer}/source/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\" && sed 's|\"path\": \"../../d\"|\"path\": \"${pkg}\"|' \"${exdir}/dub.json\" > \"${consumer}/dub.json\"")
+        if rc != 0 {
+            println("d example: staging the published package + consumer failed")
+            return 1
+        }
+
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB DUB_HOME=\"${consumer}/.dub-home\" dub run --quiet --compiler=dmd")
+        if rc2 != 0 {
+            println("d example: `dub run` against the installed package failed")
+            return 1
+        }
+        println("d example: PASS — consumer replayed the canonical tape (discovery; dub path dep, bundled native/ .so)")
+        return 0
+    }
+}

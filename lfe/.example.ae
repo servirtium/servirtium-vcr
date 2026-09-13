@@ -1,0 +1,44 @@
+// Third-party-consumer EXAMPLE test for the LFE binding.
+//
+// Copies the OTP apps that lfe/.package.ae assembled (servirtium_lfe +
+// the shared servirtium_nif) to a clean location — deliberately NOT next to
+// this repo's core/ — compiles example/consumer.lfe against them, and runs it
+// with ERL_LIBS pointing ONLY at that copy and SERVIRTIUM_VCR_LIB /
+// SERVIRTIUM_NIF_DIR UNSET.
+//
+// What that proves beyond lfe/.tests.ae: the packaged apps are self-contained
+// and relocatable. The NIF resolves the engine .so through code:priv_dir plus
+// its own $ORIGIN rpath, so moving the app directory cannot break it — which
+// is exactly what a Hex-installed copy does.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        prereq("lfe")
+        dep("lfe/.package.ae")
+        erl_libs = dep_artifact("lfe/.package.ae", "erl_libs")
+        root = _get("root")
+        exdir = "${root}/lfe/example"
+        consumer = "${root}/target/lfe-consumer"
+
+        rc = os.system("rm -rf \"${consumer}\" && mkdir -p \"${consumer}/tapes\" && cp -r \"${erl_libs}\" \"${consumer}/libs\" && cp \"${exdir}/consumer.lfe\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("lfe example: staging the packaged apps + consumer failed")
+            return 1
+        }
+
+        rc2 = os.system("cd \"${consumer}\" && lfec -o . consumer.lfe")
+        if rc2 != 0 {
+            println("lfe example: compiling the consumer failed")
+            return 1
+        }
+
+        rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB -u SERVIRTIUM_NIF_DIR ERL_LIBS=\"${consumer}/libs\" lfe -noshell -pa . -eval '(consumer:main (list))' -eval '(halt 0)'")
+        if rc3 != 0 {
+            println("lfe example: consumer run against the installed apps failed")
+            return 1
+        }
+        println("lfe example: PASS — consumer replayed the canonical tape (discovery; relocated OTP apps, $ORIGIN rpath)")
+        return 0
+    }
+}
