@@ -76,14 +76,20 @@ c++ -std=c++17 -Icpp/include -Ic/include cpp/test/playback_test.cpp \
 
 ### A note on the test runner
 
-`cpp/.tests.ae` deliberately uses **`c.tests`**, not `cpp.tests`, to run the
-binary. `c.tests` documents itself as a generic binary runner
+`cpp/.tests.ae` uses **`c.tests`**, not `cpp.tests`, to run the binary — now
+for one reason: `c.tests` documents itself as a generic binary runner
 (`bldr.program_binary_of` — "prog may be a `c.program` OR an `aether.program`
-(or any future binary builder)") and checks the exit code directly. `cpp.tests`
-runs `binary 2>&1 | tee log`, and a shell pipeline reports the status of its
-*last* command — so `tee`'s 0 masks a failing test binary and the leaf goes
-green on a red suite. That was observed here: a genuinely failing assertion
-printed `FAILED: 1 cpp test(s)` and the leaf still reported PASS. Until aeb's
-cpp SDK fixes that, this suite rides the runner that tells the truth — which
-also restores `argv`, so the tape path is passed in rather than baked in with
-a compile-time define.
+(or any future binary builder)") and takes `run(leaf, args)`, so the tape path
+is passed as `argv[1]` instead of being baked into the binary with a
+compile-time `-D` define. `cpp.tests` passes no argv and no env.
+
+It used to be for two reasons. `cpp.tests` also ran `binary 2>&1 | tee log`,
+and a shell pipeline reports the status of its *last* command — so `tee`'s 0
+masked a failing test binary and this leaf went green on a red suite. That was
+observed here: a genuinely failing assertion printed `FAILED: 1 cpp test(s)`
+and the leaf still reported PASS. **That is now fixed upstream**: aeb's
+cpp/d/swift/dart/gleam/jest/moonbit/java test runners go through
+`bldr._sh_tee`, which captures the command's real exit status in an rc file
+(aeb `2734bf5`). Re-checked afterwards: `cpp.tests` exits 1 with `0/1 FAIL` on
+the same failing assertion. Either runner is honest now; this one is still the
+more convenient.

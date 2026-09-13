@@ -1,34 +1,34 @@
 // D binding tests (extern(C) + link-time). Like Nim/Zig/Go-cgo/Rust, D compiles
-// and links: the binding's own module (src/servirtium/package.d) is compiled
-// into the test binary and the engine .so is linked with an rpath, so the test
-// finds the engine at build time and at run time.
+// and links: d.test() compiles-and-runs each test file with `dmd -run`, with the
+// binding's own module (src/servirtium/package.d) compiled in via d_source() and
+// the engine .so linked via d_flag() (-L forwards to the linker) + rpath.
+//
+// The engine .so is taken from ../core/native — the compat copy core/.build.ae
+// stages next to the source tree (the same path go's cgo LDFLAGS bake in) — a
+// fixed relative path from this module dir, since dmd runs with cwd = d/.
 //
 // tests/playback_test.d replays the canonical tape (GET /ok -> 200 text/plain
 // "ok-body") and asserts the body, a clean match, the diagnostics, and what D
 // adds (scope(exit) shutdown, GC'd strings with no manual free, a thrown
-// VcrException instead of a dead handle).
-//
-// Deliberately driven through bash.test + tests/test_playback.sh rather than
-// aeb's `d.test()` builder. d.test runs `dmd … -run <file> 2>&1 | tee <log>`,
-// and a shell pipeline reports the status of its LAST command — so tee's 0
-// masks both a dmd compile error and a failing test. That was observed here:
-// this binding did not compile at all (an extern(C) function-pointer linkage
-// error) and d.test still reported "1/1 PASS", with the real errors sitting in
-// the tee'd log. bash.test runs `bash <script>` directly and propagates the
-// exit code, so this suite can actually redden. (Same root cause as aeb's
-// cpp.tests — see cpp/.tests.ae.) Revisit once aeb's d/cpp SDKs stop piping
-// through tee.
-//
-// Skipped by preflight when dmd is absent (prereq dmd).
+// VcrException instead of a dead handle). Skipped by preflight when dmd is
+// absent (prereq dmd).
 import bldr
-import bash
-import bash (script)
+import d
+import d (d_source, test_file, d_flag)
 aeb(cap) {
     bldr.build() {
         prereq("dmd")
         dep("core/.build.ae")
-        bash.test() {
-            script("tests/test_playback.sh")
+        d.test() {
+            d_flag("-Isrc")
+            // Link the engine .so from its in-tree staged location + bake rpath
+            // so the test binary finds it at run time (dmd forwards -L<x> to ld).
+            d_flag("-L-L../core/native")
+            d_flag("-L-lservirtium_vcr")
+            d_flag("-L-rpath")
+            d_flag("-L../core/native")
+            d_source("src/servirtium/package.d")
+            test_file("tests/playback_test.d")
         }
     }
 }

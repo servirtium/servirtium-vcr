@@ -79,13 +79,19 @@ symbol ("cannot pass argument … of type `extern (C) char* function …`").
 `extern (C)` is also not accepted inline in a parameter's type — hence the
 alias.
 
-**The runner is `bash.test`, not aeb's `d.test()`.** `d.test` runs
+**The runner reported PASS on a binding that did not compile.** `d.test` ran
 `dmd … -run <file> 2>&1 | tee <log>`, and a shell pipeline reports the exit
-status of its *last* command — so `tee`'s 0 masks both a dmd compile error and
+status of its *last* command — so `tee`'s 0 masked both a dmd compile error and
 a failing test. That was observed here: this binding once did not compile at
-all (the linkage error above) and `aeb d/.tests.ae` still reported **1/1 PASS**,
-with the real errors sitting unread in the tee'd log. `bash.test` runs
-`bash <script>` directly and propagates the exit code, so this suite can
-actually redden — verified by breaking an assertion on purpose and watching the
-leaf go red. Same root cause as aeb's `cpp.tests`; revisit both once the aeb
-SDKs stop piping through `tee`.
+all (the `extern (C)` linkage error above) and `aeb d/.tests.ae` still reported
+**1/1 PASS**, with the real errors sitting unread in the tee'd log. It was
+caught only by running dmd by hand.
+
+**Fixed upstream**, so this leaf uses the plain `d.test()` builder again: aeb's
+`d`/`cpp`/`swift`/`dart`/`gleam`/`jest`/`moonbit`/`java` test runners now go
+through `bldr._sh_tee`, which keeps the tee'd log but captures the command's
+real exit status in an rc file, and fails closed if that status can't be read
+(aeb `2734bf5`). Verified against this very suite after the fix: `d.test`
+reddens both on a failing assertion **and** on a compile error, and stays green
+when the suite is good. The interim `bash.test` + `tests/test_playback.sh`
+workaround has been removed.

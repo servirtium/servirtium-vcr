@@ -329,25 +329,29 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   `--install-dir` to isolate, which is what `ruby/.example.ae` already
   documents. Worth knowing before you "verify" a gem into your own gem dir by
   accident — and `gem uninstall servirtium -x` to undo it.
-- **TWO aeb SDKs report PASS on a failing test. Do not trust them.** Both
-  `cpp.tests` (aeb `lib/cpp/module.ae`) and `d.test` (`lib/d/module.ae`) run the
-  test binary as `<cmd> 2>&1 | tee <log>`, and a shell pipeline exits with the
-  status of its LAST command — so `tee`'s 0 masks a failing binary AND a
-  compile error. Observed twice, for real, while adding these bindings:
-  (a) the C++ suite printed `FAILED: 1 cpp test(s)` and the leaf said
-  `1/1 PASS`; (b) the D binding did not compile at all (an `extern(C)`
-  function-pointer linkage error) and the leaf still said `1/1 PASS`, the dmd
-  errors sitting unread in the tee'd log under `target/tests/d/`. Both suites
-  are therefore driven through runners that check the exit code directly:
-  `cpp/.tests.ae` uses **`c.tests`** (documented as a generic binary runner over
-  `bldr.program_binary_of` — "prog may be a `c.program` OR an `aether.program`",
-  and it gives argv back, so the tape path is passed in), and `d/.tests.ae` uses
-  **`bash.test`** + `d/tests/test_playback.sh` (`bash <script>`, no pipe). Both
-  were verified to redden by breaking an assertion on purpose. **When you touch
-  either leaf, re-prove it can fail** — and if you ever add a leaf on an aeb
-  builder you haven't seen redden, break a test once and check. The fix belongs
-  in `../aeb` (drop the `tee`, or `set -o pipefail`); revisit these two leaves
-  after that lands.
+- **aeb test runners USED to report PASS on a failing test — fixed upstream,
+  and the habit it should leave you with.** Nine builders across seven SDKs
+  (`cpp.tests`, `d.test`, `swift.test`, `dart`, `gleam`, `jest`, `moonbit`, both
+  java JUnit runners) ran the runner as `cmd 2>&1 | tee <log>` and took the
+  PIPELINE's exit status as the verdict — which is `tee`'s, always 0. Caught
+  here, twice and for real: (a) the C++ suite printed `FAILED: 1 cpp test(s)`
+  and the leaf said `1/1 PASS`; (b) the D binding did not compile AT ALL (an
+  `extern(C)` function-pointer linkage error) and the leaf still said
+  `1/1 PASS`, dmd's errors sitting unread in the tee'd log under `target/tests/d/`.
+  Both were found only by running the binaries by hand.
+
+  Fixed in aeb `2734bf5` (this session): all nine go through the new
+  `bldr._sh_tee`, which keeps the tee'd log the summary parsers read but
+  captures the command's real status in an rc file, and **fails closed** when
+  that status can't be read. `d/.tests.ae` is therefore back on the plain
+  `d.test()` builder (the `bash.test` + shell-script workaround is gone), and
+  `cpp/.tests.ae` stays on `c.tests` for the ONE remaining reason that it
+  passes argv (so the tape path isn't baked in with a `-D` define).
+
+  **The habit to keep:** when you add a leaf on a builder you have not
+  personally seen fail, break one assertion and confirm it reddens. Every
+  binding suite in this repo has been through that check. It costs one minute
+  and it is the only thing that distinguishes a passing suite from a silent one.
 - **LFE: `record` is a CORE FORM, and exported names must use underscores.**
   `(record …)` inside `lfe/src/servirtium_lfe.lfe` parses as LFE's Erlang-record
   form, not as this module's function — so the exported `record/2` and `record/3`
