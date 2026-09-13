@@ -367,7 +367,8 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   was compiled into the in-tree run and failed there by design ("expected the
   installed scala jar, got target/build/scala/classes/"). The binding was fine
   the whole time. Fixed by adding `source_layout("maven idiomatic")` to
-  `scala/.tests.ae` (opt-in upstream, aeb `938faa9`, mirroring kotlin/groovy),
+  `scala/.tests.ae` (opt-in upstream, aeb v0.308 / `938faa9`, mirroring
+  kotlin/groovy),
   which roots discovery at `src/test/scala`. The consumer test still runs where
   it belongs: `scala/.example.ae`. **If a suite fails on an assertion about
   installed artifacts, check what it actually compiled before doubting the
@@ -377,7 +378,8 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   from aeb's dev `tools/` tree, so install's `rm -rf`+`cp -R` wiped it and put
   nothing back — after which every maven/java/scala/kotlin build here dies with
   `Unable to access jarfile .../aeb-resolve.jar` and `Could not find or load
-  main class dotty.tools.dotc.Main`. Fixed upstream in aeb `938faa9`. If you
+  main class dotty.tools.dotc.Main`. Fixed upstream in aeb v0.308 (`938faa9`);
+  **the repo now floors aeb at 0.308** for this and the two test-runner fixes. If you
   ever see that pair, rebuild with `aeb tools/resolver/.dist.ae` and copy
   `target/dist/tools/resolver/bin/*.jar` into `~/.local/share/aeb/tools/`.
 - **Groovy was red for two stacked reasons, and neither mentioned Groovy.**
@@ -409,7 +411,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   `1/1 PASS`, dmd's errors sitting unread in the tee'd log under `target/tests/d/`.
   Both were found only by running the binaries by hand.
 
-  Fixed in aeb `2734bf5` (this session): all nine go through the new
+  Fixed in aeb **v0.308** (`2734bf5`): all nine go through the new
   `bldr._sh_tee`, which keeps the tee'd log the summary parsers read but
   captures the command's real status in an rc file, and **fails closed** when
   that status can't be read. `d/.tests.ae` is therefore back on the plain

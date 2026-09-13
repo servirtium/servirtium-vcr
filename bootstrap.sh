@@ -38,10 +38,10 @@ set -euo pipefail
 #             not automatically better, it is another thing to have tested.
 #             Aether cuts releases fast; do not chase HEAD by hand.
 AE_PIN="0.413.0"
-AE_FETCH="v0.650.0"    # verified on ae 0.650.0 + aeb v0.307: engine + CLI +
-                       # core_tests (all 6 leaves) + cli-tests, and 28 of the 29
-                       # language leaves green in one sequential sweep, plus all
-                       # 29 .package.ae and all 29 .example.ae. The one that is
+AE_FETCH="v0.650.0"    # verified on ae 0.650.0 + the RELEASED aeb v0.308:
+                       # engine + CLI + core_tests (all 6 leaves) + cli-tests,
+                       # 28 of the 29 language leaves, all 29 .package.ae, and
+                       # all 29 .example.ae — green in sequential sweeps. The one that is
                        # not green is pharo (6/12 error: every record-mode test
                        # + static content; playback fine) — a real open
                        # question, not a missing tool. python/ruby/haskell need
@@ -53,11 +53,18 @@ AE_FETCH="v0.650.0"    # verified on ae 0.650.0 + aeb v0.307: engine + CLI +
                        # ship. (AE_PIN stays 0.413.0 — the genuine floor; nothing
                        # in the engine needs a 0.650 primitive, this is a
                        # known-good ratchet, not a floor bump.)
-# aeb floor: the Shape A (b-free bldr.build{}) leaves in this repo need
-# aeb >= 0.307 (v0.298 made the bundle installer make-free; v0.307 is the current
-# release, Aether-floored at 0.650.0). install.sh fetches latest, which satisfies
-# that; an older aeb already on PATH fails loudly on `import bldr` rather than
-# silently.
+# aeb floor: aeb >= 0.308 — a REAL floor, not a ratchet. Two leaves here now
+# require it: scala/.tests.ae calls scala's source_layout("maven idiomatic"),
+# a setter that does not exist before 0.308 (on 0.307 the leaf dies with
+# "Undefined function 'source_layout'"), and d/.tests.ae relies on d.test
+# propagating the compiler/test exit code instead of tee's — before 0.308 a
+# failing D suite, or one that did not compile at all, reported PASS. groovy
+# additionally needs 0.308's groovyc cache key to notice edited sources.
+# (Earlier history: v0.298 made the bundle installer make-free; v0.300 aligned
+# the release asset on x86_64.) install.sh fetches the latest tag, which
+# satisfies this; an older aeb already on PATH fails loudly — on `import bldr`
+# for the Shape A (b-free bldr.build{}) leaves, or on the missing setter above
+# — rather than silently.
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX
