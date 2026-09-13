@@ -23,21 +23,38 @@
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
 set -euo pipefail
 
-# ---- Aether pin: two numbers on two clocks (pattern borrowed from the aeb
-# repo's AETHER_PIN / AETHER_FETCH files — see ../aeb for the long rationale).
+# ---- Aether pin: ONE number, deliberately.
 #
-#   AE_PIN    is a FLOOR: the oldest ae that can compile this repo's engine.
-#             An already-installed ae >= AE_PIN is accepted as-is (no fetch).
-#             Move it ONLY when the code starts using a primitive an older
-#             ae lacks, in the same commit — never speculatively.
-#             Current evidence: core/vcr.ae uses std.encoding.base64_decode,
-#             which moved there (as a string! error-union) in ae 0.413.
-#   AE_FETCH  is the KNOWN-GOOD release get.sh installs when the floor is
-#             not met. MUST be >= AE_PIN. Bump it deliberately after a
-#             successful build+test on the new release — a newer number is
-#             not automatically better, it is another thing to have tested.
-#             Aether cuts releases fast; do not chase HEAD by hand.
-AE_PIN="0.413.0"
+# This used to be two numbers on two clocks (the aeb repo's
+# AETHER_PIN / AETHER_FETCH pattern): a FLOOR at the oldest ae that could
+# compile the engine, and a KNOWN-GOOD release to fetch when the floor was not
+# met. That is the more permissive design, and we have collapsed it on purpose.
+#
+#   AE_PIN == AE_FETCH == the one Aether this repo is VERIFIED against.
+#
+# Why the change. The old floor (0.413.0, the release that moved base64_decode
+# into std.encoding) was the last point at which anyone could name a primitive
+# the engine needs. It was never the oldest ae that actually WORKS here — it
+# was the oldest nobody had disproved. Every sweep this repo has ever published
+# ran on AE_FETCH, so a permissive floor advertised support for ~250 releases
+# that nothing verifies, and handed anyone sitting in that range a toolchain
+# combination we have never built.
+#
+# It also removes a failure mode that is genuinely nasty rather than merely
+# untested: `ae` and `aetherc` are separate binaries and aetherc does the
+# codegen, so a box can end up mixing versions (see the AE_FETCH note below —
+# it cost an afternoon). One number means "install exactly this", and the
+# split cannot arise from following our own instructions.
+#
+# Cost, stated honestly: a user with a perfectly good ae 0.650 on PATH now
+# gets a fetch they did not strictly need. That is the trade — a fetch is
+# cheap, and "supported" now means "tested".
+#
+# Move BOTH numbers together, after a successful build+test on the new release
+# (engine + core_tests + the language sweep). A newer number is not
+# automatically better; it is another thing to have tested. Aether cuts
+# releases fast — do not chase HEAD by hand.
+AE_PIN="0.666.0"
 AE_FETCH="v0.666.0"    # verified on ae 0.666.0 + the RELEASED aeb v0.309:
                        # engine + CLI + core_tests (all 6 leaves) + cli-tests,
                        # 28 of the 29 language leaves, all 29 .package.ae, and
@@ -62,9 +79,10 @@ AE_FETCH="v0.666.0"    # verified on ae 0.666.0 + the RELEASED aeb v0.309:
                        # docs/dev-setup.md. Ratcheted to match the sibling
                        # toolchains (aeb v0.309 pins Aether 0.666.0), so
                        # servirtium builds against the same ae the build runner
-                       # ships. (AE_PIN stays 0.413.0 — the genuine floor;
-                       # nothing in the engine needs a 0.666 primitive, this is
-                       # a known-good ratchet, not a floor bump.)
+                       # ships. AE_PIN moves with it (they are one number now —
+                       # see the pin note above); nothing in the engine NEEDS a
+                       # 0.666 primitive, so this is a "pin what we verify"
+                       # choice, not a discovered requirement.
 # aeb floor: aeb >= 0.308 — a REAL floor, not a ratchet. Two leaves here now
 # require it: scala/.tests.ae calls scala's source_layout("maven idiomatic"),
 # a setter that does not exist before 0.308 (on 0.307 the leaf dies with

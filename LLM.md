@@ -491,7 +491,10 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   `DOTNET_ROLL_FORWARD`), which is a no-op where net8 is installed. Keeps the
   TFM honest instead of retargeting the shipped floor. Without it the .NET
   suite fails with a bare "tests FAILED" and no reason in the log.
-- **base64 lives in `std.encoding`, not `std.cryptography` (ae 0.4x).** ae 0.413
+- **base64 lives in `std.encoding`, not `std.cryptography` (ae 0.4x).** (This is
+  the last primitive anyone could name as a hard ae requirement, and it used to
+  BE the `AE_PIN` floor. It no longer is — `AE_PIN` == `AE_FETCH` == the one ae
+  we verify against, currently 0.666.0.) ae 0.413
   moved it and changed `base64_decode` to a `string!` error-union; the engine's
   `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
   with "Undefined function 'cryptography.base64_decode'", something reintroduced

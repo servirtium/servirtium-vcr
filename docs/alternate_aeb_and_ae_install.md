@@ -41,7 +41,7 @@ Useful env knobs (all optional):
 
 | Var | Meaning |
 |---|---|
-| `AE_PIN` | FLOOR: the oldest `ae` that can build this repo. In sourced mode `ae_ensure` requires it. |
+| `AE_PIN` | The one `ae` this repo is verified against (`0.666.0`) — deliberately equal to `AE_FETCH`, not a permissive floor; see the pin note atop `bootstrap.sh`. In sourced mode `ae_ensure` requires it. |
 | `AE_FETCH` | The `ae` release to install when the floor isn't met. Defaults to `AE_PIN`. |
 | `AETHER_REF` | Explicit `ae` ref — a tag installs the binary; a branch/SHA forces a source build. Overrides the above. |
 | `AEB_REF` | The `aeb` release tag (or positional arg #1 to `get.sh`). Defaults to latest. |

@@ -283,9 +283,13 @@ target, so they install in that order. aeb's
 [`get.sh`](https://github.com/aether-lang-dev/aeb/blob/main/get.sh) ensures both
 from a bare clone: prebuilt-binary-first per platform, source fallback otherwise,
 fetching the pinned Aether via Aether's own `get.sh`. The authoritative pins live
-in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` is the ae *floor* (the oldest ae that
-can build the engine), `AE_FETCH` the known-good ae release it installs (currently
-`v0.666.0`), and the aeb floor is `>= 0.308` (v0.298 made the bundle installer make-free; v0.300 aligned the release asset on `x86_64`; v0.309 is current — and a real floor: `scala/.tests.ae` uses a setter added there, and `d/.tests.ae` relies on its honest test exit codes). The commands below pin that
+in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` and `AE_FETCH` are now **one
+number** — `0.666.0`, the single ae this repo is *verified* against. (They used
+to differ: a permissive floor at `0.413.0` plus a known-good release to fetch.
+The floor advertised support for ~250 releases nothing ever tested, and a
+mixed `ae`/`aetherc` pair is a genuinely nasty failure — so "supported" now
+means "tested". The trade: a user with a good-but-different ae gets a fetch
+they didn't strictly need.) The aeb floor is `>= 0.308` (v0.298 made the bundle installer make-free; v0.300 aligned the release asset on `x86_64`; v0.309 is current — and a real floor: `scala/.tests.ae` uses a setter added there, and `d/.tests.ae` relies on its honest test exit codes). The commands below pin that
 known-good pair; keep their numbers in step with `bootstrap.sh`.
 
 **Recommended — `./bootstrap.sh`.** It installs a pinned `ae` (>= `AE_PIN`) THEN
