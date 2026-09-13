@@ -1,0 +1,26 @@
+// .groovy.jar.ae — the Apache Groovy RUNTIME jar, pinned by sha256.
+//
+// Needed at TEST-RUN time, not compile time: `groovyc` comes from the system
+// Groovy install and compiles fine without this, but every class it emits
+// implements `groovy.lang.GroovyObject`. Without the runtime on the JUnit
+// classpath the test class cannot load — and JUnit's classpath scanner
+// silently SKIPS classes it can't load, so the suite reported
+// "0 tests found" (and then failed on --fail-if-no-tests) rather than saying
+// anything about Groovy. That cost real diagnosis time; see groovy/.tests.ae.
+//
+// Version must track the `groovyc` that compiled the classes — 5.1.0 here.
+// Same committed-lockfile shape as libs/java/clojure: coordinate + content
+// hash, no jar bytes; mvn_repo resolves from the cache, ~/.m2 or Central and
+// verifies the sha256 fail-closed before use.
+import bldr
+import java
+import java (central, pinned)
+
+aeb(cap) {
+    bldr.build() {
+        java.mvn_repo() {
+            central()
+            pinned("org.apache.groovy:groovy:5.1.0", "70d972d074583cef329016e062c8839d90b73741c88fc97a3dd4710dbacc161e")
+        }
+    }
+}

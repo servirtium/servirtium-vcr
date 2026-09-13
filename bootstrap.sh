@@ -49,7 +49,9 @@ AE_FETCH="v0.650.0"    # verified on ae 0.650.0 + aeb v0.307: engine + CLI +
                        # a clean env; scala pulls its example/ consumer test
                        # into the in-tree suite (scalac_test globs both source
                        # roots) so an "expected the installed jar" assert fires;
-                       # groovy's JUnit run finds 0 tests; pharo errors 6/12
+                       # (groovy's "0 tests found" is FIXED — it was a missing
+                       # Groovy runtime jar plus a content-blind groovyc cache);
+                       # pharo errors 6/12
                        # (every record-mode test + static content, playback
                        # fine). Ratcheted to match the sibling
                        # toolchains (aeb v0.299 + aeo v0.2.2 both floor Aether at

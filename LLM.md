@@ -344,6 +344,24 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   `--install-dir` to isolate, which is what `ruby/.example.ae` already
   documents. Worth knowing before you "verify" a gem into your own gem dir by
   accident — and `gem uninstall servirtium -x` to undo it.
+- **Groovy was red for two stacked reasons, and neither mentioned Groovy.**
+  Symptom: `[ 0 tests found ]`, then a FAILED leaf (`--fail-if-no-tests`).
+  (a) The **Groovy runtime jar was missing from the JUnit classpath**. groovyc
+  comes from the system install and compiles fine, but every class it emits
+  implements `groovy.lang.GroovyObject`; without the runtime the test class
+  cannot load, and JUnit's scanner SILENTLY SKIPS classes it can't load. Fixed
+  by `libs/java/groovy/.groovy.jar.ae` (the same pinned-lockfile shape as
+  `libs/java/clojure`, which exists for exactly this reason) + a `dep()` in
+  `groovy/.tests.ae`. The jar's version must track the `groovyc` that compiled
+  the classes — 5.1.0 here. Kotlin/Scala don't need this because their stdlibs
+  arrive via the binding's own jar deps.
+  (b) Once it ran, it still couldn't FAIL: aeb's groovy SDK wrote an empty
+  argfile, so the groovyc cache key hashed no sources and a stale class tree
+  was replayed forever. Fixed upstream (aeb `01b2880`). Verified here: breaking
+  one assertion now recompiles and fails the leaf.
+  **When a JVM-family suite reports 0 tests found, suspect an unloadable test
+  class before you suspect discovery** — check the runtime jar is on the
+  classpath that `java.junit5()` builds.
 - **aeb test runners USED to report PASS on a failing test — fixed upstream,
   and the habit it should leave you with.** Nine builders across seven SDKs
   (`cpp.tests`, `d.test`, `swift.test`, `dart`, `gleam`, `jest`, `moonbit`, both
