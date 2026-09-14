@@ -54,12 +54,12 @@ set -euo pipefail
 # (engine + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.666.0"
-AE_FETCH="v0.666.0"    # verified on ae 0.666.0 + the RELEASED aeb v0.309:
+AE_PIN="0.668.0"
+AE_FETCH="v0.668.0"    # verified on ae 0.668.0 + the RELEASED aeb v0.310:
                        # engine + CLI + core_tests (all 6 leaves) + cli-tests,
                        # 28 of the 29 language leaves, all 29 .package.ae, and
                        # all 29 .example.ae — green in sequential sweeps.
-                       # 0.666.0 is also what aeb v0.309 pins internally, so
+                       # 0.668.0 is also what aeb v0.310 pins internally, so
                        # this repo and the build runner now agree on one
                        # Aether. MIND THE SPLIT TOOLCHAIN: `ae` and `aetherc`
                        # are separate binaries and aetherc does the codegen, so
@@ -77,13 +77,18 @@ AE_FETCH="v0.666.0"    # verified on ae 0.666.0 + the RELEASED aeb v0.309:
                        # a one-time dev-dep setup that is NOT obvious on a
                        # PEP-668 distro with a dynamic-only GHC: see
                        # docs/dev-setup.md. Ratcheted to match the sibling
-                       # toolchains (aeb v0.309 pins Aether 0.666.0), so
+                       # toolchains (aeb v0.310 pins Aether 0.668.0), so
                        # servirtium builds against the same ae the build runner
                        # ships. AE_PIN moves with it (they are one number now —
                        # see the pin note above); nothing in the engine NEEDS a
-                       # 0.666 primitive, so this is a "pin what we verify"
+                       # 0.668 primitive, so this is a "pin what we verify"
                        # choice, not a discovered requirement.
-# aeb floor: aeb >= 0.308 — a REAL floor, not a ratchet. Two leaves here now
+# aeb floor: aeb >= 0.308 — a REAL floor, not a ratchet. NOTE the asymmetry
+# with AE_PIN above, which is deliberate: for Aether nobody could name a
+# requirement past 0.413, so that pin was collapsed onto the one version we
+# verify. For aeb there IS a nameable requirement (below), so the floor states
+# it and AEB_REF separately tracks the release we test (currently v0.310).
+# Collapse this one too if you'd rather have a single aeb number as well. Two leaves here now
 # require it: scala/.tests.ae calls scala's source_layout("maven idiomatic"),
 # a setter that does not exist before 0.308 (on 0.307 the leaf dies with
 # "Undefined function 'source_layout'"), and d/.tests.ae relies on d.test
