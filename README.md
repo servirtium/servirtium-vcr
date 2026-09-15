@@ -289,7 +289,15 @@ to differ: a permissive floor at `0.413.0` plus a known-good release to fetch.
 The floor advertised support for ~250 releases nothing ever tested, and a
 mixed `ae`/`aetherc` pair is a genuinely nasty failure — so "supported" now
 means "tested". The trade: a user with a good-but-different ae gets a fetch
-they didn't strictly need.) The aeb floor is `>= 0.308` (v0.298 made the bundle installer make-free; v0.300 aligned the release asset on `x86_64`; v0.311 is current — and a real floor: `scala/.tests.ae` uses a setter added there, and `d/.tests.ae` relies on its honest test exit codes). The commands below pin that
+they didn't strictly need.) The **aeb** pin is one number on the same policy:
+`AEB_REF` == floor == `v0.311`, the one aeb this repo is verified against — and
+a hard requirement in its own right, since v0.311's SDK needs ae 0.675
+(`fs.make_temp_file`), so the two toolchains move as a pair. (0.308 was the last
+*nameable* aeb requirement — `scala/.tests.ae` uses a setter added there and
+`d/.tests.ae` relies on its honest test exit codes; `bootstrap.sh` keeps that
+history, and notes that the aeb floor is a documentation contract rather than a
+machine-enforced check, because a tarball-installed aeb reports no parseable
+version.) The commands below pin that
 known-good pair; keep their numbers in step with `bootstrap.sh`.
 
 **Recommended — `./bootstrap.sh`.** It installs a pinned `ae` (>= `AE_PIN`) THEN

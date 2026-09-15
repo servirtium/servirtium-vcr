@@ -97,23 +97,38 @@ AE_FETCH="v0.675.0"    # 0.675 is a DISCOVERED REQUIREMENT, not a pin-what-we-ve
                        # see the pin note above); nothing in the engine NEEDS a
                        # 0.668 primitive, so this is a "pin what we verify"
                        # choice, not a discovered requirement.
-# aeb floor: aeb >= 0.308 — a REAL floor, not a ratchet. NOTE the asymmetry
-# with AE_PIN above, which is deliberate: for Aether nobody could name a
-# requirement past 0.413, so that pin was collapsed onto the one version we
-# verify. For aeb there IS a nameable requirement (below), so the floor states
-# it and AEB_REF separately tracks the release we test (currently v0.311).
-# Collapse this one too if you'd rather have a single aeb number as well. Two leaves here now
-# require it: scala/.tests.ae calls scala's source_layout("maven idiomatic"),
-# a setter that does not exist before 0.308 (on 0.307 the leaf dies with
-# "Undefined function 'source_layout'"), and d/.tests.ae relies on d.test
-# propagating the compiler/test exit code instead of tee's — before 0.308 a
-# failing D suite, or one that did not compile at all, reported PASS. groovy
-# additionally needs 0.308's groovyc cache key to notice edited sources.
-# (Earlier history: v0.298 made the bundle installer make-free; v0.300 aligned
-# the release asset on x86_64.) install.sh fetches the latest tag, which
-# satisfies this; an older aeb already on PATH fails loudly — on `import bldr`
-# for the Shape A (b-free bldr.build{}) leaves, or on the missing setter above
-# — rather than silently.
+# ---- aeb pin: ONE number too, matching the AE_PIN policy above.
+#
+#   aeb floor == AEB_REF == v0.311 == the one aeb this repo is VERIFIED against.
+#
+# Collapsed from the old permissive floor (>= 0.308) for the same reason the
+# Aether pin was: every sweep this repo publishes runs on AEB_REF, so a lower
+# floor advertised support for releases nothing verifies. 0.311 is also a hard
+# requirement in its own right now — it is the aeb whose SDK needs ae 0.675
+# (fs.make_temp_file), so the two toolchains move as a pair.
+#
+# Kept for the record, because it is the last nameable aeb requirement and
+# explains why 0.308 was ever the number: scala/.tests.ae calls scala's
+# source_layout("maven idiomatic"), absent before 0.308 (on 0.307 the leaf dies
+# with "Undefined function 'source_layout'"); d/.tests.ae relies on d.test
+# propagating the compiler/test exit code instead of tee's (before 0.308 a
+# failing D suite — or one that did not compile at all — reported PASS); and
+# groovy needs 0.308's groovyc cache key to notice edited sources. (Earlier
+# history: v0.298 made the bundle installer make-free; v0.300 aligned the
+# release asset on x86_64.)
+#
+# HONEST LIMITATION — this floor is a documentation contract, NOT enforced.
+# Step 2 below accepts ANY aeb already on PATH (`command -v aeb` → skip),
+# unlike the ae check, which compares versions. That is not laziness: an aeb
+# installed from a release TARBALL reports
+#     aeb 0.0.0-dev+<hash>   (git unknown, installed <date>)
+# with no parseable version, so a version_ge gate would either reject every
+# tarball install or be trivially fooled. AEB_REF is what gets installed when
+# aeb is ABSENT; when it is present the repo relies on the failure being loud
+# (a missing setter is an "Undefined function" compile error, not a silent
+# wrong answer). If you want it enforced, the fix belongs upstream in aeb —
+# have `aeb --version` report the release it was built from even for tarball
+# installs.
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX

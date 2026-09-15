@@ -43,6 +43,7 @@ Useful env knobs (all optional):
 |---|---|
 | `AE_PIN` | The one `ae` this repo is verified against (`0.675.0`) — deliberately equal to `AE_FETCH`, not a permissive floor; see the pin note atop `bootstrap.sh`. In sourced mode `ae_ensure` requires it. |
 | `AE_FETCH` | The `ae` release to install when the floor isn't met. Defaults to `AE_PIN`. |
+| `AEB_REF` | The one `aeb` this repo is verified against (`v0.311`) — floor and installed release are the same number, same policy as `AE_PIN`. Unlike `AE_PIN` it is not machine-checked: a tarball-installed `aeb` reports no parseable version (see `bootstrap.sh`). |
 | `AETHER_REF` | Explicit `ae` ref — a tag installs the binary; a branch/SHA forces a source build. Overrides the above. |
 | `AEB_REF` | The `aeb` release tag (or positional arg #1 to `get.sh`). Defaults to latest. |
 | `AEB_MIN` | FLOOR: the oldest `aeb` the repo needs (a sourced run warns if the one on PATH is older). |
