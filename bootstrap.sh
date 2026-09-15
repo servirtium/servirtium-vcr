@@ -54,8 +54,22 @@ set -euo pipefail
 # (engine + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.668.0"
-AE_FETCH="v0.668.0"    # verified on ae 0.668.0 + the RELEASED aeb v0.310:
+AE_PIN="0.675.0"
+AE_FETCH="v0.675.0"    # 0.675 is a DISCOVERED REQUIREMENT, not a pin-what-we-verify
+                       # choice: aeb v0.311's SDK refactor calls fs.make_temp_file, a
+                       # stdlib primitive absent before 0.675 (verified missing in
+                       # 0.650/0.668), so building this repo with aeb v0.311 on an
+                       # older ae fails to LINK (undefined reference to
+                       # fs_make_temp_file_raw). aeb and ae genuinely move together.
+                       # VERIFIED on ae 0.675.0 + released aeb v0.311: engine + CLI +
+                       # core_tests (4 leaves) + cli-tests 18/18 + go/rust/js 1/1,
+                       # AND a virginal-debian:13-slim one-liner install→clone→
+                       # `aeb go/.tests.ae` green. The full 29-language sweep was NOT
+                       # re-run on 0.675 (the 0.668 note below records that sweep) —
+                       # only the ae-floor lift was forced; the SDK refactors are
+                       # internal. Re-run the sweep before relying on every leaf.
+                       # ---- (0.668 note, kept — its split-toolchain warning still bites) ----
+                       # verified on ae 0.668.0 + the RELEASED aeb v0.310:
                        # engine + CLI + core_tests (all 6 leaves) + cli-tests,
                        # 28 of the 29 language leaves, all 29 .package.ae, and
                        # all 29 .example.ae — green in sequential sweeps.
@@ -87,7 +101,7 @@ AE_FETCH="v0.668.0"    # verified on ae 0.668.0 + the RELEASED aeb v0.310:
 # with AE_PIN above, which is deliberate: for Aether nobody could name a
 # requirement past 0.413, so that pin was collapsed onto the one version we
 # verify. For aeb there IS a nameable requirement (below), so the floor states
-# it and AEB_REF separately tracks the release we test (currently v0.310).
+# it and AEB_REF separately tracks the release we test (currently v0.311).
 # Collapse this one too if you'd rather have a single aeb number as well. Two leaves here now
 # require it: scala/.tests.ae calls scala's source_layout("maven idiomatic"),
 # a setter that does not exist before 0.308 (on 0.307 the leaf dies with
