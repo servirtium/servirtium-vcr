@@ -259,7 +259,7 @@ tree and builds the full graph in dependency order.
 
 **Prerequisites first.** Two separate needs, don't conflate them:
 
-- **Installing `ae` + `aeb`** needs only `curl` — as of aeb v0.311 the toolchain
+- **Installing `ae` + `aeb`** needs only `curl` — as of aeb v0.312 the toolchain
   installs binary-first with no compiler and no `make` (verified on a clean
   `debian:13-slim`).
 - **Building this repo's engine** (`core/` → `libservirtium_vcr.so`) is what needs
@@ -284,14 +284,14 @@ target, so they install in that order. aeb's
 from a bare clone: prebuilt-binary-first per platform, source fallback otherwise,
 fetching the pinned Aether via Aether's own `get.sh`. The authoritative pins live
 in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` and `AE_FETCH` are now **one
-number** — `0.675.0`, the single ae this repo is *verified* against. (They used
+number** — `0.677.0`, the single ae this repo is *verified* against. (They used
 to differ: a permissive floor at `0.413.0` plus a known-good release to fetch.
 The floor advertised support for ~250 releases nothing ever tested, and a
 mixed `ae`/`aetherc` pair is a genuinely nasty failure — so "supported" now
 means "tested". The trade: a user with a good-but-different ae gets a fetch
 they didn't strictly need.) The **aeb** pin is one number on the same policy:
-`AEB_REF` == floor == `v0.311`, the one aeb this repo is verified against — and
-a hard requirement in its own right, since v0.311's SDK needs ae 0.675
+`AEB_REF` == floor == `v0.312`, the one aeb this repo is verified against — and
+a hard requirement in its own right, since aeb's SDK (v0.311+) needs ae >= 0.675
 (`fs.make_temp_file`), so the two toolchains move as a pair. (0.308 was the last
 *nameable* aeb requirement — `scala/.tests.ae` uses a setter added there and
 `d/.tests.ae` relies on its honest test exit codes; `bootstrap.sh` keeps that
@@ -311,13 +311,13 @@ pinned `ae` (>= `AE_PIN`) THEN a pinned `aeb`, binary-first, into `~/.local`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh \
-  | AE_PIN=0.675.0 AEB_REF=v0.311 sh
+  | AE_PIN=0.677.0 AEB_REF=v0.312 sh
 ```
 
 (Prefer this to `sh -c "$(curl …)"` — the piped form is what `get.sh`'s
 executed-mode guard is built for. If you want a fetch error and install progress
 on your own terminal rather than through the pipe, download first and run the
-file: `curl … -o get.sh && AE_PIN=0.675.0 AEB_REF=v0.311 bash get.sh` — same
+file: `curl … -o get.sh && AE_PIN=0.677.0 AEB_REF=v0.312 bash get.sh` — same
 result.)
 
 ### Optionally: `aeo` (only for the containerized integration tests)
@@ -331,7 +331,7 @@ the same way, and ensures `ae` + `aeb` first (aeo shells them at runtime):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh \
-  | AE_PIN=0.675.0 AEB_REF=v0.311 AEO_REF=v0.2.3 sh
+  | AE_PIN=0.677.0 AEB_REF=v0.312 AEO_REF=v0.2.3 sh
 ```
 
 (Verified binary-first on a clean `debian:13-slim` — no compiler, no `make`.

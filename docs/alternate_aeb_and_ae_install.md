@@ -12,7 +12,7 @@ your platform, and aeb's bundle installer always runs `make`). Install them firs
 equivalent). Everything installs into `~/.local` (no sudo); set `PREFIX=` to
 override, and make sure `$PREFIX/bin` is on your `PATH`.
 
-The pins below (`AE_PIN=0.675.0`, `AEB_REF=v0.311`) mirror this repo's
+The pins below (`AE_PIN=0.677.0`, `AEB_REF=v0.312`) mirror this repo's
 [`bootstrap.sh`](../bootstrap.sh) — keep them in step with it.
 
 ## `get.sh` as a sourceable library (CI)
@@ -24,7 +24,7 @@ temp file, no second script:
 
 ```bash
 . <(curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh)
-AE_PIN=0.675.0 AEB_REF=v0.311 aeb_bootstrap        # ensures ae (>= AE_PIN) THEN aeb
+AE_PIN=0.677.0 AEB_REF=v0.312 aeb_bootstrap        # ensures ae (>= AE_PIN) THEN aeb
 ```
 
 `aeb_bootstrap` ensures `ae` (>= `AE_PIN`) and then `aeb` (they install in that
@@ -41,9 +41,9 @@ Useful env knobs (all optional):
 
 | Var | Meaning |
 |---|---|
-| `AE_PIN` | The one `ae` this repo is verified against (`0.675.0`) — deliberately equal to `AE_FETCH`, not a permissive floor; see the pin note atop `bootstrap.sh`. In sourced mode `ae_ensure` requires it. |
+| `AE_PIN` | The one `ae` this repo is verified against (`0.677.0`) — deliberately equal to `AE_FETCH`, not a permissive floor; see the pin note atop `bootstrap.sh`. In sourced mode `ae_ensure` requires it. |
 | `AE_FETCH` | The `ae` release to install when the floor isn't met. Defaults to `AE_PIN`. |
-| `AEB_REF` | The one `aeb` this repo is verified against (`v0.311`) — floor and installed release are the same number, same policy as `AE_PIN`. Unlike `AE_PIN` it is not machine-checked: a tarball-installed `aeb` reports no parseable version (see `bootstrap.sh`). |
+| `AEB_REF` | The one `aeb` this repo is verified against (`v0.312`) — floor and installed release are the same number, same policy as `AE_PIN`. Unlike `AE_PIN` it is not machine-checked: a tarball-installed `aeb` reports no parseable version (see `bootstrap.sh`). |
 | `AETHER_REF` | Explicit `ae` ref — a tag installs the binary; a branch/SHA forces a source build. Overrides the above. |
 | `AEB_REF` | The `aeb` release tag (or positional arg #1 to `get.sh`). Defaults to latest. |
 | `AEB_MIN` | FLOOR: the oldest `aeb` the repo needs (a sourced run warns if the one on PATH is older). |
@@ -63,7 +63,7 @@ platform with no asset), set `AEB_FROM_SOURCE=1`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh -o get.sh
-AE_PIN=0.675.0 AEB_REF=v0.311 AEB_FROM_SOURCE=1 bash get.sh
+AE_PIN=0.677.0 AEB_REF=v0.312 AEB_FROM_SOURCE=1 bash get.sh
 ```
 
 The source path builds `ae` via Aether's own `get.sh` (`make install`) and `aeb`

@@ -54,20 +54,28 @@ set -euo pipefail
 # (engine + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.675.0"
-AE_FETCH="v0.675.0"    # 0.675 is a DISCOVERED REQUIREMENT, not a pin-what-we-verify
-                       # choice: aeb v0.311's SDK refactor calls fs.make_temp_file, a
-                       # stdlib primitive absent before 0.675 (verified missing in
-                       # 0.650/0.668), so building this repo with aeb v0.311 on an
-                       # older ae fails to LINK (undefined reference to
-                       # fs_make_temp_file_raw). aeb and ae genuinely move together.
-                       # VERIFIED on ae 0.675.0 + released aeb v0.311: engine + CLI +
-                       # core_tests (4 leaves) + cli-tests 18/18 + go/rust/js 1/1,
-                       # AND a virginal-debian:13-slim one-liner install→clone→
-                       # `aeb go/.tests.ae` green. The full 29-language sweep was NOT
-                       # re-run on 0.675 (the 0.668 note below records that sweep) —
-                       # only the ae-floor lift was forced; the SDK refactors are
-                       # internal. Re-run the sweep before relying on every leaf.
+AE_PIN="0.677.0"
+AE_FETCH="v0.677.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
+                       # fs.make_temp_file (see below), and I verified aeb v0.312
+                       # builds this repo fine on ae 0.675. We pin 0.677 anyway to
+                       # track aeb v0.312's own AETHER_PIN (its @c_callback weak-emit
+                       # need — which THIS repo doesn't exercise), keeping "one ae,
+                       # matching the build runner". So 0.677 is a tracking bump; 0.675
+                       # is the requirement.
+                       # Why v0.312 at all: v0.311's SDK hit a SIGSEGV / E0200
+                       # int-narrowing under ae 0.675 in seq_filter (bldr, python,
+                       # dart, gleam, moonbit) — I never tripped it (only ran
+                       # go/rust/js + core on 0.675); aeb's own cold-compile gate
+                       # caught it and v0.312 fixes it. So 0.677/v0.312 is strictly
+                       # better than 0.675/v0.311.
+                       # VERIFIED on ae 0.677.0 + released aeb v0.312: engine + CLI +
+                       # core_tests + cli-tests 18/18 + go/rust/js/gleam 1/1, and the
+                       # previously-crashing python/dart/gleam SDK path now runs with
+                       # NO SIGSEGV/E0200 (python fails only on this box's broken
+                       # pytest; dart only on a stale Dart 3.8.1 vs the binding's
+                       # ^3.12.0 — both environmental). Full 29-language sweep still
+                       # NOT re-run here — that's docs/handover-verify-0675-sweep-on-
+                       # cachyos.md's job (now equally a 0.677 ask).
                        # ---- (0.668 note, kept — its split-toolchain warning still bites) ----
                        # verified on ae 0.668.0 + the RELEASED aeb v0.310:
                        # engine + CLI + core_tests (all 6 leaves) + cli-tests,
@@ -99,7 +107,7 @@ AE_FETCH="v0.675.0"    # 0.675 is a DISCOVERED REQUIREMENT, not a pin-what-we-ve
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.311 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.312 == the one aeb this repo is VERIFIED against.
 #
 # Collapsed from the old permissive floor (>= 0.308) for the same reason the
 # Aether pin was: every sweep this repo publishes runs on AEB_REF, so a lower
