@@ -89,7 +89,48 @@ needs no cabal config. This box has a ghcup GHC 9.10.3 installed but not on
 PATH; the settings above use the system 9.6.6 that the rest of the repo is
 verified against.
 
+## Swift — the two library shims
+
+Swift 6.0.3 on CachyOS won't even print `--version` without two compatibility
+symlinks, because the distro moved on from the sonames the toolchain was built
+against:
+
+```sh
+ln -sf /usr/lib/libncursesw.so.6 ~/.local/lib/libncurses.so.6
+ln -sf /usr/lib/libxml2.so.16    ~/.local/lib/libxml2.so.2
+export LD_LIBRARY_PATH="$HOME/.local/lib:$LD_LIBRARY_PATH"
+```
+
+Without `LD_LIBRARY_PATH` exported, `swift/.tests.ae` fails with
+`swift: error while loading shared libraries: libncurses.so.6` — which looks
+like a binding bug and is not one. The shims are deliberately **not** baked
+into the leaf: pointing a build at a soname the platform doesn't actually
+provide is the sort of thing that should stay an explicit, visible local
+choice rather than something the repo does behind your back.
+
+## Selenium — for the browser integration leaf
+
+`integration/.tests.ae` drives real headless Chrome through the Python
+binding, so it needs `selenium` importable by the *system* `python3` (the leaf
+shells out to bare `python3`):
+
+```sh
+python3 -m pip install --user --break-system-packages selenium
+```
+
+No browser install is needed and none is wanted: Selenium Manager downloads a
+matching Chrome-for-Testing on first run, entirely under `~/.cache`. That
+matters on a box without passwordless sudo, where `pacman -S chromium` is not
+an option — this leaf is still runnable.
+
 ## What's still red after all this
 
 `pharo/.tests.ae` — 6 of 12 error, every record-mode test plus static content;
 playback passes. That one is a real open question, not a missing tool.
+Unchanged on ae 0.677 / aeb v0.312, so it is not a toolchain regression.
+
+`dotnet/…/.tests.ae` and `fsharp/.tests.ae` — red for a reason that has
+nothing to do with dev deps: ae 0.675 regressed closure codegen and emits
+invalid C for aeb's dotnet SDK. See
+[`handover-ae-0675-closure-capture-codegen-bug.md`](handover-ae-0675-closure-capture-codegen-bug.md)
+for the diagnosis and the verified 2-line workaround.

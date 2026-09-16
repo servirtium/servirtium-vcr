@@ -73,9 +73,25 @@ AE_FETCH="v0.677.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # previously-crashing python/dart/gleam SDK path now runs with
                        # NO SIGSEGV/E0200 (python fails only on this box's broken
                        # pytest; dart only on a stale Dart 3.8.1 vs the binding's
-                       # ^3.12.0 — both environmental). Full 29-language sweep still
-                       # NOT re-run here — that's docs/handover-verify-0675-sweep-on-
-                       # cachyos.md's job (now equally a 0.677 ask).
+                       # ^3.12.0 — both environmental).
+                       # SWEEP DONE on CachyOS (the handover's ask): all 34
+                       # .tests.ae leaves, .packages.ae (29 packages) and all 29
+                       # .example.ae green on ae 0.677.0 + released aeb v0.312 —
+                       # EXCEPT pharo (unchanged 6/12, see the 0.668 note) and,
+                       # until aeb ships a 2-line rename, dotnet + fsharp: ae
+                       # 0.675 REGRESSED closure codegen and emits invalid C for
+                       # aeb's dotnet SDK (a closure's own locals get captured as
+                       # cells declared in an already-closed block). Bisected:
+                       # clean on 0.668, broken on 0.675 AND 0.677; aeb's dotnet
+                       # module is byte-identical v0.311->v0.312, so this is an
+                       # Aether bug, not an SDK one. It could not have shown up
+                       # in the 0.675 check above — that box had no .NET SDK, so
+                       # the dotnet path never compiled. Full writeup + the
+                       # verified workaround: docs/handover-ae-0675-closure-
+                       # capture-codegen-bug.md. ruby/swift/integration also need
+                       # env (gem bin on PATH, LD_LIBRARY_PATH for swift's
+                       # libncurses shim, python selenium) — all green once set,
+                       # see docs/dev-setup.md.
                        # ---- (0.668 note, kept — its split-toolchain warning still bites) ----
                        # verified on ae 0.668.0 + the RELEASED aeb v0.310:
                        # engine + CLI + core_tests (all 6 leaves) + cli-tests,
