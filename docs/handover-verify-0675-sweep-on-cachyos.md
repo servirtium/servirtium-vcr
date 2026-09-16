@@ -2,6 +2,14 @@
 
 _2026-09-15. For the sibling running this repo on CachyOS. Short + specific._
 
+> **UPDATE 2026-09-16 (commit cf2db47): now ae 0.677 / aeb v0.312 — sweep against
+> THAT.** aeb v0.312 fixes a v0.311 SDK bug (SIGSEGV/E0200 in seq_filter on ae
+> 0.675, hitting python/dart/gleam/bldr/moonbit) I had missed — so verifying on
+> v0.312 matters MORE, not less. Everything below still applies; just read
+> "0.675/v0.311" as "0.677/v0.312". (0.675 is still the true floor — 0.677 only
+> tracks aeb's own pin.) I re-verified go/rust/js/gleam + core on 0.677; the
+> SDK-gated leaves in the table below remain your box's to check.
+
 ## What I did, and the honest gap
 
 Ratcheted the toolchain **ae 0.668 → 0.675 / aeb v0.310 → v0.311** (commit
