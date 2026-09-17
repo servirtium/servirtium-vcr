@@ -2,7 +2,7 @@
 # One-command casual-dev bootstrap for the servirtium-vcr monorepo.
 #
 # Ensures the Aether toolchain (`ae`) and the build runner (`aeb`) are present
-# and recent enough, then runs `aeb` to build the native VCR engine, the Go
+# and recent enough, then runs `aeb` to build libservirtium_vcr, the Go
 # binding, and the up_poke_down demo.
 #
 # The toolchains are installed via their canonical remote installers — they
@@ -27,14 +27,14 @@ set -euo pipefail
 #
 # This used to be two numbers on two clocks (the aeb repo's
 # AETHER_PIN / AETHER_FETCH pattern): a FLOOR at the oldest ae that could
-# compile the engine, and a KNOWN-GOOD release to fetch when the floor was not
+# compile libservirtium_vcr, and a KNOWN-GOOD release to fetch when the floor was not
 # met. That is the more permissive design, and we have collapsed it on purpose.
 #
 #   AE_PIN == AE_FETCH == the one Aether this repo is VERIFIED against.
 #
 # Why the change. The old floor (0.413.0, the release that moved base64_decode
 # into std.encoding) was the last point at which anyone could name a primitive
-# the engine needs. It was never the oldest ae that actually WORKS here — it
+# libservirtium_vcr needs. It was never the oldest ae that actually WORKS here — it
 # was the oldest nobody had disproved. Every sweep this repo has ever published
 # ran on AE_FETCH, so a permissive floor advertised support for ~250 releases
 # that nothing verifies, and handed anyone sitting in that range a toolchain
@@ -51,12 +51,12 @@ set -euo pipefail
 # cheap, and "supported" now means "tested".
 #
 # Move BOTH numbers together, after a successful build+test on the new release
-# (engine + core_tests + the language sweep). A newer number is not
+# (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
 AE_PIN="0.681.0"
 AE_FETCH="v0.681.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
-                       # fs.make_temp_file, and this repo's engine needs no newer
+                       # fs.make_temp_file, and this repo's libservirtium_vcr needs no newer
                        # primitive. We pin 0.681 to track aeb v0.315's own
                        # AETHER_PIN (0.681.0), keeping "one ae, matching the build
                        # runner". So 0.681 is a tracking bump; 0.675 is the
@@ -75,18 +75,20 @@ AE_FETCH="v0.681.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # anymore — the pinned prebuilt cross-builds the release
                        # matrix as-is.
                        # VERIFIED on ae 0.681.0 + released aeb v0.315 (this box):
-                       # engine build + release/ core matrix 4/4 (linux+macos,
+                       # libservirtium_vcr build + release/ core matrix 4/4 (linux+macos,
                        # x86_64+arm64, cross from Linux) + go/rust .tests.ae 1/1.
                        # The SDK-gated leaves (dotnet/kotlin/scala/haskell/lua/php/
                        # pharo/swift) are unrun here (no SDKs) — sweep them on the
                        # provisioned box; the dotnet closure-codegen bug below
                        # still applies until aeb ships the rename OR ae fixes it.
-                       # ---- CachyOS SWEEP (was done on 0.677/v0.312; re-run on
-                       # 0.681/v0.315): all 34 .tests.ae leaves, .packages.ae (29
-                       # packages) and all 29 .example.ae were green on
-                       # 0.677/v0.312 EXCEPT pharo (unchanged 6/12, see the 0.668
-                       # note) and, until aeb ships a 2-line rename, dotnet +
-                       # fsharp: ae 0.675 REGRESSED closure codegen and emits
+                       # ---- CachyOS SWEEP, NOW RE-RUN ON 0.681/v0.315: all 34
+                       # .tests.ae leaves 33/34, .packages.ae (29 packages) 29/29
+                       # and all 29 .example.ae 29/29 green. The ONE red is pharo
+                       # (unchanged 6/12, see the 0.668 note) — so nothing
+                       # regressed from 0.677/v0.312, which swept the same way.
+                       # dotnet + fsharp are green ONLY with aeb's 2-line rename
+                       # applied locally; unpatched they still fail, because
+                       # ae 0.675 REGRESSED closure codegen and emits
                        # invalid C for
                        # aeb's dotnet SDK (a closure's own locals get captured as
                        # cells declared in an already-closed block). Bisected:
@@ -103,7 +105,7 @@ AE_FETCH="v0.681.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # see docs/dev-setup.md.
                        # ---- (0.668 note, kept — its split-toolchain warning still bites) ----
                        # verified on ae 0.668.0 + the RELEASED aeb v0.310:
-                       # engine + CLI + core_tests (all 6 leaves) + cli-tests,
+                       # libservirtium_vcr + CLI + core_tests (all 6 leaves) + cli-tests,
                        # 28 of the 29 language leaves, all 29 .package.ae, and
                        # all 29 .example.ae — green in sequential sweeps.
                        # 0.668.0 is also what aeb v0.310 pins internally, so
@@ -127,7 +129,7 @@ AE_FETCH="v0.681.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # toolchains (aeb v0.310 pins Aether 0.668.0), so
                        # servirtium builds against the same ae the build runner
                        # ships. AE_PIN moves with it (they are one number now —
-                       # see the pin note above); nothing in the engine NEEDS a
+                       # see the pin note above); nothing in libservirtium_vcr NEEDS a
                        # 0.668 primitive, so this is a "pin what we verify"
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
@@ -222,7 +224,7 @@ case ":$PATH:" in *":$PREFIX/bin:"*) : ;; *) say "tip: add '$PREFIX/bin' to your
 # With explicit args, honor them verbatim. Otherwise, DON'T `aeb --scan` the
 # whole tree — that builds all 29 bindings and is guaranteed to fail on any box
 # lacking a toolchain (every box). Instead, sniff which language toolchains are
-# present and build only those leaves. `core` (the native engine) always
+# present and build only those leaves. `core` (libservirtium_vcr) always
 # builds: it needs only `ae` + a C compiler, which we just ensured.
 #
 # Table rows: "<command-to-probe> <leaf-to-build>". If the command is on PATH,
@@ -231,7 +233,7 @@ case ":$PATH:" in *":$PREFIX/bin:"*) : ;; *) say "tip: add '$PREFIX/bin' to your
 if [ "$#" -gt 0 ]; then
     targets="$*"
 else
-    targets="core/.build.ae core/.cli.ae"  # always — engine + CLI need only ae + cc
+    targets="core/.build.ae core/.cli.ae"  # always — libservirtium_vcr + CLI need only ae + cc
     skipped=""
     while read -r cmd leaf; do
         [ -n "$cmd" ] || continue

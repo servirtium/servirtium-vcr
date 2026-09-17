@@ -3,14 +3,14 @@
 Nothing in this repo is published to a registry. There is no
 `gem push`, no `npm publish`, no NuGet upload — and there may never be. What
 there *is*: **one aeb target per language that builds the distributable
-locally**, in the shape that language's tooling expects, with the native engine
+locally**, in the shape that language's tooling expects, with libservirtium_vcr
 bundled inside it.
 
 ```sh
 ./get-package.sh ruby            # build the gem, copy it to ./out, print how to install it
 ./get-package.sh                 # list the languages
 aeb ruby/.package.ae             # the same thing, if you already have aeb
-aeb .packages.ae                 # every language, one command (~50s, one engine build)
+aeb .packages.ae                 # every language, one command (~50s, one libservirtium_vcr build)
 ```
 
 Piped from a bare machine (clones into `~/.cache/servirtium-vcr`, installs the
@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/servirtium/servirtium-vcr/main/get-
 
 ## Packaging runs no tests
 
-A package step compiles what must be compiled, puts the engine `.so` where that
+A package step compiles what must be compiled, puts `libservirtium_vcr.so` where that
 language's loader or linker will find it, and stops. It does **not** run the
 binding's test suite. That is deliberate: you can build the wheel on a box with
 no `pytest`, the gem with no `rspec`, the jar with no JUnit.
@@ -39,11 +39,11 @@ All three exist for **all 29 languages**, and each `.example.ae` installs the
 way that ecosystem really does — unpacked tarball + pkg-config, a dub or
 SwiftPM path dependency, `Pkg.develop`, a shards-style `lib/` tree, a local
 NuGet feed, relocated OTP apps on `ERL_LIBS` — always with
-`SERVIRTIUM_VCR_LIB` unset, so only the bundled engine can satisfy the load.
+`SERVIRTIUM_VCR_LIB` unset, so only the bundled libservirtium_vcr can satisfy the load.
 
 ## What each language yields
 
-The engine `.so` travels **inside** every artifact below, found either by a
+`libservirtium_vcr.so` travels **inside** every artifact below, found either by a
 baked `rpath` or by the binding's own bundled-`native/` discovery. No consumer
 needs `SERVIRTIUM_VCR_LIB`.
 
@@ -68,7 +68,7 @@ both nupkgs in one directory, so the feed is complete.
 
 ### A source package you point a path dep at
 
-The engine `.so` is staged inside the package tree; the consumer's own build
+`libservirtium_vcr.so` is staged inside the package tree; the consumer's own build
 links or loads it from there.
 
 | Language | Point at it with |
@@ -76,7 +76,7 @@ links or loads it from there.
 | Rust | `servirtium = { path = "…/rust" }` |
 | Go | `go mod edit -replace github.com/servirtium/servirtium-go=…/go` |
 | Nim | `nim c --path:…/nim/src` |
-| Zig | `build.zig`, engine in `zig/native/` |
+| Zig | `build.zig`, libservirtium_vcr in `zig/native/` |
 | Haskell | a path `source-repository-package` |
 | Crystal | `servirtium: {path: "…/crystal"}` in `shard.yml` |
 | Julia | `Pkg.develop(path="…/julia")` |
@@ -89,7 +89,7 @@ links or loads it from there.
 ### A relocatable OTP app (the BEAM four)
 
 `erlang/.package.ae` builds the **one** `servirtium_nif` app —
-engine `.so` in `priv/`, NIF linked `-Wl,-rpath,$ORIGIN` so it finds the engine
+`libservirtium_vcr.so` in `priv/`, NIF linked `-Wl,-rpath,$ORIGIN` so it finds libservirtium_vcr
 beside itself wherever the app is placed. Elixir, Gleam and LFE each stage that
 same app into their own `_build_pkg/`, so every BEAM package is self-contained
 while there is still exactly one NIF in the repo.
@@ -98,6 +98,39 @@ while there is still exactly one NIF in the repo.
 ERL_LIBS=…/erlang/_build_pkg                        # erl, escript, gleam
 SERVIRTIUM_NIF_EBIN=…/servirtium_nif/ebin           # mix (it ignores ERL_LIBS)
 ```
+
+## Getting a package without the Aether toolchain
+
+Building a package normally builds `libservirtium_vcr` from source, which means
+`bootstrap.sh` installs `ae` + `aeb` first. For someone who just wants the gem
+for their language and has never heard of Aether, that is the whole barrier.
+
+`core/.getFromGitHubReleases.ae` removes it. It is a **drop-in substitute
+producer**: instead of compiling `libservirtium_vcr`, it downloads the prebuilt
+one for the host platform from this project's GitHub releases, verifies it
+against the published `.sha256`, caches it under
+`$XDG_CACHE_HOME/servirtium-vcr/<tag>/`, and publishes the *same four artifact
+edges* `core/.build.ae` publishes. Relabel the dependency edge and any package
+node consumes the fetched library:
+
+```sh
+aeb ruby/.package.ae --overrideDep core/.build.ae=core/.getFromGitHubReleases.ae
+```
+
+Needs aeb >= v0.314 (`--overrideDep`) and ae >= 0.681 (`os.arch()`). The node is
+pure Aether stdlib — `http.client`, `cryptography.sha256_file`, `fs.*` — with no
+shelled `curl`/`sha256sum`/`uname`, so it works in a sandbox with no shell.
+
+The release tag comes from the repo-root **`SERVIRTIUM_VCR_VERSION`** file, which
+is the single source of truth — no per-binding tag literal to drift.
+
+**This is not live yet.** It needs a GitHub release whose assets are named
+`libservirtium_vcr-<tag>-<os>-<arch>.{so,dylib,dll}` with `.sha256` sidecars —
+exactly what `release/build.sh` emits and `release/publish.sh` attaches. Until
+someone runs `release/publish.sh`, the node fails with "no such release asset".
+The mechanism itself is proven: pointed at a sibling project's real release, it
+downloaded, followed GitHub's CDN redirect, matched the published checksum, and
+staged and published correctly.
 
 ## Relocatability, and the two bugs it catches
 
@@ -120,7 +153,7 @@ package step exists to catch:
 
 Pick the nearest shape above and copy it. The rules:
 
-1. **`dep("core/.build.ae")`** and take the engine from its `shared_lib`
+1. **`dep("core/.build.ae")`** and take libservirtium_vcr from its `shared_lib`
    artifact — never a hardcoded `target/` path.
 2. **Bundle, don't reference.** Copy the `.so` into the package; a consumer
    must never need this checkout on disk.

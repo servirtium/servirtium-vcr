@@ -1,0 +1,222 @@
+// core/.getFromGitHubReleases.ae — the FETCH substitute producer for libservirtium_vcr
+// .so. Instead of compiling libservirtium_vcr from Aether source, this node
+// downloads the prebuilt libservirtium_vcr for THIS platform from the project's GitHub
+// releases (verified against its published .sha256, cached), stages it, and
+// publishes the SAME artifact edges core/.build.ae publishes — a drop-in
+// producer with no libservirtium_vcr source to build, and no Aether toolchain needed to
+// produce libservirtium_vcr.
+//
+// THIS IS THE DX UNLOCK. A consumer who has never heard of Aether wants their
+// gem/wheel/nupkg, not a compiler. Relabel libservirtium_vcr edge to this node and the
+// whole toolchain requirement collapses to "download one .so":
+//
+//   aeb <lang>/.package.ae --overrideDep core/.build.ae=core/.getFromGitHubReleases.ae
+//
+// so a binding's package/tests node consumes the FETCHED libservirtium_vcr (its
+// dep_artifact reads what this node publishes) rather than building it.
+// Requires aeb >= v0.314 (--overrideDep).
+//
+// PURE Aether stdlib, NO shell-out: http.client (download, following GitHub's
+// CDN redirect), cryptography.sha256_file (verify), fs.* (cache + stage),
+// os.getenv/os.platform/os.arch (locate + release-asset name). No shelled
+// curl/wget/sha256sum/mkdir/cp, and no `uname -m` — os.arch() (aether #2051,
+// ae 0.681+) supplies the CPU-arch token at compile time, which also means it
+// reports the TARGET arch under cross-compile where `uname -m` could not.
+//
+// Modelled on selenium_core/.getFromGitHubReleases.ae, with two deliberate
+// differences for this repo:
+//   1. It publishes FOUR edges, not three. core/.build.ae publishes ldlibdeps
+//      as well, and aeb's java SDK (-Djava.library.path) and go SDK read it via
+//      _read_dep_artifact. Omitting it would make the fetch node a drop-in for
+//      the 73 leaves that read "shared_lib" but silently NOT for the JVM/Go
+//      consumers. (The selenium node publishes three; worth a look there.)
+//   2. It stages to core/native/ too, because this repo bakes that path into
+//      go/servirtium.go's cgo LDFLAGS and the lua/haskell link lines — see
+//      core/.build.ae's COMPAT note.
+//
+// CAVEAT, verified the hard way: core/native/libservirtium_vcr.so is a SHARED
+// IN-TREE PATH that this node and core/.build.ae both write. Whichever ran last
+// wins, and nothing warns you. The published dep_artifact path does NOT have
+// this problem — aeb namespaces it per leaf (target/getFromGitHubReleases/core/
+// lib/ vs target/build/core/lib/), so the two producers' artifacts stay
+// distinct. Only the core/native/ compatibility copy is contended. If you
+// fetch and then want a built lib again (or vice versa), re-run the producer
+// you actually want; a stale core/native/ is the one way a link-time binding
+// (go/lua/haskell) can silently pick up the other producer's .so.
+//
+// It does NOT publish c_header_dirs / c_needs_aether_runtime. Those come from
+// `--emit=lib`'s generated catalog header, which is not a release asset; the C
+// and C++ bindings here carry their own hand-written include/servirtium.h, and
+// nothing in this repo reads those two edges. If that ever changes, the header
+// has to start shipping as a release asset before this node can serve it.
+import bldr
+import std.string
+import std.os
+import std.fs
+import std.http.client
+import std.cryptography
+
+// The libservirtium_vcr gh-release tag this node fetches. Single source of
+// truth: the repo-root SERVIRTIUM_VCR_VERSION file (one dir up from this
+// node's core/ source dir), read at build time so the tag lives in ONE place
+// rather than as a literal in each binding. Falls back to the baked default
+// only if the file is unreadable.
+_tag(srcdir: string) -> string {
+    v, err = fs.read(string.concat(srcdir, "/../SERVIRTIUM_VCR_VERSION"))
+    if string.length(err) > 0 { return "v2.0.0" }
+    t = string.trim(v)
+    if string.length(t) == 0 { return "v2.0.0" }
+    return t
+}
+_repo() -> string { return "servirtium/servirtium-vcr" }
+
+aeb(cap) {
+    bldr.build() {
+        ctx = builder_context()
+        srcdir = bldr.source_dir(ctx)
+        tag = _tag(srcdir)
+        os_ = _os_tag()
+        arch = _arch()
+        ext = _ext(os_)
+
+        // Asset name must match release/build.sh's:
+        //   libservirtium_vcr-<tag>-<os>-<arch>.<ext>
+        asset = string.concat("libservirtium_vcr-", string.concat(tag,
+            string.concat("-", string.concat(os_, string.concat("-",
+            string.concat(arch, string.concat(".", ext)))))))
+        base = string.concat("https://github.com/", string.concat(_repo(),
+            string.concat("/releases/download/", tag)))
+
+        // cache: $XDG_CACHE_HOME (or OS default) /servirtium-vcr/<tag>/<asset>
+        // Keyed by the platform-correct asset name so one cache dir can hold
+        // several platforms' copies without collision.
+        cache_dir = string.concat(_cache_base(os_), string.concat("/servirtium-vcr/", tag))
+        cached = string.concat(cache_dir, string.concat("/", asset))
+        _m = fs.mkdir_p(cache_dir)
+
+        // published .sha256 sidecar ("" if unavailable) — for verify + idempotence.
+        want = _download_text(string.concat(base, string.concat("/", string.concat(asset, ".sha256"))))
+        want = _first_word(want)
+
+        // idempotent: a present, checksum-matching cached copy skips the network.
+        need = 1
+        if fs.exists(cached) == 1 {
+            if string.length(want) == 0 { need = 0 }
+            else {
+                have_hex, _he = cryptography.sha256_file(cached)
+                if have_hex == want { need = 0 }
+            }
+        }
+        if need == 1 {
+            println("libservirtium_vcr: fetching ${asset} from ${_repo()} ${tag}")
+            body, blen = _download_bytes(string.concat(base, string.concat("/", asset)))
+            if blen <= 0 {
+                bldr.fail(ctx, string.concat("fetch failed (no such release asset, or no network): ", asset))
+                return 1
+            }
+            _w = fs.write_binary(cached, body, blen)
+            if string.length(want) > 0 {
+                got, _ge = cryptography.sha256_file(cached)
+                if got != want {
+                    bldr.fail(ctx, string.concat("checksum mismatch for ", asset))
+                    return 1
+                }
+            } else {
+                println("libservirtium_vcr: WARNING — no .sha256 sidecar published for ${asset}; fetched UNVERIFIED")
+            }
+        } else {
+            println("libservirtium_vcr: using cached ${asset}")
+        }
+
+        // Stage under the drop-in NAME core/.build.ae publishes — always
+        // "libservirtium_vcr.so", on every platform. That looks wrong on macOS
+        // (a Mach-O dylib called .so) but it is deliberate: core/.build.ae's
+        // aether.shared_lib does output("libservirtium_vcr.so") unconditionally,
+        // so every consumer in this repo — and every SERVIRTIUM_VCR_LIB path in
+        // the docs — expects that exact name. A drop-in producer that renamed
+        // the artifact per platform would not be a drop-in. dlopen/FFI load by
+        // path and do not care about the extension.
+        tgt = bldr.target_dir(ctx)
+        libdir = string.concat(tgt, "/lib")
+        so_path = string.concat(libdir, "/libservirtium_vcr.so")
+        _m2 = fs.mkdir_p(libdir)
+        _m3 = fs.mkdir_p(string.concat(srcdir, "/native"))
+        _c1 = fs.copy(cached, so_path)
+        _c2 = fs.copy(cached, string.concat(srcdir, "/native/libservirtium_vcr.so"))
+
+        // Publish the exact edge set core/.build.ae publishes (all four).
+        publish_artifact("shared_lib", so_path)
+        publish_artifact("shared_library", so_path)
+        publish_artifact("ldlibdeps", so_path)
+        publish_artifact("shared_library_deps_including_transitive", so_path)
+
+        println("libservirtium_vcr: fetched (${os_}-${arch}) — no Aether build")
+        return 0
+    }
+}
+
+// ---- platform ---------------------------------------------------------------
+
+// os.platform() gives the OS kernel token; map to the release-asset OS word.
+_os_tag() -> string {
+    p = os.platform()
+    if p == "darwin" { return "macos" }
+    return p    // linux / windows / freebsd already match the asset vocabulary
+}
+_ext(os_: string) -> string {
+    if os_ == "macos" { return "dylib" }
+    if os_ == "windows" { return "dll" }
+    return "so"
+}
+
+// _arch() — the CPU-arch word for the release-asset name. os.arch() (aether
+// #2051, ae 0.681+) already returns the normalized ecosystem vocabulary the
+// release assets use ("x86_64" never "amd64", "arm64" never "aarch64"), so no
+// normalizer is needed. Compile-time (no process spawn — works in a sandbox
+// with no shell) AND correct under cross-compile.
+_arch() -> string {
+    return os.arch()
+}
+
+_cache_base(os_: string) -> string {
+    xdg = os.getenv("XDG_CACHE_HOME")
+    if string.length(xdg) > 0 { return xdg }
+    home = os.getenv("HOME")
+    if os_ == "macos" { return string.concat(home, "/Library/Caches") }
+    if os_ == "windows" {
+        la = os.getenv("LOCALAPPDATA")
+        if string.length(la) > 0 { return la }
+        return string.concat(home, "/AppData/Local")
+    }
+    return string.concat(home, "/.cache")
+}
+
+// ---- http (stdlib, redirect-following) --------------------------------------
+
+// GET a URL, following GitHub's CDN redirect, and return (body, length). length
+// <= 0 on any failure. Binary-safe (uses response_body_length, not str length).
+_download_bytes(url: string) -> (string, int) {
+    req = client.request("GET", url)
+    if req == null { return "", 0 }
+    _r = client.set_follow_redirects(req, 5)
+    resp, err = client.send_request(req)
+    if string.length(err) > 0 { return "", 0 }
+    if client.response_status(resp) != 200 { return "", 0 }
+    body = client.response_body(resp)
+    len = client.response_body_length(resp)
+    return body, len
+}
+
+// GET a small text resource (the .sha256 sidecar); "" on any failure.
+_download_text(url: string) -> string {
+    body, len = _download_bytes(url)
+    if len <= 0 { return "" }
+    return body
+}
+
+_first_word(s: string) -> string {
+    t = string.trim(s)
+    sp = string.index_of(t, " ")
+    if sp < 0 { return t }
+    return string.substring(t, 0, sp)
+}
