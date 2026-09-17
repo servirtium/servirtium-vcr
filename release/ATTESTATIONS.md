@@ -1,4 +1,4 @@
-# Attestations — cross-built engine artifacts run on real target hardware
+# Attestations — cross-built core-lib artifacts run on real target hardware
 
 Each record: a SHA256-identified `libservirtium_vcr` artifact that was cross-built
 on one Linux host (`release/build.sh`) and then verified on its actual target OS.
@@ -13,7 +13,7 @@ specific hardware, so never pre-fill or copy one. Say what the suite exercised
 
 ---
 
-_No attestations yet._ The engine cross-builds green for the core matrix
+_No attestations yet._ The core lib cross-builds green for the core matrix
 (`{aarch64,x86_64}-{linux,macos}`) from Linux — but a Linux host cannot *run* an
 arm64-macOS or Windows artifact, so on-target results are recorded here as they
 are produced. Template for the first entry:

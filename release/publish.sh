@@ -92,9 +92,9 @@ plats="$(
   done | sort -u | awk 'NR>1{printf ", "} {printf "%s", $0} END{if (NR) print ""}'
 )"
 
-notes="Cross-built \`libservirtium_vcr\` engine, ${nbin} platform artifact(s) — each with a \`.sha256\` (and a combined \`SHA256SUMS.txt\`): ${plats}.
+notes="Cross-built \`libservirtium_vcr\` core library, ${nbin} platform artifact(s) — each with a \`.sha256\` (and a combined \`SHA256SUMS.txt\`): ${plats}.
 
-This is the libservirtium_vcr shared library only — the one thing that's hard to produce.
+This is the \`libservirtium_vcr\` core library only — the one thing that's hard to produce.
 Point any binding at a downloaded artifact via \`SERVIRTIUM_VCR_LIB=/path/to/lib…\`
 (or your OS loader path). The per-language packages (wheel / gem / jar / …) are
 NOT here — build those from the tagged source with \`aeb <lang>/.package.ae\`.

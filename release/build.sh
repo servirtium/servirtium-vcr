@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-build the engine (libservirtium_vcr) for the release matrix from ONE host,
+# Cross-build the Servirtium core lib (libservirtium_vcr) for the release matrix from ONE host,
 # and emit each artifact with a .sha256 — ready for out-of-band on-target
 # attestation (run the binding suite on real hardware and attest a hash).
 #
@@ -81,7 +81,7 @@ os_of()  { case "$1" in *-linux|*-linux-musl) echo linux;; *-macos) echo macos;;
 arch_of(){ case "$1" in aarch64-*) echo arm64;; x86_64-*) echo x86_64;; *) echo "$1";; esac; }
 ext_of() { case "$1" in *-macos) echo dylib;; *-windows) echo dll;; *) echo so;; esac; }
 
-say "engine: libservirtium_vcr  tag: $TAG"
+say "core lib: libservirtium_vcr  tag: $TAG"
 say "matrix: $MATRIX"
 echo
 
