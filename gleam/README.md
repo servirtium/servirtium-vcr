@@ -67,6 +67,29 @@ Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
 
+**Build the package locally.** Nothing is published to a package registry
+(Hex) yet, so you build the native side yourself. Gleam ships **no** C source of
+its own — the native side is the shared `servirtium_nif` OTP app owned by the
+Erlang binding, which `src/servirtium.gleam` binds to with
+`@external(erlang, "servirtium_nif", ...)`. So:
+
+1. Build the shared Erlang NIF first, per the [Erlang README's "Build the
+   package locally"](../erlang/README.md) (needs a C compiler + Erlang/OTP) —
+   this produces the `servirtium_nif` app.
+2. `gleam` honors `ERL_LIBS`, so point it at the app's parent dir and build/run
+   the Gleam sources normally:
+
+   ```sh
+   # from gleam/
+   ERL_LIBS=/path/to/servirtium_nif/.. gleam test
+   ```
+
+   (`ERL_LIBS` names the directory *containing* `servirtium_nif/`, so its module
+   and `priv/servirtium_nif.so` load the standard OTP way.)
+
+(The `aeb gleam/.package.ae` build stages the shared `servirtium_nif` app beside
+the gleam source; the Gleam modules are compiled by the consumer's own `gleam`.)
+
 Gleam doesn't link this lib directly — it loads the shared Erlang NIF, and it's
 that NIF (`servirtium_nif`) which needs `libservirtium_vcr` present. So the
 download matters one layer down: obtaining/building the Erlang `servirtium_nif`

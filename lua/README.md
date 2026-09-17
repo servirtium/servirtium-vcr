@@ -136,6 +136,26 @@ Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
 
+**Build the package locally.** Nothing is published to a package registry (e.g.
+LuaRocks) yet, so you compile the C extension yourself against the downloaded
+lib. Needs a C compiler (`cc`) plus `lua5.4` and its dev headers (`pkg-config
+--cflags lua5.4` must work). Building the self-contained `dist/` from the repo
+root:
+
+```sh
+mkdir -p dist
+cp lua/servirtium.lua dist/
+cp libservirtium_vcr-v0.1.0-linux-x86_64.so dist/libservirtium_vcr.so
+cc -O2 -shared -fPIC $(pkg-config --cflags lua5.4) lua/csrc/servirtium.c \
+   -L dist -lservirtium_vcr -Wl,-rpath,'$ORIGIN' \
+   -o dist/servirtium_native.so
+```
+
+That leaves a `dist/` holding `servirtium.lua` + the two `.so` beside each other
+(the `$ORIGIN` rpath lets `servirtium_native.so` find `libservirtium_vcr.so`
+without `LD_LIBRARY_PATH`); point `LUA_CPATH`/`LUA_PATH` at it. (The `aeb
+lua/.package.ae` build does exactly this.)
+
 The C extension **links** the lib (its directory baked in as an rpath), so
 point `./build.sh` at the directory holding the downloaded lib, and set
 `SERVIRTIUM_VCR_LIB` to it when running the tests:

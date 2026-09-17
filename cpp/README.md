@@ -72,6 +72,22 @@ Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
 
+**Build the package locally.** Nothing is published to a package registry yet,
+so you build the native pieces yourself. This client is header-only over the C
+client, so its package is exactly the C prefix plus `cpp/include/servirtium.hpp`:
+first build the C prefix as in the [C README's "Build the package
+locally"](../c/README.md) (needs a C compiler), then drop the header-only C++
+layer beside its headers:
+
+```sh
+cp cpp/include/servirtium.hpp dist/include/
+```
+
+There is no separate compile step — `servirtium.hpp` is header-only C++17 over
+the C ABI, so a consumer just adds `-I dist/include -std=c++17` and links the
+same two `.so` from `dist/lib`. (The `aeb cpp/.package.ae` build reuses the C
+prefix and adds this header, plus a `pkg-config` `servirtium-cpp.pc`.)
+
 The lib is resolved at **link time**: this binding links the C client's object
 plus `libservirtium_vcr.so`, so put the downloaded `libservirtium_vcr` where the
 linker's `-L`/rpath finds it (see the by-hand link below).

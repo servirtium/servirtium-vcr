@@ -78,6 +78,19 @@ curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/l
 sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
 ```
 
+**Build the package locally**
+
+Nothing is published to a registry yet, so you assemble the package yourself:
+drop the downloaded library at the package-relative path below, then consume it
+from source (a local/source-tree dependency in your `cabal.project`).
+
+```sh
+# from the haskell binding directory, with libservirtium_vcr-v0.1.0-linux-x86_64.so downloaded:
+mkdir -p native
+cp libservirtium_vcr-v0.1.0-linux-x86_64.so native/libservirtium_vcr.so
+# the package now carries the native library; consume it from source (see this README's usage/examples).
+```
+
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)

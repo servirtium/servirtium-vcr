@@ -78,6 +78,27 @@ Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
 
+**Build the package locally.** Nothing is published to a package registry yet,
+so you compile this binding's bridge library (`libservirtium_c.so`) yourself
+against the downloaded lib. Needs a C compiler (`cc`). Building the whole
+relocatable prefix a C consumer points `-I`/`-L` at — from the repo root, with
+the downloaded library:
+
+```sh
+mkdir -p dist/include dist/lib/pkgconfig
+cp c/include/servirtium.h dist/include/
+cp libservirtium_vcr-v0.1.0-linux-x86_64.so dist/lib/libservirtium_vcr.so
+cc -O2 -std=c99 -fPIC -shared -I c/include c/src/servirtium.c \
+   -L dist/lib -lservirtium_vcr -Wl,-rpath,'$ORIGIN' \
+   -o dist/lib/libservirtium_c.so
+```
+
+That gives you a `dist/` tree (`include/` + `lib/`, both `.so` side by side, the
+`$ORIGIN` rpath letting `libservirtium_c.so` find `libservirtium_vcr.so` beside
+it) that your own program links against — `-lservirtium_c -lservirtium_vcr` plus
+an rpath to `dist/lib`. (The `aeb c/.package.ae` build does exactly this and also
+writes a `pkg-config` `servirtium.pc`.)
+
 The lib is resolved at **link time**: put the downloaded `libservirtium_vcr`
 where the linker's `-L`/rpath finds it (see the by-hand link below), and
 `-lservirtium_vcr` plus an rpath to its directory picks it up.

@@ -67,6 +67,21 @@ without a separate native FFI to maintain.
   ```sh
   export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
   ```
+
+  **Build the package locally.** Nothing is on Maven Central yet, so you install
+  to your **local `~/.m2`** and resolve from there. You'll need a **JDK 22+ and
+  Maven**. The Scala module depends on the Java jar, so build that into `~/.m2`
+  first (it bundles the `.so` — see [java/README.md](../java/README.md#requirements)),
+  then install this module:
+
+  ```sh
+  mvn -q -DskipTests -f scala install
+  ```
+
+  This installs `com.paulhammant.servirtium:servirtium-vcr-scala` to `~/.m2`; a
+  consumer depends on that coordinate and the Java jar (with its bundled `.so`)
+  rides along transitively. The native library is auto-extracted from the
+  classpath at runtime, so a consumer needs **no `SERVIRTIUM_VCR_LIB`**.
 - One server per port — N independent VCR servers can run concurrently, each on
   its own port.
 

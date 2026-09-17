@@ -77,6 +77,24 @@ JNI). It does **not** reimplement Servirtium in Java.
   export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
   ```
 
+  **Build the package locally.** Nothing is on Maven Central yet, so to consume
+  this as a normal Maven/Gradle dependency you install it to your **local
+  `~/.m2`** and resolve from there. You'll need a **JDK 22+ and Maven**. Stage
+  the downloaded `.so` as the jar's bundled resource, then `mvn install` the
+  Java module:
+
+  ```sh
+  mkdir -p java/src/main/resources/native/linux-x64
+  cp libservirtium_vcr-v0.1.0-linux-x86_64.so java/src/main/resources/native/linux-x64/libservirtium_vcr.so
+  (cd java && mvn -q -DskipTests install)
+  ```
+
+  This installs the `servirtium-vcr` jar — with the `.so` bundled inside it — to
+  `~/.m2`, resolvable as `com.paulhammant.servirtium:servirtium-vcr`. A consumer
+  then just depends on that coordinate; `NativeLoader` extracts the bundled
+  library from the classpath at runtime, so a consumer resolving this jar needs
+  **no `SERVIRTIUM_VCR_LIB`**.
+
 ### A flag your build needs
 
 JDK 25 prints a native-access warning unless the calling module is granted

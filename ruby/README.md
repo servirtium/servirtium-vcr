@@ -68,6 +68,17 @@ export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
 
 Fiddle loads the library from that path at runtime.
 
+**Build the package locally.** Nothing is published to RubyGems yet, so build
+the gem yourself — stage the downloaded lib at the fixed path, run `gem build`,
+then install the produced `.gem`:
+
+```sh
+# from the ruby/ binding directory, with the .so downloaded here:
+mkdir -p lib/servirtium/native && cp libservirtium_vcr-v0.1.0-linux-x86_64.so lib/servirtium/native/libservirtium_vcr.so
+gem build servirtium.gemspec
+# -> then install the produced artifact locally: gem install ./servirtium-*.gem
+```
+
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,

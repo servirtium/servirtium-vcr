@@ -62,6 +62,18 @@ managed layer P/Invokes it from that path at runtime:
 export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
 ```
 
+**Build the package locally.** Nothing is published to NuGet yet, so build the
+`.nupkg` yourself — stage the downloaded lib under the project's per-RID runtime
+folder so the pack bundles it, run `dotnet pack`, then add the output directory
+as a local NuGet source (adjust `linux-x64` to your RID):
+
+```sh
+# from the dotnet/ binding directory, with the .so downloaded here:
+mkdir -p Servirtium.Vcr/runtimes/linux-x64/native && cp libservirtium_vcr-v0.1.0-linux-x86_64.so Servirtium.Vcr/runtimes/linux-x64/native/libservirtium_vcr.so
+dotnet pack Servirtium.Vcr -c Release -o pkg
+# -> then use the produced artifact locally: dotnet nuget add source "$PWD/pkg"
+```
+
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,

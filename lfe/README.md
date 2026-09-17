@@ -83,6 +83,29 @@ Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
 
+**Build the package locally.** Nothing is published to a package registry yet,
+so you build both halves yourself. LFE ships **no** C source of its own — the
+native side is the shared `servirtium_nif` OTP app owned by the Erlang binding —
+but it does compile its own BEAM module (`servirtium_lfe`) with `lfec`. Needs
+`lfec`/`lfe` on PATH (plus the C compiler + Erlang/OTP for the NIF). So:
+
+1. Build the shared Erlang NIF first, per the [Erlang README's "Build the
+   package locally"](../erlang/README.md) — this produces the `servirtium_nif`
+   app.
+2. Compile this binding's own LFE module and stage it as an OTP app:
+
+   ```sh
+   mkdir -p servirtium_lfe/ebin
+   lfec -o servirtium_lfe/ebin lfe/src/servirtium_lfe.lfe
+   cp lfe/src/servirtium_lfe.app servirtium_lfe/ebin/servirtium_lfe.app
+   ```
+
+3. Put both apps' parent dir(s) on `ERL_LIBS` so `code:priv_dir` finds the NIF
+   and its `libservirtium_vcr.so`, then run over the BEAM the standard OTP way.
+
+(The `aeb lfe/.package.ae` build assembles both `servirtium_lfe` and the shared
+`servirtium_nif` under one dir a consumer points `ERL_LIBS` at.)
+
 LFE doesn't link this lib directly — it loads the shared Erlang NIF, and it's
 that NIF (`servirtium_nif`) which needs `libservirtium_vcr` present. So the
 download matters one layer down: obtaining/building the Erlang `servirtium_nif`

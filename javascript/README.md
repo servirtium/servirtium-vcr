@@ -67,6 +67,17 @@ export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
 
 koffi loads the library from that path at runtime.
 
+**Build the package locally.** Nothing is published to npm yet, so build the
+tarball yourself — stage the downloaded lib at the fixed path, run `npm pack`,
+then install the produced `.tgz`:
+
+```sh
+# from the javascript/ binding directory, with the .so downloaded here:
+mkdir -p native && cp libservirtium_vcr-v0.1.0-linux-x86_64.so native/libservirtium_vcr.so
+npm install && npm pack
+# -> then install the produced artifact locally: npm install ./servirtium-vcr-*.tgz
+```
+
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,

@@ -107,6 +107,26 @@ Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
 
+**Build the package locally.** Nothing is published to a package registry
+(hex.pm) yet, so you build the native side yourself. Elixir compiles **no** C of
+its own — the native side is the shared `servirtium_nif` OTP app owned by the
+Erlang binding, which `Servirtium.Native` `defdelegate`s onto. So:
+
+1. Build the shared Erlang NIF first, per the [Erlang README's "Build the
+   package locally"](../erlang/README.md) (needs a C compiler + Erlang/OTP) —
+   this produces the `servirtium_nif` app.
+2. Put its parent dir on the BEAM code path via `SERVIRTIUM_NIF_EBIN` (mix does
+   not fold `ERL_LIBS` in — see below), then compile and run the Elixir sources
+   with `mix`:
+
+   ```sh
+   mix deps.get
+   SERVIRTIUM_NIF_EBIN=/path/to/servirtium_nif/ebin mix test
+   ```
+
+(The `aeb elixir/.package.ae` build stages the shared `servirtium_nif` app beside
+the mix source; the Elixir BEAM modules are compiled by the consumer's own `mix`.)
+
 The FFI is a **C NIF** that links `libservirtium_vcr` at **build** time (not a
 runtime `dlopen`): point `SERVIRTIUM_VCR_LIB` at the downloaded library so the
 NIF build/load resolves it against that `.so`. This is separate from

@@ -72,6 +72,17 @@ export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
 
 (If you have the repo checked out, `pip install ./python` works the same way.)
 
+**Or build a wheel.** Nothing is published to PyPI yet for 2.0, so you can build
+a self-contained wheel yourself — stage the downloaded lib at the fixed path,
+run `python3 -m build --wheel`, then install the produced wheel:
+
+```sh
+# from the python/ binding directory, with the .so downloaded here:
+mkdir -p servirtium/native && cp libservirtium_vcr-v0.1.0-linux-x86_64.so servirtium/native/libservirtium_vcr.so
+python3 -m build --wheel
+# -> then install the produced artifact locally: pip install dist/*.whl
+```
+
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,

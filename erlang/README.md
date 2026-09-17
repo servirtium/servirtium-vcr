@@ -68,6 +68,31 @@ Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
 
+**Build the package locally.** Nothing is published to a package registry
+(hex.pm) yet, so you compile the shared `servirtium_nif` OTP app yourself against
+the downloaded lib. This is the **one** NIF the whole BEAM family (Elixir,
+Gleam, LFE) then reuses. Needs a C compiler (`cc`) and Erlang/OTP (`erl`,
+`erlc`). Building the relocatable app under `servirtium_nif/` from the repo root,
+with the downloaded library:
+
+```sh
+mkdir -p servirtium_nif/ebin servirtium_nif/priv
+cp libservirtium_vcr-v0.1.0-linux-x86_64.so servirtium_nif/priv/libservirtium_vcr.so
+ERTS_INC=$(erl -noshell -eval 'io:format("~s/usr/include",[code:root_dir()]),halt()')
+cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I"$ERTS_INC" -shared \
+   erlang/c_src/servirtium_nif.c \
+   -L servirtium_nif/priv -lservirtium_vcr -Wl,-rpath,'$ORIGIN' \
+   -o servirtium_nif/priv/servirtium_nif.so
+erlc -o servirtium_nif/ebin erlang/src/servirtium_nif.erl erlang/src/servirtium.erl
+cp erlang/src/servirtium_nif.app servirtium_nif/ebin/servirtium_nif.app
+```
+
+That leaves a `servirtium_nif` OTP app (`ebin/` + `priv/`, `libservirtium_vcr.so`
+beside the NIF with a `$ORIGIN` rpath, so no `SERVIRTIUM_VCR_LIB` and no
+`LD_LIBRARY_PATH`). Put its **parent** dir on `ERL_LIBS` and `code:priv_dir` finds
+the `.so` the standard OTP way. (The `aeb erlang/.package.ae` build does exactly
+this.)
+
 The C NIF (`c_src/servirtium_nif.c`) links this lib at **build time**: drop the
 downloaded `libservirtium_vcr` in as `core/native/libservirtium_vcr.so` where
 the NIF build's `-L`/rpath finds it (the rpath it embeds points at
