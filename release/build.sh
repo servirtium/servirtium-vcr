@@ -16,7 +16,9 @@
 #
 # Usage:
 #   release/build.sh                    # core matrix (linux+macos x86_64/arm64)
-#   RELEASE_EXTRA_TARGETS=1 release/build.sh   # + windows (slow) + freebsd (needs sysroot)
+#   RELEASE_EXTRA_TARGETS=1 release/build.sh   # + windows (slow) + freebsd-x86_64
+#                                                (freebsd auto-picks a per-arch base
+#                                                 from CROSSBUILD_BASES; skips if absent)
 #   RELEASE_TAG=v1.2.3 release/build.sh  # stamp the tag into artifact names
 #                                          (default: `git describe`, else "dev")
 #   TARGETS="aarch64-macos" release/build.sh   # override the matrix entirely
@@ -51,6 +53,29 @@ fi
 DIST="$ROOT/release/dist"
 rm -rf "$DIST"; mkdir -p "$DIST"
 
+# FreeBSD cross needs an ARCH-SPECIFIC base sysroot: sys/_ucontext.h pulls the
+# arch's <machine/ucontext.h> (where mcontext_t lives), so an x86_64 base cannot
+# satisfy an aarch64 target and vice-versa. `ae build` reads the base from the
+# AETHER_SYSROOT env var, so we must point it at the RIGHT base per target arch,
+# not share one value across the whole matrix.
+#   CROSSBUILD_BASES : dir holding <cpu>-freebsd<ver> base sysroots
+#                      (default: aether-crossbuild's bases/)
+#   FREEBSD_VER      : FreeBSD major used in the base dir name (default 15)
+# An explicit AETHER_SYSROOT in the environment still wins (single-target use),
+# but for a multi-arch run leave it unset and let this resolve per target.
+CROSSBUILD_BASES="${CROSSBUILD_BASES:-$HOME/scm/aether-crossbuild/bases}"
+FREEBSD_VER="${FREEBSD_VER:-15}"
+# echo the base-sysroot path for a freebsd triple, or empty if none is present.
+freebsd_base_of() {
+  case "$1" in
+    aarch64-*) _cpu=aarch64 ;;
+    x86_64-*)  _cpu=x86_64 ;;
+    *) echo ""; return ;;
+  esac
+  _b="$CROSSBUILD_BASES/${_cpu}-freebsd${FREEBSD_VER}"
+  [ -d "$_b" ] && echo "$_b" || echo ""
+}
+
 # triple -> {os, arch, extension} for the artifact name.
 os_of()  { case "$1" in *-linux|*-linux-musl) echo linux;; *-macos) echo macos;; *-windows) echo windows;; *-freebsd) echo freebsd;; *) echo unknown;; esac; }
 arch_of(){ case "$1" in aarch64-*) echo arm64;; x86_64-*) echo x86_64;; *) echo "$1";; esac; }
@@ -67,10 +92,17 @@ for t in $MATRIX; do
   out="$DIST/$name"
   log="$DIST/.$t.log"
 
-  # FreeBSD needs a base sysroot; skip loudly rather than fail if it's absent.
-  if [ "$os" = "freebsd" ] && [ -z "${AETHER_SYSROOT:-}" ]; then
-    say "SKIP $t — set AETHER_SYSROOT to a FreeBSD base sysroot (see aether-crossbuild)"
-    continue
+  # FreeBSD needs an ARCH-SPECIFIC base sysroot. Resolve it per target: an
+  # explicit AETHER_SYSROOT wins (single-target use), else pick the base matching
+  # THIS target's arch. Skip loudly if none is present — never fall back to a
+  # different-arch base (that yields the `mcontext_t` mismatch).
+  TARGET_SYSROOT=""
+  if [ "$os" = "freebsd" ]; then
+    TARGET_SYSROOT="${AETHER_SYSROOT:-$(freebsd_base_of "$t")}"
+    if [ -z "$TARGET_SYSROOT" ]; then
+      say "SKIP $t — no ${arch} FreeBSD base sysroot (looked in $CROSSBUILD_BASES for *-freebsd${FREEBSD_VER}; see aether-crossbuild)"
+      continue
+    fi
   fi
 
   printf 'release:   %-18s -> %s ... ' "$t" "$name"
@@ -80,7 +112,10 @@ for t in $MATRIX; do
   #   path: ae's cross path (--target) does not resolve a relative --extra from
   #   CWD (the native path was forgiving; an absolute path builds on every
   #   target). --size strips. Built from core/ so `import vcr` resolves.
+  # Export AETHER_SYSROOT scoped to THIS build (the per-arch base for freebsd,
+  # empty otherwise) — inside the subshell so it never leaks to the next target.
   if ( cd "$ROOT/core" \
+       && export AETHER_SYSROOT="$TARGET_SYSROOT" \
        && ae build --emit=lib --with=fs,net --size --target="$t" \
             embed.ae --extra "$ROOT/core/_embed_strdup.c" -o "$out" ) >"$log" 2>&1; then
     ( cd "$DIST" && sha256sum "$name" > "$name.sha256" )
