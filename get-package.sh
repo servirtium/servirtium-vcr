@@ -12,7 +12,7 @@
 # `<lang>/.package.ae` — and then copies the resulting artifact into ./out/
 # (override with OUT=) and prints the exact command to consume it.
 #
-# PACKAGING RUNS NO TESTS. It builds the engine .so, bundles it where that
+# PACKAGING RUNS NO TESTS. It builds the libservirtium_vcr.so, bundles it where that
 # language's loader or linker expects it, and stops. So this works on a box
 # with no pytest, no rspec, no JUnit — you get the gem/wheel/nupkg regardless.
 # (The test suites are `aeb <lang>/.tests.ae`; the install-from-scratch proofs
@@ -73,7 +73,7 @@ TABLE
 }
 
 list_langs() {
-    say "servirtium-vcr — 29 language bindings over one native engine"
+    say "servirtium-vcr — 29 language bindings over one libservirtium_vcr"
     echo
     langs_table | awk '{printf "%s ", $1}' | fold -s -w 70 | sed 's/^/  /'
     echo
@@ -103,7 +103,7 @@ consume_hint() {
         rust:*)       note "servirtium = { path = \"$_dest\" }        # in Cargo.toml" ;;
         go:*)         note "go mod edit -replace github.com/servirtium/servirtium-go=$_dest" ;;
         nim:*)        note "nim c --path:$_dest/src your_test.nim" ;;
-        zig:*)        note "point your build.zig at $_dest (engine .so in $_dest/native)" ;;
+        zig:*)        note "point your build.zig at $_dest (libservirtium_vcr.so in $_dest/native)" ;;
         haskell:*)    note "cabal build with a path source-repository-package at $_dest" ;;
         crystal:*)    note "dependencies:  servirtium: {path: $_dest}   # in shard.yml" ;;
         swift:*)      note ".package(path: \"$_dest\")                  # in Package.swift" ;;
@@ -113,7 +113,7 @@ consume_hint() {
                       note "com.paulhammant.servirtium:servirtium-vcr$( [ "$_lang" = java ] || echo "-$_lang" ):2.0.0-SNAPSHOT" ;;
     esac
     echo
-    note "The engine .so travels inside the package; no SERVIRTIUM_VCR_LIB needed."
+    note "The libservirtium_vcr.so travels inside the package; no SERVIRTIUM_VCR_LIB needed."
 }
 
 # ---- locate a checkout to build in --------------------------------------

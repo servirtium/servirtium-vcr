@@ -3,7 +3,7 @@
 // A standalone Gleam project that depends on the servirtium_gleam package (path
 // dep) and replays the canonical tape via `gleam run`. The shared servirtium_nif
 // OTP app (built $ORIGIN-relocatable by erlang/.package.ae) is on the code path
-// via ERL_LIBS; the engine .so loads through the NIF's $ORIGIN rpath, with no
+// via ERL_LIBS; the libservirtium_vcr.so loads through the NIF's $ORIGIN rpath, with no
 // SERVIRTIUM_VCR_LIB.
 import bldr
 import std.os

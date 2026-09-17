@@ -36,7 +36,7 @@ already have both toolchains.
 ## Build the native library
 
 The native library is built from the **in-repo** Aether VCR embedding
-module, `core/embed.ae` (which imports the pure-Aether engine in
+module, `core/embed.ae` (which imports libservirtium_vcr in
 `core/vcr.ae`) — no Aether source checkout beyond this repo is needed. The
 build is driven by `aeb` (the Aether build runner); `bootstrap.sh` installs
 `ae`/`aeb` and runs it for you. Under the hood the native step is:
@@ -49,7 +49,7 @@ ae build --emit=lib --with=fs,net core/embed.ae \
 - `--emit=lib` produces a shared library with `aether_*` exports.
 - `--with=fs,net` grants the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC`
-  Aether runtime, and the engine's whole-tape rewrites use `std.regex` —
+  Aether runtime, and libservirtium_vcr's whole-tape rewrites use `std.regex` —
   **Aether ≥ 0.227.0**.
 
 This produces the **host platform's** RID only. The native libs are

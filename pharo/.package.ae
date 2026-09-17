@@ -1,8 +1,8 @@
 // Third-party-consumer PACKAGE stage for the Pharo binding.
 // A Pharo consumer loads the Servirtium package into their image via a
-// Metacello baseline and pins the engine explicitly with
+// Metacello baseline and pins libservirtium_vcr explicitly with
 // `ServirtiumLibrary libPath: anAbsolutePath` (the binding's first-class
-// native-lib override). This stages the freshly-built engine .so into
+// native-lib override). This stages the freshly-built libservirtium_vcr.so into
 // pharo/native/ so there is a bundled path to point at. Deps core/.build.ae;
 // publishes the pharo package dir.
 import bldr
@@ -22,7 +22,7 @@ aeb(cap) {
         }
 
         publish_artifact("package_dir", "${_get("root")}/pharo")
-        println("pharo package: staged engine .so into pharo/native/ (Pharo package ready)")
+        println("pharo package: staged libservirtium_vcr.so into pharo/native/ (Pharo package ready)")
         return 0
     }
 }

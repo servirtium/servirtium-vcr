@@ -11,7 +11,7 @@ build/
 dist/
 
 # native build artifacts — staged fresh by python/.package.ae (copies the
-# engine .so from core/native/ into the package tree before `python -m build`).
+# libservirtium_vcr.so from core/native/ into the package tree before `python -m build`).
 # Build-only; never commit the binary.
 servirtium/native/*.so
 servirtium/native/*.dylib

@@ -27,13 +27,13 @@ aeb(cap) {
         }
     
         // The consumer's project config: reference the local package and tell cabal
-        // where the engine .so lives (absolute extra-lib-dirs + baked rpath).
+        // where the libservirtium_vcr.so lives (absolute extra-lib-dirs + baked rpath).
         proj = "packages: .\n          ${pkg}\n"
         _w1 = io.write_file("${consumer}/cabal.project", proj)
         // Arch ships a dynamic-only GHC (no static libs), so cabal's default static
         // build fails ("files missing in base"). `shared: True` +
         // `executable-dynamic: True` build every unit dynamically. The
-        // servirtium-haskell stanza points the linker at the bundled engine .so.
+        // servirtium-haskell stanza points the linker at the bundled libservirtium_vcr.so.
         projlocal = "library-vanilla: False\nshared: True\nexecutable-dynamic: True\n\npackage servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
         _w2 = io.write_file("${consumer}/cabal.project.local", projlocal)
     

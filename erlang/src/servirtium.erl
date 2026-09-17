@@ -12,7 +12,7 @@
 %%
 %% All record/replay machinery — markdown parse/emit, the HTTP server, request
 %% matching, redactions, drift detection, etc. — lives in the in-repo Aether
-%% `core/vcr.ae` engine. This module only drives the control surface through
+%% `core/vcr.ae` libservirtium_vcr. This module only drives the control surface through
 %% the C NIF in servirtium_nif (which is the Elixir binding's C NIF, retargeted
 %% to the `servirtium_nif` module).
 %%

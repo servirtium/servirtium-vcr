@@ -2,7 +2,7 @@
 //
 // A separate project that depends on `servirtium` via pub (a `path:` dep here;
 // a hosted dep resolves identically). It imports `package:servirtium/...`,
-// self-locates the native engine .so that ships inside the resolved package
+// self-locates the native libservirtium_vcr.so that ships inside the resolved package
 // (lib/native/), and replays the canonical Servirtium tape — with no
 // SERVIRTIUM_VCR_LIB, proving the package is self-contained.
 //
@@ -64,7 +64,7 @@ Future<void> main(List<String> args) async {
   switch (mode) {
     case 'explicit':
       if (!File(bundledSo).existsSync()) {
-        fail('bundled engine .so missing from the resolved package: $bundledSo');
+        fail('bundled libservirtium_vcr.so missing from the resolved package: $bundledSo');
       }
       await play(Vcr.playback(tape, nativeLib: bundledSo));
       stdout.writeln('ok: explicit nativeLib: playback (bundled .so $bundledSo)');

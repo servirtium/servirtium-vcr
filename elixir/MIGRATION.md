@@ -24,7 +24,7 @@ compatibility with the old API.
 
 | Before (1.x) | After (2.0) |
 |---|---|
-| `plug_cowboy` + `reverse_proxy_plug` HTTP proxy | the embedded Aether HTTP server (in the engine) |
+| `plug_cowboy` + `reverse_proxy_plug` HTTP proxy | the embedded Aether HTTP server (in libservirtium_vcr) |
 | `Servirtium.Markdown` parse/emit | Aether core markdown parse/emit |
 | `ServirtiumPlayback` / `ServirtiumRecorder` | Aether core dispatch/record |
 | `httpoison` for forwarding | Aether core forwarding (record mode) |

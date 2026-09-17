@@ -2,7 +2,7 @@
 //
 // A standalone Maven project that depends only on the installed Kotlin DSL jar
 // (servirtium-vcr-kotlin, from ~/.m2) and replays the canonical tape through
-// the `playback { }` DSL — the engine .so arrives transitively via the
+// the `playback { }` DSL — the libservirtium_vcr.so arrives transitively via the
 // servirtium-vcr jar resource, with no SERVIRTIUM_VCR_LIB.
 import bldr
 import std.os

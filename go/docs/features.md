@@ -4,7 +4,7 @@ Servirtium capability checklist (record, playback, redaction/mutation, header
 removal, whole-tape normalization, notes, drift, static bypass, strict
 matching, markdown interop, diagnostics), mapped through the stack. "Test" =
 exercised by the binding's `*_test.go` suite against the real native library,
-unless noted as a core probe (the shared engine's `core_tests/`).
+unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 
 | Capability | Aether core | embed C-ABI | Go API | Test |
 |---|:---:|:---:|---|:---:|
@@ -34,7 +34,7 @@ unless noted as a core probe (the shared engine's `core_tests/`).
 | One server per port (N servers / process) | ✅ | ✅ | (each `Start()` owns its handle) | ✅ core probe |
 
 The two whole-tape rewrites and one server per port are proven at the
-shared-engine level: `core_tests/normalize_probe.ae` (whole-tape) and
+shared-libservirtium_vcr level: `core_tests/normalize_probe.ae` (whole-tape) and
 `core_tests/.concurrent.ae` (two playback VCRs in one process on two ports,
 each replaying its own tape with independent cursors/diagnostics).
 

@@ -44,7 +44,7 @@ servirtium = { git = "https://github.com/servirtium/servirtium-rust" }
 
 The native library is loaded at runtime. The crate looks for it (in order)
 at `$SERVIRTIUM_VCR_LIB`, then `native/libservirtium_vcr.{so,dylib}` next to
-the crate, then via the OS loader. Build the shared engine from `core/`
+the crate, then via the OS loader. Build libservirtium_vcr from `core/`
 (needs the Aether `ae` toolchain — see [docs/building.md](docs/building.md))
 or set `SERVIRTIUM_VCR_LIB` to a prebuilt copy.
 
@@ -76,7 +76,7 @@ for the model, and `tests/` for worked examples.
 ## Building from source
 
 ```sh
-# build the shared engine from core/, then point tests at it:
+# build libservirtium_vcr from core/, then point tests at it:
 SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so cargo test
 ```
 

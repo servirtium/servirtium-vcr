@@ -37,7 +37,7 @@ Lua or C.
 Two modules ship:
 
 - `servirtium_native.so` — the compiled C extension, a thin 1:1 wrapper over the
-  engine ABI (`require("servirtium_native")`).
+  libservirtium_vcr ABI (`require("servirtium_native")`).
 - `servirtium.lua` — the idiomatic Lua surface (`require("servirtium")`): the
   `playback` / `record` builders with chainable config and a `Server` object.
 
@@ -92,15 +92,15 @@ Module constants:
 See [docs/usage.md](docs/usage.md) for worked examples and
 [docs/features.md](docs/features.md) for the capability matrix.
 
-Caller-owned `char*` returns from the engine are copied into Lua strings and
+Caller-owned `char*` returns from libservirtium_vcr are copied into Lua strings and
 freed (`aether_vcr_embed_free_string`) inside the C module, per the ABI's
-ownership rule. Mutation setters return the engine's error string (`""` on
+ownership rule. Mutation setters return libservirtium_vcr's error string (`""` on
 success); the builders raise a Lua error on a non-empty result.
 
 ## Build
 
 `lua5.4` and its dev headers are required (`pkg-config --cflags lua5.4` must
-work), plus a C compiler (`cc`). Build the shared engine from `core/` first (see
+work), plus a C compiler (`cc`). Build libservirtium_vcr from `core/` first (see
 the repo root), then compile the extension:
 
 ```sh
@@ -115,7 +115,7 @@ cc -O2 -shared -fPIC $(pkg-config --cflags lua5.4) csrc/servirtium.c \
    -o servirtium_native.so
 ```
 
-The `-Wl,-rpath` bakes the engine's directory into the module, so
+The `-Wl,-rpath` bakes libservirtium_vcr's directory into the module, so
 `libservirtium_vcr.so` is found at runtime without `LD_LIBRARY_PATH`. See
 [docs/building.md](docs/building.md).
 
@@ -147,7 +147,7 @@ method+body, then kills it. Recorded tapes are written to the OS temp dir, never
 into `tapes/`.
 
 With [aeb](https://github.com/aether-lang-dev/aeb): `aeb lua/.tests.ae` builds
-the engine `.so`, compiles the extension, and runs the whole suite.
+`libservirtium_vcr.so`, compiles the extension, and runs the whole suite.
 
 ## Concurrency: one server per port
 

@@ -4,7 +4,7 @@
 Proves the core of the browser-driven Servirtium test model: a Servirtium VCR
 both *serves a web page* (static-content mount) and *replays the page's XHR*
 from a tape — same-origin, so no CORS. This is the plumbing the full
-TodoBackend Mocha suite rides on. The engine is shared, so hosting it from the
+TodoBackend Mocha suite rides on. libservirtium_vcr is shared, so hosting it from the
 Python binding proves the browser-facing behaviour for every binding.
 
 Run via integration/.tests.ae (sets SERVIRTIUM_VCR_LIB + PYTHONPATH), or:

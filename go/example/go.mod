@@ -1,6 +1,6 @@
 // Third-party consumer example for the Go binding. Depends on the servirtium-go
 // module and points it (via replace) at the packaged copy under target/go-pkg
-// (which carries the bundled native/ .so). The engine .so self-locates via the
+// (which carries the bundled native/ .so). The libservirtium_vcr.so self-locates via the
 // module's cgo rpath (${SRCDIR}/native) — no SERVIRTIUM_VCR_LIB.
 module servirtium.example/consumer
 

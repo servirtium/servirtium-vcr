@@ -209,4 +209,4 @@ mutations, and diagnostics, with no cross-talk (see
 [architecture.md](architecture.md#concurrency-one-server-per-port)). Each fixture's config is scoped
 to its handle, so settings never leak between fixtures. The bundled Jest config
 still runs `--runInBand`, but only because the suite shares one fixed test port,
-not because the engine is single-server.
+not because libservirtium_vcr is single-server.

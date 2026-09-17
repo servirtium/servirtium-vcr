@@ -1,26 +1,26 @@
 /*
- * servirtium.c — a Lua 5.4 C extension binding the shared Aether VCR engine.
+ * servirtium.c — a Lua 5.4 C extension binding libservirtium_vcr.
  *
  * This is the PORTABLE binding path for Lua: a hand-written C extension module
- * using the Lua 5.4 C API (NOT LuaJIT FFI). It links the single shared engine
+ * using the Lua 5.4 C API (NOT LuaJIT FFI). It links the single shared libservirtium_vcr
  * artifact (core/native/libservirtium_vcr.so) at build time via -L/-l and an
  * embedded rpath, then exposes an idiomatic Lua surface via require("servirtium").
  *
- * The engine's opaque server handle (void*) is carried across the Lua boundary
- * as a light userdata. Caller-owned char* returns from the engine are copied
+ * libservirtium_vcr's opaque server handle (void*) is carried across the Lua boundary
+ * as a light userdata. Caller-owned char* returns from libservirtium_vcr are copied
  * into a Lua string and then freed with aether_vcr_embed_free_string per the
  * ABI's ownership rule.
  *
  * The externs below mirror the aether_vcr_embed_* C ABI exported by
  * core/embed.ae (see rust/src/native.rs and go/servirtium.go for the full
- * table). We declare them here rather than depending on an engine header.
+ * table). We declare them here rather than depending on an libservirtium_vcr header.
  */
 
 #include <lua.h>
 #include <lauxlib.h>
 #include <stddef.h>
 
-/* ---- engine C ABI (aether_vcr_embed_*) ---------------------------------- */
+/* ---- libservirtium_vcr C ABI (aether_vcr_embed_*) ---------------------------------- */
 
 /* lifecycle */
 extern void *aether_vcr_embed_open_playback(const char *label,
@@ -99,7 +99,7 @@ static void *check_handle(lua_State *L, int idx)
     return NULL; /* unreachable */
 }
 
-/* Push a caller-owned engine char* as a Lua string, then free it. A NULL
+/* Push a caller-owned libservirtium_vcr char* as a Lua string, then free it. A NULL
  * pointer becomes an empty string. Returns 1 (one value pushed). */
 static int push_owned_string(lua_State *L, char *s)
 {

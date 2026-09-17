@@ -7,8 +7,8 @@
 // nothing from this repo.
 //
 // That app is not rebuilt here; it is copied from erlang/.package.ae's
-// RELOCATABLE build (engine .so in priv/, NIF linked `-Wl,-rpath,$ORIGIN`)
-// into gleam/_build_pkg, so the Gleam package is self-contained — one engine,
+// RELOCATABLE build (libservirtium_vcr.so in priv/, NIF linked `-Wl,-rpath,$ORIGIN`)
+// into gleam/_build_pkg, so the Gleam package is self-contained — one libservirtium_vcr,
 // one NIF, one rpath story for the whole BEAM family. `gleam` honors ERL_LIBS,
 // so a consumer points that at the staged dir and needs no
 // SERVIRTIUM_VCR_LIB.

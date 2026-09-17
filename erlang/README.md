@@ -38,7 +38,7 @@ each compiling their own copy of the C source. There is exactly one
 
 ## Layout
 
-- `c_src/servirtium_nif.c` — the C NIF over the engine's C-ABI (links
+- `c_src/servirtium_nif.c` — the C NIF over libservirtium_vcr's C-ABI (links
   `core/native/libservirtium_vcr.so`, embedding its dir as an rpath).
 - `src/servirtium_nif.erl` — the loader/stub module the NIF replaces at load
   time; one `erlang:nif_error(not_loaded)` body per `nif_funcs[]` entry.
@@ -54,11 +54,11 @@ each compiling their own copy of the C source. There is exactly one
 ## Building and testing
 
 `.build.ae` builds the shared `servirtium_nif` OTP app once: `cc` compiles the
-C NIF `.so` (linking the engine, rpath-embedding `core/native`), `erlc` compiles
+C NIF `.so` (linking libservirtium_vcr, rpath-embedding `core/native`), `erlc` compiles
 the `.erl` modules, and the `.app` resource is staged — all under
 `_build/servirtium_nif/{ebin,priv}`. Consumers (this binding, plus Elixir and
 Gleam) put that app on the code path with **ERL_LIBS** so `code:priv_dir` finds
-the `.so`. Run it through the monorepo build (which also builds the engine):
+the `.so`. Run it through the monorepo build (which also builds libservirtium_vcr):
 
 ```sh
 aeb erlang/.tests.ae      # deps erlang/.build.ae + core; ERL_LIBS=_build escript

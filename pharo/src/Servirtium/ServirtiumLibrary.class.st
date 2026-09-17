@@ -1,5 +1,5 @@
 "
-I am the raw UnifiedFFI (uFFI) surface over the native VCR engine
+I am the raw UnifiedFFI (uFFI) surface over libservirtium_vcr
 (libservirtium_vcr.so / .dylib), which exports the `aether_vcr_embed_*`
 C-ABI built from the in-repo `core/embed.ae` (the embedding layer over
 `core/vcr.ae`, built on Aether stdlib primitives).
@@ -13,7 +13,7 @@ repository's `native/` library. uFFI dlopen's that path directly. The path
 is resolved at runtime from (in order):
   1. the `SERVIRTIUM_VCR_LIB` OS environment variable (an absolute file
      path) — set by run-tests.sh / bootstrap.sh so the binding finds the
-     freshly built engine regardless of where the repo lives;
+     freshly built libservirtium_vcr regardless of where the repo lives;
   2. the `LibPathOverride` class variable, settable via
      `ServirtiumLibrary libPath: aString` from a consumer's baseline;
   3. the committed default below.
@@ -46,7 +46,7 @@ ServirtiumLibrary class >> defaultLibPath [
 	"Last-resort fallback when neither SERVIRTIUM_VCR_LIB nor #libPath:
 	 provides one: a bundled native/ copy next to the image's working
 	 directory, else the bare library name (the OS loader then resolves it
-	 via LD_LIBRARY_PATH / rpath). A consumer normally pins the engine
+	 via LD_LIBRARY_PATH / rpath). A consumer normally pins libservirtium_vcr
 	 explicitly with `ServirtiumLibrary libPath: anAbsolutePath`."
 
 	^ 'libservirtium_vcr.so'
@@ -54,8 +54,8 @@ ServirtiumLibrary class >> defaultLibPath [
 
 { #category : 'configuration' }
 ServirtiumLibrary class >> libPath [
-	"Resolve the absolute path to the native VCR engine. Env var wins so a
-	 built engine in the working tree is always preferred; then an explicit
+	"Resolve the absolute path to libservirtium_vcr. Env var wins so a
+	 built libservirtium_vcr in the working tree is always preferred; then an explicit
 	 override; then the committed default."
 
 	| env |
@@ -67,7 +67,7 @@ ServirtiumLibrary class >> libPath [
 
 { #category : 'configuration' }
 ServirtiumLibrary class >> libPath: anAbsolutePathString [
-	"Pin the native engine path explicitly (e.g. from a consumer baseline)."
+	"Pin libservirtium_vcr path explicitly (e.g. from a consumer baseline)."
 
 	LibPathOverride := anAbsolutePathString
 ]

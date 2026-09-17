@@ -8,7 +8,7 @@ and is loaded automatically by `Servirtium::Native.open_library`.
 
 ## Building the native library
 
-The engine is the in-repo pure-Aether module `core/vcr.ae` plus the
+libservirtium_vcr is the in-repo pure-Aether module `core/vcr.ae` plus the
 `core/embed.ae` C-ABI, built once by the repo's **[aeb](https://github.com/aether-lang-dev/aeb)**
 `core/` node. Building any binding deps that node, so the simplest way to get
 the native lib *and* run the Ruby tests is:
@@ -17,12 +17,12 @@ the native lib *and* run the Ruby tests is:
 aeb ruby/.tests.ae
 ```
 
-`ruby/.tests.ae` deps `core/.build.ae` (which builds the engine once via
+`ruby/.tests.ae` deps `core/.build.ae` (which builds libservirtium_vcr once via
 `ae build --emit=lib` to `core/native/libservirtium_vcr.so`), then runs `rspec`
 against it with `SERVIRTIUM_VCR_LIB` pointed at that artifact. Bare `aeb` (no
 target) builds the whole monorepo.
 
-Requires the Aether toolchain (`ae`) **≥ 0.227.0** (the engine uses `std.regex`)
+Requires the Aether toolchain (`ae`) **≥ 0.227.0** (libservirtium_vcr uses `std.regex`)
 and `aeb`, both on PATH. See the repo-root `README.md` and `./bootstrap.sh` for
 installing them.
 
@@ -39,8 +39,8 @@ SERVIRTIUM_VCR_LIB=/abs/path/libservirtium_vcr.so bundle exec rspec
 
 ## Running the tests
 
-`aeb ruby/.tests.ae` runs the suite against a freshly built engine. To iterate
-on the Ruby layer alone (engine already built), run rspec directly with
+`aeb ruby/.tests.ae` runs the suite against a freshly built libservirtium_vcr. To iterate
+on the Ruby layer alone (libservirtium_vcr already built), run rspec directly with
 `SERVIRTIUM_VCR_LIB` pointed at the artifact:
 
 ```sh
@@ -48,5 +48,5 @@ SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so bundle exec rspec
 bundle exec rubocop
 ```
 
-The engine is one-server-per-port, so the suite has no serial-execution constraint of
+libservirtium_vcr is one-server-per-port, so the suite has no serial-execution constraint of
 its own — see [architecture.md](architecture.md#concurrency-one-server-per-port).

@@ -1,5 +1,5 @@
-// The shared Servirtium VCR engine, built ONCE for the whole monorepo from
-// the engine source that lives IN this repo (core/).
+// libservirtium_vcr, built ONCE for the whole monorepo from
+// libservirtium_vcr source that lives IN this repo (core/).
 //
 // Output: libservirtium_vcr.so — every binding's .tests.ae deps this node
 // and then links (cgo/NIF/cabal) or loads (ctypes/ffi/koffi/Fiddle/FFM/uFFI,
@@ -7,7 +7,7 @@
 // dep_artifact("core/.build.ae", "shared_lib") — no hardcoded path.
 //
 // Source: core/embed.ae (the aether_vcr_embed_* C-ABI) imports the local
-// `vcr` module (core/vcr.ae) — the WHOLE engine RUNTIME (Servirtium markdown
+// `vcr` module (core/vcr.ae) — the WHOLE libservirtium_vcr RUNTIME (Servirtium markdown
 // parser / emitter + tape storage + dispatchers + matching + record) is
 // PURE AETHER (was the 2133-line core/aether_vcr.c). The only C left is
 // core/_embed_strdup.c (~12 lines): the embed ABI's vcr_embed_dup/free
@@ -39,8 +39,8 @@ aeb(cap) {
         root = _get("root")
         td = _get("target_dir")
         rc = os.system("mkdir -p \"${root}/core/native\" && cp \"${td}/lib/libservirtium_vcr.so\" \"${root}/core/native/\"")
-        if rc != 0 { println("engine: failed to stage core/native/libservirtium_vcr.so"); return 1 }
-        println("engine: built libservirtium_vcr.so (aether.shared_lib; staged to core/native/)")
+        if rc != 0 { println("failed to stage core/native/libservirtium_vcr.so"); return 1 }
+        println("built libservirtium_vcr.so (aether.shared_lib; staged to core/native/)")
         return 0
     }
 }

@@ -4,7 +4,7 @@ build/
 # Compiled BEAM artifacts.
 *.beam
 
-# Native build artifact: the cc-built C NIF (links the engine via rpath).
+# Native build artifact: the cc-built C NIF (links libservirtium_vcr via rpath).
 priv/*.so
 priv/*.dylib
 priv/*.dll

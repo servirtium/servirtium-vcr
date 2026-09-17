@@ -3,7 +3,7 @@
 // Since aether 0.269.0 the std.http SERVER hands the handler a STREAMING
 // request when Content-Length > 16 KiB: http_request_body(req) returns ""
 // and the payload must be pulled via http.request_body_read. The VCR
-// engine previously read every body through the buffered accessor, so a
+// libservirtium_vcr previously read every body through the buffered accessor, so a
 // large POST was forwarded/recorded/compared as EMPTY. The fix routes all
 // body reads through read_full_request_body, which drains the stream.
 //

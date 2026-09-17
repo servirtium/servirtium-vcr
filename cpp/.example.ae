@@ -5,10 +5,10 @@
 // example/consumer.cpp against it using nothing but the prefix's own
 // pkg-config file, with SERVIRTIUM_VCR_LIB and LD_LIBRARY_PATH UNSET.
 //
-// `pkg-config servirtium-cpp` must pull the C client and the engine in through
+// `pkg-config servirtium-cpp` must pull the C client and libservirtium_vcr in through
 // `Requires: servirtium`, which only resolves because both .pc files ship side
 // by side in the same prefix — the thing this layer exists to check. The
-// header-only C++ client then links the C client, which finds the engine
+// header-only C++ client then links the C client, which finds libservirtium_vcr
 // beside itself through its $ORIGIN rpath.
 import bldr
 import std.os

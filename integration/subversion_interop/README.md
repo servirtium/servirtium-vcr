@@ -1,7 +1,7 @@
 # Subversion interop
 
 The Subversion-family VCR tests, ported from the Aether stdlib's
-`tests/integration/svn_*` into the monorepo so they ride on `core/` (the engine
+`tests/integration/svn_*` into the monorepo so they ride on `core/` (libservirtium_vcr
 now lives here) — they were the last live importers of the old Aether VCR
 module, so bringing them here unblocks deleting that module upstream
 (`aether/VCR-MOVED-TO-MONOREPO.md`, Phase 2).
@@ -11,7 +11,7 @@ details (duplicate-keyed `DAV:` headers, custom verbs like `REPORT`/`PROPFIND`),
 so it's a stern test of the VCR's byte-faithful record/replay.
 
 No `.sh` runners — each leaf orchestrates inline in Aether (`os.system`),
-mirroring `core_tests` (Aether probes built against the pure-Aether engine,
+mirroring `core_tests` (Aether probes built against libservirtium_vcr,
 plain `ae build`, no `--extra`) and the container-lifecycle pattern (the svn-CLI leaf brings a VCR server up,
 drives `svn`, tears it down).
 

@@ -1,5 +1,5 @@
 // servirtium.hpp — the header-only C++ client for the shared pure-Aether VCR
-// engine.
+// libservirtium_vcr.
 //
 // Servirtium records an HTTP conversation to a human-readable markdown tape
 // once, then replays it forever — offline, deterministic, git-diffable. Point
@@ -15,9 +15,9 @@
 //     }   // <- destructor stops the server
 //
 // This is a header-only RAII wrapper over the C client (c/include/servirtium.h)
-// — which is itself the thinnest ergonomic layer over the engine's flat C ABI.
+// — which is itself the thinnest ergonomic layer over libservirtium_vcr's flat C ABI.
 // There is NO second FFI here: C++ links the C client's object (compiled AS C,
-// so its extern "C" symbols aren't mangled) and the engine .so. What C++ adds
+// so its extern "C" symbols aren't mangled) and the libservirtium_vcr.so. What C++ adds
 // is exactly what C++ should add:
 //
 //   * RAII — the server is stopped by the destructor, on every path including
@@ -29,10 +29,10 @@
 //
 // It carries NO record/replay logic: markdown parse/emit, the HTTP server,
 // request matching, redactions and drift detection all live in the in-repo
-// Aether core/vcr.ae engine.
+// Aether core/vcr.ae libservirtium_vcr.
 //
-// Portability: C++17, no dependencies beyond the C client + engine .so.
-// Thread-safety matches the engine: each Vcr owns an independent handle — N
+// Portability: C++17, no dependencies beyond the C client + libservirtium_vcr.so.
+// Thread-safety matches libservirtium_vcr: each Vcr owns an independent handle — N
 // servers can run concurrently in one process, one per port — but don't share
 // a single Vcr across threads without external synchronisation.
 #ifndef SERVIRTIUM_CPP_HPP
@@ -176,7 +176,7 @@ public:
     void clear_last_error() { sv_clear_last_error(vcr_); }
 
     // ---- configuration ---------------------------------------------------
-    // Each throws Error if the engine rejects it. Apply after construction and
+    // Each throws Error if libservirtium_vcr rejects it. Apply after construction and
     // before driving the SUT.
 
     void redact(Field field, const std::string& pattern, const std::string& replacement) {

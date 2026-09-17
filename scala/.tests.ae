@@ -1,5 +1,5 @@
 // Scala binding tests — compile *Test.scala, run via JUnit 5 (the runner is
-// language-agnostic). Engine .so via SERVIRTIUM_VCR_LIB.
+// language-agnostic). libservirtium_vcr.so via SERVIRTIUM_VCR_LIB.
 //
 // source_layout("maven idiomatic") roots test discovery at src/test/scala, as
 // the kotlin and groovy leaves already do. Without it, scalac_test `find`s

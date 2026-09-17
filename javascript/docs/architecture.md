@@ -82,9 +82,9 @@ cursor, mutations, static mounts, pending note, and diagnostics. Consequences:
 - A fixture's config is applied to its own handle in `start()` (`applyConfig`),
   so there is no process-global state to reset and no leakage between fixtures.
 - The bundled `jest.config.js` still pins `maxWorkers: 1` (= `jest --runInBand`),
-  but **not** because the engine is single-server — the suite shares a single
+  but **not** because libservirtium_vcr is single-server — the suite shares a single
   fixed test port across files, so running files in parallel would collide on
-  that port. The one-server-per-port engine itself imposes no serial constraint.
+  that port. The one-server-per-port libservirtium_vcr itself imposes no serial constraint.
 
 ## A subtle ordering rule (notes)
 

@@ -1,4 +1,4 @@
-# Servirtium.jl — the Julia binding over the shared Aether VCR engine.
+# Servirtium.jl — the Julia binding over libservirtium_vcr.
 #
 # Servirtium records an HTTP conversation to a human-readable markdown tape
 # once, then replays it forever — offline, deterministic, git-diffable. Point
@@ -10,14 +10,14 @@
 #       @test last_kind(vcr) == Ok
 #   end
 #
-# Julia's built-in `ccall` invokes the engine's flat C ABI (aether_vcr_embed_*)
+# Julia's built-in `ccall` invokes libservirtium_vcr's flat C ABI (aether_vcr_embed_*)
 # DIRECTLY — no glue, no second copy of the marshalling rules to drift from
-# core/embed.ae. The engine .so is located via SERVIRTIUM_VCR_LIB (an absolute
+# core/embed.ae. The libservirtium_vcr.so is located via SERVIRTIUM_VCR_LIB (an absolute
 # path env), so ccall's library handle is that path.
 #
 # This module carries NO record/replay logic: markdown parse/emit, the HTTP
 # server, request matching, redactions and drift detection all live in the
-# in-repo pure-Aether core/vcr.ae engine. What Julia adds is a do-block form
+# in-repo pure-Aether core/vcr.ae libservirtium_vcr. What Julia adds is a do-block form
 # that always closes the server, enums for Field/Outcome, caller-owned-string
 # handling, and a typed error.
 module Servirtium
@@ -40,11 +40,11 @@ export Vcr, VcrError, Field, Outcome,
 """
     LIB
 
-Absolute path to the engine shared library, resolved once at load time in three
+Absolute path to libservirtium_vcr shared library, resolved once at load time in three
 steps — the same order every binding in this repo uses:
 
 1. `SERVIRTIUM_VCR_LIB` when set (how each `.tests.ae` leaf hands the
-   freshly-built engine in, and the explicit escape hatch for a consumer);
+   freshly-built libservirtium_vcr in, and the explicit escape hatch for a consumer);
 2. `native/libservirtium_vcr.so` bundled beside the installed package (what
    `julia/.package.ae` stages, so a `Pkg.add`-ed copy is zero-config);
 3. the bare soname, letting the OS loader find a system-installed copy.
@@ -240,7 +240,7 @@ last_index(vcr::Vcr) = Int(ccall((:aether_vcr_embed_last_index, LIB), Cint,
 clear_last_error(vcr::Vcr) = ccall((:aether_vcr_embed_clear_last_error, LIB), Cvoid,
                                    (Ptr{Cvoid},), vcr.handle)
 
-# ---- config (each throws VcrError if the engine rejects it) ---------------
+# ---- config (each throws VcrError if libservirtium_vcr rejects it) ---------------
 
 redact(vcr::Vcr, field::Field, pattern, replacement) =
     check(ccall((:aether_vcr_embed_redact, LIB), Ptr{Cchar},

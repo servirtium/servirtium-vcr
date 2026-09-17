@@ -5,10 +5,10 @@
 - **Lua 5.4** and its dev headers — `pkg-config --cflags lua5.4` must work
   (Debian/Ubuntu: `liblua5.4-dev`; the interpreter is `lua5.4`).
 - A C toolchain (`cc`).
-- The shared engine `core/native/libservirtium_vcr.so`, built once from the
+- libservirtium_vcr `core/native/libservirtium_vcr.so`, built once from the
   in-repo Aether core (`core/vcr.ae` + `core/embed.ae`) by `core/.build.ae`.
   No separate Aether source checkout is needed; `core/.build.ae` compiles it
-  against the installed toolchain's stdlib. Building the engine needs the Aether
+  against the installed toolchain's stdlib. Building libservirtium_vcr needs the Aether
   toolchain (`ae`) **≥ 0.227.0** (for `std.regex` whole-tape rewrites and
   chunked de-chunking) — see the repo root `bootstrap.sh` / Go binding's
   `building.md` for installing it.
@@ -29,18 +29,18 @@ cc -O2 -shared -fPIC $(pkg-config --cflags lua5.4) csrc/servirtium.c \
 ```
 
 `-shared -fPIC` produce a loadable module; `pkg-config --cflags lua5.4` finds
-`lua.h`/`lauxlib.h`; `-L`/`-l` link the engine and `-Wl,-rpath` bakes its
+`lua.h`/`lauxlib.h`; `-L`/`-l` link libservirtium_vcr and `-Wl,-rpath` bakes its
 directory in so `libservirtium_vcr.so` is found at runtime with no
 `LD_LIBRARY_PATH`.
 
 ## With aeb (the monorepo path)
 
 The binding's build/test leaf is `lua/.tests.ae`. It `build.dep`s
-`core/.build.ae` (so the engine `.so` is built first), then runs `./build.sh`
-with the engine dir and finally drives the full test suite:
+`core/.build.ae` (so `libservirtium_vcr.so` is built first), then runs `./build.sh`
+with libservirtium_vcr dir and finally drives the full test suite:
 
 ```sh
-aeb lua/.tests.ae        # engine .so + compile the extension + run all Lua tests
+aeb lua/.tests.ae        # libservirtium_vcr.so + compile the extension + run all Lua tests
 ```
 
 > aeb is not on a fresh `PATH` — it's at `~/.local/bin/aeb`. Prefix

@@ -1,5 +1,5 @@
 // Third-party consumer example: imports the `servirtium` Zig module (from a
-// published package) and replays the canonical tape. The engine .so is linked
+// published package) and replays the canonical tape. The libservirtium_vcr.so is linked
 // from the package's bundled native/ dir (baked -rpath) — no SERVIRTIUM_VCR_LIB.
 const std = @import("std");
 const servirtium = @import("servirtium");

@@ -29,7 +29,7 @@ Everything from here down is what `bootstrap.sh` automates.
   library; `bootstrap.sh` installs it via aether's `get.sh` if absent
   (`curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh | sh`).
 
-## Build the native library (the engine)
+## Build the native library (libservirtium_vcr)
 
 The native library is built from the in-repo VCR embedding module,
 `core/embed.ae` (which compiles `core/vcr.ae`, a pure-Aether module on the
@@ -71,14 +71,14 @@ mix deps.get
 SERVIRTIUM_NIF_EBIN=../erlang/_build/servirtium_nif/ebin mix test
 ```
 
-Or just `aeb elixir/.tests.ae`, which builds the engine + the shared Erlang app
-(via deps) and passes `SERVIRTIUM_NIF_EBIN` for you. The engine `.so` and the
+Or just `aeb elixir/.tests.ae`, which builds libservirtium_vcr + the shared Erlang app
+(via deps) and passes `SERVIRTIUM_NIF_EBIN` for you. `libservirtium_vcr.so` and the
 shared NIF are **git-ignored build artifacts**.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on push/PR: installs `ae`, builds the native
-engine (`build-native.sh`), then `mix deps.get`, `mix test`, and
+libservirtium_vcr (`build-native.sh`), then `mix deps.get`, `mix test`, and
 `mix format --check-formatted`.
 
 ## Platform notes

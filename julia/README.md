@@ -21,7 +21,7 @@ detection, static bypass, gzip/chunked handling — lives in the in-repo,
 pure-Aether `core/vcr.ae` module. This binding does **not** reimplement
 Servirtium in Julia.
 
-Julia's built-in `ccall` invokes the engine's flat C ABI (`aether_vcr_embed_*`)
+Julia's built-in `ccall` invokes libservirtium_vcr's flat C ABI (`aether_vcr_embed_*`)
 **directly** — no glue, no second copy of the marshalling rules. There is
 nothing to build and nothing to stage: the `.so` is located by absolute path
 from `SERVIRTIUM_VCR_LIB`, which is `ccall`'s library handle.
@@ -32,7 +32,7 @@ from `SERVIRTIUM_VCR_LIB`, which is `ccall`'s library handle.
   `record(tape, upstream) do vcr … end` flushes when the block ends normally
   and **discards** the recording if it threw, so a failed test can't overwrite
   a good tape.
-- **`@enum Field` / `@enum Outcome`** mirroring the engine constants, and a
+- **`@enum Field` / `@enum Outcome`** mirroring libservirtium_vcr constants, and a
   typed `VcrError`.
 - **Caller-owned-string handling** in exactly one place (`take`).
 
@@ -50,7 +50,7 @@ from `SERVIRTIUM_VCR_LIB`, which is `ccall`'s library handle.
 ## Building and testing
 
 ```sh
-aeb julia/.tests.ae   # hands the engine .so in via SERVIRTIUM_VCR_LIB
+aeb julia/.tests.ae   # hands the libservirtium_vcr.so in via SERVIRTIUM_VCR_LIB
 ```
 
 By hand:

@@ -27,7 +27,7 @@ record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static-content bypass,
 gzip/chunked handling — lives in this repo as a pure-Aether module
 (`core/vcr.ae`, with the `core/embed.ae` C-ABI), built once to
-`core/native/libservirtium_vcr.so`. The engine is *built on* Aether's stdlib
+`core/native/libservirtium_vcr.so`. libservirtium_vcr is *built on* Aether's stdlib
 primitives (`std.http` server, `std.regex`, `std.zlib`, `std.cryptography`), but
 the Servirtium logic is in-repo, not in the stdlib. This package cgo-binds that
 precompiled native build; it does **not** reimplement Servirtium in Go.

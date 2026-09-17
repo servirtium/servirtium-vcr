@@ -1,8 +1,8 @@
 // Browser ↔ Servirtium VCR integration test (real Chrome via Selenium).
-// Proves the engine's browser-facing model end-to-end: a VCR serves a page
+// Proves libservirtium_vcr's browser-facing model end-to-end: a VCR serves a page
 // (static-content mount) AND replays that page's same-origin XHR from a tape,
-// in real headless Chrome. Engine-shared, so this proves it for all bindings;
-// hosted here via the Python binding. Deps the shared engine.
+// in real headless Chrome. libservirtium_vcr-shared, so this proves it for all bindings;
+// hosted here via the Python binding. Deps libservirtium_vcr.
 //
 // Needs: a Chrome/Chromium browser + Python `selenium` (Selenium Manager
 // auto-fetches the matching chromedriver). The full TodoBackend Mocha suite

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Cross-build the engine (libservirtium_vcr) for the release matrix from ONE host,
+# Cross-build libservirtium_vcr (libservirtium_vcr) for the release matrix from ONE host,
 # and emit each artifact with a .sha256 — ready for out-of-band on-target
 # attestation (run the binding suite on real hardware and attest a hash).
 #
-# The engine is pure Aether (+ a ~12-line C string bridge); `ae build
+# libservirtium_vcr is pure Aether (+ a ~12-line C string bridge); `ae build
 # --target=<triple>` cross-compiles via zig cc, no per-OS runner. Output name:
 # libservirtium_vcr-<tag>-<os>-<arch>.<ext> (.so linux / .dylib macos / .dll
 # windows). Alongside each: <artifact>.sha256, and a combined
 # release/dist/SHA256SUMS.txt.
 #
-# ENGINE ONLY — this deliberately ships the one thing that is hard for a user to
+# libservirtium_vcr ONLY — this deliberately ships the one thing that is hard for a user to
 # produce: the native shared library, per OS/CPU. It does NOT build the
 # per-language packages (wheel / gem / jar / nupkg / …) — those are the
 # `.package.ae` nodes' job and a registry/credentialed concern, out of scope here.
@@ -56,7 +56,7 @@ os_of()  { case "$1" in *-linux|*-linux-musl) echo linux;; *-macos) echo macos;;
 arch_of(){ case "$1" in aarch64-*) echo arm64;; x86_64-*) echo x86_64;; *) echo "$1";; esac; }
 ext_of() { case "$1" in *-macos) echo dylib;; *-windows) echo dll;; *) echo so;; esac; }
 
-say "engine: libservirtium_vcr  tag: $TAG"
+say "libservirtium_vcr: libservirtium_vcr  tag: $TAG"
 say "matrix: $MATRIX"
 echo
 
@@ -74,7 +74,7 @@ for t in $MATRIX; do
   fi
 
   printf 'release:   %-18s -> %s ... ' "$t" "$name"
-  # --with=fs,net mirrors core/.build.ae's caps("fs,net") — the engine's HTTP
+  # --with=fs,net mirrors core/.build.ae's caps("fs,net") — libservirtium_vcr's HTTP
   #   server/client (net) + tape file I/O (fs). --extra is the ~12-line
   #   caller-owned-string C bridge (core/_embed_strdup.c), given as an ABSOLUTE
   #   path: ae's cross path (--target) does not resolve a relative --extra from
@@ -106,6 +106,6 @@ echo
 # Named SHA256SUMS.txt so a browser renders it inline (no forced download).
 ( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib 2>/dev/null > SHA256SUMS.txt || true )
 
-say "built $built engine artifact(s) into release/dist/ ($failed failed)"
+say "built $built libservirtium_vcr artifact(s) into release/dist/ ($failed failed)"
 [ "$built" -gt 0 ] || die "no artifacts built"
 [ "$failed" -eq 0 ] || die "$failed target(s) failed — see release/dist/.<triple>.log"

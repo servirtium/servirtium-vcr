@@ -73,7 +73,7 @@ ports without their cursors or mutations bleeding into each other (proven by
 
 ## Building from source
 
-The native engine and the Python tests build together through `aeb` (needs
+libservirtium_vcr and the Python tests build together through `aeb` (needs
 `ae` ≥ v0.227.0 and `aeb` on PATH):
 
 ```sh

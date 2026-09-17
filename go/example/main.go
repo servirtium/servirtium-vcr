@@ -1,5 +1,5 @@
 // Third-party consumer example: imports the servirtium-go module and replays
-// the canonical tape. The engine .so is resolved via the module's own bundled
+// the canonical tape. The libservirtium_vcr.so is resolved via the module's own bundled
 // native/ dir (cgo rpath ${SRCDIR}/native) — no SERVIRTIUM_VCR_LIB, and the
 // packaged module copy has no core/ sibling, so only the bundled .so can load.
 package main

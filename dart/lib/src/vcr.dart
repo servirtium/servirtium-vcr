@@ -1,4 +1,4 @@
-/// Idiomatic Dart record/replay fixtures over the in-repo `core/vcr.ae` engine.
+/// Idiomatic Dart record/replay fixtures over the in-repo `core/vcr.ae` libservirtium_vcr.
 ///
 /// The system-under-test talks plain HTTP to [VcrServer.baseUrl]; tape paths,
 /// mode, mutations, and diagnostics live in test setup/teardown.
@@ -44,7 +44,7 @@ enum VcrField {
 }
 
 /// Per-dispatch outcome. Values mirror the `VCR_KIND_*` constants in the
-/// in-repo `core/vcr.ae` engine. Read after a request to assert what the
+/// in-repo `core/vcr.ae` libservirtium_vcr. Read after a request to assert what the
 /// dispatcher decided.
 enum VcrOutcome {
   ok(0),
@@ -94,10 +94,10 @@ String _drainStartError(Pointer<Void> handle) {
   return err.isNotEmpty ? err : '(no detail; check tape path and port availability)';
 }
 
-/// Entry point for record/replay fixtures backed by the in-repo `core/vcr.ae` engine.
+/// Entry point for record/replay fixtures backed by the in-repo `core/vcr.ae` libservirtium_vcr.
 abstract final class Vcr {
   /// Replay a Servirtium markdown tape from disk. [nativeLib] optionally pins
-  /// the engine `.so` path explicitly (see `BuilderBase.nativeLib`); by default
+  /// `libservirtium_vcr.so` path explicitly (see `BuilderBase.nativeLib`); by default
   /// the bundled library is discovered.
   static PlaybackBuilder playback(String tapePath, {String? nativeLib}) {
     final b = PlaybackBuilder._(tapePath);
@@ -108,7 +108,7 @@ abstract final class Vcr {
   /// Record live interactions: forward to [upstreamBase], return the real
   /// response to the SUT, and capture the exchange. The tape is written to
   /// [tapePath] when the server is closed. [nativeLib] optionally pins the
-  /// engine `.so` path explicitly.
+  /// `libservirtium_vcr.so` path explicitly.
   static RecordBuilder record(String tapePath, String upstreamBase,
       {String? nativeLib}) {
     final b = RecordBuilder._(tapePath, upstreamBase);
@@ -132,7 +132,7 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
 
   T get _self;
 
-  /// Pin an explicit path to the native engine library for this run — the
+  /// Pin an explicit path to libservirtium_vcr library for this run — the
   /// first-class way to say *where the `.so` is* at launch, instead of relying
   /// on discovery. Wins over the bundled-`lib/native/` default and the
   /// `SERVIRTIUM_VCR_LIB` env override. Set before `.start()`.

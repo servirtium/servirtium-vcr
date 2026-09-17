@@ -28,7 +28,7 @@ dependencies {
 
     testImplementation platform("org.junit:junit-bom:$junitVersion")
     testImplementation "org.junit.jupiter:junit-jupiter-api"
-    testImplementation "org.junit.jupiter:junit-jupiter-engine"
+    testImplementation "org.junit.jupiter:junit-jupiter-libservirtium_vcr"
 }
 
 mainClassName = 'org.http4k.todo.TodoBackendAppKt'

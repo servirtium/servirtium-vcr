@@ -30,7 +30,7 @@ try (VcrServer vcr = Vcr.playback("tapes/climate_api.md").port(0).start()) {
 Since **2.0**, this is a thin Java layer over the **servirtium-vcr** core. All
 record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static bypass, gzip/chunked
-handling — lives in the pure-Aether engine **in this repo** at `core/vcr.ae`
+handling — lives in libservirtium_vcr **in this repo** at `core/vcr.ae`
 (with `core/embed.ae` exposing its C-ABI), built once to
 `core/native/libservirtium_vcr.so` on Aether standard-library primitives. The
 Servirtium logic is in-repo, not in the Aether stdlib. This module calls that
@@ -74,7 +74,7 @@ their own test JVM args.
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix
   and what's covered by tests.
 - **[docs/architecture.md](docs/architecture.md)** — how the FFM layering
-  works (Java → downcall handles → `embed.ae` → the `core/` engine), the native
+  works (Java → downcall handles → `embed.ae` → the `core/` libservirtium_vcr), the native
   loader, and the one-server-per-port (handle-based) concurrency model.
 - **[docs/building.md](docs/building.md)** — building the native library,
   the RID matrix, and CI.
@@ -93,11 +93,11 @@ separate ports, each replaying its own tape). See
 ## Building from source
 
 The repo is driven by [`aeb`](https://github.com/aether-lang-dev/aeb): the
-`java/.tests.ae` leaf deps `core/.build.ae`, which builds the native engine
+`java/.tests.ae` leaf deps `core/.build.ae`, which builds libservirtium_vcr
 (`core/native/libservirtium_vcr.so`) once, then runs `mvn test` against it.
 
 ```sh
-aeb java/.tests.ae   # builds the core engine (needs ae ≥ 0.227.0), then mvn test on JDK 25
+aeb java/.tests.ae   # builds the core libservirtium_vcr (needs ae ≥ 0.227.0), then mvn test on JDK 25
 ```
 
 Details — including the raw `ae build` / `mvn` invocations — in

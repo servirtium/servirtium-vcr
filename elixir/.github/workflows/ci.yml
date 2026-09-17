@@ -25,7 +25,7 @@ jobs:
           AETHER_REF="$AETHER_REF" sh /tmp/get.sh
           echo "$PREFIX/bin" >> "$GITHUB_PATH"
 
-      - name: Build native VCR engine
+      - name: Build libservirtium_vcr
         run: ./build-native.sh
 
       - name: Fetch deps

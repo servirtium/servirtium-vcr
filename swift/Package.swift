@@ -1,12 +1,12 @@
 // swift-tools-version:5.9
-// Swift binding for the shared Aether VCR engine. CServirtiumVcr exposes the
-// engine's flat C ABI (aether_vcr_embed_*) via a module map; Servirtium is the
-// idiomatic Swift surface over it. The engine .so is found at link/run time via
+// Swift binding for libservirtium_vcr. CServirtiumVcr exposes the
+// libservirtium_vcr's flat C ABI (aether_vcr_embed_*) via a module map; Servirtium is the
+// idiomatic Swift surface over it. The libservirtium_vcr.so is found at link/run time via
 // the -L/-rpath below (the .tests.ae stages native/).
 import Foundation
 import PackageDescription
 
-// The engine .so lives in this package's own native/ directory. The path has
+// The libservirtium_vcr.so lives in this package's own native/ directory. The path has
 // to be ABSOLUTE and computed here, at manifest-evaluation time, because a
 // relative "-L native" resolves against whatever directory the LINKER runs in
 // — which, as soon as this package is consumed as a dependency, is the
@@ -27,9 +27,9 @@ let package = Package(
     targets: [
         // The C ABI as a Swift-importable module (header + module map only).
         // This target keeps the CServirtiumVcr name — it is the C-module seam
-        // mapping to the engine's flat C ABI, not the user-facing surface.
+        // mapping to libservirtium_vcr's flat C ABI, not the user-facing surface.
         .target(name: "CServirtiumVcr"),
-        // The idiomatic Swift surface. Links the engine .so from native/.
+        // The idiomatic Swift surface. Links the libservirtium_vcr.so from native/.
         .target(
             name: "Servirtium",
             dependencies: ["CServirtiumVcr"],

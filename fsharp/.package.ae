@@ -1,7 +1,7 @@
 // Third-party-consumer PACKAGE stage for the F# binding.
 //
 // F# consumes `Servirtium.Vcr.FSharp` as a NuGet package. It is managed-only
-// and small on purpose: the engine .so travels in the Servirtium.Vcr package
+// and small on purpose: the libservirtium_vcr.so travels in the Servirtium.Vcr package
 // (built by dotnet/Servirtium.Vcr/.dist.ae), which this one takes as a NuGet
 // DEPENDENCY — the CLR family rides ONE native assembly, so bundling a second
 // copy of the .so here would be exactly the duplication this repo's one rule

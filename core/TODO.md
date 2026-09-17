@@ -178,7 +178,7 @@ repointed to `import core.vcr`) + `core_tests/chunked_upstream.c` (the raw-socke
 C responder, since the Aether HTTP server only emits `Content-Length`). It has
 its own leaf, `core_tests/.chunked.ae` (NOT the `test_vcr_*` run-tests.sh loop,
 since it needs the C upstream process) — inline-Aether orchestration: cc the
-upstream, read its port, build+run the probe against the pure-Aether engine
+upstream, read its port, build+run the probe against libservirtium_vcr
 (plain `ae build`, no `--extra` — the runtime is inline in `core/vcr.ae` now),
 tear the upstream down. Asserts all three tiers: client de-chunks, record tape
 stores the decoded payload (not framing), replay serves it decoded.

@@ -45,17 +45,17 @@ loads the shared `servirtium_nif` NIF owned by the Erlang binding (below).
 
 ## One shared NIF for the whole BEAM family
 
-Elixir/Erlang has no ctypes/Fiddle equivalent, so the FFI to the engine's
+Elixir/Erlang has no ctypes/Fiddle equivalent, so the FFI to libservirtium_vcr's
 `aether_vcr_embed_*` C-ABI is a small hand-written NIF. There is exactly **one**
 such NIF in the monorepo — the `servirtium_nif` OTP app, owned and built by the
 **Erlang** binding (Erlang is the BEAM's lingua franca, so it owns the shared
 binding, exactly as the one Java jar backs the Kotlin/Scala/Clojure/Groovy
 bindings). Elixir does not compile its own copy: `Servirtium.Native`
 `defdelegate`s onto `:servirtium_nif`, which loads `priv/servirtium_nif.so` over
-the BEAM. The NIF only drives the engine's *control surface*
-(start/stop/diagnostics/mutations) — the engine itself is the HTTP server the
+the BEAM. The NIF only drives libservirtium_vcr's *control surface*
+(start/stop/diagnostics/mutations) — libservirtium_vcr itself is the HTTP server the
 SUT talks to over plain HTTP. The `start_*` calls return immediately (the accept
-loop runs on a detached pthread inside the engine), so no NIF blocks the BEAM
+loop runs on a detached pthread inside libservirtium_vcr), so no NIF blocks the BEAM
 scheduler. See [docs/architecture.md](docs/architecture.md).
 
 ## Docs
@@ -68,7 +68,7 @@ scheduler. See [docs/architecture.md](docs/architecture.md).
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering works
   (Elixir → C NIF → `core/embed.ae` → `core/vcr.ae`), and the handle-based
   one-server-per-port model.
-- **[docs/building.md](docs/building.md)** — building the engine + the shared
+- **[docs/building.md](docs/building.md)** — building libservirtium_vcr + the shared
   Erlang NIF, and how Elixir loads it.
 - **[MIGRATION.md](MIGRATION.md)** — the 1.x → 2.0 rewrite story.
 
@@ -83,7 +83,7 @@ each other's state. See
 [docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port).
 
 The included `test/test_helper.exs` still starts ExUnit with `max_cases: 1`,
-but that is a property of this suite, not a constraint of the engine.
+but that is a property of this suite, not a constraint of libservirtium_vcr.
 
 ## Building from source
 
@@ -96,14 +96,14 @@ present):
 ./bootstrap.sh        # extra args pass through to `mix test`
 ```
 
-Through the monorepo build (recommended — builds the engine and the shared
+Through the monorepo build (recommended — builds libservirtium_vcr and the shared
 Erlang NIF, then runs the suite with the NIF on the code path):
 
 ```sh
 aeb elixir/.tests.ae   # deps erlang/.build.ae + core; passes SERVIRTIUM_NIF_EBIN
 ```
 
-By hand, once the engine and the Erlang binding's shared app are built
+By hand, once libservirtium_vcr and the Erlang binding's shared app are built
 (`aeb erlang/.build.ae` → `erlang/_build/servirtium_nif`):
 
 ```sh

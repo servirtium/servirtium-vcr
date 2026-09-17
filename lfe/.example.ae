@@ -7,7 +7,7 @@
 // SERVIRTIUM_NIF_DIR UNSET.
 //
 // What that proves beyond lfe/.tests.ae: the packaged apps are self-contained
-// and relocatable. The NIF resolves the engine .so through code:priv_dir plus
+// and relocatable. The NIF resolves the libservirtium_vcr.so through code:priv_dir plus
 // its own $ORIGIN rpath, so moving the app directory cannot break it — which
 // is exactly what a Hex-installed copy does.
 import bldr

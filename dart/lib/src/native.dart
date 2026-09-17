@@ -1,11 +1,11 @@
 /// Raw `dart:ffi` surface over the native VCR library.
 ///
 /// 1:1 with the `aether_vcr_embed_*` C-ABI exported by the in-repo
-/// `core/embed.ae` engine (built on Aether stdlib primitives). This file owns
+/// `core/embed.ae` libservirtium_vcr (built on Aether stdlib primitives). This file owns
 /// library location/loading, the typedef/lookup declarations, and the
 /// string-ownership helpers.
 ///
-/// Per-listener contract (matching the `core/vcr.ae` engine): N independent VCR
+/// Per-listener contract (matching the `core/vcr.ae` libservirtium_vcr): N independent VCR
 /// servers can run concurrently, one server per port, each keyed by its own
 /// handle; every config / diagnostic / lifecycle call takes the handle.
 /// Lifecycle is open -> configure(handle) -> start.

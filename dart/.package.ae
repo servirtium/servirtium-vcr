@@ -1,7 +1,7 @@
 // Third-party-consumer PACKAGE stage for the Dart binding.
 //
 // Dart/pub packages are source-consumed; "packaging" here stages the freshly-
-// built engine .so into dart/lib/native/ — the fixed, package-relative
+// built libservirtium_vcr.so into dart/lib/native/ — the fixed, package-relative
 // location the loader self-locates via the consumer's package_config.json
 // (`package:servirtium` -> its lib/, so lib/native/ survives pub publish and a
 // path: dep alike). Deps core/.build.ae; publishes the dart package dir on the
@@ -23,7 +23,7 @@ aeb(cap) {
         }
 
         publish_artifact("package_dir", "${_get("root")}/dart")
-        println("dart package: staged engine .so into dart/lib/native/ (pub package ready)")
+        println("dart package: staged libservirtium_vcr.so into dart/lib/native/ (pub package ready)")
         return 0
     }
 }

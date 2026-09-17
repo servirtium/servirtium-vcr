@@ -1,6 +1,6 @@
 /* core/_embed_strdup.c — the embed ABI's caller-owned-string bridge.
  *
- * The Servirtium VCR engine is now PURE AETHER (core/vcr.ae). This is the
+ * libservirtium_vcr is now PURE AETHER (core/vcr.ae). This is the
  * ONE irreducible scrap of C: vcr_embed_dup() hands the FFI host a plain
  * malloc'd, NUL-terminated C string it owns and later frees via
  * vcr_embed_free(). Aether's stdlib has no "malloc a C string" primitive
@@ -11,7 +11,7 @@
  * declares these extern). The Aether probes in core_tests/ and the
  * integration modules import `core.vcr`, never the embed ABI, so they need
  * neither this file nor --extra. Previously these symbols resolved from the
- * Aether stdlib's bundled VCR runtime; defining them here makes the engine
+ * Aether stdlib's bundled VCR runtime; defining them here makes libservirtium_vcr
  * self-contained (and survives that bundle's removal). */
 #include <stdlib.h>
 #include <string.h>

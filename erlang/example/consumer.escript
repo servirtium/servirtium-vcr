@@ -2,7 +2,7 @@
 %%
 %% Third-party consumer example for the Erlang binding. Uses the INSTALLED
 %% servirtium_nif OTP app (resolved via ERL_LIBS, the standard OTP way — the
-%% `servirtium` module + its priv/servirtium_nif.so). The NIF finds the engine
+%% `servirtium` module + its priv/servirtium_nif.so). The NIF finds libservirtium_vcr
 %% libservirtium_vcr.so beside it in priv/ via a $ORIGIN rpath — self-contained
 %% and relocatable, with no SERVIRTIUM_VCR_LIB and no reference to the repo core/.
 

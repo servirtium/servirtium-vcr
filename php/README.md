@@ -42,8 +42,8 @@ Requires **PHP 8.4+ with the `FFI` extension** (`ext-ffi`).
 composer require --dev servirtium/servirtium-php
 ```
 
-The native engine ships with the package (under `native/`); consumers do
-**not** need the Aether toolchain — only contributors rebuilding the engine
+libservirtium_vcr ships with the package (under `native/`); consumers do
+**not** need the Aether toolchain — only contributors rebuilding libservirtium_vcr
 do (see [docs/building.md](docs/building.md)).
 
 ## Docs

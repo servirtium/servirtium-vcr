@@ -1,7 +1,7 @@
 // Whole-tape normalization probe — the acceptance gate for the two tape-wide
 // rewrite verbs (vcr.normalize_whole_tape + vcr.redact_whole_tape, and their
 // embed ABIs). It reproduces the exact non-determinism that dirties a real
-// record leaf — the TodoBackend CRUD tape — and proves the engine now makes a
+// record leaf — the TodoBackend CRUD tape — and proves libservirtium_vcr now makes a
 // re-record byte-identical.
 //
 // Two kinds of volatility, deliberately modelled differently:
@@ -15,7 +15,7 @@
 //     here (A would mint {{date-1}},{{date-2}}; B only {{date-1}}), so Date
 //     uses redact_whole_tape — collapse every match to one constant.
 //
-// Built against the LOCAL pure-Aether engine, driven through the no-server
+// Built against libservirtium_vcr, driven through the no-server
 // record()/flush() helpers.   aeb core_tests/.normalize.ae
 
 import core.vcr

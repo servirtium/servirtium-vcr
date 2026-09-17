@@ -8,8 +8,8 @@
 // Two things this proves that fsharp/.tests.ae cannot. First, the F# nupkg's
 // dependency on Servirtium.Vcr actually resolves: F# ships managed-only
 // because the CLR family rides ONE native assembly, so if that dependency were
-// wrong the consumer would restore an F# layer with no engine underneath it.
-// Second, the engine .so reaches the consumer purely as the Servirtium.Vcr
+// wrong the consumer would restore an F# layer with no libservirtium_vcr underneath it.
+// Second, the libservirtium_vcr.so reaches the consumer purely as the Servirtium.Vcr
 // package's per-RID native payload, extracted by the C# NativeLoader.
 //
 // The package cache entries are cleared first: a stale
@@ -36,7 +36,7 @@ aeb(cap) {
             println("fsharp example: consumer `dotnet run` against the installed packages failed")
             return 1
         }
-        println("fsharp example: PASS — consumer replayed the canonical tape (discovery; local NuGet feed, engine .so from the Servirtium.Vcr package)")
+        println("fsharp example: PASS — consumer replayed the canonical tape (discovery; local NuGet feed, libservirtium_vcr.so from the Servirtium.Vcr package)")
         return 0
     }
 }

@@ -105,7 +105,7 @@ a box with no make). Fixed across the ecosystem: aeb **v0.298** made the bundle
 installer copy-only, aeb **v0.300** + aeo **v0.2.3** ship it, and the get.sh
 make-gate was dropped in both installers. Verified on a virginal `debian:13-slim`:
 `ae` + `aeb v0.300` + `aeo v0.2.3` all install binary-first with no make. (Note:
-building *this repo's engine* still needs the C `-dev` libs — that's the engine
+building *this repo's libservirtium_vcr* still needs the C `-dev` libs — that's libservirtium_vcr
 link, not the toolchain install; see the top-level README.)
 
 ## Verdict

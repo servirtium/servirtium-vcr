@@ -1,5 +1,5 @@
 //! Third-party consumer example: drives the `servirtium` crate (consumed as a
-//! Cargo dependency) to replay the canonical tape. The engine .so is located
+//! Cargo dependency) to replay the canonical tape. The libservirtium_vcr.so is located
 //! either explicitly (first-class `.native_lib()`) or by discovery (the crate
 //! self-locates its bundled native/ .so) — with no SERVIRTIUM_VCR_LIB.
 //!

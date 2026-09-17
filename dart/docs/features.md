@@ -29,7 +29,7 @@ exercised by `dart test` against the real native library.
 ## Not exposed through the C-ABI (same as every binding)
 
 `flush_or_check` (the `.actual`-sibling drift variant) and `load_url`
-(HTTP-fetched tape) exist in the in-repo `core/vcr.ae` engine but aren't
+(HTTP-fetched tape) exist in the in-repo `core/vcr.ae` libservirtium_vcr but aren't
 surfaced by `core/embed.ae`. Small additions.
 
 ## Known limitations (inherited from the core)

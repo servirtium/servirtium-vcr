@@ -24,7 +24,7 @@ try {
 A thin **`dart:ffi`** wrapper over the **Aether VCR** core: markdown
 parse/emit, the HTTP server, request matching, redactions, notes, drift
 detection, static-content bypass, gzip/chunked handling all live in the
-in-repo pure-Aether engine (`core/vcr.ae`, with the C-ABI wrapper in
+in-repo pure-Aether libservirtium_vcr (`core/vcr.ae`, with the C-ABI wrapper in
 `core/embed.ae`), built on Aether stdlib primitives and shipped as a
 precompiled native library (`core/native/libservirtium_vcr.so`). This package
 opens that library with `DynamicLibrary.open` and presents an idiomatic Dart
@@ -37,8 +37,8 @@ serves Flutter.
 dart pub add --dev servirtium
 ```
 
-The native engine ships with the package (`native/`); consumers do **not**
-need the Aether toolchain — only contributors rebuilding the engine do
+libservirtium_vcr ships with the package (`native/`); consumers do **not**
+need the Aether toolchain — only contributors rebuilding libservirtium_vcr do
 (see [docs/building.md](docs/building.md)).
 
 ## Usage
@@ -60,7 +60,7 @@ without their cursors or mutations bleeding into each other.
 - [docs/usage.md](docs/usage.md) — full API surface and examples
 - [docs/features.md](docs/features.md) — capability matrix vs. the core
 - [docs/architecture.md](docs/architecture.md) — FFI layering
-- [docs/building.md](docs/building.md) — building the native engine from source
+- [docs/building.md](docs/building.md) — building libservirtium_vcr from source
 
 ## Building from source
 

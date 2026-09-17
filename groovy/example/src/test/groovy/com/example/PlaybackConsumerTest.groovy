@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test
 /**
  * Third-party consumer test: drives the INSTALLED Groovy DSL jar
  * (servirtium-vcr-groovy, resolved from ~/.m2) via the `playback(tape) { }`
- * DSL, replaying the canonical tape. The engine .so is discovered zero-config
+ * DSL, replaying the canonical tape. The libservirtium_vcr.so is discovered zero-config
  * from the transitive servirtium-vcr jar resource — no SERVIRTIUM_VCR_LIB.
  */
 class PlaybackConsumerTest {

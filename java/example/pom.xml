@@ -5,7 +5,7 @@
   A standalone Maven project that depends on the INSTALLED servirtium-vcr jar
   (com.paulhammant.servirtium:servirtium-vcr, resolved from the local ~/.m2 repo
   that `mvn install` populated) and replays the canonical tape from that jar —
-  the engine .so is discovered from the jar's own /native/<rid>/ resource, with
+  the libservirtium_vcr.so is discovered from the jar's own /native/<rid>/ resource, with
   no SERVIRTIUM_VCR_LIB. The honest "add the dependency and it just works" test.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"

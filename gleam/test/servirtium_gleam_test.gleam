@@ -3,7 +3,7 @@
 //// curl, and assert the body + a clean match (last_kind == Ok).
 ////
 //// Gleam reuses the Erlang binding's C NIF over the BEAM, so this exercises
-//// the same Aether VCR core engine as every other binding.
+//// the same Aether VCR core libservirtium_vcr as every other binding.
 ////
 //// NOTE on the runner: this dev box's Erlang/OTP 27 ships a *stripped* eunit
 //// (only its headers, no compiled .beam), so gleeunit's eunit-based

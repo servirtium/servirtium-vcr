@@ -2,7 +2,7 @@
 //
 // `mvn install`s the Kotlin DSL layer (com.paulhammant.servirtium:
 // servirtium-vcr-kotlin) to ~/.m2. It depends on the Java jar
-// (servirtium-vcr, which bundles the engine .so as a resource), so we dep
+// (servirtium-vcr, which bundles the libservirtium_vcr.so as a resource), so we dep
 // java/.package.ae to get that into ~/.m2 first. A Kotlin consumer then
 // resolves servirtium-vcr-kotlin and the .so rides along transitively.
 import bldr

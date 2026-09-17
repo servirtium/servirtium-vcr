@@ -21,7 +21,7 @@ detection, static bypass, gzip/chunked handling — lives in the in-repo,
 pure-Aether `core/vcr.ae` module. This binding does **not** reimplement
 Servirtium in Swift.
 
-Swift calls the engine's flat C ABI (`aether_vcr_embed_*`) **directly** through
+Swift calls libservirtium_vcr's flat C ABI (`aether_vcr_embed_*`) **directly** through
 a clang module map (`CServirtiumVcr`) — no glue `.c`, no second copy of the
 marshalling rules to drift from `core/embed.ae`.
 
@@ -48,16 +48,16 @@ marshalling rules to drift from `core/embed.ae`.
   close, two concurrent servers, and the enum values.
 - `tapes/single_get.md` — the canonical sample tape (`GET /ok` → `200
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
-- `native/` — where the leaf stages the engine `.so` (git-ignored).
+- `native/` — where the leaf stages `libservirtium_vcr.so` (git-ignored).
 
 ## Building and testing
 
 ```sh
-aeb swift/.tests.ae   # stages the engine .so into native/, then
+aeb swift/.tests.ae   # stages the libservirtium_vcr.so into native/, then
                       # swift build + swift test
 ```
 
-The leaf copies the engine's `shared_lib` artifact to
+The leaf copies libservirtium_vcr's `shared_lib` artifact to
 `native/libservirtium_vcr.so`; `Package.swift` links it with
 `-L native -lservirtium_vcr` and bakes an rpath, so the test binary resolves it
 at run time.

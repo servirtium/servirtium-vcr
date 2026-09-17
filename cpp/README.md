@@ -23,13 +23,13 @@ directions.
 
 This is a **header-only RAII wrapper over the C client**
 (`c/include/servirtium.h`), which is itself the ergonomic layer over the
-engine's flat C ABI. All record/replay machinery — markdown parse/emit, the
+libservirtium_vcr's flat C ABI. All record/replay machinery — markdown parse/emit, the
 HTTP server, request matching, redactions, notes, drift detection, static
 bypass, gzip/chunked handling — lives in the in-repo, pure-Aether
 `core/vcr.ae` module. This binding does **not** reimplement Servirtium in C++.
 
 There is **no second FFI**: C++ links the C client's object (compiled *as C*,
-so its `extern "C"` symbols aren't mangled) and the engine `.so`.
+so its `extern "C"` symbols aren't mangled) and `libservirtium_vcr.so`.
 
 ### What C++ adds over the C client
 
@@ -57,11 +57,11 @@ so its `extern "C"` symbols aren't mangled) and the engine `.so`.
 
 ## Building and testing
 
-C++17, no dependencies beyond the C client + engine `.so`. Needs a C++
+C++17, no dependencies beyond the C client + `libservirtium_vcr.so`. Needs a C++
 compiler (and a C compiler for the C client's object).
 
 ```sh
-aeb cpp/.tests.ae   # builds the engine + the C object, compiles and runs the
+aeb cpp/.tests.ae   # builds libservirtium_vcr + the C object, compiles and runs the
                     # C++ test binary
 ```
 

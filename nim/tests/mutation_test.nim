@@ -58,7 +58,7 @@ suite "servirtium mutation":
     discard nextObservation()
     rec1.close()
     # std/asynchttpserver lower-cases header names, so match case-insensitively
-    # (header removal below is itself case-insensitive on the engine side).
+    # (header removal below is itself case-insensitive on libservirtium_vcr side).
     check readFile(tape1).toLowerAscii.contains("x-trace-id")
 
     # Phase 2: with removal, it's gone.

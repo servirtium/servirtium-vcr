@@ -22,7 +22,7 @@ your SUT  ⇄  http://127.0.0.1:<port>
 
 The Ruby side owns **none** of the Servirtium semantics. It starts/stops the
 server, marshals strings, and presents an idiomatic builder/server. Everything
-that defines Servirtium behaviour is the in-repo Aether engine (`core/vcr.ae` +
+that defines Servirtium behaviour is libservirtium_vcr (`core/vcr.ae` +
 `core/embed.ae`), shared with every other language binding built on the same
 `core/embed.ae`.
 
@@ -77,7 +77,7 @@ handle on the Aether side. Nothing is process-global. Consequences:
   apply that fixture's config to it; a prior fixture's settings live on its own
   (now-closed) handle, so they cannot leak forward.
 
-The one-server-per-port contract is proven at the engine level by
+The one-server-per-port contract is proven at libservirtium_vcr level by
 `core_tests/concurrent_probe.ae`, which drives several independent listeners at
 once.
 

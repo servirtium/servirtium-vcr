@@ -1,6 +1,6 @@
 // Clojure binding tests — runs clojure.test (servirtium_test.clj). Deps only
 // clojure/.build.ae: the Java binding classes + the clojure runtime arrive
-// transitively through that node (uniform with kotlin/scala/groovy). Engine
+// transitively through that node (uniform with kotlin/scala/groovy). libservirtium_vcr
 // .so via SERVIRTIUM_VCR_LIB.
 import bldr
 import clojure

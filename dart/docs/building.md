@@ -28,9 +28,9 @@ Override `PREFIX` / `AETHER_REF` (pin in CI) / `MIN_AE` via env.
 ```
 
 Builds `core/native/libservirtium_vcr.so` from the in-repo `core/embed.ae`
-(C-ABI wrapper) and `core/vcr.ae` (the pure-Aether engine) using the
+(C-ABI wrapper) and `core/vcr.ae` (libservirtium_vcr) using the
 **installed** toolchain — no Aether source checkout needed. `--with=fs,net`
-needs a `-fPIC` Aether runtime, and the engine uses `std.regex`, so **ae ≥
+needs a `-fPIC` Aether runtime, and libservirtium_vcr uses `std.regex`, so **ae ≥
 0.227.0** is required. The native lib is a git-ignored build artifact.
 
 ## Test
@@ -44,7 +44,7 @@ dart test        # one server per port — independent servers per process
 
 ## Distributing to consumers (incl. Flutter)
 
-The native engine should ship inside the pub package (per-platform libs under
+libservirtium_vcr should ship inside the pub package (per-platform libs under
 `native/`, or via Flutter's plugin native-asset mechanism) so a `dart pub add`
 / Flutter consumer never needs the Aether toolchain. Multi-platform packaging
 (`.so`/`.dylib`/`.dll` + Android/iOS for Flutter) is the same concern every

@@ -4,7 +4,7 @@ Servirtium capability checklist (record, playback, redaction/mutation, header
 removal, whole-tape normalization, notes, drift, static bypass, strict
 matching, markdown interop, diagnostics), mapped through the stack. "Test" =
 exercised by the binding's `tests/*.lua` suite against the real native library,
-unless noted as a core probe (the shared engine's `core_tests/`).
+unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 
 | Capability | Aether core | embed C-ABI | Lua API | Test |
 |---|:---:|:---:|---|:---:|
@@ -33,7 +33,7 @@ unless noted as a core probe (the shared engine's `core_tests/`).
 | Dynamic (OS-assigned) port | ✅ | ✅ | `:port(0)` → `Server:port()` | ✅ |
 | One server per port (N servers / process) | ✅ | ✅ | (each `:start()` owns its handle) | ✅ |
 
-The two whole-tape rewrites are proven at the shared-engine level
+The two whole-tape rewrites are proven at libservirtium_vcr level
 (`core_tests/normalize_probe.ae`); both are wired on the Lua surface
 (`:normalize_whole_tape` / `:redact_whole_tape`). One-server-per-port is proven
 directly in `tests/playback.lua` (two playback VCRs on two ports, each replaying

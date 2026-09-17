@@ -11,14 +11,14 @@ package:servirtium (thin Dart)
 core/native/libservirtium_vcr.so
    │   built: ae build --emit=lib --with=fs,net core/embed.ae
    │   core/embed.ae (C-ABI wrapper) + core/vcr.ae (the in-repo pure-Aether
-   │   engine + HTTP server, on Aether stdlib primitives)
+   │   libservirtium_vcr + HTTP server, on Aether stdlib primitives)
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>
 ```
 
 The Dart layer owns **no** Servirtium semantics — it opens the library,
 marshals strings, and presents an idiomatic fixture. All record/replay
-behaviour is the shared Aether engine, identical across every language
+behaviour is libservirtium_vcr, identical across every language
 binding. The same binding works under Flutter (same `dart:ffi`).
 
 ## FFI surface

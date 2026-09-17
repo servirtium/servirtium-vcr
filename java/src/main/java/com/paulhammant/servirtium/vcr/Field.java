@@ -2,7 +2,7 @@ package com.paulhammant.servirtium.vcr;
 
 /**
  * Field selector for redactions / unredactions / header removals.
- * Values mirror the FIELD_* constants in the in-repo {@code core/vcr.ae} engine.
+ * Values mirror the FIELD_* constants in the in-repo {@code core/vcr.ae} libservirtium_vcr.
  */
 public enum Field {
     PATH(1),

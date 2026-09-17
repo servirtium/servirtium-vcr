@@ -6,7 +6,7 @@
 //   dist/include/servirtium.hpp            the C++ client (header-only)
 //   dist/include/servirtium.h              the C client it wraps
 //   dist/lib/libservirtium_c.so            the C client
-//   dist/lib/libservirtium_vcr.so          the engine
+//   dist/lib/libservirtium_vcr.so          libservirtium_vcr
 //   dist/lib/pkgconfig/servirtium-cpp.pc   requires servirtium, adds -std=c++17
 //   ../servirtium-cpp-2.0.0.tar.gz         the whole prefix, one file
 //
@@ -38,7 +38,7 @@ aeb(cap) {
         }
 
         // `\0044` is a literal '$' once printf '%b' runs — see c/.package.ae.
-        pc = "prefix=\\0044{pcfiledir}/../..\nexec_prefix=\\0044{prefix}\nlibdir=\\0044{prefix}/lib\nincludedir=\\0044{prefix}/include\n\nName: servirtium-cpp\nDescription: Record/replay for HTTP service tests (Servirtium markdown tapes) — header-only C++ client over the pure-Aether VCR engine\nVersion: 2.0.0\nRequires: servirtium\nCflags: -I\\0044{includedir} -std=c++17\n"
+        pc = "prefix=\\0044{pcfiledir}/../..\nexec_prefix=\\0044{prefix}\nlibdir=\\0044{prefix}/lib\nincludedir=\\0044{prefix}/include\n\nName: servirtium-cpp\nDescription: Record/replay for HTTP service tests (Servirtium markdown tapes) — header-only C++ client over libservirtium_vcr\nVersion: 2.0.0\nRequires: servirtium\nCflags: -I\\0044{includedir} -std=c++17\n"
         rc2 = os.system("printf '%b' \"${pc}\" > \"${dist}/lib/pkgconfig/servirtium-cpp.pc\"")
         if rc2 != 0 {
             println("cpp package: writing servirtium-cpp.pc failed")
@@ -53,7 +53,7 @@ aeb(cap) {
 
         publish_artifact("package_dir", "${dist}")
         publish_artifact("tarball", "${tarball}")
-        println("cpp package: built relocatable prefix (C++ header + C client + engine) → cpp/dist, tarball → cpp/servirtium-cpp-2.0.0.tar.gz")
+        println("cpp package: built relocatable prefix (C++ header + C client + libservirtium_vcr) → cpp/dist, tarball → cpp/servirtium-cpp-2.0.0.tar.gz")
         return 0
     }
 }

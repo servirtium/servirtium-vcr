@@ -1,5 +1,5 @@
 //! Root of the Zig binding test suite. `zig build test` compiles this module
-//! (linked against the shared engine `.so`) and runs every `test {}` block in
+//! (linked against the shared `libservirtium_vcr.so`) and runs every `test {}` block in
 //! the files referenced below. We shell out to `curl` for HTTP (see
 //! `testutil.zig`) rather than fighting `std.http.Client`'s 0.16 API, and the
 //! record-mode tests drive a throwaway `FakeUpstream` over `std.Io.net`.

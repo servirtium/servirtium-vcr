@@ -1,4 +1,4 @@
-// JavaScript/TS binding tests (koffi). Loads the shared engine via
+// JavaScript/TS binding tests (koffi). Loads libservirtium_vcr via
 // SERVIRTIUM_VCR_LIB; jest --runInBand for the one-server-per-process rule.
 import bldr
 import javascript

@@ -3,7 +3,7 @@ markdown tape format.
 
 Since 2.0 this is a thin Python (ctypes) wrapper over the in-repo VCR core; all
 record/replay machinery lives in and is maintained as the in-repo
-``core/vcr.ae`` engine (built on Aether stdlib primitives). See README.md /
+``core/vcr.ae`` libservirtium_vcr (built on Aether stdlib primitives). See README.md /
 docs/.
 
     import servirtium

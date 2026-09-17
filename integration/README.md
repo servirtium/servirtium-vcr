@@ -1,12 +1,12 @@
 # Browser-driven integration test
 
-A real-browser end-to-end test of the Servirtium VCR engine: headless Chrome
+A real-browser end-to-end test of libservirtium_vcr: headless Chrome
 (via Selenium) drives a web page **served by the VCR**, whose same-origin XHR
 the VCR **replays from a tape**. Because the page and the API share the VCR's
 origin, there's no CORS — the trick that lets a browser test suite run against
 a Servirtium recording.
 
-The engine is shared across all 12 bindings, so this proves the browser-facing
+libservirtium_vcr is shared across all 12 bindings, so this proves the browser-facing
 behaviour for *all* of them; it's hosted here via the Python binding (any
 binding would do).
 
@@ -41,6 +41,6 @@ real believability showcase. It's the same shape as the smoke:
    the VCR root (`?<vcr-base>`), load it in Chrome, wait for `mocha.run()` to
    finish, scrape the pass/fail count from the DOM. No network.
 
-A green Mocha run in a real browser, across the same engine every language
+A green Mocha run in a real browser, across the same libservirtium_vcr every language
 binding wraps, is the cross-binding behavioural conformance — the
 "believability" proof.

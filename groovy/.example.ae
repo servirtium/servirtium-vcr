@@ -1,6 +1,6 @@
 // Third-party-consumer EXAMPLE test for the Groovy binding. Standalone Maven
 // project depending only on the installed servirtium-vcr-groovy jar (~/.m2);
-// replays the canonical tape via the Groovy DSL, engine .so transitive from the
+// replays the canonical tape via the Groovy DSL, libservirtium_vcr.so transitive from the
 // servirtium-vcr jar resource, no SERVIRTIUM_VCR_LIB.
 import bldr
 import std.os

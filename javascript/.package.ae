@@ -1,12 +1,12 @@
 // Third-party-consumer PACKAGE stage for the JavaScript/TypeScript binding.
 //
 // Builds the `@servirtium/vcr` npm tarball as a downstream user would receive
-// it: the freshly-built engine .so bundled INSIDE the tarball (package.json
+// it: the freshly-built libservirtium_vcr.so bundled INSIDE the tarball (package.json
 // `files` includes `native/**/*`), via the idiomatic `npm pack`. `npm pack`
 // runs the `prepare` script (rimraf dist && tsc), so the compiled dist/ ships
 // too.
 //
-// Deps core/.build.ae for the engine .so; publishes the pack output dir on the
+// Deps core/.build.ae for the libservirtium_vcr.so; publishes the pack output dir on the
 // "tarball_dir" artifact edge (holds one *.tgz), which javascript/.example.ae
 // consumes.
 import bldr
@@ -21,7 +21,7 @@ aeb(cap) {
         root = _get("root")
         jsdir = "${root}/javascript"
 
-        // 1. Bundle the engine .so into native/ (what `files: native/**/*` ships).
+        // 1. Bundle the libservirtium_vcr.so into native/ (what `files: native/**/*` ships).
         //    copy.file auto-creates the dest parent; `to` resolves against the
         //    leaf's source_dir (javascript/).
         copy.file() {
@@ -41,7 +41,7 @@ aeb(cap) {
             return 1
         }
         publish_artifact("tarball_dir", "${jsdir}/pkgout")
-        println("javascript package: built npm tarball with engine .so bundled → javascript/pkgout/")
+        println("javascript package: built npm tarball with libservirtium_vcr.so bundled → javascript/pkgout/")
         return 0
     }
 }

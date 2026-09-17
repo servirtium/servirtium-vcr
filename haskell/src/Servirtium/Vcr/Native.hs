@@ -4,7 +4,7 @@
 -- linked at build time via @foreign import ccall@. 1:1 with the
 -- @aether_vcr_embed_*@ C-ABI exported by @core\/embed.ae@.
 --
--- Per-listener contract (matching the engine side): N independent VCR
+-- Per-listener contract (matching libservirtium_vcr side): N independent VCR
 -- servers can run concurrently in one process, one server per port, each
 -- keyed by its own handle;
 -- every config / diagnostic / lifecycle call takes the handle. Returned

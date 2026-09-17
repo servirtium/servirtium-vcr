@@ -2,7 +2,7 @@
 //
 // Loads the Servirtium package into a FRESH Pharo image via its Metacello
 // baseline (from a published src copy under target/pharo-pkg, no core/ sibling),
-// pins the engine explicitly with `ServirtiumLibrary libPath:` (the binding's
+// pins libservirtium_vcr explicitly with `ServirtiumLibrary libPath:` (the binding's
 // first-class native-lib override), then replays the canonical tape over
 // in-image HTTP (ZnClient) — with no SERVIRTIUM_VCR_LIB. The honest "load the
 // package into my image and it just works" test.
@@ -38,7 +38,7 @@ aeb(cap) {
         loadst = "[ Metacello new baseline: 'Servirtium'; repository: 'tonel://${pkg}/src'; load: 'Servirtium'. Stdio stdout nextPutAll: 'LOADED'; lf ] on: Error do: [ :e | Stdio stdout nextPutAll: 'LOAD FAILED: '; nextPutAll: e messageText; lf. Smalltalk exitFailure ]"
         _w1 = io.write_file("${consumer}/load.st", loadst)
     
-        // 2. Pin the engine explicitly (first-class native-lib override), replay
+        // 2. Pin libservirtium_vcr explicitly (first-class native-lib override), replay
         //    the canonical tape, and assert body + a clean #ok outcome.
         runst = "[ | server body kind | ServirtiumLibrary libPath: '${so}'. server := (Servirtium playback: '${tape}') port: 0; start. body := ZnClient new get: server baseUrl, '/ok'. kind := server lastKind. server stop. (body = 'ok-body' and: [ kind = #ok ]) ifTrue: [ Stdio stdout nextPutAll: 'PASS[explicit]: consumer replayed the canonical tape via the loaded Servirtium package'; lf. Smalltalk exitSuccess ] ifFalse: [ Stdio stdout nextPutAll: 'FAIL: body='; print: body; nextPutAll: ' kind='; print: kind; lf. Smalltalk exitFailure ] ] on: Error do: [ :e | Stdio stdout nextPutAll: 'ERROR: '; nextPutAll: e messageText; lf. Smalltalk exitFailure ]"
         _w2 = io.write_file("${consumer}/run.st", runst)

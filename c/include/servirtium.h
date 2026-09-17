@@ -1,4 +1,4 @@
-/* servirtium.h — the C client for the shared pure-Aether VCR engine.
+/* servirtium.h — the C client for libservirtium_vcr.
  *
  * Servirtium records an HTTP conversation to a human-readable markdown tape
  * once, then replays it forever — offline, deterministic, git-diffable. Point
@@ -6,7 +6,7 @@
  *
  * This is the thinnest possible ergonomic layer over the flat C ABI
  * (aether_vcr_embed_*, from core/embed.ae). Unlike every other binding in this
- * repo, C needs no FFI bridge at all — the engine's ABI is already C — so what
+ * repo, C needs no FFI bridge at all — libservirtium_vcr's ABI is already C — so what
  * this header adds is exactly three things:
  *
  *   1. the ABI declared once, so a consumer doesn't hand-write 42 externs;
@@ -17,12 +17,12 @@
  *
  * It carries NO record/replay logic: markdown parse/emit, the HTTP server,
  * request matching, redactions and drift detection all live in the in-repo
- * Aether core/vcr.ae engine. This header is ALSO the substrate the C++ client
+ * Aether core/vcr.ae libservirtium_vcr. This header is ALSO the substrate the C++ client
  * (cpp/) wraps in RAII.
  *
- * Portability: C99, no dependencies beyond the engine .so. Link with
+ * Portability: C99, no dependencies beyond the libservirtium_vcr.so. Link with
  * -lservirtium_vcr (+ an rpath to its directory). Thread-safety matches the
- * engine: each sv_vcr handle is independent — N servers can run concurrently
+ * libservirtium_vcr: each sv_vcr handle is independent — N servers can run concurrently
  * in one process, one per port — but do not share one handle across threads
  * without external synchronisation.
  */
@@ -39,7 +39,7 @@ extern "C" {
 
 /* A heap string owned by the caller. `ptr` is NUL-terminated (never NULL for
  * a successful call; "" on an empty result). Free EVERY sv_str with sv_free —
- * do not free() it directly (it came from the engine's allocator). */
+ * do not free() it directly (it came from libservirtium_vcr's allocator). */
 typedef struct {
     char *ptr;
     size_t len;

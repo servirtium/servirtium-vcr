@@ -1,5 +1,5 @@
 // Pharo binding tests (UnifiedFFI). run-tests.sh loads the Tonel src into a
-// throwaway image and runs SUnit headless; uFFI loads the shared engine via
+// throwaway image and runs SUnit headless; uFFI loads libservirtium_vcr via
 // SERVIRTIUM_VCR_LIB. Needs a Pharo VM (PHARO_DIR).
 import bldr
 import pharo

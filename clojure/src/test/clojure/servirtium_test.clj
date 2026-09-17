@@ -1,7 +1,7 @@
 (ns servirtium-test
-  "Proves the Clojure wrapper drives the shared native engine end-to-end:
+  "Proves the Clojure wrapper drives libservirtium_vcr end-to-end:
   record the response of a throwaway HTTP upstream to a tape, then replay it
-  offline. Same engine the other bindings use, reached through the Java FFM
+  offline. Same libservirtium_vcr the other bindings use, reached through the Java FFM
   binding."
   (:require [clojure.test :refer [deftest is]]
             [servirtium :as vcr])

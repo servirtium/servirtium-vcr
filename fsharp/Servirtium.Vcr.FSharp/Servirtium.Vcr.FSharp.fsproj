@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- The shippable F# library: idiomatic F# over the ONE C# P/Invoke binding
-       (dotnet/Servirtium.Vcr) — no second FFI, no second .so. The engine .so
+       (dotnet/Servirtium.Vcr) — no second FFI, no second .so. The libservirtium_vcr.so
        travels in the Servirtium.Vcr package, which this one depends on, so
        `dotnet pack` here produces a small managed-only nupkg. -->
   <PropertyGroup>

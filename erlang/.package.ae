@@ -1,8 +1,8 @@
 // Third-party-consumer PACKAGE stage for the Erlang binding (and the BEAM
 // family). Builds a RELOCATABLE, self-contained copy of the servirtium_nif OTP
-// app under erlang/_build_pkg/servirtium_nif/{ebin,priv}: the engine
+// app under erlang/_build_pkg/servirtium_nif/{ebin,priv}: libservirtium_vcr
 // libservirtium_vcr.so ships in priv/ beside the NIF, and the NIF is linked
-// `-Wl,-rpath,$ORIGIN` so it finds the engine next to itself wherever the app
+// `-Wl,-rpath,$ORIGIN` so it finds libservirtium_vcr next to itself wherever the app
 // is placed — no SERVIRTIUM_VCR_LIB, no core/ reference. elixir/gleam consume
 // this same app. Deps core/.build.ae; publishes erl_libs.
 import bldr

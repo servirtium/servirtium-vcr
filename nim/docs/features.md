@@ -4,7 +4,7 @@ Servirtium capability checklist (record, playback, redaction/mutation, header
 removal, whole-tape normalization, notes, drift, static bypass, strict
 matching, markdown interop, diagnostics), mapped through the stack. "Test" =
 exercised by this binding's `tests/*_test.nim` suites against the real native
-library, unless noted as a core probe (the shared engine's `core_tests/`).
+library, unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 
 | Capability | Aether core | embed C-ABI | Nim API | Test |
 |---|:---:|:---:|---|:---:|
@@ -34,7 +34,7 @@ library, unless noted as a core probe (the shared engine's `core_tests/`).
 | One server per port (N servers / process) | ✅ | ✅ | (each `start` owns its handle) | ✅ |
 
 The two whole-tape rewrites are bound on the Nim surface
-(`normalizeWholeTape` / `redactWholeTape`) and proven at the shared-engine
+(`normalizeWholeTape` / `redactWholeTape`) and proven at libservirtium_vcr
 level (`core_tests/normalize_probe.ae`); the "one server per port" guarantee is
 exercised directly by this binding (`tests/playback_test.nim`: two playback
 servers alive at once on two ports) and by `core_tests/.concurrent.ae`.

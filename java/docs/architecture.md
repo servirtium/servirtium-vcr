@@ -24,7 +24,7 @@ your SUT  ⇄  http://127.0.0.1:<port>
 
 The Java side owns **none** of the Servirtium semantics. It starts/stops the
 server, marshals strings, and presents an idiomatic fixture. Everything that
-defines Servirtium behaviour is the pure-Aether engine in this repo's `core/`,
+defines Servirtium behaviour is libservirtium_vcr in this repo's `core/`,
 shared with every other language binding built on the same `core/embed.ae`
 (e.g. the .NET binding).
 

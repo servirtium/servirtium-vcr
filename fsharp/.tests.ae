@@ -8,7 +8,7 @@
 // xUnit facts. Split so the nupkg carries no test code and the two don't share
 // an obj/ dir. The test project ProjectReferences the library, which
 // ProjectReferences dotnet/Servirtium.Vcr's GENERATED csproj — hence the dep
-// on that leaf. SERVIRTIUM_VCR_LIB points the C# NativeLoader at the engine's
+// on that leaf. SERVIRTIUM_VCR_LIB points the C# NativeLoader at libservirtium_vcr's
 // shared_lib artifact; roll_forward lets the net8.0 test host launch on a box
 // carrying only a newer runtime (see the sibling dotnet test leaf).
 import bldr

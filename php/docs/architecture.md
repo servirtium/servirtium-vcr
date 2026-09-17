@@ -10,14 +10,14 @@ Servirtium\* (this package — thin PHP)
    ▼   PHP FFI
 libservirtium_vcr.so
    │   built: --emit=lib --with=fs,net core/embed.ae
-   │   core/embed.ae (C-ABI wrapper) + core/vcr.ae (the engine + HTTP server)
+   │   core/embed.ae (C-ABI wrapper) + core/vcr.ae (libservirtium_vcr + HTTP server)
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>
 ```
 
 The PHP layer owns **no** Servirtium semantics — it starts/stops the server,
 marshals strings, and presents an idiomatic fixture. All record/replay
-behaviour is the shared Aether engine, identical across every language
+behaviour is libservirtium_vcr, identical across every language
 binding.
 
 ## FFI surface

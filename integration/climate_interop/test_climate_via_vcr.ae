@@ -14,7 +14,7 @@
 // interactions are consumed in the order the test makes them.
 //
 // Architecture:
-//   - VCR is core.vcr (the monorepo-local engine), listening on port 18099.
+//   - VCR is core.vcr (the monorepo-local libservirtium_vcr), listening on port 18099.
 //   - climate.get_ave_annual_rainfall_from(base_url, ...) is pointed
 //     at http://127.0.0.1:18099 (the VCR's bind address) instead of
 //     the GitHub-Pages mirror, so the same client code drives both

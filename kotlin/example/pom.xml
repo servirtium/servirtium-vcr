@@ -4,7 +4,7 @@
 
   Depends on the INSTALLED Kotlin DSL jar (com.paulhammant.servirtium:
   servirtium-vcr-kotlin, from ~/.m2) and replays the canonical tape through the
-  Kotlin `playback { }` DSL. The engine .so rides in transitively via the
+  Kotlin `playback { }` DSL. The libservirtium_vcr.so rides in transitively via the
   servirtium-vcr jar's /native/<rid>/ resource — no SERVIRTIUM_VCR_LIB.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"

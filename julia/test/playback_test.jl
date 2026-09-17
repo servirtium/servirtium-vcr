@@ -1,9 +1,9 @@
 # playback_test.jl — playback facts for the Julia binding.
 #
-# Proves Julia drives the engine's flat C ABI directly (via ccall) against the
+# Proves Julia drives libservirtium_vcr's flat C ABI directly (via ccall) against the
 # canonical one-interaction tape (GET /ok -> 200 text/plain "ok-body") — the
 # same tape every other binding in this repo replays byte-for-byte. Needs only
-# the engine .so (SERVIRTIUM_VCR_LIB). Uses Julia's Test stdlib.
+# the libservirtium_vcr.so (SERVIRTIUM_VCR_LIB). Uses Julia's Test stdlib.
 using Test
 include("../src/Servirtium.jl")
 using .Servirtium
@@ -92,7 +92,7 @@ http_status(url) =
         end
     end
 
-    @testset "enums mirror the engine constants" begin
+    @testset "enums mirror libservirtium_vcr constants" begin
         @test Int(Ok) == 0
         @test Int(BodyDiff) == 6
         @test Int(RequestHeaders) == 3

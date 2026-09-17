@@ -1,5 +1,5 @@
 /**
- * servirtium — the D binding over the shared pure-Aether VCR engine.
+ * servirtium — the D binding over libservirtium_vcr.
  *
  * Servirtium records an HTTP conversation to a human-readable markdown tape
  * once, then replays it forever — offline, deterministic, git-diffable. Point
@@ -13,16 +13,16 @@
  * assert(vcr.lastKind == Outcome.ok);
  * ---
  *
- * One engine (`libservirtium_vcr`, written in Aether) exposes a flat C ABI of
+ * One libservirtium_vcr (`libservirtium_vcr`, written in Aether) exposes a flat C ABI of
  * `aether_vcr_embed_*` symbols; every language binding is a thin, ergonomic
  * surface over that ABI. This is the D one. It carries NO record/replay logic:
  * markdown parse/emit, the HTTP server, request matching, redactions and drift
- * detection all live in the in-repo `core/vcr.ae` engine.
+ * detection all live in the in-repo `core/vcr.ae` libservirtium_vcr.
  *
  * Why extern(C) + a real link (not a runtime dlopen): D compiles and links like
  * Nim/Zig/Go-cgo/Rust. The `.tests.ae` node passes
  * `-L-L../core/native -L-lservirtium_vcr -L-rpath ...` to dmd, so a test binary
- * finds the engine at build time and at run time.
+ * finds libservirtium_vcr at build time and at run time.
  *
  * Every ABI call that returns a `char*` hands back a caller-owned string; it is
  * copied into a GC'd D `string` and freed via `aether_vcr_embed_free_string` by
@@ -247,7 +247,7 @@ struct Vcr {
 
     void clearLastError() { aether_vcr_embed_clear_last_error(handle); }
 
-    // ---- config (each throws VcrException if the engine rejects it) ------
+    // ---- config (each throws VcrException if libservirtium_vcr rejects it) ------
 
     void redact(Field field, string pattern, string replacement) {
         check(aether_vcr_embed_redact(handle, field, pattern.toStringz,

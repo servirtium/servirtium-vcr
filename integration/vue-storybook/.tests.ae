@@ -9,7 +9,7 @@
 //
 // Needs: node, a Chrome/Chromium (Selenium Manager fetches the matching
 // chromedriver), and the JS binding built (../../javascript/dist). Deps the
-// shared engine. CI installs lean (--omit=dev: no Storybook tree).
+// shared libservirtium_vcr. CI installs lean (--omit=dev: no Storybook tree).
 import bldr
 import std.os
 aeb(cap) {

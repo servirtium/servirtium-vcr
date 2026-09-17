@@ -10,9 +10,9 @@ import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.nio.file.Files
 
 /**
- * Proves the Scala helpers drive the shared native engine end-to-end: record
+ * Proves the Scala helpers drive libservirtium_vcr end-to-end: record
  * the response of a throwaway HTTP upstream to a tape, then replay it offline.
- * Same engine the other bindings use, reached through the Java FFM binding.
+ * Same libservirtium_vcr the other bindings use, reached through the Java FFM binding.
  */
 class ServirtiumScalaTest:
 

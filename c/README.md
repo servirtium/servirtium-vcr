@@ -33,9 +33,9 @@ reimplement Servirtium in C.
 
 ### The one binding with no FFI bridge
 
-Every other binding in this repo bridges a runtime to the engine — ctypes,
+Every other binding in this repo bridges a runtime to libservirtium_vcr — ctypes,
 Fiddle, koffi, cgo, a NIF, P/Invoke, Panama. C needs none of that: **the
-engine's ABI is already C.** So what this binding adds is exactly three things:
+libservirtium_vcr's ABI is already C.** So what this binding adds is exactly three things:
 
 1. **the ABI declared once**, so a consumer doesn't hand-write 42 externs;
 2. **the Field and Outcome integers as real enums** (`sv_field`, `sv_outcome`);
@@ -54,7 +54,7 @@ This header is **also** the substrate the C++ client (`cpp/`) wraps in RAII.
   diagnostic calls, the full config surface (redactions, normalizations,
   header removals, the three opt-in matchers, notes, static content, untaped
   paths), the three flush variants, and the HAR converters.
-- `src/servirtium.c` — the implementation: forwards to the engine, converts
+- `src/servirtium.c` — the implementation: forwards to libservirtium_vcr, converts
   integers, handles string ownership. Nothing else.
 - `test/playback_test.c` — 17 facts over the canonical tape, plus the layer's
   own contracts (owned strings, a failed open reporting why, cursor reset).
@@ -63,10 +63,10 @@ This header is **also** the substrate the C++ client (`cpp/`) wraps in RAII.
 
 ## Building and testing
 
-C99, no dependencies beyond the engine `.so`. Needs a C compiler.
+C99, no dependencies beyond `libservirtium_vcr.so`. Needs a C compiler.
 
 ```sh
-aeb c/.tests.ae     # builds the engine, compiles src/ to an object,
+aeb c/.tests.ae     # builds libservirtium_vcr, compiles src/ to an object,
                     # links + runs the test binary
 ```
 
@@ -76,7 +76,7 @@ Three leaves, because the object is shared:
   `c_objects` artifact, so a dependent links it **without recompiling**. Used
   by the C test binary *and* by `cpp/`, whose C++ compiler must not recompile
   `servirtium.c` (its `extern "C"` symbols would come out mangled).
-- `c/.build.ae` — links the test binary against that object + the engine `.so`
+- `c/.build.ae` — links the test binary against that object + `libservirtium_vcr.so`
   (with an rpath, so it runs without `LD_LIBRARY_PATH`).
 - `c/.tests.ae` — runs it, passing the tape by absolute path.
 

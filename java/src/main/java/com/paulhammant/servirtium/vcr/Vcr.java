@@ -3,7 +3,7 @@ package com.paulhammant.servirtium.vcr;
 /**
  * Entry point for record/replay fixtures backed by the in-repo VCR core
  * (the {@code aether_vcr_embed_*} C-ABI from {@code core/embed.ae}, built on
- * the {@code core/vcr.ae} engine, reached via Java FFM / Project Panama —
+ * the {@code core/vcr.ae} libservirtium_vcr, reached via Java FFM / Project Panama —
  * {@link java.lang.foreign}). The
  * system-under-test talks plain HTTP to {@link VcrServer#baseUrl()}; tape paths,
  * mode, mutations, and diagnostics live in test setup/teardown.
@@ -18,7 +18,7 @@ package com.paulhammant.servirtium.vcr;
  * }
  * }</pre>
  *
- * <p>Handle-based contract (matching the engine): N independent VCR servers can
+ * <p>Handle-based contract (matching libservirtium_vcr): N independent VCR servers can
  * run concurrently in one process — one server per port — each keyed by its own
  * handle with its own tape, cursor, and mutation/diagnostic state. Config applied
  * via the builder lands on that handle alone, so a redaction/note/strict setting
@@ -35,7 +35,7 @@ public final class Vcr {
     }
 
     /**
-     * Replay a Servirtium markdown tape, pinning the engine {@code .so} path
+     * Replay a Servirtium markdown tape, pinning libservirtium_vcr {@code .so} path
      * explicitly (see {@link VcrBuilderBase#nativeLib(String)}); by default the
      * bundled library is discovered.
      */

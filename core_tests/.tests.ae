@@ -1,5 +1,5 @@
-// Aether-level engine tests: the test_vcr_*.ae suite (vendored from the Aether
-// stdlib) compiled against the LOCAL engine (core/vcr.ae, pure Aether),
+// Aether-level libservirtium_vcr tests: the test_vcr_*.ae suite (vendored from the Aether
+// stdlib) compiled against libservirtium_vcr (core/vcr.ae, pure Aether),
 // not the .so the bindings use. run-tests.sh builds + runs each as a binary.
 import bldr
 import std.os
@@ -7,8 +7,8 @@ aeb(cap) {
     bldr.build() {
         root = _get("root")
         rc = os.system("cd \"${root}/core_tests\" && ./run-tests.sh")
-        if rc != 0 { println("core_tests: engine tests failed"); return 1 }
-        println("core_tests: engine tests passed")
+        if rc != 0 { println("core_tests: libservirtium_vcr tests failed"); return 1 }
+        println("core_tests: libservirtium_vcr tests passed")
         return 0
     }
 }

@@ -14,13 +14,13 @@
 The native library is built from the in-repo Aether VCR core — `core/vcr.ae`
 with its C-ABI seam `core/embed.ae` — into `core/native/`. The whole repo is
 driven by [`aeb`](https://github.com/aether-lang-dev/aeb); building this binding
-builds the engine once first:
+builds libservirtium_vcr once first:
 
 ```sh
 aeb javascript/.tests.ae   # builds core/native/libservirtium_vcr.so, then runs the JS tests
 ```
 
-Under the hood the engine compiles to a shared library:
+Under the hood libservirtium_vcr compiles to a shared library:
 
 ```sh
 ae build --emit=lib --with=fs,net \

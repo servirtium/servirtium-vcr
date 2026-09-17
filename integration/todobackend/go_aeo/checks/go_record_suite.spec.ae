@@ -9,7 +9,7 @@
 // It invokes the CANONICAL aeb record leaf (../../go/.record.ae) — NOT a
 // hand-built `cd … && ENV=… go test` shell string. That leaf declares the whole
 // go-test invocation via go.go_test() { env_var(...) run_filter(...) }, gets the
-// engine .so through dep_artifact, and runs from the go.mod dir. So the only
+// libservirtium_vcr.so through dep_artifact, and runs from the go.mod dir. So the only
 // thing this spec does is ask the build runner to run it: `aeb <leaf>`.
 //
 // The record test itself drives the Mocha CRUD suite in headless Chrome through a

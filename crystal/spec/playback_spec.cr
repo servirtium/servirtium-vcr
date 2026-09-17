@@ -1,9 +1,9 @@
 # playback_spec.cr — playback facts for the Crystal binding.
 #
-# Proves Crystal drives the engine's flat C ABI directly (via the LibVcr `lib`
+# Proves Crystal drives libservirtium_vcr's flat C ABI directly (via the LibVcr `lib`
 # block) against the canonical one-interaction tape (GET /ok -> 200 text/plain
 # "ok-body") — the same tape every other binding in this repo replays
-# byte-for-byte. Needs only the engine .so (linked via the @[Link] ldflags /
+# byte-for-byte. Needs only the libservirtium_vcr.so (linked via the @[Link] ldflags /
 # the staged native/ dir). Crystal's built-in `spec` framework.
 require "spec"
 require "http/client"

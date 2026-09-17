@@ -1,11 +1,11 @@
 # aeb build outputs
 /target/
-# the shared native engine is a build artifact (core/.build.ae rebuilds it)
+# libservirtium_vcr is a build artifact (core/.build.ae rebuilds it)
 /core/native/*.so
 /core/native/*.dylib
 /core/native/*.dll
 
-# the engine .so staged next to a binding for its linker/loader to find
+# the libservirtium_vcr.so staged next to a binding for its linker/loader to find
 # (crystal's CRYSTAL_LIBRARY_PATH, swift's -L/-rpath, julia's bundled-path
 # discovery, dub's $PACKAGE_DIR/native lflags) — a build artifact, as
 # core/native/ above

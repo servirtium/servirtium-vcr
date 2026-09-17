@@ -1,6 +1,6 @@
 // Third-party consumer build for the Zig binding. A separate project that
 // imports the `servirtium` module from a published package copy and links its
-// bundled engine .so (at <pkg>/native, via a baked -rpath) — no
+// bundled libservirtium_vcr.so (at <pkg>/native, via a baked -rpath) — no
 // SERVIRTIUM_VCR_LIB. The package dir is passed via -Dpkg=<dir>.
 const std = @import("std");
 
@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     main_mod.addImport("servirtium", servirtium);
-    // Link the engine .so bundled inside the package, with an rpath so the
+    // Link the libservirtium_vcr.so bundled inside the package, with an rpath so the
     // consumer binary self-locates it at runtime.
     main_mod.addLibraryPath(.{ .cwd_relative = native });
     main_mod.linkSystemLibrary("servirtium_vcr", .{});

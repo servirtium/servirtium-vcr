@@ -13,7 +13,7 @@
       Servirtium VCR for Scala: a thin idiomatic layer (small playback/record
       helpers taking a Builder => Unit) over the Java FFM binding
       (com.paulhammant.servirtium:servirtium-vcr), which is the actual binding
-      to the native engine. Scala reaches the engine entirely through that jar
+      to libservirtium_vcr. Scala reaches libservirtium_vcr entirely through that jar
       via seamless Java interop, so there is no second FFI here. Run on JDK 22+
       with native access enabled (see the surefire argLine below); point
       SERVIRTIUM_VCR_LIB at libservirtium_vcr.so.
@@ -71,7 +71,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.5</version>
                 <configuration>
-                    <!-- FFM downcalls into the native engine -->
+                    <!-- FFM downcalls into libservirtium_vcr -->
                     <argLine>--enable-native-access=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>

@@ -1,9 +1,9 @@
-## Raw FFI surface over the native VCR engine. 1:1 with the
+## Raw FFI surface over libservirtium_vcr. 1:1 with the
 ## `aether_vcr_embed_*` C-ABI exported by `core/embed.ae` (shipped as
 ## `core/native/libservirtium_vcr.so`). The whole record/replay machinery —
 ## markdown parse/emit, the HTTP server, request matching, redactions, notes,
 ## drift detection, static bypass, gzip/chunked handling — lives in the
-## in-repo pure-Aether `core/vcr.ae` engine; this module only binds it.
+## in-repo pure-Aether `core/vcr.ae` libservirtium_vcr; this module only binds it.
 ##
 ## Per-listener contract: N independent VCR servers can run concurrently in
 ## one process, each keyed by its own opaque handle; every config / diagnostic
@@ -15,14 +15,14 @@
 import std/os
 export os  # currentSourcePath/`/`/dirname are only used in one compile-time `when` branch
 
-# Link the shared engine at the absolute path of core/native, resolved at
+# Link libservirtium_vcr at the absolute path of core/native, resolved at
 # compile time. Honor SERVIRTIUM_VCR_LIB (a path to the .so) if set, else fall
 # back to core/native next to this source tree. An -rpath is baked in so the
 # OS loader finds it at run time without LD_LIBRARY_PATH.
 const envLib = staticExec("printf %s \"$SERVIRTIUM_VCR_LIB\"")
 # Bundled copy shipped INSIDE the package at <pkg>/native (nim/.package.ae stages
 # the .so there). A third-party consumer with no repo `core/` still links and
-# self-locates the engine via this dir's baked -rpath. -L/-rpath to a missing
+# self-locates libservirtium_vcr via this dir's baked -rpath. -L/-rpath to a missing
 # dir is harmless, so we always pass both the monorepo core/native and the
 # bundled native dir.
 const bundledDir = currentSourcePath().parentDir().parentDir().parentDir() / "native"

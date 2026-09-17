@@ -1,10 +1,10 @@
 // Servirtium.Vcr — the shippable managed .NET binding (P/Invoke over the
-// native Aether VCR engine). aeb-native: the .csproj is GENERATED from
+// native Aether VCR libservirtium_vcr). aeb-native: the .csproj is GENERATED from
 // these declarations as .Servirtium.Vcr.generated.csproj (git-ignored),
 // never checked in — matching google-monorepo-sim's csharp components
 // (a .build.ae per project dir).
 //
-// bldr.dep on core/.build.ae builds the engine .so first; native_runtime
+// bldr.dep on core/.build.ae builds the libservirtium_vcr.so first; native_runtime
 // stages it under runtimes/<rid>/native/ so it's packed into the NuGet and
 // copied next to the assembly for dev/test (NativeLoader probes there).
 // Only the host RID (linux-x64) is wired here; the full per-RID grid feeds

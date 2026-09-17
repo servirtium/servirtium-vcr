@@ -35,7 +35,7 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     abstract S self();
 
     /**
-     * Pin an explicit path to the native engine library for this run — the
+     * Pin an explicit path to libservirtium_vcr library for this run — the
      * first-class way to say <em>where the {@code .so} is</em> at launch,
      * instead of relying on discovery. Wins over the bundled jar-resource
      * default and the {@code SERVIRTIUM_VCR_LIB} env override. Set before

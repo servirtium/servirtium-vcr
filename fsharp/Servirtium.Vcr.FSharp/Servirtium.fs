@@ -5,7 +5,7 @@ open Servirtium.Vcr
 /// Idiomatic F# over the .NET binding.
 ///
 /// There is NO second FFI here. The one CLR binding to the shared Aether VCR
-/// engine is `dotnet/Servirtium.Vcr` (P/Invoke over the `aether_vcr_embed_*`
+/// libservirtium_vcr is `dotnet/Servirtium.Vcr` (P/Invoke over the `aether_vcr_embed_*`
 /// C-ABI); everything in this module is ordinary F#/.NET interop on top of
 /// those classes — exactly as one Java jar backs the whole JVM family
 /// (Java/Kotlin/Scala/Clojure/Groovy) and one Erlang NIF backs the BEAM four.

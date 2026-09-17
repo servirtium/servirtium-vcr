@@ -53,7 +53,7 @@ reimplement Servirtium in Nim.
 ## What's tested
 
 Full feature/test parity with the Go binding — 15 cases across four files,
-all run against the real native engine:
+all run against the real native libservirtium_vcr:
 
 - **`tests/playback_test.nim`** — replays a recorded GET; flags a path mismatch
   via diagnostics; unredaction lets a scrubbed tape match (secure_get +
@@ -67,9 +67,9 @@ all run against the real native engine:
   not leak between fixtures; `failIfChanged` raises on drift.
 - **`tests/playback.nim`** — the original curl-driven playback smoke test.
 
-## Linking the native engine
+## Linking libservirtium_vcr
 
-The native engine is linked at build time via `{.passL.}` in
+libservirtium_vcr is linked at build time via `{.passL.}` in
 `src/servirtium/native.nim`:
 
 ```
@@ -81,13 +81,13 @@ The `-L`/`-rpath` directory is resolved at compile time: it honors
 `core/native` relative to this source tree. The baked-in `-rpath` means the OS
 loader finds `libservirtium_vcr.so` at run time without `LD_LIBRARY_PATH`.
 
-Build the shared engine from `core/` (needs the Aether `ae` toolchain) or set
+Build libservirtium_vcr from `core/` (needs the Aether `ae` toolchain) or set
 `SERVIRTIUM_VCR_LIB` to a prebuilt copy.
 
 ## Building / testing from source
 
 ```sh
-# build the shared engine from core/, then run the whole suite against it.
+# build libservirtium_vcr from core/, then run the whole suite against it.
 # --threads:on is required: the record/mutation suites run their throwaway
 # upstream's async accept loop on a dedicated thread.
 cd nim
@@ -99,7 +99,7 @@ for t in tests/playback.nim tests/playback_test.nim \
 done
 ```
 
-Or via aeb: `aeb nim/.tests.ae` (builds the engine `.so` first, then runs all
+Or via aeb: `aeb nim/.tests.ae` (builds `libservirtium_vcr.so` first, then runs all
 four files). The playback suite drives requests with `curl` via `osproc` (no
 HTTP-client dependency); the record/mutation suites use `std/httpclient` from
 the main thread, since forking `curl` while the async upstream thread is live

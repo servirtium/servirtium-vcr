@@ -1,7 +1,7 @@
 /// Servirtium for Dart (and Flutter): record/replay for HTTP service tests in
 /// the [Servirtium](https://servirtium.dev) markdown tape format.
 ///
-/// A thin `dart:ffi` wrapper over the in-repo `core/vcr.ae` engine
+/// A thin `dart:ffi` wrapper over the in-repo `core/vcr.ae` libservirtium_vcr
 /// (`libservirtium_vcr.so`).
 /// Point your system-under-test at [VcrServer.baseUrl]; in playback it replays
 /// a recorded tape with no network, in record it forwards to the real service

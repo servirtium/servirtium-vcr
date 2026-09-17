@@ -2,7 +2,7 @@
  *
  * Compiled against the UNPACKED tarball prefix (via its pkg-config file) with
  * no reference to this repo, and run with SERVIRTIUM_VCR_LIB and
- * LD_LIBRARY_PATH unset: only the engine .so bundled inside the prefix, found
+ * LD_LIBRARY_PATH unset: only the libservirtium_vcr.so bundled inside the prefix, found
  * through the baked rpath, can satisfy the link and the load.
  *
  * Replays the canonical tape (GET /ok -> 200 text/plain "ok-body").

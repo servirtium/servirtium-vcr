@@ -29,7 +29,7 @@ aeb(cap) {
         }
 
         publish_artifact("nupkg_dir", "${out}")
-        println("dotnet package: staged Servirtium.Vcr nupkg (engine .so bundled per-RID) → dotnet/pkg (a local NuGet feed)")
+        println("dotnet package: staged Servirtium.Vcr nupkg (libservirtium_vcr.so bundled per-RID) → dotnet/pkg (a local NuGet feed)")
         return 0
     }
 }

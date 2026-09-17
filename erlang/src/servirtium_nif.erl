@@ -2,7 +2,7 @@
 %%
 %% This is a 1:1 stub module: every function here is replaced at load time by
 %% the native implementation in c_src/servirtium_nif.c (priv/servirtium_nif.so),
-%% which links the engine in core/native/libservirtium_vcr.so. Until the NIF
+%% which links libservirtium_vcr in core/native/libservirtium_vcr.so. Until the NIF
 %% loads, each body raises `nif_error(not_loaded)`.
 %%
 %% This is the CANONICAL Aether VCR NIF for the whole BEAM family. It is built

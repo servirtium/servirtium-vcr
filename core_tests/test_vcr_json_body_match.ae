@@ -6,7 +6,7 @@
 // between them so each retries interaction 0):
 //
 //   A. match_json_body OFF (default): a key-reordered but semantically equal
-//      body must still 599 — the engine stays byte-exact by default.
+//      body must still 599 — libservirtium_vcr stays byte-exact by default.
 //   B. match_json_body ON: the same reordered body must now match (200).
 //   C. match_json_body ON but a NON-JSON body: must still 599 — unparseable
 //      bodies fall back to the byte-exact verdict, never loosened.

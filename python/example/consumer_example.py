@@ -3,11 +3,11 @@
 This is deliberately NOT a test inside the source tree. It is what a real
 downstream user gets after ``pip install servirtium``: it imports the package
 from site-packages (asserting it is NOT the in-repo ``python/servirtium/``),
-finds the native engine ``.so`` that shipped *inside* the wheel, and replays
+finds libservirtium_vcr ``.so`` that shipped *inside* the wheel, and replays
 the canonical Servirtium tape — proving the packaged artifact is self-contained
 and usable with no ``SERVIRTIUM_VCR_LIB`` and no access to this repo.
 
-Two modes, each meant to run in its OWN fresh process (the engine loads once
+Two modes, each meant to run in its OWN fresh process (libservirtium_vcr loads once
 per process, so mixing them would not honestly test discovery):
 
     python consumer_example.py explicit    # first-class native_lib= argument
@@ -57,11 +57,11 @@ def _assert_installed_not_source() -> None:
 
 
 def _bundled_so() -> str:
-    """The engine .so that shipped inside the installed wheel."""
+    """The libservirtium_vcr.so that shipped inside the installed wheel."""
     pkg_dir = os.path.dirname(os.path.abspath(servirtium.__file__))
     so = os.path.join(pkg_dir, "native", "libservirtium_vcr.so")
     if not os.path.isfile(so):
-        _fail(f"bundled engine .so missing from the installed wheel: {so}")
+        _fail(f"bundled libservirtium_vcr.so missing from the installed wheel: {so}")
     return so
 
 

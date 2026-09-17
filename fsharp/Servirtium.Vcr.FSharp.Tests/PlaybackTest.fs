@@ -10,7 +10,7 @@ open Servirtium.Vcr.FSharp
 /// Proves F# drives the ONE CLR binding (dotnet/Servirtium.Vcr, P/Invoke) — no
 /// second FFI — against the canonical one-interaction tape
 /// (GET /ok -> 200 text/plain "ok-body"), the same tape every other binding
-/// replays byte-for-byte. The engine .so is resolved by the C# NativeLoader
+/// replays byte-for-byte. The libservirtium_vcr.so is resolved by the C# NativeLoader
 /// (SERVIRTIUM_VCR_LIB, or the copy staged next to the assembly).
 
 let private tape = "tapes/single_get.md"

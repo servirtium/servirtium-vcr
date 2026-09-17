@@ -34,7 +34,7 @@ abstract class VcrBuilderBase
     }
 
     /**
-     * Pin an explicit path to the native engine library for this run — the
+     * Pin an explicit path to libservirtium_vcr library for this run — the
      * first-class way to say *where the `.so` is* at launch, instead of relying
      * on discovery. Wins over the bundled-`native/` default and the
      * `SERVIRTIUM_VCR_LIB` env override. Set before `start()`.

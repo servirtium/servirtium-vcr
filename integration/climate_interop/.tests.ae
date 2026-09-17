@@ -1,7 +1,7 @@
 // WorldBank-climate VCR test (offline, pure-Aether) — the canonical Servirtium
-// "weather" walkthrough, ported from the Aether engine's
+// "weather" walkthrough, ported from libservirtium_vcr's
 // contrib/climate_http_tests/ into the monorepo so it rides on core/ (the
-// engine now lives here). One probe, compiled against the LOCAL engine
+// libservirtium_vcr now lives here). One probe, compiled against libservirtium_vcr
 // (core/vcr.ae, pure Aether — aether.program with lib("../..") resolves
 // `import core.vcr` from the repo root) and run inline here — no .sh runner:
 //

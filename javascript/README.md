@@ -69,7 +69,7 @@ concurrently in one process, each keyed by its own opaque handle, with its own
 tape / cursor / mutations / diagnostics — so two `.start()` servers can be alive
 at once without bleeding into each other. The bundled `jest.config.js` still
 pins `maxWorkers: 1` (= `jest --runInBand`), but only because the suite shares a
-fixed test port across files, not because the engine is single-server. See
+fixed test port across files, not because libservirtium_vcr is single-server. See
 [docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port).
 
 ## Building from source

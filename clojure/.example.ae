@@ -1,6 +1,6 @@
 // Third-party-consumer EXAMPLE test for the Clojure binding. A deps.edn project
 // depending only on the installed servirtium-vcr-clojure jar (~/.m2); replays
-// the canonical tape via `servirtium/playback`. The engine .so is transitive
+// the canonical tape via `servirtium/playback`. The libservirtium_vcr.so is transitive
 // from the servirtium-vcr jar resource; no SERVIRTIUM_VCR_LIB. Clojure needs the
 // FFM flag passed to its JVM (-J--enable-native-access).
 import bldr

@@ -61,7 +61,7 @@ The library path is resolved at runtime, in order:
 
 1. the `SERVIRTIUM_VCR_LIB` OS environment variable (an absolute file path) —
    set by `run-tests.sh` / `bootstrap.sh` so the binding finds the freshly
-   built engine regardless of where the repo lives;
+   built libservirtium_vcr regardless of where the repo lives;
 2. `ServirtiumLibrary libPath:` (a class-side override a consumer baseline can
    pin);
 3. a committed default absolute path.

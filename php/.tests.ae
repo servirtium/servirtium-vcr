@@ -1,4 +1,4 @@
-// PHP binding tests. FFI loads the shared engine via SERVIRTIUM_VCR_LIB.
+// PHP binding tests. FFI loads libservirtium_vcr via SERVIRTIUM_VCR_LIB.
 //
 // ext-ffi is compiled as a shared module on many distros (Arch:
 // /usr/lib/php/modules/ffi.so) but NOT enabled in php.ini, so a bare `php`

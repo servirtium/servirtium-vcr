@@ -3,14 +3,14 @@
  * (the aether_vcr_embed_* symbols from core/embed.ae,
  * linked from core/native/libservirtium_vcr.so).
  *
- * This is the thin FFI seam: the engine, once started, is an HTTP server
+ * This is the thin FFI seam: libservirtium_vcr, once started, is an HTTP server
  * the system-under-test talks to over HTTP; the NIF only drives the
  * control surface (open/configure/start/stop/diagnostics/mutations). All
  * record/replay semantics live in the Aether core, not here.
  *
  * The opaque server handle is passed back to Elixir as a 64-bit integer
  * (uintptr_t). open_* run fast (binding only), start_* spawn a detached
- * pthread inside the engine, so no NIF here blocks the scheduler.
+ * pthread inside libservirtium_vcr, so no NIF here blocks the scheduler.
  *
  * PER-LISTENER: N independent servers can run concurrently in one process,
  * each keyed by its handle; every config / diagnostic / lifecycle NIF takes
@@ -27,7 +27,7 @@
 /* Most NIFs ignore some of (env, argc, argv); quiet -Wunused-parameter. */
 #define UNUSED(x) ((void)(x))
 
-/* ---- the engine's C-ABI (libservirtium_vcr.so) ------------------------- */
+/* ---- libservirtium_vcr's C-ABI (libservirtium_vcr.so) ------------------------- */
 
 extern void *aether_vcr_embed_open_playback(const char *label, const char *tape_path, const char *host, int port);
 extern void *aether_vcr_embed_open_playback_url(const char *label, const char *tape_url, const char *host, int port);
@@ -93,7 +93,7 @@ static char *term_to_cstr(ErlNifEnv *env, ERL_NIF_TERM term)
 }
 
 /* Build an Erlang binary term from a NUL-terminated C string, then free the
- * source via the engine's allocator. A NULL pointer yields an empty binary. */
+ * source via libservirtium_vcr's allocator. A NULL pointer yields an empty binary. */
 static ERL_NIF_TERM take_cstr(ErlNifEnv *env, char *s)
 {
     if (s == NULL) {

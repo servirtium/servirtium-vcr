@@ -22,7 +22,7 @@ module Servirtium
       @untaped = []
     end
 
-    # Pin an explicit path to the native engine library for this run — the
+    # Pin an explicit path to libservirtium_vcr library for this run — the
     # first-class way to say *where the +.so+ is* at launch, instead of
     # relying on discovery. Wins over the bundled-+native/+ default and the
     # +SERVIRTIUM_VCR_LIB+ env override. Set before {#start}.
@@ -300,7 +300,7 @@ module Servirtium
   end
 
   # Entry point for record/replay fixtures backed by the in-repo core/vcr.ae
-  # engine (built on Aether stdlib primitives), via the +aether_vcr_embed_*+
+  # libservirtium_vcr (built on Aether stdlib primitives), via the +aether_vcr_embed_*+
   # C-ABI from +core/embed.ae+. The
   # system-under-test talks plain HTTP to {Server#base_url}; tape paths, mode,
   # mutations, and diagnostics live in test setup/teardown.
@@ -317,7 +317,7 @@ module Servirtium
   module_function
 
   # Replay a Servirtium markdown tape from disk. +native_lib+ optionally pins
-  # the engine +.so+ path explicitly (see {BuilderBase#native_lib}); by default
+  # libservirtium_vcr +.so+ path explicitly (see {BuilderBase#native_lib}); by default
   # the bundled library is discovered.
   def playback(tape_path, native_lib: nil)
     b = PlaybackBuilder.new(tape_path)
@@ -328,7 +328,7 @@ module Servirtium
   # Record live interactions: forward to +upstream_base+, return the real
   # response to the SUT, and capture the exchange. The tape is written to
   # +tape_path+ when the server is closed. +native_lib+ optionally pins the
-  # engine +.so+ path explicitly.
+  # libservirtium_vcr +.so+ path explicitly.
   def record(tape_path, upstream_base, native_lib: nil)
     b = RecordBuilder.new(tape_path, upstream_base)
     b.native_lib(native_lib) if native_lib

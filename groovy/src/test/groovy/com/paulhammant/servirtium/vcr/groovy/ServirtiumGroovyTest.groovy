@@ -16,9 +16,9 @@ import static com.paulhammant.servirtium.vcr.groovy.Servirtium.record
 import static org.junit.jupiter.api.Assertions.assertEquals
 
 /**
- * Proves the Groovy DSL drives the shared native engine end-to-end: record the
+ * Proves the Groovy DSL drives libservirtium_vcr end-to-end: record the
  * response of a throwaway HTTP upstream to a tape, then replay it offline. Same
- * engine the other bindings use, reached through the Java FFM binding.
+ * libservirtium_vcr the other bindings use, reached through the Java FFM binding.
  */
 class ServirtiumGroovyTest {
 

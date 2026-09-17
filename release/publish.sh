@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Cut a GitHub Release for a tag and attach the cross-built engine artifacts +
+# Cut a GitHub Release for a tag and attach the cross-built libservirtium_vcr artifacts +
 # their checksums. Manual, CLI-only — no GitHub Actions, no repo settings, no
 # secrets: it uses your existing `gh` auth to create the release and upload
 # assets.
 #
-# ENGINE ONLY, on purpose. This ships the native libservirtium_vcr.* per OS/CPU —
+# libservirtium_vcr ONLY, on purpose. This ships the native libservirtium_vcr.* per OS/CPU —
 # the one thing that's hard for a user to produce. It does NOT publish the
 # per-language packages (wheel / gem / jar / nupkg / …) or push to any registry
 # (PyPI / npm / Maven / …): those are the `.package.ae` nodes' job and a
@@ -44,7 +44,7 @@ have gh || die "gh (GitHub CLI) not found — install it, or upload release/dist
 gh auth status >/dev/null 2>&1 || die "gh is not authenticated — run 'gh auth login'"
 
 # One release serves BOTH consumers of this repo:
-#   - source consumers (git clone + checkout <tag>, then build the engine with aeb)
+#   - source consumers (git clone + checkout <tag>, then build libservirtium_vcr with aeb)
 #     get the tree AT THE TAGGED COMMIT;
 #   - FFI consumers who don't want to build get the prebuilt libservirtium_vcr.*
 #     assets built HERE.
@@ -72,13 +72,13 @@ bins=( "$DIST"/*.so "$DIST"/*.dylib "$DIST"/*.dll "$DIST"/*.dll.lib )
 sums=( "$DIST"/*.sha256 )
 manifest=( "$DIST"/SHA256SUMS.txt )   # nullglob: empty if it doesn't exist
 shopt -u nullglob
-[ "${#bins[@]}" -gt 0 ] || die "no engine artifacts in release/dist — run release/build.sh (or drop --no-build)"
+[ "${#bins[@]}" -gt 0 ] || die "no libservirtium_vcr artifacts in release/dist — run release/build.sh (or drop --no-build)"
 assets=( "${bins[@]}" "${sums[@]}" "${manifest[@]}" )
 # Count only the loadable libraries (not the Windows .dll.lib import stubs) for
 # the "N platform artifacts" note.
 nbin=0; for f in "${bins[@]}"; do case "$f" in *.dll.lib) ;; *) nbin=$((nbin+1)) ;; esac; done
 
-# The os-arch combinations shipped — derived from the actual engine libs in dist
+# The os-arch combinations shipped — derived from the actual libservirtium_vcr libs in dist
 # (their names carry -<os>-<arch>.<ext>), so this stays true as the matrix
 # grows/shrinks rather than hardcoding. Deduped, comma-listed.
 plats="$(
@@ -89,9 +89,9 @@ plats="$(
   done | sort -u | awk 'NR>1{printf ", "} {printf "%s", $0} END{if (NR) print ""}'
 )"
 
-notes="Cross-built \`libservirtium_vcr\` engine, ${nbin} platform artifact(s) — each with a \`.sha256\` (and a combined \`SHA256SUMS.txt\`): ${plats}.
+notes="Cross-built \`libservirtium_vcr\` libservirtium_vcr, ${nbin} platform artifact(s) — each with a \`.sha256\` (and a combined \`SHA256SUMS.txt\`): ${plats}.
 
-This is the ENGINE shared library only — the one thing that's hard to produce.
+This is the libservirtium_vcr shared library only — the one thing that's hard to produce.
 Point any binding at a downloaded artifact via \`SERVIRTIUM_VCR_LIB=/path/to/lib…\`
 (or your OS loader path). The per-language packages (wheel / gem / jar / …) are
 NOT here — build those from the tagged source with \`aeb <lang>/.package.ae\`.

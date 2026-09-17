@@ -1,10 +1,10 @@
 // Real `svn` client driven through the Aether VCR — offline replay half of
-// the engine's svn_checkout_fs_equivalence test (the gated live-network
+// libservirtium_vcr's svn_checkout_fs_equivalence test (the gated live-network
 // comparison against svn.apache.org is intentionally NOT ported).
 //
 // Inline UP -> use -> DOWN, modelled on integration/todobackend/.python_record.ae:
 // the "service" is the VCR replay server process (checkout_server.ae, built
-// by aether.program against the local engine — lib("../..") resolves
+// by aether.program against the local libservirtium_vcr — lib("../..") resolves
 // `import core.vcr`), torn down unconditionally.
 //
 //   UP    start checkout_server on :18142 reading the vendored pre-scrubbed
@@ -14,7 +14,7 @@
 //         trust.jks, log4j.properties) materialised — the recorded checkout
 //   DOWN  kill the server (pkill -x checkout_server), clean target/ checkout
 //
-// The tape is committed pre-scrubbed: the engine's .sh did the request-block
+// The tape is committed pre-scrubbed: libservirtium_vcr's .sh did the request-block
 // scrub (perl) + spliced a synthetic 404 for interaction 4 (awk) at runtime;
 // here that transform is baked into tapes/svn_checkout_scrubbed.tape once.
 //

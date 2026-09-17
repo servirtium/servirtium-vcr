@@ -47,7 +47,7 @@
 // of them should be replayable by us. Note the compact spacing above:
 // our emitter writes the next `###` heading directly after a closing
 // code fence (no blank line between), and that is the canonical form
-// this engine produces. The parser is lenient and also accepts the
+// this libservirtium_vcr produces. The parser is lenient and also accepts the
 // looser "blank line after every fence" style other tools may emit.
 //
 // Matching is ordered. The dispatcher always checks method/path; it
@@ -237,7 +237,7 @@ struct Redaction {
 // modes, distinguished by which slot is set:
 //
 //   correlate (replacement == "", name set) — every DISTINCT match becomes a
-//     stable {{name-N}} token, N by order of first appearance. The engine
+//     stable {{name-N}} token, N by order of first appearance. libservirtium_vcr
 //     mints the token, so a server-generated value that recurs (a created
 //     entity's id echoed back in a later request path) collapses to the SAME
 //     token everywhere — identity preserved, so it round-trips on playback.
@@ -507,7 +507,7 @@ vcr_get_strict_headers() -> int { return vcr_get_strict_headers_k(cur_key()) }
 // Opt-in: when on, a request body that differs byte-for-byte from the recorded
 // one is re-checked for *semantic* JSON equality (key order and insignificant
 // whitespace ignored) before being called a mismatch. Off by default so the
-// engine stays byte-exact; a fixture turns it on when its bodies are JSON whose
+// libservirtium_vcr stays byte-exact; a fixture turns it on when its bodies are JSON whose
 // serialization it doesn't control. Non-JSON bodies fall back to the byte-exact
 // result, so enabling it never loosens matching for non-JSON payloads.
 vcr_set_match_json_body_k(key: string, on: int) {
@@ -521,7 +521,7 @@ vcr_get_match_json_body() -> int { return vcr_get_match_json_body_k(cur_key()) }
 // one that fits the request (method/path + any enabled header/body rules) rather
 // than consuming them in strict recorded order — and a matched interaction is
 // REUSABLE (not consumed), so repeated identical requests all replay it and
-// out-of-order requests still match. Off by default: the engine stays strictly
+// out-of-order requests still match. Off by default: libservirtium_vcr stays strictly
 // ordered ("the tape is a conversation"), which is the right model for most
 // tapes; turn this on for polling/retry or non-deterministic request order.
 vcr_set_match_multiple_k(key: string, on: int) {
@@ -1753,12 +1753,12 @@ serve_static_file(m: *StaticMount, req: ptr, res: ptr) {
 // buffer (16 KiB): such a request is handed over *streaming*, with
 // `http_request_body(req)` returning "" and the payload pulled window
 // by window off the socket via http.request_body_read. Small bodies
-// keep the legacy fully-buffered path. The engine reads each live body
+// keep the legacy fully-buffered path. libservirtium_vcr reads each live body
 // exactly once (record: forward upstream; replay: compare against the
 // tape), so a single sequential drain is correct for both. We
 // accumulate into a std.bytes buffer (O(n), binary-safe, embedded-NUL
 // preserving) and hand back a length-bearing AetherString, exactly
-// like the gzip/base64 wrappers elsewhere in the engine. The legacy
+// like the gzip/base64 wrappers elsewhere in libservirtium_vcr. The legacy
 // accessor would silently truncate a >16 KiB body to empty — a SOAP /
 // GraphQL / JSON / file-upload POST is well within that range — so
 // every body must come through here, never http_request_body directly.
@@ -2236,7 +2236,7 @@ find_line_start_token(haystack: string, token: string) -> int {
 
 // Kind-of-outcome enum. Returned by vcr.last_kind() after each
 // dispatch to tell the test which branch the dispatcher took.
-// These numeric values are the engine's stable Outcome contract,
+// These numeric values are libservirtium_vcr's stable Outcome contract,
 // mirrored by the VCR_KIND_* / Outcome ints in the C ABI (embed.ae)
 // and every binding.
 const KIND_OK                  = 0
@@ -2765,7 +2765,7 @@ har_headers_to_json(block: string) -> ptr {
     return a
 }
 
-// Strip the engine's " base64 below" marker off a content-type, yielding the
+// Strip libservirtium_vcr's " base64 below" marker off a content-type, yielding the
 // bare MIME type for HAR's content.mimeType.
 strip_base64_marker(ctype: string) -> string {
     idx = string.index_of(ctype, " base64 below")
@@ -2882,7 +2882,7 @@ check_tape(tape_path: string) -> (int, string) {
 }
 
 // Canonical-form check: "" when the on-disk bytes are exactly what this
-// engine's emitter writes for the tape's content (the compact/tight
+// libservirtium_vcr's emitter writes for the tape's content (the compact/tight
 // canonical form, default format options), else a description. A tape
 // can parse clean yet not be canonical — the parser is deliberately
 // lenient and accepts other Servirtium implementations' looser spacing.

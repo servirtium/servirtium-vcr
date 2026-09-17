@@ -8,7 +8,7 @@
 //! them into a Zig slice and free them via `aether_vcr_embed_free_string`.
 //!
 //! Unlike the Rust binding (which dlopens via libloading), this binding links
-//! the engine `.so` at build time and calls the exports directly.
+//! `libservirtium_vcr.so` at build time and calls the exports directly.
 //!
 //! This file exposes two layers:
 //!   * the raw `extern "c"` C ABI surface, and

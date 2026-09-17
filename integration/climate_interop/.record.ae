@@ -4,7 +4,7 @@
 // want to re-record the tape or sanity-check against the live upstream.
 //
 // Both probes honor AETHER_SKIP_NETWORK (set it and they skip / replay-only),
-// and both are built against the LOCAL engine (core/vcr.ae, pure Aether —
+// and both are built against libservirtium_vcr (core/vcr.ae, pure Aether —
 // aether.program with lib("../..") resolves `import core.vcr`) so they
 // build cleanly even on offline runners.
 //

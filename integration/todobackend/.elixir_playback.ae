@@ -6,7 +6,7 @@
 // real TodoBackend Mocha spec against it in headless Chrome (Elixir W3C
 // WebDriver client over :httpc + :json). No SUT, no network — proves the full
 // record/replay loop for the Elixir binding. The binding's C NIF links the
-// shared engine directly (NATIVE_DIR -> ../core/native), so no
+// shared libservirtium_vcr directly (NATIVE_DIR -> ../core/native), so no
 // SERVIRTIUM_VCR_LIB is needed; ExUnit runs serially (max_cases: 1).
 import bldr
 import std.os

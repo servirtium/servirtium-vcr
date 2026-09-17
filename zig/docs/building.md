@@ -1,6 +1,6 @@
 # Building and testing
 
-This binding links the shared native engine (`core/native/libservirtium_vcr.so`)
+This binding links libservirtium_vcr (`core/native/libservirtium_vcr.so`)
 at **build time** via `build.zig`, then runs its `zig build test` suite.
 
 ## Prerequisites
@@ -10,11 +10,11 @@ at **build time** via `build.zig`, then runs its `zig build test` suite.
   `std.ArrayList` unmanaged) match this release; see "Zig 0.16 gotchas" below.
 - **`curl`** on `PATH` — the test suite shells out to `curl` for HTTP rather
   than fighting `std.http.Client`'s churning API.
-- The native engine `libservirtium_vcr.so`, built from `core/` with the Aether
+- libservirtium_vcr `libservirtium_vcr.so`, built from `core/` with the Aether
   `ae` toolchain (≥ 0.227.0 for `std.regex` whole-tape rewrites + chunked
   de-chunk). It is git-ignored build output produced by `core/.build.ae`.
 
-## How the build finds the engine
+## How the build finds libservirtium_vcr
 
 `build.zig` resolves the directory holding `libservirtium_vcr.so` as:
 
@@ -26,7 +26,7 @@ that directory, so the test binary loads the `.so` at runtime with no
 `LD_LIBRARY_PATH`.
 
 ```sh
-# point the build at a prebuilt engine and run the full suite:
+# point the build at a prebuilt libservirtium_vcr and run the full suite:
 SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so zig build test
 ```
 
@@ -40,12 +40,12 @@ zig build test --summary all
 `src/test.zig` is the test root; it `@import`s `playback_test.zig`,
 `record_test.zig`, and `mutation_test.zig` so the test runner discovers every
 `test {}` block. `build.zig`'s `test` step compiles that root module against
-the engine and runs it.
+libservirtium_vcr and runs it.
 
 ## Within aeb (the monorepo build)
 
 In the monorepo, `zig/.tests.ae` is the build leaf. It `build.dep`s
-`core/.build.ae` (so the engine is built first), then shells:
+`core/.build.ae` (so libservirtium_vcr is built first), then shells:
 
 ```
 cd "<root>/zig" && SERVIRTIUM_VCR_LIB="<root>/core/native/libservirtium_vcr.so" zig build test

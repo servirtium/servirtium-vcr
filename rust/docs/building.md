@@ -4,15 +4,15 @@
 
 - **A current Rust toolchain** (edition 2021; tested with cargo 1.94).
 - **The Aether toolchain (`ae`) on PATH** — only needed to build the
-  *native* library (**≥ 0.227.0**, the engine's `std.regex` floor). Consumers
+  *native* library (**≥ 0.227.0**, libservirtium_vcr's `std.regex` floor). Consumers
   who ship a prebuilt `.so`/`.dylib` (or point `SERVIRTIUM_VCR_LIB` at one)
   don't need it.
 
 ## Build the native library
 
-The native library is the shared engine for the whole monorepo, built from
+The native library is libservirtium_vcr for the whole monorepo, built from
 the in-repo Aether VCR embedding module, `core/embed.ae` (which imports the
-pure-Aether engine `core/vcr.ae`). The Servirtium logic lives in this repo,
+pure-Aether libservirtium_vcr `core/vcr.ae`). The Servirtium logic lives in this repo,
 not the Aether standard library. The repo's build (`core/.build.ae`, run via
 `aeb`) produces it once into `core/native/`:
 
@@ -26,7 +26,7 @@ ae build --emit=lib --with=fs,net core/embed.ae \
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC`
   Aether runtime — **Aether ≥ 0.182.0**; chunked de-chunking needs
   **≥ 0.183.0**; the whole-tape `std.regex` normalize/redact path needs
-  **≥ 0.227.0**, which is the current floor for the engine.
+  **≥ 0.227.0**, which is the current floor for libservirtium_vcr.
 - `--extra core/_embed_strdup.c` links the ~12-line caller-owned-string
   bridge (`vcr_embed_dup`/`free`) — the one malloc/free FFI primitive the
   Aether stdlib can't express; everything else is pure Aether.

@@ -1,10 +1,10 @@
-// Swift binding tests. Swift calls the engine's flat C ABI (aether_vcr_embed_*)
+// Swift binding tests. Swift calls libservirtium_vcr's flat C ABI (aether_vcr_embed_*)
 // DIRECTLY via the CServirtiumVcr module map — no glue .c, no second copy of
 // the marshalling rules. The idiomatic Swift surface (the Vcr class with a
 // scoped withPlayback/withRecord form, Field/Outcome enums, throws instead of
 // NULL, automatic caller-owned-string handling) is in Sources/Servirtium.
 //
-// The engine .so is staged into native/ (copy.file) so Package.swift's
+// The libservirtium_vcr.so is staged into native/ (copy.file) so Package.swift's
 // -L native -lservirtium_vcr + rpath resolve it at link and run time.
 // swift.build_pkg compiles the SwiftPM package; swift.test runs the XCTest
 // playback facts.

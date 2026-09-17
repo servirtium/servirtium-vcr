@@ -1,6 +1,6 @@
 // Third-party-consumer EXAMPLE test for the Scala binding. Standalone Maven
 // project depending only on the installed servirtium-vcr-scala jar (~/.m2);
-// replays the canonical tape via the Scala helpers, engine .so transitive from
+// replays the canonical tape via the Scala helpers, libservirtium_vcr.so transitive from
 // the servirtium-vcr jar resource, no SERVIRTIUM_VCR_LIB.
 import bldr
 import std.os

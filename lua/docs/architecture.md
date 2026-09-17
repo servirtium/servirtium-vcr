@@ -34,12 +34,12 @@ by `core/.build.ae`.
 ## Why a C extension (not LuaJIT FFI)
 
 This is the **portable** binding path: a hand-written module using the Lua 5.4
-C API (`luaL_Reg` / `luaL_newlib`, the opaque engine handle carried as a *light
+C API (`luaL_Reg` / `luaL_newlib`, the opaque libservirtium_vcr handle carried as a *light
 userdata*), **not** LuaJIT FFI — LuaJIT is not a requirement and need not be
 installed. Two modules ship:
 
 - `servirtium_native.so` — the compiled extension, a thin 1:1 wrapper over the
-  engine ABI (`require("servirtium_native")`).
+  libservirtium_vcr ABI (`require("servirtium_native")`).
 - `servirtium.lua` — the idiomatic surface (`require("servirtium")`) that wraps
   it with builders + a `Server` object.
 
@@ -60,12 +60,12 @@ avoids colliding with the core's own `vcr_*` runtime symbols). It adds only the
 exposes each as a Lua C function. The helper `push_owned_string` copies a
 returned `char*` into a Lua string and frees the pointer; inputs are read with
 `luaL_checkstring` (Lua owns those, no free). Mutation setters return the
-engine's `char*` error ("" on success), surfaced to Lua and raised as a Lua
+libservirtium_vcr's `char*` error ("" on success), surfaced to Lua and raised as a Lua
 error by the builder's `check()`.
 
 ## Native-library resolution
 
-`build.sh` links the extension against the engine with:
+`build.sh` links the extension against libservirtium_vcr with:
 
 ```sh
 cc ... -L<core/native> -lservirtium_vcr -Wl,-rpath,<core/native> -o servirtium_native.so
@@ -74,7 +74,7 @@ cc ... -L<core/native> -lservirtium_vcr -Wl,-rpath,<core/native> -o servirtium_n
 `-L` finds it at link time; `-Wl,-rpath` bakes an **absolute** rpath into the
 module so the runtime loader finds `libservirtium_vcr.so` without
 `LD_LIBRARY_PATH`. For parity with the other bindings, the `.tests.ae` also
-exports `SERVIRTIUM_VCR_LIB` (an absolute path the engine honors first).
+exports `SERVIRTIUM_VCR_LIB` (an absolute path libservirtium_vcr honors first).
 
 ## Concurrency: one server per port
 

@@ -2,7 +2,7 @@
  * declared once, plus the ergonomic layer servirtium.h promises.
  *
  * Carries NO record/replay logic. Every function here either forwards to the
- * engine, converts an integer, or handles string ownership. If you find
+ * libservirtium_vcr, converts an integer, or handles string ownership. If you find
  * yourself wanting to parse a tape or match a request in this file, stop —
  * that is core/vcr.ae's job.
  */
@@ -93,7 +93,7 @@ const char *sv_open_error(void) { return sv_open_err; }
 /* Duplicate a NUL-terminated string with malloc. NOT strdup: strdup is POSIX,
  * not ISO C99, so under a strict -std=c99 it isn't declared (and on MSVC it is
  * spelled _strdup). This header advertises plain C99 with no dependencies
- * beyond the engine .so, so the four lines are cheaper than a feature macro. */
+ * beyond the libservirtium_vcr.so, so the four lines are cheaper than a feature macro. */
 static char *dup_string(const char *s) {
     size_t n;
     char *out;
@@ -104,7 +104,7 @@ static char *dup_string(const char *s) {
     return out;
 }
 
-/* Adopt an engine char* as an sv_str. NULL becomes an empty (but valid) one. */
+/* Adopt an libservirtium_vcr char* as an sv_str. NULL becomes an empty (but valid) one. */
 static sv_str adopt(char *raw) {
     sv_str s;
     if (raw == NULL) {
@@ -129,7 +129,7 @@ void sv_free(sv_str s) {
     if (s.ptr != NULL) aether_vcr_embed_free_string(s.ptr);
 }
 
-/* Copy the engine's last_error for the static open-error slot, then release
+/* Copy libservirtium_vcr's last_error for the static open-error slot, then release
  * it — the caller of an open gets a const char*, not an owned string. */
 static void capture_open_error(sv_handle h, const char *fallback) {
     char *raw = (h == NULL) ? NULL : aether_vcr_embed_last_error(h);
@@ -342,7 +342,7 @@ void sv_clear_format_options(sv_vcr *vcr) {
 
 /* ---- shutdown ---------------------------------------------------------- */
 
-/* Release the wrapper itself. The engine handle is already stopped by the
+/* Release the wrapper itself. libservirtium_vcr handle is already stopped by the
  * caller; this frees only what the C layer owns. */
 static void free_wrapper(struct sv_vcr *vcr) {
     free(vcr->host);

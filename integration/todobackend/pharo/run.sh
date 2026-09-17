@@ -22,7 +22,7 @@
 #   PHARO_DIR             Pharo VM + Pharo.image dir   (default $HOME/.local/pharo)
 #   SELENIUM_SERVER_JAR   selenium-server standalone jar (Selenium 4.x).
 #                         Default: $HOME/.cache/selenium/selenium-server.jar
-#   SERVIRTIUM_VCR_LIB    the native engine .so (required; set by the .ae leaf)
+#   SERVIRTIUM_VCR_LIB    the native libservirtium_vcr.so (required; set by the .ae leaf)
 #   TODOBACKEND_UPSTREAM  (record only) live SUT base URL
 set -euo pipefail
 
@@ -38,7 +38,7 @@ die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 [ -x "$PHARO_DIR/pharo" ]      || die "Pharo VM not found at '$PHARO_DIR/pharo' (set PHARO_DIR)."
 [ -f "$PHARO_DIR/Pharo.image" ] || die "Pharo.image not found in '$PHARO_DIR' (set PHARO_DIR)."
 [ -f "$SELENIUM_SERVER_JAR" ]  || die "Selenium server jar missing: $SELENIUM_SERVER_JAR (set SELENIUM_SERVER_JAR)."
-[ -n "${SERVIRTIUM_VCR_LIB:-}" ] || die "set SERVIRTIUM_VCR_LIB to the native engine .so"
+[ -n "${SERVIRTIUM_VCR_LIB:-}" ] || die "set SERVIRTIUM_VCR_LIB to the native libservirtium_vcr.so"
 command -v java >/dev/null     || die "java not found (needed for the Selenium server)."
 
 DRIVER="$(find "$HOME/.cache/selenium" -name chromedriver -type f 2>/dev/null | head -1)"

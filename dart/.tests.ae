@@ -1,5 +1,5 @@
 // Dart binding tests (dart:ffi). The loader honors SERVIRTIUM_VCR_LIB, pointed
-// at the shared engine artifact this node deps. `dart pub get` then `dart test`
+// at libservirtium_vcr artifact this node deps. `dart pub get` then `dart test`
 // serially (-j 1; native VCR state is process-global, shared across isolates).
 import bldr
 import dart

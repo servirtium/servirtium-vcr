@@ -10,7 +10,7 @@
 ;;;
 ;;; Carries NO record/replay logic: markdown parse/emit, the HTTP server,
 ;;; request matching, redactions and drift detection all live in the in-repo
-;;; Aether `core/vcr.ae` engine, reached through `servirtium_nif`. This module
+;;; Aether `core/vcr.ae` libservirtium_vcr, reached through `servirtium_nif`. This module
 ;;; only marshals strings across that seam and presents an idiomatic surface
 ;;; mirroring the Erlang twin (erlang/src/servirtium.erl) function-for-function.
 ;;;

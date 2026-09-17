@@ -1,9 +1,9 @@
-// Julia binding tests. Julia's built-in `ccall` invokes the engine's flat C ABI
+// Julia binding tests. Julia's built-in `ccall` invokes libservirtium_vcr's flat C ABI
 // (aether_vcr_embed_*) DIRECTLY — no glue, no second copy of the marshalling
 // rules. The idiomatic Julia surface (the Vcr struct with do-block forms,
 // Field/Outcome enums, caller-owned-string handling, a typed error) is in
-// src/Servirtium.jl. The engine .so is located via SERVIRTIUM_VCR_LIB (injected
-// from the engine's shared_lib artifact) — ccall's library handle is that
+// src/Servirtium.jl. The libservirtium_vcr.so is located via SERVIRTIUM_VCR_LIB (injected
+// from libservirtium_vcr's shared_lib artifact) — ccall's library handle is that
 // absolute path, so there is nothing to stage and no LD_LIBRARY_PATH.
 // julia.test runs the playback facts (Test stdlib).
 //

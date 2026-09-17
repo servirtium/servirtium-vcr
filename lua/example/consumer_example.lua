@@ -2,7 +2,7 @@
 --
 -- Requires the `servirtium` module from an INSTALLED package dir (on
 -- LUA_PATH/LUA_CPATH) and replays the canonical tape. The C extension
--- (servirtium_native.so) finds the engine libservirtium_vcr.so beside it via a
+-- (servirtium_native.so) finds libservirtium_vcr libservirtium_vcr.so beside it via a
 -- $ORIGIN rpath — so the package is self-contained and relocatable, with no
 -- SERVIRTIUM_VCR_LIB and no reference to the repo's core/.
 

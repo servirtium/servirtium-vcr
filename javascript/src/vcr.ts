@@ -1,4 +1,4 @@
-// Idiomatic TypeScript API over the in-repo core/vcr.ae engine (built on
+// Idiomatic TypeScript API over the in-repo core/vcr.ae libservirtium_vcr (built on
 // Aether stdlib primitives), via the `aether_vcr_embed_*` C-ABI from
 // `core/embed.ae`.
 //
@@ -81,7 +81,7 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected abstract self(): TSelf
 
   /**
-   * Pin an explicit path to the native engine library for this run — the
+   * Pin an explicit path to libservirtium_vcr library for this run — the
    * first-class way to say *where the `.so` is* at launch, instead of relying
    * on discovery. Wins over the bundled-`native/` default and the
    * `SERVIRTIUM_VCR_LIB` env override. Set before `.start()`.

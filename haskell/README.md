@@ -85,6 +85,6 @@ cabal test
 ```
 
 `build-native.sh` bakes an rpath into the test binary, so `cabal test` finds
-and loads the engine with no `LD_LIBRARY_PATH`. (If you skip the rpath, run
+and loads libservirtium_vcr with no `LD_LIBRARY_PATH`. (If you skip the rpath, run
 `LD_LIBRARY_PATH=$PWD/native cabal test`.) Details in
 [docs/building.md](docs/building.md).

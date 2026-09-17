@@ -1,28 +1,28 @@
 # Building
 
-This binding links the shared native engine at **build time** through Nim's C
+This binding links libservirtium_vcr at **build time** through Nim's C
 backend (`importc` + a `{.passL.}` link directive), so building is just
-`nim c` with the engine `.so` reachable.
+`nim c` with `libservirtium_vcr.so` reachable.
 
 ## Prerequisites
 
 - **Nim** ≥ 2.0 (developed against 2.2.4) with a C compiler (Nim compiles to C).
-- The native engine `core/native/libservirtium_vcr.so`. It is git-ignored build
-  output produced from the in-repo Aether engine (`core/vcr.ae` +
+- libservirtium_vcr `core/native/libservirtium_vcr.so`. It is git-ignored build
+  output produced from libservirtium_vcr (`core/vcr.ae` +
   `core/embed.ae`) by `core/.build.ae`, which shells out to
   `ae build --emit=lib --with=fs,net core/embed.ae … -o core/native/libservirtium_vcr.so`.
   - The Aether toolchain (`ae`) must be **≥ 0.227.0** (`std.regex` for the
-    engine's whole-tape rewrites, the `-fPIC` runtime that `--emit=lib --with=net`
+    libservirtium_vcr's whole-tape rewrites, the `-fPIC` runtime that `--emit=lib --with=net`
     needs, and chunked de-chunking on record).
-- No Aether source checkout is needed — the engine lives in this repo.
+- No Aether source checkout is needed — libservirtium_vcr lives in this repo.
 
-## Pointing Nim at the engine
+## Pointing Nim at libservirtium_vcr
 
 `src/servirtium/native.nim` resolves the link directory at compile time:
 
 - **`SERVIRTIUM_VCR_LIB`** — if set to the absolute path of the `.so`, its
   parent directory is used for `-L`/`-rpath`. This is how the tests and
-  `.tests.ae` pin the engine.
+  `.tests.ae` pin libservirtium_vcr.
 - otherwise it falls back to `core/native` relative to this source tree.
 
 The baked-in `-rpath` means the produced binary loads the `.so` at runtime
@@ -53,8 +53,8 @@ This binding's leaf is `nim/.tests.ae`:
 
 | Node | Class | What it does |
 |---|---|---|
-| `core/.build.ae` | build | builds the shared engine `.so` (once for every binding) |
-| `nim/.tests.ae` | test | `build.dep`s the engine, then compiles + runs all four Nim test files with `SERVIRTIUM_VCR_LIB` pointed at the freshly built `.so` |
+| `core/.build.ae` | build | builds the shared `libservirtium_vcr.so` (once for every binding) |
+| `nim/.tests.ae` | test | `build.dep`s libservirtium_vcr, then compiles + runs all four Nim test files with `SERVIRTIUM_VCR_LIB` pointed at the freshly built `.so` |
 
 ```sh
 aeb nim/.tests.ae      # native lib + the full Nim suite

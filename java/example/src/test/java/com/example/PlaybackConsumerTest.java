@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Third-party consumer test: exercises the INSTALLED servirtium-vcr jar (from
  * ~/.m2, resolved as a normal Maven dependency), replaying the canonical tape.
- * The engine .so is discovered zero-config from the jar's own /native/&lt;rid&gt;/
+ * The libservirtium_vcr.so is discovered zero-config from the jar's own /native/&lt;rid&gt;/
  * resource — no SERVIRTIUM_VCR_LIB, no source tree. This is the idiomatic Java
  * consumer experience (a jar bundles the native lib as a resource; there is no
  * loose .so file to pass to nativeLib(), so discovery is the mode here).

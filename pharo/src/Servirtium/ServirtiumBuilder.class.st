@@ -83,7 +83,7 @@ ServirtiumBuilder >> removeHeaderField: aField name: aName [
 { #category : 'configuring' }
 ServirtiumBuilder >> staticContentMount: aMountPath dir: anFsDir [
 	"Serve a path prefix from an on-disk directory instead of the tape /
-	 upstream (Servirtium step 11). The engine honors static mounts in record
+	 upstream (Servirtium step 11). libservirtium_vcr honors static mounts in record
 	 mode too, so a browser suite can be recorded served same-origin from the
 	 VCR (no CORS/preflight noise), matching how it's replayed."
 

@@ -1,7 +1,7 @@
 // servirtium — the standalone tape CLI. A pure-Aether static binary over
 // core/vcr.ae (no .so, no SERVIRTIUM_VCR_LIB): serve a tape as a live stub
 // server, lint tapes, and convert to/from HAR 1.2. Everything smart lives
-// in the engine (the one rule); this file is argv parsing and printlns.
+// in libservirtium_vcr (the one rule); this file is argv parsing and printlns.
 //
 //   servirtium serve  <tape.md>[,more.md...] [port] [--ordered]   replay tape(s) as a live server (default port 8080)
 //   servirtium check  [--canonical] <tape.md> ...    lint tapes: parse clean? (exit 0/1)
@@ -11,11 +11,11 @@
 // `serve` defaults to MatchMultiple playback (order-independent and
 // non-consuming, so repeated identical requests keep answering) because a
 // hand-driven stub server is exactly the demo/polling case; `--ordered`
-// restores the engine default (strictly ordered, each interaction consumed
+// restores libservirtium_vcr default (strictly ordered, each interaction consumed
 // once, then 599 tape-exhausted).
 //
 // `check` exits 0 only if every tape parses; `--canonical` additionally
-// requires byte-identity with this engine's compact emitter form (what the
+// requires byte-identity with this libservirtium_vcr's compact emitter form (what the
 // */example/tapes goldens are). The parser itself stays lenient.
 //
 // (`import`/`export` absorbed the old `servirtium-har` binary — same
@@ -43,7 +43,7 @@ usage() {
     println("")
     println("serve replays repeatably and order-independently (MatchMultiple);")
     println("--ordered restores strict one-shot tape order. check --canonical also")
-    println("requires the file to be byte-identical to the engine's emitter form.")
+    println("requires the file to be byte-identical to libservirtium_vcr's emitter form.")
 }
 
 // serve <tape.md>[,more.md...] [port] [--ordered] — bind a playback server

@@ -39,7 +39,7 @@ Smalltalk.
 ## Install (into a Pharo image)
 
 Load the Tonel project via its Metacello baseline, pointing at this repo's
-`src/`, then tell the binding where the native engine is (or export
+`src/`, then tell the binding where libservirtium_vcr is (or export
 `SERVIRTIUM_VCR_LIB` before launching the image):
 
 ```smalltalk
@@ -51,7 +51,7 @@ Metacello new
 ServirtiumLibrary libPath: '/abs/path/to/servirtium-pharo/native/libservirtium_vcr.so'.
 ```
 
-The engine library is **not** committed — build it once with
+libservirtium_vcr library is **not** committed — build it once with
 `./build-native.sh` (needs the Aether `ae` toolchain). See
 [docs/building.md](docs/building.md).
 

@@ -4,7 +4,7 @@ _build/
 # Legacy in-place build artifacts.
 ebin/
 
-# Native build artifacts: the compiled C NIF (links the engine via rpath).
+# Native build artifacts: the compiled C NIF (links libservirtium_vcr via rpath).
 priv/*.so
 priv/*.dylib
 priv/*.dll

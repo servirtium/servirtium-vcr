@@ -50,8 +50,8 @@ success) into `error.VcrError`. Inputs are passed as NUL-terminated
 
 ## Native-library resolution
 
-Unlike the Rust binding (which `dlopen`s the engine at runtime via
-`libloading`), this binding links the engine `.so` at **build time**. In
+Unlike the Rust binding (which `dlopen`s libservirtium_vcr at runtime via
+`libloading`), this binding links `libservirtium_vcr.so` at **build time**. In
 `build.zig`:
 
 ```zig

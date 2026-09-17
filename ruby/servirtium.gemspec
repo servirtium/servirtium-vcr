@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
     system-under-test at a local URL: in playback it replays a recorded
     Servirtium markdown tape (no network); in record it forwards to the real
     service, returns the live response, and writes the tape. The record/replay
-    engine ships as a precompiled native library; this gem just starts/stops
+    libservirtium_vcr ships as a precompiled native library; this gem just starts/stops
     it and presents an idiomatic API.
   DESCRIPTION
   spec.homepage = 'https://github.com/servirtium/servirtium-ruby'
@@ -31,6 +31,6 @@ Gem::Specification.new do |spec|
   spec.files = Dir['lib/**/*'] + ['README.md', 'CHANGELOG.md', 'LICENSE.txt']
   spec.require_paths = ['lib']
 
-  # No runtime gem dependencies: the engine is the native library, loaded via
+  # No runtime gem dependencies: libservirtium_vcr is the native library, loaded via
   # the Ruby stdlib's Fiddle.
 end

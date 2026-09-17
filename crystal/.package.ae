@@ -2,10 +2,10 @@
 //
 // Crystal consumes `servirtium` as a source shard (git-consumed, like a
 // crates.io crate is source-consumed by Cargo): shard.yml + src/. The binding
-// links the engine at the consumer's compile time via the @[Link] ldflags,
-// which carry a self-locating -L/-rpath off __DIR__/../native — so the engine
+// links libservirtium_vcr at the consumer's compile time via the @[Link] ldflags,
+// which carry a self-locating -L/-rpath off __DIR__/../native — so libservirtium_vcr
 // .so must ship INSIDE the shard, in native/. This stages the freshly-built
-// engine .so there.
+// libservirtium_vcr.so there.
 //
 // No tests run here; packaging is a build step (crystal/.tests.ae is the test
 // node). Deps core/.build.ae; publishes the shard dir on "package_dir".
@@ -25,7 +25,7 @@ aeb(cap) {
         }
 
         publish_artifact("package_dir", "${_get("root")}/crystal")
-        println("crystal package: staged engine .so into crystal/native/ (shard ready)")
+        println("crystal package: staged libservirtium_vcr.so into crystal/native/ (shard ready)")
         return 0
     }
 }

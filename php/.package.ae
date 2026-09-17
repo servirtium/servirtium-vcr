@@ -2,7 +2,7 @@
 //
 // PHP/Composer packages are source-consumed (no built artifact like a wheel):
 // a consumer adds this as a `path` repository and Composer copies it into
-// vendor/. So "packaging" here is just staging the freshly-built engine .so
+// vendor/. So "packaging" here is just staging the freshly-built libservirtium_vcr.so
 // into php/native/ (where the loader's bundled fallback looks, and which
 // Composer carries along in the copy). Deps core/.build.ae; publishes the php
 // package dir on the "package_dir" edge for php/.example.ae.
@@ -23,7 +23,7 @@ aeb(cap) {
         }
 
         publish_artifact("package_dir", "${_get("root")}/php")
-        println("php package: staged engine .so into php/native/ (Composer path package ready)")
+        println("php package: staged libservirtium_vcr.so into php/native/ (Composer path package ready)")
         return 0
     }
 }

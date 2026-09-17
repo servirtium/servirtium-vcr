@@ -9,7 +9,7 @@
 // than by path, so this checks the same thing a `shards install` consumer
 // would hit. The `shards` binary itself is not required (and is absent on this
 // box): copying the package into lib/<name> is precisely what it would do. The
-// engine .so is found only through the @[Link] ldflags' __DIR__-relative -L
+// libservirtium_vcr.so is found only through the @[Link] ldflags' __DIR__-relative -L
 // and baked rpath, pointing at the shard's own bundled native/.
 import bldr
 import std.os

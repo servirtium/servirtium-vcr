@@ -10,7 +10,7 @@ paths, mode, mutations, and diagnostics live in test setup/teardown.
         # point the SUT at vcr.base_url, drive it ...
         assert vcr.last_kind is servirtium.Outcome.OK
 
-One-server-per-port contract (from the engine side): N independent VCR servers
+One-server-per-port contract (from libservirtium_vcr side): N independent VCR servers
 can run concurrently, one per port, each keyed by its own handle. A fixture's
 config / diagnostics / tape are scoped to its handle, so two
 ``servirtium.playback(...).start()`` servers can be alive at once without
@@ -77,7 +77,7 @@ class _BuilderBase:
         self._untaped: list[str] = []
 
     def native_lib(self, path: str):
-        """Pin an explicit path to the native engine library for this run.
+        """Pin an explicit path to libservirtium_vcr library for this run.
 
         The first-class way to say *where the ``.so`` is* at launch, instead of
         relying on discovery. Passing it here (or via the ``native_lib=`` kwarg
@@ -437,7 +437,7 @@ class VcrServer:
 def playback(tape_path: str, *, native_lib: str | None = None) -> PlaybackBuilder:
     """Replay a Servirtium markdown tape from disk.
 
-    ``native_lib`` optionally pins the engine ``.so`` path explicitly (see
+    ``native_lib`` optionally pins libservirtium_vcr ``.so`` path explicitly (see
     :meth:`PlaybackBuilder.native_lib`); by default the bundled library is
     discovered."""
     b = PlaybackBuilder(tape_path)
@@ -451,7 +451,7 @@ def record(tape_path: str, upstream_base: str, *, native_lib: str | None = None)
     response to the SUT, and capture the exchange. The tape is written to
     ``tape_path`` when the server is closed.
 
-    ``native_lib`` optionally pins the engine ``.so`` path explicitly."""
+    ``native_lib`` optionally pins libservirtium_vcr ``.so`` path explicitly."""
     b = RecordBuilder(tape_path, upstream_base)
     if native_lib is not None:
         b.native_lib(native_lib)

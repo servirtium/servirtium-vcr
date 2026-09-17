@@ -12,9 +12,9 @@ import java.net.http.HttpResponse
 import java.nio.file.Files
 
 /**
- * Proves the Kotlin DSL drives the shared native engine end-to-end: record the
+ * Proves the Kotlin DSL drives libservirtium_vcr end-to-end: record the
  * response of a throwaway HTTP upstream to a tape, then replay it offline.
- * Same engine the other 12 bindings use, reached through the Java FFM binding.
+ * Same libservirtium_vcr the other 12 bindings use, reached through the Java FFM binding.
  */
 class ServirtiumKotlinTest {
 

@@ -1,4 +1,4 @@
-// Ruby binding tests. Fiddle loads the shared engine via SERVIRTIUM_VCR_LIB.
+// Ruby binding tests. Fiddle loads libservirtium_vcr via SERVIRTIUM_VCR_LIB.
 import bldr
 import ruby
 import ruby (rspec, env)

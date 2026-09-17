@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build + run the Aether-level engine tests (test_vcr_*.ae) against the local
-# engine source: each compiles `import core.vcr` (core/vcr.ae) and links the
+# Build + run the Aether-level libservirtium_vcr tests (test_vcr_*.ae) against the local
+# libservirtium_vcr source: each compiles `import core.vcr` (core/vcr.ae) and links the
 # hand-written core/vcr.ae (pure Aether), producing a test binary whose
 # exit code is pass/fail. Needs `ae` on PATH.
 set -uo pipefail

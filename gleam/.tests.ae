@@ -4,7 +4,7 @@
 // servirtium.gleam binds to it via @external(erlang, "servirtium_nif", ...);
 // this node deps that build and runs `gleam test` with the shared app on the
 // code path via ERL_LIBS (the `servirtium_nif` module + its priv .so resolve
-// the standard OTP way — code:priv_dir). Engine .so comes transitively via the
+// the standard OTP way — code:priv_dir). libservirtium_vcr.so comes transitively via the
 // erlang build's dep on core.
 import bldr
 import gleam

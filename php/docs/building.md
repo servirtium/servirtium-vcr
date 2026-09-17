@@ -28,7 +28,7 @@ build-from-source fallback); checks PHP 8.4+ with the FFI extension (does
 ./build-native.sh
 ```
 
-Builds `native/libservirtium_vcr.so` from this repo's in-repo engine
+Builds `native/libservirtium_vcr.so` from this repo's in-repo libservirtium_vcr
 `core/embed.ae` (the C-ABI wrapper) + `core/vcr.ae` (the pure-Aether VCR), on
 top of Aether stdlib primitives (`std.http`, `std.regex`, `std.zlib`,
 `std.cryptography`) — no Aether source checkout needed. The `--with=fs,net`
@@ -46,7 +46,7 @@ overrides the path (handy when iterating on `embed.ae`).
 
 ## Distributing to consumers
 
-The native engine should ship inside the Composer package (commit/pack
+libservirtium_vcr should ship inside the Composer package (commit/pack
 `native/<platform>` libs, or build on install) so a `composer require`
 consumer never needs the Aether toolchain. Multi-platform packaging (per-OS
 `.so`/`.dylib`/`.dll`) is the same concern every native-lib binding has.

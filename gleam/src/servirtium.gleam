@@ -13,7 +13,7 @@
 ////
 //// All record/replay machinery — markdown parse/emit, the HTTP server,
 //// request matching, redactions, drift detection, etc. — lives in the in-repo
-//// Aether `core/vcr.ae` engine. This module only drives the control surface
+//// Aether `core/vcr.ae` libservirtium_vcr. This module only drives the control surface
 //// through the C NIF (`servirtium_nif`, the Erlang binding's C NIF, reused
 //// over the BEAM). Gleam `String`s are Erlang binaries on the Erlang target,
 //// which is exactly the term type the NIF takes and returns.

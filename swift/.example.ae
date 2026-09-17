@@ -7,7 +7,7 @@
 //
 // What that proves beyond swift/.tests.ae: the package resolves and links as a
 // dependency of someone else's Package.swift — its -L/-rpath are relative to
-// the package, not to this checkout — and the engine .so travels with it.
+// the package, not to this checkout — and the libservirtium_vcr.so travels with it.
 //
 // Note this leaf needs a WORKING swift toolchain, which is not the same as
 // `swift` being on PATH: the build installed on this dev box is linked against

@@ -10,16 +10,16 @@ tape path, mode, mutations, assertions — lives in your test setup/teardown.
 
 ## Consuming this in another Go project
 
-This is a **cgo** package over a native engine, and Go gives a dependency no
+This is a **cgo** package over a libservirtium_vcr, and Go gives a dependency no
 build hook (a module fetched by `go get` is read-only, hash-verified source;
-there is no `postinstall`/`build.rs` equivalent). So how you bring the engine
+there is no `postinstall`/`build.rs` equivalent). So how you bring libservirtium_vcr
 in matters. In recommended order:
 
 ### Committed C amalgamation (recommended)
 
 Vendor a **self-contained C bundle** into an internal test package and let
 cgo compile it as part of your `go test`. The bundle is `servirtium.go` + a
-cgo bridge + a `ccore/` directory holding the Aether VCR engine emitted as
+cgo bridge + a `ccore/` directory holding libservirtium_vcr emitted as
 C (`aetherc --emit-c` + `--emit-header`) plus its runtime/std C closure — the
 [`mattn/go-sqlite3`](https://github.com/mattn/go-sqlite3) model.
 
@@ -28,7 +28,7 @@ yourrepo/
   internal/servirtiumvcr/        # committed; you import this directly
     servirtium.go
     cgo_bridge.go                # #cgo CFLAGS: -I${SRCDIR}/cengine
-    ccore/  *.c  *.h           # the engine + Aether runtime/std closure
+    ccore/  *.c  *.h           # libservirtium_vcr + Aether runtime/std closure
 ```
 
 Why this is the recommended path:

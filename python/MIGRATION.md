@@ -59,7 +59,7 @@ server-first model the Aether VCR is designed around.
 - `servirtium/_vcr.py` — **new**: idiomatic builders/fixture (`playback`,
   `record`, `PlaybackBuilder`, `RecordBuilder`, `VcrServer`, `Field`,
   `Outcome`, `VcrError`).
-- `servirtium/native/libservirtium_vcr.so` — the prebuilt native VCR engine.
+- `servirtium/native/libservirtium_vcr.so` — the prebuilt native VCR libservirtium_vcr.
 - The Servirtium markdown tape format and the compatibility suite —
   unchanged; format interop is the whole point.
 

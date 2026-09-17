@@ -6,12 +6,12 @@
 //
 //   dist/include/servirtium.h              the public header
 //   dist/lib/libservirtium_c.so            the C client (this binding)
-//   dist/lib/libservirtium_vcr.so          the engine it links
+//   dist/lib/libservirtium_vcr.so          libservirtium_vcr it links
 //   dist/lib/pkgconfig/servirtium.pc       `pkg-config --cflags --libs servirtium`
 //   ../servirtium-c-2.0.0.tar.gz           the whole prefix, one file
 //
 // RELOCATABLE, two ways that have to hold together:
-//   * libservirtium_c.so is linked `-Wl,-rpath,$ORIGIN`, so it finds the engine
+//   * libservirtium_c.so is linked `-Wl,-rpath,$ORIGIN`, so it finds libservirtium_vcr
 //     .so beside it wherever the prefix is unpacked;
 //   * the .pc anchors its prefix at `${pcfiledir}/../..` — pkg-config's own
 //     "directory holding this .pc" variable — so the -I/-L/-rpath a consumer
@@ -50,7 +50,7 @@ aeb(cap) {
         // normally-linked consumer would get -L/-l with no rpath and its binary
         // would fail at startup ("libservirtium_c.so: cannot open shared object
         // file") even with a complete prefix.
-        pc = "prefix=\\0044{pcfiledir}/../..\nexec_prefix=\\0044{prefix}\nlibdir=\\0044{prefix}/lib\nincludedir=\\0044{prefix}/include\n\nName: servirtium\nDescription: Record/replay for HTTP service tests (Servirtium markdown tapes) over the pure-Aether VCR engine\nVersion: 2.0.0\nLibs: -L\\0044{libdir} -lservirtium_c -lservirtium_vcr -Wl,-rpath,\\0044{libdir}\nCflags: -I\\0044{includedir}\n"
+        pc = "prefix=\\0044{pcfiledir}/../..\nexec_prefix=\\0044{prefix}\nlibdir=\\0044{prefix}/lib\nincludedir=\\0044{prefix}/include\n\nName: servirtium\nDescription: Record/replay for HTTP service tests (Servirtium markdown tapes) over libservirtium_vcr\nVersion: 2.0.0\nLibs: -L\\0044{libdir} -lservirtium_c -lservirtium_vcr -Wl,-rpath,\\0044{libdir}\nCflags: -I\\0044{includedir}\n"
         rc2 = os.system("printf '%b' \"${pc}\" > \"${dist}/lib/pkgconfig/servirtium.pc\"")
         if rc2 != 0 {
             println("c package: writing servirtium.pc failed")

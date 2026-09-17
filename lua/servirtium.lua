@@ -1,7 +1,7 @@
 -- servirtium.lua — idiomatic Lua surface over the C extension `servirtium_native.so`.
 --
 -- The C module (csrc/servirtium.c, loaded here via require) is a thin 1:1
--- wrapper over the shared Aether VCR engine's aether_vcr_embed_* C ABI. This
+-- wrapper over libservirtium_vcr's aether_vcr_embed_* C ABI. This
 -- file layers an object-style API on top, mirroring the mature Go binding:
 --
 --   * servirtium.playback(tape)            -> a PlaybackBuilder
@@ -86,7 +86,7 @@ function Server:reset_cursor()
 end
 
 -- Stage a note (record mode) for the next interaction to be captured. Returns
--- the engine's error string ("" on success).
+-- libservirtium_vcr's error string ("" on success).
 function Server:note(title, body)
     return C.note(self._handle, title, body)
 end
@@ -121,7 +121,7 @@ end
 
 -- ---- shared builder config (applied to a handle between open and start) ----
 
--- check(err, op) raises a Lua error if the engine returned a non-empty error
+-- check(err, op) raises a Lua error if libservirtium_vcr returned a non-empty error
 -- string from a mutation setter, matching the Go binding's checkErr behaviour.
 local function check(err, op)
     if err ~= nil and err ~= "" then

@@ -26,7 +26,7 @@ end
 Since **2.0**, this is a thin Ruby layer over the **Aether VCR** core. All
 record/replay machinery — markdown parse/emit, the HTTP server, request
 matching, redactions, notes, drift detection, static bypass, gzip/chunked
-handling — lives in the in-repo pure-Aether engine (`core/vcr.ae`, with the
+handling — lives in libservirtium_vcr (`core/vcr.ae`, with the
 `core/embed.ae` C-ABI), built on Aether's standard-library primitives (its
 HTTP server, regex, zlib, …) and built once to `core/native/libservirtium_vcr.so`.
 This gem loads that precompiled native build via Ruby's stdlib
@@ -60,13 +60,13 @@ to *use* it. (Currently linux-x64 ships prebuilt; build others with `aeb`, see
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering works
   (Ruby → Fiddle → `core/embed.ae` → `core/vcr.ae`), the native loader, and the
   one-server-per-port (handle-based) model.
-- **[docs/building.md](docs/building.md)** — building the native engine (via
+- **[docs/building.md](docs/building.md)** — building libservirtium_vcr (via
   `aeb`) and releasing.
 - **[MIGRATION.md](MIGRATION.md)** — the 0.x → 2.0 rewrite story.
 
 ## Concurrency: one server per port
 
-The engine uses a **one server per port** ABI: N independent VCR servers
+libservirtium_vcr uses a **one server per port** ABI: N independent VCR servers
 can run concurrently in one process, each keyed by its own handle, with its own
 tape, replay cursor, mutations, and diagnostics — nothing is process-global.
 Two `Servirtium.playback(...).start` servers can be alive at once without their
@@ -78,7 +78,7 @@ See [docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port)
 ## Building from source
 
 ```sh
-aeb ruby/.tests.ae    # builds the engine it deps, then runs rspec (needs `ae` ≥ 0.227.0 + `aeb`)
+aeb ruby/.tests.ae    # builds libservirtium_vcr it deps, then runs rspec (needs `ae` ≥ 0.227.0 + `aeb`)
 ```
 
 Details in [docs/building.md](docs/building.md).

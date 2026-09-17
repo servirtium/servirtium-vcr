@@ -1,4 +1,4 @@
-/* servirtium_vcr.h — the flat C ABI of the shared Aether VCR engine.
+/* servirtium_vcr.h — the flat C ABI of libservirtium_vcr.
  *
  * Declares the aether_vcr_embed_* symbols (from core/embed.ae) so Swift can
  * call them DIRECTLY via a clang module map — no glue .c, no second copy of the
@@ -8,7 +8,7 @@
  * free it with aether_vcr_embed_free_string. Most config setters return an
  * error string, empty meaning OK.
  *
- * This is the ONE FFI declaration the Swift binding needs; the engine .so is
+ * This is the ONE FFI declaration the Swift binding needs; the libservirtium_vcr.so is
  * linked via the -L/-rpath in Package.swift (the .tests.ae stages native/). */
 #ifndef SERVIRTIUM_VCR_H
 #define SERVIRTIUM_VCR_H

@@ -4,7 +4,7 @@
 // core/embed.ae): all record/replay machinery — markdown
 // parse/emit, the HTTP server, request matching, redactions, notes, drift
 // detection, static-content bypass, gzip/chunked handling — lives in and is
-// maintained as the in-repo core/vcr.ae engine (built on Aether stdlib
+// maintained as the in-repo core/vcr.ae libservirtium_vcr (built on Aether stdlib
 // primitives). This package does not reimplement Servirtium in Go.
 //
 // You point your system-under-test at a local base URL. In playback it
@@ -29,7 +29,7 @@
 package servirtium
 
 /*
-// Link against the engine .so from two locations, so both the in-repo build
+// Link against the libservirtium_vcr.so from two locations, so both the in-repo build
 // and a third-party consumer work: ${SRCDIR}/../core/native is the monorepo
 // layout (this module sitting next to core/); ${SRCDIR}/native is the bundled
 // copy a consumer gets (go/.package.ae stages the .so there, and it ships in the
@@ -187,7 +187,7 @@ type baseBuilder struct {
 
 // applyBase registers the config shared by both builders: header removals,
 // static-content mounts, and untaped paths. The latter two are honored in
-// both playback and record mode (the engine wires the static routes either
+// both playback and record mode (libservirtium_vcr wires the static routes either
 // way and the record dispatcher checks untaped), so a browser suite can be
 // served same-origin from the VCR while recording too — no CORS/OPTIONS noise
 // on the tape — matching how it's replayed.
@@ -397,7 +397,7 @@ func (b *RecordBuilder) Redact(field Field, pattern, repl string) *RecordBuilder
 
 // NormalizeWholeTape rewrites every distinct match of pattern (a regex),
 // scanned across all fields and interactions in first-appearance order, to a
-// stable {{name-N}} token. The engine mints the token, so a server-generated
+// stable {{name-N}} token. libservirtium_vcr mints the token, so a server-generated
 // value that recurs — a created entity's id echoed back in a later request
 // path — collapses to one token everywhere it appears (identity preserved, so
 // it round-trips on playback). Use it for correlated dynamic values; the

@@ -36,7 +36,7 @@ public enum VcrOutcome
 /// <summary>
 /// Raw P/Invoke surface over the native VCR library. 1:1 with the
 /// <c>aether_vcr_embed_*</c> C-ABI exported by <c>core/embed.ae</c>
-/// (the embedding layer over the in-repo <c>core/vcr.ae</c> engine,
+/// (the embedding layer over the in-repo <c>core/vcr.ae</c> libservirtium_vcr,
 /// built on Aether stdlib primitives), compiled to
 /// <c>core/native/libservirtium_vcr.so</c>.
 ///

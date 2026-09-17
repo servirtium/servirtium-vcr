@@ -1,6 +1,6 @@
 //// Third-party consumer example for the Gleam binding: imports the
 //// servirtium_gleam package (path dep) and replays the canonical tape. The
-//// engine .so loads through the shared servirtium_nif app's $ORIGIN-linked NIF
+//// libservirtium_vcr.so loads through the shared servirtium_nif app's $ORIGIN-linked NIF
 //// — no SERVIRTIUM_VCR_LIB. `let assert` panics (non-zero exit) on mismatch.
 
 import gleam/io

@@ -1,14 +1,14 @@
 # Servirtium VCR — monorepo
 
 Record/replay for HTTP service tests in the [Servirtium](https://servirtium.dev)
-markdown tape format, across many languages — **one engine, many thin
+markdown tape format, across many languages — **one libservirtium_vcr, many thin
 bindings, one build**.
 
-The record/replay engine is a single pure-Aether module in [`core/`](core/)
+libservirtium_vcr is a single pure-Aether module in [`core/`](core/)
 (`core/vcr.ae` plus the `core/embed.ae` C-ABI), built once here as a native
 shared library (`libservirtium_vcr.so`) on top of Aether's standard library
 (its HTTP server, regex, zlib, crypto, …). Each language binding is a thin FFI
-wrapper over that one engine, so they cannot drift from each other —
+wrapper over that one libservirtium_vcr, so they cannot drift from each other —
 Servirtium compatibility across languages is a build-time guarantee, not a
 test target.
 
@@ -31,7 +31,7 @@ servirtium-vcr/
   julia/         # ccall                       swift/     # C interop via a module map
   kotlin/ scala/ clojure/ groovy/  # JVM family — thin layers over the Java jar (no 2nd FFI)
   fsharp/        # CLR family — thin layer over the .NET assembly (no 2nd FFI)
-  core_tests/    # Aether-level engine tests (pure-Aether, no binding)
+  core_tests/    # Aether-level libservirtium_vcr tests (pure-Aether, no binding)
   integration/   # browser · subversion · climate · todobackend cross-binding tests
   <lang>/docs/   # per-binding usage docs
 ```
@@ -77,7 +77,7 @@ folder (`usage`, `features`, `architecture`, `building`).
 | Julia | `ccall` | [julia/README.md](julia/README.md) |
 | Swift | C interop via a module map | [swift/README.md](swift/README.md) |
 
-**JVM family.** Kotlin, Scala, Clojure and Groovy reach the engine through the
+**JVM family.** Kotlin, Scala, Clojure and Groovy reach libservirtium_vcr through the
 **Java binding's jar** via seamless JVM interop — there is *no second native
 FFI*. Each is a thin idiomatic layer over the same API, with its own
 record→replay test:
@@ -92,7 +92,7 @@ record→replay test:
 (For an independent, Kotlin-native option maintained outside this repo, see
 [http4k-testing/servirtium](https://github.com/http4k/http4k/tree/master/http4k-testing/servirtium).)
 
-**CLR family.** F# reaches the engine through the **.NET binding's assembly**
+**CLR family.** F# reaches libservirtium_vcr through the **.NET binding's assembly**
 via ordinary .NET interop — again *no second native FFI*:
 
 | Language | Idiomatic layer | Binding |
@@ -105,7 +105,7 @@ source.
 
 ## Features
 
-One engine; every binding exposes the same surface.
+One libservirtium_vcr; every binding exposes the same surface.
 
 - **Two modes** — *playback* (replay a committed tape, no network) and
   *record* (forward to the live upstream, return the real response, write the
@@ -147,7 +147,7 @@ One engine; every binding exposes the same surface.
     played as one script).
   - `servirtium check [--canonical] <tape.md> ...` lints tapes — parse-clean
     (exit 0/1, pre-commit friendly), and `--canonical` additionally requires
-    the engine emitter's compact byte-form (what the goldens are).
+    libservirtium_vcr emitter's compact byte-form (what the goldens are).
   - `servirtium import <in.har> <out.md>` / `export <in.md> <out.har>` — the
     **HAR bridge**: convert between the HTTP Archive format (Chrome DevTools /
     Fiddler / Charles / Postman exports) and Servirtium tapes. Capture real
@@ -208,7 +208,7 @@ artifact** that tests in any language can replay.
 
 Nothing here is published to a registry — but you don't have to build from
 source by hand either. One script, one language name, and you get the artifact
-your tooling expects with the native engine already inside it:
+your tooling expects with libservirtium_vcr already inside it:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/servirtium/servirtium-vcr/main/get-package.sh | sh -s -- ruby
@@ -225,7 +225,7 @@ aeb .packages.ae            # every language's package, one command (~50s)
 ```
 
 **Packaging runs no tests.** It compiles what must be compiled, bundles the
-engine `.so` where that language's loader or linker finds it, and stops — so
+`libservirtium_vcr.so` where that language's loader or linker finds it, and stops — so
 the wheel builds on a box with no `pytest`, the gem with no `rspec`. Testing is
 the separate `<lang>/.tests.ae` set; "can a stranger install this?" is the
 separate `<lang>/.example.ae` set.
@@ -246,7 +246,7 @@ adding a new one: **[docs/packaging.md](docs/packaging.md)**.
 
 
 The whole repo is built with **[aeb](https://github.com/aether-lang-dev/aeb)**,
-the polyglot Aether build runner — the natural fit for a one-engine,
+the polyglot Aether build runner — the natural fit for a libservirtium_vcr,
 many-language monorepo. You point `aeb` at the node you want (a dot-prefixed
 `.ae` script, e.g. `java/.tests.ae`); it follows that node's `dep(...)` edges
 and builds just its transitive dependencies, in order. Because every binding
@@ -262,11 +262,11 @@ tree and builds the full graph in dependency order.
 - **Installing `ae` + `aeb`** needs only `curl` — as of aeb v0.312 the toolchain
   installs binary-first with no compiler and no `make` (verified on a clean
   `debian:13-slim`).
-- **Building this repo's engine** (`core/` → `libservirtium_vcr.so`) is what needs
-  a **C compiler and a few `-dev` libraries**: the engine links OpenSSL, zlib,
+- **Building this repo's libservirtium_vcr** (`core/` → `libservirtium_vcr.so`) is what needs
+  a **C compiler and a few `-dev` libraries**: libservirtium_vcr links OpenSSL, zlib,
   PCRE2, brotli and zstd, so without their headers the build stops at
   `ld: cannot find -lssl …`. Plus `git` to clone. Install once — this exact set is
-  verified on a clean `debian:13` to build the engine and pass `aeb go/.tests.ae`:
+  verified on a clean `debian:13` to build libservirtium_vcr and pass `aeb go/.tests.ae`:
 
 ```sh
 # Debian/Ubuntu
@@ -325,7 +325,7 @@ result.)
 The `integration/todobackend/` suite stands its service-under-test up in a
 container. That standup is moving to **[aeo](https://github.com/aether-lang-dev/aeo)**,
 the ecosystem's infrastructure orchestrator (health-gated bring-up, verified
-teardown). You do **not** need `aeo` for the engine, the bindings, or `aeb
+teardown). You do **not** need `aeo` for libservirtium_vcr, the bindings, or `aeb
 go/.tests.ae` — only for that container integration tier. Its `get.sh` installs
 the same way, and ensures `ae` + `aeb` first (aeo shells them at runtime):
 
@@ -345,11 +345,11 @@ installing from a clone — are in
 ### Building
 
 ```sh
-./bootstrap.sh        # installs the toolchain if missing, then builds the engine + present bindings
+./bootstrap.sh        # installs the toolchain if missing, then builds libservirtium_vcr + present bindings
 # or, with ae (>= AE_PIN) and aeb (>= 0.308) already on PATH:
 aeb                   # whole repo: every node, in dependency order
-aeb core/.build.ae    # just the engine -> libservirtium_vcr.so (needs only ae + a C compiler)
-aeb go/.tests.ae      # one binding (builds the engine it deps, then tests — needs Go)
+aeb core/.build.ae    # just libservirtium_vcr -> libservirtium_vcr.so (needs only ae + a C compiler)
+aeb go/.tests.ae      # one binding (builds libservirtium_vcr it deps, then tests — needs Go)
 ```
 
 See each binding's own `docs/`, and [`integration/`](integration/) for the

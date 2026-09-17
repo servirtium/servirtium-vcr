@@ -6,7 +6,7 @@ namespace Servirtium;
 
 /**
  * Entry point for record/replay fixtures backed by the in-repo core/vcr.ae
- * engine (built on Aether stdlib primitives; the `aether_vcr_embed_*` C-ABI
+ * libservirtium_vcr (built on Aether stdlib primitives; the `aether_vcr_embed_*` C-ABI
  * from `core/embed.ae`). The system-under-test talks plain HTTP to
  * {@see VcrServer::baseUrl()}; tape paths, mode, mutations, and diagnostics
  * live in test setup/teardown.
@@ -33,7 +33,7 @@ final class Vcr
 
     /**
      * Replay a Servirtium markdown tape from disk. `$nativeLib` optionally pins
-     * the engine `.so` path explicitly (see {@see VcrBuilderBase::nativeLib()});
+     * `libservirtium_vcr.so` path explicitly (see {@see VcrBuilderBase::nativeLib()});
      * by default the bundled library is discovered.
      */
     public static function playback(string $tapePath, ?string $nativeLib = null): PlaybackBuilder
@@ -50,7 +50,7 @@ final class Vcr
      * Record live interactions: forward to `$upstreamBase`, return the real
      * response to the SUT, and capture the exchange. The tape is written to
      * `$tapePath` when the server is stopped. `$nativeLib` optionally pins the
-     * engine `.so` path explicitly.
+     * `libservirtium_vcr.so` path explicitly.
      */
     public static function record(string $tapePath, string $upstreamBase, ?string $nativeLib = null): RecordBuilder
     {

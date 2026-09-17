@@ -9,6 +9,6 @@ dist
 native/*.dylib
 native/*.dll
 
-# native engine .so — staged fresh by javascript/.package.ae, never commit
+# native libservirtium_vcr.so — staged fresh by javascript/.package.ae, never commit
 native/*.so
 pkgout/

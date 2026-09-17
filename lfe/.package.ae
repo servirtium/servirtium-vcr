@@ -4,15 +4,15 @@
 // owns) plus its own compiled module. This stage assembles BOTH as OTP apps
 // under lfe/_build_pkg, so a consumer points ERL_LIBS at ONE directory:
 //
-//   _build_pkg/servirtium_nif/{ebin,priv}   the shared NIF + engine .so
+//   _build_pkg/servirtium_nif/{ebin,priv}   the shared NIF + libservirtium_vcr.so
 //   _build_pkg/servirtium_lfe/ebin          servirtium_lfe.beam + .app
 //
 // The NIF half is not rebuilt here — it is copied from erlang/.package.ae's
-// RELOCATABLE app (engine .so in priv/, NIF linked `-Wl,-rpath,$ORIGIN`), so
+// RELOCATABLE app (libservirtium_vcr.so in priv/, NIF linked `-Wl,-rpath,$ORIGIN`), so
 // there is exactly one place that compiles the NIF and one rpath story for the
 // whole BEAM family. A consumer needs no SERVIRTIUM_VCR_LIB, no
 // SERVIRTIUM_NIF_DIR and no reference to this repo: `code:priv_dir/1` finds the
-// engine beside the NIF wherever _build_pkg is placed.
+// libservirtium_vcr beside the NIF wherever _build_pkg is placed.
 //
 // No tests run here; packaging is a build step (lfe/.tests.ae is the test node,
 // and it needs lfec/lfe — packaging needs lfec only).

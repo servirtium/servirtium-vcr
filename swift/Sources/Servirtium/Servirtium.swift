@@ -1,4 +1,4 @@
-// Servirtium.swift — the Swift binding over the shared Aether VCR engine.
+// Servirtium.swift — the Swift binding over libservirtium_vcr.
 //
 // Servirtium records an HTTP conversation to a human-readable markdown tape
 // once, then replays it forever — offline, deterministic, git-diffable. Point
@@ -9,13 +9,13 @@
 //   let body = try String(contentsOf: URL(string: vcr.baseUrl + "/ok")!)
 //   XCTAssertEqual(vcr.lastKind, .ok)
 //
-// Swift calls the engine's flat C ABI (aether_vcr_embed_*) DIRECTLY through the
+// Swift calls libservirtium_vcr's flat C ABI (aether_vcr_embed_*) DIRECTLY through the
 // CServirtiumVcr module map — no glue .c, no second copy of the marshalling
 // rules to drift from core/embed.ae.
 //
 // This file carries NO record/replay logic: markdown parse/emit, the HTTP
 // server, request matching, redactions and drift detection all live in the
-// in-repo pure-Aether core/vcr.ae engine. What Swift adds is a `withPlayback`
+// in-repo pure-Aether core/vcr.ae libservirtium_vcr. What Swift adds is a `withPlayback`
 // scoped form that always closes, typed enums, `throws` instead of NULL/error
 // strings, and automatic caller-owned-string handling.
 import CServirtiumVcr
@@ -181,7 +181,7 @@ public final class Vcr {
 
     public func clearLastError() { aether_vcr_embed_clear_last_error(handle) }
 
-    // ---- config (each throws if the engine rejects it) -------------------
+    // ---- config (each throws if libservirtium_vcr rejects it) -------------------
 
     public func redact(_ field: Field, _ pattern: String, _ replacement: String) throws {
         try check(aether_vcr_embed_redact(handle, field.rawValue, pattern, replacement),

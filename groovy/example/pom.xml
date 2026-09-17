@@ -2,7 +2,7 @@
 <!--
   Third-party consumer example for the Groovy binding. Depends on the INSTALLED
   servirtium-vcr-groovy jar (from ~/.m2) and replays the canonical tape through
-  the Groovy `playback(tape) { }` DSL. The engine .so rides in transitively via
+  the Groovy `playback(tape) { }` DSL. The libservirtium_vcr.so rides in transitively via
   the servirtium-vcr jar resource — no SERVIRTIUM_VCR_LIB.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"

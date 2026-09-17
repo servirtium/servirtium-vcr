@@ -1,5 +1,5 @@
 // Groovy binding tests — compile src/test/groovy, run via JUnit 5 (the
-// runner is language-agnostic). Engine .so via SERVIRTIUM_VCR_LIB.
+// runner is language-agnostic). libservirtium_vcr.so via SERVIRTIUM_VCR_LIB.
 //
 // The Groovy RUNTIME jar is a dep for the run, not the compile: groovyc comes
 // from the system Groovy install, but every class it emits implements

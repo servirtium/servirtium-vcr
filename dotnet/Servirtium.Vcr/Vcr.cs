@@ -73,7 +73,7 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     /// <summary>
     /// Serve a path prefix from an on-disk directory instead of the tape
     /// (Servirtium step 11). Honored in both playback and record mode — the
-    /// engine wires the static routes either way, so a browser suite can be
+    /// libservirtium_vcr wires the static routes either way, so a browser suite can be
     /// served same-origin from the VCR while recording too (no CORS/OPTIONS
     /// noise on the tape), matching how it's replayed.
     /// </summary>

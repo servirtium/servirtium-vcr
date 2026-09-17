@@ -1,7 +1,7 @@
 -- | Third-party consumer example for the Haskell binding.
 --
 -- A standalone cabal executable that depends on the servirtium-haskell package
--- and replays the canonical tape. The engine .so is linked from the package's
+-- and replays the canonical tape. The libservirtium_vcr.so is linked from the package's
 -- bundled native/ dir (via extra-lib-dirs + an rpath in cabal.project.local) —
 -- no SERVIRTIUM_VCR_LIB. HTTP is done by shelling out to curl (System.Process),
 -- so the consumer needs only GHC boot libraries (base, process) — no Hackage.

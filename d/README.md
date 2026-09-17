@@ -29,10 +29,10 @@ explanation lives here rather than in the manifest: `dub.json` is strict JSON
 with no comment syntax, and dub emits a warning — an empty-bodied one, which
 costs a minute to trace — for any key it does not recognise.)
 
-D declares the engine's flat C ABI (`aether_vcr_embed_*`) with `extern (C)` and
+D declares libservirtium_vcr's flat C ABI (`aether_vcr_embed_*`) with `extern (C)` and
 **links** it — like Nim, Zig, Go-cgo and Rust, not a runtime `dlopen`. The
 `.tests.ae` leaf passes `-L-L../core/native -L-lservirtium_vcr -L-rpath …` to
-dmd, so the test binary finds the engine at build time and at run time.
+dmd, so the test binary finds libservirtium_vcr at build time and at run time.
 
 ### What D adds
 

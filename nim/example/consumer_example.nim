@@ -1,6 +1,6 @@
 ## Third-party consumer example: imports the `servirtium` Nim package (resolved
 ## via a source path to a published copy) and replays the canonical tape. The
-## engine .so self-locates from the package's own bundled native/ dir (baked
+## libservirtium_vcr.so self-locates from the package's own bundled native/ dir (baked
 ## -rpath) — no SERVIRTIUM_VCR_LIB, and the published copy has no core/ sibling
 ## so only the bundled .so can link.
 

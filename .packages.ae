@@ -7,15 +7,15 @@
 //     ./get-package.sh <lang>   # or let the script install aeb and do it
 //
 // PACKAGING RUNS NO TESTS. Every leaf here is a build step: it compiles what
-// has to be compiled, bundles the engine .so where that language's loader or
+// has to be compiled, bundles the libservirtium_vcr.so where that language's loader or
 // linker will find it, and stops. The test nodes are the separate
 // `<lang>/.tests.ae` set, and the "can a stranger install this?" proofs are the
 // separate `<lang>/.example.ae` set. Keeping them apart is what lets a consumer
 // build a gem on a box with no rspec, or a wheel with no pytest.
 //
-// The engine .so is built ONCE by core/.build.ae and every leaf below deps it
+// The libservirtium_vcr.so is built ONCE by core/.build.ae and every leaf below deps it
 // (directly, or transitively via erlang/ or dotnet/), so the shared DAG means
-// this whole set costs one engine build.
+// this whole set costs one libservirtium_vcr build.
 //
 // What each language yields (see docs/packaging.md for the full table):
 //   a real archive     python (wheel) · ruby (gem) · javascript (npm tgz) ·
@@ -24,9 +24,9 @@
 //                      dart (pub) · c + cpp (relocatable tar.gz prefix)
 //   a source package   rust (crate) · go (module) · nim · crystal (shard) ·
 //                      julia (Pkg) · swift (SwiftPM) · d (dub) — each with the
-//                      engine .so staged inside, found by a baked rpath
+//                      libservirtium_vcr.so staged inside, found by a baked rpath
 //   a relocatable app  erlang/elixir/gleam/lfe (one servirtium_nif OTP app,
-//                      $ORIGIN rpath) · lua (Lua module + C ext + engine) ·
+//                      $ORIGIN rpath) · lua (Lua module + C ext + libservirtium_vcr) ·
 //                      haskell · pharo
 import bldr
 aeb(cap) {

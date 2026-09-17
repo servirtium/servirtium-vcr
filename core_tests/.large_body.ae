@@ -1,7 +1,7 @@
 // VCR large-request-body streaming test (aether #626). Since aether
 // 0.269.0 the std.http SERVER hands the handler a STREAMING request when
 // Content-Length > 16 KiB — http_request_body(req) returns "" and the
-// payload must be pulled via http.request_body_read. The engine read
+// payload must be pulled via http.request_body_read. libservirtium_vcr read
 // every body through the buffered accessor, so a > 16 KiB POST was
 // forwarded / recorded / compared as EMPTY. read_full_request_body
 // (core/vcr.ae) drains the stream; this leaf proves it end to end.

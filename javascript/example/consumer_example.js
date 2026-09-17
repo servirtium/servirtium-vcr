@@ -3,7 +3,7 @@
 // Not a test inside the source tree: this is what a downstream user gets after
 // `npm install @servirtium/vcr`. It requires the package from node_modules
 // (asserting it is NOT the in-repo javascript/src|dist), finds the native
-// engine .so that shipped *inside* the npm tarball, and replays the canonical
+// libservirtium_vcr.so that shipped *inside* the npm tarball, and replays the canonical
 // Servirtium tape — proving the packaged tarball is self-contained with no
 // SERVIRTIUM_VCR_LIB and no access to this repo.
 //
@@ -42,7 +42,7 @@ function packageRoot() {
 function bundledSo(root) {
   const so = path.join(root, 'native', 'libservirtium_vcr.so')
   if (!fs.existsSync(so)) {
-    fail('bundled engine .so missing from the installed package: ' + so)
+    fail('bundled libservirtium_vcr.so missing from the installed package: ' + so)
   }
   return so
 }

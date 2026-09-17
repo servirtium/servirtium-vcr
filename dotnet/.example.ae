@@ -3,7 +3,7 @@
 // Consumes the Servirtium.Vcr .nupkg (built by dotnet/Servirtium.Vcr/.dist.ae)
 // the idiomatic way: publish it to a LOCAL NuGet feed, then a standalone test
 // project restores it via a normal PackageReference and replays the canonical
-// tape. The engine .so auto-deploys from the package's runtimes/linux-x64/
+// tape. The libservirtium_vcr.so auto-deploys from the package's runtimes/linux-x64/
 // native/ asset and is discovered at AppContext.BaseDirectory — no
 // SERVIRTIUM_VCR_LIB. (.NET allows only ONE DllImportResolver per assembly,
 // registered internally, so there is no first-class native_lib= arg to add —

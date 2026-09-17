@@ -1,6 +1,6 @@
 "
 Field selector ints for redactions / unredactions / header removals.
-Mirror the FIELD_* constants in the in-repo core/vcr.ae engine:
+Mirror the FIELD_* constants in the in-repo core/vcr.ae libservirtium_vcr:
 
   Path=1  ResponseBody=2  RequestHeaders=3  RequestBody=4  ResponseHeaders=5
 

@@ -8,7 +8,7 @@ Load from a working tree:
 		repository: 'tonel://', '/abs/path/to/servirtium-pharo/src';
 		load.
 
-Then point ServirtiumLibrary at the native engine (or set the
+Then point ServirtiumLibrary at libservirtium_vcr (or set the
 SERVIRTIUM_VCR_LIB env var before launching the image):
 
 	ServirtiumLibrary libPath: '/abs/path/to/servirtium-pharo/native/libservirtium_vcr.so'.

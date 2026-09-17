@@ -12,7 +12,7 @@ Servirtium                ── thin Elixir, this repo ──
    │   • Servirtium.Native          — raw NIF stubs (lib/servirtium/native.ex)
    ▼   NIF call
 priv/servirtium_nif.so    ── hand-written C NIF (c_src/servirtium_nif.c) ──
-   │   erl_nif bindings to aether_vcr_embed_*; links the engine below.
+   │   erl_nif bindings to aether_vcr_embed_*; links libservirtium_vcr below.
    ▼   C-ABI
 core/native/libservirtium_vcr.so
    │   built from core/embed.ae (with the Aether stdlib's fs/net/regex)
@@ -50,12 +50,12 @@ The shared NIF:
 - String **out**: the caller-owned `char*` is copied into an Erlang binary, then
   freed with `aether_vcr_embed_free_string` — per the ABI's ownership rule.
   Mutation calls return `""` for success or an error message.
-- `start_playback` / `start_record` **return fast** — the engine binds the
+- `start_playback` / `start_record` **return fast** — libservirtium_vcr binds the
   socket synchronously (so an OS-assigned port is resolved before the call
-  returns) and runs its accept loop on a detached pthread *inside the engine*.
+  returns) and runs its accept loop on a detached pthread *inside libservirtium_vcr*.
   No NIF here does blocking I/O, so none stalls a BEAM scheduler thread.
 
-### How the NIF builds and links the engine
+### How the NIF builds and links libservirtium_vcr
 
 The Erlang binding's `.build.ae` compiles it once (Elixir just consumes the
 result over the BEAM):
@@ -70,8 +70,8 @@ cc -O2 -std=c11 -fPIC -I$(ERLANG_PATH)/usr/include \
 
 - `-I$(ERLANG_PATH)/usr/include` finds `erl_nif.h` (Erlang root from
   `code:root_dir()`).
-- `-L./native -lservirtium_vcr` links the engine shared library.
-- `-Wl,-rpath,<abs native dir>` bakes the engine's directory into the NIF, so
+- `-L./native -lservirtium_vcr` links libservirtium_vcr shared library.
+- `-Wl,-rpath,<abs native dir>` bakes libservirtium_vcr's directory into the NIF, so
   the dynamic loader finds `libservirtium_vcr.so` at runtime **without**
   `LD_LIBRARY_PATH`.
 
@@ -106,14 +106,14 @@ to it. So:
 
 - N independent servers can run concurrently in one BEAM, each addressed by the
   handle inside its `%Servirtium.Server{}`. Two live fixtures never bleed into
-  each other's cursors or mutations. The engine's `core_tests/concurrent_probe.ae`
+  each other's cursors or mutations. libservirtium_vcr's `core_tests/concurrent_probe.ae`
   proves this contract.
 - `Servirtium.playback/2` / `record/3` apply the fixture's config to *that
   handle* between `open_*` and `start` (see `apply_shared_config/2`,
   `apply_playback_config/2`, `apply_record_config/2`) — no global state, nothing
   to reset, no leak between servers by construction.
 - The included `test/test_helper.exs` still starts ExUnit with `max_cases: 1`,
-  but that is a choice of this suite, not a constraint of the engine — `async`
+  but that is a choice of this suite, not a constraint of libservirtium_vcr — `async`
   is left off the cases for the same reason, not because two servers would
   collide.
 

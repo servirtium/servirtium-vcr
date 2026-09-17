@@ -1,10 +1,10 @@
 /**
  * playback_test.d — playback facts for the D binding.
  *
- * Proves D drives the engine's flat C ABI directly (extern(C) + a real link)
+ * Proves D drives libservirtium_vcr's flat C ABI directly (extern(C) + a real link)
  * against the canonical one-interaction tape (GET /ok -> 200 text/plain
  * "ok-body") — the same tape every other binding in this repo replays
- * byte-for-byte. Needs only the engine .so (linked via the leaf's -L/-rpath).
+ * byte-for-byte. Needs only the libservirtium_vcr.so (linked via the leaf's -L/-rpath).
  *
  * A plain `main` returning non-zero on failure, which is what `d.test`
  * (dmd -run) treats as a failure. Run from d/ so tapes/ resolves; the path is
@@ -110,7 +110,7 @@ int main() {
         ck("second server serves", httpGet(b.baseUrl() ~ "/ok") == "ok-body");
     }
 
-    // ---- enums mirror the engine constants ----
+    // ---- enums mirror libservirtium_vcr constants ----
     ck("Outcome.ok is 0", cast(int) Outcome.ok == 0);
     ck("Outcome.bodyDiff is 6", cast(int) Outcome.bodyDiff == 6);
     ck("Field.requestHeaders is 3", cast(int) Field.requestHeaders == 3);

@@ -3,7 +3,7 @@ nimcache/
 tests/playback
 tests/*_test
 *.exe
-# native engine .so — staged fresh by nim/.package.ae; consumer_example binary
+# native libservirtium_vcr.so — staged fresh by nim/.package.ae; consumer_example binary
 native/*.so
 native/*.dylib
 native/*.dll

@@ -4,7 +4,7 @@ defmodule Servirtium.Server do
   and `Servirtium.record/3`; pass it to `Servirtium.base_url/1`,
   `Servirtium.port/1`, `Servirtium.note/3`, `Servirtium.stop/1`, etc.
 
-  `handle` is the engine's opaque pointer as a 64-bit integer (`0` == none).
+  `handle` is libservirtium_vcr's opaque pointer as a 64-bit integer (`0` == none).
   """
 
   @enforce_keys [:handle, :host, :tape_path, :mode, :fail_if_changed]

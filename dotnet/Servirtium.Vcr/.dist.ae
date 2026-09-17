@@ -1,5 +1,5 @@
 // Servirtium.Vcr — produce the shippable NuGet package. Deps the library
-// .build.ae (so the managed assembly is built and the engine .so is staged
+// .build.ae (so the managed assembly is built and the libservirtium_vcr.so is staged
 // via native_runtime), then `dotnet pack` bundles the managed DLL + the
 // per-RID native(s) under runtimes/<rid>/native/ into Servirtium.Vcr.nupkg.
 // The .nupkg is published as an aeb `nupkg` artifact for a publish step.

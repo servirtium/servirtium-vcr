@@ -15,10 +15,10 @@ The native library is built from the in-repo VCR embedding module,
 `libservirtium_vcr.so` into every binding:
 
 ```sh
-aeb python/.tests.ae    # builds the engine it deps, then the Python tests
+aeb python/.tests.ae    # builds libservirtium_vcr it deps, then the Python tests
 ```
 
-Under the hood the engine build is:
+Under the hood libservirtium_vcr build is:
 
 ```sh
 ae build --emit=lib --with=fs,net core/embed.ae \
@@ -27,7 +27,7 @@ ae build --emit=lib --with=fs,net core/embed.ae \
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
 - `--with=fs,net` grants the filesystem + networking capabilities the VCR needs
-  (tape I/O + the embedded HTTP server). The engine uses `std.regex`, so the
+  (tape I/O + the embedded HTTP server). libservirtium_vcr uses `std.regex`, so the
   current toolchain floor is **Aether ≥ v0.227.0** (chunked de-chunking was
   introduced at ≥ 0.183.0).
 

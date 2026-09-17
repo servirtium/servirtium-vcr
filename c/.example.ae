@@ -10,7 +10,7 @@
 // the .pc resolves to the UNPACKED copy rather than the build tree (it anchors
 // on ${pcfiledir}, so an absolute bake-time prefix would silently send the
 // link back here — a bug this layer caught for real); and the consumer's
-// binary finds libservirtium_c.so, which finds the engine beside itself
+// binary finds libservirtium_c.so, which finds libservirtium_vcr beside itself
 // through its $ORIGIN rpath.
 import bldr
 import std.os

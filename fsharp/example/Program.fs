@@ -1,7 +1,7 @@
 // Program.fs — a third party using the packaged F# binding.
 //
 // Restores Servirtium.Vcr.FSharp (and its Servirtium.Vcr dependency, which
-// carries the engine .so) from a LOCAL NUGET FEED, with no ProjectReference to
+// carries the libservirtium_vcr.so) from a LOCAL NUGET FEED, with no ProjectReference to
 // this repo and with SERVIRTIUM_VCR_LIB unset: only the per-RID native payload
 // inside the Servirtium.Vcr package can satisfy the P/Invoke.
 //

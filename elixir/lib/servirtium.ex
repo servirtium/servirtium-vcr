@@ -23,7 +23,7 @@ defmodule Servirtium do
 
   All record/replay machinery — markdown parse/emit, the HTTP server, request
   matching, redactions, notes, drift detection, static bypass, gzip/chunked
-  handling — lives in the in-repo `core/vcr.ae` engine (built on Aether stdlib
+  handling — lives in the in-repo `core/vcr.ae` libservirtium_vcr (built on Aether stdlib
   primitives, with the C-ABI embedding seam in `core/embed.ae`). This package
   drives a precompiled native build of that core through a C NIF; it does
   **not** reimplement Servirtium in Elixir.

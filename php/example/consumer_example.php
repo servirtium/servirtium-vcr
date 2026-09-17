@@ -7,7 +7,7 @@ declare(strict_types=1);
 //
 // Not a test inside the source tree: this is what a downstream user gets after
 // `composer require servirtium/servirtium-php`. It autoloads the package from
-// vendor/ (asserting it is NOT the in-repo php/src), finds the native engine
+// vendor/ (asserting it is NOT the in-repo php/src), finds libservirtium_vcr
 // .so that shipped *inside* the installed package (php/native/), and replays
 // the canonical Servirtium tape — proving the package is self-contained with no
 // SERVIRTIUM_VCR_LIB and no access to this repo.
@@ -61,7 +61,7 @@ $play = static function (\Servirtium\PlaybackBuilder $builder): void {
 if ($mode === 'explicit') {
     $so = $pkgRoot . '/native/libservirtium_vcr.so';
     if (!is_file($so)) {
-        fail("bundled engine .so missing from the installed package: {$so}");
+        fail("bundled libservirtium_vcr.so missing from the installed package: {$so}");
     }
     $play(Vcr::playback($tape, $so));
     echo "ok: explicit ->nativeLib() playback (bundled .so {$so})\n";

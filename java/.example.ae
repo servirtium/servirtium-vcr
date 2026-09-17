@@ -3,7 +3,7 @@
 // Runs a standalone Maven consumer project (java/example) whose only servirtium
 // dependency is com.paulhammant.servirtium:servirtium-vcr:2.0.0-SNAPSHOT,
 // resolved from ~/.m2 (populated by java/.package.ae) — NOT the source classes.
-// Its JUnit test replays the canonical single_get tape, with the engine .so
+// Its JUnit test replays the canonical single_get tape, with the libservirtium_vcr.so
 // discovered from the jar's own /native/linux-x64/ resource and no
 // SERVIRTIUM_VCR_LIB. The honest "add the Maven dependency and it just works"
 // test the in-tree java/.tests.ae cannot give.

@@ -8,7 +8,7 @@
 // proves the full record/replay loop for the Haskell binding.
 //
 // Models the `.tests.ae` invocation: generate cabal.project.local so the
-// build links + loads the native engine (ghc-pkg rejects a relative
+// build links + loads libservirtium_vcr (ghc-pkg rejects a relative
 // extra-lib-dirs), then `cabal run` the integration executable.
 import bldr
 import std.os

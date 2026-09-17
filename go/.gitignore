@@ -3,7 +3,7 @@ compatibility_suite_mock_replacements.sh
 .idea
 /vendor/
 
-# native engine .so — staged fresh by go/.package.ae, never commit
+# native libservirtium_vcr.so — staged fresh by go/.package.ae, never commit
 native/*.so
 native/*.dylib
 native/*.dll

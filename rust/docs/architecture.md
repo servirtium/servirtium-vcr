@@ -84,7 +84,7 @@ this.) Consequences:
 - As a belt-and-braces measure the current wrapper still takes one
   process-wide `Mutex` for the life of each `VcrServer` (so `cargo test`'s
   parallel runner is safe with no `--test-threads=1`); the one-server-per-port core
-  means this is a wrapper policy, not an engine constraint. Tests in
+  means this is a wrapper policy, not an libservirtium_vcr constraint. Tests in
   *separate* integration-test binaries are separate processes anyway.
 
 ## A subtle ordering rule (notes)

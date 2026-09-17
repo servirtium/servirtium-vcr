@@ -23,7 +23,7 @@ erl_crash.dump
 servirtium-*.tar
 servirtium_elixir-*.tar
 
-# Native build artifacts: the engine lib (built by build-native.sh) and the
+# Native build artifacts: libservirtium_vcr lib (built by build-native.sh) and the
 # compiled C NIF (built by mix compile via elixir_make). Run build-native.sh +
 # mix compile after cloning, or let CI build them.
 /native/*.so

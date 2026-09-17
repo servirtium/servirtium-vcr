@@ -3,7 +3,7 @@
 Servirtium capability checklist, mapped through the stack. "Test" = exercised
 by this binding's `zig build test` suite (`src/playback_test.zig`,
 `record_test.zig`, `mutation_test.zig`) against the real native library, unless
-noted as a core probe (the shared engine's `core_tests/`).
+noted as a core probe (libservirtium_vcr's `core_tests/`).
 
 | Capability | Aether core | embed C-ABI | Zig API | Test |
 |---|:---:|:---:|---|:---:|

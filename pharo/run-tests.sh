@@ -4,7 +4,7 @@
 # error. This is the bar for the binding.
 #
 # We never mutate the developer's base image: we work on a fresh copy under
-# build/ so repeated runs are deterministic. The native engine and tape
+# build/ so repeated runs are deterministic. libservirtium_vcr and tape
 # resources are located via env vars (SERVIRTIUM_VCR_LIB / SERVIRTIUM_TAPES_DIR)
 # so the binding finds them regardless of where this repo lives.
 #
@@ -23,7 +23,7 @@ die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 [ -f "$PHARO_DIR/Pharo.image" ] || die "Pharo.image not found in '$PHARO_DIR' (set PHARO_DIR)."
 
 LIB="${SERVIRTIUM_VCR_LIB:-$HERE/native/libservirtium_vcr.so}"
-[ -f "$LIB" ] || die "native engine missing: $LIB (run ./build-native.sh)."
+[ -f "$LIB" ] || die "native libservirtium_vcr missing: $LIB (run ./build-native.sh)."
 
 export SERVIRTIUM_VCR_LIB="$LIB"
 export SERVIRTIUM_TAPES_DIR="$HERE/src/Servirtium-Tests/tapes"

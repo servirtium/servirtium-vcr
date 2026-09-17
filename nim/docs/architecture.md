@@ -51,7 +51,7 @@ passed as `cstring` views of Nim strings (kept alive across the call).
 ## Native-library resolution (importc + passL)
 
 Unlike the runtime-loading bindings (Python ctypes, Ruby Fiddle, …), Nim links
-the engine **at build time** through the C backend. `src/servirtium/native.nim`
+libservirtium_vcr **at build time** through the C backend. `src/servirtium/native.nim`
 emits a `{.passL.}` pragma:
 
 ```nim
@@ -80,7 +80,7 @@ process-global. Consequences:
   replaying or recording its own tape with its own cursor and diagnostics,
   without bleeding into each other. (`tests/playback_test.nim`'s "two playback
   servers at once" exercises this; `core_tests/.concurrent.ae` proves it at the
-  engine level.)
+  libservirtium_vcr level.)
 - The lifecycle is **open → configure(handle) → start**: each fixture's config
   (redactions, unredactions, header removals, static mounts, whole-tape
   rewrites, format options, strict-headers) is applied to its own handle

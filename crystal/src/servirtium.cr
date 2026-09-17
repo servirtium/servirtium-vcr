@@ -1,4 +1,4 @@
-# servirtium.cr — the Crystal binding over the shared Aether VCR engine.
+# servirtium.cr — the Crystal binding over libservirtium_vcr.
 #
 # Servirtium records an HTTP conversation to a human-readable markdown tape
 # once, then replays it forever — offline, deterministic, git-diffable. Point
@@ -9,7 +9,7 @@
 #   vcr.last_kind.should eq(Servirtium::Outcome::Ok)
 #   vcr.close
 #
-# Crystal binds the engine's flat C ABI (aether_vcr_embed_*) DIRECTLY via a
+# Crystal binds libservirtium_vcr's flat C ABI (aether_vcr_embed_*) DIRECTLY via a
 # `lib` block — no glue, no second copy of the marshalling rules to drift from
 # core/embed.ae. This file is the idiomatic Crystal surface: a `Vcr` object with
 # a block form that always closes, typed enums, caller-owned-string handling,
@@ -17,7 +17,7 @@
 #
 # It carries NO record/replay logic: markdown parse/emit, the HTTP server,
 # request matching, redactions and drift detection all live in the in-repo
-# pure-Aether core/vcr.ae engine.
+# pure-Aether core/vcr.ae libservirtium_vcr.
 
 # -L/-rpath are made self-locating from this source file's dir (../native holds
 # the staged libservirtium_vcr.so) so the link works regardless of the linker's
@@ -246,7 +246,7 @@ module Servirtium
       LibVcr.clear_last_error(@handle)
     end
 
-    # ---- config (each raises Error if the engine rejects it) ----
+    # ---- config (each raises Error if libservirtium_vcr rejects it) ----
 
     def redact(field : Field, pattern : String, replacement : String) : Nil
       check LibVcr.redact(@handle, field.value, pattern, replacement), "redact"

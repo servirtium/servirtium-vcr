@@ -31,7 +31,7 @@ ghc-options:
 
 library:
   source-dirs: src
-  # Link against the native Aether VCR engine built by build-native.sh.
+  # Link against libservirtium_vcr built by build-native.sh.
   extra-libraries: servirtium_vcr
   extra-lib-dirs: native
 
@@ -39,7 +39,7 @@ tests:
   servirtium-haskell-test:
     main:                Spec.hs
     source-dirs:         test
-    # The test-suite also links the native engine directly.
+    # The test-suite also links libservirtium_vcr directly.
     extra-libraries: servirtium_vcr
     extra-lib-dirs: native
     dependencies:

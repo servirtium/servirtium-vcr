@@ -1,6 +1,6 @@
 // Third-party-consumer PACKAGE stage for the Zig binding.
-// A Zig consumer links the engine .so via its own bldr.zig, pointed at the
-// package's bundled native/ dir. Stages the freshly-built engine .so into
+// A Zig consumer links the libservirtium_vcr.so via its own bldr.zig, pointed at the
+// package's bundled native/ dir. Stages the freshly-built libservirtium_vcr.so into
 // zig/native/. Deps core/.build.ae; publishes the zig package dir on
 // "package_dir".
 import bldr
@@ -20,7 +20,7 @@ aeb(cap) {
         }
 
         publish_artifact("package_dir", "${_get("root")}/zig")
-        println("zig package: staged engine .so into zig/native/ (Zig package ready)")
+        println("zig package: staged libservirtium_vcr.so into zig/native/ (Zig package ready)")
         return 0
     }
 }

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- F# binding tests. Real xUnit facts over the canonical tape; the engine
+  <!-- F# binding tests. Real xUnit facts over the canonical tape; libservirtium_vcr
        .so is resolved by the C# NativeLoader (SERVIRTIUM_VCR_LIB, or the copy
        the referenced projects stage next to the assembly). Separate from the
        library project so the shipped nupkg carries no test code or xunit

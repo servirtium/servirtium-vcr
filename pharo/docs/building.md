@@ -37,14 +37,14 @@ already have both toolchains.
 
 ## Build the native library
 
-The native engine is built from the in-repo pure-Aether VCR module and its
+libservirtium_vcr is built from the in-repo pure-Aether VCR module and its
 C-ABI seam, `core/vcr.ae` + `core/embed.ae`:
 
 ```sh
 ./build-native.sh
 ```
 
-This produces the **host platform's** library into `native/`. The engine lives
+This produces the **host platform's** library into `native/`. libservirtium_vcr lives
 in this repo (no Aether source checkout needed beyond the `ae` toolchain
 itself, which supplies the stdlib primitives `core/vcr.ae` builds on). Under
 the hood:

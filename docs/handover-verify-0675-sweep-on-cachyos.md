@@ -24,7 +24,7 @@ green, pharo the exception). I could **not** reproduce that sweep on 0.675,
 because this box (ChromeOS/crostini Debian) is missing the SDKs. What I *did*
 verify on ae 0.675 + released aeb v0.311:
 
-- engine + CLI + `core_tests` (all 4 leaves) + `cli-tests` 18/18 — green;
+- libservirtium_vcr + CLI + `core_tests` (all 4 leaves) + `cli-tests` 18/18 — green;
 - `go` / `rust` / `javascript` `.tests.ae` — 1/1 each;
 - a virginal `debian:13-slim` one-liner (`AE_PIN=0.675.0 AEB_REF=v0.311 | sh`) →
   clone → `aeb go/.tests.ae` — green end-to-end.

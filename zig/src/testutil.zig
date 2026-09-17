@@ -15,7 +15,7 @@ const std = @import("std");
 const net = std.Io.net;
 
 /// Absolute path of the process cwd (libc `getcwd`; libc is linked). Caller
-/// frees. `std.Io.Dir` in 0.16 has no `realpathAlloc`, and the native engine
+/// frees. `std.Io.Dir` in 0.16 has no `realpathAlloc`, and libservirtium_vcr
 /// resolves tape paths against the process cwd, so we build absolute paths
 /// from this for record-mode tapes and static-content dirs.
 pub fn cwdAlloc(allocator: std.mem.Allocator) ![]u8 {

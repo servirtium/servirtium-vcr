@@ -4,7 +4,7 @@
 // build and runs `mix test`, passing SERVIRTIUM_NIF_EBIN so test_helper.exs
 // Code.append_path's the shared app onto the code path (mix doesn't fold
 // ERL_LIBS in); code:priv_dir then resolves priv/servirtium_nif.so and the NIF
-// loads. The engine .so is pulled in transitively via erlang/.build.ae's dep
+// loads. The libservirtium_vcr.so is pulled in transitively via erlang/.build.ae's dep
 // on core. ExUnit runs serially (max_cases: 1).
 import bldr
 import elixir

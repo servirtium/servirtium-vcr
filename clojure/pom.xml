@@ -12,14 +12,14 @@
     <!--
       Servirtium VCR for Clojure: a thin idiomatic wrapper over the Java FFM
       binding (com.paulhammant.servirtium:servirtium-vcr), which is the actual
-      binding to the native engine. Clojure reaches the engine entirely through
+      binding to libservirtium_vcr. Clojure reaches libservirtium_vcr entirely through
       that jar via JVM interop, so there is no second FFI here. Clojure is
       dynamic, so there is no static compile against the Java jar; the .clj
       sources live under src/main/clojure and src/test/clojure and are placed on
       the classpath, and clojure.test is run under Maven (test phase) by
       exec-maven-plugin launching `java clojure.main`. The forked JVM that runs
       the tests is given native-access (see exec arguments below), since these
-      are FFM downcalls into the native engine; point SERVIRTIUM_VCR_LIB at
+      are FFM downcalls into libservirtium_vcr; point SERVIRTIUM_VCR_LIB at
       libservirtium_vcr.so. Run on JDK 22+, tested on JDK 25.
     -->
     <properties>
@@ -108,7 +108,7 @@
             <!-- Run clojure.test under the `test` phase by launching a JVM with
                  clojure.main. The runner namespace calls (run-tests) and exits
                  nonzero on any failure/error, so a failing test fails the build.
-                 The forked JVM gets native-access enabled because the engine is
+                 The forked JVM gets native-access enabled because libservirtium_vcr is
                  reached via java.lang.foreign (FFM downcalls). -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

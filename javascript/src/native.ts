@@ -1,7 +1,7 @@
 // Centralized koffi binding to the native VCR library.
 //
 // 1:1 with the `aether_vcr_embed_*` C-ABI exported by the in-repo
-// `core/embed.ae` (the engine itself is `core/vcr.ae`). The opaque server
+// `core/embed.ae` (libservirtium_vcr itself is `core/vcr.ae`). The opaque server
 // handle is a `void*` pointer; NULL means failure. Every `char*` returned by
 // the ABI is caller-owned and NUL-terminated — `takeString` decodes it into a
 // JS string and then frees it via `aether_vcr_embed_free_string`, per the

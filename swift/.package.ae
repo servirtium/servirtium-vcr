@@ -1,9 +1,9 @@
 // Third-party-consumer PACKAGE stage for the Swift binding.
 //
 // Swift consumes `Servirtium` as a SwiftPM package (source-consumed from a path
-// or git URL): Package.swift + Sources/. Package.swift links the engine with
-// `-L native -lservirtium_vcr` and bakes an rpath, so the engine .so must ship
-// INSIDE the package, in native/. This stages the freshly-built engine .so
+// or git URL): Package.swift + Sources/. Package.swift links libservirtium_vcr with
+// `-L native -lservirtium_vcr` and bakes an rpath, so the libservirtium_vcr.so must ship
+// INSIDE the package, in native/. This stages the freshly-built libservirtium_vcr.so
 // there.
 //
 // No tests run here; packaging is a build step (swift/.tests.ae is the test
@@ -23,7 +23,7 @@ aeb(cap) {
         }
 
         publish_artifact("package_dir", "${_get("root")}/swift")
-        println("swift package: staged engine .so into swift/native/ (SwiftPM package ready)")
+        println("swift package: staged libservirtium_vcr.so into swift/native/ (SwiftPM package ready)")
         return 0
     }
 }

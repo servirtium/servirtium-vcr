@@ -1,7 +1,7 @@
 (ns servirtium
   "Servirtium VCR for Clojure.
 
-  Clojure reaches the shared native engine through the Java FFM binding
+  Clojure reaches libservirtium_vcr through the Java FFM binding
   (com.paulhammant.servirtium.vcr) via JVM interop -- there is no second FFI
   here. The Java surface is already friendly: no checked exceptions,
   AutoCloseable (so clojure.core/with-open works), fluent builders, and the
@@ -27,7 +27,7 @@
 (defn playback
   "Start a playback VCR replaying the tape at `tape`, returning the running
   VcrServer (a java.lang.AutoCloseable, so use clojure.core/with-open). `opts`
-  is an optional map; :port 0 (the default the engine uses) asks the OS for a
+  is an optional map; :port 0 (the default libservirtium_vcr uses) asks the OS for a
   free port."
   (^VcrServer [tape] (playback tape {}))
   (^VcrServer [tape opts]

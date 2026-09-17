@@ -10,6 +10,6 @@ require (
 require github.com/blang/semver v3.5.1+incompatible // indirect
 
 // The servirtium-go binding lives in this repo at go/; use it directly rather
-// than a published version. cgo links the shared engine via that package's
+// than a published version. cgo links libservirtium_vcr via that package's
 // own #cgo LDFLAGS rpath (relative to go/), so the .so is found from here too.
 replace github.com/servirtium/servirtium-go => ../../../go

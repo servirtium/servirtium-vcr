@@ -1,6 +1,6 @@
 #!/bin/sh
 # Compile the Lua 5.4 C extension (csrc/servirtium.c) into servirtium_native.so,
-# linking the shared Aether VCR engine with an embedded rpath so the .so is
+# linking libservirtium_vcr with an embedded rpath so the .so is
 # found at runtime without LD_LIBRARY_PATH.
 #
 # Usage: ./build.sh [CORE_NATIVE_DIR]

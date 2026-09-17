@@ -1,9 +1,9 @@
 // PlaybackTests.swift — playback facts for the Swift binding.
 //
-// Proves Swift drives the engine's flat C ABI directly (through the
+// Proves Swift drives libservirtium_vcr's flat C ABI directly (through the
 // CServirtiumVcr module map) against the canonical one-interaction tape
 // (GET /ok -> 200 text/plain "ok-body") — the same tape every other binding in
-// this repo replays byte-for-byte. Needs only the engine .so (staged into
+// this repo replays byte-for-byte. Needs only the libservirtium_vcr.so (staged into
 // native/ by the .tests.ae leaf). XCTest, no browser, no network.
 import XCTest
 

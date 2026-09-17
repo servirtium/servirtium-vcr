@@ -1,6 +1,6 @@
 // Third-party-consumer PACKAGE stage for the Scala binding.
 // mvn-installs the Scala helper layer (servirtium-vcr-scala) to ~/.m2; deps
-// java/.package.ae so the Java jar (with the bundled engine .so) is in ~/.m2
+// java/.package.ae so the Java jar (with the bundled libservirtium_vcr.so) is in ~/.m2
 // first and rides along transitively for a Scala consumer.
 import bldr
 import maven

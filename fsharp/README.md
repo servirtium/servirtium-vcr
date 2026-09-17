@@ -29,7 +29,7 @@ reimplement Servirtium in F#.
 
 ### Consumes the shared C# assembly (over the CLR)
 
-There is **no second FFI** here. The one CLR binding to the engine is
+There is **no second FFI** here. The one CLR binding to libservirtium_vcr is
 `dotnet/Servirtium.Vcr` (P/Invoke over the `aether_vcr_embed_*` C-ABI);
 everything in `Servirtium.fs` is ordinary F#/.NET interop on top of those
 classes. One C# assembly backs the CLR family (C#, F#), exactly as one Java
@@ -61,7 +61,7 @@ logic.
 
 ## Building and testing
 
-There is no native step here — the engine `.so` and the C# assembly are built
+There is no native step here — `libservirtium_vcr.so` and the C# assembly are built
 by `core/.build.ae` and `dotnet/Servirtium.Vcr/.build.ae`. Needs the .NET SDK.
 
 ```sh

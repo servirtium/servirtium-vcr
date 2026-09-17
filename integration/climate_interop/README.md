@@ -3,9 +3,9 @@
 The canonical Servirtium "weather" walkthrough — a real-world HTTP API client
 for the WorldBank climate XML API (mirror at
 `https://servirtium.github.io/worldbank-climate-recordings`), tested offline by
-replaying a committed VCR tape. Ported from the Aether engine's
+replaying a committed VCR tape. Ported from libservirtium_vcr's
 `contrib/climate_http_tests/` into the monorepo so it rides on `core/` (the
-engine now lives here) — together with `subversion_interop`, these were the
+libservirtium_vcr now lives here) — together with `subversion_interop`, these were the
 last live importers of the old Aether VCR module, so bringing the climate tests
 here removes the final external consumer and unblocks deleting that module
 upstream (`aether/VCR-MOVED-TO-MONOREPO.md`).
@@ -18,7 +18,7 @@ unsupported date range → "date range not supported".
 
 No `.sh` runners — each leaf orchestrates inline in Aether (`os.system`),
 mirroring `core_tests` and `subversion_interop`: the Aether probes are built
-against the local engine from the repo root (so `import core.vcr` resolves
+against the local libservirtium_vcr from the repo root (so `import core.vcr` resolves
 `core/vcr.ae` — the runtime is pure Aether, inline in that file, no `--extra`),
 then run inline.
 

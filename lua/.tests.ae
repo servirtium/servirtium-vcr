@@ -1,10 +1,10 @@
 // Lua binding tests. The binding is a hand-written Lua 5.4 C EXTENSION
 // (csrc/servirtium.c — NOT LuaJIT FFI, since LuaJIT isn't installed) that
-// links the shared engine (core/.build.ae output:
+// links libservirtium_vcr (core/.build.ae output:
 // core/native/libservirtium_vcr.so) via
 // `cc ... -L<core/native> -lservirtium_vcr -Wl,-rpath,<core/native>`, so this
-// deps the engine node, compiles servirtium_native.so, then runs the lua test.
-// The rpath makes the engine resolvable at runtime; SERVIRTIUM_VCR_LIB is also
+// deps libservirtium_vcr node, compiles servirtium_native.so, then runs the lua test.
+// The rpath makes libservirtium_vcr resolvable at runtime; SERVIRTIUM_VCR_LIB is also
 // passed for parity with the other bindings. tests/run_all.lua drives the full
 // suite (playback + record + mutation, ~14 cases): playback shells out to curl
 // against the VCR server; record/mutation spawn a throwaway python3 upstream

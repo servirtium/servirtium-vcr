@@ -2,7 +2,7 @@
 // `c_objects` artifact so a dependent target links it WITHOUT recompiling —
 // used by the C test binary (c/.build.ae) AND the C++ client (cpp/.tests.ae),
 // whose C++ compiler must NOT recompile servirtium.c (its `extern "C"` symbols
-// would come out mangled). The engine .so is linked by the final binary, not
+// would come out mangled). The libservirtium_vcr.so is linked by the final binary, not
 // here. Skipped by preflight when a C compiler is absent (prereq gcc).
 import bldr
 import c

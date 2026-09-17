@@ -2,7 +2,7 @@ defmodule ConsumerTest do
   use ExUnit.Case
 
   # Drives the INSTALLED servirtium Elixir package (path dep) to replay the
-  # canonical tape. The engine .so loads via the shared servirtium_nif app's
+  # canonical tape. The libservirtium_vcr.so loads via the shared servirtium_nif app's
   # $ORIGIN-linked NIF — no SERVIRTIUM_VCR_LIB.
   test "replays the canonical tape from the installed servirtium package" do
     tape = Path.join(File.cwd!(), "tapes/single_get.md")

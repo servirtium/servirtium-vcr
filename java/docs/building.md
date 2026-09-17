@@ -17,10 +17,10 @@
 
 ## Building the native library
 
-The native engine is built from the in-repo `core/` module (`core/vcr.ae` plus
+libservirtium_vcr is built from the in-repo `core/` module (`core/vcr.ae` plus
 the `core/embed.ae` C-ABI) — **not** the Aether stdlib. The whole flow is
 driven by `aeb`: the `java/.tests.ae` leaf deps `core/.build.ae`, which builds
-the engine once and then runs the Maven tests against it.
+libservirtium_vcr once and then runs the Maven tests against it.
 
 ```sh
 aeb java/.tests.ae
@@ -33,11 +33,11 @@ ae build --emit=lib --with=fs,net core/embed.ae \
    --extra _embed_strdup.c -o core/native/libservirtium_vcr.so
 ```
 
-- The engine is `core/vcr.ae` plus the `core/embed.ae` C-ABI; the `--extra
+- libservirtium_vcr is `core/vcr.ae` plus the `core/embed.ae` C-ABI; the `--extra
   _embed_strdup.c` is the ~12-line `vcr_embed_dup/free` string bridge.
 - It builds only the host's RID (e.g. `linux-x64`); cross-platform builds
   happen in CI (one runner per OS/arch).
-- Requires **Aether ≥ 0.227.0** (the engine uses `std.regex`).
+- Requires **Aether ≥ 0.227.0** (libservirtium_vcr uses `std.regex`).
 
 For packaging, the host's `libservirtium_vcr.so` is copied under
 `src/main/resources/native/<rid>/`, so it rides into the jar as a classpath
@@ -83,7 +83,7 @@ from the OS, so adding a platform is just shipping the right artifact under
 
 ## CI / release outline
 
-1. A matrix job per OS/arch builds the `core/` engine (`ae build --emit=lib`),
+1. A matrix job per OS/arch builds the `core/` libservirtium_vcr (`ae build --emit=lib`),
    producing one `native/<rid>/<lib>`.
 2. The artifacts are gathered into `src/main/resources/native/` and the jar is
    built once (the FFM bindings are platform-independent Java).

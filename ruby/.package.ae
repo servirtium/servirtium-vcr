@@ -1,11 +1,11 @@
 // Third-party-consumer PACKAGE stage for the Ruby binding.
 //
 // Builds the `servirtium` gem as a downstream user would receive it from
-// RubyGems: the freshly-built engine .so bundled INSIDE the gem (the gemspec's
+// RubyGems: the freshly-built libservirtium_vcr.so bundled INSIDE the gem (the gemspec's
 // `spec.files = Dir['lib/**/*']` sweeps in lib/servirtium/native/*.so), via the
 // idiomatic `gem build`.
 //
-// Deps core/.build.ae for the engine .so; publishes the built .gem on the
+// Deps core/.build.ae for the libservirtium_vcr.so; publishes the built .gem on the
 // "gem" artifact edge, which ruby/.example.ae consumes.
 import bldr
 import std.os
@@ -19,7 +19,7 @@ aeb(cap) {
         root = _get("root")
         rbdir = "${root}/ruby"
 
-        // 1. Bundle the engine .so into lib/ (what `Dir['lib/**/*']` ships).
+        // 1. Bundle the libservirtium_vcr.so into lib/ (what `Dir['lib/**/*']` ships).
         //    copy.file auto-creates the dest parent; `to` resolves against the
         //    leaf's source_dir (ruby/).
         copy.file() {
@@ -34,7 +34,7 @@ aeb(cap) {
             return 1
         }
         publish_artifact("gem", "${rbdir}/pkg/servirtium.gem")
-        println("ruby package: built gem with engine .so bundled → ruby/pkg/servirtium.gem")
+        println("ruby package: built gem with libservirtium_vcr.so bundled → ruby/pkg/servirtium.gem")
         return 0
     }
 }

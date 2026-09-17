@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test
 /**
  * Third-party consumer test: drives the INSTALLED Kotlin DSL jar
  * (servirtium-vcr-kotlin, resolved from ~/.m2) through its `playback { }` DSL,
- * replaying the canonical tape. The engine .so is discovered zero-config from
+ * replaying the canonical tape. The libservirtium_vcr.so is discovered zero-config from
  * the transitive servirtium-vcr jar's /native/<rid>/ resource — no
  * SERVIRTIUM_VCR_LIB, no source tree.
  */

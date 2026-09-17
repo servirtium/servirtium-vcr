@@ -3,7 +3,7 @@
 ;;;; Runs against a RELOCATED copy of lfe/_build_pkg (the servirtium_lfe app
 ;;;; plus the shared servirtium_nif app), with only ERL_LIBS pointing at it —
 ;;;; no SERVIRTIUM_VCR_LIB, no SERVIRTIUM_NIF_DIR, and no reference to this
-;;;; repo. code:priv_dir finds the engine .so beside the NIF, through the
+;;;; repo. code:priv_dir finds the libservirtium_vcr.so beside the NIF, through the
 ;;;; NIF's own $ORIGIN rpath.
 ;;;;
 ;;;; Replays the canonical tape (GET /ok -> 200 text/plain "ok-body").

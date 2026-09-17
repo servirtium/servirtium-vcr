@@ -34,8 +34,8 @@ lives in the in-repo, pure-Aether `core/vcr.ae` module. This binding links a
 precompiled native build of that core and calls its `aether_vcr_embed_*` C ABI
 directly; it does **not** reimplement Servirtium in Zig.
 
-Unlike the Rust binding (which `dlopen`s the engine at runtime via
-`libloading`), this binding links the engine `.so` at **build time**
+Unlike the Rust binding (which `dlopen`s libservirtium_vcr at runtime via
+`libloading`), this binding links `libservirtium_vcr.so` at **build time**
 (`addLibraryPath` + `linkSystemLibrary("servirtium_vcr")`) and bakes an rpath
 so the test binary finds it without `LD_LIBRARY_PATH`. The tape *format* is the
 same across all bindings, so existing tapes replay as-is.
@@ -80,13 +80,13 @@ scenarios, and [docs/architecture.md](docs/architecture.md) for the layering.
 
 ## Building and testing
 
-The native engine is built from `core/` (needs the Aether `ae` toolchain). The
+libservirtium_vcr is built from `core/` (needs the Aether `ae` toolchain). The
 build looks for `libservirtium_vcr.so` at `$SERVIRTIUM_VCR_LIB` if set,
 otherwise at `../core/native/libservirtium_vcr.so` relative to this directory.
 The suite shells out to `curl`, so `curl` must be on `PATH`.
 
 ```sh
-# build the shared engine from core/, then point the build at it:
+# build libservirtium_vcr from core/, then point the build at it:
 SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so zig build test --summary all
 # Build Summary: 3/3 steps succeeded; 14/14 tests passed
 ```

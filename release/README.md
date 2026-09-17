@@ -1,13 +1,13 @@
-# release — cross-built engine artifacts + on-target attestation
+# release — cross-built libservirtium_vcr artifacts + on-target attestation
 
-The engine (`libservirtium_vcr`) is pure Aether plus a ~12-line C string bridge,
+`libservirtium_vcr` is pure Aether plus a ~12-line C string bridge,
 so it **cross-compiles for the whole platform matrix from one Linux host** — no
 per-OS runner for the build. This directory builds those artifacts, checksums
 them, and (via `publish.sh`) attaches them to a GitHub release as **linkable,
 per-OS/CPU downloads**. On-target *testing* is done out of band and recorded as
 an attestation keyed by SHA256.
 
-**Engine only, on purpose.** These scripts ship the one thing that is hard for a
+**libservirtium_vcr only, on purpose.** These scripts ship the one thing that is hard for a
 user to produce — the native shared library, one per OS/CPU. They deliberately do
 **not** build or publish the per-language packages (wheel / gem / jar / nupkg /
 …) or push to any registry (PyPI / npm / Maven / …). Those are the `.package.ae`
@@ -81,7 +81,7 @@ host cannot do is *run* an arm64-macOS binary. So:
 
 ## What "passed" covers per artifact
 
-The engine's job is record/replay of HTTP over `libservirtium_vcr`'s own HTTP
+Its job is record/replay of HTTP over `libservirtium_vcr`'s own HTTP
 server + client (`std.http`). A cross-built artifact covers:
 
 - **Playback** (replay a committed tape; no upstream network) — the common CI

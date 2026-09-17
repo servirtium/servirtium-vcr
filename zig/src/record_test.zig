@@ -10,7 +10,7 @@ const Outcome = servirtium.Outcome;
 
 /// Build a NUL-terminated absolute path to `name` inside `tmp`. The TmpDir
 /// lives at `.zig-cache/tmp/<sub_path>` relative to the process cwd; we
-/// absolutize via libc getcwd so the native engine resolves the same file.
+/// absolutize via libc getcwd so libservirtium_vcr resolves the same file.
 fn tapePathZ(allocator: std.mem.Allocator, tmp: *std.testing.TmpDir, name: []const u8) ![:0]u8 {
     const rel = try std.fs.path.join(allocator, &.{ ".zig-cache", "tmp", &tmp.sub_path, name });
     defer allocator.free(rel);

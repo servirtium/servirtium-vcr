@@ -4,7 +4,7 @@
 // dep) and replays the canonical tape via `Servirtium.with_playback`. The
 // shared servirtium_nif OTP app (built $ORIGIN-relocatable by erlang/.package.ae)
 // is put on the code path via SERVIRTIUM_NIF_EBIN — the local stand-in for a Hex
-// {:servirtium_nif} dep. The engine .so loads via the NIF's $ORIGIN rpath, with
+// {:servirtium_nif} dep. The libservirtium_vcr.so loads via the NIF's $ORIGIN rpath, with
 // no SERVIRTIUM_VCR_LIB.
 import bldr
 import std.os

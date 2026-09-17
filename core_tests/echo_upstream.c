@@ -6,11 +6,11 @@
  * Since aether 0.269.0 the std.http SERVER no longer buffers a request
  * body whole when Content-Length > 16 KiB — it hands the handler a
  * streaming request, and http_request_body(req) returns "". The VCR
- * engine read bodies only via that buffered accessor, so a >16 KiB
+ * libservirtium_vcr read bodies only via that buffered accessor, so a >16 KiB
  * POST recorded/forwarded an EMPTY body. This upstream lets the record
- * probe prove the engine now drains the whole streamed body: it reads
+ * probe prove libservirtium_vcr now drains the whole streamed body: it reads
  * the full Content-Length off the socket and writes it straight back,
- * so a short echo means the engine forwarded a truncated body.
+ * so a short echo means libservirtium_vcr forwarded a truncated body.
  *
  * Binds 127.0.0.1:0, prints the OS-assigned port (one line) to stdout,
  * then loops: accept, read headers + exactly Content-Length body bytes,

@@ -4,7 +4,7 @@
 #
 # Not a spec inside the source tree: this is what a downstream user gets after
 # `gem install servirtium`. It loads the gem from GEM_HOME (asserting it is NOT
-# the in-repo ruby/lib/), finds the native engine .so that shipped *inside* the
+# the in-repo ruby/lib/), finds the native libservirtium_vcr.so that shipped *inside* the
 # gem, and replays the canonical Servirtium tape — proving the packaged gem is
 # self-contained with no SERVIRTIUM_VCR_LIB and no access to this repo.
 #
@@ -40,7 +40,7 @@ end
 
 def bundled_so(lib_dir)
   so = File.join(lib_dir, 'native', 'libservirtium_vcr.so')
-  fail!("bundled engine .so missing from the installed gem: #{so}") unless File.file?(so)
+  fail!("bundled libservirtium_vcr.so missing from the installed gem: #{so}") unless File.file?(so)
   so
 end
 

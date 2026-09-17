@@ -1,6 +1,6 @@
 // Subversion-family VCR tests (offline, pure-Aether) — ported from the
-// Aether engine's tests/integration/. Two probes, both compiled against
-// the LOCAL engine (core/vcr.ae, pure Aether — aether.program with
+// Aether libservirtium_vcr's tests/integration/. Two probes, both compiled against
+// libservirtium_vcr (core/vcr.ae, pure Aether — aether.program with
 // lib("../..") resolves `import core.vcr`) and run inline here — no .sh
 // runner:
 //

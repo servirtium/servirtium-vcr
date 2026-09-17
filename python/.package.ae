@@ -1,13 +1,13 @@
 // Third-party-consumer PACKAGE stage for the Python binding.
 //
 // Builds the `servirtium` wheel exactly as a downstream user would receive it
-// from PyPI: the freshly-built engine .so bundled INSIDE the wheel (via the
+// from PyPI: the freshly-built libservirtium_vcr.so bundled INSIDE the wheel (via the
 // existing setup.py `package_data={'servirtium': ['native/*.so', ...]}`), using
 // the idiomatic `python -m build`. We deliberately do NOT use aeb's
 // python.package builder here — it generates/overwrites pyproject.toml from DSL
 // metadata and would drop the native-lib bundling that setup.py encodes.
 //
-// Deps core/.build.ae for the engine .so; publishes the built wheel on the
+// Deps core/.build.ae for the libservirtium_vcr.so; publishes the built wheel on the
 // "wheel" artifact edge, which python/.example.ae consumes.
 import bldr
 import std.os
@@ -21,7 +21,7 @@ aeb(cap) {
         root = _get("root")
         pydir = "${root}/python"
 
-        // 1. Bundle the engine .so into the package tree (what the wheel ships).
+        // 1. Bundle the libservirtium_vcr.so into the package tree (what the wheel ships).
         //    copy.file auto-creates the dest parent; `to` resolves against the
         //    leaf's source_dir (python/).
         copy.file() {
@@ -46,7 +46,7 @@ aeb(cap) {
             return 1
         }
         publish_artifact("wheel_dir", "${pydir}/dist")
-        println("python package: built wheel with engine .so bundled → python/dist/")
+        println("python package: built wheel with libservirtium_vcr.so bundled → python/dist/")
         return 0
     }
 }

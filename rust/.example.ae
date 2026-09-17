@@ -1,7 +1,7 @@
 // Third-party-consumer EXAMPLE test for the Rust binding.
 //
 // A standalone consumer crate that depends on `servirtium` (path dep on
-// ../../rust) and replays the canonical tape — the engine .so self-locates from
+// ../../rust) and replays the canonical tape — the libservirtium_vcr.so self-locates from
 // the servirtium crate's bundled native/ dir, with no SERVIRTIUM_VCR_LIB. The
 // honest "cargo add it and it just works" test the in-tree rust/.tests.ae
 // cannot give (that one hands the .so in via env var).

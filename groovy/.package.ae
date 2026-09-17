@@ -1,6 +1,6 @@
 // Third-party-consumer PACKAGE stage for the Groovy binding.
 // mvn-installs the Groovy DSL layer (servirtium-vcr-groovy) to ~/.m2; deps
-// java/.package.ae so the Java jar (with the bundled engine .so) is present and
+// java/.package.ae so the Java jar (with the bundled libservirtium_vcr.so) is present and
 // rides along transitively for a Groovy consumer.
 import bldr
 import maven

@@ -8,7 +8,7 @@ truth; this is just the map so your *first* attempt lands clean.
 
 Servirtium records an HTTP conversation to a human-readable **Markdown tape**
 once, then **replays** it forever — offline, deterministic, git-diffable. This
-repo is **one native engine + thin per-language bindings**. The engine
+repo is **one libservirtium_vcr + thin per-language bindings**. libservirtium_vcr
 (`core/vcr.ae`, pure Aether: parser/emitter, tape store, matcher, dispatchers,
 record — the old 2133-line `aether_vcr.c` was folded in and deleted) compiles
 via `core/embed.ae` (the C ABI) to `libservirtium_vcr.so` (built by
@@ -28,7 +28,7 @@ languages is now *structural*, not a cross-impl test.
 **Bindings carry no logic.** A binding opens a handle, configures it, starts the
 server, hands back a base URL, and stops. Anything smarter than marshalling
 strings across the FFI belongs in `core/`, not in a binding. If you're tempted
-to parse a tape or match a request in a binding, stop — that's the engine's job.
+to parse a tape or match a request in a binding, stop — that's libservirtium_vcr's job.
 
 ## Adding a language (the entire job)
 
@@ -70,7 +70,7 @@ the spec. To add, say, Perl:
    bindings just curl the playback server.
 4. **Add a `.tests.ae` leaf** (see Build/test). It `dep()`s
    `core/.build.ae`, then compiles + runs the test with `SERVIRTIUM_VCR_LIB`
-   pointed at the engine `.so` (via `dep_artifact(..., "shared_lib")`).
+   pointed at `libservirtium_vcr.so` (via `dep_artifact(..., "shared_lib")`).
 5. **Verify**: `aeb <lang>/.tests.ae` → exit 0, `test: <lang>`.
 
 That's it. I added Nim/Zig/Lua/Erlang/Gleam this way with no guide — just the
@@ -142,9 +142,9 @@ reference). Quick facts:
   (`.record.ae`, `.triple.ae`, …) is a generic leaf, run by name. Node output
   lands under `target/<buildtype>/<module>/` (buildtype = the leaf name).
 - Edges are literal strings: `dep("core/.build.ae")` — every binding deps the
-  engine node so the `.so` is built first.
-- Engine + CLI + the pure-Aether probes build via the **`aether` SDK
-  builders** (`aether.shared_lib` for the engine, `aether.program` for
+  libservirtium_vcr node so the `.so` is built first.
+- libservirtium_vcr + CLI + the pure-Aether probes build via the **`aether` SDK
+  builders** (`aether.shared_lib` for libservirtium_vcr, `aether.program` for
   `core/cli.ae` and the core_tests/integration probes — `lib("..")`-style
   setters resolve root-relative imports like `import core.vcr`, since the
   compile cwd is the leaf's dir). Only genuinely-imperative test choreography
@@ -157,12 +157,12 @@ reference). Quick facts:
 ## Third-party-consumer tests (`.package.ae` + `.example.ae`)
 
 The in-tree `<lang>/.tests.ae` runs each binding's own suite against the source
-tree with the engine `.so` handed in via `SERVIRTIUM_VCR_LIB` — it proves the
+tree with `libservirtium_vcr.so` handed in via `SERVIRTIUM_VCR_LIB` — it proves the
 binding works, **not** that a downstream user can install and use it. That gap
 is covered by a second layer every binding now has:
 
 - **`<lang>/.package.ae`** builds the idiomatic distributable the way a consumer
-  receives it, with the engine `.so` bundled inside — wheel/gem/npm-tgz/nupkg/
+  receives it, with `libservirtium_vcr.so` bundled inside — wheel/gem/npm-tgz/nupkg/
   jar-to-`~/.m2`/crate/Composer-copy/pub, or (for the compiled/linked group) the
   `.so` staged where the binding's linker/loader finds it.
 - **`<lang>/.example.ae`** installs that artifact into a **clean** environment
@@ -181,7 +181,7 @@ compiled/linked group (go/rust/nim/zig/lua/haskell + the BEAM NIF) relies on a
 relocatable rpath (`$ORIGIN` or a bundled `native/`), proven by publishing a
 package copy with **no `core/` sibling** so the repo layout can't accidentally
 satisfy the link. Run the whole set with `aeb <lang>/.example.ae …` (shared deps
-— engine `.so`, the Java jar, the Erlang NIF — build once across the DAG).
+— `libservirtium_vcr.so`, the Java jar, the Erlang NIF — build once across the DAG).
 
 **Record-and-compare (the `record` mode).** Playback-only consumer tests prove
 the *player* works; they say nothing about whether the installed package's
@@ -198,7 +198,7 @@ others) **serialize VCR servers process-wide** (`server_lock()` — a second
 `start()` blocks until the first is dropped), so recording *against* an in-process
 playback server would deadlock. Keeping the recorder the only live VCR server
 sidesteps that and is uniform across bindings. The other 18 bindings do the
-structural argument only (one engine, one recorder, no per-binding record logic).
+structural argument only (one libservirtium_vcr, one recorder, no per-binding record logic).
 
 **Tape format is compact/tight, and that is canonical here.** The emitter writes
 the next `### …` section heading directly after a closing code fence — **no blank
@@ -225,7 +225,7 @@ env var). Subcommands: `serve <tape.md>[,more.md...] [port] [--ordered]`
 `vcr.load_append_h` / `parse_tape_text_append` — as a live stub server; blocks
 in `http_server_start_raw`; defaults to MatchMultiple so repeated/out-of-order
 requests keep answering across the union of the tapes, `--ordered` restores the
-engine's strict consuming order over the concatenation),
+libservirtium_vcr's strict consuming order over the concatenation),
 `check [--canonical] <tape.md> ...` (lint:
 `vcr.check_tape` parse-check, plus `vcr.canonical_check_tape` byte-comparison
 against the emitter's canonical form), and `import <in.har> <out.md>` /
@@ -249,7 +249,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 - **Response** status/headers/body kept; hop-by-hop + `Content-Encoding` dropped
   (the body is stored decoded). Header-name casing is preserved as-is (HTTP/2 HARs
   lower-case them; HTTP is case-insensitive and the `(200: type)` line comes from
-  `content.mimeType`). base64 HAR content → the engine's `"<mime> base64 below"`
+  `content.mimeType`). base64 HAR content → libservirtium_vcr's `"<mime> base64 below"`
   convention.
 - Guarded by `core_tests/test_vcr_har_import.ae` (import → assert tape → replay).
 - **Latent bug this surfaced + fixed:** `http_request_query` returns the query
@@ -260,11 +260,11 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 
 ## Gotchas / hard-won
 
-- **JSON request-body matching is opt-in and lives in the engine.**
+- **JSON request-body matching is opt-in and lives in libservirtium_vcr.**
   `set_match_json_body(h, 1)` makes a request body that differs byte-for-byte
   get a second chance at *semantic* JSON equality (object key order + whitespace
   ignored; array order significant) before it's a `BodyDiff`. Off by default —
-  the engine stays byte-exact — and a **non-JSON body always falls back to the
+  libservirtium_vcr stays byte-exact — and a **non-JSON body always falls back to the
   byte-exact verdict**, so enabling it never loosens non-JSON matching. Logic is
   `json_deep_equal` / `json_bodies_equal` in `core/vcr.ae` (via `std.json`); the
   `core_tests/test_vcr_json_body_match.ae` proves off→reject / on→match /
@@ -278,7 +278,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   idiomatic wrappers deliberately don't surface it** — they stage no playback
   config at all (no `strict_headers` either), so parity means not adding it;
   it's still reachable via `servirtium_nif:set_match_json_body/2`.
-- **Two more opt-in matchers, same engine home + rollout as the JSON one.**
+- **Two more opt-in matchers, same libservirtium_vcr home + rollout as the JSON one.**
   `set_match_multiple(h,1)` — **MatchMultiple**: playback searches ALL
   interactions for one that fits (not just the cursor) and replays it WITHOUT
   consuming it, so repeated identical requests and out-of-order requests both
@@ -351,7 +351,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   CLI fail with `Unknown option: --emit-deps`. Nothing was wrong with either
   version: 0.666's `ae` passes `--emit-deps`, which only 0.666's `aetherc`
   accepts, and `ae` resolved `aetherc` from `~/.aether/current/bin` (0.650).
-  The engine `.so` still built, which made it look like a test-only problem.
+  `libservirtium_vcr.so` still built, which made it look like a test-only problem.
   **`ae --version` prints both and warns when they disagree** — read it first
   whenever a build breaks right after a toolchain change:
 
@@ -495,7 +495,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   the last primitive anyone could name as a hard ae requirement, and it used to
   BE the `AE_PIN` floor. It no longer is — `AE_PIN` == `AE_FETCH` == the one ae
   we verify against, currently 0.666.0.) ae 0.413
-  moved it and changed `base64_decode` to a `string!` error-union; the engine's
+  moved it and changed `base64_decode` to a `string!` error-union; libservirtium_vcr's
   `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
   with "Undefined function 'cryptography.base64_decode'", something reintroduced
   the old import.
@@ -532,8 +532,8 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 
 ## Repo geography
 
-`core/` engine + ABI. `<lang>/` one binding each (its own README is the
-per-language source of truth). `core_tests/` pure-Aether engine probes.
+`core/` libservirtium_vcr + ABI. `<lang>/` one binding each (its own README is the
+per-language source of truth). `core_tests/` pure-Aether libservirtium_vcr probes.
 `integration/` end-to-end demos (subversion checkout, climate API, the
 Vue+Storybook+Selenium component-test demo). Root `README.md` has the Bindings
 table (the registry) and the layout block.
@@ -555,7 +555,7 @@ installs the way that ecosystem really does — unpacked tarball + pkg-config
 (c, cpp), relocated OTP apps with only ERL_LIBS (lfe), `Pkg.develop` into a
 throwaway depot (julia), a shards-style `lib/<name>/` tree (crystal), a dub
 path dependency (d), a SwiftPM path dependency (swift), a local NuGet feed
-(fsharp) — always with `SERVIRTIUM_VCR_LIB` unset, so only the bundled engine
+(fsharp) — always with `SERVIRTIUM_VCR_LIB` unset, so only the bundled libservirtium_vcr
 can satisfy the load.
 
 That layer immediately earned itself: see the Swift `-L` and dub.json notes in

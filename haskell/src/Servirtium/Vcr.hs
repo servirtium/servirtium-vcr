@@ -17,7 +17,7 @@
 -- This is a __thin Haskell FFI layer over the VCR core__. All
 -- record\/replay machinery — markdown parse\/emit, the HTTP server, request
 -- matching, redactions, notes, drift detection, static bypass, gzip\/chunked
--- handling — lives in and is maintained as the in-repo @core\/vcr.ae@ engine
+-- handling — lives in and is maintained as the in-repo @core\/vcr.ae@ libservirtium_vcr
 -- (built on Aether stdlib primitives). This package links a precompiled
 -- native build of that core (@libservirtium_vcr.so@); it does __not__
 -- reimplement Servirtium in Haskell.
@@ -197,7 +197,7 @@ data RecordOptions = RecordOptions
     -- it differs from the on-disk one — the drift contract.
   , recStaticContent     :: [(String, String)]
     -- ^ @(mountPath, fsDir)@: serve a path prefix from disk instead of
-    -- forwarding upstream. The engine honors static mounts in record mode too,
+    -- forwarding upstream. libservirtium_vcr honors static mounts in record mode too,
     -- so a browser suite can be recorded served same-origin from the VCR (no
     -- CORS\/preflight noise), matching how it's replayed.
   , recUntaped           :: [String]
@@ -273,7 +273,7 @@ applyRemoveHeaders h removals =
         removals
 
 -- | Register static-content mounts and untaped paths on the handle. The
--- engine honors both in playback and record mode, so this is shared.
+-- libservirtium_vcr honors both in playback and record mode, so this is shared.
 applyStaticAndUntaped :: N.Handle -> [(String, String)] -> [String] -> IO ()
 applyStaticAndUntaped h statics untaped = do
   mapM_ (\(mount, dir) ->

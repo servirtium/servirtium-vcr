@@ -1,4 +1,4 @@
-// Rust binding tests. libloading loads the shared engine via SERVIRTIUM_VCR_LIB
+// Rust binding tests. libloading loads libservirtium_vcr via SERVIRTIUM_VCR_LIB
 // (tests serialized by the crate's internal global Mutex).
 import bldr
 import rust

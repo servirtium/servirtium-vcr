@@ -50,7 +50,7 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
      * match of {@code pattern} (a regex), scanned over all fields and all
      * interactions in first-appearance order, is rewritten to a stable
      * {@code {{name-N}}} token. Unlike {@link #redact}, you don't supply the
-     * replacement — the engine mints it — so a server-generated value that
+     * replacement — libservirtium_vcr mints it — so a server-generated value that
      * recurs (a created entity's id echoed back in a later request path)
      * collapses to one token everywhere it appears. The payoff: re-recording
      * the same suite produces a byte-identical tape, so {@link #failIfChanged}

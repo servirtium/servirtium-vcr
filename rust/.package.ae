@@ -4,7 +4,7 @@
 // crates.io crate). The binding loads its .so at runtime via libloading, from
 // env!("CARGO_MANIFEST_DIR")/native — which, for a dependent crate, resolves to
 // the servirtium crate's OWN dir. So "packaging" stages the freshly-built
-// engine .so into rust/native/, where a consumer's build of the crate finds it.
+// libservirtium_vcr.so into rust/native/, where a consumer's build of the crate finds it.
 // Deps core/.build.ae; publishes the rust crate dir on "crate_dir".
 import bldr
 import copy
@@ -23,7 +23,7 @@ aeb(cap) {
         }
 
         publish_artifact("crate_dir", "${_get("root")}/rust")
-        println("rust package: staged engine .so into rust/native/ (Cargo crate ready)")
+        println("rust package: staged libservirtium_vcr.so into rust/native/ (Cargo crate ready)")
         return 0
     }
 }

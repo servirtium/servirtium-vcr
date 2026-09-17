@@ -6,8 +6,8 @@
 ## machinery — markdown parse/emit, the HTTP server, request matching,
 ## redactions, notes, drift detection, static-content bypass, gzip/chunked
 ## handling — lives in and is maintained as the in-repo pure-Aether
-## `core/vcr.ae` engine. This module does not reimplement Servirtium in Nim;
-## it binds and links the shared native engine.
+## `core/vcr.ae` libservirtium_vcr. This module does not reimplement Servirtium in Nim;
+## it binds and links libservirtium_vcr.
 ##
 ## You point your system-under-test at a local base URL. In **playback** it
 ## replays a recorded markdown tape (no network); in **record** it forwards to
@@ -33,7 +33,7 @@ import std/strformat
 import servirtium/native
 
 type
-  ## Outcome of the last interaction, mirroring the engine's `VCR_KIND_*`
+  ## Outcome of the last interaction, mirroring libservirtium_vcr's `VCR_KIND_*`
   ## constants. `Ok` means a clean match; anything non-zero is a mismatch.
   Outcome* = enum
     Ok = 0
@@ -45,7 +45,7 @@ type
     BodyDiff = 6
     RecordError = 7
 
-  ## Field selector for redactions / header removal, mirroring the engine.
+  ## Field selector for redactions / header removal, mirroring libservirtium_vcr.
   Field* = enum
     Path = 1
     ResponseBody = 2
@@ -67,7 +67,7 @@ type
 const defaultHost = "127.0.0.1"
 
 proc `$`*(o: Outcome): string =
-  ## Human-facing name of an outcome, matching the engine's diagnostic vocab.
+  ## Human-facing name of an outcome, matching libservirtium_vcr's diagnostic vocab.
   case o
   of Ok: "Ok"
   of PathOrMethodDiff: "PathOrMethodDiff"

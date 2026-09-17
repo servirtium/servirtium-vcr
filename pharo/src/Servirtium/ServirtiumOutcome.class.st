@@ -1,6 +1,6 @@
 "
 Per-dispatch outcome codes. Mirror the VCR_KIND_* constants in the in-repo
-core/vcr.ae engine:
+core/vcr.ae libservirtium_vcr:
 
   Ok=0 PathOrMethodDiff=1 HeaderMissing=2 HeaderValueDiff=3
   HeaderUnexpected=4 TapeExhausted=5 BodyDiff=6 RecordError=7

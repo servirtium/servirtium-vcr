@@ -66,7 +66,7 @@ package servirtium-haskell
 ```
 
 That makes a plain `cabal build` / `cabal test` find (linker) and load
-(loader, via `RUNPATH`) the engine with no extra flags. `bootstrap.sh` also
+(loader, via `RUNPATH`) libservirtium_vcr with no extra flags. `bootstrap.sh` also
 sets `LD_LIBRARY_PATH=$PWD/native` as a belt-and-suspenders fallback.
 
 ## Concurrency: one server per port

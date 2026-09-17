@@ -1,11 +1,11 @@
 """Raw ctypes surface over the native VCR library.
 
 1:1 with the ``aether_vcr_embed_*`` C-ABI exported by the in-repo
-``core/embed.ae`` (built on the ``core/vcr.ae`` engine). This module owns
+``core/embed.ae`` (built on the ``core/vcr.ae`` libservirtium_vcr). This module owns
 library location/loading, prototype declarations, and the string-ownership
 helper.
 
-Handle-based contract (matching the engine side): N independent VCR servers
+Handle-based contract (matching libservirtium_vcr side): N independent VCR servers
 can run concurrently, ONE PER PORT, each keyed by its own handle — so the
 lifecycle, introspection, diagnostics, and mutation calls all take that handle
 to scope their tape / cursor / state.

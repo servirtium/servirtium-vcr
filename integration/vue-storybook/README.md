@@ -9,7 +9,7 @@ A small demo that ties four things together:
 - **Selenium** — drives the control in **real headless Chrome**, *outside*
   Storybook, against the built standalone page;
 - a **Servirtium 2.0** mock backend — the JavaScript binding (over the shared
-  native engine) serving the page same-origin and **recording or replaying**
+  native libservirtium_vcr) serving the page same-origin and **recording or replaying**
   the form's POST as a Markdown tape.
 
 ```
@@ -34,7 +34,7 @@ npm run test:playback       # replay tapes/post.md  (offline; the CI path)
 npm run test:record         # forward to a throwaway stub backend and (re)write the tape
 ```
 
-Via the monorepo build (builds the engine + JS binding, installs lean, builds
+Via the monorepo build (builds libservirtium_vcr + JS binding, installs lean, builds
 the page, runs the Selenium playback):
 
 ```sh
@@ -97,6 +97,6 @@ own tape; the Selenium script drives the toggles in the recorded order.
 ## Notes
 
 - The mock backend is the **JavaScript binding** in [`../../javascript`](../../javascript)
-  (koffi over `libservirtium_vcr.so`) — the same engine all the bindings share.
+  (koffi over `libservirtium_vcr.so`) — the same libservirtium_vcr all the bindings share.
 - Storybook is the showcase (`npm run storybook`); the automated tests use the
   Vite-built standalone pages, not the Storybook dev server.

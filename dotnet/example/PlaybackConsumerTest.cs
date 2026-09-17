@@ -9,7 +9,7 @@ namespace ConsumerExample;
 /// <summary>
 /// Third-party consumer test: exercises the INSTALLED Servirtium.Vcr NuGet
 /// package (restored from a local feed as a normal PackageReference), replaying
-/// the canonical tape. The engine .so is discovered zero-config from the
+/// the canonical tape. The libservirtium_vcr.so is discovered zero-config from the
 /// package's own runtimes/linux-x64/native/ asset — no SERVIRTIUM_VCR_LIB, no
 /// source tree.
 /// </summary>
@@ -25,7 +25,7 @@ public class PlaybackConsumerTest
         string nativeNextToApp = Path.Combine(AppContext.BaseDirectory, "libservirtium_vcr.so");
         Assert.True(
             File.Exists(nativeUnderApp) || File.Exists(nativeNextToApp),
-            "expected the NuGet package's bundled engine .so to be deployed under " + AppContext.BaseDirectory);
+            "expected the NuGet package's bundled libservirtium_vcr.so to be deployed under " + AppContext.BaseDirectory);
 
         string tape = Path.Combine(AppContext.BaseDirectory, "tapes", "single_get.md");
 

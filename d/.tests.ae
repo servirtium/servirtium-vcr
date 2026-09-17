@@ -1,9 +1,9 @@
 // D binding tests (extern(C) + link-time). Like Nim/Zig/Go-cgo/Rust, D compiles
 // and links: d.test() compiles-and-runs each test file with `dmd -run`, with the
 // binding's own module (src/servirtium/package.d) compiled in via d_source() and
-// the engine .so linked via d_flag() (-L forwards to the linker) + rpath.
+// the libservirtium_vcr.so linked via d_flag() (-L forwards to the linker) + rpath.
 //
-// The engine .so is taken from ../core/native — the compat copy core/.build.ae
+// The libservirtium_vcr.so is taken from ../core/native — the compat copy core/.build.ae
 // stages next to the source tree (the same path go's cgo LDFLAGS bake in) — a
 // fixed relative path from this module dir, since dmd runs with cwd = d/.
 //
@@ -21,7 +21,7 @@ aeb(cap) {
         dep("core/.build.ae")
         d.test() {
             d_flag("-Isrc")
-            // Link the engine .so from its in-tree staged location + bake rpath
+            // Link the libservirtium_vcr.so from its in-tree staged location + bake rpath
             // so the test binary finds it at run time (dmd forwards -L<x> to ld).
             d_flag("-L-L../core/native")
             d_flag("-L-lservirtium_vcr")

@@ -1,7 +1,7 @@
 const std = @import("std");
 
-// Build the Zig binding's test, linking the shared engine
-// (core/native/libservirtium_vcr.so) at build time. The engine path is taken
+// Build the Zig binding's test, linking libservirtium_vcr
+// (core/native/libservirtium_vcr.so) at build time. libservirtium_vcr path is taken
 // from $SERVIRTIUM_VCR_LIB if set, otherwise ../core/native relative to this
 // file. We add it as a library search path, link the `.so` by name, and bake
 // an rpath so the test binary finds it at runtime without LD_LIBRARY_PATH.
@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_tests.step);
 }
 
-/// Directory that contains the engine `.so`: $SERVIRTIUM_VCR_LIB's parent if
+/// Directory that contains `libservirtium_vcr.so`: $SERVIRTIUM_VCR_LIB's parent if
 /// the env var points at the file, else ../core/native next to this build.zig.
 fn nativeDir(b: *std.Build) []const u8 {
     if (b.graph.environ_map.get("SERVIRTIUM_VCR_LIB")) |lib| {
