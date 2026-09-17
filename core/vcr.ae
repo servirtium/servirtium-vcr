@@ -2559,6 +2559,18 @@ clear_recording() {
     vcr_aether_clear_tape()
 }
 
+// Ensure the parent directory of `path` exists before we write to it.
+// Every README example writes a tape under a subdir (e.g. "tapes/foo.md")
+// without a prior mkdir, so a first write to a not-yet-existing directory
+// used to fail with a bare "cannot open file for writing". mkdir -p the
+// parent so the common case just works; path_dirname is pure (a bare
+// filename yields ".", and mkdir_p(".") is a harmless no-op).
+ensure_parent_dir(path: string) -> string {
+    dir = fs.path_dirname(path)
+    if string.length(dir) == 0 { return "" }
+    return fs.mkdir_p(dir)
+}
+
 // Write every captured interaction to `tape_path` in canonical
 // Servirtium markdown. Overwrites any existing file at that path.
 // Returns "" on success, error string otherwise.
@@ -2569,6 +2581,8 @@ clear_recording() {
 // retained as a fallback during the C→Aether migration.
 flush(tape_path: string) -> string {
     blob = emit_tape()
+    derr = ensure_parent_dir(tape_path)
+    if derr != "" { return derr }
     werr = fs.write(tape_path, blob)
     if werr != "" { return werr }
     return ""
@@ -2719,6 +2733,11 @@ har_import(har_path: string, tape_path: string) -> string {
 
     set_cur_key(key)
     blob = emit_tape()
+    derr = ensure_parent_dir(tape_path)
+    if derr != "" {
+        list_reset(slot(key, "tape"))
+        return string_concat("har import: cannot create tape dir: ", derr)
+    }
     werr = fs.write(tape_path, blob)
     list_reset(slot(key, "tape"))                       // leave the scratch key clean
     if werr != "" { return string_concat("har import: cannot write tape: ", werr) }
@@ -2860,6 +2879,8 @@ har_export(tape_path: string, har_path: string) -> string {
     json.json_free(root)
     list_reset(slot(key, "tape"))
     if eerr != "" { return string_concat("har export: JSON encode failed: ", eerr) }
+    derr = ensure_parent_dir(har_path)
+    if derr != "" { return string_concat("har export: cannot create har dir: ", derr) }
     werr = fs.write(har_path, text)
     if werr != "" { return string_concat("har export: cannot write har file: ", werr) }
     return ""
@@ -2953,6 +2974,8 @@ flush_and_fail_if_changed(tape_path: string) -> string {
     existing, eerr = fs.read(tape_path)
     blob = emit_tape()
 
+    derr = ensure_parent_dir(tape_path)
+    if derr != "" { return derr }
     werr = fs.write(tape_path, blob)
     if werr != "" { return werr }
 

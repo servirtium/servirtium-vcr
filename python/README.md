@@ -40,13 +40,37 @@ Servirtium in Python.
 
 ## Install
 
+> **Note.** The `servirtium` package on PyPI is the **old 1.x** pure-Python
+> implementation; the **2.0** layer documented here (the thin `ctypes` shell over
+> the Aether core) is **not on PyPI yet**, so `pip install servirtium` does *not*
+> give you the API below. Until 2.0 is published, install this package from
+> source (two steps) and point it at a prebuilt native library.
+
+**1. Get the native library** (`libservirtium_vcr`) for your OS/arch. Download it
+from the [GitHub releases](https://github.com/servirtium/servirtium-vcr/releases)
+— one prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
 ```sh
-pip install servirtium
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
 ```
 
-The native library for your OS/arch ships in the package (`servirtium/native/`)
-and is selected automatically — no Aether toolchain needed to *use* it.
-Supported platforms: linux-x64 (more in [docs/building.md](docs/building.md)).
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library.
+
+**2. Install this package from source** and tell it where the library is via
+`SERVIRTIUM_VCR_LIB`:
+
+```sh
+pip install "git+https://github.com/servirtium/servirtium-vcr.git#subdirectory=python"
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+# …then run your Python tests as usual; ctypes loads the library from that path.
+```
+
+(If you have the repo checked out, `pip install ./python` works the same way.)
 
 ## Docs
 
