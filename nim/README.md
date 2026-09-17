@@ -81,8 +81,31 @@ The `-L`/`-rpath` directory is resolved at compile time: it honors
 `core/native` relative to this source tree. The baked-in `-rpath` means the OS
 loader finds `libservirtium_vcr.so` at run time without `LD_LIBRARY_PATH`.
 
-Build libservirtium_vcr from `core/` (needs the Aether `ae` toolchain) or set
-`SERVIRTIUM_VCR_LIB` to a prebuilt copy.
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+Because the lib is resolved at **compile time**, set `SERVIRTIUM_VCR_LIB` to
+the directory containing the downloaded lib (or point the linker's `-L`/`-rpath`
+search path there) before `nim c`:
+
+```sh
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+```
+
+Contributors can instead build libservirtium_vcr from `core/` (needs the Aether
+`ae` toolchain).
 
 ## Building / testing from source
 

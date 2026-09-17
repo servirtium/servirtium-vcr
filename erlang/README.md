@@ -53,6 +53,30 @@ each compiling their own copy of the C source. There is exactly one
 
 ## Building and testing
 
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+The C NIF (`c_src/servirtium_nif.c`) links this lib at **build time**: drop the
+downloaded `libservirtium_vcr` in as `core/native/libservirtium_vcr.so` where
+the NIF build's `-L`/rpath finds it (the rpath it embeds points at
+`core/native`). Only the C-compiler side of the build below is then needed — no
+Aether toolchain.
+
+Contributors who want to build the lib from source instead (Aether toolchain
+required) can use `aeb`:
+
 `.build.ae` builds the shared `servirtium_nif` OTP app once: `cc` compiles the
 C NIF `.so` (linking libservirtium_vcr, rpath-embedding `core/native`), `erlc` compiles
 the `.erl` modules, and the `.app` resource is staged — all under

@@ -85,6 +85,34 @@ each other's state. See
 The included `test/test_helper.exs` still starts ExUnit with `max_cases: 1`,
 but that is a property of this suite, not a constraint of libservirtium_vcr.
 
+## Install
+
+> **Note:** nothing is published to **hex.pm** yet, so `mix deps.get` does
+> **not** fetch this library. Until a Hex package ships, build from source (or
+> add a `:path`/`:git` dependency) and supply the prebuilt native library as
+> below.
+
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+The FFI is a **C NIF** that links `libservirtium_vcr` at **build** time (not a
+runtime `dlopen`): point `SERVIRTIUM_VCR_LIB` at the downloaded library so the
+NIF build/load resolves it against that `.so`. This is separate from
+`SERVIRTIUM_NIF_EBIN`, which puts the shared `servirtium_nif` app on the BEAM
+code path (see below) — you generally set both.
+
 ## Building from source
 
 **Casual dev, one command** (installs the Aether toolchain via its official

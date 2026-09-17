@@ -42,11 +42,31 @@ that core (via [`libloading`](https://crates.io/crates/libloading)); it does
 servirtium = { git = "https://github.com/servirtium/servirtium-rust" }
 ```
 
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
 The native library is loaded at runtime. The crate looks for it (in order)
 at `$SERVIRTIUM_VCR_LIB`, then `native/libservirtium_vcr.{so,dylib}` next to
-the crate, then via the OS loader. Build libservirtium_vcr from `core/`
-(needs the Aether `ae` toolchain — see [docs/building.md](docs/building.md))
-or set `SERVIRTIUM_VCR_LIB` to a prebuilt copy.
+the crate, then via the OS loader. Point the crate at the downloaded lib:
+
+```sh
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+```
+
+Or, for contributors, build libservirtium_vcr from `core/` (needs the Aether
+`ae` toolchain — see [docs/building.md](docs/building.md)).
 
 ## Docs
 

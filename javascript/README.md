@@ -39,14 +39,33 @@ TypeScript.
 
 ## Install
 
+> **Note:** the `@servirtium/vcr` npm package is **not published yet**, so
+> `npm install @servirtium/vcr` does **not** give you this library. Get the
+> native library from GitHub releases instead (below).
+
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
 ```sh
-npm install @servirtium/vcr
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
 ```
 
-The native library for your OS/arch lives in `native/`. For published packages
-the host's prebuilt `linux-x64` `.so` ships in the box; on other platforms (or
-to iterate on the core) build it from `core/` with the Aether toolchain (`ae`
-≥ v0.227.0, driven by `aeb`). See [docs/building.md](docs/building.md).
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll` — adjust the
+filename accordingly.)
+
+Then point the binding at it via `SERVIRTIUM_VCR_LIB`:
+
+```sh
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+```
+
+koffi loads the library from that path at runtime.
 
 ## Docs
 

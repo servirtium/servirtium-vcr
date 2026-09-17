@@ -65,7 +65,32 @@ other (the `core_tests/.concurrent.ae` test proves it). `hspec` runs specs
 sequentially by default, which is fine; with `tasty` you may run in parallel.
 See [docs/architecture.md](docs/architecture.md#concurrency-one-server-per-port).
 
+## Getting the native library
+
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+The `foreign import ccall` FFI resolves the lib at **link time**: drop the
+downloaded `libservirtium_vcr` in as `native/libservirtium_vcr.so` where the
+`-L`/rpath finds it — the same location `build-native.sh` produces. (If you skip
+the rpath, run `LD_LIBRARY_PATH=$PWD/native cabal test`.)
+
 ## Building from source
+
+Contributors who want to build the lib from source instead (Aether toolchain
+required) can use the scripts below.
 
 **Casual dev, one command** (installs the Aether toolchain via its official
 `get.sh` to `~/.local` if missing — no sudo, no tests, no contrib; needs

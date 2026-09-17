@@ -52,6 +52,31 @@ marshalling rules to drift from `core/embed.ae`.
 
 ## Building and testing
 
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+`Package.swift` resolves the lib at **link time** (`-L native -lservirtium_vcr`
++ rpath, both computed against the package's own directory): drop the downloaded
+`libservirtium_vcr` in as `native/libservirtium_vcr.so` where that `-L`/rpath
+finds it — the same location the `aeb` leaf stages it. The C header the binding
+imports (`Sources/CServirtiumVcr/include/servirtium_vcr.h`) is already in-tree,
+so a downloaded lib is all you add.
+
+Contributors who want to build the lib from source instead (Aether toolchain
+required) can use `aeb`:
+
 ```sh
 aeb swift/.tests.ae   # stages the libservirtium_vcr.so into native/, then
                       # swift build + swift test

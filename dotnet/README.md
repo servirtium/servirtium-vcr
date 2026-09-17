@@ -35,14 +35,32 @@ native build; it does **not** reimplement Servirtium in C#.
 
 ## Install
 
+> **Note:** nothing is published to **NuGet** yet, so `dotnet add package
+> Servirtium.Vcr` does **not** give you this library. Until a package ships,
+> install by downloading the prebuilt native library and pointing the binding
+> at it, as below.
+
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
 ```sh
-dotnet add package Servirtium.Vcr
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
 ```
 
-The right native library for your OS/arch ships in the package
-(`runtimes/<rid>/native/`) and is selected automatically — no Aether
-toolchain needed to *use* it. Supported RIDs: linux-x64, osx-x64,
-osx-arm64 (more in [docs/building.md](docs/building.md)).
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+Point the binding at the downloaded library with `SERVIRTIUM_VCR_LIB` — the
+managed layer P/Invokes it from that path at runtime:
+
+```sh
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+```
 
 ## Docs
 

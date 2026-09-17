@@ -68,6 +68,32 @@ which LFE gives no way to suppress selectively (only `-Werror` and
 
 ## Building and testing
 
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+LFE doesn't link this lib directly — it loads the shared Erlang NIF, and it's
+that NIF (`servirtium_nif`) which needs `libservirtium_vcr` present. So the
+download matters one layer down: obtaining/building the Erlang `servirtium_nif`
+app (which links the lib) is the prerequisite here. Drop the downloaded lib
+where the NIF build finds it and build that app the way the
+[erlang README](../erlang/README.md) describes; then `ERL_LIBS` puts it on the
+BEAM code path for the LFE test run.
+
+Contributors who want to build the lib from source instead (Aether toolchain
+required) can use `aeb`:
+
 There is no C step here — the shared `servirtium_nif` app is built by the
 Erlang binding. Needs `lfec`/`lfe` on PATH (the leaf SKIPs loudly otherwise),
 plus Erlang/OTP and `cc` for the NIF.

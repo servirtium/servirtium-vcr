@@ -80,10 +80,33 @@ scenarios, and [docs/architecture.md](docs/architecture.md) for the layering.
 
 ## Building and testing
 
-libservirtium_vcr is built from `core/` (needs the Aether `ae` toolchain). The
-build looks for `libservirtium_vcr.so` at `$SERVIRTIUM_VCR_LIB` if set,
-otherwise at `../core/native/libservirtium_vcr.so` relative to this directory.
-The suite shells out to `curl`, so `curl` must be on `PATH`.
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+The lib is resolved at **build/link time** (`addLibraryPath` +
+`linkSystemLibrary`, with an rpath baked). The build looks for
+`libservirtium_vcr.so` at `$SERVIRTIUM_VCR_LIB` if set, otherwise at
+`../core/native/libservirtium_vcr.so` relative to this directory — point
+`SERVIRTIUM_VCR_LIB` at the downloaded lib so the link finds it:
+
+```sh
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+```
+
+Contributors can instead build libservirtium_vcr from `core/` (needs the Aether
+`ae` toolchain). The suite shells out to `curl`, so `curl` must be on `PATH`.
 
 ```sh
 # build libservirtium_vcr from core/, then point the build at it:

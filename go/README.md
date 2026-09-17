@@ -39,14 +39,38 @@ precompiled native build; it does **not** reimplement Servirtium in Go.
 
 ## Install
 
-```sh
-go get github.com/servirtium/servirtium-go
-```
+> **Note:** nothing is published to the **Go module proxy** yet, so `go get
+> github.com/servirtium/servirtium-go` does **not** give you this library.
+> Until the module is published, vendor it locally (or use a `replace`
+> directive) and supply the prebuilt native library as below.
 
 This package uses **cgo**, so `CGO_ENABLED=1` (the default on most platforms)
-and a C toolchain are required to build. The native library
-(`native/libservirtium_vcr.so`) is linked with an embedded rpath, so
-`go test` finds it at runtime with no `LD_LIBRARY_PATH` needed.
+and a C toolchain are required to build.
+
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+cgo links this library at **build** time, not via a runtime `dlopen`: the
+package's `#cgo LDFLAGS` carry `-L`/`-rpath` for the directory holding the
+`.so` (`core/native` and the bundled `native/`). To build against the
+downloaded library, drop it into that directory (or add the directory to
+cgo's `-L`/rpath), so the linker resolves `-lservirtium_vcr` and bakes an
+rpath into the binary — `go test` then finds it with no `LD_LIBRARY_PATH`.
+The in-repo integration tests point at a specific `.so` with
+`SERVIRTIUM_VCR_LIB=<path-to-libservirtium_vcr.so>`; a consumer that relies on
+the module's own bundled `native/` copy needs nothing set.
 
 ## Docs
 

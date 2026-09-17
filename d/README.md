@@ -58,6 +58,34 @@ dmd, so the test binary finds libservirtium_vcr at build time and at run time.
 
 ## Building and testing
 
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+D **links** the lib at build time and bakes an rpath, so no
+`SERVIRTIUM_VCR_LIB` is needed at run time (see the note above). Drop the
+downloaded lib where the link line points — `../core/native/` (the `-L-L`
+directory in the build commands below) — so the linker resolves it:
+
+```sh
+mkdir -p ../core/native
+mv libservirtium_vcr-v0.1.0-linux-x86_64.so ../core/native/libservirtium_vcr.so
+```
+
+Contributors can instead build libservirtium_vcr from `core/` (needs the Aether
+`ae` toolchain).
+
 Needs `dmd` on PATH (the leaf skips loudly otherwise).
 
 ```sh

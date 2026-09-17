@@ -49,10 +49,33 @@ JNI). It does **not** reimplement Servirtium in Java.
   binding compiles to JDK-22 bytecode — which also lets the JVM-family bindings
   (Kotlin/Scala/Clojure/Groovy) consume this jar. It's built and tested on
   JDK 25 (its `.tests.ae` pins `JAVA25_HOME`).
-- The native library `libservirtium_vcr.{so,dylib}` for your OS/arch. It ships
-  on the classpath under `native/<rid>/` and is extracted/loaded automatically;
-  no Aether toolchain is needed to *use* it. Supported RIDs: `linux-x64`
-  (more in [docs/building.md](docs/building.md)).
+- The native library `libservirtium_vcr.{so,dylib}` for your OS/arch. The
+  Maven coordinate `com.paulhammant.servirtium:servirtium-vcr` is **not on
+  Maven Central yet**, so you can't add it as a dependency to pull the native
+  library down — and the "ships on the classpath under `native/<rid>/`,
+  extracted/loaded automatically" path only picks up a lib **you** supply
+  there, not a published artifact. Instead, fetch the prebuilt library from
+  releases and point the binding at it (below).
+
+  **Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+  [GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+  prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+  verify it:
+
+  ```sh
+  curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+  curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+  sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+  ```
+
+  Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+  (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+  library. (For macOS use the `.dylib`, for Windows the `.dll`.) Then point the
+  binding at it — the JVM FFM layer loads it from that path:
+
+  ```sh
+  export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+  ```
 
 ### A flag your build needs
 

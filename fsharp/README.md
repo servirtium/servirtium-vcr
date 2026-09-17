@@ -61,6 +61,30 @@ logic.
 
 ## Building and testing
 
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+F# has no FFI of its own — it uses the `dotnet/Servirtium.Vcr` binding's
+P/Invoke — so the native lib is located exactly the way the
+[dotnet README](../dotnet/README.md) describes: point that binding at the
+downloaded lib with `SERVIRTIUM_VCR_LIB` (or drop it where the dotnet binding
+loads it).
+
+Contributors who want to build the lib from source instead (Aether toolchain
+required) can use `aeb`:
+
 There is no native step here — `libservirtium_vcr.so` and the C# assembly are built
 by `core/.build.ae` and `dotnet/Servirtium.Vcr/.build.ae`. Needs the .NET SDK.
 

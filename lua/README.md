@@ -119,6 +119,34 @@ The `-Wl,-rpath` bakes libservirtium_vcr's directory into the module, so
 `libservirtium_vcr.so` is found at runtime without `LD_LIBRARY_PATH`. See
 [docs/building.md](docs/building.md).
 
+## Getting the native library
+
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+The C extension **links** the lib (its directory baked in as an rpath), so
+point `./build.sh` at the directory holding the downloaded lib, and set
+`SERVIRTIUM_VCR_LIB` to it when running the tests:
+
+```sh
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+```
+
+Contributors can instead build libservirtium_vcr from `core/` (needs the Aether
+`ae` toolchain), as in **Build** above.
+
 ## Run the tests
 
 ```sh

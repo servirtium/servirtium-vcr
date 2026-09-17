@@ -40,15 +40,33 @@ reimplement Servirtium in Ruby.
 
 ## Install
 
-```ruby
-# Gemfile
-gem 'servirtium'
+> **Note:** the `servirtium` gem is **not published to RubyGems yet**, so a
+> `gem 'servirtium'` line in your Gemfile does **not** give you this library.
+> Get the native library from GitHub releases instead (below).
+
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
 ```
 
-The native library for your OS/arch is bundled in the gem under
-`lib/servirtium/native/` and loaded automatically — no Aether toolchain needed
-to *use* it. (Currently linux-x64 ships prebuilt; build others with `aeb`, see
-[docs/building.md](docs/building.md).)
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll` — adjust the
+filename accordingly.)
+
+Then point the binding at it via `SERVIRTIUM_VCR_LIB`:
+
+```sh
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+```
+
+Fiddle loads the library from that path at runtime.
 
 ## Docs
 

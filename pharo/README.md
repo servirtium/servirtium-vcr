@@ -51,9 +51,34 @@ Metacello new
 ServirtiumLibrary libPath: '/abs/path/to/servirtium-pharo/native/libservirtium_vcr.so'.
 ```
 
-libservirtium_vcr library is **not** committed — build it once with
-`./build-native.sh` (needs the Aether `ae` toolchain). See
-[docs/building.md](docs/building.md).
+The libservirtium_vcr library is **not** committed. The no-toolchain path is to
+download a prebuilt copy:
+
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+Point the FFI binding at the downloaded lib — either `ServirtiumLibrary
+libPath:` (as above) or by exporting `SERVIRTIUM_VCR_LIB` before launching the
+image:
+
+```sh
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so
+```
+
+Contributors can instead build it once with `./build-native.sh` (needs the
+Aether `ae` toolchain). See [docs/building.md](docs/building.md).
 
 ## Docs
 

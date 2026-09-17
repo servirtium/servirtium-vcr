@@ -49,6 +49,29 @@ marshalling rules to drift from `core/embed.ae`.
 
 ## Building and testing
 
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+The `@[Link]` binding resolves the lib at **link time**: drop the downloaded
+`libservirtium_vcr` into `native/` (as `native/libservirtium_vcr.so`) where the
+self-locating `-L`/`-rpath` and `CRYSTAL_LIBRARY_PATH` find it — the same place
+the `aeb` leaf stages it (see the by-hand build below).
+
+Contributors who want to build the lib from source instead (Aether toolchain
+required) can use `aeb`:
+
 ```sh
 aeb crystal/.tests.ae   # stages the libservirtium_vcr.so into native/, runs `crystal spec`
 ```

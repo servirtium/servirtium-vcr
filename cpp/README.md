@@ -57,6 +57,28 @@ so its `extern "C"` symbols aren't mangled) and `libservirtium_vcr.so`.
 
 ## Building and testing
 
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+The lib is resolved at **link time**: this binding links the C client's object
+plus `libservirtium_vcr.so`, so put the downloaded `libservirtium_vcr` where the
+linker's `-L`/rpath finds it (see the by-hand link below).
+
+Contributors who want to build the lib from source instead (Aether toolchain
+required) can use `aeb`:
+
 C++17, no dependencies beyond the C client + `libservirtium_vcr.so`. Needs a C++
 compiler (and a C compiler for the C client's object).
 

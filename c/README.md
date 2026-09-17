@@ -63,6 +63,28 @@ This header is **also** the substrate the C++ client (`cpp/`) wraps in RAII.
 
 ## Building and testing
 
+**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
+[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
+prebuilt shared library per platform, each with a `.sha256` — and (optionally)
+verify it:
+
+```sh
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+```
+
+Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
+(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
+library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+
+The lib is resolved at **link time**: put the downloaded `libservirtium_vcr`
+where the linker's `-L`/rpath finds it (see the by-hand link below), and
+`-lservirtium_vcr` plus an rpath to its directory picks it up.
+
+Contributors who want to build the lib from source instead (Aether toolchain
+required) can use `aeb`:
+
 C99, no dependencies beyond `libservirtium_vcr.so`. Needs a C compiler.
 
 ```sh
