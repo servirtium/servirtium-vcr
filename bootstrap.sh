@@ -54,37 +54,46 @@ set -euo pipefail
 # (engine + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.677.0"
-AE_FETCH="v0.677.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
-                       # fs.make_temp_file (see below), and I verified aeb v0.312
-                       # builds this repo fine on ae 0.675. We pin 0.677 anyway to
-                       # track aeb v0.312's own AETHER_PIN (its @c_callback weak-emit
-                       # need — which THIS repo doesn't exercise), keeping "one ae,
-                       # matching the build runner". So 0.677 is a tracking bump; 0.675
-                       # is the requirement.
-                       # Why v0.312 at all: v0.311's SDK hit a SIGSEGV / E0200
-                       # int-narrowing under ae 0.675 in seq_filter (bldr, python,
-                       # dart, gleam, moonbit) — I never tripped it (only ran
-                       # go/rust/js + core on 0.675); aeb's own cold-compile gate
-                       # caught it and v0.312 fixes it. So 0.677/v0.312 is strictly
-                       # better than 0.675/v0.311.
-                       # VERIFIED on ae 0.677.0 + released aeb v0.312: engine + CLI +
-                       # core_tests + cli-tests 18/18 + go/rust/js/gleam 1/1, and the
-                       # previously-crashing python/dart/gleam SDK path now runs with
-                       # NO SIGSEGV/E0200 (python fails only on this box's broken
-                       # pytest; dart only on a stale Dart 3.8.1 vs the binding's
-                       # ^3.12.0 — both environmental).
-                       # SWEEP DONE on CachyOS (the handover's ask): all 34
-                       # .tests.ae leaves, .packages.ae (29 packages) and all 29
-                       # .example.ae green on ae 0.677.0 + released aeb v0.312 —
-                       # EXCEPT pharo (unchanged 6/12, see the 0.668 note) and,
-                       # until aeb ships a 2-line rename, dotnet + fsharp: ae
-                       # 0.675 REGRESSED closure codegen and emits invalid C for
+AE_PIN="0.681.0"
+AE_FETCH="v0.681.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
+                       # fs.make_temp_file, and this repo's engine needs no newer
+                       # primitive. We pin 0.681 to track aeb v0.315's own
+                       # AETHER_PIN (0.681.0), keeping "one ae, matching the build
+                       # runner". So 0.681 is a tracking bump; 0.675 is the
+                       # requirement.
+                       # WHY 0.681/v0.315 (bumped from 0.677/v0.312): aeb v0.313
+                       # pinned ae 0.680 (FreeBSD --emit=lib -fPIC release-build
+                       # fix) and v0.315 pinned 0.681 (bldr._host_arch via
+                       # os.arch()); v0.314/v0.315 also add consumer-manifest
+                       # generation + --overrideDep. Nothing here NEEDS them —
+                       # it's a stay-with-the-runner bump.
+                       # PREBUILT WEAK-EMIT, now clean: the @c_callback weak-emit
+                       # (ae PR #2043 / AETHER_WEAK_DEF) that made release/ cross
+                       # builds fail on the LAGGING 0.677 prebuilt is present in
+                       # the 0.680 AND 0.681 prebuilts (`strings aetherc | grep
+                       # AETHER_WEAK_DEF` = 4). So no from-source build is needed
+                       # anymore — the pinned prebuilt cross-builds the release
+                       # matrix as-is.
+                       # VERIFIED on ae 0.681.0 + released aeb v0.315 (this box):
+                       # engine build + release/ core matrix 4/4 (linux+macos,
+                       # x86_64+arm64, cross from Linux) + go/rust .tests.ae 1/1.
+                       # The SDK-gated leaves (dotnet/kotlin/scala/haskell/lua/php/
+                       # pharo/swift) are unrun here (no SDKs) — sweep them on the
+                       # provisioned box; the dotnet closure-codegen bug below
+                       # still applies until aeb ships the rename OR ae fixes it.
+                       # ---- CachyOS SWEEP (was done on 0.677/v0.312; re-run on
+                       # 0.681/v0.315): all 34 .tests.ae leaves, .packages.ae (29
+                       # packages) and all 29 .example.ae were green on
+                       # 0.677/v0.312 EXCEPT pharo (unchanged 6/12, see the 0.668
+                       # note) and, until aeb ships a 2-line rename, dotnet +
+                       # fsharp: ae 0.675 REGRESSED closure codegen and emits
+                       # invalid C for
                        # aeb's dotnet SDK (a closure's own locals get captured as
                        # cells declared in an already-closed block). Bisected:
-                       # clean on 0.668, broken on 0.675 AND 0.677; aeb's dotnet
-                       # module is byte-identical v0.311->v0.312, so this is an
-                       # Aether bug, not an SDK one. It could not have shown up
+                       # clean on 0.668, broken on 0.675, 0.677, and still on
+                       # 0.680/0.681; aeb's dotnet module is unchanged across
+                       # v0.311->v0.315, so this is an Aether bug, not an SDK
+                       # one. It could not have shown up
                        # in the 0.675 check above — that box had no .NET SDK, so
                        # the dotnet path never compiled. Full writeup + the
                        # verified workaround: docs/handover-ae-0675-closure-
@@ -123,13 +132,12 @@ AE_FETCH="v0.677.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.312 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.315 == the one aeb this repo is VERIFIED against.
 #
 # Collapsed from the old permissive floor (>= 0.308) for the same reason the
 # Aether pin was: every sweep this repo publishes runs on AEB_REF, so a lower
-# floor advertised support for releases nothing verifies. 0.311 is also a hard
-# requirement in its own right now — it is the aeb whose SDK needs ae 0.675
-# (fs.make_temp_file), so the two toolchains move as a pair.
+# floor advertised support for releases nothing verifies. v0.315 pins ae 0.681
+# (its AETHER_PIN), so the two toolchains move as a pair — install them together.
 #
 # Kept for the record, because it is the last nameable aeb requirement and
 # explains why 0.308 was ever the number: scala/.tests.ae calls scala's
