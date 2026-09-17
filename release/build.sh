@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-build libservirtium_vcr (libservirtium_vcr) for the release matrix from ONE host,
+# Cross-build the engine (libservirtium_vcr) for the release matrix from ONE host,
 # and emit each artifact with a .sha256 — ready for out-of-band on-target
 # attestation (run the binding suite on real hardware and attest a hash).
 #
@@ -56,7 +56,7 @@ os_of()  { case "$1" in *-linux|*-linux-musl) echo linux;; *-macos) echo macos;;
 arch_of(){ case "$1" in aarch64-*) echo arm64;; x86_64-*) echo x86_64;; *) echo "$1";; esac; }
 ext_of() { case "$1" in *-macos) echo dylib;; *-windows) echo dll;; *) echo so;; esac; }
 
-say "libservirtium_vcr: libservirtium_vcr  tag: $TAG"
+say "engine: libservirtium_vcr  tag: $TAG"
 say "matrix: $MATRIX"
 echo
 
@@ -97,6 +97,11 @@ for t in $MATRIX; do
   else
     printf 'FAILED\n'
     sed 's/^/release:     /' "$log" | grep -iE 'error|fatal' | head -3
+    # A failed cross build can leave partial output in dist/ (a half-written
+    # <out>, and ae's generated <out>.c when the C stage errored) — remove it so
+    # a later --no-build publish, or a human, never mistakes debris for an
+    # artifact. The .log is KEPT on failure (the else branch), unlike success.
+    rm -f "$out" "$out.c" "$out.lib"
     failed=$((failed+1))
   fi
 done

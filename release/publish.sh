@@ -85,11 +85,14 @@ plats="$(
   for f in "${bins[@]}"; do
     case "$f" in *.dll.lib) continue ;; esac
     b="$(basename "$f")"
-    printf '%s\n' "${b#libservirtium_vcr-*-}" | sed -E 's/\.(so|dylib|dll)$//'
+    # Take just the trailing <os>-<arch> (the last two dash-segments before the
+    # extension), NOT ${b#prefix-*-} — the tag itself can contain a dash
+    # (v1.0.0-rc1), which would leak into the list. sed keeps this tag-agnostic.
+    printf '%s\n' "$b" | sed -E 's/\.(so|dylib|dll)$//; s/.*-([^-]+-[^-]+)$/\1/'
   done | sort -u | awk 'NR>1{printf ", "} {printf "%s", $0} END{if (NR) print ""}'
 )"
 
-notes="Cross-built \`libservirtium_vcr\` libservirtium_vcr, ${nbin} platform artifact(s) — each with a \`.sha256\` (and a combined \`SHA256SUMS.txt\`): ${plats}.
+notes="Cross-built \`libservirtium_vcr\` engine, ${nbin} platform artifact(s) — each with a \`.sha256\` (and a combined \`SHA256SUMS.txt\`): ${plats}.
 
 This is the libservirtium_vcr shared library only — the one thing that's hard to produce.
 Point any binding at a downloaded artifact via \`SERVIRTIUM_VCR_LIB=/path/to/lib…\`
