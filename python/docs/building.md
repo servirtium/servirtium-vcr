@@ -33,13 +33,19 @@ ae build --emit=lib --with=fs,net core/embed.ae \
 
 ## Build & test
 
+From the repository root, in an activated virtual environment:
+
 ```sh
-python -m pip install -e .[dev]
-python -m pytest
+python -m pip install -e './python[dev]'
+export SERVIRTIUM_VCR_LIB="/absolute/path/to/libservirtium_vcr.so"
+python -m pytest python/test
 ```
 
 `SERVIRTIUM_VCR_LIB=/path/to/libservirtium_vcr.so` overrides the native-lib
 location (handy when iterating on `embed.ae`).
+
+Python packaging uses the setuptools backend declared in `pyproject.toml`;
+package metadata and native-library inclusion remain in `setup.py`.
 
 ## Platform matrix
 

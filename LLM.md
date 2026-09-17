@@ -260,6 +260,18 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 
 ## Gotchas / hard-won
 
+- **Exercise the consumer README without the build toolchain.** The Python
+  onboarding check (2026-09-17, Python 3.11/Linux x86_64) downloaded the exact
+  v0.1.0 native release named in `python/README.md`, verified its checksum,
+  installed the Python source into a fresh venv, and recorded a stdlib HTTP
+  server's JSON response, including a query string. No `ae`/`aeb` or in-tree
+  native artifact was needed. The README now includes a self-contained local
+  record/replay example that stops the upstream before playback. Its snippet
+  was also run against a bundled wheel with `SERVIRTIUM_VCR_LIB` unset, alongside
+  all three existing consumer-example modes. Keep this consumer path usable:
+  source installation uses the backend in `python/pyproject.toml`; `setup.py`
+  still owns metadata and native package data. A green in-tree suite alone
+  doesn't verify these instructions or compatibility with the published binary.
 - **JSON request-body matching is opt-in and lives in libservirtium_vcr.**
   `set_match_json_body(h, 1)` makes a request body that differs byte-for-byte
   get a second chance at *semantic* JSON equality (object key order + whitespace

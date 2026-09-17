@@ -7,7 +7,7 @@ setup(
                 'tape format — a thin Python (ctypes) wrapper over the Aether VCR core',
     author='Paul Hammant',
     author_email='paul@hammant.org',
-    url='https://github.com/servirtium/servirtium-python',
+    url='https://github.com/servirtium/servirtium-vcr/tree/main/python',
     long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
     license='MIT',

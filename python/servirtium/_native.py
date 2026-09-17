@@ -99,8 +99,9 @@ def _load_library() -> ctypes.CDLL:
             last_err = exc
 
     raise OSError(
-        f"could not load native VCR library '{_file_name()}'. Build it with "
-        f"./build-native.sh, pass native_lib=<path>, or set SERVIRTIUM_VCR_LIB."
+        f"could not load native VCR library '{_file_name()}'. Download the library "
+        f"for your OS/architecture from https://github.com/servirtium/servirtium-vcr/releases "
+        f"and set SERVIRTIUM_VCR_LIB to its absolute path (or pass native_lib=<path>)."
         + (f" (last error: {last_err})" if last_err else "")
     )
 

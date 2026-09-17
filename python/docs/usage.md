@@ -23,15 +23,21 @@ with servirtium.playback("tapes/climate_api.md").port(0).start() as vcr:  # 0 = 
 ## Recording
 
 ```python
+import servirtium
+import urllib.request
+
 with servirtium.record("tapes/climate_api.md",
                        "https://climatedataapi.worldbank.org").port(0).start() as vcr:
-    urllib.request.urlopen(f"{vcr.base_url}/api/v1/countries").read()
+    urllib.request.urlopen(f"{vcr.base_url}/api/v1/countries", timeout=10).read()
     # exiting the `with` (or calling vcr.close()) writes the markdown tape.
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
 your SUT, and captures the exchange. Chunked responses are de-chunked (needs
 the native lib built with Aether ≥ 0.183.0).
+
+For a complete example with a local upstream and offline replay, see the
+[README quickstart](../README.md#record-and-replay-a-local-service).
 
 ### Drift detection
 
@@ -160,10 +166,14 @@ servirtium.playback(tape).static_content("/assets", "build/static").start()
 ## Markdown format options (record)
 
 ```python
-servirtium.record(tape, upstream) \
-    .indent_code_blocks() \      # 4-space-indented blocks instead of ``` fences
-    .emphasize_http_verbs() \    # *GET* instead of bare GET in headings
+vcr = (
+    servirtium.record(tape, upstream)
+    .indent_code_blocks()       # 4-space-indented blocks instead of fences
+    .emphasize_http_verbs()     # *GET* instead of bare GET in headings
     .start()
+)
+# ... make requests via vcr.base_url ...
+vcr.close()  # flush the tape
 ```
 
 Playback tolerates either form regardless, so cross-implementation tapes load
