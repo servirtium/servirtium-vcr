@@ -34,7 +34,7 @@ The Servirtium logic is in-repo, not the stdlib. This package `FFI::cdef`s
 that precompiled native build and presents an idiomatic PHP fixture; it does
 **not** reimplement Servirtium in PHP.
 
-Requires **PHP 8.4+ with the `FFI` extension** (`ext-ffi`).
+Requires **PHP 8.2+ with the `FFI` extension** (`ext-ffi`).
 
 ## Install
 

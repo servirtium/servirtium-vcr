@@ -5,7 +5,7 @@
     "license": "MIT",
     "keywords": ["servirtium", "vcr", "http", "record", "replay", "testing", "ffi"],
     "require": {
-        "php": ">=8.4",
+        "php": ">=8.2",
         "ext-ffi": "*"
     },
     "require-dev": {

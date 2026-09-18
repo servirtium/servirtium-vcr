@@ -76,10 +76,13 @@ libservirtium_vcr is linked at build time via `{.passL.}` in
 {.passL: "-L<core/native> -lservirtium_vcr -Wl,-rpath,<core/native>".}
 ```
 
-The `-L`/`-rpath` directory is resolved at compile time: it honors
-`$SERVIRTIUM_VCR_LIB` (a path to the `.so`) if set, otherwise it falls back to
-`core/native` relative to this source tree. The baked-in `-rpath` means the OS
-loader finds `libservirtium_vcr.so` at run time without `LD_LIBRARY_PATH`.
+The `-L`/`-rpath` **directory** is resolved at compile time: it honors
+`$SERVIRTIUM_VCR_LIB` — which must name a **directory that contains a file called
+exactly `libservirtium_vcr.so`** (that is what `-lservirtium_vcr` links against; a
+versioned filename like `libservirtium_vcr-<ver>-<os>.so` will *not* satisfy
+`-l`). If unset, it falls back to `native/` (staged below) then `core/native`
+relative to this source tree. The baked-in `-rpath` means the OS loader finds
+`libservirtium_vcr.so` at run time without `LD_LIBRARY_PATH`.
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the
 [GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
@@ -109,12 +112,16 @@ Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
 
-Because the lib is resolved at **compile time**, set `SERVIRTIUM_VCR_LIB` to
-the directory containing the downloaded lib (or point the linker's `-L`/`-rpath`
-search path there) before `nim c`:
+The `cp` above (to `native/libservirtium_vcr.so`) is the whole story — that
+correctly-named file is what the link resolves, so **no env var is needed**. Only
+if you want the lib somewhere else, set `SERVIRTIUM_VCR_LIB` to the **directory**
+holding a file named exactly `libservirtium_vcr.so` (not the versioned download —
+rename or symlink it first), before `nim c`:
 
 ```sh
-export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
+# optional override: point at a DIRECTORY containing libservirtium_vcr.so
+mkdir -p /some/dir && cp libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so /some/dir/libservirtium_vcr.so
+export SERVIRTIUM_VCR_LIB=/some/dir
 ```
 
 Contributors can instead build libservirtium_vcr from `core/` (needs the Aether

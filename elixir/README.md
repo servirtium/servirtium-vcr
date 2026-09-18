@@ -124,6 +124,16 @@ Erlang binding, which `Servirtium.Native` `defdelegate`s onto. So:
    SERVIRTIUM_NIF_EBIN=/path/to/servirtium_nif/ebin mix test
    ```
 
+   > **`SERVIRTIUM_NIF_EBIN` is read by this binding's `test/test_helper.exs`, so
+   > it only takes effect under `mix test`.** For `mix run`, `iex -S mix`, or your
+   > own app, the env var does nothing on its own — put the NIF app on the code
+   > path yourself in your app's startup (or `test_helper.exs`):
+   > ```elixir
+   > Code.append_path(System.get_env("SERVIRTIUM_NIF_EBIN") || "/path/to/servirtium_nif/ebin")
+   > ```
+   > Without this you get `module :servirtium_nif is not available` even with the
+   > env var set.
+
 (The `aeb elixir/.package.ae` build stages the shared `servirtium_nif` app beside
 the mix source; the Elixir BEAM modules are compiled by the consumer's own `mix`.)
 
