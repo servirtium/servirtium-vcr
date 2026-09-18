@@ -63,9 +63,9 @@ JNI). It does **not** reimplement Servirtium in Java.
   verify it:
 
   ```sh
-  curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so
-  curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256
-  sha256sum -c libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256   # -> OK
+  curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
+  curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256
+  sha256sum -c libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256   # -> OK
   ```
 
   Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
@@ -74,7 +74,7 @@ JNI). It does **not** reimplement Servirtium in Java.
   binding at it — the JVM FFM layer loads it from that path:
 
   ```sh
-  export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.1-linux-x86_64.so
+  export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
   ```
 
   **Build the package locally.** Nothing is on Maven Central yet, so to consume
@@ -85,7 +85,7 @@ JNI). It does **not** reimplement Servirtium in Java.
 
   ```sh
   mkdir -p java/src/main/resources/native/linux-x64
-  cp libservirtium_vcr-v0.1.1-linux-x86_64.so java/src/main/resources/native/linux-x64/libservirtium_vcr.so
+  cp libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so java/src/main/resources/native/linux-x64/libservirtium_vcr.so
   (cd java && mvn -q -DskipTests install)
   ```
 

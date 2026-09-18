@@ -127,9 +127,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256   # -> OK
 ```
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
@@ -145,7 +145,7 @@ root:
 ```sh
 mkdir -p dist
 cp lua/servirtium.lua dist/
-cp libservirtium_vcr-v0.1.1-linux-x86_64.so dist/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so dist/libservirtium_vcr.so
 cc -O2 -shared -fPIC $(pkg-config --cflags lua5.4) lua/csrc/servirtium.c \
    -L dist -lservirtium_vcr -Wl,-rpath,'$ORIGIN' \
    -o dist/servirtium_native.so
@@ -161,7 +161,7 @@ point `./build.sh` at the directory holding the downloaded lib, and set
 `SERVIRTIUM_VCR_LIB` to it when running the tests:
 
 ```sh
-export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.1-linux-x86_64.so
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
 ```
 
 Contributors can instead build libservirtium_vcr from `core/` (needs the Aether

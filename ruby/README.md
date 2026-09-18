@@ -65,9 +65,9 @@ prebuilt shared library per platform, each with a `.sha256`. Download and verify
 the Linux x86_64 library in the `ruby/` directory:
 
 ```sh
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256   # -> OK
+curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
+curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256   # -> OK
 ```
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
@@ -81,7 +81,7 @@ or `servirtium_vcr.dll` on Windows.
 
 ```sh
 mkdir -p lib/servirtium/native
-cp libservirtium_vcr-v0.1.1-linux-x86_64.so lib/servirtium/native/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so lib/servirtium/native/libservirtium_vcr.so
 gem build servirtium.gemspec
 # Produces servirtium-2.0.0.gem for the selected OS/architecture.
 ```

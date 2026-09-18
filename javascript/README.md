@@ -64,9 +64,9 @@ prebuilt shared library per platform, each with a `.sha256`. Download and verify
 the Linux x86_64 library in the `javascript/` directory:
 
 ```sh
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256   # -> OK
+curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
+curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256   # -> OK
 ```
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
@@ -80,7 +80,7 @@ matching release asset on other machines. When staging it below, use
 
 ```sh
 mkdir -p native
-cp libservirtium_vcr-v0.1.1-linux-x86_64.so native/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so native/libservirtium_vcr.so
 npm ci
 npm pack
 # Produces servirtium-vcr-2.0.0.tgz (for this OS/architecture).

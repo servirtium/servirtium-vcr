@@ -69,9 +69,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256   # -> OK
 ```
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
@@ -87,7 +87,7 @@ the downloaded library:
 ```sh
 mkdir -p dist/include dist/lib/pkgconfig
 cp c/include/servirtium.h dist/include/
-cp libservirtium_vcr-v0.1.1-linux-x86_64.so dist/lib/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so dist/lib/libservirtium_vcr.so
 cc -O2 -std=c99 -fPIC -shared -I c/include c/src/servirtium.c \
    -L dist/lib -lservirtium_vcr -Wl,-rpath,'$ORIGIN' \
    -o dist/lib/libservirtium_c.so

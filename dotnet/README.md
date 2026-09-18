@@ -46,9 +46,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.1/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so.sha256   # -> OK
 ```
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
@@ -59,7 +59,7 @@ Point the binding at the downloaded library with `SERVIRTIUM_VCR_LIB` — the
 managed layer P/Invokes it from that path at runtime:
 
 ```sh
-export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v0.1.1-linux-x86_64.so
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so
 ```
 
 **Build the package locally.** Nothing is published to NuGet yet, so build the
@@ -69,7 +69,7 @@ as a local NuGet source (adjust `linux-x64` to your RID):
 
 ```sh
 # from the dotnet/ binding directory, with the .so downloaded here:
-mkdir -p Servirtium.Vcr/runtimes/linux-x64/native && cp libservirtium_vcr-v0.1.1-linux-x86_64.so Servirtium.Vcr/runtimes/linux-x64/native/libservirtium_vcr.so
+mkdir -p Servirtium.Vcr/runtimes/linux-x64/native && cp libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so Servirtium.Vcr/runtimes/linux-x64/native/libservirtium_vcr.so
 dotnet pack Servirtium.Vcr -c Release -o pkg
 # -> then use the produced artifact locally: dotnet nuget add source "$PWD/pkg"
 ```
