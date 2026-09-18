@@ -1,6 +1,6 @@
 {
   "name": "@servirtium/vcr",
-  "version": "2.0.0",
+  "version": "2.0.0-alpha.1",
   "description": "Record/replay for HTTP service tests in the Servirtium markdown tape format — a thin Node.js (koffi FFI) wrapper over the Aether VCR core.",
   "homepage": "https://servirtium.dev",
   "main": "dist/index.js",

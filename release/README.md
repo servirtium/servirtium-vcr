@@ -39,9 +39,10 @@ first-class. FreeBSD needs `AETHER_SYSROOT` and skips loudly without it.
 ## Cut a GitHub release (manual, no repo settings needed)
 
 ```sh
-release/publish.sh v2.0.0            # build the matrix + create the release, assets attached
-release/publish.sh v2.0.0 --draft    # create as a draft to review first
-release/publish.sh v2.0.0 --no-build # attach whatever is already in release/dist
+release/publish.sh v2.0.0-alpha.1              # build the matrix + create the release, assets attached
+release/publish.sh v2.0.0-alpha.1 --prerelease # mark it a pre-release on GitHub (do this for -alpha/-beta/-rc)
+release/publish.sh v2.0.0-alpha.1 --draft      # create as a draft to review first
+release/publish.sh v2.0.0-alpha.1 --no-build   # attach whatever is already in release/dist
 ```
 
 `publish.sh` builds (unless `--no-build`), then `gh release create <tag>` with
@@ -49,6 +50,23 @@ every artifact, its `.sha256`, and `SHA256SUMS.txt`. It uses your existing `gh`
 auth — **nothing in GitHub Settings, no Actions, no secrets.** It pins the tag to
 the exact commit it built (`--target <commit>`) and refuses a dirty tracked tree,
 so the tagged source and the binaries are the same code.
+
+### Version strings are pre-release-aware — mind `sort -V`
+
+The canonical version is a SemVer **pre-release** (`2.0.0-alpha.1`). Two gotchas:
+
+- **`sort -V` disagrees with SemVer on pre-releases.** SemVer orders
+  `2.0.0-alpha.1` *before* `2.0.0` (a pre-release precedes its final), but
+  `sort -V` puts the bare `2.0.0` first and treats any `-suffix` as *later* — so
+  `sort -V | tail -1` would rank an alpha as "newer" than the final release. Do
+  **not** pick "latest" by `sort -V` once a pre-release and its final coexist;
+  let GitHub's own "Latest" flag (set at publish, cleared by `--prerelease`)
+  decide, or compare with a real SemVer parser.
+- **Each package ecosystem spells the pre-release differently** — the git tag is
+  `v2.0.0-alpha.1`, but the per-language manifests carry the ecosystem-valid form:
+  Python `2.0.0a1` (PEP 440), RubyGems `2.0.0.alpha.1`, Maven `2.0.0-alpha1`,
+  and plain SemVer `2.0.0-alpha.1` everywhere else (npm/cargo/pub/NuGet/hex/…).
+  A single literal string is **not** portable across all of them.
 
 ## Using a published artifact
 
