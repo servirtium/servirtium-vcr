@@ -59,7 +59,7 @@ bindings; canonical reference is `servirtium-dotnet`.
   C-ABI + the native-lib resolver + the decode-and-free string helper.
 - `src/vcr.ts` — the idiomatic API: `Vcr.playback` / `Vcr.record` builders and
   `VcrServer`, plus `VcrField`, `VcrOutcome`, `VcrError`.
-- `build-native.sh` — builds the host's native lib from `embed.ae`.
+- `core/.build.ae` — builds the shared native library for all bindings.
 - `tapes/` — `single_get.md`, `secure_get.md` fixtures (from the .NET suite).
 - `docs/` — usage, architecture, features, building.
 

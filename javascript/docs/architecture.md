@@ -56,12 +56,14 @@ thing: `koffi.decode(ptr, 'char', -1)` to read the C string, then
 
 `src/native.ts` resolves the library, in order:
 
-1. `SERVIRTIUM_VCR_LIB` (explicit path — point it at a fresh
+1. The path pinned by the builder's `.nativeLib(path)`, if supplied before the
+   first `.start()` in the process;
+2. `SERVIRTIUM_VCR_LIB` (explicit path — point it at a fresh
    `ae build --emit=lib` artifact during development);
-2. `native/<libservirtium_vcr.so|.dylib|.dll>` next to the package (the
+3. `native/<libservirtium_vcr.so|.dylib|.dll>` next to the package (the
    shipped/built layout; `aeb` builds the artifact under `core/native/` and the
    suite points `SERVIRTIUM_VCR_LIB` at it directly);
-3. the bare file name, letting the OS loader try `LD_LIBRARY_PATH` / system
+4. the bare file name, letting the OS loader try `LD_LIBRARY_PATH` / system
    paths.
 
 The file name is computed per-platform: `libservirtium_vcr.so` (Linux) /

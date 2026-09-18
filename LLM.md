@@ -260,6 +260,19 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 
 ## Gotchas / hard-won
 
+- **JavaScript's README consumer path works without native build tools too.**
+  Tested with Node 22.21 on Linux x86_64: download/checksum the README's
+  v0.1.0 library, stage it as `javascript/native/libservirtium_vcr.so`, install
+  build dependencies, `npm pack`, then install that tarball into a separate
+  app. The package's `prepare` script compiles TypeScript; the app needs only
+  Node and the installed package. Recording a Node HTTP service's JSON response
+  with a query string worked. The README now walks through the complete setup
+  and a `.mjs` record/replay example, tested with the upstream stopped before
+  replay and `SERVIRTIUM_VCR_LIB` unset. The native env override does **not**
+  bundle a library when packing: it must be staged in `native/`. There is no
+  architecture-subdirectory selection in the JS loader, so this tarball is
+  platform-specific. Removed stale references to the deleted `build-native.sh`
+  and to native binaries being committed.
 - **Exercise the consumer README without the build toolchain.** The Python
   onboarding check (2026-09-17, Python 3.11/Linux x86_64) downloaded the exact
   v0.1.0 native release named in `python/README.md`, verified its checksum,

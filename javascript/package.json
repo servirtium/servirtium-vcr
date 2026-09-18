@@ -8,12 +8,10 @@
   "license": "MIT",
   "files": [
     "dist/**/*",
-    "native/**/*",
-    "build-native.sh"
+    "native/**/*"
   ],
   "scripts": {
     "build": "rimraf dist && tsc",
-    "build:native": "./build-native.sh",
     "test": "jest --runInBand",
     "prepare": "npm run build"
   },

@@ -28,11 +28,16 @@ try {
 ## Recording
 
 ```ts
+import { Vcr } from '@servirtium/vcr'
+
 const vcr = Vcr.record('tapes/climate_api.md', 'https://climatedataapi.worldbank.org')
   .port(0)
   .start()
 try {
-  await fetch(`${vcr.baseUrl}/api/v1/countries`)
+  const response = await fetch(`${vcr.baseUrl}/api/v1/countries`, {
+    signal: AbortSignal.timeout(10000),
+  })
+  const body = await response.text()
 } finally {
   vcr.close() // forwards nothing more and writes the markdown tape to disk
 }
@@ -41,6 +46,9 @@ try {
 Record forwards each request to the upstream, returns the **real** response to
 your SUT, and captures the exchange. Chunked responses are de-chunked
 automatically.
+
+For a runnable JavaScript example with a local HTTP service and replay after
+that service has stopped, see the [README quickstart](../README.md#record-and-replay-a-local-service).
 
 ### Drift detection
 

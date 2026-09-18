@@ -3,9 +3,8 @@ node_modules
 .idea
 dist
 
-# Native libs are build artifacts produced by build-native.sh. The host's
-# prebuilt linux-x64 .so is committed for convenience; ignore other platforms'
-# locally-built variants.
+# Native libraries are downloaded or built, then staged by the package step.
+# Never commit platform binaries.
 native/*.dylib
 native/*.dll
 
