@@ -54,10 +54,11 @@ rule.
 `Servirtium::Native.open_library` calls `Fiddle.dlopen` on the first candidate
 that loads, in order:
 
-1. `SERVIRTIUM_VCR_LIB` (explicit path — point it at a fresh
+1. The explicit `native_lib:` path, set before the first server starts;
+2. `SERVIRTIUM_VCR_LIB` (explicit path — point it at a fresh
    `ae build --emit=lib` artifact during development);
-2. the bundled `lib/servirtium/native/<file>`;
-3. the bare library name (OS loader: `LD_LIBRARY_PATH`, system paths).
+3. the bundled `lib/servirtium/native/<file>`;
+4. the bare library name (OS loader: `LD_LIBRARY_PATH`, system paths).
 
 The file name is computed per-platform: `libservirtium_vcr.so` / `.dylib` /
 `servirtium_vcr.dll` (from `RbConfig::CONFIG['host_os']`).

@@ -17,13 +17,13 @@ Gem::Specification.new do |spec|
     libservirtium_vcr ships as a precompiled native library; this gem just starts/stops
     it and presents an idiomatic API.
   DESCRIPTION
-  spec.homepage = 'https://github.com/servirtium/servirtium-ruby'
+  spec.homepage = 'https://servirtium.dev'
   spec.license = 'MIT'
   spec.required_ruby_version = Gem::Requirement.new('>= 3.3.0')
 
   spec.metadata['homepage_uri'] = spec.homepage
-  spec.metadata['source_code_uri'] = spec.homepage
-  spec.metadata['changelog_uri'] = "#{spec.homepage}/CHANGELOG.md"
+  spec.metadata['source_code_uri'] = 'https://github.com/servirtium/servirtium-vcr/tree/main/ruby'
+  spec.metadata['changelog_uri'] = 'https://github.com/servirtium/servirtium-vcr/blob/main/ruby/CHANGELOG.md'
   spec.metadata['rubygems_mfa_required'] = 'true'
 
   # Ship the Ruby sources plus the bundled native library (per-platform .so/

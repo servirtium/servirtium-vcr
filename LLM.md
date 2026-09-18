@@ -260,6 +260,17 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 
 ## Gotchas / hard-won
 
+- **Ruby's consumer README exposed an obsolete version-manager pin.** A clean
+  `ruby/` checkout contained `.ruby-version = ruby-2.5.7`, which made rbenv
+  refuse even `gem build` despite Ruby 3.3 being installed. Removed that file;
+  the gemspec's Ruby >= 3.3 requirement remains the compatibility floor. The
+  README now gives a complete isolated gem install and stdlib-only local
+  record/replay example. Verified with Ruby 3.3.12 and the downloaded/checksummed
+  v0.1.0 Linux x86_64 library: building needs no Aether tools or Bundler;
+  `--install-dir` plus `GEM_HOME`/`GEM_PATH` isolates the consumer. The installed
+  gem records a query-string request and JSON response, then replays with the
+  upstream stopped and `SERVIRTIUM_VCR_LIB` unset. Existing explicit/discovery
+  consumer modes pass too. Keep native staging separate from runtime overrides.
 - **JavaScript's README consumer path works without native build tools too.**
   Tested with Node 22.21 on Linux x86_64: download/checksum the README's
   v0.1.0 library, stage it as `javascript/native/libservirtium_vcr.so`, install

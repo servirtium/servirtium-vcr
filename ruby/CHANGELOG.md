@@ -4,7 +4,7 @@
 
 **Breaking rewrite.** servirtium-ruby is now a thin Ruby (Fiddle/stdlib FFI)
 wrapper over the **Aether VCR** core — the same precompiled native libservirtium_vcr
-(`std/http/server/vcr`) used by the .NET, Go, Java, Rust, and Python bindings.
+(`core/vcr.ae`) used by the .NET, Go, Java, Rust, and Python bindings.
 
 - Deleted the Ruby reimplementation of Servirtium: the markdown reader/writer,
   the WEBrick/Rack record-replay server and proxy, the recorder/replayer, and
@@ -14,14 +14,14 @@ wrapper over the **Aether VCR** core — the same precompiled native libservirti
   auto-closing block form). The SUT only ever talks HTTP to `server.base_url`.
 - libservirtium_vcr — markdown parse/emit, request matching, redaction,
   unredaction, header removal, notes, drift detection, static content,
-  gzip/chunked handling — now lives in (and is maintained as) the Aether
-  standard library. This gem marshals strings and presents an idiomatic API.
+  gzip/chunked handling — now lives in this repository's `core/vcr.ae`, built
+  on Aether standard-library primitives. This gem marshals strings and presents
+  an idiomatic API.
 - No backwards compatibility with the old API; no shim. The tape *format* is
   unchanged, so existing tapes replay as-is.
 - Runtime gem dependencies removed (`faraday`, `faraday_middleware`, `gyoku`);
   loading uses the Ruby stdlib `fiddle`. Requires Ruby >= 3.3.
 - The native library (`libservirtium_vcr.so`) is bundled under
-  `lib/servirtium/native/`; `build-native.sh` rebuilds it from the Aether
-  toolchain.
+  `lib/servirtium/native/`; maintainers rebuild it through `core/.build.ae`.
 
 ## v0.1.0

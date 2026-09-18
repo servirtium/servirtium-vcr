@@ -34,6 +34,9 @@ end
 ## Recording
 
 ```ruby
+require 'servirtium'
+require 'net/http'
+
 Servirtium.record('spec/tapes/climate_api.md', 'https://climatedataapi.worldbank.org')
           .port(0)
           .start do |server|
@@ -44,6 +47,9 @@ end   # block exit closes the server, which forwards nothing more and writes the
 Record forwards each request to the upstream, returns the **real** response to
 your SUT, and captures the exchange. Chunked and gzip-encoded responses are
 decoded to the stored payload.
+
+For a complete local HTTP service and replay after stopping it, see the
+[README quickstart](../README.md#record-and-replay-a-local-service).
 
 ### Drift detection
 
