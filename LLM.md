@@ -266,14 +266,14 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   the gemspec's Ruby >= 3.3 requirement remains the compatibility floor. The
   README now gives a complete isolated gem install and stdlib-only local
   record/replay example. Verified with Ruby 3.3.12 and the downloaded/checksummed
-  v0.1.0 Linux x86_64 library: building needs no Aether tools or Bundler;
+  v0.1.1 Linux x86_64 library: building needs no Aether tools or Bundler;
   `--install-dir` plus `GEM_HOME`/`GEM_PATH` isolates the consumer. The installed
   gem records a query-string request and JSON response, then replays with the
   upstream stopped and `SERVIRTIUM_VCR_LIB` unset. Existing explicit/discovery
   consumer modes pass too. Keep native staging separate from runtime overrides.
 - **JavaScript's README consumer path works without native build tools too.**
   Tested with Node 22.21 on Linux x86_64: download/checksum the README's
-  v0.1.0 library, stage it as `javascript/native/libservirtium_vcr.so`, install
+  v0.1.1 library, stage it as `javascript/native/libservirtium_vcr.so`, install
   build dependencies, `npm pack`, then install that tarball into a separate
   app. The package's `prepare` script compiles TypeScript; the app needs only
   Node and the installed package. Recording a Node HTTP service's JSON response
@@ -286,7 +286,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   and to native binaries being committed.
 - **Exercise the consumer README without the build toolchain.** The Python
   onboarding check (2026-09-17, Python 3.11/Linux x86_64) downloaded the exact
-  v0.1.0 native release named in `python/README.md`, verified its checksum,
+  v0.1.1 native release named in `python/README.md`, verified its checksum,
   installed the Python source into a fresh venv, and recorded a stdlib HTTP
   server's JSON response, including a query string. No `ae`/`aeb` or in-tree
   native artifact was needed. The README now includes a self-contained local

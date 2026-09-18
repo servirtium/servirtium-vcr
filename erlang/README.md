@@ -59,9 +59,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256   # -> OK
 ```
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
@@ -77,7 +77,7 @@ with the downloaded library:
 
 ```sh
 mkdir -p servirtium_nif/ebin servirtium_nif/priv
-cp libservirtium_vcr-v0.1.0-linux-x86_64.so servirtium_nif/priv/libservirtium_vcr.so
+cp libservirtium_vcr-v0.1.1-linux-x86_64.so servirtium_nif/priv/libservirtium_vcr.so
 ERTS_INC=$(erl -noshell -eval 'io:format("~s/usr/include",[code:root_dir()]),halt()')
 cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I"$ERTS_INC" -shared \
    erlang/c_src/servirtium_nif.c \

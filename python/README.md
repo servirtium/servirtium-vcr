@@ -60,9 +60,9 @@ from the [GitHub releases](https://github.com/servirtium/servirtium-vcr/releases
 verify it:
 
 ```sh
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so
+curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256   # -> OK
 ```
 
 These URLs are for Linux x86_64; select the matching release assets for your
@@ -75,7 +75,7 @@ library.
 
 ```sh
 python -m pip install "git+https://github.com/servirtium/servirtium-vcr.git#subdirectory=python"
-export SERVIRTIUM_VCR_LIB="$PWD/libservirtium_vcr-v0.1.0-linux-x86_64.so"
+export SERVIRTIUM_VCR_LIB="$PWD/libservirtium_vcr-v0.1.1-linux-x86_64.so"
 # …then run your Python tests as usual; ctypes loads the library from that path.
 ```
 
@@ -89,7 +89,7 @@ run `python3 -m build --wheel`, then install the produced wheel:
 
 ```sh
 # from the python/ binding directory, with the .so downloaded here:
-mkdir -p servirtium/native && cp libservirtium_vcr-v0.1.0-linux-x86_64.so servirtium/native/libservirtium_vcr.so
+mkdir -p servirtium/native && cp libservirtium_vcr-v0.1.1-linux-x86_64.so servirtium/native/libservirtium_vcr.so
 python -m pip install build
 python -m build --wheel
 python -m pip install dist/*.whl

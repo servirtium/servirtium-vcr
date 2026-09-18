@@ -63,9 +63,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.0/libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v0.1.0-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v0.1.1/libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v0.1.1-linux-x86_64.so.sha256   # -> OK
 ```
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
