@@ -11,7 +11,7 @@
 // the other native_runtime() calls at CI pack time.
 import bldr
 import dotnet
-import dotnet (target_framework, root_namespace, nullable, package_id, package_description, native_runtime)
+import dotnet (target_framework, root_namespace, nullable, package_id, package_version, package_description, native_runtime)
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
@@ -21,6 +21,10 @@ aeb(cap) {
             root_namespace("Servirtium.Vcr")
             nullable()
             package_id("Servirtium.Vcr")
+            // Without this the generated csproj carries no <Version> and NuGet
+            // silently defaults the nupkg to 1.0.0 — which then cannot satisfy
+            // the example's PackageReference and fails restore with NU1102.
+            package_version("2.0.0-alpha.1")
             package_description("Idiomatic .NET record/replay (Servirtium) over the Aether VCR core, via P/Invoke to a precompiled native library.")
             // NOTE: no package_readme — the binding README is at dotnet/README.md
             // (parent dir), and the aeb setter uses one value for both
