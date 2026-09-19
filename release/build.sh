@@ -3,11 +3,17 @@
 # and emit each artifact with a .sha256 — ready for out-of-band on-target
 # attestation (run the binding suite on real hardware and attest a hash).
 #
-# libservirtium_vcr is pure Aether (+ a ~12-line C string bridge); `ae build
-# --target=<triple>` cross-compiles via zig cc, no per-OS runner. Output name:
-# libservirtium_vcr-<tag>-<os>-<arch>.<ext> (.so linux / .dylib macos / .dll
-# windows). Alongside each: <artifact>.sha256, and a combined
-# release/dist/SHA256SUMS.txt.
+# libservirtium_vcr is pure Aether (+ a ~12-line C string bridge). Each triple is
+# built by ONE `aeb core/.build.ae` run with SVCR_TARGET set: aeb's
+# aether.shared_lib(){target()} cross-compiles via `ae build --target` (zig cc,
+# no per-OS runner) and aether.emit_binary_package(){target()} stages the matching
+# `ae add` binary-package asset in the SAME pass — so one method yields BOTH the
+# raw FFI lib and the ae-add package per triple (no hand-synthesis, no drift; the
+# builder owns the trio format). Output name: libservirtium_vcr-<tag>-<os>-<arch>.<ext>
+# (.so linux / .dylib macos / .dll windows). Alongside each: <artifact>.sha256, a
+# combined release/dist/SHA256SUMS.txt, and release/dist/ae-add/ (the `ae add` set).
+# Needs aeb >= v0.319 (its emit_binary_package target() cross-emit + the 0.681
+# libaether floor-guard).
 #
 # libservirtium_vcr ONLY — this deliberately ships the one thing that is hard for a user to
 # produce: the native shared library, per OS/CPU. It does NOT build the
@@ -37,6 +43,7 @@ die()  { printf 'release: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 have ae  || die "ae not on PATH — install the pinned toolchain (see ../bootstrap.sh / ../README.md)"
+have aeb || die "aeb not on PATH — install the pinned toolchain (see ../bootstrap.sh / ../README.md)"
 have zig || die "zig not on PATH — required for cross-compilation (ae build --target)"
 have sha256sum || die "sha256sum required to checksum artifacts"
 
@@ -53,8 +60,8 @@ fi
 DIST="$ROOT/release/dist"
 rm -rf "$DIST"; mkdir -p "$DIST"
 # ae-add/ holds the `ae add`-installable binary-package set (one asset per triple
-# + one shared aether.toml), synthesized from the cross-built libs — see the
-# per-target staging in the loop and the aether.toml written after it.
+# + one shared aether.toml). aeb's emit_binary_package produces these directly;
+# the loop copies each triple's ae-add output here as it builds.
 AEADD="$DIST/ae-add"; mkdir -p "$AEADD"
 
 # FreeBSD cross needs an ARCH-SPECIFIC base sysroot: sys/_ucontext.h pulls the
@@ -110,47 +117,47 @@ for t in $MATRIX; do
   fi
 
   printf 'release:   %-18s -> %s ... ' "$t" "$name"
-  # --with=fs,net mirrors core/.build.ae's caps("fs,net") — libservirtium_vcr's HTTP
-  #   server/client (net) + tape file I/O (fs). --extra is the ~12-line
-  #   caller-owned-string C bridge (core/_embed_strdup.c), given as an ABSOLUTE
-  #   path: ae's cross path (--target) does not resolve a relative --extra from
-  #   CWD (the native path was forgiving; an absolute path builds on every
-  #   target). --size strips. Built from core/ so `import vcr` resolves.
-  # Export AETHER_SYSROOT scoped to THIS build (the per-arch base for freebsd,
-  # empty otherwise) — inside the subshell so it never leaks to the next target.
-  if ( cd "$ROOT/core" \
-       && export AETHER_SYSROOT="$TARGET_SYSROOT" \
-       && ae build --emit=lib --with=fs,net --size --target="$t" \
-            embed.ae --extra "$ROOT/core/_embed_strdup.c" -o "$out" ) >"$log" 2>&1; then
+  # ONE aeb run per triple: core/.build.ae reads SVCR_TARGET and runs
+  #   aether.shared_lib(){ size() target(t) }         -> the cross lib (--size)
+  #   aether.emit_binary_package(){ stem() target(t) } -> the ae-add asset
+  # AEB_RELEASE_TAG stamps the ae-add asset name; AETHER_SYSROOT (per-arch base
+  # for freebsd, empty otherwise) is scoped to this run — emit only READS the
+  # built .so so it inherits the sysroot cleanly. The cross build leaves the lib
+  # at target/build/core/lib/ (name cross-mangled: libservirtium_vcr.so for
+  # linux/freebsd, .so.dll for windows, .so.dylib for macos) and the ae-add trio
+  # under target/build/core/ae-add/. Clean per-triple so nothing leaks between
+  # targets (a prior triple's ae-add/ would otherwise be re-collected).
+  rm -rf "$ROOT/target/build/core/ae-add" "$ROOT/target/build/core/lib"
+  if ( cd "$ROOT" \
+       && export SVCR_TARGET="$t" AEB_RELEASE_TAG="$TAG" AETHER_SYSROOT="$TARGET_SYSROOT" \
+       && aeb core/.build.ae ) >"$log" 2>&1; then
+    # Collect the raw FFI lib (the on-disk name is cross-mangled; find it).
+    libdir="$ROOT/target/build/core/lib"
+    src=""
+    for cand in "$libdir/libservirtium_vcr.${ext}" "$libdir/libservirtium_vcr.so.${ext}" "$libdir/libservirtium_vcr.so"; do
+      [ -f "$cand" ] && { src="$cand"; break; }
+    done
+    if [ -z "$src" ]; then
+      printf 'FAILED\n'; say "  built but no lib found under $libdir"; failed=$((failed+1)); continue
+    fi
+    cp "$src" "$out"
     ( cd "$DIST" && sha256sum "$name" > "$name.sha256" )
-    # Windows emits an import library (<dll>.lib) beside the DLL — needed only by
-    # a consumer that LINKS the DLL at build time (our FFI bindings dlopen at
-    # runtime and don't need it, but ship it so Windows is first-class). Checksum
-    # it too.
-    if [ "$os" = "windows" ] && [ -f "$out.lib" ]; then
+    # Windows also emits an import library (<dll>.lib) — ship it (a consumer that
+    # LINKS the DLL at build time needs it; our FFI bindings dlopen and don't).
+    if [ "$os" = "windows" ] && [ -f "$libdir/libservirtium_vcr.so.lib" ]; then
+      cp "$libdir/libservirtium_vcr.so.lib" "$out.lib"
       ( cd "$DIST" && sha256sum "$name.lib" > "$name.lib.sha256" )
     fi
-    # ALSO stage this triple's `ae add` binary-package asset (under ae-add/).
-    # aeb's aether.emit_binary_package() only emits for the HOST triple (it uses
-    # bldr._host_os_arch), but its asset format is simple and its triple spelling
-    # is exactly our <os>-<arch> — so we synthesize the full per-triple set here
-    # from the same cross-built .so, keeping the one-Linux-host model. Asset name
-    # is the module STEM (no `lib` prefix): servirtium_vcr-<tag>-<os>-<arch>.<ext>.
-    # The shared aether.toml is written once after the loop.
-    aeasset="servirtium_vcr-${TAG}-${os}-${arch}.${ext}"
-    cp "$out" "$AEADD/$aeasset"
-    ( cd "$AEADD" && sha256sum "$aeasset" > "$aeasset.sha256" )
+    # Collect this triple's ae-add asset trio (aeb named it in the ae-add
+    # <os>-<arch> spelling automatically; aether.toml is identical each run).
+    cp "$ROOT/target/build/core/ae-add/"servirtium_vcr-* "$AEADD/" 2>/dev/null
+    cp "$ROOT/target/build/core/ae-add/aether.toml" "$AEADD/" 2>/dev/null
     printf 'ok  (%s)\n' "$(file -b "$out" 2>/dev/null | cut -c1-42)"
     built=$((built+1))
     rm -f "$log"
   else
     printf 'FAILED\n'
-    sed 's/^/release:     /' "$log" | grep -iE 'error|fatal' | head -3
-    # A failed cross build can leave partial output in dist/ (a half-written
-    # <out>, and ae's generated <out>.c when the C stage errored) — remove it so
-    # a later --no-build publish, or a human, never mistakes debris for an
-    # artifact. The .log is KEPT on failure (the else branch), unlike success.
-    rm -f "$out" "$out.c" "$out.lib"
+    sed 's/^/release:     /' "$log" | grep -iE 'error|fatal|os_arch_raw|older than' | head -3
     failed=$((failed+1))
   fi
 done
@@ -160,21 +167,9 @@ echo
 # Named SHA256SUMS.txt so a browser renders it inline (no forced download).
 ( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib 2>/dev/null > SHA256SUMS.txt || true )
 
-# The single shared aether.toml that marks the ae-add asset set a binary package.
-# Format is exactly what ae's ae_try_binary_package parses (verified against
-# aeb's aether.emit_binary_package output): [package].binary = <stem>, modules=".".
-# `ae add github.com/servirtium/servirtium-vcr@<tag>` reads it, then fetches the
-# matching servirtium_vcr-<tag>-<host-triple>.<ext> + .sha256 for the caller's host.
-if [ "$built" -gt 0 ]; then
-  cat > "$AEADD/aether.toml" <<'TOML'
-# aether.toml — binary-package manifest for `ae add`.
-# `ae add <pkg>@<tag>` reads [package].binary, fetches the per-triple lib, and
-# installs it as servirtium_vcr<ext> on the import search path (modules = ".").
-
-[package]
-binary = "servirtium_vcr"
-modules = "."
-TOML
+# The ae-add set (per-triple assets + .sha256 + aether.toml) was produced by
+# aeb's emit_binary_package and collected in the loop above — no post-processing.
+if [ "$built" -gt 0 ] && [ -f "$AEADD/aether.toml" ]; then
   say "staged ae-add/ binary-package set ($built triple(s) + aether.toml) for \`ae add\`"
 fi
 

@@ -25,25 +25,53 @@
 // (target/build/core/lib/) and core/native/ are the same bytes.
 import bldr
 import aether
-import aether (source, output, extra_source, caps)
+import aether (source, output, extra_source, caps, size, stem, target)
 import std.os
+import std.string
 
 aeb(cap) {
     bldr.build() {
+        // TWO paths, selected by SVCR_TARGET:
+        //
+        //  - SVCR_TARGET set (release/build.sh, once per triple): CROSS-build the
+        //    lib for that triple with --size (release strip parity), AND stage the
+        //    `ae add` binary-package asset for it (target/build/core/ae-add/:
+        //    aether.toml + servirtium_vcr-<tag>-<triple>.<ext> + .sha256). Tag from
+        //    AEB_RELEASE_TAG (release/publish.sh sets it), else v0.0.0. output() is
+        //    required on BOTH builders: a cross --emit=lib writes lib….so.dll/.dylib
+        //    on disk, and emit_binary_package resolves the real name from its OWN
+        //    output() (a separate builder map from shared_lib's), so set it here too.
+        //    Needs aeb >= v0.319 + a clean Aether >= 0.681 runtime archive: earlier
+        //    aeb/stale-libaether combos broke the orchestrator link with
+        //    `undefined reference to os_arch_raw` (v0.319's floor-guard makes that a
+        //    legible error instead).
+        //
+        //  - SVCR_TARGET unset (normal monorepo build, every binding's .tests.ae
+        //    deps this): HOST build + the core/native/ compat copy the FFI link
+        //    lines bake in. No ae-add (host consumers use dep_artifact / the .so).
+        t = os.getenv("SVCR_TARGET")
+        if string.length(t) > 0 {
+            aether.shared_lib() {
+                source("embed.ae")
+                extra_source("_embed_strdup.c")
+                caps("fs,net")
+                size()
+                output("libservirtium_vcr.so")
+                target(t)
+            }
+            aether.emit_binary_package() {
+                stem("servirtium_vcr")
+                output("libservirtium_vcr.so")
+                target(t)
+            }
+            return 0
+        }
         aether.shared_lib() {
             source("embed.ae")
             extra_source("_embed_strdup.c")
             caps("fs,net")
             output("libservirtium_vcr.so")
         }
-        // NOTE: the `ae add` binary package is produced by release/build.sh (it
-        // renames each cross-built lib into the ae-add trio), NOT here. Calling
-        // aether.emit_binary_package() in this node breaks the fan-out
-        // orchestrator link with `undefined reference to os_arch_raw` (its
-        // os.arch() host-triple call isn't linked into aeb's generated
-        // orchestrator for a multi-leaf repo) — filed aeb
-        // asks/emit-binary-package-host-only-no-cross-target.md + the os_arch_raw
-        // follow-up. Re-add it (with target(), per-triple) once that's fixed.
         root = _get("root")
         td = _get("target_dir")
         rc = os.system("mkdir -p \"${root}/core/native\" && cp \"${td}/lib/libservirtium_vcr.so\" \"${root}/core/native/\"")
