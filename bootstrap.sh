@@ -80,25 +80,30 @@ AE_FETCH="v0.696.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # pharo/swift) are unrun here (no SDKs) — sweep them on the
                        # provisioned box; the dotnet closure-codegen bug below
                        # still applies until aeb ships the rename OR ae fixes it.
-                       # ---- CachyOS SWEEP, NOW RE-RUN ON 0.681/v0.315: all 34
-                       # .tests.ae leaves 33/34, .packages.ae (29 packages) 29/29
-                       # and all 29 .example.ae 29/29 green. The ONE red is pharo
-                       # (unchanged 6/12, see the 0.668 note) — so nothing
-                       # regressed from 0.677/v0.312, which swept the same way.
-                       # dotnet + fsharp are green ONLY with aeb's 2-line rename
-                       # applied locally; unpatched they still fail, because
-                       # ae 0.675 REGRESSED closure codegen and emits
-                       # invalid C for
-                       # aeb's dotnet SDK (a closure's own locals get captured as
-                       # cells declared in an already-closed block). Bisected:
-                       # clean on 0.668, broken on 0.675, 0.677, and still on
-                       # 0.680/0.681; aeb's dotnet module is unchanged across
-                       # v0.311->v0.315, so this is an Aether bug, not an SDK
-                       # one. It could not have shown up
-                       # in the 0.675 check above — that box had no .NET SDK, so
-                       # the dotnet path never compiled. Full writeup + the
-                       # verified workaround: docs/handover-ae-0675-closure-
-                       # capture-codegen-bug.md. ruby/swift/integration also need
+                       # ---- CachyOS SWEEP, RE-RUN ON ae 0.696 + aeb main
+                       # (v0.319-2-g5fde2d5, NOT the pinned tag — see the aeb pin
+                       # note below for why that distinction matters): 92 leaves,
+                       # 91 green. 33/34 .tests.ae, 29/29 .package.ae, 29/29
+                       # .example.ae. The ONE red is pharo (unchanged
+                       # run=12 passed=6 errors=6 — every record-mode test plus
+                       # static content; playback fine), so nothing regressed
+                       # from 0.681/v0.315, which swept the same way.
+                       # dotnet + fsharp now pass with NO local patch: aeb
+                       # 6af17aa ships the closure-local rename. The Aether bug
+                       # underneath is still live on 0.696 — measured by
+                       # reverting only that rename — so this is a workaround
+                       # holding, not a fix. It fails at orchestrator link,
+                       # so on an aeb without the rename it stops every node
+                       # in the graph, not just the dotnet ones. Mechanism: a
+                       # closure's own locals are unified with same-named locals
+                       # in an earlier, already-closed block, promoted to heap
+                       # cells, then captured outside their declaring block.
+                       # Measured bisect: clean 0.668; broken 0.675, 0.677,
+                       # 0.681, 0.696. aeb's dotnet module was byte-identical
+                       # v0.311->v0.319 throughout, which is what makes it an
+                       # Aether bug rather than an SDK one. Full writeup:
+                       # docs/handover-ae-0675-closure-capture-codegen-bug.md.
+                       # ruby/swift/integration also need
                        # env (gem bin on PATH, LD_LIBRARY_PATH for swift's
                        # libncurses shim, python selenium) — all green once set,
                        # see docs/dev-setup.md.
@@ -149,6 +154,40 @@ AE_FETCH="v0.696.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
 # groovy needs 0.308's groovyc cache key to notice edited sources. (Earlier
 # history: v0.298 made the bundle installer make-free; v0.300 aligned the
 # release asset on x86_64.)
+#
+# ⚠ v0.319 IS KNOWN-BROKEN IN TWO WAYS, AND NO NEWER TAG EXISTS (2026-09-19).
+# It is still the pin, deliberately — see "why not just point at main" below.
+#
+#   1. It CONTAINS aeb 9faf844, which dropped the `mkdir -p` from the dep
+#      staging loop when that became a bare fs.copy_tree, across 7 SDKs. Any
+#      stage() into a not-yet-existing directory then copies NOTHING and leaves
+#      the destination dead — silently. Fixed in aeb 5fde2d5, AFTER the tag.
+#      On the selenium side this killed every .example.ae at its assert_file and,
+#      once fixed, exposed five further packaging breaks it had been masking.
+#      THIS REPO IS CLEAN OF THAT CLASS: no .package.ae / .example.ae / .dist.ae
+#      node reaches outside its own directory, and a full sweep with 5fde2d5 in
+#      place turned up nothing new. But note that any sweep run on v0.315..v0.319
+#      was a MASKED-MKDIR sweep and is weaker evidence than it looks.
+#   2. It LACKS aeb 6af17aa, the dotnet SDK's closure-local rename. Without it
+#      ae >= 0.675 emits invalid C for lib/dotnet/module.ae ("'idx' undeclared"),
+#      which fails at ORCHESTRATOR LINK — so it does not merely break the dotnet
+#      leaves, it stops every node in any graph containing them. The underlying
+#      Aether codegen bug is still live on 0.696 (measured, by reverting only the
+#      rename); 6af17aa only hides it. See
+#      docs/handover-ae-0675-closure-capture-codegen-bug.md.
+#
+# So: a tag carrying BOTH 5fde2d5 and 6af17aa is what this repo actually wants,
+# and cutting one is the fix. Until then AEB_REF stays at v0.319 rather than
+# tracking main, because AEB_REF takes a TAG: pointing it at a branch would
+# trade a known-broken pin for an UNPINNED one, which is worse — the failure
+# mode stops being "a bug we have written down" and becomes "whatever main was
+# that day". (Same call the selenium sibling made, independently.)
+#
+# DISCLOSURE, so the sweep numbers are not read as more than they are: the
+# 91/92 sweep recorded below was run on aeb main at v0.319-2-g5fde2d5 — i.e.
+# WITH both fixes — not on the pinned v0.319. On the pin itself the dotnet and
+# fsharp leaves cannot link at all. Installing exactly AEB_REF and sweeping is
+# therefore expected to be WORSE than what is recorded, not better.
 #
 # HONEST LIMITATION — this floor is a documentation contract, NOT enforced.
 # Step 2 below accepts ANY aeb already on PATH (`command -v aeb` → skip),
