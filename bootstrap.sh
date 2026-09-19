@@ -133,11 +133,11 @@ AE_FETCH="v0.695.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.317 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.318 == the one aeb this repo is VERIFIED against.
 #
 # Collapsed from the old permissive floor (>= 0.308) for the same reason the
 # Aether pin was: every sweep this repo publishes runs on AEB_REF, so a lower
-# floor advertised support for releases nothing verifies. v0.317 pins ae 0.695
+# floor advertised support for releases nothing verifies. v0.318 pins ae 0.695
 # (its AETHER_PIN), so the two toolchains move as a pair — install them together.
 #
 # Kept for the record, because it is the last nameable aeb requirement and

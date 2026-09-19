@@ -25,7 +25,7 @@
 // (target/build/core/lib/) and core/native/ are the same bytes.
 import bldr
 import aether
-import aether (source, output, extra_source, caps, stem, release_tag)
+import aether (source, output, extra_source, caps)
 import std.os
 
 aeb(cap) {
@@ -36,19 +36,14 @@ aeb(cap) {
             caps("fs,net")
             output("libservirtium_vcr.so")
         }
-        // ALSO stage the built .so as an `ae add`-installable binary package
-        // (target/build/core/ae-add/: aether.toml + servirtium_vcr-<tag>-<triple>.so
-        // + .sha256). Lets an *Aether* consumer do
-        //   ae add github.com/servirtium/servirtium-vcr@<tag>   then   import servirtium_vcr
-        // — fetched + checksum-verified per host triple, no source, no
-        // SERVIRTIUM_VCR_LIB. (The FFI bindings still use the raw .so; this serves
-        // Aether-native consumers.) Must be in this SAME node — it reads the
-        // shared_lib output above. release/publish.sh sets AEB_RELEASE_TAG so the
-        // asset names carry the real release tag; else it falls back to v0.0.0.
-        aether.emit_binary_package() {
-            stem("servirtium_vcr")
-            output("libservirtium_vcr.so")
-        }
+        // NOTE: the `ae add` binary package is produced by release/build.sh (it
+        // renames each cross-built lib into the ae-add trio), NOT here. Calling
+        // aether.emit_binary_package() in this node breaks the fan-out
+        // orchestrator link with `undefined reference to os_arch_raw` (its
+        // os.arch() host-triple call isn't linked into aeb's generated
+        // orchestrator for a multi-leaf repo) — filed aeb
+        // asks/emit-binary-package-host-only-no-cross-target.md + the os_arch_raw
+        // follow-up. Re-add it (with target(), per-triple) once that's fixed.
         root = _get("root")
         td = _get("target_dir")
         rc = os.system("mkdir -p \"${root}/core/native\" && cp \"${td}/lib/libservirtium_vcr.so\" \"${root}/core/native/\"")
