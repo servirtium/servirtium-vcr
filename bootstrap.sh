@@ -80,19 +80,26 @@ AE_FETCH="v0.696.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # pharo/swift) are unrun here (no SDKs) — sweep them on the
                        # provisioned box; the dotnet closure-codegen bug below
                        # still applies until aeb ships the rename OR ae fixes it.
-                       # ---- CachyOS SWEEP, RE-RUN ON ae 0.696 + aeb main
+                       # ---- CachyOS SWEEP, RE-RUN ON ae 0.697 + aeb main
                        # (v0.319-2-g5fde2d5, NOT the pinned tag — see the aeb pin
                        # note below for why that distinction matters): 92 leaves,
-                       # 91 green. 33/34 .tests.ae, 29/29 .package.ae, 29/29
+                       # 91 green. (Same 91/92 on 0.696 immediately before.) 33/34 .tests.ae, 29/29 .package.ae, 29/29
                        # .example.ae. The ONE red is pharo (unchanged
                        # run=12 passed=6 errors=6 — every record-mode test plus
                        # static content; playback fine), so nothing regressed
                        # from 0.681/v0.315, which swept the same way.
                        # dotnet + fsharp now pass with NO local patch: aeb
-                       # 6af17aa ships the closure-local rename. The Aether bug
-                       # underneath is still live on 0.696 — measured by
-                       # reverting only that rename — so this is a workaround
-                       # holding, not a fix. It fails at orchestrator link,
+                       # 6af17aa ships the closure-local rename, which MUST
+                       # STAY: ae 0.697 shipped a real codegen fix (055fcc7d)
+                       # that is PARTIAL. Upstream's own regression test fails
+                       # on 0.696 and builds on 0.697, so the fix is genuinely
+                       # in the release — but the shape that started this still
+                       # emits undeclared C on 0.697, measured by reverting only
+                       # the rename. Do not read "merged fix + passing test +
+                       # cut release" as licence to drop the rename: that breaks
+                       # 0.675-0.697 inclusive. Trigger is an enclosing `if`
+                       # specifically (a `while` or function scope compiles).
+                       # Filed upstream with a 35-line reproducer. It fails at orchestrator link,
                        # so on an aeb without the rename it stops every node
                        # in the graph, not just the dotnet ones. Mechanism: a
                        # closure's own locals are unified with same-named locals
