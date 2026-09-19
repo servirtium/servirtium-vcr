@@ -156,6 +156,19 @@ One libservirtium_vcr; every binding exposes the same surface.
     convert-once-offline step, not a test-time operation — though
     `har_import`/`har_export` are also in the C ABI for any binding that wants
     to wrap them.)
+  - `servirtium import-bru <bru-dir> <upstream> <out.md> [--var NAME] [--port N]`
+    — **import a Bruno collection and hydrate it.** A `.bru` collection holds
+    request *definitions* with no responses; this fires each request (in
+    `meta.seq` order) through record mode against the real `<upstream>` and
+    captures the live responses into a replayable tape — the "poke the service to
+    fill the blanks" step. The collection's base-url variable (`{{baseUrl}}` by
+    default; `--var` to change) is rewritten to the local record proxy. Request
+    headers are not carried into the match (a collection's headers wouldn't match
+    a test client's — matching is method + path + body, the same policy as HAR
+    import). **It makes real calls to `<upstream>`** (side effects on POST/PUT/
+    DELETE), so point it at a service you mean to hit. A Postman collection can
+    be run the same way after exporting a session to HAR (`servirtium import`),
+    or exported/converted to `.bru` first.
 
 ## Compared with other mocking / virtualization tools
 

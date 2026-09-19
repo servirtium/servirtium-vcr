@@ -153,6 +153,7 @@ exports (
     load_record, eject_record,
     record, clear_recording, flush, flush_or_check, flush_and_fail_if_changed,
     har_import, har_export,
+    bru_block_body, bru_kv, bru_method_of, bru_verb_block, bru_trim,
     check_tape, canonical_check_tape,
     redact, clear_redactions, unredact, clear_unredactions,
     normalize_whole_tape, redact_whole_tape, clear_normalizations,
@@ -2647,6 +2648,83 @@ har_skip_header(name: string) -> int {
     if icmp_rt(name, "Content-Encoding") == 0 { return 1 }  // body stored decoded
     if icmp_rt(name, "Keep-Alive") == 0 { return 1 }
     return 0
+}
+
+// ---- Bruno (.bru) request parsing --------------------------------------
+//
+// A .bru file is a small block DSL of request DEFINITIONS (no responses):
+//   meta { name: ...  seq: N }
+//   get  { url: {{baseUrl}}/path  body: none }   (block name IS the method)
+//   headers { Accept: application/json }
+//   body:json { {"k": "v"} }
+// These parse the request-half; the CLI's `import-bru` then HYDRATES it by
+// firing each request through record mode against a real upstream, so the
+// captured responses fill the tape. (Like har_import, request headers are NOT
+// carried into the match — a collection's headers would not match a test
+// client's; matching is method + path + body.)
+
+// Trim ASCII space / tab / CR / LF from both ends.
+bru_trim(s: string) -> string {
+    n = string.length(s)
+    a = 0
+    while a < n {
+        c = string.char_at(s, a)
+        if c != 32 && c != 9 && c != 13 && c != 10 { break }
+        a = a + 1
+    }
+    b = n
+    while b > a {
+        c = string.char_at(s, b - 1)
+        if c != 32 && c != 9 && c != 13 && c != 10 { break }
+        b = b - 1
+    }
+    return string.substring(s, a, b)
+}
+
+// The inner text of a single-level `name { ... \n}` block, or "" if absent.
+bru_block_body(text: string, name: string) -> string {
+    hdr = string.concat(name, " {")
+    at = string.index_of(text, hdr)
+    if at < 0 { return "" }
+    open = at + string.length(hdr)
+    close = string.index_of_from(text, "\n}", open)
+    if close < 0 { return "" }
+    return string.substring(text, open, close)
+}
+
+// The trimmed value of `key:` within a block body (first occurrence), or "".
+bru_kv(body: string, key: string) -> string {
+    needle = string.concat(key, ":")
+    at = string.index_of(body, needle)
+    if at < 0 { return "" }
+    vs = at + string.length(needle)
+    nl = string.index_of_from(body, "\n", vs)
+    if nl < 0 { nl = string.length(body) }
+    return bru_trim(string.substring(body, vs, nl))
+}
+
+// The HTTP method = whichever verb block is present. "" if none.
+bru_method_of(text: string) -> string {
+    if string.index_of(text, "get {") >= 0 { return "GET" }
+    if string.index_of(text, "post {") >= 0 { return "POST" }
+    if string.index_of(text, "put {") >= 0 { return "PUT" }
+    if string.index_of(text, "patch {") >= 0 { return "PATCH" }
+    if string.index_of(text, "delete {") >= 0 { return "DELETE" }
+    if string.index_of(text, "head {") >= 0 { return "HEAD" }
+    if string.index_of(text, "options {") >= 0 { return "OPTIONS" }
+    return ""
+}
+
+// The lowercase verb-block name for a method (the block bru_block_body reads).
+bru_verb_block(method: string) -> string {
+    if string.equals(method, "GET") == 1 { return "get" }
+    if string.equals(method, "POST") == 1 { return "post" }
+    if string.equals(method, "PUT") == 1 { return "put" }
+    if string.equals(method, "PATCH") == 1 { return "patch" }
+    if string.equals(method, "DELETE") == 1 { return "delete" }
+    if string.equals(method, "HEAD") == 1 { return "head" }
+    if string.equals(method, "OPTIONS") == 1 { return "options" }
+    return ""
 }
 
 // "Name: value\n..." block from a HAR message's headers[] array (filtered).

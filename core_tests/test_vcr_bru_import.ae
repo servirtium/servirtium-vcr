@@ -1,0 +1,62 @@
+// Bruno (.bru) request parsing — the pure helpers behind `servirtium import-bru`.
+//
+// A .bru file is a block DSL of request DEFINITIONS (no responses). The CLI's
+// import-bru hydrates them by firing each through record mode against a real
+// upstream (that end-to-end path needs a live upstream, exercised by the CLI's
+// own run, not here). This unit test pins the PARSE half — the novel logic —
+// against a fixture: method (from the verb block name), url (with {{var}} +
+// query), meta.seq, and a JSON body. Parses only; no network, no actors.
+
+import core.vcr
+import std.string
+
+extern exit(code: int)
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+eq(got: string, want: string, label: string) {
+    if string.equals(got, want) != 1 {
+        fail("${label}: expected '${want}', got '${got}'")
+    }
+}
+
+const GET_BRU = "meta {\n  name: Get Greeting\n  seq: 1\n}\nget {\n  url: {{baseUrl}}/api/v1/greeting?name=README\n  body: none\n}\nheaders {\n  Accept: application/json\n}\n"
+const POST_BRU = "meta {\n  name: Create Item\n  seq: 2\n}\npost {\n  url: {{baseUrl}}/api/v1/items\n  body: json\n}\nbody:json {\n  {\"title\": \"hello\"}\n}\n"
+
+main() {
+    println("=== .bru request parsing ===\n")
+
+    // --- GET fixture ---
+    m = vcr.bru_method_of(GET_BRU)
+    eq(m, "GET", "GET method from verb block")
+    vb = vcr.bru_block_body(GET_BRU, vcr.bru_verb_block(m))
+    eq(vcr.bru_kv(vb, "url"), "{{baseUrl}}/api/v1/greeting?name=README", "GET url (var + query preserved)")
+    meta = vcr.bru_block_body(GET_BRU, "meta")
+    eq(vcr.bru_kv(meta, "name"), "Get Greeting", "GET meta.name")
+    eq(vcr.bru_kv(meta, "seq"), "1", "GET meta.seq")
+    // no body:json block -> empty
+    eq(vcr.bru_trim(vcr.bru_block_body(GET_BRU, "body:json")), "", "GET has no json body")
+
+    // --- POST fixture (with JSON body) ---
+    pm = vcr.bru_method_of(POST_BRU)
+    eq(pm, "POST", "POST method from verb block")
+    pvb = vcr.bru_block_body(POST_BRU, vcr.bru_verb_block(pm))
+    eq(vcr.bru_kv(pvb, "url"), "{{baseUrl}}/api/v1/items", "POST url")
+    eq(vcr.bru_kv(vcr.bru_block_body(POST_BRU, "meta"), "seq"), "2", "POST meta.seq")
+    eq(vcr.bru_trim(vcr.bru_block_body(POST_BRU, "body:json")), "{\"title\": \"hello\"}", "POST json body")
+
+    // --- trim edge cases ---
+    eq(vcr.bru_trim("  x \t\r\n"), "x", "trim strips surrounding whitespace")
+    eq(vcr.bru_trim(""), "", "trim of empty is empty")
+
+    // --- absent block / key -> "" (no crash) ---
+    eq(vcr.bru_block_body(GET_BRU, "nope"), "", "absent block is empty")
+    eq(vcr.bru_kv(meta, "missing"), "", "absent key is empty")
+    eq(vcr.bru_method_of("meta {\n  name: x\n}\n"), "", "no verb block -> empty method")
+
+    println("PASS: .bru parsing (method, url+var+query, seq, json body, edges)")
+    println("\n=== .bru import parse subtest passed ===")
+    exit(0)
+}

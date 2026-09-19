@@ -27,9 +27,24 @@
 import core.vcr
 import std.os
 import std.string
+import std.fs
+import std.http.client
+import std.intarr
 
 extern exit(code: int)
 extern http_server_start_raw(server: ptr) -> int
+
+// Actor plumbing for `import-bru`: the record server's accept loop
+// (http_server_start_raw) blocks, so it runs in its own actor while main()
+// drives the parsed requests through it as a client. SchedHelper is the
+// documented scheduler-nudge companion (see the record-in-process recipe in
+// core/vcr.ae). Both mirror std.http.server.vcr's canonical pattern.
+message StartVCR { raw: ptr }
+message Noop {}
+actor VCRActor { state s = 0
+    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } } }
+actor SchedHelper { state x = 0
+    receive { Noop() -> { x = 1 } } }
 
 usage() {
     println("servirtium — serve, lint, and convert Servirtium markdown tapes")
@@ -40,6 +55,8 @@ usage() {
     println("  servirtium check  [--canonical] <tape.md> ...    lint: tapes parse clean (exit 0/1)")
     println("  servirtium import <in.har> <out.md>              HAR capture -> Servirtium tape")
     println("  servirtium export <in.md>  <out.har>             Servirtium tape -> HAR capture")
+    println("  servirtium import-bru <bru-dir> <upstream> <out.md> [--var NAME] [--port N]")
+    println("                                                   Bruno collection -> hydrate vs upstream -> tape")
     println("")
     println("serve replays repeatably and order-independently (MatchMultiple);")
     println("--ordered restores strict one-shot tape order. check --canonical also")
@@ -166,6 +183,131 @@ run_check(argc: int) {
     exit(0)
 }
 
+// import-bru <bru-dir> <upstream-base> <out.md> [--var NAME] [--port N]
+//
+// Import a Bruno collection (request DEFINITIONS, no responses) and HYDRATE it:
+// each .bru's request is fired through a record-mode proxy at `upstream-base`,
+// and the real responses are captured into `out.md` — a replayable tape.
+//
+// The collection's base-url variable (default {{baseUrl}}) is rewritten to the
+// local record proxy. Request headers are intentionally not forwarded into the
+// tape's match block (a collection's headers wouldn't match a test client's;
+// matching is method + path + body — same policy as HAR import).
+//
+// WARNING: this makes REAL calls to `upstream-base` (side effects on POST/PUT/
+// DELETE, auth, rate limits). It is the "poke the service to fill the blanks"
+// step; run it against a service you intend to hit.
+run_import_bru(argc: int) {
+    dir = ""
+    upstream = ""
+    out = ""
+    basevar = "baseUrl"
+    port = 8099
+    i = 2
+    npos = 0
+    while i < argc {
+        a = os.aether_args_get(i)
+        if string.equals(a, "--var") == 1 {
+            i = i + 1
+            if i < argc { basevar = os.aether_args_get(i) }
+        } else if string.equals(a, "--port") == 1 {
+            i = i + 1
+            if i < argc {
+                p, perr = string.to_int(os.aether_args_get(i))
+                if perr == "" && p > 0 && p <= 65535 { port = p }
+            }
+        } else {
+            if npos == 0 { dir = a } else if npos == 1 { upstream = a } else if npos == 2 { out = a }
+            npos = npos + 1
+        }
+        i = i + 1
+    }
+    if dir == "" || upstream == "" || out == "" { usage(); exit(2) }
+
+    files, gerr = fs.glob(string.concat(dir, "/*.bru"))
+    if string.length(gerr) > 0 { println("servirtium import-bru: ${gerr}"); exit(1) }
+    nfiles = fs.dir_list_count(files)
+    if nfiles == 0 { println("servirtium import-bru: no .bru files under ${dir}"); fs.dir_list_free(files); exit(1) }
+
+    raw = vcr.load_record(out, upstream, port)
+    if raw == null { println("servirtium import-bru: ${vcr.load_error()}"); exit(1) }
+
+    spawn(SchedHelper())
+    a = spawn(VCRActor())
+    a ! StartVCR { raw: raw }
+    sleep(500)
+
+    proxy = "http://127.0.0.1:${port}"
+    varneedle = "{{${basevar}}}"
+    hydrated = 0
+    // Selection sort on meta.seq so interactions are hydrated in the collection's
+    // intended order (fs.glob returns alphabetical, not seq order). n is small (a
+    // collection is tens of requests) so O(n^2) is fine, and it sidesteps a
+    // parallel-array sort in ae. Each round picks the not-yet-done file with the
+    // lowest seq; ties and missing seq (->0) fall back to glob/alphabetical order
+    // because the scan keeps the FIRST file at a given seq and marks indices done.
+    // done_flags[i] != 0 once file i is processed.
+    done_flags, dferr = intarr.new(nfiles)
+    if string.length(dferr) > 0 { println("servirtium import-bru: ${dferr}"); fs.dir_list_free(files); exit(1) }
+    processed = 0
+    while processed < nfiles {
+        pick = -1
+        pick_seq = 0
+        gi = 0
+        while gi < nfiles {
+            gflag, _gfe = intarr.get(done_flags, gi)
+            if gflag == 0 {
+                gp = fs.dir_list_get(files, gi)
+                gt, ge = fs.read(gp)
+                gseq = 0
+                if string.length(ge) == 0 {
+                    s, serr = string.to_int(vcr.bru_kv(vcr.bru_block_body(gt, "meta"), "seq"))
+                    if serr == "" { gseq = s }
+                }
+                if pick < 0 || gseq < pick_seq { pick = gi; pick_seq = gseq }
+            }
+            gi = gi + 1
+        }
+        if pick < 0 { break }
+        _sfe = intarr.set(done_flags, pick, 1)
+        processed = processed + 1
+        path = fs.dir_list_get(files, pick)
+        text, rerr = fs.read(path)
+        if string.length(rerr) > 0 { println("  skip ${path}: ${rerr}"); continue }
+        method = vcr.bru_method_of(text)
+        if method == "" { println("  skip ${path}: no http verb block"); continue }
+        vb = vcr.bru_block_body(text, vcr.bru_verb_block(method))
+        url = vcr.bru_kv(vb, "url")
+        if url == "" { println("  skip ${path}: no url"); continue }
+        // rewrite the collection's base-url var to the record proxy
+        vat = string.index_of(url, varneedle)
+        if vat >= 0 {
+            url = string.concat(proxy, string.substring(url, vat + string.length(varneedle), string.length(url)))
+        }
+        body = vcr.bru_trim(vcr.bru_block_body(text, "body:json"))
+
+        req = client.request(method, url)
+        if string.length(body) > 0 {
+            _sb = client.set_body(req, body, string.length(body), "application/json")
+        }
+        resp, cerr = client.send_request(req)
+        if string.length(cerr) > 0 {
+            println("  ${method} ${url}: request failed: ${cerr}")
+        } else {
+            println("  ${method} ${url} -> ${client.response_status(resp)}")
+            client.response_free(resp)
+            hydrated = hydrated + 1
+        }
+        client.request_free(req)
+    }
+
+    fs.dir_list_free(files)
+    e = vcr.eject_record(raw, out)
+    if string.length(e) > 0 { println("servirtium import-bru: ${e}"); exit(1) }
+    println("servirtium: import-bru hydrated ${hydrated} interaction(s) from ${dir} -> ${out}")
+    exit(0)
+}
+
 main() {
     // aether_args_get(0) is argv0; the sub-command and its args follow.
     argc = os.aether_args_count()
@@ -177,6 +319,7 @@ main() {
 
     if string.equals(cmd, "serve") == 1 { run_serve(argc) }
     if string.equals(cmd, "check") == 1 { run_check(argc) }
+    if string.equals(cmd, "import-bru") == 1 { run_import_bru(argc) }
 
     if string.equals(cmd, "import") == 1 {
         if argc < 4 { usage(); exit(2) }
