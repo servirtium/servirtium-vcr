@@ -54,8 +54,8 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.696.0"
-AE_FETCH="v0.696.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
+AE_PIN="0.698.0"
+AE_FETCH="v0.698.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # fs.make_temp_file, and this repo's libservirtium_vcr needs no newer
                        # primitive. We pin 0.696 to track aeb v0.319's own
                        # AETHER_PIN (0.696.0), keeping "one ae, matching the build
@@ -80,24 +80,32 @@ AE_FETCH="v0.696.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # pharo/swift) are unrun here (no SDKs) — sweep them on the
                        # provisioned box; the dotnet closure-codegen bug below
                        # still applies until aeb ships the rename OR ae fixes it.
-                       # ---- CachyOS SWEEP, RE-RUN ON ae 0.697 + aeb main
+                       # ---- CachyOS SWEEP, RE-RUN ON ae 0.698 + aeb main
                        # (v0.319-2-g5fde2d5, NOT the pinned tag — see the aeb pin
                        # note below for why that distinction matters): 92 leaves,
-                       # 91 green. (Same 91/92 on 0.696 immediately before.) 33/34 .tests.ae, 29/29 .package.ae, 29/29
+                       # 91 green. 33/34 .tests.ae, 29/29 .package.ae, 29/29
                        # .example.ae. The ONE red is pharo (unchanged
                        # run=12 passed=6 errors=6 — every record-mode test plus
-                       # static content; playback fine), so nothing regressed
-                       # from 0.681/v0.315, which swept the same way.
-                       # dotnet + fsharp now pass with NO local patch: aeb
-                       # 6af17aa ships the closure-local rename, which MUST
-                       # STAY: ae 0.697 shipped a real codegen fix (055fcc7d)
-                       # that is PARTIAL. Upstream's own regression test fails
-                       # on 0.696 and builds on 0.697, so the fix is genuinely
-                       # in the release — but the shape that started this still
-                       # emits undeclared C on 0.697, measured by reverting only
-                       # the rename. Do not read "merged fix + passing test +
-                       # cut release" as licence to drop the rename: that breaks
-                       # 0.675-0.697 inclusive. Trigger is an enclosing `if`
+                       # static content; playback fine). Identical tallies on
+                       # 0.696 and 0.697 immediately before, so three consecutive
+                       # releases regressed nothing here.
+                       # THE CLOSURE CODEGEN BUG IS FIXED AS OF ae 0.698.
+                       # Full history, because the middle step misleads: 0.675
+                       # introduced it; 0.697 shipped a PARTIAL fix (055fcc7d)
+                       # that made upstream's own regression test pass while the
+                       # shape that started this still failed; 0.698 completed it
+                       # (0745fa85) and all five rows of the matrix are clean,
+                       # including the real dotnet module with aeb's rename
+                       # reverted. Measured, not inferred — the revert was proven
+                       # (vr_ refs 6->0), the build ran (rc=0), it passed
+                       # positively ("1/1 PASS", not merely no error), and the
+                       # SDK was restored and re-asserted.
+                       # aeb's 6af17aa rename nevertheless STAYS: it is still
+                       # load-bearing on 0.675-0.697 inclusive, so removing it
+                       # re-opens a whole-graph build failure for anyone pinned
+                       # lower. Retiring it is gated on aeb's AETHER_PIN reaching
+                       # 0.698, which is aeb's call, not this repo's.
+                       # For the record, the trigger was an enclosing `if`
                        # specifically (a `while` or function scope compiles).
                        # Filed upstream with a 35-line reproducer. It fails at orchestrator link,
                        # so on an aeb without the rename it stops every node
