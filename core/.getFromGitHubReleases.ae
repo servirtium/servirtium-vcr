@@ -59,14 +59,20 @@ import std.cryptography
 // The libservirtium_vcr gh-release tag this node fetches. Single source of
 // truth: the repo-root SERVIRTIUM_VCR_VERSION file (one dir up from this
 // node's core/ source dir), read at build time so the tag lives in ONE place
-// rather than as a literal in each binding. Falls back to the baked default
-// only if the file is unreadable.
+// rather than as a literal in each binding.
+//
+// NO SILENT FALLBACK. An earlier version of this returned a baked "v2.0.0" when
+// the file was unreadable, and that default went stale the moment the real tag
+// became v2.0.0-alpha.1 — so a missing file produced a confusing "no such
+// release asset: ...v2.0.0..." naming a tag nobody had ever cut, instead of
+// saying the version file was missing. Returning "" makes the caller fail with
+// the real reason. (Prompted by se-co: the same reach-outside-your-own-dir
+// pattern for SELENIUM_CORE_VERSION was one of the breaks the aeb mkdir fix
+// exposed in selenium.)
 _tag(srcdir: string) -> string {
     v, err = fs.read(string.concat(srcdir, "/../SERVIRTIUM_VCR_VERSION"))
-    if string.length(err) > 0 { return "v2.0.0" }
-    t = string.trim(v)
-    if string.length(t) == 0 { return "v2.0.0" }
-    return t
+    if string.length(err) > 0 { return "" }
+    return string.trim(v)
 }
 _repo() -> string { return "servirtium/servirtium-vcr" }
 
@@ -75,6 +81,10 @@ aeb(cap) {
         ctx = builder_context()
         srcdir = bldr.source_dir(ctx)
         tag = _tag(srcdir)
+        if string.length(tag) == 0 {
+            bldr.fail(ctx, "cannot read SERVIRTIUM_VCR_VERSION at the repo root — it is the single source of truth for the release tag")
+            return 1
+        }
         os_ = _os_tag()
         arch = _arch()
         ext = _ext(os_)
