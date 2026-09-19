@@ -73,6 +73,28 @@ cp libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so native/libservirtium_vcr.so
 # the package now carries the native library; consume it from source (see this README's usage/examples).
 ```
 
+Then point your own `shard.yml` at it. **You must state the version explicitly**:
+
+```yaml
+dependencies:
+  servirtium:
+    path: ../path/to/servirtium-vcr/crystal
+    version: 2.0.0-alpha.1      # REQUIRED — see below
+```
+
+The `version:` line is not optional while this is a prerelease. Omit it and
+shards defaults the requirement to `*`, which **does not match a prerelease**,
+so resolution fails with:
+
+```
+E: Unable to satisfy the following requirements:
+- `servirtium (*)` required by `shard.yml`
+```
+
+— which does not mention prereleases and reads like the shard is missing
+entirely. Naming `2.0.0-alpha.1` resolves it. This goes away once a non-
+prerelease version ships.
+
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
