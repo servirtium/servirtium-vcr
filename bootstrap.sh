@@ -54,29 +54,28 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.681.0"
-AE_FETCH="v0.681.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
+AE_PIN="0.695.0"
+AE_FETCH="v0.695.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # fs.make_temp_file, and this repo's libservirtium_vcr needs no newer
-                       # primitive. We pin 0.681 to track aeb v0.315's own
-                       # AETHER_PIN (0.681.0), keeping "one ae, matching the build
-                       # runner". So 0.681 is a tracking bump; 0.675 is the
+                       # primitive. We pin 0.695 to track aeb v0.317's own
+                       # AETHER_PIN (0.695.0), keeping "one ae, matching the build
+                       # runner". So 0.695 is a tracking bump; 0.675 is the
                        # requirement.
-                       # WHY 0.681/v0.315 (bumped from 0.677/v0.312): aeb v0.313
-                       # pinned ae 0.680 (FreeBSD --emit=lib -fPIC release-build
-                       # fix) and v0.315 pinned 0.681 (bldr._host_arch via
-                       # os.arch()); v0.314/v0.315 also add consumer-manifest
-                       # generation + --overrideDep. Nothing here NEEDS them —
-                       # it's a stay-with-the-runner bump.
-                       # PREBUILT WEAK-EMIT, now clean: the @c_callback weak-emit
-                       # (ae PR #2043 / AETHER_WEAK_DEF) that made release/ cross
-                       # builds fail on the LAGGING 0.677 prebuilt is present in
-                       # the 0.680 AND 0.681 prebuilts (`strings aetherc | grep
-                       # AETHER_WEAK_DEF` = 4). So no from-source build is needed
-                       # anymore — the pinned prebuilt cross-builds the release
-                       # matrix as-is.
-                       # VERIFIED on ae 0.681.0 + released aeb v0.315 (this box):
-                       # libservirtium_vcr build + release/ core matrix 4/4 (linux+macos,
-                       # x86_64+arm64, cross from Linux) + go/rust .tests.ae 1/1.
+                       # WHY 0.695/v0.317 (bumped from 0.681/v0.315): aeb v0.316/
+                       # v0.317 add emit_binary_package (the PRODUCER side of ae's
+                       # native `ae add binary` install — 0.694+) and pin ae 0.695
+                       # (0.683 setter-in-builder fix, 0.686 snapshot concurrent-
+                       # CAS, 0.695 binary-import-in-dotted-wrapper consumer fix).
+                       # Lets Aether consumers `ae add github.com/servirtium/
+                       # servirtium-vcr` once we wire the emit side into release/.
+                       # PREBUILT WEAK-EMIT still clean: the @c_callback weak-emit
+                       # (ae PR #2043 / AETHER_WEAK_DEF) is present in the 0.695
+                       # prebuilt (`strings aetherc | grep AETHER_WEAK_DEF` = 4),
+                       # so the pinned prebuilt cross-builds the release matrix as-is.
+                       # VERIFIED on ae 0.695.0 + released aeb v0.317 (this box):
+                       # libservirtium_vcr build + cross-build (x86_64-linux) +
+                       # go/rust .tests.ae 1/1. (Full 7-target matrix + the
+                       # SDK-gated sweep last confirmed green on 0.681/v0.315.)
                        # The SDK-gated leaves (dotnet/kotlin/scala/haskell/lua/php/
                        # pharo/swift) are unrun here (no SDKs) — sweep them on the
                        # provisioned box; the dotnet closure-codegen bug below
@@ -134,11 +133,11 @@ AE_FETCH="v0.681.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.315 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.317 == the one aeb this repo is VERIFIED against.
 #
 # Collapsed from the old permissive floor (>= 0.308) for the same reason the
 # Aether pin was: every sweep this repo publishes runs on AEB_REF, so a lower
-# floor advertised support for releases nothing verifies. v0.315 pins ae 0.681
+# floor advertised support for releases nothing verifies. v0.317 pins ae 0.695
 # (its AETHER_PIN), so the two toolchains move as a pair — install them together.
 #
 # Kept for the record, because it is the last nameable aeb requirement and
