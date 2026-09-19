@@ -52,6 +52,10 @@ fi
 
 DIST="$ROOT/release/dist"
 rm -rf "$DIST"; mkdir -p "$DIST"
+# ae-add/ holds the `ae add`-installable binary-package set (one asset per triple
+# + one shared aether.toml), synthesized from the cross-built libs — see the
+# per-target staging in the loop and the aether.toml written after it.
+AEADD="$DIST/ae-add"; mkdir -p "$AEADD"
 
 # FreeBSD cross needs an ARCH-SPECIFIC base sysroot: sys/_ucontext.h pulls the
 # arch's <machine/ucontext.h> (where mcontext_t lives), so an x86_64 base cannot
@@ -126,6 +130,16 @@ for t in $MATRIX; do
     if [ "$os" = "windows" ] && [ -f "$out.lib" ]; then
       ( cd "$DIST" && sha256sum "$name.lib" > "$name.lib.sha256" )
     fi
+    # ALSO stage this triple's `ae add` binary-package asset (under ae-add/).
+    # aeb's aether.emit_binary_package() only emits for the HOST triple (it uses
+    # bldr._host_os_arch), but its asset format is simple and its triple spelling
+    # is exactly our <os>-<arch> — so we synthesize the full per-triple set here
+    # from the same cross-built .so, keeping the one-Linux-host model. Asset name
+    # is the module STEM (no `lib` prefix): servirtium_vcr-<tag>-<os>-<arch>.<ext>.
+    # The shared aether.toml is written once after the loop.
+    aeasset="servirtium_vcr-${TAG}-${os}-${arch}.${ext}"
+    cp "$out" "$AEADD/$aeasset"
+    ( cd "$AEADD" && sha256sum "$aeasset" > "$aeasset.sha256" )
     printf 'ok  (%s)\n' "$(file -b "$out" 2>/dev/null | cut -c1-42)"
     built=$((built+1))
     rm -f "$log"
@@ -145,6 +159,24 @@ echo
 # A combined checksum manifest over every artifact (not the .sha256 sidecars).
 # Named SHA256SUMS.txt so a browser renders it inline (no forced download).
 ( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib 2>/dev/null > SHA256SUMS.txt || true )
+
+# The single shared aether.toml that marks the ae-add asset set a binary package.
+# Format is exactly what ae's ae_try_binary_package parses (verified against
+# aeb's aether.emit_binary_package output): [package].binary = <stem>, modules=".".
+# `ae add github.com/servirtium/servirtium-vcr@<tag>` reads it, then fetches the
+# matching servirtium_vcr-<tag>-<host-triple>.<ext> + .sha256 for the caller's host.
+if [ "$built" -gt 0 ]; then
+  cat > "$AEADD/aether.toml" <<'TOML'
+# aether.toml — binary-package manifest for `ae add`.
+# `ae add <pkg>@<tag>` reads [package].binary, fetches the per-triple lib, and
+# installs it as servirtium_vcr<ext> on the import search path (modules = ".").
+
+[package]
+binary = "servirtium_vcr"
+modules = "."
+TOML
+  say "staged ae-add/ binary-package set ($built triple(s) + aether.toml) for \`ae add\`"
+fi
 
 say "built $built libservirtium_vcr artifact(s) into release/dist/ ($failed failed)"
 [ "$built" -gt 0 ] || die "no artifacts built"

@@ -25,7 +25,7 @@
 // (target/build/core/lib/) and core/native/ are the same bytes.
 import bldr
 import aether
-import aether (source, output, extra_source, caps)
+import aether (source, output, extra_source, caps, stem, release_tag)
 import std.os
 
 aeb(cap) {
@@ -34,6 +34,19 @@ aeb(cap) {
             source("embed.ae")
             extra_source("_embed_strdup.c")
             caps("fs,net")
+            output("libservirtium_vcr.so")
+        }
+        // ALSO stage the built .so as an `ae add`-installable binary package
+        // (target/build/core/ae-add/: aether.toml + servirtium_vcr-<tag>-<triple>.so
+        // + .sha256). Lets an *Aether* consumer do
+        //   ae add github.com/servirtium/servirtium-vcr@<tag>   then   import servirtium_vcr
+        // — fetched + checksum-verified per host triple, no source, no
+        // SERVIRTIUM_VCR_LIB. (The FFI bindings still use the raw .so; this serves
+        // Aether-native consumers.) Must be in this SAME node — it reads the
+        // shared_lib output above. release/publish.sh sets AEB_RELEASE_TAG so the
+        // asset names carry the real release tag; else it falls back to v0.0.0.
+        aether.emit_binary_package() {
+            stem("servirtium_vcr")
             output("libservirtium_vcr.so")
         }
         root = _get("root")

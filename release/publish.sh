@@ -71,9 +71,14 @@ shopt -s nullglob
 bins=( "$DIST"/*.so "$DIST"/*.dylib "$DIST"/*.dll "$DIST"/*.dll.lib )
 sums=( "$DIST"/*.sha256 )
 manifest=( "$DIST"/SHA256SUMS.txt )   # nullglob: empty if it doesn't exist
+# The `ae add` binary-package set (subdir, so NOT caught by the globs above):
+# the per-triple servirtium_vcr-<tag>-<triple>.<ext> assets, their .sha256, and
+# the shared aether.toml. Uploaded flat to the release — `ae add` fetches each by
+# name. Empty (nullglob) if build.sh didn't stage them.
+aeadd=( "$DIST"/ae-add/servirtium_vcr-* "$DIST"/ae-add/aether.toml )
 shopt -u nullglob
 [ "${#bins[@]}" -gt 0 ] || die "no libservirtium_vcr artifacts in release/dist — run release/build.sh (or drop --no-build)"
-assets=( "${bins[@]}" "${sums[@]}" "${manifest[@]}" )
+assets=( "${bins[@]}" "${sums[@]}" "${manifest[@]}" "${aeadd[@]}" )
 # Count only the loadable libraries (not the Windows .dll.lib import stubs) for
 # the "N platform artifacts" note.
 nbin=0; for f in "${bins[@]}"; do case "$f" in *.dll.lib) ;; *) nbin=$((nbin+1)) ;; esac; done
@@ -98,6 +103,11 @@ This is the \`libservirtium_vcr\` core library only — the one thing that's har
 Point any binding at a downloaded artifact via \`SERVIRTIUM_VCR_LIB=/path/to/lib…\`
 (or your OS loader path). The per-language packages (wheel / gem / jar / …) are
 NOT here — build those from the tagged source with \`aeb <lang>/.package.ae\`.
+
+**Aether consumers:** \`ae add github.com/servirtium/servirtium-vcr@${TAG}\` then
+\`import servirtium_vcr\` — the \`servirtium_vcr-${TAG}-<os>-<arch>\` assets (+ their
+\`.sha256\` and \`aether.toml\`) are the \`ae add\` binary package; \`ae\` fetches and
+checksum-verifies the one matching your host, no \`SERVIRTIUM_VCR_LIB\` needed.
 
 Built from a single Linux host via \`ae build --target\` (zig cc), so every
 artifact is the same deterministic bytes a target would build. See
