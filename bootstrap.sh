@@ -81,15 +81,18 @@ AE_FETCH="v0.699.0"    # THE FLOOR MOVED TO 0.698. It used to be 0.675 (aeb's SD
                        # (ae PR #2043 / AETHER_WEAK_DEF) is present in the 0.696
                        # prebuilt (`strings aetherc | grep AETHER_WEAK_DEF` = 4).
                        # VERIFIED (this box) on ae 0.696/0.698 + aeb MAIN ahead of
-                       # v0.319 (v0.319-N-g…, which carries the mkdir + dotnet-rename
-                       # fixes the v0.319 TAG lacks — see the ⚠ known-broken note in
-                       # the aeb pin section): libservirtium_vcr build + go/rust
-                       # .tests.ae 1/1 + the full release/ builder-loop matrix (7/7,
-                       # see release/build.sh). NOT verified on the exact v0.319 tag
-                       # (its dotnet/fsharp leaves cannot link); the release
-                       # cross-build path doesn't touch those, but installing the
-                       # bare tag and sweeping would still hit them until a newer
-                       # aeb tag exists.
+                       # v0.319 (v0.319-N-g…, which carried the mkdir + dotnet-rename
+                       # fixes the v0.319 TAG lacked): libservirtium_vcr build +
+                       # go/rust .tests.ae 1/1 + the full release/ builder-loop
+                       # matrix (7/7, see release/build.sh). NOT verified on the
+                       # exact v0.319 tag (its dotnet/fsharp leaves could not
+                       # link); the release cross-build path doesn't touch those,
+                       # but installing the bare tag and sweeping would have hit
+                       # them. SUPERSEDED: v0.320 is now released and carries both
+                       # fixes, AEB_REF points at it, and the 92-leaf sweep below
+                       # DID run on that exact tag — so the caveat this paragraph
+                       # was hedging against no longer applies. Kept as the record
+                       # of what was true for v0.317-v0.319.
                        # The SDK-gated leaves (dotnet/kotlin/scala/haskell/lua/php/
                        # pharo/swift) are unrun here (no SDKs) — sweep them on the
                        # provisioned box; the dotnet closure-codegen bug below
