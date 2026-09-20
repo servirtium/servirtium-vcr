@@ -57,11 +57,12 @@ set -euo pipefail
 AE_PIN="0.698.0"
 AE_FETCH="v0.698.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # fs.make_temp_file, and this repo's libservirtium_vcr needs no newer
-                       # primitive. We pin 0.696 to track aeb v0.319's own
-                       # AETHER_PIN (0.696.0), keeping "one ae, matching the build
-                       # runner". So 0.696 is a tracking bump; 0.675 is the
+                       # primitive. We pin 0.698 (>= aeb v0.319's AETHER_PIN of
+                       # 0.696; 0.698 also FIXES the dotnet closure-codegen bug —
+                       # see the sweep note below), keeping "one ae, matching the
+                       # build runner". So 0.698 is a tracking bump; 0.675 is the
                        # requirement.
-                       # WHY 0.696/v0.319 (bumped from 0.695/v0.317): aeb v0.319
+                       # WHY the 0.696/v0.319 line below (bumped from 0.695/v0.317): aeb v0.319
                        # ships the emit_binary_package target() cross-emit + the
                        # 0.681 libaether FLOOR-GUARD (aeb-link now fails with a
                        # legible "runtime archive older than 0.681" instead of a
@@ -73,9 +74,16 @@ AE_FETCH="v0.698.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # PREBUILT WEAK-EMIT still clean: the @c_callback weak-emit
                        # (ae PR #2043 / AETHER_WEAK_DEF) is present in the 0.696
                        # prebuilt (`strings aetherc | grep AETHER_WEAK_DEF` = 4).
-                       # VERIFIED on ae 0.696.0 + released aeb v0.319 (this box):
-                       # libservirtium_vcr build + go/rust .tests.ae 1/1 + the full
-                       # release/ builder-loop matrix (see release/build.sh).
+                       # VERIFIED (this box) on ae 0.696/0.698 + aeb MAIN ahead of
+                       # v0.319 (v0.319-N-g…, which carries the mkdir + dotnet-rename
+                       # fixes the v0.319 TAG lacks — see the ⚠ known-broken note in
+                       # the aeb pin section): libservirtium_vcr build + go/rust
+                       # .tests.ae 1/1 + the full release/ builder-loop matrix (7/7,
+                       # see release/build.sh). NOT verified on the exact v0.319 tag
+                       # (its dotnet/fsharp leaves cannot link); the release
+                       # cross-build path doesn't touch those, but installing the
+                       # bare tag and sweeping would still hit them until a newer
+                       # aeb tag exists.
                        # The SDK-gated leaves (dotnet/kotlin/scala/haskell/lua/php/
                        # pharo/swift) are unrun here (no SDKs) — sweep them on the
                        # provisioned box; the dotnet closure-codegen bug below
