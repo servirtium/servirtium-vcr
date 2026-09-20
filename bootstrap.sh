@@ -54,14 +54,20 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.698.0"
-AE_FETCH="v0.698.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
-                       # fs.make_temp_file, and this repo's libservirtium_vcr needs no newer
-                       # primitive. We pin 0.698 (>= aeb v0.319's AETHER_PIN of
-                       # 0.696; 0.698 also FIXES the dotnet closure-codegen bug —
-                       # see the sweep note below), keeping "one ae, matching the
-                       # build runner". So 0.698 is a tracking bump; 0.675 is the
-                       # requirement.
+AE_PIN="0.699.0"
+AE_FETCH="v0.699.0"    # THE FLOOR MOVED TO 0.698. It used to be 0.675 (aeb's SDK
+                       # needing fs.make_temp_file), and this repo's own
+                       # libservirtium_vcr still needs no newer primitive — but
+                       # aeb v0.320 REVERTED the vr_idx/vr_entry rename in
+                       # lib/dotnet now that the closure-capture codegen bug is
+                       # fixed upstream. So v0.320's dotnet SDK carries the
+                       # colliding idx/entry names again and CANNOT COMPILE on
+                       # ae 0.675-0.697: it emits invalid C and dies at the
+                       # fan-out orchestrator link, taking every node in the
+                       # graph with it, not just the dotnet ones. Verified here:
+                       # the reverted SDK links clean on 0.699 (fsharp rc=0,
+                       # undeclared=0). We pin 0.699 to match aeb v0.320's own
+                       # AETHER_PIN, keeping "one ae, matching the build runner".
                        # WHY the 0.696/v0.319 line below (bumped from 0.695/v0.317): aeb v0.319
                        # ships the emit_binary_package target() cross-emit + the
                        # 0.681 libaether FLOOR-GUARD (aeb-link now fails with a
@@ -88,48 +94,24 @@ AE_FETCH="v0.698.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # pharo/swift) are unrun here (no SDKs) — sweep them on the
                        # provisioned box; the dotnet closure-codegen bug below
                        # still applies until aeb ships the rename OR ae fixes it.
-                       # ---- CachyOS SWEEP, RE-RUN ON ae 0.698 + aeb main
-                       # (v0.319-2-g5fde2d5, NOT the pinned tag — see the aeb pin
-                       # note below for why that distinction matters): 92 leaves,
-                       # 91 green. 33/34 .tests.ae, 29/29 .package.ae, 29/29
-                       # .example.ae. The ONE red is pharo (unchanged
-                       # run=12 passed=6 errors=6 — every record-mode test plus
-                       # static content; playback fine). Identical tallies on
-                       # 0.696 and 0.697 immediately before, so three consecutive
-                       # releases regressed nothing here.
-                       # THE CLOSURE CODEGEN BUG IS FIXED AS OF ae 0.698.
-                       # Full history, because the middle step misleads: 0.675
-                       # introduced it; 0.697 shipped a PARTIAL fix (055fcc7d)
-                       # that made upstream's own regression test pass while the
-                       # shape that started this still failed; 0.698 completed it
-                       # (0745fa85) and all five rows of the matrix are clean,
-                       # including the real dotnet module with aeb's rename
-                       # reverted. Measured, not inferred — the revert was proven
-                       # (vr_ refs 6->0), the build ran (rc=0), it passed
-                       # positively ("1/1 PASS", not merely no error), and the
-                       # SDK was restored and re-asserted.
-                       # aeb's 6af17aa rename nevertheless STAYS: it is still
-                       # load-bearing on 0.675-0.697 inclusive, so removing it
-                       # re-opens a whole-graph build failure for anyone pinned
-                       # lower. Retiring it is gated on aeb's AETHER_PIN reaching
-                       # 0.698, which is aeb's call, not this repo's.
-                       # For the record, the trigger was an enclosing `if`
-                       # specifically (a `while` or function scope compiles).
-                       # Filed upstream with a 35-line reproducer. It fails at orchestrator link,
-                       # so on an aeb without the rename it stops every node
-                       # in the graph, not just the dotnet ones. Mechanism: a
-                       # closure's own locals are unified with same-named locals
-                       # in an earlier, already-closed block, promoted to heap
-                       # cells, then captured outside their declaring block.
-                       # Measured bisect: clean 0.668; broken 0.675, 0.677,
-                       # 0.681, 0.696. aeb's dotnet module was byte-identical
-                       # v0.311->v0.319 throughout, which is what makes it an
-                       # Aether bug rather than an SDK one. Full writeup:
-                       # docs/handover-ae-0675-closure-capture-codegen-bug.md.
-                       # ruby/swift/integration also need
-                       # env (gem bin on PATH, LD_LIBRARY_PATH for swift's
-                       # libncurses shim, python selenium) — all green once set,
-                       # see docs/dev-setup.md.
+                       # ---- CachyOS SWEEP on ae 0.699.0 + aeb v0.320 — the
+                       # FIRST sweep since v0.315 run on the ACTUAL PINNED TAG
+                       # rather than on aeb main: 92 leaves, 91 green. 33/34
+                       # .tests.ae, 29/29 .package.ae, 29/29 .example.ae. The ONE
+                       # red is pharo (unchanged run=12 passed=6 errors=6 — every
+                       # record-mode test plus static content; playback fine).
+                       # Identical tallies on 0.696, 0.697 and 0.698 before it, so
+                       # four consecutive releases regressed nothing here.
+                       # THE CLOSURE CODEGEN SAGA IS CLOSED. 0.675 introduced it;
+                       # 0.697 shipped a PARTIAL fix that made upstream's own
+                       # regression test pass while the real shape still failed;
+                       # 0.698 completed it; aeb v0.320 then REVERTED its rename
+                       # workaround, which is why this repo's floor is now 0.698.
+                       # This repo filed both upstream asks (aether #2114, #2116)
+                       # and aeb's v0.320 tag message cites #2116 for the bisect.
+                       # Verified here on the released artifacts: the reverted
+                       # lib/dotnet links clean (fsharp rc=0, undeclared=0) with
+                       # no rename present in the installed SDK.
                        # ---- (0.668 note, kept — its split-toolchain warning still bites) ----
                        # verified on ae 0.668.0 + the RELEASED aeb v0.310:
                        # libservirtium_vcr + CLI + core_tests (all 6 leaves) + cli-tests,
@@ -161,7 +143,7 @@ AE_FETCH="v0.698.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.319 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.320 == the one aeb this repo is VERIFIED against.
 #
 # Collapsed from the old permissive floor (>= 0.308) for the same reason the
 # Aether pin was: every sweep this repo publishes runs on AEB_REF, so a lower
@@ -178,39 +160,23 @@ AE_FETCH="v0.698.0"    # The genuine FLOOR is still 0.675 — aeb's SDK needs
 # history: v0.298 made the bundle installer make-free; v0.300 aligned the
 # release asset on x86_64.)
 #
-# ⚠ v0.319 IS KNOWN-BROKEN IN TWO WAYS, AND NO NEWER TAG EXISTS (2026-09-19).
-# It is still the pin, deliberately — see "why not just point at main" below.
+# v0.320 RETIRES THE KNOWN-BROKEN-PIN CAVEAT THAT STOOD HERE. For a week this
+# note had to say the pinned tag (v0.319) was broken two ways and that the
+# recorded sweep had been run on aeb main instead. Both are now resolved and the
+# disclosure is gone because it is no longer true, not because it was tidied
+# away:
 #
-#   1. It CONTAINS aeb 9faf844, which dropped the `mkdir -p` from the dep
-#      staging loop when that became a bare fs.copy_tree, across 7 SDKs. Any
-#      stage() into a not-yet-existing directory then copies NOTHING and leaves
-#      the destination dead — silently. Fixed in aeb 5fde2d5, AFTER the tag.
-#      On the selenium side this killed every .example.ae at its assert_file and,
-#      once fixed, exposed five further packaging breaks it had been masking.
-#      THIS REPO IS CLEAN OF THAT CLASS: no .package.ae / .example.ae / .dist.ae
-#      node reaches outside its own directory, and a full sweep with 5fde2d5 in
-#      place turned up nothing new. But note that any sweep run on v0.315..v0.319
-#      was a MASKED-MKDIR sweep and is weaker evidence than it looks.
-#   2. It LACKS aeb 6af17aa, the dotnet SDK's closure-local rename. Without it
-#      ae >= 0.675 emits invalid C for lib/dotnet/module.ae ("'idx' undeclared"),
-#      which fails at ORCHESTRATOR LINK — so it does not merely break the dotnet
-#      leaves, it stops every node in any graph containing them. The underlying
-#      Aether codegen bug is still live on 0.696 (measured, by reverting only the
-#      rename); 6af17aa only hides it. See
-#      docs/handover-ae-0675-closure-capture-codegen-bug.md.
+#   - v0.319 CONTAINED aeb 9faf844, which dropped the `mkdir -p` from the dep
+#     staging loop across 7 SDKs, so any stage() into a not-yet-existing
+#     directory silently copied nothing. Fixed in 5fde2d5 — IN v0.320.
+#   - v0.319 LACKED 6af17aa, the dotnet closure-local rename, without which
+#     ae >= 0.675 emitted invalid C and died at orchestrator link. v0.320 goes
+#     one better: the underlying Aether bug is fixed (0.698), so v0.320 REVERTS
+#     the rename entirely rather than carrying a workaround. See the AE_FETCH
+#     note above for why that raises this repo's floor to 0.698.
 #
-# So: a tag carrying BOTH 5fde2d5 and 6af17aa is what this repo actually wants,
-# and cutting one is the fix. Until then AEB_REF stays at v0.319 rather than
-# tracking main, because AEB_REF takes a TAG: pointing it at a branch would
-# trade a known-broken pin for an UNPINNED one, which is worse — the failure
-# mode stops being "a bug we have written down" and becomes "whatever main was
-# that day". (Same call the selenium sibling made, independently.)
-#
-# DISCLOSURE, so the sweep numbers are not read as more than they are: the
-# 91/92 sweep recorded below was run on aeb main at v0.319-2-g5fde2d5 — i.e.
-# WITH both fixes — not on the pinned v0.319. On the pin itself the dotnet and
-# fsharp leaves cannot link at all. Installing exactly AEB_REF and sweeping is
-# therefore expected to be WORSE than what is recorded, not better.
+# So the sweep recorded below was run on the ACTUAL PINNED TAG for the first
+# time since v0.315 — no "swept on main, not the pin" asterisk.
 #
 # HONEST LIMITATION — this floor is a documentation contract, NOT enforced.
 # Step 2 below accepts ANY aeb already on PATH (`command -v aeb` → skip),
