@@ -91,6 +91,34 @@ cp libservirtium_vcr-v2.0.0-alpha.1-linux-x86_64.so native/libservirtium_vcr.so
 # the package now carries the native library; consume it from source (see this README's usage/examples).
 ```
 
+**That is not sufficient on its own.** Cabal will not find the library from
+`native/` alone — you also need a `cabal.project.local` naming that directory as
+an **absolute** path (ghc-pkg rejects a relative `extra-lib-dirs` when it
+registers the library, which is why it cannot simply be listed in the `.cabal`):
+
+```
+package servirtium-haskell
+  extra-lib-dirs: /abs/path/to/servirtium-vcr/haskell/native
+  ghc-options: -optl-Wl,-rpath,/abs/path/to/servirtium-vcr/haskell/native
+```
+
+Without it the build fails at the *configure* step with
+
+```
+* Missing (or bad) C library: servirtium_vcr
+```
+
+which reads like a missing system package — the suggested fix ("install the
+-dev version") is the wrong track entirely, because the library is present and
+merely unfindable.
+
+> **Note.** Other docs in this directory say `build-native.sh` generates this
+> file. **There is no `build-native.sh` in the repo** — it is referenced by
+> `docs/building.md`, `docs/architecture.md` and a comment in
+> `servirtium-haskell.cabal`, but the script itself is absent. In-tree builds
+> work because `haskell/.tests.ae` writes `cabal.project.local` itself (it is
+> gitignored). Anyone following the docs by hand has to write it, as above.
+
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
 (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
 library. (For macOS use the `.dylib`, for Windows the `.dll`.)
