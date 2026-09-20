@@ -13,6 +13,29 @@ try Vcr.withPlayback("tapes/single_get.md") { vcr in
 }   // <- the scoped form closes the server on every path, throws included
 ```
 
+`httpGet` above is your own helper — the binding doesn't ship one. **On Linux,
+write it against `FoundationNetworking`, not `Foundation`:**
+
+```swift
+import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking   // Linux: URLSession lives here
+#endif
+```
+
+Without that import, Linux Swift reports
+
+```
+error: type 'URLSession' (aka 'AnyObject') has no member 'shared'
+```
+
+which names neither the missing module nor the platform difference, and looks
+like a broken toolchain rather than a missing import. On macOS `URLSession` is
+in `Foundation`, so an example written there compiles and the same code fails
+only on Linux. (This binding's own tests dodge it entirely by shelling out to
+`curl` — synchronous and dependency-free — so they are not a worked example of
+the URLSession route.)
+
 ## What this is (and isn't)
 
 A thin Swift layer over the **Aether VCR** core. All record/replay machinery —
