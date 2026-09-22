@@ -232,9 +232,23 @@ run_import_bru(argc: int) {
     raw = vcr.load_record(out, upstream, port)
     if raw == null { println("servirtium import-bru: ${vcr.load_error()}"); exit(1) }
 
+    // Keep the promise the header comment above makes. client.set_body() below
+    // sets a Content-Type on every request that carries a body, and the record
+    // proxy would otherwise write it into the tape's REQUEST MATCH BLOCK — so a
+    // hydrated POST/PUT/PATCH could never be matched by a real client (its own
+    // Content-Type, or absence of one, would differ). GET/DELETE were unaffected
+    // because they send no body and so no Content-Type, which is exactly why
+    // this was invisible until a collection with a body was imported.
+    _rh = vcr.remove_header_h(raw, vcr.FIELD_REQUEST_HEADERS, "Content-Type")
+
     spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
+    // NB: deliberately NOT `a` — the arg-parsing loop above binds `a` as a
+    // string, and a local first bound inside a branch/loop is ONE variable for
+    // the whole function, so reusing it here as an ActorRef is a type conflict
+    // (ae 0.706 rejects it as E0200; older ae leaked it to gcc as an
+    // "incompatible pointer type" on the generated C).
+    vcr_actor = spawn(VCRActor())
+    vcr_actor ! StartVCR { raw: raw }
     sleep(500)
 
     proxy = "http://127.0.0.1:${port}"

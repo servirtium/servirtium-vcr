@@ -1,0 +1,18 @@
+meta {
+  name: Create Widget
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/widgets
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "flange",
+    "colour": "blue"
+  }
+}

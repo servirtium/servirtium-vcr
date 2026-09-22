@@ -1,0 +1,17 @@
+meta {
+  name: Update Widget
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/widgets/2
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "colour": "green"
+  }
+}
