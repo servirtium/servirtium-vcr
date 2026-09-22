@@ -54,8 +54,22 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.699.0"
-AE_FETCH="v0.699.0"    # THE FLOOR MOVED TO 0.698. It used to be 0.675 (aeb's SDK
+AE_PIN="0.706.0"
+AE_FETCH="v0.706.0"    # BUMPED 0.699/v0.320 -> 0.706/v0.324 (tracking): aeb v0.324
+                       # pins Aether 0.706 (its AETHER_PIN; carries the #2083
+                       # non-scheduler-send fix + a cold-compile gate that unmasked
+                       # lazy/opt-in tools); v0.321-v0.324 are otherwise aeb tooling
+                       # (--jobs / --watch validate-then-swap / --report / structured
+                       # failure capture) + a gcc-16 emitted-C miscompile guard
+                       # (-fno-ipa-bit-cp gated on real gcc, macOS/clang-safe).
+                       # Nothing in this repo's path changed. VERIFIED here on ae
+                       # 0.706 + aeb v0.324: core build + go/rust .tests.ae 1/1 +
+                       # the release/ builder-loop (x86_64-linux, weak-emit=4, ae-add
+                       # staged, 0 failed). SDK-gated leaves unrun here — CachyOS
+                       # sweep pending on 0.706/v0.324. The floor note below (0.698,
+                       # from v0.320's dotnet-rename revert) still holds.
+                       # ---- prior note (0.699/v0.320) kept for the record ----
+                       # THE FLOOR MOVED TO 0.698. It used to be 0.675 (aeb's SDK
                        # needing fs.make_temp_file), and this repo's own
                        # libservirtium_vcr still needs no newer primitive — but
                        # aeb v0.320 REVERTED the vr_idx/vr_entry rename in
@@ -146,7 +160,7 @@ AE_FETCH="v0.699.0"    # THE FLOOR MOVED TO 0.698. It used to be 0.675 (aeb's SD
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.320 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.324 == the one aeb this repo is VERIFIED against.
 #
 # Collapsed from the old permissive floor (>= 0.308) for the same reason the
 # Aether pin was: every sweep this repo publishes runs on AEB_REF, so a lower
