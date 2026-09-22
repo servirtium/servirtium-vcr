@@ -28,18 +28,36 @@ on inspection, from a tape of genuine 404s.
 
 ## The mapping
 
-### Variables → resolve at import, or fail loudly
+### Variables → resolve what you can, leave a visible TODO for the rest
 
 Bruno resolves `{{var}}` from `environments/*.bru` at send time. A Servirtium
 tape has no templating and should not acquire any — it records concrete bytes.
 
-So: read the collection's environment file, substitute every `{{var}}`, and if
-one cannot be resolved **fail the import** rather than firing a request with a
-literal placeholder in it. `--var NAME` (today's only knob) generalises to "the
-env supplies the values, and an unresolved reference is an error".
+**Import does not have to be perfect.** An earlier draft of this document said
+"resolve at import, or fail the import", which is a false binary: refusing the
+whole collection because one variable is unknown is worse than importing the
+other 20 requests and telling the dev what to finish. The third option is the
+right one — import everything, and leave an explicit placeholder where a human
+has to fill in.
 
-The current behaviour is the bad half of both options: it neither resolves nor
-refuses.
+Implemented: an unresolved `{{var}}` now produces a console `TODO` line naming
+the file and the variable, and a `## [Note]` block attached to that interaction
+in the tape, so the gap survives in the artifact rather than scrolling past in
+the import output.
+
+What it must never do is pass intent off as fact silently, which is what firing
+`/widgets/{{widgetId}}` and recording its 404 used to do: a tape holding a path
+that is not a path, linting clean.
+
+> **Caveat, measured: `[Note]` blocks do not round-trip.** `## [Note]` appears
+> only in the EMITTER (`core/vcr.ae:3623`); there is no parser for it. So a note
+> is written when a recording is flushed, and silently dropped the next time the
+> tape is loaded and re-emitted. Two consequences: a tape carrying a note fails
+> `check --canonical` (the emitter form is exactly the note's bytes shorter —
+> verified by deleting the note by hand, after which it lints clean), and a TODO
+> can vanish on a re-emit, which looks indistinguishable from the TODO having
+> been done. Notes are the right idiom for placeholders; they are currently
+> half-built, and making the parser read them back is the fix.
 
 ### `headers { … }` → send them, but keep them out of the match block
 
@@ -111,5 +129,8 @@ in a tape that lints clean.
 
 - `Content-Type` kept out of the request match block, so body-carrying requests
   can actually be replayed (`847344e`).
-- Nothing else in this document. The rest is a proposal, and the measurements
-  above are the argument for it.
+- Unresolved `{{var}}` now warns on the console and leaves a `## [Note]` TODO in
+  the tape, rather than silently recording a bogus response.
+- Everything else here is a proposal, and the measurements above are the
+  argument for it. The `[Note]` round-trip gap is the one that blocks the
+  placeholder idiom from being fully load-bearing.

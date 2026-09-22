@@ -300,6 +300,25 @@ run_import_bru(argc: int) {
         }
         body = vcr.bru_trim(vcr.bru_block_body(text, "body:json"))
 
+        // Any {{var}} still standing after the base-url rewrite is one Bruno
+        // would have resolved from environments/ and we cannot. Import does not
+        // have to be perfect — but it must not pass INTENT off as FACT, which is
+        // what firing `/widgets/{{widgetId}}` and recording its 404 does: the
+        // tape ends up holding a path that is not a path, and it lints clean.
+        // So leave the dev a visible placeholder instead: warn on the console,
+        // and attach a [Note] to the interaction so the TODO survives in the
+        // tape itself rather than scrolling past in the import output.
+        unresolved = ""
+        ob = string.index_of(url, "{{")
+        if ob >= 0 {
+            cb = string.index_of(string.substring(url, ob, string.length(url)), "}}")
+            if cb >= 0 { unresolved = string.substring(url, ob, ob + cb + 2) }
+            else { unresolved = string.substring(url, ob, string.length(url)) }
+            println("  TODO ${path}: unresolved ${unresolved} — fill it in and re-run")
+            _n = vcr.note_h(raw, "TODO: unresolved Bruno variable",
+                "`${unresolved}` came from the collection and had no value at import.\nThe request below was sent with the placeholder still in the path, so its\nresponse is almost certainly meaningless. Replace it and re-hydrate.")
+        }
+
         req = client.request(method, url)
         if string.length(body) > 0 {
             _sb = client.set_body(req, body, string.length(body), "application/json")
