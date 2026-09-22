@@ -126,7 +126,7 @@ into a Servirtium markdown tape (see the HAR section below).
 
 ## Build/test (aeb)
 
-The build runner is **aeb** (sibling repo `../aeb`; its `LLM.md` is the deep
+The build runner is **aeb** (sibling repo `../aeb`; its `AGENTS.md` is the deep
 reference). Quick facts:
 
 - **Not on `PATH`** in a fresh shell — it's at `~/.local/bin/aeb`. Prefix

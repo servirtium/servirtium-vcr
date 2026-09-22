@@ -6,7 +6,7 @@
 //
 // aether.program compiles from core/ with --lib <root> (the lib("..")) so
 // cli.ae's `import core.vcr` resolves. COMPAT: the binary is also copied to
-// target/servirtium — the documented path (README, cli-tests.sh, LLM.md).
+// target/servirtium — the documented path (README, cli-tests.sh, AGENTS.md).
 import bldr
 import aether
 import aether (source, output, lib)
