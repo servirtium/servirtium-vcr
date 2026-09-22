@@ -298,30 +298,31 @@ run_import_bru(argc: int) {
         if vat >= 0 {
             url = string.concat(proxy, string.substring(url, vat + string.length(varneedle), string.length(url)))
         }
-        body = vcr.bru_trim(vcr.bru_block_body(text, "body:json"))
-
-        // Any {{var}} still standing after the base-url rewrite is one Bruno
-        // would have resolved from environments/ and we cannot. Import does not
-        // have to be perfect — but it must not pass INTENT off as FACT, which is
-        // what firing `/widgets/{{widgetId}}` and recording its 404 does: the
-        // tape ends up holding a path that is not a path, and it lints clean.
-        // So leave the dev a visible placeholder instead: warn on the console,
-        // and attach a [Note] to the interaction so the TODO survives in the
-        // tape itself rather than scrolling past in the import output.
-        unresolved = ""
-        ob = string.index_of(url, "{{")
-        if ob >= 0 {
-            cb = string.index_of(string.substring(url, ob, string.length(url)), "}}")
-            if cb >= 0 { unresolved = string.substring(url, ob, ob + cb + 2) }
-            else { unresolved = string.substring(url, ob, string.length(url)) }
-            println("  TODO ${path}: unresolved ${unresolved} — fill it in and re-run")
-            _n = vcr.note_h(raw, "TODO: unresolved Bruno variable",
-                "`${unresolved}` came from the collection and had no value at import.\nThe request below was sent with the placeholder still in the path, so its\nresponse is almost certainly meaningless. Replace it and re-hydrate.")
+        // Body: the ENGINE owns the Bruno mapping (bru_body_block /
+        // bru_body_content_type / bru_body_needs_work in core/vcr.ae). This
+        // front end only decides what to DO about it, so a second consumer of
+        // import — another CLI, a binding, a service — gets the same answers
+        // without reimplementing Bruno's body-type table.
+        declared = vcr.bru_trim(vcr.bru_kv(vb, "body"))
+        body = ""
+        ctype = ""
+        blk = vcr.bru_body_block(declared)
+        if string.length(blk) > 0 {
+            body = vcr.bru_trim(vcr.bru_block_body(text, blk))
+            ctype = vcr.bru_body_content_type(declared)
+        }
+        if vcr.bru_body_needs_work(declared) == 1 {
+            // Import anyway — it does not have to be perfect — but leave an
+            // explicit TODO rather than send an empty body and record a
+            // plausible lie.
+            println("  TODO ${path}: body type '${declared}' not serialised yet — sent with NO body")
+            _nb = vcr.note_h(raw, "TODO: unsupported Bruno body type",
+                "The request below declares `body: ${declared}`, which the engine cannot\nserialise yet, so it was sent with NO body and the recorded response reflects\nthat. Supply the body by hand, or re-hydrate once the type is supported.")
         }
 
         req = client.request(method, url)
         if string.length(body) > 0 {
-            _sb = client.set_body(req, body, string.length(body), "application/json")
+            _sb = client.set_body(req, body, string.length(body), ctype)
         }
         resp, cerr = client.send_request(req)
         if string.length(cerr) > 0 {

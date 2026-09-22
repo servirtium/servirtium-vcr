@@ -1,0 +1,15 @@
+meta {
+  name: Create Widget XML
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/widgets.xml
+  body: xml
+  auth: none
+}
+
+body:xml {
+  <widget><name>grommet</name><colour>amber</colour></widget>
+}

@@ -44,8 +44,14 @@ Six interactions across four verbs, two of them carrying request bodies:
 | 4 | `PUT /widgets/2` + JSON body | **body-carrying request** |
 | 5 | `DELETE /widgets/2` | verb with no body |
 | 6 | `GET /widgets` | proves the delete took effect |
+| 7 | `GET /widgets.xml` | XML response |
+| 8 | `POST /widgets.xml` + XML body | **XML request body** |
+| 9 | `GET /widgets.xml` | proves the XML POST landed |
 
-Interactions 2 and 4 are the point. They are what caught a real bug — see below.
+Interactions 2 and 4 are what caught a real bug (see below); 8 proves the same
+machinery works for a non-JSON payload. The `body:` type drives everything —
+the engine maps it to a block name and a Content-Type, so XML travels the same
+path JSON does rather than a special case.
 
 ## Two things that will bite you
 

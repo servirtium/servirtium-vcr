@@ -99,8 +99,27 @@ whatever the service says to an anonymous caller.
 
 `body:form-urlencoded`, `body:text`, `body:xml`, `body:graphql`, `body:multipart`
 all reduce to "a request body plus a content type". A tape stores a literal body,
-so each is a small serialiser away. The present silent-empty-body behaviour is
-the one gap here that is actively dangerous rather than merely missing.
+so each is a small serialiser away.
+
+**Implemented for the literal types**, and the mapping lives in the ENGINE
+(`core/vcr.ae`), not in the CLI — `bru_body_block`, `bru_body_content_type` and
+`bru_body_needs_work`. That placement is the point: Bruno's body-type table is
+capability, and capability belongs in servirtium-core so a second consumer of
+import (another front end, a binding, a service) gets the same answers instead
+of reimplementing it. The CLI only decides what to *do* with the answer.
+
+| `body:` | sent as | status |
+|---|---|---|
+| `json` | `application/json` | literal |
+| `xml` | `application/xml` | literal |
+| `text` | `text/plain` | literal |
+| `sparql` | `application/sparql-query` | literal |
+| `formUrlEncoded`, `multipartForm`, `graphql`, `file` | — | **TODO note**, sent with no body |
+
+The four that remain need real serialisation (k=v joining, multipart framing, a
+GraphQL envelope), so rather than send an empty body and record a
+plausible-looking wrong answer, the importer now leaves an explicit TODO — both
+on the console and as a `## [Note]` in the tape.
 
 ### `script:*`, `tests`, `asserts` → out of scope, and say so
 

@@ -154,6 +154,7 @@ exports (
     record, clear_recording, flush, flush_or_check, flush_and_fail_if_changed,
     har_import, har_export,
     bru_block_body, bru_kv, bru_method_of, bru_verb_block, bru_trim,
+    bru_body_block, bru_body_content_type, bru_body_needs_work,
     check_tape, canonical_check_tape,
     redact, clear_redactions, unredact, clear_unredactions,
     normalize_whole_tape, redact_whole_tape, clear_normalizations,
@@ -2725,6 +2726,40 @@ bru_verb_block(method: string) -> string {
     if string.equals(method, "HEAD") == 1 { return "head" }
     if string.equals(method, "OPTIONS") == 1 { return "options" }
     return ""
+}
+
+// bru_body_block(declared) — the block name holding the payload for a Bruno
+// `body: <declared>` line, or "" when there is nothing to send. Bruno names the
+// block after the type (`body: xml` -> a `body:xml { ... }` block).
+bru_body_block(declared: string) -> string {
+    if string.equals(declared, "json") == 1 { return "body:json" }
+    if string.equals(declared, "xml") == 1 { return "body:xml" }
+    if string.equals(declared, "text") == 1 { return "body:text" }
+    if string.equals(declared, "sparql") == 1 { return "body:sparql" }
+    return ""
+}
+
+// bru_body_content_type(declared) — the Content-Type to send a Bruno body under.
+// "" when the type has no single literal payload (formUrlEncoded, multipartForm,
+// graphql and file all need real serialisation — k=v joining, multipart framing,
+// a GraphQL envelope — rather than shipping the block verbatim).
+bru_body_content_type(declared: string) -> string {
+    if string.equals(declared, "json") == 1 { return "application/json" }
+    if string.equals(declared, "xml") == 1 { return "application/xml" }
+    if string.equals(declared, "text") == 1 { return "text/plain" }
+    if string.equals(declared, "sparql") == 1 { return "application/sparql-query" }
+    return ""
+}
+
+// bru_body_needs_work(declared) — 1 when the collection declares a body this
+// engine cannot serialise yet, so a caller should leave the dev a TODO rather
+// than send an empty body and record a plausible-looking wrong answer. "none"
+// and "" are NOT work: they mean there is genuinely no body.
+bru_body_needs_work(declared: string) -> int {
+    if string.length(declared) == 0 { return 0 }
+    if string.equals(declared, "none") == 1 { return 0 }
+    if string.length(bru_body_block(declared)) > 0 { return 0 }
+    return 1
 }
 
 // "Name: value\n..." block from a HAR message's headers[] array (filtered).

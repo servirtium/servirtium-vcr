@@ -50,5 +50,9 @@ printf '    PUT    /widgets/2  -> '; curl -s -X PUT -H 'Content-Type: applicatio
     "colour": "green"
   }' http://127.0.0.1:8131/widgets/2; echo
 printf '    DELETE /widgets/2  -> '; curl -s -X DELETE http://127.0.0.1:8131/widgets/2; echo
+printf '    GET    /widgets.xml -> '; curl -s http://127.0.0.1:8131/widgets.xml; echo
+printf '    POST   /widgets.xml -> '; curl -s -X POST -H 'Content-Type: application/xml' \
+  --data-binary '<widget><name>grommet</name><colour>amber</colour></widget>' \
+  http://127.0.0.1:8131/widgets.xml; echo
 
-echo "==> done — those four responses came from $TAPE, not from python"
+echo "==> done — those six responses came from $TAPE, not from python"

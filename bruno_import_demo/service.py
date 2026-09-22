@@ -8,6 +8,7 @@ same tape. Nothing here is random or time-dependent; a tape that embeds a
 timestamp cannot be compared byte-for-byte on the next run.
 """
 import json
+import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 WIDGETS = {}
@@ -31,6 +32,18 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_xml(self, code, xml_text):
+        body = xml_text.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/xml")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_raw(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        return self.rfile.read(n) if n else b""
+
     def _read_json(self):
         n = int(self.headers.get("Content-Length") or 0)
         if not n:
@@ -45,6 +58,13 @@ class Handler(BaseHTTPRequestHandler):
         return int(tail) if tail.isdigit() else None
 
     def do_GET(self):
+        if self.path.rstrip("/") == "/widgets.xml":
+            root = ET.Element("widgets")
+            for k in sorted(WIDGETS):
+                w = ET.SubElement(root, "widget", id=str(WIDGETS[k]["id"]))
+                ET.SubElement(w, "name").text = WIDGETS[k]["name"]
+                ET.SubElement(w, "colour").text = WIDGETS[k]["colour"]
+            return self._send_xml(200, ET.tostring(root, encoding="unicode"))
         if self.path.rstrip("/") == "/widgets":
             return self._send(200, {"widgets": [WIDGETS[k] for k in sorted(WIDGETS)]})
         wid = self._id()
@@ -54,6 +74,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global NEXT_ID
+        if self.path.rstrip("/") == "/widgets.xml":
+            # Accepts <widget><name>..</name><colour>..</colour></widget>
+            try:
+                el = ET.fromstring(self._read_raw() or b"<widget/>")
+            except ET.ParseError:
+                return self._send_xml(400, "<error>malformed xml</error>")
+            wid = NEXT_ID
+            NEXT_ID += 1
+            name = (el.findtext("name") or "unnamed").strip()
+            colour = (el.findtext("colour") or "grey").strip()
+            WIDGETS[wid] = {"id": wid, "name": name, "colour": colour}
+            out = ET.Element("widget", id=str(wid))
+            ET.SubElement(out, "name").text = name
+            ET.SubElement(out, "colour").text = colour
+            return self._send_xml(201, ET.tostring(out, encoding="unicode"))
         data = self._read_json()
         wid = NEXT_ID
         NEXT_ID += 1
