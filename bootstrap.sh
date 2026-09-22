@@ -111,6 +111,23 @@ AE_FETCH="v0.706.0"    # BUMPED 0.699/v0.320 -> 0.706/v0.324 (tracking): aeb v0.
                        # pharo/swift) are unrun here (no SDKs) — sweep them on the
                        # provisioned box; the dotnet closure-codegen bug below
                        # still applies until aeb ships the rename OR ae fixes it.
+                       # ---- CachyOS SWEEP on ae 0.706.0 + aeb v0.324:
+                       # 92 leaves, 90 green, 2 red. pharo as ever (unchanged
+                       # run=12 passed=6 errors=6), AND php/.example.ae — which is
+                       # NOT a 0.706 regression: it is a pre-existing intermittent
+                       # SIGSEGV in the php consumer at FFI teardown, AFTER it has
+                       # done its work and printed PASS. Measured at the same rate
+                       # on ae 0.699 (11/20 script runs) as on 0.706 (10/20), with
+                       # the leaf failing 4/6. Cause: core/embed.ae runs the accept
+                       # loop on a DETACHED thread, so vcr_embed_stop cannot join
+                       # it and teardown races the dying thread. Full writeup:
+                       # docs/handover-php-teardown-segfault.md.
+                       # CAVEAT ON THE GREEN HISTORY BELOW: the four sweeps
+                       # recorded here as 29/29 .example.ae green include php. At
+                       # today's rates that is roughly a 1% outcome, so either the
+                       # environment changed very recently or those runs were much
+                       # luckier than they read. Unexplained — do not treat the
+                       # green history as evidence the crash is new.
                        # ---- CachyOS SWEEP on ae 0.699.0 + aeb v0.320 — the
                        # FIRST sweep since v0.315 run on the ACTUAL PINNED TAG
                        # rather than on aeb main: 92 leaves, 91 green. 33/34
