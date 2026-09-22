@@ -82,6 +82,15 @@ the importer's own documented policy, three lines up from the call:
 request bodies was imported. Fixed by having the importer drop that one header
 from the request match block, so the code now does what its comment promised.
 
+## What else a .bru can carry
+
+The importer reads four things — `meta.seq`, the verb, the `url`, and
+`body:json`. Everything else is silently ignored, and some of those omissions
+produce a tape that is wrong while looking right (an unresolved `{{var}}` is
+sent literally and its 404 recorded; a `body:form-urlencoded` POST is sent with
+an empty body). See [`../docs/bruno-import-idioms.md`](../docs/bruno-import-idioms.md)
+for the measured list and the Servirtium idiom each one should expand into.
+
 ## Tape determinism
 
 The hydrated tape records the upstream's response headers, which include
