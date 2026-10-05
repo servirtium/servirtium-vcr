@@ -54,8 +54,46 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.706.0"
-AE_FETCH="v0.706.0"    # BUMPED 0.699/v0.320 -> 0.706/v0.324 (tracking): aeb v0.324
+AE_PIN="0.778.0"
+AE_FETCH="v0.778.0"    # BUMPED 0.706/v0.324 -> 0.778/v0.325 (REQUIRED, not tracking).
+                       # 0.778.0 is the floor the whole Aether family moved to on
+                       # 2026-10-05. It is also a forced move for this repo: ae
+                       # 0.758 (#2301) changed the byte-payload std calls to take
+                       # `byte[]` slices, and aeb v0.324's SDK modules are pre-slice
+                       # and do not compile on 0.758+, so ae and aeb move as a pair
+                       # (aeb v0.325 pins ae 0.766). Ported to the slice forms in the
+                       # same change: zlib.gzip_inflate/gzip_deflate and the
+                       # body setters in core/vcr.ae (http_response_set_body_n /
+                       # http_request_set_body_raw now take `ptr`, as std.http
+                       # declares them -- a mismatched local extern is a C
+                       # "conflicting types" error, not a warning), client.set_body
+                       # in core/cli.ae + core_tests + integration/subversion_interop,
+                       # fs.write_binary + client.response_body_bytes(resp).len (the
+                       # old response_body_length is no longer exported) in
+                       # core/.getFromGitHubReleases.ae. No behaviour change intended.
+                       # VERIFIED on the RELEASED ae 0.778.0 + aeb v0.325 (get.sh),
+                       # macOS arm64: libservirtium_vcr + CLI, core_tests 21/21 + all 6
+                       # core_tests leaves, the offline integration probes (climate,
+                       # subversion 17/17 + strict 4/4), core/.getFromGitHubReleases.ae
+                       # (fetch + sha256 verify of the v2.0.0-alpha.1 dylib), the
+                       # release/ builder-loop for aarch64-macos + x86_64-linux (0
+                       # failed, weak-emit=4), and the language leaves this Mac has
+                       # toolchains for: c/cpp/zig .tests+.package+.example 9/9,
+                       # swift/ruby .package green. Compared leaf-by-leaf against
+                       # 0.706.0 + aeb v0.324 on the unported HEAD: NOTHING green on
+                       # 0.706 is red on 0.778. (On macOS arm64 v0.324 itself reports
+                       # c/cpp/zig .tests.ae red even though the suites pass -- its
+                       # generated node functions fall off the end of an `int`
+                       # function with no `return`; v0.325 emits `return 0`.) Every
+                       # other red leaf is red identically on both and is an absent or
+                       # too-old SDK (no JDK, no pytest/build, system ruby 2.6, a
+                       # SwiftPM/CLT build-input error). SDK-gated leaves (go/rust/
+                       # dotnet/jvm/beam/haskell/lua/php/dart/pharo/...) are unrun
+                       # here -- their aeb leaves all COMPILE on v0.325 and fail only
+                       # at the missing-toolchain step; CachyOS sweep pending on
+                       # 0.778/v0.325.
+                       # ---- prior note (0.706/v0.324) kept for the record ----
+                       # BUMPED 0.699/v0.320 -> 0.706/v0.324 (tracking): aeb v0.324
                        # pins Aether 0.706 (its AETHER_PIN; carries the #2083
                        # non-scheduler-send fix + a cold-compile gate that unmasked
                        # lazy/opt-in tools); v0.321-v0.324 are otherwise aeb tooling
@@ -177,7 +215,12 @@ AE_FETCH="v0.706.0"    # BUMPED 0.699/v0.320 -> 0.706/v0.324 (tracking): aeb v0.
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.324 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.325 == the one aeb this repo is VERIFIED against.
+#
+# v0.325 (from v0.324) is REQUIRED, coupled with AE_PIN 0.778: v0.324's SDK
+# modules use the pre-0.758 byte APIs and cannot compile on ae 0.758+. v0.325
+# pins ae 0.766 (its AETHER_PIN) and is verified here on 0.778 -- see the
+# AE_FETCH note above for what ran.
 #
 # Collapsed from the old permissive floor (>= 0.308) for the same reason the
 # Aether pin was: every sweep this repo publishes runs on AEB_REF, so a lower

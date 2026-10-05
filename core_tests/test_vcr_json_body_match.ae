@@ -49,7 +49,7 @@ actor SchedHelper {
 post_json(url: string, body: string) -> int {
     creq = client.request("POST", url)
     if creq == null { return -1 }
-    berr = client.set_body(creq, body, string.length(body), "application/json")
+    berr = client.set_body(creq, string.bytes(body), "application/json")
     if berr != "" { client.request_free(creq); return -2 }
     cresp, cerr = client.send_request(creq)
     client.request_free(creq)

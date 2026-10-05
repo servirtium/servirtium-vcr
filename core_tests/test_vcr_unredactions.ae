@@ -121,7 +121,7 @@ main() {
     }
 
     req2 = client.request("POST", "http://127.0.0.1:${PORT}/body")
-    client.set_body(req2, "payload=actual", string.length("payload=actual"), "text/plain")
+    client.set_body(req2, string.bytes("payload=actual"), "text/plain")
     client.set_timeout(req2, 5s)
     resp2, err2 = client.send_request(req2)
     client.request_free(req2)

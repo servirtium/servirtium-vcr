@@ -51,7 +51,7 @@ make_body() -> string {
 post_body(url: string, body: string) -> string {
     req = client.request("POST", url)
     client.set_timeout(req, 10s)
-    client.set_body(req, body, string.length(body), "text/plain")
+    client.set_body(req, string.bytes(body), "text/plain")
     resp, err = client.send_request(req)
     client.request_free(req)
     if err != "" {

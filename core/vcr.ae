@@ -306,14 +306,17 @@ extern http_response_set_header(res: ptr, name: string, value: string)
 extern http_response_add_header(res: ptr, name: string, value: string)
 extern http_response_clear_headers(res: ptr)
 extern http_response_set_body(res: ptr, body: string)
-extern http_response_set_body_n(res: ptr, body: string, length: int)
+// ae 0.758 (#2301): the payload parameter is `ptr` (std.http declares it the
+// same way, so the two C prototypes agree). Pass `string.bytes(s)` -- the
+// string's raw data pointer, never the AetherString header.
+extern http_response_set_body_n(res: ptr, body: ptr, length: int)
 extern http_server_add_route(server: ptr, method: string, path: string, handler: ptr, user_data: ptr)
 extern http_serve_file(res: ptr, filepath: string)
 
 // std.http.client raw surface for record-mode upstream forwarding.
 extern http_request_raw(method: string, url: string) -> ptr
 extern http_request_set_header_raw(req: ptr, name: string, value: string) -> int
-extern http_request_set_body_raw(req: ptr, body: string, length: int, content_type: string) -> int
+extern http_request_set_body_raw(req: ptr, body: ptr, length: int, content_type: string) -> int   // body: string.bytes(s), as above
 extern http_request_set_timeout_raw(req: ptr, seconds: int) -> int
 extern http_request_free_raw(req: ptr)
 extern http_send_raw(req: ptr) -> ptr
@@ -1813,7 +1816,7 @@ do_record(srvkey: string, req: ptr, res: ptr) {
     body_len = string.length(live_body)
     if body_len > 0 {
         ctype = request_header_value(req, "Content-Type")
-        http_request_set_body_raw(creq, live_body, body_len, ctype)
+        http_request_set_body_raw(creq, string.bytes(live_body), body_len, ctype)
     }
     http_request_set_timeout_raw(creq, 30)
 
@@ -1847,7 +1850,10 @@ do_record(srvkey: string, req: ptr, res: ptr) {
             record_dispatch_error_k(srvkey, res, 500, "vcr record mode: gzip response but zlib unavailable")
             return
         }
-        inflated, inflated_len, ierr = zlib.gzip_inflate(body, resp_body_len)
+        // ae 0.758 (#2301): zlib takes a byte[] slice. The body is a retained
+        // AetherString, so string.bytes() is bounded by its real (binary-safe)
+        // length -- the same view std.http.client's response_body_bytes hands out.
+        inflated, _inflated_len, ierr = zlib.gzip_inflate(string.bytes(body))
         if ierr != "" {
             http_response_free(cresp)
             record_dispatch_error_k(srvkey, res, 500, "vcr record mode: failed to decode gzip response")
@@ -1873,7 +1879,7 @@ do_record(srvkey: string, req: ptr, res: ptr) {
 
     http_response_set_status(res, http_response_status(cresp))
     emit_recorded_headers_to_response(res, caller_headers)
-    http_response_set_body_n(res, body, resp_body_len)
+    http_response_set_body_n(res, string.bytes(body), resp_body_len)
 
     set_last_error_k(srvkey, "")
     set_last_kind_k(srvkey, KIND_OK)
@@ -1927,15 +1933,15 @@ emit_playback_response(srvkey: string, e: *Interaction, req: ptr, res: ptr) {
     if ascii_ci_contains(e.content_type, "base64 below") == 1 {
         decoded, dlen, dok = decode_base64_body(e.body)
         if dok == 1 {
-            http_response_set_body_n(res, decoded, dlen)
+            http_response_set_body_n(res, string.bytes(decoded), dlen)
         } else {
             http_response_set_body(res, e.body)
         }
     } else {
         if request_accepts_gzip(req) == 1 && zlib_backend_available() == 1 {
-            gz_owned, gz_len, gerr = zlib.gzip_deflate(e.body, string.length(e.body), -1)
+            gz_owned, gz_len, gerr = zlib.gzip_deflate(string.bytes(e.body), -1)
             if gerr == "" {
-                http_response_set_body_n(res, gz_owned, gz_len)
+                http_response_set_body_n(res, string.bytes(gz_owned), gz_len)
                 http_response_set_header(res, "Content-Encoding", "gzip")
                 http_response_set_header(res, "Vary", "Accept-Encoding")
             } else {

@@ -29,7 +29,7 @@ tape_path() -> {
 }
 
 handle_gzip(req: ptr, res: ptr, ud: ptr) {
-    gz, n, err = zlib.gzip_deflate(BODY, string.length(BODY), 1)
+    gz, n, err = zlib.gzip_deflate(string.bytes(BODY), 1)
     if err != "" {
         http.response_set_status(res, 500)
         http.response_set_body(res, err)
@@ -39,7 +39,7 @@ handle_gzip(req: ptr, res: ptr, ud: ptr) {
     http.response_set_header(res, "Content-Type", "text/plain")
     http.response_set_header(res, "Content-Encoding", "gzip")
     http.response_set_header(res, "X-Upstream", "gz")
-    http.response_set_body_n(res, gz, n)
+    http.response_set_body_bytes(res, string.bytes(gz)[0..n])
 }
 
 wait_ready(url: string) {

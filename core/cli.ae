@@ -322,7 +322,7 @@ run_import_bru(argc: int) {
 
         req = client.request(method, url)
         if string.length(body) > 0 {
-            _sb = client.set_body(req, body, string.length(body), ctype)
+            _sb = client.set_body(req, string.bytes(body), ctype)
         }
         resp, cerr = client.send_request(req)
         if string.length(cerr) > 0 {
