@@ -15,7 +15,7 @@ servirtium-lua          ── thin Lua, this repo ──
 servirtium_native.so    ── the compiled C extension (require("servirtium_native")) ──
    ▼   -L/-l link + embedded rpath
 core/native/libservirtium_vcr.so
-   │   built: ae build --emit=lib --with=fs,net core/embed.ae (by core/.build.ae)
+   │   built: ae build --emit=lib --with=fs,net,extern core/embed.ae (by core/.build.ae)
    │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
    │   • core/vcr.ae    — the actual VCR (parse, dispatch, record, mutate,
    │     emit, match) — pure Aether, in this repo, on top of std.http's

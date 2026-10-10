@@ -5,7 +5,7 @@
 //
 // Build it as a shared library and dlsym the exports:
 //
-//     ae build --emit=lib --with=fs,net \
+//     ae build --emit=lib --with=fs,net,extern \
 //         core/embed.ae --extra core/_embed_strdup.c -o libvcr.so
 //
 // No new VCR semantics — record / playback / mutation / parse all stay
@@ -105,7 +105,9 @@ vcr_embed_open_record(label: string, tape_path: string, upstream_base: string, h
 // Begin serving: start the accept loop on a background thread. Returns
 // >= 0 on success, < 0 on failure.
 vcr_embed_start(s: ptr) -> int {
-    return http_server_start_background_raw(s)
+    // Returns once the accept loop is live (not merely spawned), so an
+    // immediate stop is never lost -- see vcr.start_background_h.
+    return vcr.start_background_h(s, 10000)
 }
 
 // Stop the accept loop (playback handles just stop).

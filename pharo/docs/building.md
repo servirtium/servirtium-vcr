@@ -50,12 +50,12 @@ itself, which supplies the stdlib primitives `core/vcr.ae` builds on). Under
 the hood:
 
 ```sh
-ae build --emit=lib --with=fs,net core/embed.ae --extra core/_embed_strdup.c \
+ae build --emit=lib --with=fs,net,extern core/embed.ae --extra core/_embed_strdup.c \
    -o native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
-- `--with=fs,net` grants the filesystem + networking capabilities the VCR
+- `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
   runtime; the whole-tape regex scrubbers need `std.regex` — **Aether ≥
   0.227.0**.

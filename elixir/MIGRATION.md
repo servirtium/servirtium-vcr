@@ -45,7 +45,7 @@ ExUnit test
 Servirtium (this repo)               ── thin Elixir ──
    │  NIF  → Servirtium.Native → c_src/servirtium_nif.c
    ▼
-libservirtium_vcr.so                 ── ae build --emit=lib --with=fs,net
+libservirtium_vcr.so                 ── ae build --emit=lib --with=fs,net,extern
    │  (the Aether VCR core: parse, dispatch, record, mutate, emit)
    ▼
 SUT  ⇄  http://127.0.0.1:<port>      ── the SUT talks HTTP to the VCR

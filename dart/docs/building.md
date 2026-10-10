@@ -29,7 +29,7 @@ Override `PREFIX` / `AETHER_REF` (pin in CI) / `MIN_AE` via env.
 
 Builds `core/native/libservirtium_vcr.so` from the in-repo `core/embed.ae`
 (C-ABI wrapper) and `core/vcr.ae` (libservirtium_vcr) using the
-**installed** toolchain — no Aether source checkout needed. `--with=fs,net`
+**installed** toolchain — no Aether source checkout needed. `--with=fs,net,extern`
 needs a `-fPIC` Aether runtime, and libservirtium_vcr uses `std.regex`, so **ae ≥
 0.227.0** is required. The native lib is a git-ignored build artifact.
 

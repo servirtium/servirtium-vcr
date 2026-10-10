@@ -77,7 +77,7 @@ edges, and runs them in dependency order:
 
 | Node | Class | What it does |
 |---|---|---|
-| `core/.build.ae` | build | `ae build --emit=lib --with=fs,net core/embed.ae --extra _embed_strdup.c -o core/native/libservirtium_vcr.so` (libservirtium_vcr, built once for every binding) |
+| `core/.build.ae` | build | `ae build --emit=lib --with=fs,net,extern core/embed.ae --extra _embed_strdup.c -o core/native/libservirtium_vcr.so` (libservirtium_vcr, built once for every binding) |
 | `cmd/vcrdemo/.build.ae` | build | `go build` the lifecycle demo binary (cgo links the `.so`); deps `core/.build.ae` |
 | `go/.tests.ae` | test | `go test .` — the binding's suite; deps `core/.build.ae` |
 | `demo/.up_poke_down.ae` | build | runs the demo: UP a playback server, POKE the recorded path, DOWN; gates the build on a live record/replay; deps the demo build |
@@ -125,7 +125,7 @@ The pieces are plain tools, so you can drive them by hand if needed
 (`embed.ae` is the in-repo `core/embed.ae`, run from the `core/` directory):
 
 ```sh
-( cd core && ae build --emit=lib --with=fs,net embed.ae --extra _embed_strdup.c \
+( cd core && ae build --emit=lib --with=fs,net,extern embed.ae --extra _embed_strdup.c \
    -o native/libservirtium_vcr.so )
 CGO_ENABLED=1 go test ./...
 ```

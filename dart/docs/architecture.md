@@ -9,7 +9,7 @@ package:servirtium (thin Dart)
    │   • Native (dart:ffi lookups of aether_vcr_embed_*, + takeString copy/free)
    ▼   dart:ffi (DynamicLibrary.open)
 core/native/libservirtium_vcr.so
-   │   built: ae build --emit=lib --with=fs,net core/embed.ae
+   │   built: ae build --emit=lib --with=fs,net,extern core/embed.ae
    │   core/embed.ae (C-ABI wrapper) + core/vcr.ae (the in-repo pure-Aether
    │   libservirtium_vcr + HTTP server, on Aether stdlib primitives)
    ▼

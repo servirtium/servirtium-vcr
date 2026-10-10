@@ -42,12 +42,12 @@ build is driven by `aeb` (the Aether build runner); `bootstrap.sh` installs
 `ae`/`aeb` and runs it for you. Under the hood the native step is:
 
 ```sh
-ae build --emit=lib --with=fs,net core/embed.ae \
+ae build --emit=lib --with=fs,net,extern core/embed.ae \
    -o core/native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
-- `--with=fs,net` grants the filesystem + networking capabilities the VCR
+- `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC`
   Aether runtime, and libservirtium_vcr's whole-tape rewrites use `std.regex` —
   **Aether ≥ 0.227.0**.

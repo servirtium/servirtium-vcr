@@ -54,8 +54,62 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.778.0"
-AE_FETCH="v0.778.0"    # BUMPED 0.706/v0.324 -> 0.778/v0.325 (REQUIRED, not tracking).
+AE_PIN="0.801.0"
+AE_FETCH="v0.801.0"    # BUMPED 0.778/v0.325 -> 0.801/v0.326 (REQUIRED, not tracking).
+                       # aeb v0.326 (2026-10-10) pins ae 0.801.0, and v0.325's SDK
+                       # modules do not compile on 0.801, so ae and aeb move as a
+                       # pair again. Two things 0.801 exposed here, both fixed at
+                       # their cause in the same change:
+                       #  (1) #2709 structured grants: an --emit=lib build that
+                       #      declares `extern`s must be granted `extern`.
+                       #      libservirtium_vcr does (core/embed.ae's
+                       #      vcr_embed_dup/free bridge, core/vcr.ae's std.http
+                       #      and malloc/free externs), so core/.build.ae's
+                       #      caps() is now "fs,net,extern" on both the host and
+                       #      the SVCR_TARGET cross path (and the hand-run
+                       #      `ae build --emit=lib` lines in the docs say so).
+                       #  (2) a HANG, not a compile error: since 0.799
+                       #      http_server_stop JOINS the background server
+                       #      thread (aether #2672; it used to be detached).
+                       #      http_server_start_raw's first act is
+                       #      `is_running = 1`, so a stop that lands before the
+                       #      spawned thread gets there is overwritten and the
+                       #      loop polls a closed socket forever -- harmless
+                       #      leaked thread before, deadlocked join now. Any
+                       #      open -> start -> stop with no request in between
+                       #      hung the host: cpp/.tests.ae's "close is
+                       #      idempotent" fact did, deterministically (and the
+                       #      same 4-line shape hangs in pure Aether, no vcr
+                       #      involved). vcr_embed_start now returns only once
+                       #      the accept loop is live (std.http's on_start hook
+                       #      -- vcr.start_background_h), which is what "start"
+                       #      should have meant for the embed ABI anyway. The
+                       #      race itself is upstream's to fix. Side effect seen
+                       #      on macOS: a stop takes ~1s (the accept loop's poll
+                       #      timeout; shutdown() wakes poll on Linux only).
+                       # No E0700 / `${fn}`-interpolation hits in this repo.
+                       # VERIFIED on the RELEASED ae 0.801.0 + aeb v0.326,
+                       # macOS arm64: libservirtium_vcr + CLI, core_tests 21/21 +
+                       # cli-tests 18/18 + all 6 core_tests leaves, the offline
+                       # integration probes (climate 5 assertions, subversion
+                       # 17/17 + strict 4/4), core/.getFromGitHubReleases.ae, and
+                       # the release/ builder-loop for aarch64-macos +
+                       # x86_64-linux (0 failed), and the language leaves this
+                       # Mac has toolchains for: c/cpp/zig/go
+                       # .tests+.package+.example 12/12, java .build + .tests
+                       # 13/13 (Homebrew openjdk@25), swift/ruby .package green.
+                       # Red exactly as on 0.778 and for the same absent/too-old
+                       # SDK reasons (no mvn, no pytest/build, system ruby 2.6,
+                       # the SwiftPM build-input error). The cpp hang was proven
+                       # against the unfixed lib first (open -> start -> stop:
+                       # hangs every run; with the handshake 50/50 cycles clean).
+                       # ALSO on real x86_64 Linux (ae-x64, Ubuntu 22.04, the
+                       # same released pair via get.sh): libservirtium_vcr + CLI,
+                       # all 6 core_tests leaves (21/21, cli-tests 18/18), climate
+                       # + subversion (17/17, 4/4), c/cpp/zig/go
+                       # .tests+.package+.example 12/12.
+                       # ---- prior note (0.778/v0.325) kept for the record ----
+                       # BUMPED 0.706/v0.324 -> 0.778/v0.325 (REQUIRED, not tracking).
                        # 0.778.0 is the floor the whole Aether family moved to on
                        # 2026-10-05. It is also a forced move for this repo: ae
                        # 0.758 (#2301) changed the byte-payload std calls to take
@@ -215,9 +269,15 @@ AE_FETCH="v0.778.0"    # BUMPED 0.706/v0.324 -> 0.778/v0.325 (REQUIRED, not trac
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.325 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.326 == the one aeb this repo is VERIFIED against.
 #
-# v0.325 (from v0.324) is REQUIRED, coupled with AE_PIN 0.778: v0.324's SDK
+# v0.326 (from v0.325) is REQUIRED, coupled with AE_PIN 0.801: v0.325's SDK
+# modules do not compile on ae 0.801, and v0.326 pins exactly 0.801.0 (its
+# AETHER_PIN). See the AE_FETCH note above for what ran. (This repo has no CI
+# config of its own; AEB_REF's DEFAULT below is still "latest tag" for a fresh
+# bootstrap, so pin AEB_REF=v0.326 wherever reproducibility matters.)
+#
+# Previous move, kept for the record: v0.325 (from v0.324) was REQUIRED, coupled with AE_PIN 0.778: v0.324's SDK
 # modules use the pre-0.758 byte APIs and cannot compile on ae 0.758+. v0.325
 # pins ae 0.766 (its AETHER_PIN) and is verified here on 0.778 -- see the
 # AE_FETCH note above for what ran.

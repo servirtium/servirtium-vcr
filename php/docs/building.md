@@ -31,7 +31,7 @@ build-from-source fallback); checks PHP 8.4+ with the FFI extension (does
 Builds `native/libservirtium_vcr.so` from this repo's in-repo libservirtium_vcr
 `core/embed.ae` (the C-ABI wrapper) + `core/vcr.ae` (the pure-Aether VCR), on
 top of Aether stdlib primitives (`std.http`, `std.regex`, `std.zlib`,
-`std.cryptography`) — no Aether source checkout needed. The `--with=fs,net`
+`std.cryptography`) — no Aether source checkout needed. The `--with=fs,net,extern`
 build needs a `-fPIC` Aether runtime; the `std.regex` whole-tape mutations
 require **Aether ≥ 0.227.0**. The native lib is a git-ignored build artifact.
 

@@ -12,7 +12,7 @@ servirtium-haskell        ── thin Haskell, this repo ──
    │   • Servirtium.Vcr.Native   — `foreign import ccall` block to aether_vcr_embed_*
    ▼   FFI (foreign import ccall, static link against libservirtium_vcr.so)
 libservirtium_vcr.{so,dylib,dll}
-   │   built: ae build --emit=lib --with=fs,net core/embed.ae
+   │   built: ae build --emit=lib --with=fs,net,extern core/embed.ae
    │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
    │   • core/vcr.ae    — the actual VCR (parse, dispatch, record,
    │     mutate, emit, match) + the embedded Aether HTTP server, a

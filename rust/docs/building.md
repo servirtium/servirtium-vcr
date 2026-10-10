@@ -17,12 +17,12 @@ not the Aether standard library. The repo's build (`core/.build.ae`, run via
 `aeb`) produces it once into `core/native/`:
 
 ```sh
-ae build --emit=lib --with=fs,net core/embed.ae \
+ae build --emit=lib --with=fs,net,extern core/embed.ae \
    --extra core/_embed_strdup.c -o core/native/libservirtium_vcr.so
 ```
 
 - `--emit=lib` produces a shared library with `aether_vcr_embed_*` exports.
-- `--with=fs,net` grants the filesystem + networking capabilities the VCR
+- `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC`
   Aether runtime — **Aether ≥ 0.182.0**; chunked de-chunking needs
   **≥ 0.183.0**; the whole-tape `std.regex` normalize/redact path needs

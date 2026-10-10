@@ -9,7 +9,7 @@ Servirtium\* (this package — thin PHP)
    │   • Native (FFI::cdef of aether_vcr_embed_*, + takeString copy/free)
    ▼   PHP FFI
 libservirtium_vcr.so
-   │   built: --emit=lib --with=fs,net core/embed.ae
+   │   built: --emit=lib --with=fs,net,extern core/embed.ae
    │   core/embed.ae (C-ABI wrapper) + core/vcr.ae (libservirtium_vcr + HTTP server)
    ▼
 your SUT  ⇄  http://127.0.0.1:<port>

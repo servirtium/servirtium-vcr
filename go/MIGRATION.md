@@ -32,7 +32,7 @@ go test
 servirtium-go (this repo)            ── thin Go (cgo) ──
    │  cgo  aether_vcr_embed_*()
    ▼
-libservirtium_vcr.so                 ── ae build --emit=lib --with=fs,net
+libservirtium_vcr.so                 ── ae build --emit=lib --with=fs,net,extern
    │  (the Aether VCR core: parse, dispatch, record, mutate, emit)
    ▼
 SUT  ⇄  http://127.0.0.1:<port>      ── the SUT talks HTTP to the VCR

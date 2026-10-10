@@ -11,7 +11,7 @@ servirtium (this crate)    ── thin idiomatic Rust ──
    │   • libloading bindings to aether_vcr_embed_*          (src/native.rs)
    ▼   FFI (dlopen)
 libservirtium_vcr.{so,dylib,dll}
-   │   built: ae build --emit=lib --with=fs,net core/embed.ae --extra core/_embed_strdup.c
+   │   built: ae build --emit=lib --with=fs,net,extern core/embed.ae --extra core/_embed_strdup.c
    │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
    │   • core/vcr.ae    — the actual VCR (parse, dispatch, record, mutate,
    │     emit, match) + the embedded Aether HTTP server, a pure-Aether module

@@ -11,7 +11,7 @@ servirtium-nim          ── thin Nim (importc + passL), this repo ──
    │   • {.importc, cdecl.} bindings to aether_vcr_embed_*            (src/servirtium/native.nim)
    ▼   C ABI, linked at build time
 core/native/libservirtium_vcr.so
-   │   built: ae build --emit=lib --with=fs,net core/embed.ae (by core/.build.ae)
+   │   built: ae build --emit=lib --with=fs,net,extern core/embed.ae (by core/.build.ae)
    │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
    │   • core/vcr.ae    — the actual VCR (parse, dispatch, record, mutate,
    │     emit, match) — pure Aether, in this repo, on top of std.http's

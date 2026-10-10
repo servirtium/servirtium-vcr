@@ -12,7 +12,7 @@ your test (jest / vitest / node:test)
    │   • native-lib resolver                                (src/native.ts)
    ▼   koffi FFI
 libservirtium_vcr.{so,dylib,dll}     (built to core/native/)
-   │   built: ae build --emit=lib --with=fs,net \
+   │   built: ae build --emit=lib --with=fs,net,extern \
    │            core/embed.ae --extra core/_embed_strdup.c
    │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
    │   • core/vcr.ae    — the actual VCR (parse, dispatch, record,

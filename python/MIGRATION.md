@@ -30,7 +30,7 @@ pytest / unittest test
 servirtium (this repo)               ── thin Python (ctypes) ──
    │  ctypes  aether_vcr_embed_*()
    ▼
-libservirtium_vcr.{so,dylib,dll}     ── ae build --emit=lib --with=fs,net
+libservirtium_vcr.{so,dylib,dll}     ── ae build --emit=lib --with=fs,net,extern
    │  (the Aether VCR core: parse, dispatch, record, mutate, emit)
    ▼
 SUT  ⇄  http://127.0.0.1:<port>      ── the SUT talks HTTP to the VCR

@@ -10,7 +10,7 @@ backend (`importc` + a `{.passL.}` link directive), so building is just
 - libservirtium_vcr `core/native/libservirtium_vcr.so`. It is git-ignored build
   output produced from libservirtium_vcr (`core/vcr.ae` +
   `core/embed.ae`) by `core/.build.ae`, which shells out to
-  `ae build --emit=lib --with=fs,net core/embed.ae … -o core/native/libservirtium_vcr.so`.
+  `ae build --emit=lib --with=fs,net,extern core/embed.ae … -o core/native/libservirtium_vcr.so`.
   - The Aether toolchain (`ae`) must be **≥ 0.227.0** (`std.regex` for the
     libservirtium_vcr's whole-tape rewrites, the `-fPIC` runtime that `--emit=lib --with=net`
     needs, and chunked de-chunking on record).

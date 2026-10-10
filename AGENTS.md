@@ -530,7 +530,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 - **base64 lives in `std.encoding`, not `std.cryptography` (ae 0.4x).** (This is
   the last primitive anyone could name as a hard ae requirement, and it used to
   BE the `AE_PIN` floor. It no longer is — `AE_PIN` == `AE_FETCH` == the one ae
-  we verify against, currently 0.778.0.) ae 0.413
+  we verify against, currently 0.801.0.) ae 0.413
   moved it and changed `base64_decode` to a `string!` error-union; libservirtium_vcr's
   `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
   with "Undefined function 'cryptography.base64_decode'", something reintroduced

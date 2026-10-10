@@ -45,12 +45,12 @@ lives in this repo (`core/`), so no Aether source checkout is needed — only th
 `ae` toolchain on PATH to compile it. Under the hood:
 
 ```sh
-ae build --emit=lib --with=fs,net core/embed.ae \
+ae build --emit=lib --with=fs,net,extern core/embed.ae \
    -o native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
-- `--with=fs,net` grants the filesystem + networking capabilities the VCR
+- `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
   runtime, and the whole-tape normalization passes use `std.regex` — together
   these need **Aether ≥ 0.227.0**.

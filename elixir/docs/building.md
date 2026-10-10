@@ -44,12 +44,12 @@ This produces the **host platform's** shared library
 toolchain over `core/embed.ae`:
 
 ```sh
-ae build --emit=lib --with=fs,net core/embed.ae \
+ae build --emit=lib --with=fs,net,extern core/embed.ae \
    -o core/native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
-- `--with=fs,net` grants the filesystem + networking capabilities the VCR needs
+- `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR needs
   (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
   runtime; the whole-tape normalization/redaction features need `std.regex`, so
   the floor is **Aether ≥ 0.227.0**.

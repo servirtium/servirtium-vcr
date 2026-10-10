@@ -29,7 +29,7 @@ aeb java/.tests.ae
 Under the hood `core/.build.ae` runs:
 
 ```sh
-ae build --emit=lib --with=fs,net core/embed.ae \
+ae build --emit=lib --with=fs,net,extern core/embed.ae \
    --extra _embed_strdup.c -o core/native/libservirtium_vcr.so
 ```
 

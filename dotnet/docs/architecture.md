@@ -12,7 +12,7 @@ Servirtium.Vcr            ── thin managed C#, this repo ──
    │   • native-lib resolver                                (NativeLoader.cs)
    ▼   P/Invoke
 core/native/libservirtium_vcr.{so,dylib,dll}
-   │   built: ae build --emit=lib --with=fs,net core/embed.ae
+   │   built: ae build --emit=lib --with=fs,net,extern core/embed.ae
    │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
    │   • core/vcr.ae    — the actual VCR (parse, dispatch, record, mutate,
    │     emit, match), a pure-Aether module on stdlib primitives, plus the

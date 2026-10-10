@@ -12,7 +12,7 @@ servirtium-vcr            ── thin Java (FFM / Panama), this repo ──
    │   • native-lib loader (SymbolLookup.libraryLookup)            (NativeLoader.java)
    ▼   FFM downcall (java.lang.foreign)
 libservirtium_vcr.{so,dylib,dll}
-   │   built once here: ae build --emit=lib --with=fs,net core/embed.ae \
+   │   built once here: ae build --emit=lib --with=fs,net,extern core/embed.ae \
    │     --extra _embed_strdup.c -o core/native/libservirtium_vcr.so
    │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
    │   • core/vcr.ae    — the actual VCR (parse, dispatch, record, mutate,

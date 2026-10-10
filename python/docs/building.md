@@ -21,12 +21,12 @@ aeb python/.tests.ae    # builds libservirtium_vcr it deps, then the Python test
 Under the hood libservirtium_vcr build is:
 
 ```sh
-ae build --emit=lib --with=fs,net core/embed.ae \
+ae build --emit=lib --with=fs,net,extern core/embed.ae \
    -o core/native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
-- `--with=fs,net` grants the filesystem + networking capabilities the VCR needs
+- `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR needs
   (tape I/O + the embedded HTTP server). libservirtium_vcr uses `std.regex`, so the
   current toolchain floor is **Aether ≥ v0.227.0** (chunked de-chunking was
   introduced at ≥ 0.183.0).

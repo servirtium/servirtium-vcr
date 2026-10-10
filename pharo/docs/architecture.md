@@ -13,7 +13,7 @@ Servirtium (this repo, package 'Servirtium')   ── thin Smalltalk ──
    │   • ServirtiumField / ServirtiumOutcome / ServirtiumError
    ▼   UnifiedFFI (uFFI), dlopen of native/libservirtium_vcr.so
 libservirtium_vcr.{so,dylib,dll}
-   │   built: ae build --emit=lib --with=fs,net core/embed.ae
+   │   built: ae build --emit=lib --with=fs,net,extern core/embed.ae
    │   • core/embed.ae  — thin Aether wrapper exposing the C-ABI
    │   • core/vcr.ae  — the actual VCR (parse, dispatch, record,
    │     mutate, emit, match) + the embedded Aether HTTP server,
