@@ -54,8 +54,51 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.801.0"
-AE_FETCH="v0.801.0"    # BUMPED 0.778/v0.325 -> 0.801/v0.326 (REQUIRED, not tracking).
+AE_PIN="0.824.0"
+AE_FETCH="v0.824.0"    # BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
+                       # The family-wide move to 0.824.0, and a required pair
+                       # again: aeb v0.326's bldr does not compile on ae 0.818+
+                       # (E0902, a borrowed ptr captured by a closure); v0.327
+                       # is the first aeb release that does (its AETHER_PIN is
+                       # 0.823.0). libservirtium_vcr itself compiled clean across
+                       # 0.818's ownership rework (no kept ptr parameter, no
+                       # string[] C store, no E0901, every self-declared extern
+                       # string result fine) and 0.820-0.824's changes, but it
+                       # was BROKEN AT RUNTIME by 0.819's --emit=lib string
+                       # handles: an export returning `string` now hands the
+                       # host an Aether string handle, and vcr_embed_dup's
+                       # malloc'd char* returned as `string` is first copied
+                       # into a counted string. Every binding read garbage where
+                       # it expects a NUL-terminated char* and
+                       # vcr_embed_free_string free()d the wrong block: c/.tests
+                       # aborted (exit 134, "base_url is loopback http" FAIL),
+                       # and cpp/zig/go .tests + .example failed the same way.
+                       # Fixed at the cause in core/embed.ae: vcr_embed_dup and
+                       # the 16 string-returning exports return `ptr`, and
+                       # vcr_embed_free_string takes one, so the char* crosses
+                       # as itself; the C signatures every binding declares are
+                       # unchanged. (0.824's #2937 hides each export under its
+                       # own name; no binding uses the bare names, only the
+                       # aether_vcr_embed_* ones: still 42 exports.)
+                       # VERIFIED on ae 0.824.0 + aeb v0.327, both built from
+                       # their tags, macOS arm64: libservirtium_vcr + CLI, all 6
+                       # core_tests leaves (21/21, cli-tests 18/18), climate (5
+                       # assertions) + subversion (17/17, strict 4/4),
+                       # core/.getFromGitHubReleases.ae, the release/ builder
+                       # loop for aarch64/x86_64 linux + macos and x86_64-windows
+                       # (0 failed), c/cpp/zig/go .tests+.package+.example 12/12,
+                       # java .build + .tests 13/13 (Homebrew openjdk@25),
+                       # swift/ruby .package green. The c/cpp/zig/go reds were
+                       # proven on the unfixed embed.ae first. ALSO on Linux with
+                       # 0.824.0 built from its tag under -Werror: aether-linux
+                       # (arm64 22.04) and ae-x64 (x86_64, gcc 11) each ran the
+                       # lib, all 6 core_tests leaves, climate + subversion,
+                       # c/cpp .tests+.package+.example and go/zig .tests, all
+                       # green. And the cross-built windows-x86_64 DLL, loaded
+                       # on Windows 11 (MINGW64 gcc), serves a playback tape and
+                       # returns base_url/last_error as plain char* it frees.
+                       # ---- prior note (0.801/v0.326) kept for the record ----
+                       # BUMPED 0.778/v0.325 -> 0.801/v0.326 (REQUIRED, not tracking).
                        # aeb v0.326 (2026-10-10) pins ae 0.801.0, and v0.325's SDK
                        # modules do not compile on 0.801, so ae and aeb move as a
                        # pair again. Two things 0.801 exposed here, both fixed at
@@ -269,9 +312,14 @@ AE_FETCH="v0.801.0"    # BUMPED 0.778/v0.325 -> 0.801/v0.326 (REQUIRED, not trac
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.326 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.327 == the one aeb this repo is VERIFIED against.
 #
-# v0.326 (from v0.325) is REQUIRED, coupled with AE_PIN 0.801: v0.325's SDK
+# v0.327 (from v0.326) is REQUIRED, coupled with AE_PIN 0.824: v0.326's bldr
+# does not compile on ae 0.818+ (E0902), and v0.327 is the first release that
+# does (its AETHER_PIN is 0.823.0; verified here on 0.824.0). See the AE_FETCH
+# note above for what ran. Pin AEB_REF=v0.327 wherever reproducibility matters.
+#
+# Previous move, kept for the record: v0.326 (from v0.325) was REQUIRED, coupled with AE_PIN 0.801: v0.325's SDK
 # modules do not compile on ae 0.801, and v0.326 pins exactly 0.801.0 (its
 # AETHER_PIN). See the AE_FETCH note above for what ran. (This repo has no CI
 # config of its own; AEB_REF's DEFAULT below is still "latest tag" for a fresh

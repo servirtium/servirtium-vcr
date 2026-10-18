@@ -41,8 +41,16 @@ import std.http
 
 // Caller-owned-string helpers (core/_embed_strdup.c). malloc/strdup-style
 // dup + free for the caller-owned-return contract.
-extern vcr_embed_dup(s: string) -> string
-extern vcr_embed_free(s: string)
+//
+// They speak `ptr`, not `string`, on the way out. Since Aether 0.819 an
+// --emit=lib export returning `string` hands the host an Aether string
+// handle, and a malloc'd C string returned as `string` is first copied into
+// a new counted string: the host would get the handle, not these bytes,
+// vcr_embed_free_string would free() the wrong block, and the copy would
+// leak. A `ptr` result crosses as the pointer itself: the plain,
+// NUL-terminated char* this ABI has always promised every binding.
+extern vcr_embed_dup(s: string) -> ptr
+extern vcr_embed_free(s: ptr)
 
 // ---- lifecycle: open (create + bind + register, NOT serving) ----
 
@@ -117,20 +125,20 @@ vcr_embed_stop(s: ptr) {
 
 // Record handles: stop + flush the captured markdown to `tape_path`.
 // Returns "" on success, else an error (caller frees the string).
-vcr_embed_stop_and_flush(s: ptr, tape_path: string) -> string {
+vcr_embed_stop_and_flush(s: ptr, tape_path: string) -> ptr {
     return vcr_embed_dup(vcr.stop_and_flush_h(s, tape_path))
 }
 
 // Stop + flush, overwriting the tape AND returning a non-empty drift
 // error when the new recording differs (Servirtium step-4 contract).
-vcr_embed_stop_and_flush_fail_if_changed(s: ptr, tape_path: string) -> string {
+vcr_embed_stop_and_flush_fail_if_changed(s: ptr, tape_path: string) -> ptr {
     return vcr_embed_dup(vcr.stop_and_flush_fail_if_changed_h(s, tape_path))
 }
 
 // Stop + the non-destructive drift variant: writes the freshly recorded
 // tape to a `<tape_path>.actual` sibling and byte-compares against the
 // committed tape WITHOUT overwriting it. Caller frees.
-vcr_embed_stop_and_flush_or_check(s: ptr, tape_path: string) -> string {
+vcr_embed_stop_and_flush_or_check(s: ptr, tape_path: string) -> ptr {
     return vcr_embed_dup(vcr.stop_and_flush_or_check_h(s, tape_path))
 }
 
@@ -142,7 +150,7 @@ vcr_embed_port(s: ptr) -> int {
 }
 
 // "http://<host>:<port>" for the running server — caller frees.
-vcr_embed_base_url(s: ptr, host: string) -> string {
+vcr_embed_base_url(s: ptr, host: string) -> ptr {
     p = http_server_port(s)
     url = "http://${host}:${p}"
     return vcr_embed_dup(url)
@@ -160,7 +168,7 @@ vcr_embed_reset_cursor(s: ptr) {
 
 // The last match-failure detail, or — when no match failure is pending —
 // the last load failure reason (fetch/parse/bind).
-vcr_embed_last_error(s: ptr) -> string {
+vcr_embed_last_error(s: ptr) -> ptr {
     e = vcr.last_error_h(s)
     if e == "" {
         e = vcr.load_error_h(s)
@@ -182,26 +190,26 @@ vcr_embed_clear_last_error(s: ptr) {
 
 // ---- mutations / config (handle 1st arg; call BEFORE start) ----
 
-vcr_embed_redact(s: ptr, field: int, pattern: string, replacement: string) -> string {
+vcr_embed_redact(s: ptr, field: int, pattern: string, replacement: string) -> ptr {
     return vcr_embed_dup(vcr.redact_h(s, field, pattern, replacement))
 }
 
 // Convert a HAR 1.2 capture to a Servirtium markdown tape (no server handle —
 // this is a pure file->file transform). Returns "" on success, else an error.
-vcr_embed_har_import(har_path: string, tape_path: string) -> string {
+vcr_embed_har_import(har_path: string, tape_path: string) -> ptr {
     return vcr_embed_dup(vcr.har_import(har_path, tape_path))
 }
 
 // Inverse of vcr_embed_har_import: a Servirtium tape -> HAR 1.2 JSON file.
-vcr_embed_har_export(tape_path: string, har_path: string) -> string {
+vcr_embed_har_export(tape_path: string, har_path: string) -> ptr {
     return vcr_embed_dup(vcr.har_export(tape_path, har_path))
 }
 
-vcr_embed_unredact(s: ptr, field: int, pattern: string, replacement: string) -> string {
+vcr_embed_unredact(s: ptr, field: int, pattern: string, replacement: string) -> ptr {
     return vcr_embed_dup(vcr.unredact_h(s, field, pattern, replacement))
 }
 
-vcr_embed_remove_header(s: ptr, field: int, name: string) -> string {
+vcr_embed_remove_header(s: ptr, field: int, name: string) -> ptr {
     return vcr_embed_dup(vcr.remove_header_h(s, field, name))
 }
 
@@ -211,7 +219,7 @@ vcr_embed_remove_header(s: ptr, field: int, name: string) -> string {
 // created entity's id echoed back in later request paths — collapse to one
 // token, so a re-record comes out byte-identical and drift detection
 // (fail_if_changed) only fires on real changes. Configure before start.
-vcr_embed_normalize_whole_tape(s: ptr, pattern: string, name: string) -> string {
+vcr_embed_normalize_whole_tape(s: ptr, pattern: string, name: string) -> ptr {
     return vcr_embed_dup(vcr.normalize_whole_tape_h(s, pattern, name))
 }
 
@@ -219,7 +227,7 @@ vcr_embed_normalize_whole_tape(s: ptr, pattern: string, name: string) -> string 
 // The companion to normalize for volatile-but-uncorrelated values (Date
 // headers, nonces): a value whose distinct-count varies per run, so a
 // correlated token would not be byte-stable. Configure before start.
-vcr_embed_redact_whole_tape(s: ptr, pattern: string, replacement: string) -> string {
+vcr_embed_redact_whole_tape(s: ptr, pattern: string, replacement: string) -> ptr {
     return vcr_embed_dup(vcr.redact_whole_tape_h(s, pattern, replacement))
 }
 
@@ -227,7 +235,7 @@ vcr_embed_redact_whole_tape(s: ptr, pattern: string, replacement: string) -> str
 // never recorded — User-Agent, Accept, Accept-Encoding, Connection. Each
 // is dropped from BOTH the recorded expectation and the live request
 // before strict matching. Returns "" on success, else the first error.
-vcr_embed_strict_ignore_common_headers(s: ptr) -> string {
+vcr_embed_strict_ignore_common_headers(s: ptr) -> ptr {
     e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "User-Agent")
     if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Accept") }
     if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Accept-Encoding") }
@@ -235,18 +243,18 @@ vcr_embed_strict_ignore_common_headers(s: ptr) -> string {
     return vcr_embed_dup(e)
 }
 
-vcr_embed_note(s: ptr, title: string, body: string) -> string {
+vcr_embed_note(s: ptr, title: string, body: string) -> ptr {
     return vcr_embed_dup(vcr.note_h(s, title, body))
 }
 
-vcr_embed_static_content(s: ptr, mount_path: string, fs_dir: string) -> string {
+vcr_embed_static_content(s: ptr, mount_path: string, fs_dir: string) -> ptr {
     return vcr_embed_dup(vcr.static_content_h(s, mount_path, fs_dir))
 }
 
 // Mark an incidental path (e.g. "/favicon.ico") as never-on-the-tape:
 // the VCR answers it 404 without consuming the playback cursor or, in
 // record mode, forwarding/recording it. Configure before start.
-vcr_embed_untaped(s: ptr, path: string) -> string {
+vcr_embed_untaped(s: ptr, path: string) -> ptr {
     return vcr_embed_dup(vcr.untaped_h(s, path))
 }
 
@@ -317,6 +325,6 @@ vcr_embed_clear_format_options(s: ptr) {
 // ---- string ownership ----
 
 // Free any char* returned by a vcr_embed_* function above.
-vcr_embed_free_string(s: string) {
+vcr_embed_free_string(s: ptr) {
     vcr_embed_free(s)
 }

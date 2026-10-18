@@ -87,7 +87,12 @@ Per-listener, handle-based: **N independent VCR servers run concurrently in one
 process** ("one server per port"). Every config/diagnostic/lifecycle call takes
 the opaque handle. `NULL` handle = open failed. Returned `char*` are
 **caller-owned, NUL-terminated** — copy out, then free with
-`aether_vcr_embed_free_string`. Most config setters return a `char*` error
+`aether_vcr_embed_free_string`. In `core/embed.ae` those exports (and
+`vcr_embed_dup`/`vcr_embed_free_string`) are typed `ptr`, NOT `string`: since
+Aether 0.819 an `--emit=lib` export returning `string` hands the host an Aether
+string handle (first byte 0xDE), not a `char*`, so typing them `string` breaks
+every binding at runtime while still compiling clean. Keep new string-returning
+exports `-> ptr` and return `vcr_embed_dup(...)`. Most config setters return a `char*` error
 (empty string = OK).
 
 Lifecycle: `open_playback(label, tape, host, port)` /
@@ -530,7 +535,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 - **base64 lives in `std.encoding`, not `std.cryptography` (ae 0.4x).** (This is
   the last primitive anyone could name as a hard ae requirement, and it used to
   BE the `AE_PIN` floor. It no longer is — `AE_PIN` == `AE_FETCH` == the one ae
-  we verify against, currently 0.801.0.) ae 0.413
+  we verify against, currently 0.824.0.) ae 0.413
   moved it and changed `base64_decode` to a `string!` error-union; libservirtium_vcr's
   `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
   with "Undefined function 'cryptography.base64_decode'", something reintroduced
