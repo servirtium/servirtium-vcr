@@ -7,6 +7,60 @@ them, and (via `publish.sh`) attaches them to a GitHub release as **linkable,
 per-OS/CPU downloads**. On-target *testing* is done out of band and recorded as
 an attestation keyed by SHA256.
 
+Pushing a `v*` tag now starts the [GitHub release workflow](../.github/workflows/release.yml).
+It cross-builds on one Linux runner, verifies the artifacts, creates the release,
+and downloads the published assets again to check their checksums and Linux ABI.
+The OS CI test matrix remains separate.
+
+## GitHub-built releases
+
+Prepare the single engine-download pin before tagging, so it matches the engine
+that will be published at that tag. For example, for a future alpha:
+
+```sh
+printf '%s\n' v2.0.0-alpha.2 > SERVIRTIUM_VCR_VERSION
+python3 release/check-artifacts.py v2.0.0-alpha.2 --check-version
+# Stage and commit the release preparation, then:
+git tag -a v2.0.0-alpha.2 -m 'Servirtium core v2.0.0-alpha.2'
+git push origin main
+git push origin v2.0.0-alpha.2
+```
+
+Use a new unused version; pushing `main` alone does not publish a release.
+Prerelease tags (`-alpha`, `-beta`, `-rc`, etc.) are marked as prereleases on
+GitHub. A manual workflow run can release an existing tag containing this
+workflow. Existing releases are not overwritten.
+
+The required raw-library downloads are:
+
+| Platform | CPU variants | Asset suffix |
+|---|---|---|
+| Linux glibc | x86_64, arm64 | `linux-<arch>.so` |
+| Linux musl | x86_64, arm64 | `linux-<arch>-musl.so` |
+| macOS | x86_64, arm64 | `macos-<arch>.dylib` |
+| Windows | x86_64, arm64 | `windows-<arch>.dll` (+ `.dll.lib`) |
+| FreeBSD | x86_64 | `freebsd-x86_64.so` |
+
+All nine libraries must build successfully. The workflow verifies every
+checksum, both Windows import libraries, and every declared Linux x86_64 C ABI
+export. It preserves the seven existing `ae add` binary packages and their
+`aether.toml`, and checks that each package contains the identical raw library.
+Musl libraries are raw FFI downloads only: the pinned emitter and installer
+collapse musl and glibc package identities. The upstream fixes are tracked in
+[Aether #3073](https://github.com/aether-lang-dev/aether/issues/3073) and
+[aeb #17](https://github.com/aether-lang-dev/aeb/issues/17).
+
+`release/toolchain.env` pins Aether, aeb, and Zig for the runner. Aether must
+match `bootstrap.sh`'s `AE_FETCH`; the version check enforces this. Toolchain
+archives and the matching FreeBSD x86_64 sysroot are checksum-verified before
+use. FreeBSD arm64 awaits a matching published sysroot.
+
+After publication, verify that `SERVIRTIUM_VCR_VERSION` on the current branch
+still names the release just published. Update engine-download examples to that
+release, then run consumer packaging against the downloaded libraries. Do not
+change ecosystem-specific package versions by blindly copying the engine tag;
+the version-spelling notes below still apply.
+
 **libservirtium_vcr only, on purpose.** These scripts ship the one thing that is hard for a
 user to produce — the native shared library, one per OS/CPU. They deliberately do
 **not** build or publish the per-language packages (wheel / gem / jar / nupkg /
@@ -17,7 +71,7 @@ credentialed, per-registry concern out of scope here.
 ## Build
 
 ```sh
-release/build.sh                        # core matrix: linux + macos, x86_64 + arm64
+release/build.sh                        # linux glibc/musl + macos, x86_64 + arm64
 RELEASE_TAG=v2.0.0 release/build.sh      # stamp a tag into the artifact names
 RELEASE_EXTRA_TARGETS=1 release/build.sh # + windows (slow) + freebsd (needs AETHER_SYSROOT)
 TARGETS="aarch64-macos" release/build.sh # just one
@@ -36,7 +90,11 @@ only by a consumer that *links* the DLL at build time; the FFI bindings `dlopen`
 at runtime and don't use it, but it's checksummed and shipped so Windows is
 first-class. FreeBSD needs `AETHER_SYSROOT` and skips loudly without it.
 
-## Cut a GitHub release (manual, no repo settings needed)
+## Manual alternative
+
+Disable the automatic release workflow before using the local publisher for a
+tag, so the two publishers do not race. The script still builds and uploads raw
+libraries and the matching `ae add` assets, without publishing language packages.
 
 ```sh
 release/publish.sh v2.0.0-alpha.1              # build the matrix + create the release, assets attached

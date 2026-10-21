@@ -4,6 +4,11 @@ Record/replay for HTTP service tests in the [Servirtium](https://servirtium.dev)
 markdown tape format, across many languages — **one libservirtium_vcr, many thin
 bindings, one build**.
 
+Release binaries are built and published by [GitHub Actions](.github/workflows/release.yml)
+when a `v*` tag is pushed. The next release includes Linux glibc and musl,
+macOS, and Windows on x86_64/arm64, plus FreeBSD x86_64. Prepare
+`SERVIRTIUM_VCR_VERSION` before tagging; see the [release instructions](release/README.md).
+
 libservirtium_vcr is a single pure-Aether module in [`core/`](core/)
 (`core/vcr.ae` plus the `core/embed.ae` C-ABI), built once here as a native
 shared library (`libservirtium_vcr.so`) on top of Aether's standard library

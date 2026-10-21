@@ -124,13 +124,12 @@ shelled `curl`/`sha256sum`/`uname`, so it works in a sandbox with no shell.
 The release tag comes from the repo-root **`SERVIRTIUM_VCR_VERSION`** file, which
 is the single source of truth — no per-binding tag literal to drift.
 
-**This is not live yet.** It needs a GitHub release whose assets are named
+The GitHub release assets are named
 `libservirtium_vcr-<tag>-<os>-<arch>.{so,dylib,dll}` with `.sha256` sidecars —
-exactly what `release/build.sh` emits and `release/publish.sh` attaches. Until
-someone runs `release/publish.sh`, the node fails with "no such release asset".
-The mechanism itself is proven: pointed at a sibling project's real release, it
-downloaded, followed GitHub's CDN redirect, matched the published checksum, and
-staged and published correctly.
+exactly what `release/build.sh` emits. New release tags trigger the
+[GitHub release workflow](../.github/workflows/release.yml) to build and publish
+them. Commit the `SERVIRTIUM_VCR_VERSION` update before tagging, and verify it
+matches the release just published; see the [release instructions](../release/README.md).
 
 ## Version strings differ per ecosystem — and one of them can't comply
 

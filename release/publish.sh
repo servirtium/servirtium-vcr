@@ -17,6 +17,8 @@
 #
 # Steps: ensure artifacts for <tag> exist (build them unless --no-build), then
 # `gh release create <tag>` with every artifact, its .sha256, and SHA256SUMS.txt.
+# Disable the automatic release workflow before a manual cut to avoid racing
+# its tag-triggered publisher (see release/README.md).
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -42,6 +44,7 @@ case "$TAG" in v*) ;; *) die "tag should look like vX.Y.Z (got '$TAG')" ;; esac
 
 have gh || die "gh (GitHub CLI) not found — install it, or upload release/dist/* by hand"
 gh auth status >/dev/null 2>&1 || die "gh is not authenticated — run 'gh auth login'"
+python3 "$HERE/check-artifacts.py" "$TAG" --check-version || die "update and commit SERVIRTIUM_VCR_VERSION before tagging"
 
 # One release serves BOTH consumers of this repo:
 #   - source consumers (git clone + checkout <tag>, then build libservirtium_vcr with aeb)

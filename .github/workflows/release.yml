@@ -1,0 +1,137 @@
+name: Release core binaries
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, including prereleases
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Check release tag and version pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 release/check-artifacts.py "$RELEASE_TAG" --check-version
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libssl-dev zlib1g-dev libnghttp2-dev libpcre2-dev
+
+      - name: Install pinned toolchains and FreeBSD sysroot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source release/toolchain.env
+          tools="$RUNNER_TEMP/servirtium-toolchain"
+          mkdir -p "$tools/aether" "$tools/aeb" "$tools/freebsd"
+          fetch_asset() {
+            local repo="$1" tag="$2" asset="$3" digest
+            digest="$(gh api "repos/$repo/releases/tags/$tag" \
+              --jq ".assets[] | select(.name == \"$asset\") | .digest")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            curl --fail --silent --show-error --location --retry 3 \
+              "https://github.com/$repo/releases/download/$tag/$asset" -o "$tools/$asset"
+            printf '%s  %s\n' "${digest#sha256:}" "$tools/$asset" | sha256sum --check -
+          }
+          version="${AETHER_REF#v}"
+          asset="aether-$version-linux-x86_64.tar.gz"
+          fetch_asset aether-lang-dev/aether "$AETHER_REF" "$asset"
+          tar -xzf "$tools/$asset" -C "$tools/aether"
+
+          fetch_asset aether-lang-dev/aeb "$AEB_REF" aeb-linux-x86_64.tar.gz
+          tar -xzf "$tools/aeb-linux-x86_64.tar.gz" -C "$tools/aeb"
+          sh "$tools/aeb/aeb-linux-x86_64/install.sh" "$tools/prefix"
+
+          asset="aether-$version-freebsd-x86_64-sysroot.tar.xz"
+          fetch_asset aether-lang-dev/aether "$AETHER_REF" "$asset"
+          tar -xJf "$tools/$asset" -C "$tools/freebsd" --strip-components=1
+          test -f "$tools/freebsd/usr/include/stdio.h"
+
+          asset="zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://ziglang.org/download/$ZIG_VERSION/$asset" -o "$tools/$asset"
+          printf '%s  %s\n' "$ZIG_SHA256" "$tools/$asset" | sha256sum --check -
+          tar -xJf "$tools/$asset" -C "$tools"
+          test "$("$tools/zig-x86_64-linux-$ZIG_VERSION/zig" version)" = "$ZIG_VERSION"
+          echo "$tools/aether/bin" >> "$GITHUB_PATH"
+          echo "$tools/prefix/bin" >> "$GITHUB_PATH"
+          echo "$tools/zig-x86_64-linux-$ZIG_VERSION" >> "$GITHUB_PATH"
+          echo "AETHER_HOME=$tools/aether" >> "$GITHUB_ENV"
+          echo "AETHERC=$tools/aether/bin/aetherc" >> "$GITHUB_ENV"
+          echo "AEB_HOME=$tools/prefix/share/aeb" >> "$GITHUB_ENV"
+          echo "PREFIX=$tools/prefix" >> "$GITHUB_ENV"
+          echo "AETHER_SYSROOT=$tools/freebsd" >> "$GITHUB_ENV"
+
+      - name: Build all nine libraries and seven ae-add packages
+        env:
+          TARGETS: x86_64-linux aarch64-linux x86_64-linux-musl aarch64-linux-musl x86_64-macos aarch64-macos x86_64-windows aarch64-windows x86_64-freebsd
+        run: release/build.sh
+
+      - name: Verify release artifacts and Linux ABI
+        run: python3 release/check-artifacts.py "$RELEASE_TAG"
+
+      - name: Publish binaries and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          Cross-built libservirtium_vcr libraries for Linux, macOS, and Windows
+          (x86_64 and arm64), plus Linux musl (x86_64 and arm64) and FreeBSD x86_64.
+          Each library has a SHA256 checksum.
+
+          The seven non-musl ae-add binary packages and aether.toml are included.
+          Musl libraries are separate native downloads: the pinned ae-add installer
+          does not distinguish glibc and musl assets.
+          Language packages and registry publishing remain separate.
+
+          All nine libraries built successfully. The Linux x86_64 library was
+          loaded and checked for every declared C ABI export. This does not claim
+          a record/playback test pass on every target platform.
+          NOTES
+          flags=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" --verify-tag "${flags[@]}" \
+            --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" \
+            release/dist/*.so release/dist/*.dylib release/dist/*.dll \
+            release/dist/*.dll.lib release/dist/*.sha256 release/dist/SHA256SUMS.txt \
+            release/dist/ae-add/servirtium_vcr-* release/dist/ae-add/aether.toml
+
+      - name: Verify published downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          downloaded="$RUNNER_TEMP/published-core"
+          gh release download "$RELEASE_TAG" --dir "$downloaded"
+          python3 release/check-artifacts.py "$RELEASE_TAG" --dist "$downloaded"
+          echo "Downloaded and verified all nine libraries, seven ae-add packages, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

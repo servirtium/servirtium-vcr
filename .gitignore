@@ -1,5 +1,6 @@
 # aeb build outputs
 /target/
+/release/dist/
 # libservirtium_vcr is a build artifact (core/.build.ae rebuilds it)
 /core/native/*.so
 /core/native/*.dylib

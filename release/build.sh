@@ -10,6 +10,8 @@
 # `ae add` binary-package asset in the SAME pass — so one method yields BOTH the
 # raw FFI lib and the ae-add package per triple (no hand-synthesis, no drift; the
 # builder owns the trio format). Output name: libservirtium_vcr-<tag>-<os>-<arch>.<ext>
+# Linux musl is the exception: raw FFI downloads only until aether#3073/aeb#17
+# give its ae-add packages an identity distinct from glibc.
 # (.so linux / .dylib macos / .dll windows). Alongside each: <artifact>.sha256, a
 # combined release/dist/SHA256SUMS.txt, and release/dist/ae-add/ (the `ae add` set).
 # Needs aeb >= v0.319 (its emit_binary_package target() cross-emit + the 0.681
@@ -21,7 +23,7 @@
 # `.package.ae` nodes' job and a registry/credentialed concern, out of scope here.
 #
 # Usage:
-#   release/build.sh                    # core matrix (linux+macos x86_64/arm64)
+#   release/build.sh                    # linux glibc/musl + macos x86_64/arm64
 #   RELEASE_EXTRA_TARGETS=1 release/build.sh   # + windows (slow) + freebsd-x86_64
 #                                                (freebsd auto-picks a per-arch base
 #                                                 from CROSSBUILD_BASES; skips if absent)
@@ -36,7 +38,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 . "$HERE/targets.env"
 cd "$ROOT"
 
-export PATH="${PREFIX:-$HOME/.local}/bin:$HOME/.aether/bin:$PATH"
+export PATH="${AETHER_HOME:+$AETHER_HOME/bin:}${PREFIX:-$HOME/.local}/bin:$HOME/.aether/bin:$PATH"
 
 say()  { printf 'release: %s\n' "$*"; }
 die()  { printf 'release: %s\n' "$*" >&2; exit 1; }
@@ -96,10 +98,12 @@ say "core lib: libservirtium_vcr  tag: $TAG"
 say "matrix: $MATRIX"
 echo
 
-built=0; failed=0
+built=0; failed=0; packaged=0
 for t in $MATRIX; do
   os=$(os_of "$t"); arch=$(arch_of "$t"); ext=$(ext_of "$t")
-  name="libservirtium_vcr-${TAG}-${os}-${arch}.${ext}"
+  variant=""
+  case "$t" in *-linux-musl) variant="-musl" ;; esac
+  name="libservirtium_vcr-${TAG}-${os}-${arch}${variant}.${ext}"
   out="$DIST/$name"
   log="$DIST/.$t.log"
 
@@ -119,7 +123,7 @@ for t in $MATRIX; do
   printf 'release:   %-18s -> %s ... ' "$t" "$name"
   # ONE aeb run per triple: core/.build.ae reads SVCR_TARGET and runs
   #   aether.shared_lib(){ size() target(t) }         -> the cross lib (--size)
-  #   aether.emit_binary_package(){ stem() target(t) } -> the ae-add asset
+  #   aether.emit_binary_package(){ stem() target(t) } -> non-musl ae-add asset
   # AEB_RELEASE_TAG stamps the ae-add asset name; AETHER_SYSROOT (per-arch base
   # for freebsd, empty otherwise) is scoped to this run — emit only READS the
   # built .so so it inherits the sysroot cleanly. The cross build leaves the lib
@@ -140,18 +144,22 @@ for t in $MATRIX; do
     if [ -z "$src" ]; then
       printf 'FAILED\n'; say "  built but no lib found under $libdir"; failed=$((failed+1)); continue
     fi
-    cp "$src" "$out"
-    ( cd "$DIST" && sha256sum "$name" > "$name.sha256" )
+    cp "$src" "$out" || die "could not stage $name"
+    ( cd "$DIST" && sha256sum "$name" > "$name.sha256" ) || die "could not checksum $name"
     # Windows also emits an import library (<dll>.lib) — ship it (a consumer that
     # LINKS the DLL at build time needs it; our FFI bindings dlopen and don't).
-    if [ "$os" = "windows" ] && [ -f "$libdir/libservirtium_vcr.so.lib" ]; then
-      cp "$libdir/libservirtium_vcr.so.lib" "$out.lib"
-      ( cd "$DIST" && sha256sum "$name.lib" > "$name.lib.sha256" )
+    if [ "$os" = "windows" ]; then
+      [ -s "$libdir/libservirtium_vcr.so.lib" ] || die "missing Windows import library for $t"
+      cp "$libdir/libservirtium_vcr.so.lib" "$out.lib" || die "could not stage Windows import library for $t"
+      ( cd "$DIST" && sha256sum "$name.lib" > "$name.lib.sha256" ) || die "could not checksum Windows import library for $t"
     fi
     # Collect this triple's ae-add asset trio (aeb named it in the ae-add
     # <os>-<arch> spelling automatically; aether.toml is identical each run).
-    cp "$ROOT/target/build/core/ae-add/"servirtium_vcr-* "$AEADD/" 2>/dev/null
-    cp "$ROOT/target/build/core/ae-add/aether.toml" "$AEADD/" 2>/dev/null
+    if [ "$variant" != "-musl" ]; then
+      cp "$ROOT/target/build/core/ae-add/"servirtium_vcr-* "$AEADD/" || die "missing ae-add assets for $t"
+      cp "$ROOT/target/build/core/ae-add/aether.toml" "$AEADD/" || die "missing ae-add manifest for $t"
+      packaged=$((packaged+1))
+    fi
     printf 'ok  (%s)\n' "$(file -b "$out" 2>/dev/null | cut -c1-42)"
     built=$((built+1))
     rm -f "$log"
@@ -170,7 +178,7 @@ echo
 # The ae-add set (per-triple assets + .sha256 + aether.toml) was produced by
 # aeb's emit_binary_package and collected in the loop above — no post-processing.
 if [ "$built" -gt 0 ] && [ -f "$AEADD/aether.toml" ]; then
-  say "staged ae-add/ binary-package set ($built triple(s) + aether.toml) for \`ae add\`"
+  say "staged ae-add/ binary-package set ($packaged triple(s) + aether.toml) for \`ae add\`"
 fi
 
 say "built $built libservirtium_vcr artifact(s) into release/dist/ ($failed failed)"
