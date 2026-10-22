@@ -17,7 +17,7 @@
 # Env overrides:
 #   PREFIX        install prefix                 (default: $HOME/.local; no sudo)
 #   AETHER_REF    ae tag/branch/SHA to install   (default: $AE_FETCH below)
-#   AEB_REF       aeb tag/branch/SHA to install  (default: latest tag) — pin in CI
+#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.330)
 #   MIN_AE        minimum acceptable ae version  (default: $AE_PIN below)
 #   AEB_TIMEOUT   passed through to aeb (seconds)  (optional)
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
@@ -54,8 +54,13 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-AE_PIN="0.824.0"
-AE_FETCH="v0.824.0"    # BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
+# 2026-10-21: verified release pair 0.838.0 / aeb v0.330. This enables
+# distinct musl ae-add packages (aether#3073, aeb#17) without local exclusions.
+# 0.838 enforces unique short export names: core/vcr.ae keeps its public
+# wrappers exported and removes duplicate implementation names from exports.
+AE_PIN="0.838.0"
+AE_FETCH="v0.838.0"
+                       # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
                        # (E0902, a borrowed ptr captured by a closure); v0.327
@@ -312,7 +317,7 @@ AE_FETCH="v0.824.0"    # BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not trac
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.327 == the one aeb this repo is VERIFIED against.
+#   aeb floor == AEB_REF == v0.330 == the verified release for this cut.
 #
 # v0.327 (from v0.326) is REQUIRED, coupled with AE_PIN 0.824: v0.326's bldr
 # does not compile on ae 0.818+ (E0902), and v0.327 is the first release that
@@ -363,28 +368,20 @@ AE_FETCH="v0.824.0"    # BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not trac
 # So the sweep recorded below was run on the ACTUAL PINNED TAG for the first
 # time since v0.315 — no "swept on main, not the pin" asterisk.
 #
-# HONEST LIMITATION — this floor is a documentation contract, NOT enforced.
-# Step 2 below accepts ANY aeb already on PATH (`command -v aeb` → skip),
-# unlike the ae check, which compares versions. That is not laziness: an aeb
-# installed from a release TARBALL reports
-#     aeb 0.0.0-dev+<hash>   (git unknown, installed <date>)
-# with no parseable version, so a version_ge gate would either reject every
-# tarball install or be trivially fooled. AEB_REF is what gets installed when
-# aeb is ABSENT; when it is present the repo relies on the failure being loud
-# (a missing setter is an "Undefined function" compile error, not a silent
-# wrong answer). If you want it enforced, the fix belongs upstream in aeb —
-# have `aeb --version` report the release it was built from even for tarball
-# installs.
+# Released aeb bundles now report their version. Enforce the release floor;
+# an unversioned development build cannot establish that it meets the pin.
+AEB_REF="${AEB_REF:-v0.330}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX
 MIN_AE="${MIN_AE:-$AE_PIN}"
-AETHER_GET_URL="https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh"
-AEB_INSTALL_URL="https://raw.githubusercontent.com/aether-lang-dev/aeb/main/install.sh"
+AETHER_GET_URL="https://raw.githubusercontent.com/aether-lang-dev/aether/$AE_FETCH/get.sh"
+AEB_INSTALL_URL="https://raw.githubusercontent.com/aether-lang-dev/aeb/$AEB_REF/install.sh"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 version_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]; }
+aeb_version() { aeb --version 2>/dev/null | sed -nE 's/^aeb v?([0-9]+\.[0-9]+(\.[0-9]+)?)([[:space:]].*)?$/\1/p'; }
 ae_version() { ae --version 2>/dev/null | head -n1 | sed -E 's/^ae ([0-9]+\.[0-9]+\.[0-9]+).*/\1/'; }
 
 # fetch_run URL : download an installer to a temp file and run it under sh,
@@ -420,13 +417,20 @@ else
 fi
 
 # ---- 2. Build runner (aeb) ----
-if command -v aeb >/dev/null 2>&1; then
-    say "aeb already on PATH — skipping"
+aeb_have="$(aeb_version || true)"
+if [ -n "$aeb_have" ] && version_ge "$aeb_have" "${AEB_REF#v}"; then
+    say "aeb $aeb_have already on PATH (>= $AEB_REF) — skipping"
 else
     say "installing aeb via install.sh (AEB_REF=${AEB_REF:-latest}, PREFIX=$PREFIX)"
     AEB_REF="${AEB_REF:-}" AETHER="$(command -v ae)" fetch_run "$AEB_INSTALL_URL" || die "aeb install failed (install.sh)."
     command -v aeb >/dev/null 2>&1 || die "aeb installed but not on PATH — ensure $PREFIX/bin is on PATH."
 fi
+case "$AEB_REF" in
+    v[0-9]*.[0-9]*)
+        aeb_have="$(aeb_version || true)"
+        [ -n "$aeb_have" ] && version_ge "$aeb_have" "${AEB_REF#v}" \
+            || die "installed aeb does not meet $AEB_REF" ;;
+esac
 say "using aeb: $(command -v aeb)"
 
 # ---- 3. Build the project ----

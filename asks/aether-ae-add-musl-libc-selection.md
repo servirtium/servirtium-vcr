@@ -1,4 +1,11 @@
-# OPEN — ae add must distinguish musl and glibc binary packages
+# FIXED — ae add must distinguish musl and glibc binary packages
+
+Resolved by Aether `9918f257` (0.838.0) and aeb `466de8f` (included in
+v0.330, whose `22cc8b1` also supports compiling SDKs with 0.838.0).
+This release uses that pair and emits/validates all nine ae-add packages,
+including both musl architectures. The temporary exclusion is removed.
+Original findings follow.
+
 
 Upstream issue: https://github.com/aether-lang-dev/aether/issues/3073
 Producer-side companion: https://github.com/aether-lang-dev/aeb/issues/17

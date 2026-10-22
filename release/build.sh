@@ -10,8 +10,7 @@
 # `ae add` binary-package asset in the SAME pass — so one method yields BOTH the
 # raw FFI lib and the ae-add package per triple (no hand-synthesis, no drift; the
 # builder owns the trio format). Output name: libservirtium_vcr-<tag>-<os>-<arch>.<ext>
-# Linux musl is the exception: raw FFI downloads only until aether#3073/aeb#17
-# give its ae-add packages an identity distinct from glibc.
+# GNU and musl ae-add assets keep distinct identities (aeb v0.330 + ae 0.838).
 # (.so linux / .dylib macos / .dll windows). Alongside each: <artifact>.sha256, a
 # combined release/dist/SHA256SUMS.txt, and release/dist/ae-add/ (the `ae add` set).
 # Needs aeb >= v0.319 (its emit_binary_package target() cross-emit + the 0.681
@@ -123,7 +122,7 @@ for t in $MATRIX; do
   printf 'release:   %-18s -> %s ... ' "$t" "$name"
   # ONE aeb run per triple: core/.build.ae reads SVCR_TARGET and runs
   #   aether.shared_lib(){ size() target(t) }         -> the cross lib (--size)
-  #   aether.emit_binary_package(){ stem() target(t) } -> non-musl ae-add asset
+  #   aether.emit_binary_package(){ stem() target(t) } -> matching ae-add asset
   # AEB_RELEASE_TAG stamps the ae-add asset name; AETHER_SYSROOT (per-arch base
   # for freebsd, empty otherwise) is scoped to this run — emit only READS the
   # built .so so it inherits the sysroot cleanly. The cross build leaves the lib
@@ -155,11 +154,9 @@ for t in $MATRIX; do
     fi
     # Collect this triple's ae-add asset trio (aeb named it in the ae-add
     # <os>-<arch> spelling automatically; aether.toml is identical each run).
-    if [ "$variant" != "-musl" ]; then
-      cp "$ROOT/target/build/core/ae-add/"servirtium_vcr-* "$AEADD/" || die "missing ae-add assets for $t"
-      cp "$ROOT/target/build/core/ae-add/aether.toml" "$AEADD/" || die "missing ae-add manifest for $t"
-      packaged=$((packaged+1))
-    fi
+    cp "$ROOT/target/build/core/ae-add/"servirtium_vcr-* "$AEADD/" || die "missing ae-add assets for $t"
+    cp "$ROOT/target/build/core/ae-add/aether.toml" "$AEADD/" || die "missing ae-add manifest for $t"
+    packaged=$((packaged+1))
     printf 'ok  (%s)\n' "$(file -b "$out" 2>/dev/null | cut -c1-42)"
     built=$((built+1))
     rm -f "$log"

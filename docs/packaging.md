@@ -133,27 +133,27 @@ matches the release just published; see the [release instructions](../release/RE
 
 ## Version strings differ per ecosystem — and one of them can't comply
 
-The release tag is `v2.0.0-alpha.1`, but almost every packaging system spells a
+The release tag is `v2.0.0-alpha.2`, but almost every packaging system spells a
 prerelease its own way, and a consumer copying the tag string gets an
 unresolvable coordinate. Audited 2026-09-20:
 
 | binding | declared | note |
 |---|---|---|
-| python | `2.0.0a1` | PEP 440 |
-| ruby | `2.0.0.alpha.1` | RubyGems |
-| java (+ the 4 JVM wrappers) | `2.0.0-alpha1` | **Maven — no dot before the 1** |
-| javascript, rust, crystal, zig, d, gleam, elixir, dotnet | `2.0.0-alpha.1` | SemVer |
+| python | `2.0.0a2` | PEP 440 |
+| ruby | `2.0.0.alpha.2` | RubyGems |
+| java (+ the 4 JVM wrappers) | `2.0.0-alpha2` | **Maven — no dot before the 1** |
+| javascript, rust, crystal, zig, d, gleam, elixir, dotnet | `2.0.0-alpha.2` | SemVer |
 | **haskell** | **`2.0.0`** | **cannot express a prerelease — see below** |
 | nim, php, lua | unversioned | consumed from source / VCS tag |
 
 Two traps follow from this.
 
-**Copying the tag string into a Maven POM fails.** `2.0.0-alpha.1` is not what
-`mvn install` produces; the artifact lands in `~/.m2` as `2.0.0-alpha1`. Verified
+**Copying the tag string into a Maven POM fails.** `2.0.0-alpha.2` is not what
+`mvn install` produces; the artifact lands in `~/.m2` as `2.0.0-alpha2`. Verified
 by resolving it from a separate consumer project.
 
 **Haskell's `2.0.0` will collide with the real 2.0.0.** Cabal versions are PVP —
-digits and dots only — so `2.0.0-alpha.1` is not a legal version there and the
+digits and dots only — so `2.0.0-alpha.2` is not a legal version there and the
 package has to call itself something numeric. It currently calls itself exactly
 what the GA release will call itself. A consumer who pins
 `servirtium-haskell == 2.0.0` today gets the alpha; after GA the same constraint

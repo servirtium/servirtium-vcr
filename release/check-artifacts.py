@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a release pin, nine libraries, seven ae-add packages, and the Linux ABI."""
+"""Verify a release pin, nine libraries, nine ae-add packages, and the Linux ABI."""
 
 import argparse
 import ctypes
@@ -30,6 +30,10 @@ def check_version(tag):
     pinned = re.findall(r"^AETHER_REF=(\S+)$", (ROOT / "release/toolchain.env").read_text(), re.MULTILINE)
     if len(bootstrap) != 1 or bootstrap != pinned:
         raise ValueError("release/toolchain.env AETHER_REF must match bootstrap.sh AE_FETCH")
+    bootstrap_aeb = re.findall(r'^AEB_REF="\$\{AEB_REF:-([^}]+)\}"$', (ROOT / "bootstrap.sh").read_text(), re.MULTILINE)
+    pinned_aeb = re.findall(r"^AEB_REF=(\S+)$", (ROOT / "release/toolchain.env").read_text(), re.MULTILINE)
+    if len(bootstrap_aeb) != 1 or bootstrap_aeb != pinned_aeb:
+        raise ValueError("release/toolchain.env AEB_REF must match bootstrap.sh's default AEB_REF")
 
 
 def checksum(path):
@@ -60,10 +64,9 @@ def check_artifacts(tag, dist):
             other = "libc.so.6" if arch.endswith("-musl") else "libc.so"
             if expected not in needed or other in needed:
                 raise ValueError(f"wrong Linux libc for {raw.name}: {needed}")
-        if not arch.endswith("-musl"):
-            package = packages / f"servirtium_vcr-{tag}-{os_name}-{arch}.{extension}"
-            if checksum(package) != digest:
-                raise ValueError(f"ae-add package differs from raw library: {package.name}")
+        package = packages / f"servirtium_vcr-{tag}-{os_name}-{arch}.{extension}"
+        if checksum(package) != digest:
+            raise ValueError(f"ae-add package differs from raw library: {package.name}")
         if os_name == "windows":
             imp = raw.parent / (raw.name + ".lib")
             if manifest.get(imp.name) != checksum(imp):
@@ -77,7 +80,7 @@ def check_artifacts(tag, dist):
         raise ValueError("no C ABI declarations found")
     for symbol in exports:
         getattr(lib, "aether_" + symbol)
-    print(f"Verified nine libraries, Windows import libraries, seven ae-add packages, checksums, and {len(exports)} Linux ABI exports.")
+    print(f"Verified nine libraries, Windows import libraries, nine ae-add packages, checksums, and {len(exports)} Linux ABI exports.")
 
 
 def main():

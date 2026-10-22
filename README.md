@@ -302,21 +302,16 @@ target, so they install in that order. aeb's
 from a bare clone: prebuilt-binary-first per platform, source fallback otherwise,
 fetching the pinned Aether via Aether's own `get.sh`. The authoritative pins live
 in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` and `AE_FETCH` are now **one
-number** — `0.824.0`, the single ae this repo is *verified* against. (They used
+number** — `0.838.0`, the single ae this repo is *verified* against. (They used
 to differ: a permissive floor at `0.413.0` plus a known-good release to fetch.
 The floor advertised support for ~250 releases nothing ever tested, and a
 mixed `ae`/`aetherc` pair is a genuinely nasty failure — so "supported" now
 means "tested". The trade: a user with a good-but-different ae gets a fetch
 they didn't strictly need.) The **aeb** pin is one number on the same policy:
-`AEB_REF` == floor == `v0.327`, the one aeb this repo is verified against — and
-a hard requirement in its own right: aeb v0.326's `bldr` does not compile on
-ae 0.818+ (and v0.325's SDK modules did not compile on 0.801), so the
-two toolchains move as a pair. (0.308 was the last
-*nameable* aeb requirement — `scala/.tests.ae` uses a setter added there and
-`d/.tests.ae` relies on its honest test exit codes; `bootstrap.sh` keeps that
-history, and notes that the aeb floor is a documentation contract rather than a
-machine-enforced check, because a tarball-installed aeb reports no parseable
-version.) The commands below pin that
+`AEB_REF` == floor == `v0.330`, paired with Aether 0.838.0. The pair preserves
+distinct GNU/musl binary-package identities and includes the SDK fixes for
+0.838.0. `bootstrap.sh` now checks the aeb release version as well as the
+Aether floor. The commands below pin that
 known-good pair; keep their numbers in step with `bootstrap.sh`.
 
 **Recommended — `./bootstrap.sh`.** It installs a pinned `ae` (>= `AE_PIN`) THEN
@@ -329,14 +324,14 @@ clone), pipe `get.sh` into `sh` with the pins after the pipe. It installs a
 pinned `ae` (>= `AE_PIN`) THEN a pinned `aeb`, binary-first, into `~/.local`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/get.sh \
-  | AE_PIN=0.824.0 AEB_REF=v0.327 sh
+curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/v0.330/get.sh \
+  | AE_PIN=0.838.0 AEB_REF=v0.330 sh
 ```
 
 (Prefer this to `sh -c "$(curl …)"` — the piped form is what `get.sh`'s
 executed-mode guard is built for. If you want a fetch error and install progress
 on your own terminal rather than through the pipe, download first and run the
-file: `curl … -o get.sh && AE_PIN=0.824.0 AEB_REF=v0.327 bash get.sh` — same
+file: `curl … -o get.sh && AE_PIN=0.838.0 AEB_REF=v0.330 bash get.sh` — same
 result.)
 
 ### Optionally: `aeo` (only for the containerized integration tests)
@@ -350,11 +345,11 @@ the same way, and ensures `ae` + `aeb` first (aeo shells them at runtime):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh \
-  | AE_PIN=0.824.0 AEB_REF=v0.327 AEO_REF=v0.2.3 sh
+  | AE_PIN=0.838.0 AEB_REF=v0.330 AEO_REF=v0.2.3 sh
 ```
 
 (Verified binary-first on a clean `debian:13-slim` — no compiler, no `make` —
-on an earlier pin pair; not yet re-run on 0.824.0/v0.327.
+on an earlier pin pair; not yet re-run on 0.838.0/v0.330.
 Or from a clone for development: `git clone https://github.com/aether-lang-dev/aeo
 && cd aeo && make install`.)
 

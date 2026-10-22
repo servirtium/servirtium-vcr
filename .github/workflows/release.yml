@@ -89,7 +89,7 @@ jobs:
           echo "PREFIX=$tools/prefix" >> "$GITHUB_ENV"
           echo "AETHER_SYSROOT=$tools/freebsd" >> "$GITHUB_ENV"
 
-      - name: Build all nine libraries and seven ae-add packages
+      - name: Build all nine libraries and nine ae-add packages
         env:
           TARGETS: x86_64-linux aarch64-linux x86_64-linux-musl aarch64-linux-musl x86_64-macos aarch64-macos x86_64-windows aarch64-windows x86_64-freebsd
         run: release/build.sh
@@ -108,9 +108,9 @@ jobs:
           (x86_64 and arm64), plus Linux musl (x86_64 and arm64) and FreeBSD x86_64.
           Each library has a SHA256 checksum.
 
-          The seven non-musl ae-add binary packages and aether.toml are included.
-          Musl libraries are separate native downloads: the pinned ae-add installer
-          does not distinguish glibc and musl assets.
+          All nine ae-add binary packages and aether.toml are included.
+          GNU and musl Linux packages have distinct asset names; consumption
+          requires Aether 0.838.0 or newer for libc-aware selection.
           Language packages and registry publishing remain separate.
 
           All nine libraries built successfully. The Linux x86_64 library was
@@ -134,4 +134,4 @@ jobs:
           downloaded="$RUNNER_TEMP/published-core"
           gh release download "$RELEASE_TAG" --dir "$downloaded"
           python3 release/check-artifacts.py "$RELEASE_TAG" --dist "$downloaded"
-          echo "Downloaded and verified all nine libraries, seven ae-add packages, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
+          echo "Downloaded and verified all nine libraries, nine ae-add packages, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

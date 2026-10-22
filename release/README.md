@@ -43,12 +43,10 @@ The required raw-library downloads are:
 
 All nine libraries must build successfully. The workflow verifies every
 checksum, both Windows import libraries, and every declared Linux x86_64 C ABI
-export. It preserves the seven existing `ae add` binary packages and their
-`aether.toml`, and checks that each package contains the identical raw library.
-Musl libraries are raw FFI downloads only: the pinned emitter and installer
-collapse musl and glibc package identities. The upstream fixes are tracked in
-[Aether #3073](https://github.com/aether-lang-dev/aether/issues/3073) and
-[aeb #17](https://github.com/aether-lang-dev/aeb/issues/17).
+export. All nine `ae add` binary packages and their `aether.toml` are included,
+and each package must contain the identical raw library. GNU and musl Linux
+packages have distinct names, using the fixes released in Aether 0.838.0 and
+aeb v0.330. Consumers need Aether 0.838.0 or newer for libc-aware selection.
 
 `release/toolchain.env` pins Aether, aeb, and Zig for the runner. Aether must
 match `bootstrap.sh`'s `AE_FETCH`; the version check enforces this. Toolchain
@@ -97,10 +95,10 @@ tag, so the two publishers do not race. The script still builds and uploads raw
 libraries and the matching `ae add` assets, without publishing language packages.
 
 ```sh
-release/publish.sh v2.0.0-alpha.1              # build the matrix + create the release, assets attached
-release/publish.sh v2.0.0-alpha.1 --prerelease # mark it a pre-release on GitHub (do this for -alpha/-beta/-rc)
-release/publish.sh v2.0.0-alpha.1 --draft      # create as a draft to review first
-release/publish.sh v2.0.0-alpha.1 --no-build   # attach whatever is already in release/dist
+release/publish.sh v2.0.0-alpha.2              # build the matrix + create the release, assets attached
+release/publish.sh v2.0.0-alpha.2 --prerelease # mark it a pre-release on GitHub (do this for -alpha/-beta/-rc)
+release/publish.sh v2.0.0-alpha.2 --draft      # create as a draft to review first
+release/publish.sh v2.0.0-alpha.2 --no-build   # attach whatever is already in release/dist
 ```
 
 `publish.sh` builds (unless `--no-build`), then `gh release create <tag>` with
@@ -111,19 +109,19 @@ so the tagged source and the binaries are the same code.
 
 ### Version strings are pre-release-aware — mind `sort -V`
 
-The canonical version is a SemVer **pre-release** (`2.0.0-alpha.1`). Two gotchas:
+The canonical version is a SemVer **pre-release** (`2.0.0-alpha.2`). Two gotchas:
 
 - **`sort -V` disagrees with SemVer on pre-releases.** SemVer orders
-  `2.0.0-alpha.1` *before* `2.0.0` (a pre-release precedes its final), but
+  `2.0.0-alpha.2` *before* `2.0.0` (a pre-release precedes its final), but
   `sort -V` puts the bare `2.0.0` first and treats any `-suffix` as *later* — so
   `sort -V | tail -1` would rank an alpha as "newer" than the final release. Do
   **not** pick "latest" by `sort -V` once a pre-release and its final coexist;
   let GitHub's own "Latest" flag (set at publish, cleared by `--prerelease`)
   decide, or compare with a real SemVer parser.
 - **Each package ecosystem spells the pre-release differently** — the git tag is
-  `v2.0.0-alpha.1`, but the per-language manifests carry the ecosystem-valid form:
-  Python `2.0.0a1` (PEP 440), RubyGems `2.0.0.alpha.1`, Maven `2.0.0-alpha1`,
-  and plain SemVer `2.0.0-alpha.1` everywhere else (npm/cargo/pub/NuGet/hex/…).
+  `v2.0.0-alpha.2`, but the per-language manifests carry the ecosystem-valid form:
+  Python `2.0.0a2` (PEP 440), RubyGems `2.0.0.alpha.2`, Maven `2.0.0-alpha2`,
+  and plain SemVer `2.0.0-alpha.2` everywhere else (npm/cargo/pub/NuGet/hex/…).
   A single literal string is **not** portable across all of them.
 
 ## Using a published artifact
