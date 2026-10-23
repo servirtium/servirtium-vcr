@@ -18,12 +18,12 @@ Prepare the single engine-download pin before tagging, so it matches the engine
 that will be published at that tag. For example, for a future alpha:
 
 ```sh
-printf '%s\n' v2.0.0-alpha.2 > SERVIRTIUM_VCR_VERSION
-python3 release/check-artifacts.py v2.0.0-alpha.2 --check-version
+printf '%s\n' v2.0.0-alpha.3 > SERVIRTIUM_VCR_VERSION
+python3 release/check-artifacts.py v2.0.0-alpha.3 --check-version
 # Stage and commit the release preparation, then:
-git tag -a v2.0.0-alpha.2 -m 'Servirtium core v2.0.0-alpha.2'
+git tag -a v2.0.0-alpha.3 -m 'Servirtium core v2.0.0-alpha.3'
 git push origin main
-git push origin v2.0.0-alpha.2
+git push origin v2.0.0-alpha.3
 ```
 
 Use a new unused version; pushing `main` alone does not publish a release.
@@ -95,10 +95,10 @@ tag, so the two publishers do not race. The script still builds and uploads raw
 libraries and the matching `ae add` assets, without publishing language packages.
 
 ```sh
-release/publish.sh v2.0.0-alpha.2              # build the matrix + create the release, assets attached
-release/publish.sh v2.0.0-alpha.2 --prerelease # mark it a pre-release on GitHub (do this for -alpha/-beta/-rc)
-release/publish.sh v2.0.0-alpha.2 --draft      # create as a draft to review first
-release/publish.sh v2.0.0-alpha.2 --no-build   # attach whatever is already in release/dist
+release/publish.sh v2.0.0-alpha.3              # build the matrix + create the release, assets attached
+release/publish.sh v2.0.0-alpha.3 --prerelease # mark it a pre-release on GitHub (do this for -alpha/-beta/-rc)
+release/publish.sh v2.0.0-alpha.3 --draft      # create as a draft to review first
+release/publish.sh v2.0.0-alpha.3 --no-build   # attach whatever is already in release/dist
 ```
 
 `publish.sh` builds (unless `--no-build`), then `gh release create <tag>` with
@@ -119,7 +119,7 @@ The canonical version is a SemVer **pre-release** (`2.0.0-alpha.2`). Two gotchas
   let GitHub's own "Latest" flag (set at publish, cleared by `--prerelease`)
   decide, or compare with a real SemVer parser.
 - **Each package ecosystem spells the pre-release differently** — the git tag is
-  `v2.0.0-alpha.2`, but the per-language manifests carry the ecosystem-valid form:
+  `v2.0.0-alpha.3`, but the per-language manifests carry the ecosystem-valid form:
   Python `2.0.0a2` (PEP 440), RubyGems `2.0.0.alpha.2`, Maven `2.0.0-alpha2`,
   and plain SemVer `2.0.0-alpha.2` everywhere else (npm/cargo/pub/NuGet/hex/…).
   A single literal string is **not** portable across all of them.

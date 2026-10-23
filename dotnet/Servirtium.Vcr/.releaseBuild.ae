@@ -38,7 +38,7 @@ aeb(cap) {
             root_namespace("Servirtium.Vcr")
             nullable()
             package_id("Servirtium.Vcr")
-            package_version("2.0.0-alpha.2")
+            package_version("2.0.0-alpha.3")
             package_description("Idiomatic .NET record/replay (Servirtium) over the Aether VCR core, via P/Invoke to a precompiled native library.")
             native_runtime("linux-x64", linux_x64)
             native_runtime("linux-arm64", linux_arm64)
