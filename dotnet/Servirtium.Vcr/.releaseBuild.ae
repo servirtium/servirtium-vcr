@@ -1,0 +1,53 @@
+// Release build of the Servirtium.Vcr managed assembly, wiring the FULL eight-RID
+// native matrix into the generated project so `dotnet pack` (dotnet/Servirtium.Vcr/
+// .dist.ae) bundles every verified release library under runtimes/<rid>/native/.
+//
+// This is the release-only twin of dotnet/Servirtium.Vcr/.build.ae: identical
+// PropertyGroup (so the regenerated .Servirtium.Vcr.generated.csproj is the same
+// shape dotnet.pack() expects), but its single host native_runtime("linux-x64", …)
+// is replaced by eight native_runtime(<rid>, <lib>) calls sourced from
+// core/.releaseNugetMatrix.ae — the eight portable NuGet RIDs copied from THIS
+// tag's release/dist. FreeBSD is excluded (no standard NuGet RID).
+//
+// Used only by the official tag workflow: release/build.sh runs
+//   aeb dotnet/Servirtium.Vcr/.dist.ae \
+//     --overrideDep dotnet/Servirtium.Vcr/.build.ae=dotnet/Servirtium.Vcr/.releaseBuild.ae
+// so .dist.ae's dep on .build.ae resolves here, and pack finds this node's
+// generated csproj with all eight native_runtime items. Mirrors selenium's
+// dotnet/SeleniumCore/.releaseBuild.ae (there the libs are staged into the
+// project tree; here they are consumed as the matrix node's published artifacts,
+// matching servirtium-vcr's .releaseNugetMatrix.ae design).
+import bldr
+import dotnet
+import dotnet (target_framework, root_namespace, nullable, package_id, package_version, package_description, native_runtime)
+aeb(cap) {
+    bldr.build() {
+        dep("core/.releaseNugetMatrix.ae")
+        linux_x64 = dep_artifact("core/.releaseNugetMatrix.ae", "linux_x64")
+        linux_arm64 = dep_artifact("core/.releaseNugetMatrix.ae", "linux_arm64")
+        linux_musl_x64 = dep_artifact("core/.releaseNugetMatrix.ae", "linux_musl_x64")
+        linux_musl_arm64 = dep_artifact("core/.releaseNugetMatrix.ae", "linux_musl_arm64")
+        osx_x64 = dep_artifact("core/.releaseNugetMatrix.ae", "osx_x64")
+        osx_arm64 = dep_artifact("core/.releaseNugetMatrix.ae", "osx_arm64")
+        win_x64 = dep_artifact("core/.releaseNugetMatrix.ae", "win_x64")
+        win_arm64 = dep_artifact("core/.releaseNugetMatrix.ae", "win_arm64")
+        dotnet.build_project() {
+            // Mirror dotnet/Servirtium.Vcr/.build.ae's PropertyGroup EXACTLY so
+            // the regenerated csproj differs only in the native_runtime grid.
+            target_framework("net8.0")
+            root_namespace("Servirtium.Vcr")
+            nullable()
+            package_id("Servirtium.Vcr")
+            package_version("2.0.0-alpha.2")
+            package_description("Idiomatic .NET record/replay (Servirtium) over the Aether VCR core, via P/Invoke to a precompiled native library.")
+            native_runtime("linux-x64", linux_x64)
+            native_runtime("linux-arm64", linux_arm64)
+            native_runtime("linux-musl-x64", linux_musl_x64)
+            native_runtime("linux-musl-arm64", linux_musl_arm64)
+            native_runtime("osx-x64", osx_x64)
+            native_runtime("osx-arm64", osx_arm64)
+            native_runtime("win-x64", win_x64)
+            native_runtime("win-arm64", win_arm64)
+        }
+    }
+}

@@ -1,21 +1,96 @@
 // Third-party-consumer PACKAGE stage for the Java binding (and the JVM family).
 //
 // Builds the servirtium-vcr jar as a downstream user would receive it from a
-// Maven repo: the freshly-built libservirtium_vcr.so bundled INSIDE the jar as the
-// resource /native/linux-x64/libservirtium_vcr.so (what NativeLoader extracts
-// at runtime), then `mvn install` it to the local ~/.m2 repo — the idiomatic
-// place a Maven/Gradle consumer resolves dependencies from.
+// Maven repo: the libservirtium_vcr.so bundled INSIDE the jar as a resource under
+// /native/<token>/ (what NativeLoader extracts at runtime), then `mvn install`
+// it to the local ~/.m2 repo — the idiomatic place a Maven/Gradle consumer
+// resolves dependencies from.
 //
-// Deps core/.build.ae for the libservirtium_vcr.so. Downstream JVM consumer example
-// leaves (java + kotlin/scala/clojure/groovy) dep this node and then resolve
-// com.paulhammant.servirtium:servirtium-vcr:2.0.0-SNAPSHOT from ~/.m2.
+// TWO paths, selected by RELEASE_BINDING_PACKAGES:
+//
+//  - UNSET (default: the in-tree / lean dev path, every JVM consumer example
+//    leaf's dep): deps core/.build.ae for the freshly built host .so and bundles
+//    JUST it as /native/linux-x64/libservirtium_vcr.so (the single-platform dev
+//    jar, keyed by the .NET RID token the loader's rid() layout also probes).
+//
+//  - "1" (the official tag workflow, via release/build.sh): deps
+//    core/.releaseJarMatrix.ae — fed in by `aeb java/.package.ae --overrideDep
+//    core/.build.ae=core/.releaseJarMatrix.ae`, mirroring how selenium overrides
+//    its crossbuild node with .releaseJarMatrix.ae — and bundles ALL SIX verified
+//    release libraries, each under /native/<os>-<arch>/<fileName>, where <os-arch>
+//    is the token NativeLoader.osArch() computes (linux-x86_64, macos-arm64,
+//    windows-x86_64, …) and <fileName> is what NativeLoader.fileName() extracts
+//    on that platform: ALWAYS "lib"+"servirtium_vcr"+suffix — libservirtium_vcr.so
+//    on linux, .dylib on macos, .dll on windows (NOTE: the lib prefix is kept on
+//    Windows, unlike the loose release-asset name). maven.install() then packs all
+//    six into the one fat jar, so a single jar serves every OS+arch.
+//
+// The matrix node stages its six libs into ONE lib/ dir (its shared_lib edge
+// points at the linux-x86_64 one); the sibling paths are computed from that
+// directory with the known release-asset names.
 import bldr
 import copy
 import copy (from, to)
 import maven
+import std.os
+import std.string
 
 aeb(cap) {
     bldr.build() {
+        release = os.getenv("RELEASE_BINDING_PACKAGES")
+        if string.length(release) > 0 {
+            // RELEASE path: bundle all six verified release libraries (fat jar).
+            // core/.build.ae is overridden to core/.releaseJarMatrix.ae by
+            // release/build.sh, so this edge resolves to the matrix node.
+            dep("core/.build.ae")
+            // Start from a clean native/ so the fat jar holds EXACTLY the six
+            // os-arch resources — never a leftover /native/linux-x64/ from an
+            // earlier in-tree lean run. (A fresh CI checkout has nothing here;
+            // this only matters when both paths run in one working tree.) The
+            // dir is gitignored, so removing it drops only staged artifacts.
+            root_j = _get("root")
+            _rm = os.system("rm -rf \"${root_j}/java/src/main/resources/native\"")
+            one = string.trim(dep_artifact("core/.build.ae", "shared_lib"))
+            // The matrix stages all six into the same lib/ dir; shared_lib is the
+            // linux-x86_64 one. Its directory holds the other five by known name.
+            libdir = bldr._dirname(one)
+
+            // <os-arch> tokens == NativeLoader.osArch(); <fileName> == what
+            // NativeLoader.fileName() extracts per platform (lib-prefixed, even
+            // for the .dll). The release-asset source names come from
+            // .releaseJarMatrix.ae (libservirtium_vcr-<os>-<arch>.<ext>).
+            copy.file() {
+                from(string.concat(libdir, "/libservirtium_vcr-linux-x86_64.so"))
+                to("src/main/resources/native/linux-x86_64/libservirtium_vcr.so")
+            }
+            copy.file() {
+                from(string.concat(libdir, "/libservirtium_vcr-linux-arm64.so"))
+                to("src/main/resources/native/linux-arm64/libservirtium_vcr.so")
+            }
+            copy.file() {
+                from(string.concat(libdir, "/libservirtium_vcr-macos-x86_64.dylib"))
+                to("src/main/resources/native/macos-x86_64/libservirtium_vcr.dylib")
+            }
+            copy.file() {
+                from(string.concat(libdir, "/libservirtium_vcr-macos-arm64.dylib"))
+                to("src/main/resources/native/macos-arm64/libservirtium_vcr.dylib")
+            }
+            copy.file() {
+                from(string.concat(libdir, "/libservirtium_vcr-windows-x86_64.dll"))
+                to("src/main/resources/native/windows-x86_64/libservirtium_vcr.dll")
+            }
+            copy.file() {
+                from(string.concat(libdir, "/libservirtium_vcr-windows-arm64.dll"))
+                to("src/main/resources/native/windows-arm64/libservirtium_vcr.dll")
+            }
+
+            maven.install()
+
+            publish_artifact("maven_gav", "com.paulhammant.servirtium:servirtium-vcr:2.0.0-SNAPSHOT")
+            println("java package: installed multi-platform servirtium-vcr jar (6 libservirtium_vcr natives bundled) to ~/.m2")
+            return 0
+        }
+
         dep("core/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
 

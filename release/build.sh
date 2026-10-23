@@ -168,8 +168,10 @@ for t in $MATRIX; do
 done
 
 echo
-# A combined checksum manifest over every artifact (not the .sha256 sidecars).
-# Named SHA256SUMS.txt so a browser renders it inline (no forced download).
+# A combined checksum manifest over the engine libraries (not the .sha256
+# sidecars). Named SHA256SUMS.txt so a browser renders it inline. Generated
+# here so the --engine-only pre-check below (which reads this manifest) sees it;
+# it is REGENERATED after the binding packages so the jar + nupkg join it.
 ( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib 2>/dev/null > SHA256SUMS.txt || true )
 
 # The ae-add set (per-triple assets + .sha256 + aether.toml) was produced by
@@ -177,6 +179,78 @@ echo
 if [ "$built" -gt 0 ] && [ -f "$AEADD/aether.toml" ]; then
   say "staged ae-add/ binary-package set ($packaged triple(s) + aether.toml) for \`ae add\`"
 fi
+
+# ---- official multi-platform binding packages (opt-in) ----------------------
+# SCOPE: ONLY the fat Java jar and the multi-RID .NET nupkg. svcr deliberately
+# does NOT ship ruby/python/js/crystal/julia binding packages from here (core +
+# ae-add only — see release/README.md); this widens the release for exactly the
+# two multi-platform packages a consumer cannot easily assemble themselves.
+#
+# Gated on RELEASE_BINDING_PACKAGES=1 so a normal `release/build.sh` is unchanged.
+# The fat jar embeds the SIX verified glibc/macos/windows release libraries (via
+# core/.releaseJarMatrix.ae, overriding java's core/.build.ae dep); the nupkg
+# embeds all EIGHT NuGet RIDs (via core/.releaseNugetMatrix.ae, overriding
+# dotnet/Servirtium.Vcr/.build.ae with dotnet/Servirtium.Vcr/.releaseBuild.ae).
+if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
+  have aeb || die "RELEASE_BINDING_PACKAGES=1 requires aeb"
+  # Validate the raw release libraries before any package is allowed to embed
+  # one (proves the Linux C ABI exports too). --engine-only verifies the libs
+  # and ae-add set without demanding the jar/nupkg yet.
+  python3 "$HERE/check-artifacts.py" "$TAG" --engine-only || die "engine artifact verification failed"
+
+  # -- the fat multi-platform Java jar (mvn, via java/.package.ae) --
+  say "building the fat multi-platform Java jar (6 natives) …"
+  if ( cd "$ROOT" && RELEASE_BINDING_PACKAGES=1 AEB_PER_NODE=0 aeb \
+         java/.package.ae \
+         --overrideDep core/.build.ae=core/.releaseJarMatrix.ae ) >"$DIST/.jar.log" 2>&1; then
+    # maven.install writes the jar to java/target/; its name carries the pom
+    # version (2.0.0-alpha2), not the git tag. Stage the main jar (not
+    # -sources/-javadoc) with a .sha256.
+    jar=""
+    for cand in "$ROOT"/java/target/servirtium-vcr-*.jar; do
+      case "$cand" in *-sources.jar|*-javadoc.jar) continue ;; esac
+      [ -f "$cand" ] && { jar="$cand"; break; }
+    done
+    [ -n "$jar" ] || die "fat jar not found under java/target/"
+    cp "$jar" "$DIST/" || die "could not stage $(basename "$jar")"
+    ( cd "$DIST" && sha256sum "$(basename "$jar")" > "$(basename "$jar").sha256" ) \
+      || die "could not checksum $(basename "$jar")"
+    say "  jar: $(basename "$jar") ($(du -h "$jar" | cut -f1)) staged + .sha256"
+    rm -f "$DIST/.jar.log"
+  else
+    tail -80 "$DIST/.jar.log" >&2
+    die "fat Java jar build failed — see $DIST/.jar.log"
+  fi
+
+  # -- the multi-RID .NET nupkg (dotnet pack, via the release build node) --
+  say "building the multi-RID .NET nupkg (8 RIDs) …"
+  if ( cd "$ROOT" && AEB_PER_NODE=0 aeb \
+         dotnet/Servirtium.Vcr/.dist.ae \
+         --overrideDep dotnet/Servirtium.Vcr/.build.ae=dotnet/Servirtium.Vcr/.releaseBuild.ae ) >"$DIST/.nupkg.log" 2>&1; then
+    # dotnet.pack writes the .nupkg under target/dist/dotnet/Servirtium.Vcr/nupkg/.
+    nupkgdir="$ROOT/target/dist/dotnet/Servirtium.Vcr/nupkg"
+    [ -d "$nupkgdir" ] || die "nupkg output directory missing: $nupkgdir"
+    found=0
+    for nupkg in "$nupkgdir"/*.nupkg; do
+      [ -f "$nupkg" ] || continue
+      cp "$nupkg" "$DIST/" || die "could not stage $(basename "$nupkg")"
+      ( cd "$DIST" && sha256sum "$(basename "$nupkg")" > "$(basename "$nupkg").sha256" ) \
+        || die "could not checksum $(basename "$nupkg")"
+      say "  nupkg: $(basename "$nupkg") ($(du -h "$nupkg" | cut -f1)) staged + .sha256"
+      found=$((found+1))
+    done
+    [ "$found" -gt 0 ] || die "no .nupkg produced in $nupkgdir"
+    rm -f "$DIST/.nupkg.log"
+  else
+    tail -80 "$DIST/.nupkg.log" >&2
+    die "multi-RID .NET nupkg build failed — see $DIST/.nupkg.log"
+  fi
+fi
+
+# Regenerate the combined manifest so the jar + nupkg ride it too (a no-op
+# re-list of the engine libs when RELEASE_BINDING_PACKAGES is unset — the glob
+# simply finds no .jar/.nupkg). SHA256SUMS.txt is thus always complete.
+( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib ./*.jar ./*.nupkg 2>/dev/null > SHA256SUMS.txt || true )
 
 say "built $built libservirtium_vcr artifact(s) into release/dist/ ($failed failed)"
 [ "$built" -gt 0 ] || die "no artifacts built"

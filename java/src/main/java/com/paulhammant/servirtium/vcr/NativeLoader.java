@@ -90,8 +90,12 @@ final class NativeLoader {
         }
 
         String rid = rid();
+        String osArch = osArch();
         String fileName = fileName();
-        String resourcePath = "/native/" + rid + "/" + fileName;
+        // The multi-platform jar stages under /native/<os>-<arch>/; the
+        // single-platform (dev) jar under /native/<rid>/. Try os-arch first.
+        String resourcePath = "/native/" + osArch + "/" + fileName;
+        String resourcePathRid = "/native/" + rid + "/" + fileName;
 
         // 2. Beside the jar itself: a consumer who drops libservirtium_vcr.so
         //    into the same directory as the jar on disk.
@@ -100,27 +104,34 @@ final class NativeLoader {
             return adjacent;
         }
 
-        // 3. Working-tree resources dir (running from a source checkout).
-        Path inTree = Path.of("src", "main", "resources", "native", rid, fileName);
-        if (Files.exists(inTree)) {
-            return inTree.toAbsolutePath();
+        // 3. Working-tree resources dir (running from a source checkout) —
+        //    os-arch layout (fat) then rid layout (single-platform dev build).
+        for (String token : new String[] {osArch, rid}) {
+            Path inTree = Path.of("src", "main", "resources", "native", token, fileName);
+            if (Files.exists(inTree)) {
+                return inTree.toAbsolutePath();
+            }
         }
 
         // 4. Classpath resource (packaged jar) -> extract to a temp file.
-        try (InputStream in = NativeLoader.class.getResourceAsStream(resourcePath)) {
-            if (in != null) {
-                Path tmp = Files.createTempFile("libservirtium_vcr", suffix());
-                tmp.toFile().deleteOnExit();
-                Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
-                return tmp;
+        //    os-arch (fat jar) first, then rid (single-platform jar).
+        for (String resource : new String[] {resourcePath, resourcePathRid}) {
+            try (InputStream in = NativeLoader.class.getResourceAsStream(resource)) {
+                if (in != null) {
+                    Path tmp = Files.createTempFile("libservirtium_vcr", suffix());
+                    tmp.toFile().deleteOnExit();
+                    Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
+                    return tmp;
+                }
+            } catch (IOException e) {
+                throw new VcrException("failed to extract native VCR library from " + resource + ": " + e.getMessage());
             }
-        } catch (IOException e) {
-            throw new VcrException("failed to extract native VCR library from " + resourcePath + ": " + e.getMessage());
         }
 
         throw new VcrException(
-                "native VCR library not found. Looked at $SERVIRTIUM_VCR_LIB, beside the jar, " + inTree
-                        + ", and classpath " + resourcePath
+                "native VCR library not found. Looked at $SERVIRTIUM_VCR_LIB, beside the jar, "
+                        + "src/main/resources/native/{" + osArch + "," + rid + "}, and classpath "
+                        + resourcePath + " / " + resourcePathRid
                         + ". Download libservirtium_vcr for your platform from "
                         + "https://github.com/servirtium/servirtium-vcr/releases and set "
                         + "SERVIRTIUM_VCR_LIB to its path (or drop it beside the jar).");
@@ -183,6 +194,28 @@ final class NativeLoader {
         String archName = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
         String arch = switch (archName) {
             case "x86_64", "amd64" -> "x64";
+            case "aarch64", "arm64" -> "arm64";
+            default -> archName;
+        };
+        return os + "-" + arch;
+    }
+
+    /**
+     * The {@code <os>-<arch>} token the multi-platform jar stages its resources
+     * under — {@code linux-x86_64}, {@code macos-arm64}, {@code windows-x86_64}
+     * (matching release/build.sh's release-asset names, NOT the .NET RID
+     * {@link #rid()}). The fat jar is looked up under this token first so one jar
+     * serves every OS+arch; the single-platform (dev) jar uses the RID path.
+     */
+    private static String osArch() {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        String os = osName.contains("win") ? "windows"
+                : (osName.contains("mac") || osName.contains("darwin")) ? "macos"
+                : "linux";
+
+        String archName = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+        String arch = switch (archName) {
+            case "x86_64", "amd64" -> "x86_64";
             case "aarch64", "arm64" -> "arm64";
             default -> archName;
         };

@@ -43,6 +43,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libssl-dev zlib1g-dev libnghttp2-dev libpcre2-dev
 
+      # The fat Java jar needs a JDK >= 22 (FFM / Project Panama) + Maven, and the
+      # multi-RID .NET nupkg needs the .NET SDK (dotnet pack). ubuntu-22.04 ships
+      # neither at the version the binding packages require, so install both here.
+      # Only these two multi-platform packages are built; nothing else is added.
+      - name: Install JDK and Maven (for the fat Java jar)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+          cache: maven
+      - name: Install .NET SDK (for the multi-RID nupkg)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
+
       - name: Install pinned toolchains and FreeBSD sysroot
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,13 +104,24 @@ jobs:
           echo "PREFIX=$tools/prefix" >> "$GITHUB_ENV"
           echo "AETHER_SYSROOT=$tools/freebsd" >> "$GITHUB_ENV"
 
-      - name: Build all nine libraries and nine ae-add packages
+      - name: Build all nine libraries, nine ae-add packages, and the two binding packages
         env:
           TARGETS: x86_64-linux aarch64-linux x86_64-linux-musl aarch64-linux-musl x86_64-macos aarch64-macos x86_64-windows aarch64-windows x86_64-freebsd
+          # Widen the release for exactly the fat Java jar (6 natives) and the
+          # multi-RID .NET nupkg (8 RIDs). All other HLL packages stay out of the
+          # release (core + ae-add only — see release/README.md).
+          RELEASE_BINDING_PACKAGES: '1'
         run: release/build.sh
 
+      - name: Require the two multi-platform binding packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          compgen -G 'release/dist/servirtium-vcr-*.jar' >/dev/null
+          compgen -G 'release/dist/Servirtium.Vcr.*.nupkg' >/dev/null
+
       - name: Verify release artifacts and Linux ABI
-        run: python3 release/check-artifacts.py "$RELEASE_TAG"
+        run: python3 release/check-artifacts.py "$RELEASE_TAG" --binding-packages
 
       - name: Publish binaries and checksums
         env:
@@ -111,7 +137,12 @@ jobs:
           All nine ae-add binary packages and aether.toml are included.
           GNU and musl Linux packages have distinct asset names; consumption
           requires Aether 0.838.0 or newer for libc-aware selection.
-          Language packages and registry publishing remain separate.
+
+          Two ready-to-consume multi-platform binding packages are also attached:
+          a fat Java jar (servirtium-vcr-*.jar) bundling the six glibc/macOS/Windows
+          natives under /native/<os>-<arch>/, and a multi-RID .NET NuGet package
+          (Servirtium.Vcr.*.nupkg) bundling all eight runtimes/<rid>/native/ libraries.
+          Other language packages and registry publishing remain separate.
 
           All nine libraries built successfully. The Linux x86_64 library was
           loaded and checked for every declared C ABI export. This does not claim
@@ -122,7 +153,8 @@ jobs:
           gh release create "$RELEASE_TAG" --verify-tag "${flags[@]}" \
             --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" \
             release/dist/*.so release/dist/*.dylib release/dist/*.dll \
-            release/dist/*.dll.lib release/dist/*.sha256 release/dist/SHA256SUMS.txt \
+            release/dist/*.dll.lib release/dist/*.jar release/dist/*.nupkg \
+            release/dist/*.sha256 release/dist/SHA256SUMS.txt \
             release/dist/ae-add/servirtium_vcr-* release/dist/ae-add/aether.toml
 
       - name: Verify published downloads
@@ -133,5 +165,5 @@ jobs:
           set -euo pipefail
           downloaded="$RUNNER_TEMP/published-core"
           gh release download "$RELEASE_TAG" --dir "$downloaded"
-          python3 release/check-artifacts.py "$RELEASE_TAG" --dist "$downloaded"
-          echo "Downloaded and verified all nine libraries, nine ae-add packages, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
+          python3 release/check-artifacts.py "$RELEASE_TAG" --dist "$downloaded" --binding-packages
+          echo "Downloaded and verified all nine libraries, nine ae-add packages, the fat Java jar, the multi-RID .NET nupkg, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

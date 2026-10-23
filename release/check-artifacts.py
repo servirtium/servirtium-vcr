@@ -83,10 +83,34 @@ def check_artifacts(tag, dist):
     print(f"Verified nine libraries, Windows import libraries, nine ae-add packages, checksums, and {len(exports)} Linux ABI exports.")
 
 
+def check_binding_packages(dist):
+    """Verify the two multi-platform binding packages (opt-in, built only when
+    RELEASE_BINDING_PACKAGES=1): the fat Java jar and the multi-RID .NET nupkg.
+    Each must exist, be non-empty, and have a matching .sha256 sidecar."""
+    jars = sorted(p for p in dist.glob("servirtium-vcr-*.jar")
+                  if not p.name.endswith(("-sources.jar", "-javadoc.jar")))
+    nupkgs = sorted(dist.glob("Servirtium.Vcr.*.nupkg"))
+    if not jars:
+        raise ValueError("no fat Java jar (servirtium-vcr-*.jar) in dist")
+    if not nupkgs:
+        raise ValueError("no multi-RID .NET nupkg (Servirtium.Vcr.*.nupkg) in dist")
+    for pkg in (*jars, *nupkgs):
+        checksum(pkg)
+    print(f"Verified {len(jars)} fat Java jar(s) and {len(nupkgs)} multi-RID .NET nupkg(s) with checksums.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tag")
     parser.add_argument("--check-version", action="store_true")
+    # --engine-only verifies only the engine libraries, ae-add set, and Linux
+    # ABI (the default behaviour). It exists so release/build.sh can validate the
+    # raw libraries BEFORE a binding package embeds one, without yet demanding the
+    # jar/nupkg. --binding-packages ADDITIONALLY requires the two multi-platform
+    # binding packages (fat Java jar + multi-RID .NET nupkg) to be present and
+    # checksummed — use it after RELEASE_BINDING_PACKAGES=1 has produced them.
+    parser.add_argument("--engine-only", action="store_true")
+    parser.add_argument("--binding-packages", action="store_true")
     parser.add_argument("--dist", type=Path, default=ROOT / "release/dist")
     args = parser.parse_args()
     try:
@@ -95,6 +119,8 @@ def main():
             print(f"Release version and toolchain pins match {args.tag}.")
         else:
             check_artifacts(args.tag, args.dist)
+            if args.binding_packages:
+                check_binding_packages(args.dist)
     except (OSError, ValueError, AttributeError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"release: {error}\n")
 
