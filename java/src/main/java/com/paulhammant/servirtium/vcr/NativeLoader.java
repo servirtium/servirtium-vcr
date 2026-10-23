@@ -4,16 +4,20 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.foreign.Arena;
 import java.lang.foreign.SymbolLookup;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.CodeSource;
 import java.util.Locale;
 
 /**
  * Locates and loads the native VCR library across the layouts it can ship in:
- * an explicit path via the {@code SERVIRTIUM_VCR_LIB} environment variable
- * (handy for pointing at a freshly built {@code ae build --emit=lib} artifact
- * during development), a plain file in the working tree's
+ * an explicit path via {@code nativeLib()} / {@link #configure(String)}, the
+ * {@code SERVIRTIUM_VCR_LIB} environment variable (handy for pointing at a
+ * freshly built {@code ae build --emit=lib} artifact during development), the
+ * directory the jar itself sits in (a consumer who drops the {@code .so} beside
+ * the jar), a plain file in the working tree's
  * {@code src/main/resources/native/<rid>/} dir, or — for a packaged jar — the
  * classpath resource {@code /native/<rid>/<libname>} extracted to a temp file.
  *
@@ -23,10 +27,20 @@ import java.util.Locale;
  */
 final class NativeLoader {
 
+    /**
+     * The engine release this client's ABI expects. Surfaced in the
+     * ABI-mismatch diagnostic when a required {@code aether_vcr_embed_*} export
+     * is missing from the loaded library (i.e. the {@code .so} is too old).
+     */
+    static final String ENGINE_VERSION = "v2.0.0-alpha.2";
+
     private static final Arena GLOBAL = Arena.global();
 
     /** Explicit path pinned via {@code nativeLib()} / {@link #configure(String)}. */
     private static volatile String explicitPath;
+
+    /** The path the library was actually loaded from (for diagnostics). */
+    private static volatile Path loadedLibraryPath;
 
     private NativeLoader() {
     }
@@ -46,7 +60,13 @@ final class NativeLoader {
     /** Resolve and load the native VCR library, returning a symbol lookup over it. */
     static SymbolLookup load() {
         Path libPath = locate();
+        loadedLibraryPath = libPath;
         return SymbolLookup.libraryLookup(libPath, GLOBAL);
+    }
+
+    /** The path the library was loaded from, or {@code null} before {@link #load()}. */
+    static Path loadedLibraryPath() {
+        return loadedLibraryPath;
     }
 
     private static Path locate() {
@@ -73,13 +93,20 @@ final class NativeLoader {
         String fileName = fileName();
         String resourcePath = "/native/" + rid + "/" + fileName;
 
-        // 2. Working-tree resources dir (running from a source checkout).
+        // 2. Beside the jar itself: a consumer who drops libservirtium_vcr.so
+        //    into the same directory as the jar on disk.
+        Path adjacent = besideCodeSource(fileName);
+        if (adjacent != null) {
+            return adjacent;
+        }
+
+        // 3. Working-tree resources dir (running from a source checkout).
         Path inTree = Path.of("src", "main", "resources", "native", rid, fileName);
         if (Files.exists(inTree)) {
             return inTree.toAbsolutePath();
         }
 
-        // 3. Classpath resource (packaged jar) -> extract to a temp file.
+        // 4. Classpath resource (packaged jar) -> extract to a temp file.
         try (InputStream in = NativeLoader.class.getResourceAsStream(resourcePath)) {
             if (in != null) {
                 Path tmp = Files.createTempFile("libservirtium_vcr", suffix());
@@ -92,9 +119,44 @@ final class NativeLoader {
         }
 
         throw new VcrException(
-                "native VCR library not found. Looked at $SERVIRTIUM_VCR_LIB, " + inTree
+                "native VCR library not found. Looked at $SERVIRTIUM_VCR_LIB, beside the jar, " + inTree
                         + ", and classpath " + resourcePath
-                        + ". Run ./build-native.sh to build it.");
+                        + ". Download libservirtium_vcr for your platform from "
+                        + "https://github.com/servirtium/servirtium-vcr/releases and set "
+                        + "SERVIRTIUM_VCR_LIB to its path (or drop it beside the jar).");
+    }
+
+    /**
+     * Load the library from the directory the jar (or classes dir) itself sits
+     * in — the literal "same folder as the jar" layout. Returns {@code null}
+     * when the code source isn't a filesystem location (custom classloaders) or
+     * the library isn't there, so the remaining candidates still run.
+     */
+    private static Path besideCodeSource(String lib) {
+        try {
+            CodeSource source = NativeLoader.class.getProtectionDomain().getCodeSource();
+            if (source == null || source.getLocation() == null) {
+                return null;
+            }
+            URI location = source.getLocation().toURI();
+            if (!"file".equalsIgnoreCase(location.getScheme())) {
+                return null;
+            }
+            return adjacentLibrary(Path.of(location), lib);
+        } catch (Exception e) {
+            // Custom classloaders can omit a filesystem code source. Continue
+            // through the in-tree / bundled-library fallbacks in that case.
+            return null;
+        }
+    }
+
+    static Path adjacentLibrary(Path codeSource, String lib) {
+        Path directory = Files.isDirectory(codeSource) ? codeSource : codeSource.getParent();
+        if (directory == null) {
+            return null;
+        }
+        Path candidate = directory.resolve(lib);
+        return Files.isRegularFile(candidate) ? candidate : null;
     }
 
     private static String fileName() {

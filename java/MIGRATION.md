@@ -72,7 +72,10 @@ server-first model the Aether VCR is designed around.
     1:1 with the `aether_vcr_embed_*` ABI, plus the copy-and-free string helper.
   - `NativeLoader` — `SymbolLookup.libraryLookup` over the resolved `.so`
     (env override → source tree → extracted classpath resource).
-- `build-native.sh` — builds the host-RID `.so` into `src/main/resources/native/`.
+- (removed) `build-native.sh` — the `.so` is now cross-built by the release
+  pipeline (download it from GitHub releases, or build with `aeb core/.build.ae`);
+  the loader finds it via `SERVIRTIUM_VCR_LIB`, beside the jar, or a bundled
+  `src/main/resources/native/` resource.
 - `docs/` (usage, architecture, features, building) and this file, rewritten.
 
 ## API translation (old → new)

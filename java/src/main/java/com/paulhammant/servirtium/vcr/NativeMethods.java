@@ -206,7 +206,15 @@ final class NativeMethods {
 
     private static MethodHandle down(String symbol, FunctionDescriptor descriptor) {
         MemorySegment addr = LOOKUP.find(symbol)
-                .orElseThrow(() -> new VcrException("native symbol not found: " + symbol));
+                .orElseThrow(() -> new VcrException(
+                        "The native VCR library at '" + NativeLoader.loadedLibraryPath()
+                                + "' is incompatible with this Java client (engine "
+                                + NativeLoader.ENGINE_VERSION + "): required ABI symbol " + symbol
+                                + " is missing. Please consider deleting or replacing '"
+                                + NativeLoader.loadedLibraryPath() + "' with the engine library from "
+                                + NativeLoader.ENGINE_VERSION + " (download it from "
+                                + "https://github.com/servirtium/servirtium-vcr/releases and set "
+                                + "SERVIRTIUM_VCR_LIB to its path)."));
         return LINKER.downcallHandle(addr, descriptor);
     }
 

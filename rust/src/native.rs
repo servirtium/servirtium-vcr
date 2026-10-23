@@ -166,7 +166,9 @@ fn load() -> Result<Native, String> {
         .ok_or_else(|| {
             format!(
                 "could not load the native VCR library (tried: {}). Last error: {}. \
-                 Run ./build-native.sh or set SERVIRTIUM_VCR_LIB.",
+                 Download libservirtium_vcr from \
+                 https://github.com/servirtium/servirtium-vcr/releases and set \
+                 SERVIRTIUM_VCR_LIB to its path (or place it in the crate's native/ dir).",
                 candidates
                     .iter()
                     .map(|p| p.display().to_string())
