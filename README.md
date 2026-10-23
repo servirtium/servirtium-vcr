@@ -198,7 +198,18 @@ Servirtium binding. A friendly map of the neighbourhood:
   generated from a collection's saved example responses. Ideal if your team
   already lives in Postman. Servirtium is local and file-based — the
   conversation is recorded from a real backend and committed to your repo, with
-  no SaaS endpoint in the loop.
+  no SaaS endpoint in the loop. (A Postman session exported to HAR imports via
+  `servirtium import`.)
+- **[Bruno](https://www.usebruno.com/)** — an offline, git-friendly API client
+  that stores each request as a plain-text `.bru` file in your repo — much the
+  same "collection lives in version control" instinct Servirtium has for tapes.
+  But a Bruno collection holds request *definitions*, not responses: it's for
+  *driving* an API by hand. Servirtium meets it directly —
+  `servirtium import-bru <bru-dir> <upstream> <out.md>` (above) fires a
+  collection's requests through record mode against the real upstream and
+  captures the live responses into a replayable tape. So Bruno is a first-class
+  *source* for Servirtium, not a competitor: author requests in Bruno, hydrate
+  them into a deterministic tape once, replay offline under any binding.
 - **[Microcks](https://microcks.io/)** — a centralized, Kubernetes-native
   platform that turns API artifacts (OpenAPI, Postman, gRPC, AsyncAPI, SoapUI)
   into shared mocks and contract tests across protocols and teams. Servirtium
@@ -308,7 +319,7 @@ The floor advertised support for ~250 releases nothing ever tested, and a
 mixed `ae`/`aetherc` pair is a genuinely nasty failure — so "supported" now
 means "tested". The trade: a user with a good-but-different ae gets a fetch
 they didn't strictly need.) The **aeb** pin is one number on the same policy:
-`AEB_REF` == floor == `v0.334`, paired with Aether 0.841.0. The pair preserves
+`AEB_REF` == floor == `v0.335`, paired with Aether 0.841.0. The pair preserves
 distinct GNU/musl binary-package identities (the libc-aware release floor is
 still Aether 0.838.0, which 0.841 satisfies). `bootstrap.sh` now checks the aeb release version as well as the
 Aether floor. The commands below pin that
@@ -324,14 +335,14 @@ clone), pipe `get.sh` into `sh` with the pins after the pipe. It installs a
 pinned `ae` (>= `AE_PIN`) THEN a pinned `aeb`, binary-first, into `~/.local`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/v0.334/get.sh \
-  | AE_PIN=0.841.0 AEB_REF=v0.334 sh
+curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/v0.335/get.sh \
+  | AE_PIN=0.841.0 AEB_REF=v0.335 sh
 ```
 
 (Prefer this to `sh -c "$(curl …)"` — the piped form is what `get.sh`'s
 executed-mode guard is built for. If you want a fetch error and install progress
 on your own terminal rather than through the pipe, download first and run the
-file: `curl … -o get.sh && AE_PIN=0.841.0 AEB_REF=v0.334 bash get.sh` — same
+file: `curl … -o get.sh && AE_PIN=0.841.0 AEB_REF=v0.335 bash get.sh` — same
 result.)
 
 ### Optionally: `aeo` (only for the containerized integration tests)
@@ -345,7 +356,7 @@ the same way, and ensures `ae` + `aeb` first (aeo shells them at runtime):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh \
-  | AE_PIN=0.841.0 AEB_REF=v0.334 AEO_REF=v0.2.3 sh
+  | AE_PIN=0.841.0 AEB_REF=v0.335 AEO_REF=v0.2.3 sh
 ```
 
 (Verified binary-first on a clean `debian:13-slim` — no compiler, no `make` —
