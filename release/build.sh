@@ -189,8 +189,10 @@ fi
 # Gated on RELEASE_BINDING_PACKAGES=1 so a normal `release/build.sh` is unchanged.
 # The fat jar embeds the SIX verified glibc/macos/windows release libraries (via
 # core/.releaseJarMatrix.ae, overriding java's core/.build.ae dep); the nupkg
-# embeds all EIGHT NuGet RIDs (via core/.releaseNugetMatrix.ae, overriding
-# dotnet/Servirtium.Vcr/.build.ae with dotnet/Servirtium.Vcr/.releaseBuild.ae).
+# embeds all EIGHT NuGet RIDs — .releaseBuild.ae stages them DIRECTLY from
+# release/dist (overriding dotnet/Servirtium.Vcr/.build.ae), not via a matrix
+# node, because a node substituted through --overrideDep does not get its own
+# dep() edges resolved (that left the csproj with empty <None Include> / MSB4035).
 if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
   have aeb || die "RELEASE_BINDING_PACKAGES=1 requires aeb"
   # Validate the raw release libraries before any package is allowed to embed

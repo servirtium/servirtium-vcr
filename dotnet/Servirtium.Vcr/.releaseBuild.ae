@@ -2,35 +2,69 @@
 // native matrix into the generated project so `dotnet pack` (dotnet/Servirtium.Vcr/
 // .dist.ae) bundles every verified release library under runtimes/<rid>/native/.
 //
-// This is the release-only twin of dotnet/Servirtium.Vcr/.build.ae: identical
-// PropertyGroup (so the regenerated .Servirtium.Vcr.generated.csproj is the same
-// shape dotnet.pack() expects), but its single host native_runtime("linux-x64", …)
-// is replaced by eight native_runtime(<rid>, <lib>) calls sourced from
-// core/.releaseNugetMatrix.ae — the eight portable NuGet RIDs copied from THIS
-// tag's release/dist. FreeBSD is excluded (no standard NuGet RID).
+// Release-only twin of dotnet/Servirtium.Vcr/.build.ae: identical PropertyGroup
+// (so the regenerated .Servirtium.Vcr.generated.csproj is the shape dotnet.pack()
+// expects), but its single host native_runtime("linux-x64", …) is replaced by
+// eight native_runtime(<rid>, <lib>) calls. FreeBSD is excluded (no standard
+// NuGet RID).
 //
-// Used only by the official tag workflow: release/build.sh runs
-//   aeb dotnet/Servirtium.Vcr/.dist.ae \
-//     --overrideDep dotnet/Servirtium.Vcr/.build.ae=dotnet/Servirtium.Vcr/.releaseBuild.ae
-// so .dist.ae's dep on .build.ae resolves here, and pack finds this node's
-// generated csproj with all eight native_runtime items. Mirrors selenium's
-// dotnet/SeleniumCore/.releaseBuild.ae (there the libs are staged into the
-// project tree; here they are consumed as the matrix node's published artifacts,
-// matching servirtium-vcr's .releaseNugetMatrix.ae design).
+// Each lib is STAGED DIRECTLY from this tag's release/dist (the checksummed
+// release artifacts) into the project tree, mirroring selenium's
+// dotnet/SeleniumCore/.releaseBuild.ae. This is deliberately NOT a
+// dep_artifact(core/.releaseNugetMatrix.ae, …): release/build.sh reaches this
+// node via `aeb dotnet/Servirtium.Vcr/.dist.ae --overrideDep
+// dotnet/Servirtium.Vcr/.build.ae=dotnet/Servirtium.Vcr/.releaseBuild.ae`, and a
+// node substituted in through --overrideDep does NOT get its own dep() edges
+// resolved — so a matrix dep_artifact came back empty and the csproj got
+// <None Include=""> (MSB4035). Reading release/dist directly sidesteps that.
 import bldr
 import dotnet
 import dotnet (target_framework, root_namespace, nullable, package_id, package_version, package_description, native_runtime)
+import std.fs
+import std.string
+
+// Copy one verified release engine from release/dist into the project tree under
+// the canonical runtimes filename the .NET NativeLoader expects, and return the
+// project-relative path for native_runtime().
+_stage_release_native(root: string, source_name: string, rid: string, native_name: string) -> string {
+    source = string.concat(root, string.concat("/release/dist/", source_name))
+    destination_dir = string.concat(root, string.concat("/dotnet/Servirtium.Vcr/native/", rid))
+    destination = string.concat(destination_dir, string.concat("/", native_name))
+    if fs.exists(source) == 0 {
+        bldr.fail(builder_context(), string.concat("release NuGet library missing: ", source))
+    } else {
+        mkdir_err = fs.mkdir_p(destination_dir)
+        if string.length(mkdir_err) > 0 {
+            bldr.fail(builder_context(), string.concat("cannot stage NuGet library dir: ", destination_dir))
+        } else {
+            copied, _copy_kind, copy_err = fs.copy(source, destination)
+            if copied == 0 {
+                bldr.fail(builder_context(), string.concat("cannot stage NuGet library: ", copy_err))
+            }
+        }
+    }
+    return string.concat("native/", string.concat(rid, string.concat("/", native_name)))
+}
+
 aeb(cap) {
     bldr.build() {
-        dep("core/.releaseNugetMatrix.ae")
-        linux_x64 = dep_artifact("core/.releaseNugetMatrix.ae", "linux_x64")
-        linux_arm64 = dep_artifact("core/.releaseNugetMatrix.ae", "linux_arm64")
-        linux_musl_x64 = dep_artifact("core/.releaseNugetMatrix.ae", "linux_musl_x64")
-        linux_musl_arm64 = dep_artifact("core/.releaseNugetMatrix.ae", "linux_musl_arm64")
-        osx_x64 = dep_artifact("core/.releaseNugetMatrix.ae", "osx_x64")
-        osx_arm64 = dep_artifact("core/.releaseNugetMatrix.ae", "osx_arm64")
-        win_x64 = dep_artifact("core/.releaseNugetMatrix.ae", "win_x64")
-        win_arm64 = dep_artifact("core/.releaseNugetMatrix.ae", "win_arm64")
+        srcdir = bldr.source_dir(builder_context())
+        root = string.concat(srcdir, "/../..")
+        tag_text, read_err = fs.read(string.concat(root, "/SERVIRTIUM_VCR_VERSION"))
+        if string.length(read_err) > 0 {
+            bldr.fail(builder_context(), "cannot read SERVIRTIUM_VCR_VERSION")
+        }
+        tag = string.trim(tag_text)
+
+        linux_x64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-linux-x86_64.so")), "linux-x64", "libservirtium_vcr.so")
+        linux_arm64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-linux-arm64.so")), "linux-arm64", "libservirtium_vcr.so")
+        linux_musl_x64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-linux-x86_64-musl.so")), "linux-musl-x64", "libservirtium_vcr.so")
+        linux_musl_arm64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-linux-arm64-musl.so")), "linux-musl-arm64", "libservirtium_vcr.so")
+        osx_x64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-macos-x86_64.dylib")), "osx-x64", "libservirtium_vcr.dylib")
+        osx_arm64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-macos-arm64.dylib")), "osx-arm64", "libservirtium_vcr.dylib")
+        win_x64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-windows-x86_64.dll")), "win-x64", "servirtium_vcr.dll")
+        win_arm64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-windows-arm64.dll")), "win-arm64", "servirtium_vcr.dll")
+
         dotnet.build_project() {
             // Mirror dotnet/Servirtium.Vcr/.build.ae's PropertyGroup EXACTLY so
             // the regenerated csproj differs only in the native_runtime grid.
