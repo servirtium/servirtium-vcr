@@ -17,7 +17,7 @@
 # Env overrides:
 #   PREFIX        install prefix                 (default: $HOME/.local; no sudo)
 #   AETHER_REF    ae tag/branch/SHA to install   (default: $AE_FETCH below)
-#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.333)
+#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.334)
 #   MIN_AE        minimum acceptable ae version  (default: $AE_PIN below)
 #   AEB_TIMEOUT   passed through to aeb (seconds)  (optional)
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
@@ -54,20 +54,23 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-10-23: bumped to the verified pair 0.840.0 / aeb v0.333 (tracks the
+# 2026-10-23 (later): bumped to the verified pair 0.841.0 / aeb v0.334. ae 0.841
+# makes `--emit=lib` REJECT a net/fs/os/extern import without a matching
+# `--with=<cap>` — a non-issue here because core/.build.ae already declares
+# caps("fs,net,extern"), which aeb's shared_lib forwards as --with=fs,net,extern.
+# aeb v0.334 (its AETHER_PIN is still 0.840 — a FLOOR for aeb's own sources, not a
+# cap on what it runs; anything newer on PATH is accepted). VERIFIED here on
+# 0.841 + v0.334: core build (622KB .so) + go/rust .tests.ae 1/1 + release/
+# .version.ae pins pass; aetherc AETHER_WEAK_DEF markers present (=5).
+# 2026-10-23 (earlier): the verified pair was 0.840.0 / aeb v0.333 (tracks the
 # selenium sibling, which moved 0.838/v0.330 -> 0.839/v0.332 -> 0.840/v0.333).
-# aeb v0.333 pins Aether 0.840 (its AETHER_PIN; 0.840 makes a build node's
-# session handle @keep); v0.331/v0.332 were the 0.839 branch-local-type-conflict
-# fix. Nothing in this repo's path changed — a stay-with-the-runner bump.
-# VERIFIED here on 0.840 + released aeb v0.333: core build + go/rust .tests.ae
-# 1/1 + the release/ builder-loop (x86_64-linux, weak-emit present, ae-add
-# staged, 0 failed). The C ABI stays char* (-> ptr + vcr_embed_dup), still clean
-# on 0.840 (see the AGENTS.md note on the 0.819 string-handle trap).
+# The C ABI stays char* (-> ptr + vcr_embed_dup), still clean on 0.841 (see the
+# AGENTS.md note on the 0.819 string-handle trap).
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.840.0"
-AE_FETCH="v0.840.0"
+AE_PIN="0.841.0"
+AE_FETCH="v0.841.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
@@ -325,7 +328,7 @@ AE_FETCH="v0.840.0"
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.333 == the verified release for this cut.
+#   aeb floor == AEB_REF == v0.334 == the verified release for this cut.
 #
 # v0.327 (from v0.326) is REQUIRED, coupled with AE_PIN 0.824: v0.326's bldr
 # does not compile on ae 0.818+ (E0902), and v0.327 is the first release that
@@ -378,7 +381,7 @@ AE_FETCH="v0.840.0"
 #
 # Released aeb bundles now report their version. Enforce the release floor;
 # an unversioned development build cannot establish that it meets the pin.
-AEB_REF="${AEB_REF:-v0.333}"
+AEB_REF="${AEB_REF:-v0.334}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX

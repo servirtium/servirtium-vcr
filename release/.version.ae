@@ -1,0 +1,309 @@
+// The release version pin, checked or set across every independently shipped
+// binding and the docs that quote it. Replaces release/version.py.
+//
+//   aeb release/.version.ae                                      check every pin against SERVIRTIUM_VCR_VERSION
+//   SVCR_RELEASE_TAG=v2.0.0-alpha.4 aeb release/.version.ae      check every pin against v2.0.0-alpha.4
+//   SVCR_RELEASE_SET=v2.0.0-alpha.4 aeb release/.version.ae      prepare a release: rewrite every pin
+//
+// aeb nodes take no arguments, so the mode comes from the environment. The node
+// prints to target/.aeb/logs/version_release.log; a failure's reason is also in
+// aeb's console summary.
+//
+// The canonical form is a git tag with an optional pre-release, e.g.
+// v2.0.0-alpha.3 (or plain v2.0.0). Each ecosystem spells it differently, so a
+// pin's template carries the marker for the spelling it holds:
+//
+//   @V@  v2.0.0-alpha.3   the tag: SERVIRTIUM_VCR_VERSION, loader ENGINE_VERSION
+//   @S@  2.0.0-alpha.3    semver: npm, cargo, pub, shards, julia, gleam, dub, mix, nuget
+//   @M@  2.0.0-alpha3     maven (no dot before the pre-release number)
+//   @G@  2.0.0.alpha.3    RubyGems
+//   @P@  2.0.0a3          PEP 440 (alpha->a, beta->b, rc->rc)
+//
+// Setting is all-or-nothing: every pin is found and counted before any file is
+// written. Never add this node to a target set in set mode: it rewrites tracked
+// source files.
+//
+// Docs are different from selenium's: ~29 READMEs quote the tag in download
+// URLs, so instead of one row per line, every *.md (except CHANGELOG*, and
+// anything under target/ node_modules/ .git/ dist/ _build/) has the OLD tag
+// (the one in SERVIRTIUM_VCR_VERSION) replaced by the new one in set mode, and
+// in check mode a doc still quoting the old tag fails when old != requested.
+import bldr
+import std.fs
+import std.map
+import std.os
+import std.regex
+import std.string
+import std.strbuilder
+
+// One row per pin: the file, then the text around the version as a regex, with
+// the spelling's marker where the version stands. The same text twice in one
+// file is listed twice (copies() counts them). `${` would be Aether string
+// interpolation, so a literal one in a template must be spelled `[$][{]`.
+const PINS[] = [
+    "SERVIRTIUM_VCR_VERSION", "^@V@\\s*$",
+    "javascript/package.json", "^  \"version\": \"@S@\"",
+    // top-level version and packages[""] version: the name line anchors the
+    // second so dependency entries are untouched
+    "javascript/package-lock.json", "(?:^  |\"name\": \"@servirtium/vcr\",\\n      )\"version\": \"@S@\"",
+    "javascript/package-lock.json", "(?:^  |\"name\": \"@servirtium/vcr\",\\n      )\"version\": \"@S@\"",
+    "rust/Cargo.toml", "^version = \"@S@\"",
+    "dart/pubspec.yaml", "^version: @S@$",
+    "crystal/shard.yml", "^version: @S@$",
+    "julia/Project.toml", "^version = \"@S@\"",
+    "gleam/gleam.toml", "^version = \"@S@\"",
+    "zig/build.zig.zon", "\\.version = \"@S@\"",
+    "d/dub.json", "^    \"version\": \"@S@\"",
+    "elixir/mix.exs", "@version \"@S@\"",
+    "dotnet/Servirtium.Vcr/.build.ae", "package_version\\(\"@S@\"\\)",
+    "dotnet/Servirtium.Vcr/.releaseBuild.ae", "package_version\\(\"@S@\"\\)",
+    "dotnet/example/ServirtiumConsumerExample.csproj", "Include=\"Servirtium\\.Vcr\" Version=\"@S@\"",
+    "fsharp/Servirtium.Vcr.FSharp/Servirtium.Vcr.FSharp.fsproj", "<Version>@S@</Version>",
+    "fsharp/example/ServirtiumConsumerExample.fsproj", "Include=\"Servirtium\\.Vcr\\.FSharp\" Version=\"@S@\"",
+    // consumer-facing snippet + prose in the crystal README
+    "crystal/README.md", "(?:^    version: |Naming `)@S@(?:      # REQUIRED|` resolves)",
+    "crystal/README.md", "(?:^    version: |Naming `)@S@(?:      # REQUIRED|` resolves)",
+    "ruby/lib/servirtium/version.rb", "VERSION = '@G@'",
+    "python/setup.py", "version='@P@'",
+    "java/src/main/java/com/paulhammant/servirtium/vcr/NativeLoader.java", "ENGINE_VERSION = \"@V@\"",
+    "dotnet/Servirtium.Vcr/NativeLoader.cs", "EngineVersion = \"@V@\"",
+    // Maven poms: the project version and/or the dependency on the java binding
+    // jar. @M@ matches pre-release-shaped versions only, so unrelated plain
+    // x.y.z dependency versions are untouched.
+    "java/pom.xml", "<version>@M@</version>",
+    "java/example/pom.xml", "<version>@M@</version>",
+    "kotlin/pom.xml", "<version>@M@</version>",
+    "kotlin/pom.xml", "<version>@M@</version>",
+    "kotlin/example/pom.xml", "<version>@M@</version>",
+    "scala/pom.xml", "<version>@M@</version>",
+    "scala/pom.xml", "<version>@M@</version>",
+    "scala/example/pom.xml", "<version>@M@</version>",
+    "clojure/pom.xml", "<version>@M@</version>",
+    "clojure/pom.xml", "<version>@M@</version>",
+    "groovy/pom.xml", "<version>@M@</version>",
+    "groovy/pom.xml", "<version>@M@</version>",
+    "groovy/example/pom.xml", "<version>@M@</version>"
+]
+
+const TAG = "v\\d+\\.\\d+\\.\\d+(?:-[a-z]+\\.\\d+)?"
+
+// Directories the doc sweep never enters.
+const SKIP_DIRS = "|target|node_modules|.git|dist|_build|"
+
+// The marker a template carries, "" if none.
+marker(template: string) -> string {
+    if string.contains(template, "@V@") == 1 { return "@V@" }
+    if string.contains(template, "@S@") == 1 { return "@S@" }
+    if string.contains(template, "@M@") == 1 { return "@M@" }
+    if string.contains(template, "@G@") == 1 { return "@G@" }
+    if string.contains(template, "@P@") == 1 { return "@P@" }
+    return ""
+}
+
+// What each marker's version looks like. Each matches only its own spelling.
+shape(mark: string) -> string {
+    if mark == "@V@" { return TAG }
+    if mark == "@S@" { return "\\d+\\.\\d+\\.\\d+(?:-[a-z]+\\.\\d+)?" }
+    if mark == "@M@" { return "\\d+\\.\\d+\\.\\d+-[a-z]+\\d+" }
+    if mark == "@G@" { return "\\d+\\.\\d+\\.\\d+(?:\\.[a-z]+\\.\\d+)?" }
+    return "\\d+\\.\\d+\\.\\d+(?:(?:a|b|rc)\\d+)?"
+}
+
+// The spelling `mark` wants for `tag` (a tag already validated against TAG):
+// (version, "") or ("", why not).
+spelling(tag: string, mark: string) -> (string, string) {
+    if mark == "@V@" { return tag, "" }
+    s = string.substring(tag, 1, string.length(tag))
+    dash = string.index_of(s, "-")
+    if dash < 0 { return s, "" }   // plain release: every bare form is the base
+    base = string.substring(s, 0, dash)
+    rest = string.substring(s, dash + 1, string.length(s))
+    dot = string.index_of(rest, ".")
+    kind = string.substring(rest, 0, dot)
+    num = string.substring(rest, dot + 1, string.length(rest))
+    if mark == "@S@" { return "${base}-${kind}.${num}", "" }
+    if mark == "@M@" { return "${base}-${kind}${num}", "" }
+    if mark == "@G@" { return "${base}.${kind}.${num}", "" }
+    k = ""
+    if kind == "alpha" { k = "a" }
+    else if kind == "beta" { k = "b" }
+    else if kind == "rc" { k = "rc" }
+    else { return "", "pre-release kind '${kind}' has no PEP 440 spelling (alpha/beta/rc)" }
+    return "${base}${k}${num}", ""
+}
+
+// A row's template as a regex whose whole match is the version: `\K` drops
+// what precedes it and a lookahead checks what follows, so a find_all span is
+// the version alone, like Python's match.span(1).
+pattern(template: string) -> string {
+    mark = marker(template)
+    at = string.index_of(template, mark)
+    before = string.substring(template, 0, at)
+    after = string.substring(template, at + 3, string.length(template))
+    return "${before}\\K${shape(mark)}(?=${after})"
+}
+
+// How many rows are identical to `row`, and whether `row` is the first of them.
+copies(row: int) -> (int, bool) {
+    n = 0
+    first = true
+    for i in 0..PINS.len / 2 {
+        if PINS[2 * i] == PINS[2 * row] && PINS[2 * i + 1] == PINS[2 * row + 1] {
+            n += 1
+            if i < row { first = false }
+        }
+    }
+    return n, first
+}
+
+// One row's pins in `content`, set to `tag`: the new text, the mismatches found
+// on the way ("" when it already agreed) and how many, or an error.
+retag(content: string, row: int, tag: string) -> (string, string, int, string) {
+    file = PINS[2 * row]
+    template = PINS[2 * row + 1]
+    mark = marker(template)
+    if mark == "" { return "", "", 0, "${file}: template '${template}' has no marker" }
+    want, werr = spelling(tag, mark)
+    if werr != "" { return "", "", 0, werr }
+    re, re_err = regex.compile_flags(pattern(template), regex.FLAG_MULTILINE)
+    if re_err != "" { return "", "", 0, "${file}: bad pattern: ${re_err}" }
+    defer regex.free(re)
+    fa, _fe = regex.find_all(re, content)
+    found = if fa == null { 0 } else { regex.find_all_count(fa) }
+    expected, _first = copies(row)
+    if found != expected {
+        if fa != null { regex.find_all_free(fa) }
+        return "", "", 0, "${file}: expected ${expected} version pin(s) like '${template}', found ${found}"
+    }
+    // Splice from the last match back, so earlier offsets stay valid.
+    out = content
+    detail = ""
+    wrong = 0
+    for k in 0..found {
+        j = found - 1 - k
+        ms = regex.find_all_start(fa, j)
+        me = regex.find_all_end(fa, j)
+        have = string.substring(content, ms, me)
+        if have != want {
+            detail = "${detail}\n  ${file}: ${have} != ${want}"
+            wrong += 1
+        }
+        out = "${string.substring(out, 0, ms)}${want}${string.substring(out, me, string.length(out))}"
+    }
+    if fa != null { regex.find_all_free(fa) }
+    return out, detail, wrong, ""
+}
+
+// The text after the last "/" of a path.
+base_name(path: string) -> string {
+    at = -1
+    n = string.length(path)
+    for i in 0..n {
+        if string.substring(path, i, i + 1) == "/" { at = i }
+    }
+    return string.substring(path, at + 1, n)
+}
+
+// Every doc that may quote the tag, as root-relative paths joined by newlines.
+doc_files(root: string) -> string {
+    sb = strbuilder.new(4096)
+    cut = string.length(root) + 1
+    count = 0
+    _n, _e = fs.walk(root, | path: string, kind: int, depth: int | {
+        name = base_name(path)
+        if kind == 2 && depth > 0 && string.contains(SKIP_DIRS, "|${name}|") == 1 { return 1 }
+        if kind == 1 && string.ends_with(name, ".md") == 1 && !string.starts_with(string.to_upper(name), "CHANGELOG") {
+            if count > 0 { strbuilder.append(sb, "\n") }
+            strbuilder.append(sb, string.substring(path, cut, string.length(path)))
+            count += 1
+        }
+        return 0
+    })
+    return strbuilder.finish(sb)
+}
+
+// The release run: every pin read and retagged in memory, then either written
+// (set mode) or compared. "" when it passes, else why not.
+release(root: string, tag: string, old: string, setting: bool) -> string {
+    if regex.matches_lit("^${TAG}$", tag)! == 0 {
+        return "expected a release tag like v2.0.0-alpha.3, got '${tag}'"
+    }
+    bodies = map.map_new()
+    defer map.map_free(bodies)
+    detail = ""
+    wrong = 0
+    for row in 0..PINS.len / 2 {
+        _n, first = copies(row)
+        if !first { continue }   // its first copy already handled every match
+        file = PINS[2 * row]
+        content, err = map.get_string(bodies, file)
+        if map.map_has(bodies, file) == 0 {
+            content, err = fs.read("${root}/${file}")
+            if err != "" { return "${file}: cannot read" }
+        }
+        out, d, w, rerr = retag(content, row, tag)
+        if rerr != "" { return rerr }
+        map.map_put(bodies, file, out)
+        detail = "${detail}${d}"
+        wrong += w
+    }
+    // Docs: the plain old -> new tag replace.
+    docs = string.split(doc_files(root), "\n")
+    defer string.array_free(docs)
+    for i in 0..string.array_size(docs) {
+        file = string.array_get(docs, i)
+        content, err = map.get_string(bodies, file)
+        if map.map_has(bodies, file) == 0 {
+            content, err = fs.read("${root}/${file}")
+            if err != "" { return "${file}: cannot read" }
+        }
+        if old == tag || string.contains(content, old) == 0 { continue }
+        if setting {
+            map.map_put(bodies, file, string.replace_all(content, old, tag))
+        } else {
+            detail = "${detail}\n  ${file}: still references ${old}"
+            wrong += 1
+        }
+    }
+    if !setting {
+        if wrong > 0 { return "${wrong} version pin(s) disagree with ${tag}:${detail}" }
+        println("All version pins match ${tag}.")
+        return ""
+    }
+    keys, _k = map.keys(bodies)
+    defer map.map_keys_free(keys)
+    for i in 0..map.keys_size(keys) {
+        file = map.keys_get(keys, i)
+        body, _g = map.get_string(bodies, file)
+        werr = fs.write("${root}/${file}", body)
+        if werr != "" { return "${file}: ${werr}" }
+    }
+    println("Prepared version pins for ${tag}; commit before tagging.")
+    return ""
+}
+
+// An environment variable, "" when unset: os.getenv gives null then, which
+// `!= ""` reads as set.
+env(name: string) -> string {
+    v = os.getenv(name)
+    if string.length(v) == 0 { return "" }
+    return v
+}
+
+aeb(cap) {
+    bldr.build() {
+        root = _get("root")
+        set_tag = env("SVCR_RELEASE_SET")
+        check_tag = env("SVCR_RELEASE_TAG")
+        old_raw, old_err = fs.read("${root}/SERVIRTIUM_VCR_VERSION")
+        old = string.trim(old_raw)
+        tag = old
+        if check_tag != "" { tag = check_tag }
+        if set_tag != "" { tag = set_tag }
+        bad = ""
+        if old_err != "" { bad = "cannot read SERVIRTIUM_VCR_VERSION" }
+        else if set_tag != "" && check_tag != "" { bad = "set SVCR_RELEASE_SET or SVCR_RELEASE_TAG, not both" }
+        else { bad = release(root, tag, old, set_tag != "") }
+        if bad != "" { bldr.fail(builder_context(), bad) }
+    }
+}

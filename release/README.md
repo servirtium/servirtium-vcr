@@ -18,7 +18,10 @@ Prepare the single engine-download pin before tagging, so it matches the engine
 that will be published at that tag. For example, for a future alpha:
 
 ```sh
-printf '%s\n' v2.0.0-alpha.3 > SERVIRTIUM_VCR_VERSION
+# Rewrite every version pin (per-ecosystem spellings + doc download URLs) from the
+# current SERVIRTIUM_VCR_VERSION to the new tag; all-or-nothing:
+SVCR_RELEASE_SET=v2.0.0-alpha.3 aeb release/.version.ae
+SVCR_RELEASE_TAG=v2.0.0-alpha.3 aeb release/.version.ae   # check every pin against the tag
 python3 release/check-artifacts.py v2.0.0-alpha.3 --check-version
 # Stage and commit the release preparation, then:
 git tag -a v2.0.0-alpha.3 -m 'Servirtium core v2.0.0-alpha.3'
@@ -123,6 +126,15 @@ The canonical version is a SemVer **pre-release** (`2.0.0-alpha.2`). Two gotchas
   Python `2.0.0a2` (PEP 440), RubyGems `2.0.0.alpha.2`, Maven `2.0.0-alpha2`,
   and plain SemVer `2.0.0-alpha.2` everywhere else (npm/cargo/pub/NuGet/hex/…).
   A single literal string is **not** portable across all of them.
+
+`release/.version.ae` (an aeb node; run `aeb release/.version.ae`) owns this: each
+pin row names the spelling it carries (tag / semver / maven / gem / PEP 440) and
+the node derives all five from the one tag. With no env var it checks every pin
+against `SERVIRTIUM_VCR_VERSION`; `SVCR_RELEASE_TAG=<tag>` checks against a tag;
+`SVCR_RELEASE_SET=<tag>` rewrites. Markdown docs (except `CHANGELOG*`) get a
+plain old-tag to new-tag replace, and the check fails if one still quotes the old
+tag. The Maven pins only match pre-release-shaped versions, so after a plain
+`vX.Y.Z` release the next pre-release needs the poms hand-edited back to that shape.
 
 ## Using a published artifact
 
