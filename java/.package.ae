@@ -38,18 +38,18 @@ import std.string
 aeb(cap) {
     bldr.build() {
         release = os.getenv("RELEASE_BINDING_PACKAGES")
+        // Switching between lean and multi-platform packages must not retain
+        // native resources from a previous Maven build.
+        root_j = _get("root")
+        cleaned = os.system("cd \"${root_j}/java\" && mvn -q clean")
+        if cleaned != 0 { bldr.fail(builder_context(), "java package: Maven clean failed"); return 1 }
+        cleaned = os.system("rm -rf \"${root_j}/java/src/main/resources/native\"")
+        if cleaned != 0 { bldr.fail(builder_context(), "java package: clearing staged natives failed"); return 1 }
         if string.length(release) > 0 {
             // RELEASE path: bundle all six verified release libraries (fat jar).
             // core/.build.ae is overridden to core/.releaseJarMatrix.ae by
             // release/build.sh, so this edge resolves to the matrix node.
             dep("core/.build.ae")
-            // Start from a clean native/ so the fat jar holds EXACTLY the six
-            // os-arch resources — never a leftover /native/linux-x64/ from an
-            // earlier in-tree lean run. (A fresh CI checkout has nothing here;
-            // this only matters when both paths run in one working tree.) The
-            // dir is gitignored, so removing it drops only staged artifacts.
-            root_j = _get("root")
-            _rm = os.system("rm -rf \"${root_j}/java/src/main/resources/native\"")
             one = string.trim(dep_artifact("core/.build.ae", "shared_lib"))
             // The matrix stages all six into the same lib/ dir; shared_lib is the
             // linux-x86_64 one. Its directory holds the other five by known name.
