@@ -3918,6 +3918,14 @@ emit_code_block(body: string) -> string {
     return string_concat(out, "\n```\n")
 }
 
+// Header-block newlines delimit header lines; they are not payload bytes.
+// Keep their canonical form while body blocks preserve terminal newlines.
+emit_header_block(headers: string) -> string {
+    end = string.length(headers)
+    while end > 0 && string.char_at(headers, end - 1) == 10 { end -= 1 }
+    return emit_code_block(string.substring(headers, 0, end))
+}
+
 // Emit one Interaction at index `i` as a markdown chunk.
 //
 // Implementation note: every accumulator step uses string_concat
@@ -3982,7 +3990,7 @@ emit_one_interaction(i: int) -> string {
         out = string_concat(out, "\n")
     }
 
-    rh_block = emit_code_block(req_h_out)
+    rh_block = emit_header_block(req_h_out)
     rb_block = emit_code_block(req_b_out)
     out = string_concat(out, "### Request headers recorded for playback:\n\n")
     out = string_concat(out, rh_block)
@@ -3991,11 +3999,11 @@ emit_one_interaction(i: int) -> string {
 
     out = string_concat(out, "### Response headers recorded for playback:\n\n")
     if string.length(resp_h_out) > 0 {
-        rsp_h_block = emit_code_block(resp_h_out)
+        rsp_h_block = emit_header_block(resp_h_out)
         out = string_concat(out, rsp_h_block)
     } else if string.length(ctype) > 0 {
         ct_line = "Content-Type: ${ctype}"
-        rsp_h_block = emit_code_block(ct_line)
+        rsp_h_block = emit_header_block(ct_line)
         out = string_concat(out, rsp_h_block)
     } else {
         rsp_h_block = emit_code_block("")
