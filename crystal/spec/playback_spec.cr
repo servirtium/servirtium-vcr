@@ -115,3 +115,24 @@ describe "Structured redaction helpers" do
     end
   end
 end
+
+
+describe "Retained replay diagnostics" do
+  it "supports observers, consumption and assertions" do
+    root = File.expand_path("../..", __DIR__)
+    Servirtium.playback(File.join(root, "core_tests/diagnostics/playback.md")) do |server|
+      server.test_context("Crystal scenario", "scenario.test", 123)
+      Process.run("python3", [File.join(root, "core_tests/diagnostic_fixture.py"), server.base_url]).success?.should be_true
+      server.last_error(false).should contain("owner")
+      server.last_error(false).should contain("scenario.test:123")
+      server.diagnostics_json.should_not contain("\"retrieved\":1")
+      server.last_error.should contain("owner")
+      server.diagnostics_json.should contain("\"retrieved\":0")
+      server.diagnostics_json.should contain("\"retrieved\":1")
+      expect_raises(Servirtium::Error, /admin/) { server.assert_no_mismatches }
+      server.test_context("next test")
+      server.assert_no_mismatches
+      server.diagnostics_json.should eq("[]")
+    end
+  end
+end

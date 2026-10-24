@@ -49,6 +49,10 @@ extern void  aether_vcr_embed_reset_cursor(void *handle);
 
 /* diagnostics */
 extern char *aether_vcr_embed_last_error(void *handle);
+extern char *aether_vcr_embed_last_error_ex(void *h, int consume);
+extern char *aether_vcr_embed_diagnostics_json(void *h, int consume);
+extern char *aether_vcr_embed_assert_no_mismatches(void *h);
+extern void aether_vcr_embed_test_context(void *h, const char *name, const char *file, int line);
 extern int   aether_vcr_embed_last_kind(void *handle);       /* 0 == Ok */
 extern int   aether_vcr_embed_last_index(void *handle);
 extern void  aether_vcr_embed_clear_last_error(void *handle);
@@ -236,6 +240,20 @@ static int l_last_error(lua_State *L)
 }
 
 /* clear_last_error(handle) */
+static int l_last_error_ex(lua_State *L) {
+    return push_owned_string(L, aether_vcr_embed_last_error_ex(check_handle(L, 1), lua_toboolean(L, 2)));
+}
+static int l_diagnostics_json(lua_State *L) {
+    return push_owned_string(L, aether_vcr_embed_diagnostics_json(check_handle(L, 1), lua_toboolean(L, 2)));
+}
+static int l_assert_no_mismatches(lua_State *L) {
+    return push_owned_string(L, aether_vcr_embed_assert_no_mismatches(check_handle(L, 1)));
+}
+static int l_test_context(lua_State *L) {
+    aether_vcr_embed_test_context(check_handle(L, 1), luaL_checkstring(L, 2), luaL_checkstring(L, 3), (int)luaL_checkinteger(L, 4));
+    return 0;
+}
+
 static int l_clear_last_error(lua_State *L)
 {
     void *h = check_handle(L, 1);
@@ -442,6 +460,10 @@ static const luaL_Reg servirtium_funcs[] = {
     {"last_kind",                       l_last_kind},
     {"last_index",                      l_last_index},
     {"last_error",                      l_last_error},
+    {"last_error_ex", l_last_error_ex},
+    {"diagnostics_json", l_diagnostics_json},
+    {"assert_no_mismatches", l_assert_no_mismatches},
+    {"test_context", l_test_context},
     {"clear_last_error",                l_clear_last_error},
     {"stop",                            l_stop},
     {"stop_and_flush",                  l_stop_and_flush},

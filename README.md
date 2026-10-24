@@ -20,6 +20,9 @@ test target.
 Structured credential redaction is available across the bindings: see
 [redaction helpers](docs/redaction-helpers.md) for API names, scope and playback behaviour.
 
+Replay mismatches have a shared [diagnostic side channel](docs/replay-diagnostics.md),
+with consuming/observer reads, caller-supplied test coordinates and retained diffs.
+
 ## Layout (Selenium-style, flat per language)
 
 ```

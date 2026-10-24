@@ -163,6 +163,10 @@ def _ensure_loaded() -> None:
 
     # ---- diagnostics (handle-based) ----
     g["last_error"] = _decl("aether_vcr_embed_last_error", _CSTR, [_HANDLE])
+    g["last_error_ex"] = _decl("aether_vcr_embed_last_error_ex", _CSTR, [_HANDLE, ctypes.c_int])
+    g["diagnostics_json"] = _decl("aether_vcr_embed_diagnostics_json", _CSTR, [_HANDLE, ctypes.c_int])
+    g["assert_no_mismatches"] = _decl("aether_vcr_embed_assert_no_mismatches", _CSTR, [_HANDLE])
+    g["test_context"] = _decl("aether_vcr_embed_test_context", None, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int])
     g["last_kind"] = _decl("aether_vcr_embed_last_kind", ctypes.c_int, [_HANDLE])
     g["last_index"] = _decl("aether_vcr_embed_last_index", ctypes.c_int, [_HANDLE])
     g["clear_last_error"] = _decl("aether_vcr_embed_clear_last_error", None, [_HANDLE])

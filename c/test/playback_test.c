@@ -177,6 +177,34 @@ int main(int argc, char **argv) {
           rmdir(directory); }
     }
 
+
+    {
+        char root[4096], diagnostic_tape[8192], cmd[16384];
+        char *part; int i; sv_vcr *server; sv_str value;
+        snprintf(root, sizeof root, "%s", tape);
+        for (i=0; i<3; ++i) { part = strrchr(root, '/'); if (part) *part = '\0'; }
+        snprintf(diagnostic_tape, sizeof diagnostic_tape, "%s/core_tests/diagnostics/playback.md", root);
+        server = sv_playback(diagnostic_tape);
+        ck("diagnostic server", server != NULL);
+        sv_test_context(server, "C scenario", "scenario.test", 123);
+        value = sv_base_url(server);
+        snprintf(cmd, sizeof cmd, "python3 '%s/core_tests/diagnostic_fixture.py' '%s'", root, value.ptr);
+        ck("diagnostic driver", system(cmd) == 0); sv_free(value);
+        value = sv_last_error_ex(server, 0);
+        ck("observer diagnostic", strstr(value.ptr, "owner") != NULL && strstr(value.ptr, "scenario.test:123") != NULL); sv_free(value);
+        value = sv_diagnostics_json(server, 0);
+        ck("observer does not acknowledge", strstr(value.ptr, "\"retrieved\":1") == NULL); sv_free(value);
+        value = sv_last_error(server); ck("consuming last error", strstr(value.ptr, "owner") != NULL); sv_free(value);
+        value = sv_diagnostics_json(server, 0);
+        ck("earlier event unread", strstr(value.ptr, "\"retrieved\":0") != NULL && strstr(value.ptr, "\"retrieved\":1") != NULL); sv_free(value);
+        value = sv_assert_no_mismatches(server);
+        ck("assertion reports all failures", strstr(value.ptr, "admin") != NULL && strstr(value.ptr, "owner") != NULL); sv_free(value);
+        sv_test_context(server, "next test", "", 0);
+        value = sv_assert_no_mismatches(server); ck("new test clean", value.ptr[0] == '\0'); sv_free(value);
+        value = sv_diagnostics_json(server, 0); ck("new test empty", strcmp(value.ptr, "[]") == 0); sv_free(value);
+        sv_close(server);
+    }
+
     if (failures == 0) {
         printf("PASS: c servirtium playback\n");
         return 0;

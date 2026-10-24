@@ -458,8 +458,16 @@ class VcrServer {
   /// Tape entry count (playback), or interactions captured so far (record).
   int get tapeLength => Native.tapeLength(_requireHandle);
 
-  /// Most-recent dispatch diagnostic; empty when none flagged.
+  /// Latest retained replay diagnostic; consuming reads acknowledge without erasing.
   String get lastError => takeString(Native.lastError(_requireHandle));
+
+  /// Read the latest retained diagnostic; false observes without acknowledging.
+  String readLastError({bool consume = true}) => takeString(Native.lastErrorEx(_requireHandle, consume ? 1 : 0));
+  String diagnosticsJson({bool consume = false}) => takeString(Native.diagnosticsJson(_requireHandle, consume ? 1 : 0));
+  void assertNoMismatches() => _check(Native.assertNoMismatches(_requireHandle), 'assertNoMismatches');
+  void testContext(String name, {String sourceFile = '', int sourceLine = 0}) {
+    withUtf8(name, (n) => withUtf8(sourceFile, (f) => Native.testContext(_requireHandle, n, f, sourceLine)));
+  }
 
   /// Outcome of the most-recent dispatch.
   VcrOutcome get lastKind => VcrOutcome.fromValue(Native.lastKind(_requireHandle));

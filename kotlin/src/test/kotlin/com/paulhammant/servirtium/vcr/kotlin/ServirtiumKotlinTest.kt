@@ -45,6 +45,23 @@ class ServirtiumKotlinTest {
         }
     }
 
+    @Test fun `replay diagnostics have explicit consumption`() {
+        playback("../core_tests/diagnostics/playback.md").use { server ->
+            server.testContext("Kotlin scenario", "scenario.test", 123)
+            val driver = ProcessBuilder("python3", "../core_tests/diagnostic_fixture.py", server.baseUrl()).inheritIO().start()
+            assertEquals(0, driver.waitFor())
+            org.junit.jupiter.api.Assertions.assertTrue(server.lastError(false).contains("owner"))
+            org.junit.jupiter.api.Assertions.assertTrue(server.lastError(false).contains("scenario.test:123"))
+            org.junit.jupiter.api.Assertions.assertFalse(server.diagnosticsJson().contains("\"retrieved\":1"))
+            org.junit.jupiter.api.Assertions.assertTrue(server.lastError().contains("owner"))
+            org.junit.jupiter.api.Assertions.assertTrue(server.diagnosticsJson().contains("\"retrieved\":0"))
+            org.junit.jupiter.api.Assertions.assertThrows(com.paulhammant.servirtium.vcr.VcrException::class.java) { server.assertNoMismatches() }
+            server.testContext("next test", "", 0)
+            server.assertNoMismatches()
+            assertEquals("[]", server.diagnosticsJson())
+        }
+    }
+
     private fun get(url: String): String =
         HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI.create(url)).build(),

@@ -69,6 +69,10 @@ proc reset_cursor*(h: Handle)
 # --- diagnostics ---
 proc last_error*(h: Handle): cstring
   {.importc: "aether_vcr_embed_last_error", cdecl.}
+proc last_error_ex*(h: Handle, consume: cint): cstring {.importc: "aether_vcr_embed_last_error_ex", cdecl.}
+proc diagnostics_json*(h: Handle, consume: cint): cstring {.importc: "aether_vcr_embed_diagnostics_json", cdecl.}
+proc assert_no_mismatches*(h: Handle): cstring {.importc: "aether_vcr_embed_assert_no_mismatches", cdecl.}
+proc test_context*(h: Handle, name, file: cstring, line: cint) {.importc: "aether_vcr_embed_test_context", cdecl.}
 proc last_kind*(h: Handle): cint
   {.importc: "aether_vcr_embed_last_kind", cdecl.}
 proc last_index*(h: Handle): cint

@@ -42,6 +42,10 @@ lib LibVcr
 
   # Diagnostics.
   fun last_error = aether_vcr_embed_last_error(h : Void*) : LibC::Char*
+  fun last_error_ex = aether_vcr_embed_last_error_ex(h : Void*, consume : LibC::Int) : LibC::Char*
+  fun diagnostics_json = aether_vcr_embed_diagnostics_json(h : Void*, consume : LibC::Int) : LibC::Char*
+  fun assert_no_mismatches = aether_vcr_embed_assert_no_mismatches(h : Void*) : LibC::Char*
+  fun test_context = aether_vcr_embed_test_context(h : Void*, name : LibC::Char*, file : LibC::Char*, line : LibC::Int) : Void
   fun last_kind = aether_vcr_embed_last_kind(h : Void*) : LibC::Int
   fun last_index = aether_vcr_embed_last_index(h : Void*) : LibC::Int
   fun clear_last_error = aether_vcr_embed_clear_last_error(h : Void*) : Void
@@ -236,13 +240,23 @@ module Servirtium
     end
 
     # Most-recent dispatch diagnostic; "" when none flagged.
-    def last_error : String
-      Servirtium.take(LibVcr.last_error(@handle))
+    def last_error(consume : Bool = true) : String
+      Servirtium.take(LibVcr.last_error_ex(@handle, consume ? 1 : 0))
     end
 
     # Tape index of the most-recent matched interaction, or -1.
     def last_index : Int32
       LibVcr.last_index(@handle)
+    end
+
+    def diagnostics_json(consume : Bool = false) : String
+      Servirtium.take(LibVcr.diagnostics_json(@handle, consume ? 1 : 0))
+    end
+    def assert_no_mismatches : Nil
+      check LibVcr.assert_no_mismatches(@handle), "assert_no_mismatches"
+    end
+    def test_context(name : String, source_file : String = "", source_line : Int32 = 0) : Nil
+      LibVcr.test_context(@handle, name, source_file, source_line)
     end
 
     def clear_last_error : Nil

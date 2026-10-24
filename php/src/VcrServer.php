@@ -70,10 +70,25 @@ final class VcrServer
         return Native::lib()->aether_vcr_embed_tape_length($this->requireHandle());
     }
 
-    /** Most-recent dispatch diagnostic; empty when none flagged. */
-    public function lastError(): string
+    /** Latest retained replay diagnostic; consuming reads acknowledge without erasing. */
+    public function lastError(bool $consume = true): string
     {
-        return Native::takeString(Native::lib()->aether_vcr_embed_last_error($this->requireHandle()));
+        return Native::takeString(Native::lib()->aether_vcr_embed_last_error_ex($this->requireHandle(), $consume ? 1 : 0));
+    }
+
+    /** Read all retained events, without acknowledging by default. */
+    public function diagnosticsJson(bool $consume = false): string
+    {
+        return Native::takeString(Native::lib()->aether_vcr_embed_diagnostics_json($this->requireHandle(), $consume ? 1 : 0));
+    }
+    public function assertNoMismatches(): void
+    {
+        $error = Native::takeString(Native::lib()->aether_vcr_embed_assert_no_mismatches($this->requireHandle()));
+        if ($error !== '') { throw new VcrException($error); }
+    }
+    public function testContext(string $name, string $sourceFile = '', int $sourceLine = 0): void
+    {
+        Native::lib()->aether_vcr_embed_test_context($this->requireHandle(), $name, $sourceFile, $sourceLine);
     }
 
     /** Outcome of the most-recent dispatch. */

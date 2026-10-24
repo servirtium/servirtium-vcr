@@ -50,6 +50,24 @@ class ServirtiumGroovyTest {
         }
     }
 
+    @Test void retainedReplayDiagnostics() {
+        def server = playback('../core_tests/diagnostics/playback.md')
+        try {
+            server.testContext('Groovy scenario', 'scenario.test', 123)
+            def driver = new ProcessBuilder('python3', '../core_tests/diagnostic_fixture.py', server.baseUrl()).inheritIO().start()
+            assertEquals(0, driver.waitFor())
+            assert server.lastError(false).contains('owner')
+            assert server.lastError(false).contains('scenario.test:123')
+            assert !server.diagnosticsJson().contains('"retrieved":1')
+            assert server.lastError().contains('owner')
+            assert server.diagnosticsJson().contains('"retrieved":0')
+            org.junit.jupiter.api.Assertions.assertThrows(com.paulhammant.servirtium.vcr.VcrException) { server.assertNoMismatches() }
+            server.testContext('next test', '', 0)
+            server.assertNoMismatches()
+            assertEquals('[]', server.diagnosticsJson())
+        } finally { server.close() }
+    }
+
     private static String get(String url) {
         HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI.create(url)).build(),

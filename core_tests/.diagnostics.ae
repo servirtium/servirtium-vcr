@@ -1,0 +1,14 @@
+// C ABI black-box diagnostics contract, independent of any binding.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("core/.build.ae")
+        root = _get("root")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        rc = os.system("SERVIRTIUM_VCR_LIB=\"${lib}\" python3 \"${root}/core_tests/diagnostics-tests.py\"")
+        if rc != 0 { return 1 }
+        println("test: replay diagnostic side channel")
+        return 0
+    }
+}

@@ -11,6 +11,7 @@
 //// assertions (it raises on mismatch, no eunit), but `main` invokes the test
 //// directly and `halt`s 0/1 so `gleam test` reports pass/fail correctly.
 
+import gleam/string
 import gleeunit/should
 import servirtium
 
@@ -22,6 +23,7 @@ fn io_format(fmt: String, args: List(String)) -> a
 
 pub fn main() {
   structured_redaction_test()
+  replay_diagnostics_test()
   playback_single_get_test()
   let _ = io_format("PASS: gleam servirtium playback~n", [])
   halt(0)
@@ -98,4 +100,24 @@ pub fn structured_redaction_test() {
   shell(fixture <> "check '" <> directory <> "'")
     |> should.equal("structured redaction: upstream intact, tape scrubbed\n")
   let _ = shell("rm -r '" <> directory <> "'")
+}
+
+
+pub fn replay_diagnostics_test() {
+  let server = servirtium.playback("../core_tests/diagnostics/playback.md")
+  let _ = servirtium.test_context(server, "Gleam scenario", "scenario.test", 123)
+  shell("python3 ../core_tests/diagnostic_fixture.py '" <> servirtium.base_url(server) <> "' && echo DRIVER_OK") |> should.equal("DRIVER_OK\n")
+  servirtium.last_error_with(server, False) |> string.contains("owner") |> should.be_true()
+  servirtium.last_error_with(server, False) |> string.contains("scenario.test:123") |> should.be_true()
+  servirtium.diagnostics_json(server, False) |> string.contains("\"retrieved\":1") |> should.be_false()
+  servirtium.last_error(server) |> string.contains("owner") |> should.be_true()
+  servirtium.diagnostics_json(server, False) |> string.contains("\"retrieved\":0") |> should.be_true()
+  case servirtium.assert_no_mismatches(server) {
+    Error(diagnostic) -> diagnostic |> string.contains("admin") |> should.be_true()
+    Ok(_) -> panic as "expected a mismatch assertion"
+  }
+  let _ = servirtium.test_context(server, "next test", "", 0)
+  servirtium.assert_no_mismatches(server) |> should.equal(Ok(Nil))
+  servirtium.diagnostics_json(server, False) |> should.equal("[]")
+  let _ = servirtium.close(server)
 }

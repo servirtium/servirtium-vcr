@@ -97,3 +97,9 @@ module Servirtium =
 
     /// Add a titled note to the tape being recorded.
     let note (title: string) (body: string) (vcr: VcrServer) : unit = vcr.Note(title, body)
+
+    /// Observe or acknowledge the latest retained replay failure.
+    let lastErrorWith (consume: bool) (server: VcrServer) = server.ReadLastError(consume)
+    let diagnosticsJson (consume: bool) (server: VcrServer) = server.DiagnosticsJson(consume)
+    let assertNoMismatches (server: VcrServer) = server.AssertNoMismatches()
+    let testContext (name: string) (file: string) (line: int) (server: VcrServer) = server.TestContext(name, file, line)

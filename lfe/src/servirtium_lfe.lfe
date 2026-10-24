@@ -41,6 +41,7 @@
    (tape_length 1)
    ;; diagnostics
    (last_kind 1)
+   (last_error 2) (diagnostics_json 2) (assert_no_mismatches 1) (test_context 4)
    (last_error 1)
    (last_index 1)))
 
@@ -177,3 +178,15 @@
   (case (servirtium_nif:redact_json_field (maps:get 'handle vcr) field (to-bin name) (to-bin replacement))
     (#"" 'ok)
     (err (erlang:error (tuple 'servirtium err)))))
+
+(defun consume-flag (consume) (if consume 1 0))
+(defun last_error (vcr consume)
+  (binary_to_list (servirtium_nif:last_error_ex (maps:get 'handle vcr) (consume-flag consume))))
+(defun diagnostics_json (vcr consume)
+  (binary_to_list (servirtium_nif:diagnostics_json (maps:get 'handle vcr) (consume-flag consume))))
+(defun assert_no_mismatches (vcr)
+  (case (servirtium_nif:assert_no_mismatches (maps:get 'handle vcr))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
+(defun test_context (vcr name source-file source-line)
+  (servirtium_nif:test_context (maps:get 'handle vcr) (to-bin name) (to-bin source-file) source-line))

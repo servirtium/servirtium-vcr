@@ -658,9 +658,24 @@ impl VcrServer {
         unsafe { (self.n.tape_length)(self.handle) }
     }
 
-    /// Most-recent dispatch diagnostic; empty when none flagged.
+    /// Latest retained replay diagnostic; consuming reads acknowledge without erasing.
     pub fn last_error(&self) -> String {
         take_string(self.n, unsafe { (self.n.last_error)(self.handle) })
+    }
+
+    /// False permits a monitor to observe without acknowledging the event.
+    pub fn last_error_with(&self, consume: bool) -> String {
+        take_string(self.n, unsafe { (self.n.last_error_ex)(self.handle, consume as c_int) })
+    }
+    pub fn diagnostics_json(&self, consume: bool) -> String {
+        take_string(self.n, unsafe { (self.n.diagnostics_json)(self.handle, consume as c_int) })
+    }
+    pub fn assert_no_mismatches(&self) -> Result<(), VcrError> {
+        check(self.n, unsafe { (self.n.assert_no_mismatches)(self.handle) }, "assert_no_mismatches")
+    }
+    pub fn test_context(&self, name: &str, source_file: &str, source_line: i32) -> Result<(), VcrError> {
+        unsafe { (self.n.test_context)(self.handle, cstr(name)?.as_ptr(), cstr(source_file)?.as_ptr(), source_line) };
+        Ok(())
     }
 
     /// Outcome of the most-recent dispatch.

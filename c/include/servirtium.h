@@ -123,6 +123,11 @@ void sv_reset_cursor(sv_vcr *vcr);
 sv_outcome sv_last_kind(sv_vcr *vcr);
 
 /* Most-recent dispatch diagnostic; "" when none flagged. */
+/* Consuming reads acknowledge without erasing; observers pass 0. */
+sv_str sv_last_error_ex(sv_vcr *vcr, int consume);
+sv_str sv_diagnostics_json(sv_vcr *vcr, int consume);
+sv_str sv_assert_no_mismatches(sv_vcr *vcr);
+void sv_test_context(sv_vcr *vcr, const char *name, const char *source_file, int source_line);
 sv_str sv_last_error(sv_vcr *vcr);
 
 /* Tape index of the most-recent matched interaction, or -1. */

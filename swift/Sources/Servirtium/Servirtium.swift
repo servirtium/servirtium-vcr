@@ -179,6 +179,13 @@ public final class Vcr {
     /// Tape index of the most-recent matched interaction, or -1.
     public var lastIndex: Int32 { aether_vcr_embed_last_index(handle) }
 
+    public func readLastError(consume: Bool = true) -> String { take(aether_vcr_embed_last_error_ex(handle, consume ? 1 : 0)) }
+    public func diagnosticsJson(consume: Bool = false) -> String { take(aether_vcr_embed_diagnostics_json(handle, consume ? 1 : 0)) }
+    public func assertNoMismatches() throws { try check(aether_vcr_embed_assert_no_mismatches(handle), "assertNoMismatches") }
+    public func testContext(_ name: String, sourceFile: String = "", sourceLine: Int32 = 0) {
+        aether_vcr_embed_test_context(handle, name, sourceFile, sourceLine)
+    }
+
     public func clearLastError() { aether_vcr_embed_clear_last_error(handle) }
 
     // ---- config (each throws if libservirtium_vcr rejects it) -------------------

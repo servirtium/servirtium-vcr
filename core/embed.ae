@@ -65,6 +65,7 @@ vcr_embed_open_playback(label: string, tape_path: string, host: string, port: in
     if raw == 0 {
         return null
     }
+    vcr.diagnostic_open_h(raw, label, tape_path)
     http_server_set_host(raw, host)
     rc = http_server_bind_raw(raw, host, port)
     if rc < 0 {
@@ -82,6 +83,7 @@ vcr_embed_open_playback_url(label: string, tape_url: string, host: string, port:
     if raw == 0 {
         return null
     }
+    vcr.diagnostic_open_h(raw, label, tape_url)
     http_server_set_host(raw, host)
     rc = http_server_bind_raw(raw, host, port)
     if rc < 0 {
@@ -101,6 +103,7 @@ vcr_embed_open_record(label: string, tape_path: string, upstream_base: string, h
     if raw == 0 {
         return null
     }
+    vcr.diagnostic_open_h(raw, label, tape_path)
     http_server_set_host(raw, host)
     rc = http_server_bind_raw(raw, host, port)
     if rc < 0 {
@@ -174,6 +177,22 @@ vcr_embed_last_error(s: ptr) -> ptr {
         e = vcr.load_error_h(s)
     }
     return vcr_embed_dup(e)
+}
+
+// Additive ABI: consume acknowledges retrieval without deleting the event.
+vcr_embed_last_error_ex(s: ptr, consume: int) -> ptr {
+    e = vcr.last_error_ex_h(s, consume)
+    if e == "" { e = vcr.load_error_h(s) }
+    return vcr_embed_dup(e)
+}
+vcr_embed_diagnostics_json(s: ptr, consume: int) -> ptr {
+    return vcr_embed_dup(vcr.diagnostics_json_h(s, consume))
+}
+vcr_embed_assert_no_mismatches(s: ptr) -> ptr {
+    return vcr_embed_dup(vcr.assert_no_mismatches_h(s))
+}
+vcr_embed_test_context(s: ptr, test_name: string, source_file: string, source_line: int) {
+    vcr.test_context_h(s, test_name, source_file, source_line)
 }
 
 vcr_embed_last_kind(s: ptr) -> int {

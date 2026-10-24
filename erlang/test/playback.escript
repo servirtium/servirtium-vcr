@@ -33,6 +33,22 @@ main(_) ->
         file:del_dir(Directory)
     end,
 
+
+    DiagnosticServer = servirtium:playback("../core_tests/diagnostics/playback.md"),
+    ok = servirtium:test_context(DiagnosticServer, "Erlang scenario", "scenario.test", 123),
+    Driven = os:cmd("python3 ../core_tests/diagnostic_fixture.py '" ++ servirtium:base_url(DiagnosticServer) ++ "' && echo DRIVER_OK"),
+    true = string:find(Driven, "DRIVER_OK") =/= nomatch,
+    true = string:find(servirtium:last_error(DiagnosticServer, false), "owner") =/= nomatch,
+    true = string:find(servirtium:last_error(DiagnosticServer, false), "scenario.test:123") =/= nomatch,
+    nomatch = string:find(servirtium:diagnostics_json(DiagnosticServer, false), "\"retrieved\":1"),
+    true = string:find(servirtium:last_error(DiagnosticServer), "owner") =/= nomatch,
+    true = string:find(servirtium:diagnostics_json(DiagnosticServer, false), "\"retrieved\":0") =/= nomatch,
+    {'EXIT', _} = (catch servirtium:assert_no_mismatches(DiagnosticServer)),
+    ok = servirtium:test_context(DiagnosticServer, "next test", "", 0),
+    ok = servirtium:assert_no_mismatches(DiagnosticServer),
+    "[]" = servirtium:diagnostics_json(DiagnosticServer, false),
+    ok = servirtium:close(DiagnosticServer),
+
     Tape = "tapes/single_get.md",
     Vcr = servirtium:playback(Tape),
     BaseUrl = servirtium:base_url(Vcr),

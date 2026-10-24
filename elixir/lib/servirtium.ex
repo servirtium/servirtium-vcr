@@ -269,6 +269,11 @@ defmodule Servirtium do
   @spec last_error(Server.t()) :: String.t()
   def last_error(%Server{handle: h}), do: Native.last_error(h)
 
+  def last_error(%Server{handle: h}, consume) when is_boolean(consume), do: Native.last_error_ex(h, if(consume, do: 1, else: 0))
+  def diagnostics_json(%Server{handle: h}, consume \\ false), do: Native.diagnostics_json(h, if(consume, do: 1, else: 0))
+  def assert_no_mismatches(%Server{handle: h}), do: check!(Native.assert_no_mismatches(h), "assert_no_mismatches")
+  def test_context(%Server{handle: h}, name, source_file \\ "", source_line \\ 0), do: Native.test_context(h, name, source_file, source_line)
+
   @doc "Outcome atom of the most-recent dispatch (`:ok`, `:body_diff`, …)."
   @spec last_kind(Server.t()) :: atom()
   def last_kind(%Server{handle: h}), do: Map.get(@kinds, Native.last_kind(h), :ok)

@@ -118,8 +118,16 @@ proc lastKind*(s: VcrServer): Outcome =
   ## Outcome of the last interaction; `Ok` means a clean match.
   Outcome(native.last_kind(s.handle))
 
-proc lastError*(s: VcrServer): string =
-  takeString(native.last_error(s.handle))
+proc lastError*(s: VcrServer; consume = true): string =
+  takeString(native.last_error_ex(s.handle, cint(ord(consume))))
+
+proc diagnosticsJson*(s: VcrServer; consume = false): string =
+  takeString(native.diagnostics_json(s.handle, cint(ord(consume))))
+proc assertNoMismatches*(s: VcrServer) =
+  let diagnostic = takeString(native.assert_no_mismatches(s.handle))
+  if diagnostic.len > 0: raise newException(VcrError, diagnostic)
+proc testContext*(s: VcrServer; name: string; sourceFile = ""; sourceLine = 0) =
+  native.test_context(s.handle, cstring(name), cstring(sourceFile), cint(sourceLine))
 
 proc lastIndex*(s: VcrServer): int =
   int(native.last_index(s.handle))

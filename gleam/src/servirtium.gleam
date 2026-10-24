@@ -255,3 +255,26 @@ pub fn redact_json_field(vcr: Vcr, name: String) -> Result(Nil, String) {
 pub fn redact_json_field_with(vcr: Vcr, name: String, replacement: String, field: Int) -> Result(Nil, String) {
   servirtium_result.from_error(nif_redact_json_field(vcr.handle, field, name, replacement))
 }
+
+@external(erlang, "servirtium_nif", "last_error_ex")
+fn nif_last_error_ex(handle: Int, consume: Int) -> String
+@external(erlang, "servirtium_nif", "diagnostics_json")
+fn nif_diagnostics_json(handle: Int, consume: Int) -> String
+@external(erlang, "servirtium_nif", "assert_no_mismatches")
+fn nif_assert_no_mismatches(handle: Int) -> String
+@external(erlang, "servirtium_nif", "test_context")
+fn nif_test_context(handle: Int, name: String, file: String, line: Int) -> Nil
+fn consume_flag(consume: Bool) -> Int { case consume { True -> 1 False -> 0 } }
+pub fn last_error_with(vcr: Vcr, consume: Bool) -> String {
+  nif_last_error_ex(vcr.handle, consume_flag(consume))
+}
+pub fn diagnostics_json(vcr: Vcr, consume: Bool) -> String {
+  nif_diagnostics_json(vcr.handle, consume_flag(consume))
+}
+pub fn assert_no_mismatches(vcr: Vcr) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_assert_no_mismatches(vcr.handle))
+}
+pub fn test_context(vcr: Vcr, name: String, file: String, line: Int) -> Nil {
+  let _ = nif_test_context(vcr.handle, name, file, line)
+  Nil
+}

@@ -116,3 +116,24 @@ end
         fixture_run("check", directory)
     end
 end
+
+
+@testset "Retained replay diagnostics" begin
+    root = joinpath(@__DIR__, "../..")
+    playback(joinpath(root, "core_tests/diagnostics/playback.md")) do server
+        test_context(server, "Julia scenario"; source_file="scenario.test", source_line=123)
+        driver = joinpath(root, "core_tests/diagnostic_fixture.py")
+        url = base_url(server)
+        run(`python3 $driver $url`)
+        @test occursin("owner", last_error(server; consume=false))
+        @test occursin("scenario.test:123", last_error(server; consume=false))
+        @test !occursin("\"retrieved\":1", diagnostics_json(server))
+        @test occursin("owner", last_error(server))
+        @test occursin("\"retrieved\":0", diagnostics_json(server))
+        @test occursin("\"retrieved\":1", diagnostics_json(server))
+        @test_throws VcrError assert_no_mismatches(server)
+        test_context(server, "next test")
+        assert_no_mismatches(server)
+        @test diagnostics_json(server) == "[]"
+    end
+end

@@ -136,3 +136,25 @@ fn untaped_path_returns_404_without_consuming_the_tape() {
     assert_eq!("ok-body", from_tape);
     assert_eq!(Outcome::Ok, vcr.last_kind());
 }
+
+
+#[test]
+fn retained_replay_diagnostics_support_nonconsuming_observers() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let server = servirtium::Vcr::playback(root.join("core_tests/diagnostics/playback.md").to_str().unwrap()).start().unwrap();
+    server.test_context("Rust scenario", "scenario.test", 123).unwrap();
+    let output = std::process::Command::new("python3").arg(root.join("core_tests/diagnostic_fixture.py"))
+        .arg(server.base_url()).output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(server.last_error_with(false).contains("owner"));
+    assert!(server.last_error_with(false).contains("scenario.test:123"));
+    assert!(!server.diagnostics_json(false).contains("\"retrieved\":1"));
+    assert!(server.last_error().contains("owner"));
+    let events = server.diagnostics_json(false);
+    assert!(events.contains("\"retrieved\":0") && events.contains("\"retrieved\":1"));
+    let failure = server.assert_no_mismatches().unwrap_err().to_string();
+    assert!(failure.contains("admin") && failure.contains("owner"));
+    server.test_context("next test", "next.test", 5).unwrap();
+    server.assert_no_mismatches().unwrap();
+    assert_eq!(server.diagnostics_json(false), "[]");
+}

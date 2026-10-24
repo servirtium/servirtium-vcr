@@ -61,6 +61,10 @@ private extern (C) nothrow @nogc {
 
     // diagnostics
     char* aether_vcr_embed_last_error(void* h);
+    char* aether_vcr_embed_last_error_ex(void* h, int consume);
+    char* aether_vcr_embed_diagnostics_json(void* h, int consume);
+    char* aether_vcr_embed_assert_no_mismatches(void* h);
+    void aether_vcr_embed_test_context(void* h, const(char)* name, const(char)* file, int line);
     int   aether_vcr_embed_last_kind(void* h);
     int   aether_vcr_embed_last_index(void* h);
     void  aether_vcr_embed_clear_last_error(void* h);
@@ -243,11 +247,16 @@ struct Vcr {
     bool matchedCleanly() { return lastKind == Outcome.ok; }
 
     /// Most-recent dispatch diagnostic; "" when none flagged.
-    string lastError() { return takeString(aether_vcr_embed_last_error(handle)); }
+    string lastError(bool consume = true) { return takeString(aether_vcr_embed_last_error_ex(handle, consume ? 1 : 0)); }
 
     /// Tape index of the most-recent matched interaction, or -1.
     int lastIndex() { return aether_vcr_embed_last_index(handle); }
 
+    string diagnosticsJson(bool consume = false) { return takeString(aether_vcr_embed_diagnostics_json(handle, consume ? 1 : 0)); }
+    void assertNoMismatches() { check(aether_vcr_embed_assert_no_mismatches(handle), "assertNoMismatches"); }
+    void testContext(string name, string sourceFile = "", int sourceLine = 0) {
+        aether_vcr_embed_test_context(handle, name.toStringz, sourceFile.toStringz, sourceLine);
+    }
     void clearLastError() { aether_vcr_embed_clear_last_error(handle); }
 
     // ---- config (each throws VcrException if libservirtium_vcr rejects it) ------

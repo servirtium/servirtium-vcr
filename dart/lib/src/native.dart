@@ -169,6 +169,11 @@ typedef _VoidHandleD = void Function(Pointer<Void> server);
 typedef _StrHandleC = Pointer<Utf8> Function(Pointer<Void> server);
 typedef _StrHandleD = Pointer<Utf8> Function(Pointer<Void> server);
 
+typedef _DiagC = Pointer<Utf8> Function(Pointer<Void>, Int32);
+typedef _DiagD = Pointer<Utf8> Function(Pointer<Void>, int);
+typedef _ContextC = Void Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Int32);
+typedef _ContextD = void Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, int);
+
 typedef _RedactC = Pointer<Utf8> Function(
     Pointer<Void> server, Int32 field, Pointer<Utf8> pattern, Pointer<Utf8> replacement);
 typedef _RedactD = Pointer<Utf8> Function(
@@ -243,6 +248,10 @@ class Native {
   // ---- diagnostics (handle-based) -----------------------------------------
   static final lastError =
       _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_last_error');
+  static final lastErrorEx = _lib.lookupFunction<_DiagC, _DiagD>('aether_vcr_embed_last_error_ex');
+  static final diagnosticsJson = _lib.lookupFunction<_DiagC, _DiagD>('aether_vcr_embed_diagnostics_json');
+  static final assertNoMismatches = _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_assert_no_mismatches');
+  static final testContext = _lib.lookupFunction<_ContextC, _ContextD>('aether_vcr_embed_test_context');
   static final lastKind =
       _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_last_kind');
   static final lastIndex =

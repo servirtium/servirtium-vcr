@@ -265,6 +265,19 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 
 ## Gotchas / hard-won
 
+- **Replay diagnostics are a side channel, not HTTP payload extensions.** Core
+  retains per-handle events across successful requests. `last_error_ex(h, 0)`
+  observes; the original `last_error(h)` and `_ex(h, 1)` acknowledge only the
+  latest event, without deleting it. `diagnostics_json(h, consume)` reads all
+  events; `assert_no_mismatches(h)` acknowledges all and returns their text.
+  `test_context(h, name, file, line)` reports unretrieved failures under the OLD
+  coordinates, resets events, then installs the caller's new coordinates. Stop
+  also reports unretrieved events once. `reported` is distinct from `retrieved`.
+  Clear-last-error discards events; reset-cursor does not. Diffs/masking/JSON and
+  stderr fallback live only in core; bindings marshal and raise existing errors.
+  Property-based bindings preserve their consuming property and add a boolean
+  read method. See `docs/replay-diagnostics.md` and `core_tests/.diagnostics.ae`.
+
 - **Named credential redaction is shared core logic.** `redact_header`,
   `redact_query_param`, and `redact_json_field` register structured rules in
   the same per-handle list as literal redactions (`Redaction.kind` 0–3).

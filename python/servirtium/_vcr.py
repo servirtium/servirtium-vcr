@@ -395,8 +395,23 @@ class VcrServer:
 
     @property
     def last_error(self) -> str:
-        """Most-recent dispatch diagnostic; empty when none flagged."""
+        """Latest retained replay diagnostic; consuming reads acknowledge without erasing."""
         return N.take_string(N.last_error(self._require_handle()))
+
+    def read_last_error(self, consume: bool = True) -> str:
+        """Read the retained latest mismatch; consume acknowledges without deleting."""
+        return N.take_string(N.last_error_ex(self._require_handle(), int(consume)))
+
+    def diagnostics_json(self, consume: bool = False) -> str:
+        """Read structured events; observer reads do not acknowledge failures."""
+        return N.take_string(N.diagnostics_json(self._require_handle(), int(consume)))
+
+    def assert_no_mismatches(self) -> None:
+        _check(N.assert_no_mismatches(self._require_handle()), "assert_no_mismatches")
+
+    def test_context(self, name: str, source_file: str = "", source_line: int = 0) -> None:
+        """Start a test boundary, reporting unretrieved failures from the previous test."""
+        N.test_context(self._require_handle(), N.encode(name), N.encode(source_file), source_line)
 
     @property
     def last_kind(self) -> Outcome:

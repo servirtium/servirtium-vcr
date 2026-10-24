@@ -70,3 +70,25 @@ RSpec.describe 'Servirtium playback' do
       .to raise_error(Servirtium::Error, /failed to start/)
   end
 end
+
+
+RSpec.describe 'Retained replay diagnostics' do
+  it 'distinguishes observer and consuming reads and asserts retained failures' do
+    require 'open3'
+    require 'json'
+    root = File.expand_path('../../..', __dir__)
+    Servirtium.playback(File.join(root, 'core_tests/diagnostics/playback.md')).start do |server|
+      server.test_context('Ruby scenario', source_file: 'scenario.test', source_line: 123)
+      output, status = Open3.capture2e('python3', File.join(root, 'core_tests/diagnostic_fixture.py'), server.base_url)
+      expect(status.success?).to be(true), output
+      expect(server.last_error(consume: false)).to include('owner', 'scenario.test:123')
+      expect(JSON.parse(server.diagnostics_json).map { |e| e['retrieved'] }).to eq([0, 0])
+      expect(server.last_error).to include('owner')
+      expect(JSON.parse(server.diagnostics_json).map { |e| e['retrieved'] }).to eq([0, 1])
+      expect { server.assert_no_mismatches }.to raise_error(Servirtium::Error, /admin/)
+      server.test_context('next test')
+      server.assert_no_mismatches
+      expect(server.diagnostics_json).to eq('[]')
+    end
+  end
+end

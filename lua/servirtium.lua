@@ -73,8 +73,19 @@ function Server:last_index()
     return C.last_index(self._handle)
 end
 
-function Server:last_error()
-    return C.last_error(self._handle)
+function Server:last_error(consume)
+    return C.last_error_ex(self._handle, consume ~= false)
+end
+
+function Server:diagnostics_json(consume)
+    return C.diagnostics_json(self._handle, consume == true)
+end
+function Server:assert_no_mismatches()
+    local diagnostic = C.assert_no_mismatches(self._handle)
+    if diagnostic ~= "" then error(diagnostic, 2) end
+end
+function Server:test_context(name, source_file, source_line)
+    C.test_context(self._handle, name, source_file or "", source_line or 0)
 end
 
 function Server:clear_last_error()

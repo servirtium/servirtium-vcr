@@ -43,6 +43,10 @@ pub extern "c" fn aether_vcr_embed_tape_length(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_reset_cursor(handle: Handle) void;
 
 pub extern "c" fn aether_vcr_embed_last_error(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_last_error_ex(handle: Handle, consume: c_int) [*c]u8;
+pub extern "c" fn aether_vcr_embed_diagnostics_json(handle: Handle, consume: c_int) [*c]u8;
+pub extern "c" fn aether_vcr_embed_assert_no_mismatches(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_test_context(handle: Handle, name: [*c]const u8, file: [*c]const u8, line: c_int) void;
 pub extern "c" fn aether_vcr_embed_last_kind(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_last_index(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_clear_last_error(handle: Handle) void;
@@ -184,6 +188,24 @@ pub const Vcr = struct {
     }
 
     /// Human-readable last error. Caller frees with `allocator.free`.
+    pub fn readLastError(self: *Vcr, consume: bool) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_last_error_ex(self.handle, @intFromBool(consume)));
+    }
+    pub fn diagnosticsJson(self: *Vcr, consume: bool) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_diagnostics_json(self.handle, @intFromBool(consume)));
+    }
+    pub fn assertNoMismatches(self: *Vcr) !void {
+        const diagnostic = try takeString(self.allocator, aether_vcr_embed_assert_no_mismatches(self.handle));
+        defer self.allocator.free(diagnostic);
+        if (diagnostic.len != 0) {
+            std.debug.print("{s}\n", .{diagnostic});
+            return Error.VcrError;
+        }
+    }
+    pub fn testContext(self: *Vcr, name: [:0]const u8, file: [:0]const u8, line: c_int) void {
+        aether_vcr_embed_test_context(self.handle, name.ptr, file.ptr, line);
+    }
+
     pub fn lastError(self: *Vcr) ![]u8 {
         return takeString(self.allocator, aether_vcr_embed_last_error(self.handle));
     }
@@ -665,6 +687,24 @@ pub const Server = struct {
     }
 
     /// The most-recent dispatch diagnostic; "" when none flagged. Caller frees.
+    pub fn readLastError(self: *Server, consume: bool) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_last_error_ex(self.handle, @intFromBool(consume)));
+    }
+    pub fn diagnosticsJson(self: *Server, consume: bool) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_diagnostics_json(self.handle, @intFromBool(consume)));
+    }
+    pub fn assertNoMismatches(self: *Server) !void {
+        const diagnostic = try takeString(self.allocator, aether_vcr_embed_assert_no_mismatches(self.handle));
+        defer self.allocator.free(diagnostic);
+        if (diagnostic.len != 0) {
+            std.debug.print("{s}\n", .{diagnostic});
+            return Error.VcrError;
+        }
+    }
+    pub fn testContext(self: *Server, name: [:0]const u8, file: [:0]const u8, line: c_int) void {
+        aether_vcr_embed_test_context(self.handle, name.ptr, file.ptr, line);
+    }
+
     pub fn lastError(self: *Server) ![]u8 {
         return takeString(self.allocator, aether_vcr_embed_last_error(self.handle));
     }

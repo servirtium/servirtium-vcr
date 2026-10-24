@@ -60,3 +60,26 @@ ServirtiumPlaybackTest >> testStartThenDoStopsTheServer [
 	"A second stop is a no-op and must not raise."
 	captured stop
 ]
+
+
+{ #category : 'tests' }
+ServirtiumPlaybackTest >> testRetainedReplayDiagnostics [
+    | root server client events |
+    root := self tapesDir asFileReference parent parent parent parent.
+    server := (Servirtium playback: (root / 'core_tests' / 'diagnostics' / 'playback.md') fullName) start.
+    [ server testContext: 'Pharo scenario' file: 'scenario.test' line: 123.
+      #('admin' 'owner' 'reader') do: [ :role |
+        client := ZnClient new.
+        client url: server baseUrl , '/items'; entity: (ZnEntity json: '{"role":"' , role , '"}'); post ].
+      self assert: ((server lastErrorConsume: false) includesSubstring: 'owner').
+      self assert: ((server lastErrorConsume: false) includesSubstring: 'scenario.test:123').
+      events := server diagnosticsJsonConsume: false.
+      self deny: (events includesSubstring: '"retrieved":1').
+      self assert: (server lastError includesSubstring: 'owner').
+      self assert: ((server diagnosticsJsonConsume: false) includesSubstring: '"retrieved":0').
+      self should: [ server assertNoMismatches ] raise: ServirtiumError.
+      server testContext: 'next test' file: '' line: 0.
+      server assertNoMismatches.
+      self assert: (server diagnosticsJsonConsume: false) equals: '[]'
+    ] ensure: [ server stop ]
+]

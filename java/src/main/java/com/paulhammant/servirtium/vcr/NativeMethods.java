@@ -93,6 +93,11 @@ final class NativeMethods {
             "aether_vcr_embed_last_error",
             FunctionDescriptor.of(C_STR, C_PTR));
 
+    static final MethodHandle LAST_ERROR_EX = down("aether_vcr_embed_last_error_ex", FunctionDescriptor.of(C_STR, C_PTR, C_INT));
+    static final MethodHandle DIAGNOSTICS_JSON = down("aether_vcr_embed_diagnostics_json", FunctionDescriptor.of(C_STR, C_PTR, C_INT));
+    static final MethodHandle ASSERT_NO_MISMATCHES = down("aether_vcr_embed_assert_no_mismatches", FunctionDescriptor.of(C_STR, C_PTR));
+    static final MethodHandle TEST_CONTEXT = down("aether_vcr_embed_test_context", FunctionDescriptor.ofVoid(C_PTR, C_PTR, C_PTR, C_INT));
+
     static final MethodHandle LAST_KIND = down(
             "aether_vcr_embed_last_kind",
             FunctionDescriptor.of(C_INT, C_PTR));

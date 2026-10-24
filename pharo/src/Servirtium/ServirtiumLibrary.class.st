@@ -328,3 +328,20 @@ ServirtiumLibrary >> redactQueryParam: server field: field pattern: name replace
 ServirtiumLibrary >> redactJsonField: server field: field pattern: name replacement: replacement [
     ^ self ffiCall: #( void* aether_vcr_embed_redact_json_field ( void* server, int field, String name, String replacement ) )
 ]
+
+{ #category : 'ffi - diagnostics' }
+ServirtiumLibrary >> lastError: server consume: consume [
+    ^ self ffiCall: #( void* aether_vcr_embed_last_error_ex ( void* server, int consume ) )
+]
+{ #category : 'ffi - diagnostics' }
+ServirtiumLibrary >> diagnosticsJson: server consume: consume [
+    ^ self ffiCall: #( void* aether_vcr_embed_diagnostics_json ( void* server, int consume ) )
+]
+{ #category : 'ffi - diagnostics' }
+ServirtiumLibrary >> assertNoMismatches: server [
+    ^ self ffiCall: #( void* aether_vcr_embed_assert_no_mismatches ( void* server ) )
+]
+{ #category : 'ffi - diagnostics' }
+ServirtiumLibrary >> testContext: server name: name file: file line: line [
+    ^ self ffiCall: #( void aether_vcr_embed_test_context ( void* server, String name, String file, int line ) )
+]

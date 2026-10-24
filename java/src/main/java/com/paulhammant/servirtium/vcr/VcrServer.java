@@ -64,7 +64,7 @@ public final class VcrServer implements AutoCloseable {
         }
     }
 
-    /** Most-recent dispatch diagnostic; empty when none flagged. */
+    /** Latest retained replay diagnostic; consuming reads acknowledge without erasing. */
     public String lastError() {
         try {
             MemorySegment p = (MemorySegment) NativeMethods.LAST_ERROR.invokeExact(handle());
@@ -72,6 +72,34 @@ public final class VcrServer implements AutoCloseable {
         } catch (Throwable t) {
             throw new VcrException("lastError() failed: " + t.getMessage());
         }
+    }
+
+    /** Read the latest retained mismatch. False is an observer read. */
+    public String lastError(boolean consume) {
+        try {
+            return NativeMethods.takeString((MemorySegment) NativeMethods.LAST_ERROR_EX.invokeExact(handle(), consume ? 1 : 0));
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("lastError", t); }
+    }
+
+    public String diagnosticsJson() { return diagnosticsJson(false); }
+    public String diagnosticsJson(boolean consume) {
+        try {
+            return NativeMethods.takeString((MemorySegment) NativeMethods.DIAGNOSTICS_JSON.invokeExact(handle(), consume ? 1 : 0));
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("diagnosticsJson", t); }
+    }
+
+    /** Acknowledge and assert all retained failures, including previously retrieved ones. */
+    public void assertNoMismatches() {
+        try {
+            String error = NativeMethods.takeString((MemorySegment) NativeMethods.ASSERT_NO_MISMATCHES.invokeExact(handle()));
+            if (!error.isEmpty()) throw new VcrException(error);
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("assertNoMismatches", t); }
+    }
+
+    public void testContext(String name, String sourceFile, int sourceLine) {
+        try (Arena arena = Arena.ofConfined()) {
+            NativeMethods.TEST_CONTEXT.invokeExact(handle(), NativeMethods.cString(arena, name), NativeMethods.cString(arena, sourceFile), sourceLine);
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("testContext", t); }
     }
 
     /** Outcome of the most-recent dispatch. */

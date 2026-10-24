@@ -69,3 +69,20 @@
         (with-open [files (Files/list directory)]
           (doseq [file (iterator-seq (.iterator files))] (Files/delete file)))
         (Files/delete directory)))))
+
+
+(deftest retained-replay-diagnostics
+  (with-open [server (vcr/playback "core_tests/diagnostics/playback.md")]
+    (vcr/test-context server "Clojure scenario" "scenario.test" 123)
+    (let [driver (-> (ProcessBuilder. ^java.util.List ["python3" "core_tests/diagnostic_fixture.py" (.baseUrl server)])
+                     (.inheritIO) (.start))]
+      (is (= 0 (.waitFor driver))))
+    (is (.contains (vcr/last-error server false) "owner"))
+    (is (.contains (vcr/last-error server false) "scenario.test:123"))
+    (is (not (.contains (vcr/diagnostics-json server) "\"retrieved\":1")))
+    (is (.contains (vcr/last-error server) "owner"))
+    (is (.contains (vcr/diagnostics-json server) "\"retrieved\":0"))
+    (is (thrown? com.paulhammant.servirtium.vcr.VcrException (vcr/assert-no-mismatches server)))
+    (vcr/test-context server "next test" "" 0)
+    (vcr/assert-no-mismatches server)
+    (is (= "[]" (vcr/diagnostics-json server)))))

@@ -437,9 +437,25 @@ export class VcrServer {
     return N.tapeLength(this.requireHandle())
   }
 
-  /** Most-recent dispatch diagnostic; empty when none flagged. */
+  /** Latest retained replay diagnostic; consuming reads acknowledge without erasing. */
   get lastError(): string {
     return N.takeString(N.lastError(this.requireHandle()))
+  }
+
+  readLastError(consume = true): string {
+    return N.takeString(N.lastErrorEx(this.requireHandle(), consume ? 1 : 0))
+  }
+
+  diagnosticsJson(consume = false): string {
+    return N.takeString(N.diagnosticsJson(this.requireHandle(), consume ? 1 : 0))
+  }
+
+  assertNoMismatches(): void {
+    check(N.assertNoMismatches(this.requireHandle()), 'assertNoMismatches')
+  }
+
+  testContext(name: string, sourceFile = '', sourceLine = 0): void {
+    N.testContext(this.requireHandle(), name, sourceFile, sourceLine)
   }
 
   /** Outcome of the most-recent dispatch. */

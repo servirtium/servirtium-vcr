@@ -61,6 +61,7 @@
 //
 //   import std.http.server.vcr
 //   import std.http
+import std.io
 //   import std.http.client
 //
 //   extern http_server_start_raw(server: ptr) -> int
@@ -178,6 +179,7 @@ exports (
     indent_code_blocks_h, emphasize_http_verbs_h,
     clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
     clear_static_content_h, clear_untaped_h, clear_format_options_h,
+    diagnostic_open_h, test_context_h, last_error_ex_h, diagnostics_json_h, assert_no_mismatches_h,
     last_error_h, last_kind_h, last_index_h, clear_last_error_h,
     tape_length_h, reset_cursor_h, load_error_h,
     stop_and_flush_h, stop_and_flush_fail_if_changed_h, stop_and_flush_or_check_h
@@ -495,6 +497,7 @@ set_last_index(i: int) { set_last_index_k(cur_key(), i) }
 
 vcr_clear_last_error_k(key: string) {
     cfg_set_str(slot(key, "last_error"), "")
+    list_reset(slot(key, "replay_diagnostics"))
     set_last_kind_k(key, KIND_OK)
     set_last_index_k(key, -1)
 }
@@ -2015,6 +2018,16 @@ do_playback_multiple(srvkey: string, req: ptr, res: ptr) {
         set_last_error_k(srvkey, msg)
         set_last_kind_k(srvkey, KIND_PATH_OR_METHOD_DIFF)
         set_last_index_k(srvkey, -1)
+        candidate_index = -1
+        candidate_entry = null as *Interaction
+        j = 0
+        while j < n {
+            entry = tape_get_k(srvkey, j)
+            if entry.method == got_method { candidate_index = j; candidate_entry = entry; break }
+            j = j + 1
+        }
+        if candidate_entry == null && n > 0 { candidate_index = 0; candidate_entry = tape_get_k(srvkey, 0) }
+        retain_replay_mismatch_k(srvkey, KIND_PATH_OR_METHOD_DIFF, candidate_index, candidate_entry, req, live_body, 1)
         http_response_set_status(res, 599)
         http_response_set_body(res, msg)
         return
@@ -2040,6 +2053,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         set_last_error_k(srvkey, msg)
         set_last_kind_k(srvkey, KIND_TAPE_EXHAUSTED)
         set_last_index_k(srvkey, cur)
+        retain_replay_mismatch_k(srvkey, KIND_TAPE_EXHAUSTED, cur, null, req, read_full_request_body(req), 0)
         http_response_set_status(res, 599)
         http_response_set_body(res, msg)
         return
@@ -2065,6 +2079,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         set_last_error_k(srvkey, msg)
         set_last_kind_k(srvkey, KIND_PATH_OR_METHOD_DIFF)
         set_last_index_k(srvkey, cur)
+        retain_replay_mismatch_k(srvkey, KIND_PATH_OR_METHOD_DIFF, cur, e, req, read_full_request_body(req), 0)
         http_response_set_status(res, 599)
         http_response_set_body(res, msg)
         return
@@ -2078,6 +2093,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         set_last_error_k(srvkey, msg)
         set_last_kind_k(srvkey, KIND_HEADER_VALUE_DIFF)
         set_last_index_k(srvkey, cur)
+        retain_replay_mismatch_k(srvkey, KIND_HEADER_VALUE_DIFF, cur, e, req, read_full_request_body(req), 0)
         http_response_set_status(res, 599)
         http_response_set_body(res, msg)
         return
@@ -2159,6 +2175,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
             set_last_error_k(srvkey, msg)
             set_last_kind_k(srvkey, kind)
             set_last_index_k(srvkey, cur)
+            retain_replay_mismatch_k(srvkey, kind, cur, e, req, read_full_request_body(req), 0)
             http_response_set_status(res, 599)
             http_response_set_body(res, msg)
             return
@@ -2181,6 +2198,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
             set_last_error_k(srvkey, msg)
             set_last_kind_k(srvkey, KIND_BODY_DIFF)
             set_last_index_k(srvkey, cur)
+            retain_replay_mismatch_k(srvkey, KIND_BODY_DIFF, cur, e, req, live_body, 0)
             http_response_set_status(res, 599)
             http_response_set_body(res, msg)
             return
@@ -2334,6 +2352,7 @@ load(tape_path: string, port: int) -> ptr {
     }
     key = key_for(raw)
     set_cur_key(key)
+    diagnostic_open_h(raw, tape_path, tape_path)
     set_mode_k(key, "playback")
 
     perr = parse_tape_file(tape_path)
@@ -2363,6 +2382,7 @@ load_url(tape_url: string, port: int) -> ptr {
     }
     key = key_for(raw)
     set_cur_key(key)
+    diagnostic_open_h(raw, tape_url, tape_url)
     set_mode_k(key, "playback")
     vcr_aether_clear_tape()
 
@@ -2406,6 +2426,7 @@ load_url(tape_url: string, port: int) -> ptr {
 // over-prescribed tape fails loudly.
 eject(server: ptr) {
     http.server_stop(server)
+    dump_unretrieved_k(key_for(server))
 }
 
 // ---- background start that returns only once the accept loop is live ----
@@ -2525,7 +2546,7 @@ clear_untaped_h(server: ptr) { set_cur_key(key_for(server)); clear_untaped() }
 clear_format_options_h(server: ptr) { set_cur_key(key_for(server)); clear_format_options() }
 
 // diagnostics / lifecycle (handle-based, no shared current-key reliance)
-last_error_h(server: ptr) -> string { return vcr_last_error_k(key_for(server)) }
+last_error_h(server: ptr) -> string { return replay_last_error_k(key_for(server), 1) }
 last_kind_h(server: ptr) -> int { return vcr_last_kind_k(key_for(server)) }
 last_index_h(server: ptr) -> int { return vcr_last_index_k(key_for(server)) }
 clear_last_error_h(server: ptr) { vcr_clear_last_error_k(key_for(server)) }
@@ -2553,6 +2574,7 @@ load_record(tape_path: string, upstream_base: string, port: int) -> ptr {
     }
     key = key_for(raw)
     set_cur_key(key)
+    diagnostic_open_h(raw, tape_path, tape_path)
     vcr_aether_clear_tape()
 
     ok = vcr_register_record_routes(raw, upstream_base)
@@ -2572,6 +2594,7 @@ load_record(tape_path: string, upstream_base: string, port: int) -> ptr {
 eject_record(server: ptr, tape_path: string) -> string {
     set_cur_key(key_for(server))
     http.server_stop(server)
+    dump_unretrieved_k(key_for(server))
     return flush(tape_path)
 }
 
@@ -2580,16 +2603,19 @@ eject_record(server: ptr, tape_path: string) -> string {
 stop_and_flush_h(server: ptr, tape_path: string) -> string {
     set_cur_key(key_for(server))
     http.server_stop(server)
+    dump_unretrieved_k(key_for(server))
     return flush(tape_path)
 }
 stop_and_flush_fail_if_changed_h(server: ptr, tape_path: string) -> string {
     set_cur_key(key_for(server))
     http.server_stop(server)
+    dump_unretrieved_k(key_for(server))
     return flush_and_fail_if_changed(tape_path)
 }
 stop_and_flush_or_check_h(server: ptr, tape_path: string) -> string {
     set_cur_key(key_for(server))
     http.server_stop(server)
+    dump_unretrieved_k(key_for(server))
     return flush_or_check(tape_path)
 }
 
@@ -3422,7 +3448,7 @@ record_full_response(method: string, path: string, status: int, content_type: st
 // Read this from a test's tearDown to confirm the framework
 // detected the divergence the test was set up to provoke.
 last_error() -> string {
-    return vcr_last_error()
+    return replay_last_error_k(cur_key(), 1)
 }
 
 // Drop the last-error slot — call between subtests so a flagged
@@ -4508,3 +4534,391 @@ load_append_h(server: ptr, tape_path: string) -> string {
     if rerr != "" { return rerr }
     return parse_tape_text_append(tape_path, contents)
 }
+
+// Valid UTF-8 is kept intact; invalid binary bytes never reach JSON strings.
+diagnostic_utf8_width(s: string, i: int) -> int {
+    c = string.char_at(s, i)
+    if c < 128 { return 1 }
+    width = 0
+    if c >= 194 && c <= 223 { width = 2 }
+    if c >= 224 && c <= 239 { width = 3 }
+    if c >= 240 && c <= 244 { width = 4 }
+    if width == 0 || i + width > string.length(s) { return 0 }
+    j = 1
+    while j < width {
+        next = string.char_at(s, i + j)
+        if next < 128 || next > 191 { return 0 }
+        j = j + 1
+    }
+    second = string.char_at(s, i + 1)
+    if c == 224 && second < 160 { return 0 }
+    if c == 237 && second > 159 { return 0 }
+    if c == 240 && second < 144 { return 0 }
+    if c == 244 && second > 143 { return 0 }
+    return width
+}
+
+// ---- retained replay diagnostics (side channel; single test invocation) ----
+// Reads acknowledge only the events they return. Observer reads never acknowledge.
+// latest kind/index stay per-request; events survive subsequent successful requests.
+struct ReplayDiagnostic {
+    reported: int
+    sequence: int
+    kind: int
+    interaction: int
+    retrieved: int
+    test_name: string
+    source_file: string
+    source_line: int
+    tape: string
+    expected_method: string
+    expected_path: string
+    expected_headers: string
+    expected_body: string
+    actual_method: string
+    actual_path: string
+    actual_headers: string
+    actual_body: string
+    detail: string
+    candidate: int
+}
+replay_diagnostics_k(key: string) -> ptr { return list_handle(slot(key, "replay_diagnostics")) }
+
+// Escape control bytes, bound each excerpt, and avoid terminal escape sequences.
+diagnostic_text(s: string, limit: int) -> string {
+    out = string.copy("")
+    i = 0
+    n = string.length(s)
+    while i < n && i < limit {
+        c = string.char_at(s, i)
+        if c >= 128 {
+            width = diagnostic_utf8_width(s, i)
+            if width == 0 { out = string_concat(out, "[invalid byte]") }
+            else {
+                if i + width > limit { break }
+                out = string_concat(out, string.substring(s, i, i + width))
+                i = i + width - 1
+            }
+        }
+        else if c == 10 { out = string_concat(out, "\n") }
+        else if c == 9 { out = string_concat(out, "\\t") }
+        else if c == 13 { out = string_concat(out, "\\r") }
+        else if c < 32 || c == 127 { out = string_concat(out, "[control]") }
+        else { out = string_concat(out, string.substring(s, i, i + 1)) }
+        i = i + 1
+    }
+    if i < n { out = string_concat(out, "\n[truncated]") }
+    return out
+}
+
+// Never expose a credential restored by unredact(), even in a different field.
+// Mask conventional credential fields as well. This is a diagnostic projection;
+// it does not change the values supplied to the matcher.
+diagnostic_safe_k(key: string, src: string, field: int) -> string {
+    out = src
+    rules = unredactions_k(key)
+    i = 0
+    while i < list_size(rules) {
+        r = list_get_raw(rules, i) as *Redaction
+        if string.length(r.replacement) > 0 {
+            out = str_replace_all(out, r.replacement, "[REDACTED]")
+        }
+        i = i + 1
+    }
+    if field == FIELD_REQUEST_HEADERS {
+        out = redact_header_text(out, "Authorization", "[REDACTED]")
+        out = redact_header_text(out, "Proxy-Authorization", "[REDACTED]")
+        out = redact_header_text(out, "Cookie", "[REDACTED]")
+        out = redact_header_text(out, "X-Api-Key", "[REDACTED]")
+        out = redact_header_text(out, "X-Auth-Token", "[REDACTED]")
+    }
+    if field == FIELD_PATH {
+        out = redact_query_text(out, "password", "[REDACTED]")
+        out = redact_query_text(out, "token", "[REDACTED]")
+        out = redact_query_text(out, "access_token", "[REDACTED]")
+        out = redact_query_text(out, "api_key", "[REDACTED]")
+        out = redact_query_text(out, "secret", "[REDACTED]")
+    }
+    if field == FIELD_REQUEST_BODY && string.length(out) > 0 {
+        parsed, err = json.parse(out)
+        if parsed != null && err == "" {
+            json.json_free(parsed)
+            out = redact_json_text(out, "password", "[REDACTED]")
+            out = redact_json_text(out, "secret", "[REDACTED]")
+            out = redact_json_text(out, "secretKey", "[REDACTED]")
+            out = redact_json_text(out, "token", "[REDACTED]")
+            out = redact_json_text(out, "access_token", "[REDACTED]")
+            out = redact_json_text(out, "api_key", "[REDACTED]")
+        } else {
+            if parsed != null { json.json_free(parsed) }
+        }
+    }
+    return out
+}
+first_difference(a: string, b: string) -> int {
+    i = 0
+    while i < string.length(a) && i < string.length(b) {
+        if string.char_at(a, i) != string.char_at(b, i) { return i }
+        i = i + 1
+    }
+    return i
+}
+diagnostic_binary(s: string) -> int {
+    i = 0
+    while i < string.length(s) {
+        c = string.char_at(s, i)
+        if (c < 32 && c != 9 && c != 10 && c != 13) || c == 127 { return 1 }
+        if c >= 128 {
+            width = diagnostic_utf8_width(s, i)
+            if width == 0 { return 1 }
+            i = i + width - 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+// Compact context around the first differing line. The offset is byte-based;
+// unlike an LCS, this is bounded for large/binary input and needs no UI support.
+diagnostic_diff(title: string, expected: string, actual: string) -> string {
+    if expected == actual { return "" }
+    offset = first_difference(expected, actual)
+    if diagnostic_binary(expected) == 1 || diagnostic_binary(actual) == 1 {
+        a_len = string.length(expected)
+        b_len = string.length(actual)
+        return "${title}: binary values differ at byte ${offset} (expected ${a_len} bytes, actual ${b_len} bytes)\n"
+    }
+    line = 1
+    i = 0
+    start_a = 0
+    while i < offset {
+        if string.char_at(expected, i) == 10 { line = line + 1; start_a = i + 1 }
+        i = i + 1
+    }
+    start_b = 0
+    i = 0
+    while i < offset && i < string.length(actual) {
+        if string.char_at(actual, i) == 10 { start_b = i + 1 }
+        i = i + 1
+    }
+    end_a = string.index_of_from(expected, "\n", offset)
+    if end_a < 0 { end_a = string.length(expected) }
+    end_b = string.index_of_from(actual, "\n", offset)
+    if end_b < 0 { end_b = string.length(actual) }
+    if start_a < offset - 128 { start_a = offset - 128 }
+    if start_b < offset - 128 { start_b = offset - 128 }
+    if end_a > offset + 384 { end_a = offset + 384 }
+    if end_b > offset + 384 { end_b = offset + 384 }
+    a = diagnostic_text(string.substring(expected, start_a, end_a), 512)
+    b = diagnostic_text(string.substring(actual, start_b, end_b), 512)
+    return "${title}\n--- expected\n+++ actual\n@@ line ${line}, byte ${offset} @@\n- ${a}\n+ ${b}\n"
+}
+replay_diagnostic_text(e: *ReplayDiagnostic) -> string {
+    seq = e.sequence
+    idx = e.interaction
+    kind = e.kind
+    test_name = diagnostic_text(e.test_name, 512)
+    file = diagnostic_text(e.source_file, 512)
+    line = e.source_line
+    tape = diagnostic_text(e.tape, 512)
+    heading = "Servirtium replay mismatch #${seq} (kind ${kind})\ntest: ${test_name}\nsource: ${file}:${line}\ntape: ${tape}\ninteraction: ${idx}\n"
+    if e.candidate == 1 { heading = string_concat(heading, "expected values are from a candidate interaction (match_multiple)\n") }
+    request_method = e.actual_method
+    request_path = e.actual_path
+    heading = string_concat(heading, "request: ${request_method} ${request_path}\n")
+    return string_concat(heading, e.detail)
+}
+replay_diagnostic_json(e: *ReplayDiagnostic, server_key: string) -> ptr {
+    obj = json.obj()
+    json.set(obj, "sequence", json.from_int(e.sequence))
+    json.set(obj, "kind", json.from_int(e.kind))
+    json.set(obj, "interaction", json.from_int(e.interaction))
+    json.set(obj, "retrieved", json.from_int(e.retrieved))
+    json.set(obj, "reported", json.from_int(e.reported))
+    json.set(obj, "server", json.str(server_key))
+    json.set(obj, "test", json.str(e.test_name))
+    json.set(obj, "source_file", json.str(e.source_file))
+    json.set(obj, "source_line", json.from_int(e.source_line))
+    json.set(obj, "tape", json.str(e.tape))
+    json.set(obj, "candidate", json.from_int(e.candidate))
+    expected = json.obj()
+    json.set(expected, "method", json.str(e.expected_method))
+    json.set(expected, "path", json.str(e.expected_path))
+    json.set(expected, "headers", json.str(e.expected_headers))
+    json.set(expected, "body", json.str(e.expected_body))
+    actual = json.obj()
+    json.set(actual, "method", json.str(e.actual_method))
+    json.set(actual, "path", json.str(e.actual_path))
+    json.set(actual, "headers", json.str(e.actual_headers))
+    json.set(actual, "body", json.str(e.actual_body))
+    json.set(obj, "expected", expected)
+    json.set(obj, "actual", actual)
+    json.set(obj, "diff", json.str(e.detail))
+    return obj
+}
+diagnostic_headers_k(key: string, block: string) -> string {
+    names = match_headers_k(key)
+    if list_size(names) == 0 || vcr_get_strict_headers_k(key) == 1 { return block }
+    out = string.copy("")
+    i = 0
+    while i < string.length(block) {
+        end = string.index_of_from(block, "\n", i)
+        if end < 0 { end = string.length(block) }
+        line = string.substring(block, i, end)
+        colon = string.index_of(line, ":")
+        if colon > 0 {
+            name = string.substring(line, 0, colon)
+            j = 0
+            while j < list_size(names) {
+                wanted = list_get_raw(names, j) as *MatchHeaderName
+                if icmp_rt(name, wanted.name) == 0 {
+                    out = string_concat(out, string_concat(line, "\n"))
+                    break
+                }
+                j = j + 1
+            }
+        }
+        i = end + 1
+    }
+    return out
+}
+retain_replay_mismatch_k(key: string, kind: int, index: int, expected: *Interaction,
+                          req: ptr, actual_body: string, candidate: int) {
+    e = malloc(sizeof(ReplayDiagnostic)) as *ReplayDiagnostic
+    seq = cfg_get_int(slot(key, "diagnostic_sequence"), 0) + 1
+    cfg_set_int(slot(key, "diagnostic_sequence"), seq)
+    e.sequence = seq
+    e.kind = kind
+    e.interaction = index
+    e.retrieved = 0
+    e.reported = 0
+    e.test_name = string.copy(config.get(slot(key, "diagnostic_test")))
+    e.source_file = string.copy(config.get(slot(key, "diagnostic_file")))
+    e.source_line = cfg_get_int(slot(key, "diagnostic_line"), 0)
+    e.tape = string.copy(config.get(slot(key, "diagnostic_tape")))
+    e.candidate = candidate
+    e.expected_method = ""
+    e.expected_path = ""
+    e.expected_headers = ""
+    e.expected_body = ""
+    if expected != null {
+        e.expected_method = diagnostic_text(expected.method, 128)
+        e.expected_path = diagnostic_safe_k(key, rt_apply_unredactions_for_k(key, expected.path, FIELD_PATH), FIELD_PATH)
+        // The tape holds placeholders, not the credentials restored for matching.
+        e.expected_headers = diagnostic_safe_k(key, diagnostic_headers_k(key, remove_headers_from_block_k(key, rt_apply_unredactions_for_k(key, expected.req_headers, FIELD_REQUEST_HEADERS), FIELD_REQUEST_HEADERS)), FIELD_REQUEST_HEADERS)
+        e.expected_body = diagnostic_safe_k(key, rt_apply_unredactions_for_k(key, expected.req_body, FIELD_REQUEST_BODY), FIELD_REQUEST_BODY)
+    }
+    e.actual_method = diagnostic_text(http_request_method(req), 128)
+    actual_path = build_recorded_path(req)
+    if expected != null && expected_path_includes_query(expected.path) == 0 { actual_path = http_request_path(req) }
+    e.actual_path = diagnostic_safe_k(key, actual_path, FIELD_PATH)
+    e.actual_headers = diagnostic_safe_k(key, diagnostic_headers_k(key, normalize_live_headers_k(key, req)), FIELD_REQUEST_HEADERS)
+    if diagnostic_binary(actual_body) == 1 {
+        n = string.length(actual_body)
+        e.actual_body = "[binary body: ${n} bytes]"
+    } else { e.actual_body = diagnostic_safe_k(key, actual_body, FIELD_REQUEST_BODY) }
+    if expected != null && diagnostic_binary(expected.req_body) == 1 {
+        n = string.length(expected.req_body)
+        e.expected_body = "[binary body: ${n} bytes]"
+    }
+    detail = string.copy("")
+    if expected == null {
+        detail = "no expected interaction available\n"
+    } else {
+        detail = diagnostic_diff("method", e.expected_method, e.actual_method)
+        detail = string_concat(detail, diagnostic_diff("path", e.expected_path, e.actual_path))
+        header_diff = kind >= KIND_HEADER_MISSING && kind <= KIND_HEADER_UNEXPECTED
+        if candidate == 1 && (vcr_get_strict_headers_k(key) == 1 || is_blank(expected.req_headers) == 0 || list_size(match_headers_k(key)) > 0) { header_diff = true }
+        if header_diff {
+            detail = string_concat(detail, diagnostic_diff("request headers", e.expected_headers, e.actual_headers))
+        }
+        if kind == KIND_BODY_DIFF || (candidate == 1 && is_blank(expected.req_body) == 0) {
+            if diagnostic_binary(expected.req_body) == 1 || diagnostic_binary(actual_body) == 1 {
+                offset = first_difference(expected.req_body, actual_body)
+                detail = string_concat(detail, "request body: binary values differ at byte ${offset} (body bytes omitted)\n")
+            } else {
+                detail = string_concat(detail, diagnostic_diff("request body", e.expected_body, e.actual_body))
+            }
+        }
+        if detail == "" { detail = "values differ outside displayed excerpts or before diagnostic masking\n" }
+    }
+    if kind == KIND_BODY_DIFF && expected != null {
+        expected_size = string.length(rt_apply_unredactions_for_k(key, expected.req_body, FIELD_REQUEST_BODY))
+        actual_size = string.length(actual_body)
+        summary = "request body different to expectation — recorded=${expected_size} bytes, live=${actual_size} bytes\n"
+        detail = string_concat(summary, detail)
+    }
+    e.detail = string.copy(detail)
+    e.expected_path = diagnostic_text(e.expected_path, 4096)
+    e.actual_path = diagnostic_text(e.actual_path, 4096)
+    e.expected_headers = diagnostic_text(e.expected_headers, 4096)
+    e.actual_headers = diagnostic_text(e.actual_headers, 4096)
+    e.expected_body = diagnostic_text(e.expected_body, 4096)
+    e.actual_body = diagnostic_text(e.actual_body, 4096)
+    list_add_raw(replay_diagnostics_k(key), e)
+}
+replay_last_error_k(key: string, consume: int) -> string {
+    events = replay_diagnostics_k(key)
+    n = list_size(events)
+    if n == 0 { return vcr_last_error_k(key) }
+    e = list_get_raw(events, n - 1) as *ReplayDiagnostic
+    if consume != 0 { e.retrieved = 1 }
+    return replay_diagnostic_text(e)
+}
+diagnostics_json_k(key: string, consume: int) -> string {
+    arr = json.arr()
+    events = replay_diagnostics_k(key)
+    i = 0
+    while i < list_size(events) {
+        e = list_get_raw(events, i) as *ReplayDiagnostic
+        if consume != 0 { e.retrieved = 1 }
+        json.push(arr, replay_diagnostic_json(e, key))
+        i = i + 1
+    }
+    text, _ = json.encode(arr)
+    json.json_free(arr)
+    return text
+}
+assert_no_mismatches_k(key: string) -> string {
+    out = string.copy("")
+    events = replay_diagnostics_k(key)
+    i = 0
+    while i < list_size(events) {
+        e = list_get_raw(events, i) as *ReplayDiagnostic
+        e.retrieved = 1
+        out = string_concat(out, replay_diagnostic_text(e))
+        out = string_concat(out, "\n")
+        i = i + 1
+    }
+    return out
+}
+dump_unretrieved_k(key: string) {
+    events = replay_diagnostics_k(key)
+    i = 0
+    while i < list_size(events) {
+        e = list_get_raw(events, i) as *ReplayDiagnostic
+        if e.retrieved == 0 && e.reported == 0 {
+            report = string_concat("Servirtium: UNRETRIEVED REPLAY MISMATCH (not retrieved by lastError or a consuming diagnostic read)\n", replay_diagnostic_text(e))
+            io.stderr_write(string_concat(report, "\n"))
+            e.reported = 1
+        }
+        i = i + 1
+    }
+}
+test_context_h(h: ptr, test_name: string, source_file: string, source_line: int) {
+    key = key_for(h)
+    dump_unretrieved_k(key)
+    list_reset(slot(key, "replay_diagnostics"))
+    vcr_clear_last_error_k(key)
+    cfg_set_str(slot(key, "diagnostic_test"), test_name)
+    cfg_set_str(slot(key, "diagnostic_file"), source_file)
+    cfg_set_int(slot(key, "diagnostic_line"), source_line)
+}
+diagnostic_open_h(h: ptr, test_name: string, tape: string) {
+    key = key_for(h)
+    test_context_h(h, test_name, "", 0)
+    cfg_set_str(slot(key, "diagnostic_tape"), tape)
+    cfg_set_int(slot(key, "diagnostic_sequence"), 0)
+}
+last_error_ex_h(h: ptr, consume: int) -> string { return replay_last_error_k(key_for(h), consume) }
+diagnostics_json_h(h: ptr, consume: int) -> string { return diagnostics_json_k(key_for(h), consume) }
+assert_no_mismatches_h(h: ptr) -> string { return assert_no_mismatches_k(key_for(h)) }

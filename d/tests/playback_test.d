@@ -71,6 +71,26 @@ int main() {
         fixtureRun(["check", directory]);
     }
 
+    {
+        const root = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "../..");
+        auto server = Vcr.playback(buildNormalizedPath(root, "core_tests/diagnostics/playback.md"));
+        scope (exit) server.close();
+        server.testContext("D scenario", "scenario.test", 123);
+        import std.process : execute;
+        const result = execute(["python3", buildNormalizedPath(root, "core_tests/diagnostic_fixture.py"), server.baseUrl()]);
+        ck("diagnostic driver", result.status == 0);
+        ck("observer diff", server.lastError(false).canFind("owner"));
+        ck("diagnostic coordinates", server.lastError(false).canFind("scenario.test:123"));
+        ck("observer does not consume", !server.diagnosticsJson().canFind("\"retrieved\":1"));
+        ck("consuming latest", server.lastError().canFind("owner"));
+        ck("earlier event unread", server.diagnosticsJson().canFind("\"retrieved\":0"));
+        const failure = collectExceptionMsg!VcrException(server.assertNoMismatches());
+        ck("assertion diff", failure !is null && failure.canFind("admin"));
+        server.testContext("next test");
+        server.assertNoMismatches();
+        ck("new test empty", server.diagnosticsJson() == "[]");
+    }
+
     // The tape by absolute path, derived from this source file's location, so
     // the facts don't depend on the working directory.
     const tape = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "..", "tapes",

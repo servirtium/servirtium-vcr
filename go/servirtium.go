@@ -55,6 +55,10 @@ int    aether_vcr_embed_tape_length(void* server);
 void   aether_vcr_embed_reset_cursor(void* server);
 
 char*  aether_vcr_embed_last_error(void* server);
+char* aether_vcr_embed_last_error_ex(void* server, int consume);
+char* aether_vcr_embed_diagnostics_json(void* server, int consume);
+char* aether_vcr_embed_assert_no_mismatches(void* server);
+void aether_vcr_embed_test_context(void* server, const char* name, const char* file, int line);
 int    aether_vcr_embed_last_kind(void* server);
 int    aether_vcr_embed_last_index(void* server);
 void   aether_vcr_embed_clear_last_error(void* server);
@@ -624,8 +628,30 @@ func (s *Server) BaseURL() string {
 // (record).
 func (s *Server) TapeLength() int { return int(C.aether_vcr_embed_tape_length(s.handle)) }
 
-// LastError is the most-recent dispatch diagnostic; "" when none flagged.
-func (s *Server) LastError() string { return takeString(C.aether_vcr_embed_last_error(s.handle)) }
+// LastError reads and acknowledges the latest retained failure. Pass false to observe.
+func (s *Server) LastError(consume ...bool) string {
+	flag := 1
+	if len(consume) > 0 && !consume[0] {
+		flag = 0
+	}
+	return takeString(C.aether_vcr_embed_last_error_ex(s.handle, C.int(flag)))
+}
+func (s *Server) DiagnosticsJSON(consume bool) string {
+	flag := 0
+	if consume {
+		flag = 1
+	}
+	return takeString(C.aether_vcr_embed_diagnostics_json(s.handle, C.int(flag)))
+}
+func (s *Server) AssertNoMismatches() error {
+	return checkErr(C.aether_vcr_embed_assert_no_mismatches(s.handle), "AssertNoMismatches")
+}
+func (s *Server) TestContext(name, sourceFile string, sourceLine int) {
+	cName, cFile := C.CString(name), C.CString(sourceFile)
+	defer C.free(unsafe.Pointer(cName))
+	defer C.free(unsafe.Pointer(cFile))
+	C.aether_vcr_embed_test_context(s.handle, cName, cFile, C.int(sourceLine))
+}
 
 // LastKind is the Outcome of the most-recent dispatch.
 func (s *Server) LastKind() Outcome { return Outcome(C.aether_vcr_embed_last_kind(s.handle)) }

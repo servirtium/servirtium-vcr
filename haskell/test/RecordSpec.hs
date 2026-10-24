@@ -4,6 +4,7 @@
 -- the freshly written tape and assert the same body comes back from disk.
 module RecordSpec (spec) where
 
+import Data.List (isInfixOf)
 import Control.Exception (bracket_)
 import System.Directory (doesFileExist, getTemporaryDirectory, removeFile, createDirectory, removeDirectoryRecursive)
 import System.FilePath ((</>))
@@ -28,6 +29,24 @@ spec = describe "record then replay" $ do
           lastKind rec `shouldReturn` Ok
       _ <- run ["check", directory]
       pure ()
+  it "retains replay diffs and supports explicit consumption" $
+    withPlayback (playbackOptions "../core_tests/diagnostics/playback.md") $ \server -> do
+      testContext "Haskell scenario" "scenario.test" 123 server
+      url <- baseUrl server
+      _ <- readProcess "python3" ["../core_tests/diagnostic_fixture.py", url] ""
+      diagnostic <- lastErrorWith False server
+      diagnostic `shouldSatisfy` isInfixOf "owner"
+      diagnostic `shouldSatisfy` isInfixOf "scenario.test:123"
+      observed <- diagnosticsJson False server
+      observed `shouldSatisfy` (not . isInfixOf "\"retrieved\":1")
+      _ <- lastError server
+      events <- diagnosticsJson False server
+      events `shouldSatisfy` isInfixOf "\"retrieved\":0"
+      events `shouldSatisfy` isInfixOf "\"retrieved\":1"
+      assertNoMismatches server `shouldThrow` anyException
+      testContext "next test" "" 0 server
+      assertNoMismatches server
+      diagnosticsJson False server `shouldReturn` "[]"
   it "records a GET from a live upstream and replays it from the tape" $ do
     tmp <- getTemporaryDirectory
     let tape = tmp </> "servirtium-haskell-record.md"

@@ -30,6 +30,25 @@ void main() {
     } finally { directory.deleteSync(recursive: true); }
   });
 
+  test('retained replay diagnostics support observer reads', () {
+    final server = Vcr.playback('../core_tests/diagnostics/playback.md').start();
+    try {
+      server.testContext('Dart scenario', sourceFile: 'scenario.test', sourceLine: 123);
+      final result = Process.runSync('python3', ['../core_tests/diagnostic_fixture.py', server.baseUrl]);
+      expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+      expect(server.readLastError(consume: false), contains('owner'));
+      expect(server.readLastError(consume: false), contains('scenario.test:123'));
+      expect(server.diagnosticsJson(), isNot(contains('"retrieved":1')));
+      expect(server.lastError, contains('owner'));
+      expect(server.diagnosticsJson(), contains('"retrieved":0'));
+      expect(server.diagnosticsJson(), contains('"retrieved":1'));
+      expect(() => server.assertNoMismatches(), throwsA(isA<VcrException>()));
+      server.testContext('next test');
+      server.assertNoMismatches();
+      expect(server.diagnosticsJson(), '[]');
+    } finally { server.close(); }
+  });
+
   late HttpServer upstream;
   late String upstreamBase;
   late String tapePath;

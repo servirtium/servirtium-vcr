@@ -78,6 +78,30 @@ final class PlaybackTests: XCTestCase {
         _ = try run(["check", directory.path])
     }
 
+    func testRetainedReplayDiagnostics() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        try Vcr.withPlayback(root.appendingPathComponent("core_tests/diagnostics/playback.md").path) { server in
+            server.testContext("Swift scenario", sourceFile: "scenario.test", sourceLine: 123)
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["python3", root.appendingPathComponent("core_tests/diagnostic_fixture.py").path, server.baseUrl]
+            try process.run()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0)
+            XCTAssertTrue(server.readLastError(consume: false).contains("owner"))
+            XCTAssertTrue(server.readLastError(consume: false).contains("scenario.test:123"))
+            XCTAssertFalse(server.diagnosticsJson().contains("\"retrieved\":1"))
+            XCTAssertTrue(server.lastError.contains("owner"))
+            XCTAssertTrue(server.diagnosticsJson().contains("\"retrieved\":0"))
+            XCTAssertTrue(server.diagnosticsJson().contains("\"retrieved\":1"))
+            XCTAssertThrowsError(try server.assertNoMismatches())
+            server.testContext("next test")
+            try server.assertNoMismatches()
+            XCTAssertEqual(server.diagnosticsJson(), "[]")
+        }
+    }
+
     func testReplaysTheCanonicalTapeBody() throws {
         try Vcr.withPlayback(tape) { vcr in
             XCTAssertEqual(try httpGet(vcr.baseUrl + "/ok"), "ok-body")

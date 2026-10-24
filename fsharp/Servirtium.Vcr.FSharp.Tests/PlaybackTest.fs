@@ -93,3 +93,25 @@ let ``structured helpers forward credentials and scrub tape`` () =
             Assert.Equal(VcrOutcome.Ok, recServer.LastKind)
         run ["check"; directory] |> ignore
     finally System.IO.Directory.Delete(directory, true)
+
+
+[<Fact>]
+let ``retained replay diagnostics support observers and assertions`` () =
+    let root = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../.."))
+    use server = Vcr.Playback(System.IO.Path.Combine(root, "core_tests/diagnostics/playback.md")).Start()
+    Servirtium.testContext "FSharp scenario" "scenario.test" 123 server
+    let info = System.Diagnostics.ProcessStartInfo("python3")
+    info.ArgumentList.Add(System.IO.Path.Combine(root, "core_tests/diagnostic_fixture.py"))
+    info.ArgumentList.Add(server.BaseUrl)
+    use driver = System.Diagnostics.Process.Start(info)
+    driver.WaitForExit()
+    Assert.Equal(0, driver.ExitCode)
+    Assert.Contains("owner", Servirtium.lastErrorWith false server)
+    Assert.Contains("scenario.test:123", Servirtium.lastErrorWith false server)
+    Assert.DoesNotContain("\"retrieved\":1", Servirtium.diagnosticsJson false server)
+    Assert.Contains("owner", server.LastError)
+    Assert.Contains("\"retrieved\":0", Servirtium.diagnosticsJson false server)
+    Assert.Throws<VcrException>(fun () -> Servirtium.assertNoMismatches server) |> ignore
+    Servirtium.testContext "next test" "" 0 server
+    Servirtium.assertNoMismatches server
+    Assert.Equal("[]", Servirtium.diagnosticsJson false server)

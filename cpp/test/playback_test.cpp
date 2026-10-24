@@ -151,6 +151,25 @@ int main(int argc, char** argv) {
         std::filesystem::remove_all(directory);
     }
 
+
+    {
+        const auto root = std::filesystem::path(tape).parent_path().parent_path().parent_path();
+        auto server = servirtium::Vcr::playback((root / "core_tests/diagnostics/playback.md").string());
+        server.test_context("C++ scenario", "scenario.test", 123);
+        const auto command = "python3 '" + (root / "core_tests/diagnostic_fixture.py").string() + "' '" + server.base_url() + "'";
+        ck("diagnostic driver", std::system(command.c_str()) == 0);
+        ck("observer diagnostic", server.last_error(false).find("owner") != std::string::npos);
+        ck("coordinates", server.last_error(false).find("scenario.test:123") != std::string::npos);
+        ck("observer not consuming", server.diagnostics_json().find("\"retrieved\":1") == std::string::npos);
+        ck("consuming latest", server.last_error().find("owner") != std::string::npos);
+        ck("earlier event unread", server.diagnostics_json().find("\"retrieved\":0") != std::string::npos);
+        try { server.assert_no_mismatches(); ck("assertion failed", false); }
+        catch (const servirtium::Error& error) { ck("assertion includes earlier diff", std::string(error.what()).find("admin") != std::string::npos); }
+        server.test_context("next test");
+        server.assert_no_mismatches();
+        ck("new test empty", server.diagnostics_json() == "[]");
+    }
+
     if (failures == 0) {
         std::cout << "PASS: cpp servirtium playback\n";
         return 0;

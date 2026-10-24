@@ -80,7 +80,7 @@ ServirtiumServer >> tapeLength [
 
 { #category : 'diagnostics' }
 ServirtiumServer >> lastError [
-	"Most-recent dispatch diagnostic; empty String when none flagged."
+	"Latest retained replay diagnostic; this read acknowledges without erasing."
 
 	^ self library takeString: (self library lastError: self handle)
 ]
@@ -149,4 +149,23 @@ ServirtiumServer >> stop [
 		ifTrue: [ self library stopAndFlushFailIfChanged: h tape: tapePath ]
 		ifFalse: [ self library stopAndFlush: h tape: tapePath ]).
 	err isEmpty ifFalse: [ ServirtiumError signal: err ]
+]
+
+{ #category : 'diagnostics' }
+ServirtiumServer >> lastErrorConsume: consume [
+    ^ self library takeString: (self library lastError: self handle consume: (consume ifTrue: [ 1 ] ifFalse: [ 0 ]))
+]
+{ #category : 'diagnostics' }
+ServirtiumServer >> diagnosticsJsonConsume: consume [
+    ^ self library takeString: (self library diagnosticsJson: self handle consume: (consume ifTrue: [ 1 ] ifFalse: [ 0 ]))
+]
+{ #category : 'diagnostics' }
+ServirtiumServer >> assertNoMismatches [
+    | diagnostic |
+    diagnostic := self library takeString: (self library assertNoMismatches: self handle).
+    diagnostic ifNotEmpty: [ ServirtiumError signal: diagnostic ]
+]
+{ #category : 'diagnostics' }
+ServirtiumServer >> testContext: name file: file line: line [
+    self library testContext: self handle name: name file: file line: line
 ]

@@ -35,6 +35,10 @@
     reset_cursor/1,
     %% diagnostics
     last_error/1,
+    last_error_ex/2,
+    diagnostics_json/2,
+    assert_no_mismatches/1,
+    test_context/4,
     last_kind/1,
     last_index/1,
     clear_last_error/1,
@@ -133,3 +137,8 @@ clear_match_headers(_Handle) -> erlang:nif_error(not_loaded).
 clear_static_content(_Handle) -> erlang:nif_error(not_loaded).
 clear_untaped(_Handle) -> erlang:nif_error(not_loaded).
 clear_format_options(_Handle) -> erlang:nif_error(not_loaded).
+
+last_error_ex(_H, _Consume) -> erlang:nif_error(not_loaded).
+diagnostics_json(_H, _Consume) -> erlang:nif_error(not_loaded).
+assert_no_mismatches(_H) -> erlang:nif_error(not_loaded).
+test_context(_H, _Name, _File, _Line) -> erlang:nif_error(not_loaded).

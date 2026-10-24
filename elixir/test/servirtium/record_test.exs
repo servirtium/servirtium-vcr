@@ -44,6 +44,23 @@ defmodule Servirtium.RecordTest do
     after File.rm_rf!(directory) end
   end
 
+  test "retained diagnostics distinguish observer reads" do
+    Servirtium.with_playback("../core_tests/diagnostics/playback.md", [], fn server ->
+      Servirtium.test_context(server, "Elixir scenario", "scenario.test", 123)
+      {out, status} = System.cmd("python3", ["../core_tests/diagnostic_fixture.py", Servirtium.base_url(server)], stderr_to_stdout: true)
+      assert status == 0, out
+      assert Servirtium.last_error(server, false) =~ "owner"
+      assert Servirtium.last_error(server, false) =~ "scenario.test:123"
+      refute Servirtium.diagnostics_json(server) =~ "\"retrieved\":1"
+      assert Servirtium.last_error(server) =~ "owner"
+      assert Servirtium.diagnostics_json(server) =~ "\"retrieved\":0"
+      assert_raise Servirtium.Error, ~r/admin/, fn -> Servirtium.assert_no_mismatches(server) end
+      Servirtium.test_context(server, "next test")
+      Servirtium.assert_no_mismatches(server)
+      assert Servirtium.diagnostics_json(server) == "[]"
+    end)
+  end
+
   test "records then replays the same interaction", %{tape: tape} do
     up = TestUpstream.start("hello-from-upstream")
 

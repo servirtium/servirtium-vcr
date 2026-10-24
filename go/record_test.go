@@ -211,3 +211,40 @@ func TestStructuredRedactionHelpers(t *testing.T) {
 	}
 	run("check", directory)
 }
+
+func TestRetainedReplayDiagnostics(t *testing.T) {
+	_, source, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(source), "..")
+	server, err := servirtium.Playback(filepath.Join(root, "core_tests/diagnostics/playback.md")).Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	server.TestContext("Go scenario", "scenario.test", 123)
+	output, err := exec.Command("python3", filepath.Join(root, "core_tests/diagnostic_fixture.py"), server.BaseURL()).CombinedOutput()
+	if err != nil {
+		t.Fatalf("driver: %v: %s", err, output)
+	}
+	if msg := server.LastError(false); !strings.Contains(msg, "owner") || !strings.Contains(msg, "scenario.test:123") {
+		t.Fatal(msg)
+	}
+	if msg := server.DiagnosticsJSON(false); strings.Contains(msg, `"retrieved":1`) {
+		t.Fatal(msg)
+	}
+	if !strings.Contains(server.LastError(), "owner") {
+		t.Fatal("latest diagnostic missing")
+	}
+	if msg := server.DiagnosticsJSON(false); !strings.Contains(msg, `"retrieved":0`) || !strings.Contains(msg, `"retrieved":1`) {
+		t.Fatal(msg)
+	}
+	if err := server.AssertNoMismatches(); err == nil || !strings.Contains(err.Error(), "admin") || !strings.Contains(err.Error(), "owner") {
+		t.Fatal(err)
+	}
+	server.TestContext("next test", "next.test", 5)
+	if err := server.AssertNoMismatches(); err != nil {
+		t.Fatal(err)
+	}
+	if events := server.DiagnosticsJSON(false); events != "[]" {
+		t.Fatal(events)
+	}
+}

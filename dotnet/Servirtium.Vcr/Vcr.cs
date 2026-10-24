@@ -416,8 +416,18 @@ public sealed class VcrServer : IDisposable
     /// <summary>Tape entry count (playback), or interactions captured so far (record).</summary>
     public int TapeLength => NativeMethods.TapeLength(Handle);
 
-    /// <summary>Most-recent dispatch diagnostic; empty when none flagged.</summary>
+    /// <summary>Latest retained replay diagnostic; consuming reads acknowledge without erasing.</summary>
     public string LastError => NativeMethods.TakeString(NativeMethods.LastError(Handle));
+
+    /// <summary>Read the latest retained diagnostic; false observes without acknowledging.</summary>
+    public string ReadLastError(bool consume = true) => NativeMethods.TakeString(NativeMethods.LastErrorEx(Handle, consume ? 1 : 0));
+    public string DiagnosticsJson(bool consume = false) => NativeMethods.TakeString(NativeMethods.DiagnosticsJson(Handle, consume ? 1 : 0));
+    public void AssertNoMismatches()
+    {
+        string error = NativeMethods.TakeString(NativeMethods.AssertNoMismatches(Handle));
+        if (!string.IsNullOrEmpty(error)) throw new VcrException(error);
+    }
+    public void TestContext(string name, string sourceFile = "", int sourceLine = 0) => NativeMethods.TestContext(Handle, name, sourceFile, sourceLine);
 
     /// <summary>Outcome of the most-recent dispatch.</summary>
     public VcrOutcome LastKind => (VcrOutcome)NativeMethods.LastKind(Handle);

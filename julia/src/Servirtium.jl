@@ -28,6 +28,7 @@ export Vcr, VcrError, Field, Outcome,
     TapeExhausted, BodyDiff, RecordError,
     playback, playback_url, record,
     base_url, port, tape_length, reset_cursor,
+    diagnostics_json, assert_no_mismatches, test_context,
     last_kind, last_error, last_index, clear_last_error, matched_cleanly,
     redact_header, redact_query_param, redact_json_field,
     redact, unredact, normalize_whole_tape, redact_whole_tape, remove_header,
@@ -231,12 +232,18 @@ last_kind(vcr::Vcr) = Outcome(ccall((:aether_vcr_embed_last_kind, LIB), Cint,
 matched_cleanly(vcr::Vcr) = last_kind(vcr) == Ok
 
 """Most-recent dispatch diagnostic; "" when none flagged."""
-last_error(vcr::Vcr) = take(ccall((:aether_vcr_embed_last_error, LIB), Ptr{Cchar},
-                                  (Ptr{Cvoid},), vcr.handle))
+last_error(vcr::Vcr; consume::Bool=true) = take(ccall((:aether_vcr_embed_last_error_ex, LIB), Ptr{Cchar},
+    (Ptr{Cvoid}, Cint), vcr.handle, consume ? 1 : 0))
 
 """Tape index of the most-recent matched interaction, or -1."""
 last_index(vcr::Vcr) = Int(ccall((:aether_vcr_embed_last_index, LIB), Cint,
                                  (Ptr{Cvoid},), vcr.handle))
+
+diagnostics_json(vcr::Vcr; consume::Bool=false) = take(ccall((:aether_vcr_embed_diagnostics_json, LIB), Ptr{Cchar},
+    (Ptr{Cvoid}, Cint), vcr.handle, consume ? 1 : 0))
+assert_no_mismatches(vcr::Vcr) = check(ccall((:aether_vcr_embed_assert_no_mismatches, LIB), Ptr{Cchar}, (Ptr{Cvoid},), vcr.handle), "assert_no_mismatches")
+test_context(vcr::Vcr, name; source_file="", source_line=0) = ccall((:aether_vcr_embed_test_context, LIB), Cvoid,
+    (Ptr{Cvoid}, Cstring, Cstring, Cint), vcr.handle, name, source_file, source_line)
 
 clear_last_error(vcr::Vcr) = ccall((:aether_vcr_embed_clear_last_error, LIB), Cvoid,
                                    (Ptr{Cvoid},), vcr.handle)

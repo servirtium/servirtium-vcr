@@ -139,6 +139,11 @@ export const resetCursor = lazy('void aether_vcr_embed_reset_cursor(void* server
 
 export const lastError = lazy('void* aether_vcr_embed_last_error(void* server)')
 
+export const lastErrorEx = lazy('void* aether_vcr_embed_last_error_ex(void* server, int consume)')
+export const diagnosticsJson = lazy('void* aether_vcr_embed_diagnostics_json(void* server, int consume)')
+export const assertNoMismatches = lazy('void* aether_vcr_embed_assert_no_mismatches(void* server)')
+export const testContext = lazy('void aether_vcr_embed_test_context(void* server, const char* name, const char* file, int line)')
+
 export const lastKind = lazy('int aether_vcr_embed_last_kind(void* server)')
 
 export const lastIndex = lazy('int aether_vcr_embed_last_index(void* server)')

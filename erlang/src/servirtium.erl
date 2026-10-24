@@ -28,6 +28,7 @@
     base_url/1,
     port/1,
     tape_length/1,
+    last_error/2, diagnostics_json/2, assert_no_mismatches/1, test_context/4,
     last_kind/1,
     last_error/1,
     last_index/1,
@@ -192,3 +193,15 @@ redact_json_field(#{handle := H}, Name, Replacement, Field) ->
         <<>> -> ok;
         Error -> error({servirtium, Error})
     end.
+
+last_error(#{handle := H}, Consume) when is_boolean(Consume) ->
+    binary_to_list(servirtium_nif:last_error_ex(H, case Consume of true -> 1; false -> 0 end)).
+diagnostics_json(#{handle := H}, Consume) when is_boolean(Consume) ->
+    binary_to_list(servirtium_nif:diagnostics_json(H, case Consume of true -> 1; false -> 0 end)).
+assert_no_mismatches(#{handle := H}) ->
+    case servirtium_nif:assert_no_mismatches(H) of
+        <<>> -> ok;
+        Error -> error({servirtium, Error})
+    end.
+test_context(#{handle := H}, Name, File, Line) ->
+    servirtium_nif:test_context(H, unicode:characters_to_binary(Name), unicode:characters_to_binary(File), Line).

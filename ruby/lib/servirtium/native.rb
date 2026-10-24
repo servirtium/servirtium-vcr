@@ -91,6 +91,10 @@ module Servirtium
 
       # ---- diagnostics (handle-based) ----
       [:last_error,       'aether_vcr_embed_last_error',       VOIDP, [VOIDP]],
+      [:last_error_ex, 'aether_vcr_embed_last_error_ex', VOIDP, [VOIDP, INT]],
+      [:diagnostics_json, 'aether_vcr_embed_diagnostics_json', VOIDP, [VOIDP, INT]],
+      [:assert_no_mismatches, 'aether_vcr_embed_assert_no_mismatches', VOIDP, [VOIDP]],
+      [:test_context, 'aether_vcr_embed_test_context', VOID, [VOIDP, VOIDP, VOIDP, INT]],
       [:last_kind,        'aether_vcr_embed_last_kind',        INT,   [VOIDP]],
       [:last_index,       'aether_vcr_embed_last_index',       INT,   [VOIDP]],
       [:clear_last_error, 'aether_vcr_embed_clear_last_error', VOID,  [VOIDP]],

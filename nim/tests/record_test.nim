@@ -94,3 +94,24 @@ suite "structured redaction helpers":
     check rec.lastKind() == Ok
     rec.close()
     discard fixtureRun(@["check", directory])
+
+
+suite "retained replay diagnostics":
+  test "observers do not consume and assertions report earlier failures":
+    let root = currentSourcePath().parentDir.parentDir.parentDir
+    let server = playback(root / "core_tests/diagnostics/playback.md")
+    server.testContext("Nim scenario", "scenario.test", 123)
+    check server.start()
+    defer: server.close()
+    let driven = execCmdEx("python3 " & quoteShell(root / "core_tests/diagnostic_fixture.py") & " " & quoteShell(server.baseUrl()))
+    check driven.exitCode == 0
+    check server.lastError(false).contains("owner")
+    check server.lastError(false).contains("scenario.test:123")
+    check not server.diagnosticsJson().contains("\"retrieved\":1")
+    check server.lastError().contains("owner")
+    check server.diagnosticsJson().contains("\"retrieved\":0")
+    check server.diagnosticsJson().contains("\"retrieved\":1")
+    expect VcrError: server.assertNoMismatches()
+    server.testContext("next test")
+    server.assertNoMismatches()
+    check server.diagnosticsJson() == "[]"

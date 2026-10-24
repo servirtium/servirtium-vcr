@@ -103,6 +103,15 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_error")]
     internal static extern IntPtr LastError(IntPtr server);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_error_ex", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr LastErrorEx(IntPtr server, int consume);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_diagnostics_json", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr DiagnosticsJson(IntPtr server, int consume);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_assert_no_mismatches", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr AssertNoMismatches(IntPtr server);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_test_context", CharSet = CharSet.Ansi)]
+    internal static extern void TestContext(IntPtr server, string name, string file, int line);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_kind")]
     internal static extern int LastKind(IntPtr server);
 

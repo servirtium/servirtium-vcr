@@ -44,6 +44,10 @@ extern int   aether_vcr_embed_tape_length(void *server);
 extern void  aether_vcr_embed_reset_cursor(void *server);
 
 extern char *aether_vcr_embed_last_error(void *server);
+extern char *aether_vcr_embed_last_error_ex(void *h, int consume);
+extern char *aether_vcr_embed_diagnostics_json(void *h, int consume);
+extern char *aether_vcr_embed_assert_no_mismatches(void *h);
+extern void aether_vcr_embed_test_context(void *h, const char *name, const char *file, int line);
 extern int   aether_vcr_embed_last_kind(void *server);
 extern int   aether_vcr_embed_last_index(void *server);
 extern void  aether_vcr_embed_clear_last_error(void *server);
@@ -269,6 +273,34 @@ static ERL_NIF_TERM nif_last_index(ErlNifEnv *env, int argc, const ERL_NIF_TERM 
     void *h;
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     return enif_make_int(env, aether_vcr_embed_last_index(h));
+}
+
+static ERL_NIF_TERM nif_last_error_ex(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    UNUSED(argc);
+    void *h; int consume;
+    if (!get_handle(env, argv[0], &h) || !enif_get_int(env, argv[1], &consume)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_last_error_ex(h, consume));
+}
+static ERL_NIF_TERM nif_diagnostics_json(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    UNUSED(argc);
+    void *h; int consume;
+    if (!get_handle(env, argv[0], &h) || !enif_get_int(env, argv[1], &consume)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_diagnostics_json(h, consume));
+}
+static ERL_NIF_TERM nif_assert_no_mismatches(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    UNUSED(argc); void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_assert_no_mismatches(h));
+}
+static ERL_NIF_TERM nif_test_context(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    UNUSED(argc); void *h; int line;
+    if (!get_handle(env, argv[0], &h) || !enif_get_int(env, argv[3], &line)) return enif_make_badarg(env);
+    char *name = term_to_cstr(env, argv[1]);
+    char *file = term_to_cstr(env, argv[2]);
+    if (!name || !file) { if (name) enif_free(name); if (file) enif_free(file); return enif_make_badarg(env); }
+    aether_vcr_embed_test_context(h, name, file, line);
+    enif_free(name); enif_free(file);
+    return enif_make_atom(env, "ok");
 }
 
 static ERL_NIF_TERM nif_clear_last_error(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
@@ -525,6 +557,10 @@ static ErlNifFunc nif_funcs[] = {
     {"last_error",       1, nif_last_error,       0},
     {"last_kind",        1, nif_last_kind,        0},
     {"last_index",       1, nif_last_index,       0},
+    {"last_error_ex", 2, nif_last_error_ex, 0},
+    {"diagnostics_json", 2, nif_diagnostics_json, 0},
+    {"assert_no_mismatches", 1, nif_assert_no_mismatches, 0},
+    {"test_context", 4, nif_test_context, 0},
     {"clear_last_error", 1, nif_clear_last_error, 0},
 
     {"redact",         4, nif_redact,         0},

@@ -35,6 +35,10 @@ void  aether_vcr_embed_reset_cursor(void *h);
 
 /* diagnostics */
 char *aether_vcr_embed_last_error(void *h);
+char* aether_vcr_embed_last_error_ex(void* h, int consume);
+char* aether_vcr_embed_diagnostics_json(void* h, int consume);
+char* aether_vcr_embed_assert_no_mismatches(void* h);
+void aether_vcr_embed_test_context(void* h, const char* name, const char* file, int line);
 int   aether_vcr_embed_last_kind(void *h);
 int   aether_vcr_embed_last_index(void *h);
 void  aether_vcr_embed_clear_last_error(void *h);

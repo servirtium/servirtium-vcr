@@ -164,7 +164,7 @@ public:
     Outcome last_kind() const { return static_cast<Outcome>(sv_last_kind(vcr_)); }
 
     // Most-recent dispatch diagnostic; "" when none flagged.
-    std::string last_error() const { return detail::take(sv_last_error(vcr_)); }
+    std::string last_error(bool consume = true) const { return detail::take(sv_last_error_ex(vcr_, consume)); }
 
     // Tape index of the most-recent matched interaction, or -1.
     int last_index() const { return sv_last_index(vcr_); }
@@ -172,6 +172,12 @@ public:
     // True when the most-recent dispatch matched cleanly — the assertion most
     // tests actually want.
     bool matched_cleanly() const { return last_kind() == Outcome::Ok; }
+
+    std::string diagnostics_json(bool consume = false) const { return detail::take(sv_diagnostics_json(vcr_, consume)); }
+    void assert_no_mismatches() const { detail::check(sv_assert_no_mismatches(vcr_), "assert_no_mismatches"); }
+    void test_context(const std::string& name, const std::string& file = "", int line = 0) {
+        sv_test_context(vcr_, name.c_str(), file.c_str(), line);
+    }
 
     void clear_last_error() { sv_clear_last_error(vcr_); }
 

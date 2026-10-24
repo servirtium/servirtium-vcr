@@ -53,6 +53,10 @@ defmodule Servirtium.Native do
   # ---- diagnostics ---------------------------------------------------------
 
   defdelegate last_error(handle), to: :servirtium_nif
+  defdelegate last_error_ex(handle, consume), to: :servirtium_nif
+  defdelegate diagnostics_json(handle, consume), to: :servirtium_nif
+  defdelegate assert_no_mismatches(handle), to: :servirtium_nif
+  defdelegate test_context(handle, name, file, line), to: :servirtium_nif
   defdelegate last_kind(handle), to: :servirtium_nif
   defdelegate last_index(handle), to: :servirtium_nif
   defdelegate clear_last_error(handle), to: :servirtium_nif

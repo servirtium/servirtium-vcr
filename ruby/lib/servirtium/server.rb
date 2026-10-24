@@ -31,9 +31,22 @@ module Servirtium
       Native.call(:tape_length, handle)
     end
 
-    # Most-recent dispatch diagnostic; empty when none flagged.
-    def last_error
-      Native.take_string(Native.call(:last_error, handle))
+    # Latest retained replay diagnostic; consuming reads acknowledge without erasing.
+    def last_error(consume: true)
+      Native.take_string(Native.call(:last_error_ex, handle, consume ? 1 : 0))
+    end
+
+    def diagnostics_json(consume: false)
+      Native.take_string(Native.call(:diagnostics_json, handle, consume ? 1 : 0))
+    end
+
+    def assert_no_mismatches
+      error = Native.take_string(Native.call(:assert_no_mismatches, handle))
+      raise Servirtium::Error, error unless error.empty?
+    end
+
+    def test_context(name, source_file: '', source_line: 0)
+      Native.call(:test_context, handle, name, source_file, source_line)
     end
 
     # Outcome of the most-recent dispatch, as a symbol (e.g. +:ok+). See

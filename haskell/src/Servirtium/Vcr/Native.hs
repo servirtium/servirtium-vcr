@@ -31,6 +31,10 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_tape_length
   , aether_vcr_embed_reset_cursor
   , aether_vcr_embed_last_error
+  , aether_vcr_embed_last_error_ex
+  , aether_vcr_embed_diagnostics_json
+  , aether_vcr_embed_assert_no_mismatches
+  , aether_vcr_embed_test_context
   , aether_vcr_embed_last_kind
   , aether_vcr_embed_last_index
   , aether_vcr_embed_clear_last_error
@@ -213,3 +217,12 @@ foreign import ccall unsafe "aether_vcr_embed_redact_query_param"
   aether_vcr_embed_redact_query_param :: Handle -> CInt -> CString -> CString -> IO CString
 foreign import ccall unsafe "aether_vcr_embed_redact_json_field"
   aether_vcr_embed_redact_json_field :: Handle -> CInt -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_last_error_ex"
+  aether_vcr_embed_last_error_ex :: Handle -> CInt -> IO CString
+foreign import ccall unsafe "aether_vcr_embed_diagnostics_json"
+  aether_vcr_embed_diagnostics_json :: Handle -> CInt -> IO CString
+foreign import ccall unsafe "aether_vcr_embed_assert_no_mismatches"
+  aether_vcr_embed_assert_no_mismatches :: Handle -> IO CString
+foreign import ccall unsafe "aether_vcr_embed_test_context"
+  aether_vcr_embed_test_context :: Handle -> CString -> CString -> CInt -> IO ()

@@ -48,3 +48,14 @@
          builder)
        (apply-opts opts)
        (.start))))
+
+
+(defn last-error
+  ([server] (.lastError server))
+  ([server consume] (.lastError server (boolean consume))))
+(defn diagnostics-json
+  ([server] (.diagnosticsJson server false))
+  ([server consume] (.diagnosticsJson server (boolean consume))))
+(defn assert-no-mismatches [server] (.assertNoMismatches server))
+(defn test-context [server name source-file source-line]
+  (.testContext server name source-file (int source-line)))

@@ -38,6 +38,10 @@ extern int   aether_vcr_embed_tape_length(sv_handle h);
 extern void  aether_vcr_embed_reset_cursor(sv_handle h);
 
 extern char *aether_vcr_embed_last_error(sv_handle h);
+extern char *aether_vcr_embed_last_error_ex(sv_handle h, int consume);
+extern char *aether_vcr_embed_diagnostics_json(sv_handle h, int consume);
+extern char *aether_vcr_embed_assert_no_mismatches(sv_handle h);
+extern void aether_vcr_embed_test_context(sv_handle h, const char* name, const char* file, int line);
 extern int   aether_vcr_embed_last_kind(sv_handle h);
 extern int   aether_vcr_embed_last_index(sv_handle h);
 extern void  aether_vcr_embed_clear_last_error(sv_handle h);
@@ -223,6 +227,22 @@ void sv_reset_cursor(sv_vcr *vcr) {
 sv_outcome sv_last_kind(sv_vcr *vcr) {
     if (vcr == NULL) return SV_OK;
     return (sv_outcome)aether_vcr_embed_last_kind(vcr->h);
+}
+
+sv_str sv_last_error_ex(sv_vcr *vcr, int consume) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_last_error_ex(vcr->h, consume));
+}
+sv_str sv_diagnostics_json(sv_vcr *vcr, int consume) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_diagnostics_json(vcr->h, consume));
+}
+sv_str sv_assert_no_mismatches(sv_vcr *vcr) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_assert_no_mismatches(vcr->h));
+}
+void sv_test_context(sv_vcr *vcr, const char *name, const char *file, int line) {
+    if (vcr != NULL) aether_vcr_embed_test_context(vcr->h, name, file, line);
 }
 
 sv_str sv_last_error(sv_vcr *vcr) {

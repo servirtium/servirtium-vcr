@@ -52,6 +52,10 @@ module Servirtium.Vcr
   , port
   , tapeLength
   , lastError
+  , lastErrorWith
+  , diagnosticsJson
+  , assertNoMismatches
+  , testContext
   , lastKind
   , lastIndex
   , note
@@ -503,3 +507,15 @@ resetCursor server = N.aether_vcr_embed_reset_cursor (vcrHandle server)
 -- | Clear the last-error slot between sub-cases.
 clearLastError :: VcrServer -> IO ()
 clearLastError server = N.aether_vcr_embed_clear_last_error (vcrHandle server)
+
+-- | Acknowledge without deleting; False is an observer read.
+lastErrorWith :: Bool -> VcrServer -> IO String
+lastErrorWith consume server = N.takeString =<< N.aether_vcr_embed_last_error_ex (vcrHandle server) (if consume then 1 else 0)
+diagnosticsJson :: Bool -> VcrServer -> IO String
+diagnosticsJson consume server = N.takeString =<< N.aether_vcr_embed_diagnostics_json (vcrHandle server) (if consume then 1 else 0)
+assertNoMismatches :: VcrServer -> IO ()
+assertNoMismatches server = check "assertNoMismatches" $ N.aether_vcr_embed_assert_no_mismatches (vcrHandle server)
+testContext :: String -> String -> Int -> VcrServer -> IO ()
+testContext name sourceFile sourceLine server =
+  withCString name $ \n -> withCString sourceFile $ \f ->
+    N.aether_vcr_embed_test_context (vcrHandle server) n f (fromIntegral sourceLine)

@@ -167,3 +167,41 @@ test "structured redaction helpers preserve upstream credentials" {
     const checked = try fixtureRun(allocator, &.{"check", directory});
     allocator.free(checked);
 }
+
+
+test "retained replay diagnostics and observer reads" {
+    const allocator = std.testing.allocator;
+    const tape = try testutil.cwdJoinZ(allocator, "../core_tests/diagnostics/playback.md");
+    defer allocator.free(tape);
+    var server = try servirtium.Playback.init(allocator, tape).start();
+    defer server.close() catch {};
+    server.testContext("Zig scenario", "scenario.test", 123);
+    const base = try server.baseUrl();
+    defer allocator.free(base);
+    const driven = try std.process.run(allocator, std.testing.io, .{ .argv = &.{ "python3", "../core_tests/diagnostic_fixture.py", base } });
+    defer allocator.free(driven.stdout);
+    defer allocator.free(driven.stderr);
+    switch (driven.term) {
+        .exited => |code| try std.testing.expectEqual(@as(u8, 0), code),
+        else => return error.DriverFailed,
+    }
+    const observed = try server.readLastError(false);
+    defer allocator.free(observed);
+    try std.testing.expect(std.mem.indexOf(u8, observed, "owner") != null);
+    try std.testing.expect(std.mem.indexOf(u8, observed, "scenario.test:123") != null);
+    const before = try server.diagnosticsJson(false);
+    defer allocator.free(before);
+    try std.testing.expect(std.mem.indexOf(u8, before, "\"retrieved\":1") == null);
+    const consumed = try server.lastError();
+    defer allocator.free(consumed);
+    const after = try server.diagnosticsJson(false);
+    defer allocator.free(after);
+    try std.testing.expect(std.mem.indexOf(u8, after, "\"retrieved\":0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, after, "\"retrieved\":1") != null);
+    try std.testing.expectError(servirtium.Error.VcrError, server.assertNoMismatches());
+    server.testContext("next test", "", 0);
+    try server.assertNoMismatches();
+    const empty = try server.diagnosticsJson(false);
+    defer allocator.free(empty);
+    try std.testing.expectEqualStrings("[]", empty);
+}

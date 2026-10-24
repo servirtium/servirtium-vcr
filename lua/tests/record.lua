@@ -83,4 +83,24 @@ do
     os.remove(directory)
 end
 
+do
+    h.case("retained replay diagnostics")
+    local root = here .. "/../.."
+    local server = assert(servirtium.playback(root .. "/core_tests/diagnostics/playback.md"):start())
+    server:test_context("Lua scenario", "scenario.test", 123)
+    local success = os.execute("python3 '" .. root .. "/core_tests/diagnostic_fixture.py' '" .. server:base_url() .. "'")
+    h.truthy(success, "HTTP mismatch driver")
+    h.truthy(server:last_error(false):find("owner", 1, true), "observer last error")
+    h.truthy(server:last_error(false):find("scenario.test:123", 1, true), "coordinates")
+    h.truthy(not server:diagnostics_json():find('"retrieved":1', 1, true), "observer does not consume")
+    h.truthy(server:last_error():find("owner", 1, true), "latest consuming read")
+    h.truthy(server:diagnostics_json():find('"retrieved":0', 1, true), "earlier failure remains unread")
+    local ok, diagnostic = pcall(function() server:assert_no_mismatches() end)
+    h.truthy(not ok and diagnostic:find("admin", 1, true), "assertion reports earlier failure")
+    server:test_context("next test")
+    server:assert_no_mismatches()
+    h.eq(server:diagnostics_json(), "[]", "test boundary clears events")
+    server:close()
+end
+
 h.done("record")
