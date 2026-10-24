@@ -48,6 +48,9 @@ pub extern "c" fn aether_vcr_embed_last_index(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_clear_last_error(handle: Handle) void;
 
 pub extern "c" fn aether_vcr_embed_redact(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_redact_header(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_redact_query_param(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_redact_json_field(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_normalize_whole_tape(handle: Handle, pat: [*c]const u8, name: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_redact_whole_tape(handle: Handle, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_unredact(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
@@ -190,6 +193,27 @@ pub const Vcr = struct {
         return takeString(self.allocator, aether_vcr_embed_redact(self.handle, @intFromEnum(field), pat.ptr, repl.ptr));
     }
 
+    pub fn redactHeader(self: *Vcr, name: [:0]const u8) ![]u8 {
+        return self.redactHeaderWith(name, "[REDACTED]", .request_headers);
+    }
+    pub fn redactHeaderWith(self: *Vcr, name: [:0]const u8, replacement: [:0]const u8, field: Field) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_redact_header(self.handle, @intFromEnum(field), name.ptr, replacement.ptr));
+    }
+
+    pub fn redactQueryParam(self: *Vcr, name: [:0]const u8) ![]u8 {
+        return self.redactQueryParamWith(name, "[REDACTED]", .path);
+    }
+    pub fn redactQueryParamWith(self: *Vcr, name: [:0]const u8, replacement: [:0]const u8, field: Field) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_redact_query_param(self.handle, @intFromEnum(field), name.ptr, replacement.ptr));
+    }
+
+    pub fn redactJsonField(self: *Vcr, name: [:0]const u8) ![]u8 {
+        return self.redactJsonFieldWith(name, "[REDACTED]", .request_body);
+    }
+    pub fn redactJsonFieldWith(self: *Vcr, name: [:0]const u8, replacement: [:0]const u8, field: Field) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_redact_json_field(self.handle, @intFromEnum(field), name.ptr, replacement.ptr));
+    }
+
     /// Whole-tape normalization: replace `pat` with a stable `name`.
     pub fn normalizeWholeTape(self: *Vcr, pat: [:0]const u8, name: [:0]const u8) ![]u8 {
         return takeString(self.allocator, aether_vcr_embed_normalize_whole_tape(self.handle, pat.ptr, name.ptr));
@@ -234,7 +258,7 @@ pub const Vcr = struct {
 // ===========================================================================
 
 const HeaderRemoval = struct { field: Field, name: [:0]const u8 };
-const Replacement = struct { field: Field, pattern: [:0]const u8, repl: [:0]const u8 };
+const Replacement = struct { operation: enum { literal, header, query_param, json_field } = .literal, field: Field, pattern: [:0]const u8, repl: [:0]const u8 };
 const PatName = struct { pattern: [:0]const u8, name: [:0]const u8 };
 const PatRepl = struct { pattern: [:0]const u8, repl: [:0]const u8 };
 const Mount = struct { mount: [:0]const u8, dir: [:0]const u8 };
@@ -489,6 +513,33 @@ pub const Record = struct {
         return b;
     }
 
+    pub fn redactHeader(self: Record, name: [:0]const u8) Record {
+        return self.redactHeaderWith(name, "[REDACTED]", .request_headers);
+    }
+    pub fn redactHeaderWith(self: Record, name: [:0]const u8, replacement: [:0]const u8, field: Field) Record {
+        var b = self;
+        b.redactions.append(b.allocator, .{ .operation = .header, .field = field, .pattern = name, .repl = replacement }) catch @panic("redaction allocation failed");
+        return b;
+    }
+
+    pub fn redactQueryParam(self: Record, name: [:0]const u8) Record {
+        return self.redactQueryParamWith(name, "[REDACTED]", .path);
+    }
+    pub fn redactQueryParamWith(self: Record, name: [:0]const u8, replacement: [:0]const u8, field: Field) Record {
+        var b = self;
+        b.redactions.append(b.allocator, .{ .operation = .query_param, .field = field, .pattern = name, .repl = replacement }) catch @panic("redaction allocation failed");
+        return b;
+    }
+
+    pub fn redactJsonField(self: Record, name: [:0]const u8) Record {
+        return self.redactJsonFieldWith(name, "[REDACTED]", .request_body);
+    }
+    pub fn redactJsonFieldWith(self: Record, name: [:0]const u8, replacement: [:0]const u8, field: Field) Record {
+        var b = self;
+        b.redactions.append(b.allocator, .{ .operation = .json_field, .field = field, .pattern = name, .repl = replacement }) catch @panic("redaction allocation failed");
+        return b;
+    }
+
     /// Rewrite every distinct match of `pattern` to a stable `{{name-N}}`
     /// token across the whole tape (for correlated dynamic values).
     pub fn normalizeWholeTape(self: Record, pattern: [:0]const u8, name: [:0]const u8) Record {
@@ -554,7 +605,12 @@ pub const Record = struct {
         if (self.indent_code_blocks) aether_vcr_embed_indent_code_blocks(handle);
         if (self.emphasize_http_verbs) aether_vcr_embed_emphasize_http_verbs(handle);
         for (self.redactions.items) |r| {
-            try checkErr(self.allocator, aether_vcr_embed_redact(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr));
+            try checkErr(self.allocator, switch (r.operation) {
+                .literal => aether_vcr_embed_redact(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr),
+                .header => aether_vcr_embed_redact_header(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr),
+                .query_param => aether_vcr_embed_redact_query_param(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr),
+                .json_field => aether_vcr_embed_redact_json_field(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr),
+            });
         }
         for (self.normalizations.items) |n| {
             try checkErr(self.allocator, aether_vcr_embed_normalize_whole_tape(handle, n.pattern.ptr, n.name.ptr));

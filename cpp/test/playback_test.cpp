@@ -17,6 +17,9 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <filesystem>
+#include <cstdlib>
+#include <unistd.h>
 
 namespace {
 
@@ -123,6 +126,29 @@ int main(int argc, char** argv) {
         vcr.close();
         vcr.close();
         ck("close is idempotent", true);
+    }
+
+
+    {
+        char temp[] = "/tmp/vcr-helpers-cpp-XXXXXX";
+        const char* made = mkdtemp(temp);
+        ck("create structured fixture directory", made != nullptr);
+        if (!made) return 1;
+        const std::string directory = made;
+        const auto fixture = (std::filesystem::path(tape).parent_path().parent_path().parent_path()
+                              / "core_tests/redaction_fixture.py").string();
+        const auto upstream = run_cmd("python3 '" + fixture + "' start '" + directory + "'");
+        try {
+            auto rec = servirtium::Vcr::record(directory + "/tape.md", upstream);
+            rec.redact_header("Authorization");
+            rec.redact_query_param("password");
+            rec.redact_json_field("secretKey");
+            ck("structured upstream credentials", std::system(("python3 '" + fixture + "' drive '" + directory + "' '" + rec.base_url() + "'").c_str()) == 0);
+            ck("structured outcome", rec.last_kind() == servirtium::Outcome::Ok);
+            rec.flush();
+            ck("structured tape", std::system(("python3 '" + fixture + "' check '" + directory + "'").c_str()) == 0);
+        } catch (...) { std::filesystem::remove_all(directory); throw; }
+        std::filesystem::remove_all(directory);
     }
 
     if (failures == 0) {

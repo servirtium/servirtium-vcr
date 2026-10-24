@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -179,4 +181,33 @@ func TestRecordAndReplayPostWithBody(t *testing.T) {
 	if play.LastKind() != servirtium.Ok {
 		t.Fatalf("expected Ok, got %s (%s)", play.LastKind(), play.LastError())
 	}
+}
+
+func TestStructuredRedactionHelpers(t *testing.T) {
+	_, source, _, _ := runtime.Caller(0)
+	fixture := filepath.Join(filepath.Dir(source), "../core_tests/redaction_fixture.py")
+	directory := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		output, err := exec.Command("python3", append([]string{fixture}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("fixture: %v: %s", err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	upstream := run("start", directory)
+	rec, err := servirtium.Record(filepath.Join(directory, "tape.md"), upstream).
+		RedactHeader("Authorization").RedactQueryParam("password").RedactJSONField("secretKey").Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rec.Close()
+	run("drive", directory, rec.BaseURL())
+	if rec.LastKind() != servirtium.Ok {
+		t.Fatal(rec.LastError())
+	}
+	if err := rec.Close(); err != nil {
+		t.Fatal(err)
+	}
+	run("check", directory)
 }

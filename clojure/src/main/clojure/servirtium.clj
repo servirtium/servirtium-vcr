@@ -41,6 +41,10 @@
   optional map; :port 0 (the default) asks the OS for a free port."
   (^VcrServer [tape upstream] (record tape upstream {}))
   (^VcrServer [tape upstream opts]
-   (-> (Vcr/record tape upstream)
+   (-> (let [builder (Vcr/record tape upstream)]
+         (doseq [name (:redact-header opts)] (.redactHeader builder name))
+         (doseq [name (:redact-query-param opts)] (.redactQueryParam builder name))
+         (doseq [name (:redact-json-field opts)] (.redactJsonField builder name))
+         builder)
        (apply-opts opts)
        (.start))))

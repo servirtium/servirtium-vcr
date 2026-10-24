@@ -46,3 +46,26 @@
     (with-open [v (vcr/playback tape {:port 0})]
       (is (= "hello-from-upstream" (http-get (str (.baseUrl v) "/greeting"))))
       (is (= Outcome/OK (.lastKind v))))))
+
+
+(deftest structured-helpers-forward-credentials-and-scrub-tape
+  (let [directory (Files/createTempDirectory "vcr-helpers-" (make-array FileAttribute 0))
+        run (fn [& args]
+              (let [process (-> (ProcessBuilder. ^java.util.List
+                                      (vec (concat ["python3" "core_tests/redaction_fixture.py"] args)))
+                                (.redirectErrorStream true) (.start))
+                    output (slurp (.getInputStream process))]
+                (is (= 0 (.waitFor process)) output)
+                (.trim output)))]
+    (try
+      (let [upstream (run "start" (str directory))]
+        (with-open [rec (vcr/record (str (.resolve directory "tape.md")) upstream
+                          {:redact-header ["Authorization"] :redact-query-param ["password"]
+                           :redact-json-field ["secretKey"]})]
+          (run "drive" (str directory) (.baseUrl rec))
+          (is (= Outcome/OK (.lastKind rec)))))
+      (run "check" (str directory))
+      (finally
+        (with-open [files (Files/list directory)]
+          (doseq [file (iterator-seq (.iterator files))] (Files/delete file)))
+        (Files/delete directory)))))

@@ -12,7 +12,7 @@ final class RecordBuilder extends VcrBuilderBase
 {
     private string $upstreamBase;
 
-    /** @var list<array{0: VcrField, 1: string, 2: string}> */
+    /** @var list<array{0: string, 1: VcrField, 2: string, 3: string}> */
     private array $redactions = [];
 
     /** @var list<array{0: string, 1: string}> */
@@ -37,8 +37,26 @@ final class RecordBuilder extends VcrBuilderBase
     /** Scrub a value out of the given field before it lands on the tape. */
     public function redact(VcrField $field, string $pattern, string $replacement): static
     {
-        $this->redactions[] = [$field, $pattern, $replacement];
+        $this->redactions[] = ['aether_vcr_embed_redact', $field, $pattern, $replacement];
 
+        return $this;
+    }
+
+    public function redactHeader(string $name, string $replacement = '[REDACTED]', VcrField $field = VcrField::RequestHeaders): static
+    {
+        $this->redactions[] = ['aether_vcr_embed_redact_header', $field, $name, $replacement];
+        return $this;
+    }
+
+    public function redactQueryParam(string $name, string $replacement = '[REDACTED]', VcrField $field = VcrField::Path): static
+    {
+        $this->redactions[] = ['aether_vcr_embed_redact_query_param', $field, $name, $replacement];
+        return $this;
+    }
+
+    public function redactJsonField(string $name, string $replacement = '[REDACTED]', VcrField $field = VcrField::RequestBody): static
+    {
+        $this->redactions[] = ['aether_vcr_embed_redact_json_field', $field, $name, $replacement];
         return $this;
     }
 
@@ -118,8 +136,8 @@ final class RecordBuilder extends VcrBuilderBase
         if ($this->emphasizeHttpVerbsOn) {
             $lib->aether_vcr_embed_emphasize_http_verbs($handle);
         }
-        foreach ($this->redactions as [$field, $pattern, $replacement]) {
-            self::check($lib->aether_vcr_embed_redact($handle, $field->value, $pattern, $replacement), 'redact');
+        foreach ($this->redactions as [$operation, $field, $pattern, $replacement]) {
+            self::check($lib->$operation($handle, $field->value, $pattern, $replacement), 'redact');
         }
         foreach ($this->normalizeWholeTapes as [$pattern, $name]) {
             self::check($lib->aether_vcr_embed_normalize_whole_tape($handle, $pattern, $name), 'normalizeWholeTape');

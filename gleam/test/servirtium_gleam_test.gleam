@@ -21,6 +21,7 @@ fn halt(code: Int) -> a
 fn io_format(fmt: String, args: List(String)) -> a
 
 pub fn main() {
+  structured_redaction_test()
   playback_single_get_test()
   let _ = io_format("PASS: gleam servirtium playback~n", [])
   halt(0)
@@ -66,4 +67,35 @@ fn last_char(s: String) -> String {
 
 fn drop_last(s: String) -> String {
   str_slice(s, 0, str_length(s) - 1)
+}
+
+
+@external(erlang, "erlang", "binary_to_list")
+fn to_charlist(value: String) -> Charlist
+@external(erlang, "erlang", "list_to_binary")
+fn from_charlist(value: Charlist) -> String
+@external(erlang, "os", "cmd")
+fn command(value: Charlist) -> Charlist
+@external(erlang, "os", "getpid")
+fn getpid() -> Charlist
+type Charlist
+
+fn shell(cmd: String) -> String {
+  from_charlist(command(to_charlist(cmd)))
+}
+pub fn structured_redaction_test() {
+  let directory = "/tmp/vcr-helpers-gleam-" <> from_charlist(getpid())
+  let fixture = "python3 ../core_tests/redaction_fixture.py "
+  let upstream = shell(fixture <> "start '" <> directory <> "'") |> trim_trailing_newlines()
+  let rec = servirtium.record(directory <> "/tape.md", upstream)
+  servirtium.redact_header(rec, "Authorization") |> should.equal(Ok(Nil))
+  servirtium.redact_query_param(rec, "password") |> should.equal(Ok(Nil))
+  servirtium.redact_json_field(rec, "secretKey") |> should.equal(Ok(Nil))
+  shell(fixture <> "drive '" <> directory <> "' '" <> servirtium.base_url(rec) <> "' && echo DRIVE_OK")
+    |> should.equal("DRIVE_OK\n")
+  servirtium.last_kind(rec) |> should.equal(servirtium.Ok)
+  servirtium.close(rec) |> should.equal(servirtium.Closed)
+  shell(fixture <> "check '" <> directory <> "'")
+    |> should.equal("structured redaction: upstream intact, tape scrubbed\n")
+  let _ = shell("rm -r '" <> directory <> "'")
 }

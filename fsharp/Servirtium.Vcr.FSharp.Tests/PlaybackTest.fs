@@ -64,3 +64,32 @@ let ``reset cursor allows the tape to be replayed twice`` () =
         Servirtium.resetCursor vcr
         Assert.Equal("ok-body", get url)
         Assert.Equal(VcrOutcome.Ok, Servirtium.lastKind vcr))
+
+
+[<Fact>]
+let ``structured helpers forward credentials and scrub tape`` () =
+    let directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vcr-helpers-" + System.Guid.NewGuid().ToString())
+    System.IO.Directory.CreateDirectory(directory) |> ignore
+    let fixture = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../../core_tests/redaction_fixture.py"))
+    let run args =
+        let info = System.Diagnostics.ProcessStartInfo("python3", RedirectStandardOutput = true)
+        info.ArgumentList.Add(fixture)
+        for arg in args do info.ArgumentList.Add(arg)
+        use proc = System.Diagnostics.Process.Start(info)
+        let output = proc.StandardOutput.ReadToEnd()
+        proc.WaitForExit()
+        Assert.Equal(0, proc.ExitCode)
+        output.Trim()
+    try
+        let upstream = run ["start"; directory]
+        let builder =
+            Vcr.Record(System.IO.Path.Combine(directory, "tape.md"), upstream)
+            |> Servirtium.redactHeader "Authorization"
+            |> Servirtium.redactQueryParam "password"
+            |> Servirtium.redactJsonField "secretKey"
+        do
+            use recServer = builder.Start()
+            run ["drive"; directory; recServer.BaseUrl] |> ignore
+            Assert.Equal(VcrOutcome.Ok, recServer.LastKind)
+        run ["check"; directory] |> ignore
+    finally System.IO.Directory.Delete(directory, true)

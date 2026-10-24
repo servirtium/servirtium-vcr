@@ -268,6 +268,21 @@ function RecordBuilder:redact(field, pattern, repl)
     return self
 end
 
+function RecordBuilder:redact_header(name, replacement, field)
+    table.insert(self._redactions, { operation = "redact_header", field = field or 3, pattern = name, repl = replacement or "[REDACTED]" })
+    return self
+end
+
+function RecordBuilder:redact_query_param(name, replacement, field)
+    table.insert(self._redactions, { operation = "redact_query_param", field = field or 1, pattern = name, repl = replacement or "[REDACTED]" })
+    return self
+end
+
+function RecordBuilder:redact_json_field(name, replacement, field)
+    table.insert(self._redactions, { operation = "redact_json_field", field = field or 4, pattern = name, repl = replacement or "[REDACTED]" })
+    return self
+end
+
 function RecordBuilder:normalize_whole_tape(pattern, name)
     table.insert(self._normalizations, { pattern = pattern, name = name })
     return self
@@ -325,7 +340,7 @@ function RecordBuilder:start()
             C.emphasize_http_verbs(handle)
         end
         for _, r in ipairs(self._redactions) do
-            check(C.redact(handle, r.field, r.pattern, r.repl), "redact")
+            check(C[r.operation or "redact"](handle, r.field, r.pattern, r.repl), "redact")
         end
         for _, n in ipairs(self._normalizations) do
             check(C.normalize_whole_tape(handle, n.pattern, n.name), "normalize_whole_tape")

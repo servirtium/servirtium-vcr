@@ -22,6 +22,34 @@ import static org.junit.jupiter.api.Assertions.assertEquals
  */
 class ServirtiumGroovyTest {
 
+
+    @Test void structuredHelpersForwardCredentialsAndScrubTape() {
+        def directory = Files.createTempDirectory('vcr-helpers-')
+        def run = { String... args ->
+            def process = new ProcessBuilder(['python3', '../core_tests/redaction_fixture.py'] + args.toList())
+                .redirectErrorStream(true).start()
+            def output = process.inputStream.text
+            assertEquals(0, process.waitFor(), output)
+            output.trim()
+        }
+        try {
+            def upstream = run('start', directory.toString())
+            def rec = record(directory.resolve('tape.md').toString(), upstream) {
+                redactHeader('Authorization')
+                redactQueryParam('password')
+                redactJsonField('secretKey')
+            }
+            try {
+                run('drive', directory.toString(), rec.baseUrl())
+                assertEquals(Outcome.OK, rec.lastKind())
+            } finally { rec.close() }
+            run('check', directory.toString())
+        } finally {
+            Files.list(directory).withCloseable { files -> files.forEach { Files.delete(it) } }
+            Files.delete(directory)
+        }
+    }
+
     private static String get(String url) {
         HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI.create(url)).build(),

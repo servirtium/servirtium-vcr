@@ -44,6 +44,33 @@ private string httpStatus(string url) {
 }
 
 int main() {
+
+    {
+        import std.file : tempDir, mkdir, rmdirRecurse;
+        import std.conv : to;
+        import core.sys.posix.unistd : getpid;
+        const directory = tempDir() ~ "/vcr-helpers-d-" ~ getpid().to!string;
+        mkdir(directory);
+        scope (exit) rmdirRecurse(directory);
+        const fixture = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "../../core_tests/redaction_fixture.py");
+        string fixtureRun(string[] args) {
+            import std.process : execute;
+            auto result = execute(["python3", fixture] ~ args);
+            assert(result.status == 0, result.output);
+            return result.output.strip;
+        }
+        const upstream = fixtureRun(["start", directory]);
+        auto rec = Vcr.record(directory ~ "/tape.md", upstream);
+        scope (exit) rec.close();
+        rec.redactHeader("Authorization");
+        rec.redactQueryParam("password");
+        rec.redactJsonField("secretKey");
+        fixtureRun(["drive", directory, rec.baseUrl()]);
+        ck("structured record outcome", rec.lastKind() == Outcome.ok);
+        rec.flush();
+        fixtureRun(["check", directory]);
+    }
+
     // The tape by absolute path, derived from this source file's location, so
     // the facts don't depend on the working directory.
     const tape = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "..", "tapes",

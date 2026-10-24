@@ -51,7 +51,7 @@ ServirtiumRecordBuilder >> setUpstream: anUpstreamBase [
 ServirtiumRecordBuilder >> redactField: aField pattern: aPattern replacement: aReplacement [
 	"Scrub a value out of the given field before it lands on the tape."
 
-	redactions add: { aField. aPattern. aReplacement }.
+	redactions add: { #redact:field:pattern:replacement:. aField. aPattern. aReplacement }.
 	^ self
 ]
 
@@ -116,7 +116,7 @@ ServirtiumRecordBuilder >> applyConfig: handle [
 	emphasizeHttpVerbs ifTrue: [ self library emphasizeHttpVerbs: handle ].
 	redactions do: [ :tuple |
 		self
-			check: (self library redact: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
+			check: (self library perform: (tuple at: 1) withArguments: { handle. (tuple at: 2). (tuple at: 3). (tuple at: 4) })
 			op: 'redact' ].
 	normalizations do: [ :tuple |
 		self
@@ -164,4 +164,37 @@ ServirtiumRecordBuilder >> startThenDo: aBlock [
 	| server |
 	server := self start.
 	^ [ aBlock value: server ] ensure: [ server stop ]
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> redactHeader: aName [
+    ^ self redactHeader: aName replacement: '[REDACTED]' field: 3
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> redactHeader: aName replacement: aReplacement field: aField [
+    redactions add: { #redactHeader:field:pattern:replacement:. aField. aName. aReplacement }.
+    ^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> redactQueryParam: aName [
+    ^ self redactQueryParam: aName replacement: '[REDACTED]' field: 1
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> redactQueryParam: aName replacement: aReplacement field: aField [
+    redactions add: { #redactQueryParam:field:pattern:replacement:. aField. aName. aReplacement }.
+    ^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> redactJsonField: aName [
+    ^ self redactJsonField: aName replacement: '[REDACTED]' field: 4
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> redactJsonField: aName replacement: aReplacement field: aField [
+    redactions add: { #redactJsonField:field:pattern:replacement:. aField. aName. aReplacement }.
+    ^ self
 ]

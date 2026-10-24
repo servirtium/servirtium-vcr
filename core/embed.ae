@@ -194,6 +194,18 @@ vcr_embed_redact(s: ptr, field: int, pattern: string, replacement: string) -> pt
     return vcr_embed_dup(vcr.redact_h(s, field, pattern, replacement))
 }
 
+// Structured redaction: explicit header/body scope; query rules target the URL.
+vcr_embed_redact_header(s: ptr, field: int, name: string, replacement: string) -> ptr {
+    return vcr_embed_dup(vcr.redact_header_h(s, field, name, replacement))
+}
+vcr_embed_redact_query_param(s: ptr, field: int, name: string, replacement: string) -> ptr {
+    if field != vcr.FIELD_PATH { return vcr_embed_dup("query redaction requires the path field") }
+    return vcr_embed_dup(vcr.redact_query_param_h(s, name, replacement))
+}
+vcr_embed_redact_json_field(s: ptr, field: int, name: string, replacement: string) -> ptr {
+    return vcr_embed_dup(vcr.redact_json_field_h(s, field, name, replacement))
+}
+
 // Convert a HAR 1.2 capture to a Servirtium markdown tape (no server handle —
 // this is a pure file->file transform). Returns "" on success, else an error.
 vcr_embed_har_import(har_path: string, tape_path: string) -> ptr {

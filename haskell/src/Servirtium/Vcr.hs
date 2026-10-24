@@ -169,6 +169,15 @@ data RecordOptions = RecordOptions
     -- ^ Bind port; @0@ asks the OS for a free port (default).
   , recLabel             :: String
     -- ^ Human-facing label for logs\/diagnostics (not a state key).
+  , recRedactHeader :: [String]
+  , recRedactQueryParam :: [String]
+  , recRedactJsonField :: [String]
+  , recRedactHeaderWith :: [(Field, String, String)]
+    -- ^ Explicit header scope, name and replacement.
+  , recRedactQueryParamWith :: [(String, String)]
+    -- ^ Query parameter name and replacement.
+  , recRedactJsonFieldWith :: [(Field, String, String)]
+    -- ^ Explicit body scope, JSON key and replacement.
   , recRedactions        :: [(Field, String, String)]
     -- ^ @(field, pattern, replacement)@: scrub a value before it lands on the
     -- tape (applied at flush time, so the live SUT still sees real bytes).
@@ -231,6 +240,12 @@ recordOptions tape upstream = RecordOptions
   , recHost               = "127.0.0.1"
   , recPort               = 0
   , recLabel              = ""
+  , recRedactHeader = []
+  , recRedactQueryParam = []
+  , recRedactJsonField = []
+  , recRedactHeaderWith = []
+  , recRedactQueryParamWith = []
+  , recRedactJsonFieldWith = []
   , recRedactions         = []
   , recNormalizeWholeTape = []
   , recRedactWholeTape    = []
@@ -358,6 +373,24 @@ startRecord opts = do
         ++ "' (upstream '" ++ recUpstreamBase opts ++ "')")
     else do
       applyRemoveHeaders handle (recRemoveHeaders opts)
+      mapM_ (\name -> check "redact_header" $
+        withCString name $ \cName -> withCString "[REDACTED]" $ \cReplacement ->
+          N.aether_vcr_embed_redact_header handle 3 cName cReplacement) (recRedactHeader opts)
+      mapM_ (\name -> check "redact_query_param" $
+        withCString name $ \cName -> withCString "[REDACTED]" $ \cReplacement ->
+          N.aether_vcr_embed_redact_query_param handle 1 cName cReplacement) (recRedactQueryParam opts)
+      mapM_ (\name -> check "redact_json_field" $
+        withCString name $ \cName -> withCString "[REDACTED]" $ \cReplacement ->
+          N.aether_vcr_embed_redact_json_field handle 4 cName cReplacement) (recRedactJsonField opts)
+      mapM_ (\(f, name, replacement) -> check "redact_header" $
+        withCString name $ \cName -> withCString replacement $ \cReplacement ->
+          N.aether_vcr_embed_redact_header handle (fieldCode f) cName cReplacement) (recRedactHeaderWith opts)
+      mapM_ (\(name, replacement) -> check "redact_query_param" $
+        withCString name $ \cName -> withCString replacement $ \cReplacement ->
+          N.aether_vcr_embed_redact_query_param handle 1 cName cReplacement) (recRedactQueryParamWith opts)
+      mapM_ (\(f, name, replacement) -> check "redact_json_field" $
+        withCString name $ \cName -> withCString replacement $ \cReplacement ->
+          N.aether_vcr_embed_redact_json_field handle (fieldCode f) cName cReplacement) (recRedactJsonFieldWith opts)
       when (recIndentCodeBlocks opts) (N.aether_vcr_embed_indent_code_blocks handle)
       when (recEmphasizeHttpVerbs opts) (N.aether_vcr_embed_emphasize_http_verbs handle)
       mapM_ (\(f, pat, repl) ->

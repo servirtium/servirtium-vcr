@@ -18,6 +18,33 @@ import java.nio.file.Files
  */
 class ServirtiumKotlinTest {
 
+
+    @Test fun `structured helpers forward credentials and scrub tape`() {
+        val directory = Files.createTempDirectory("vcr-helpers-")
+        fun run(vararg args: String): String {
+            val process = ProcessBuilder(listOf("python3", "../core_tests/redaction_fixture.py") + args)
+                .redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText()
+            assertEquals(0, process.waitFor(), output)
+            return output.trim()
+        }
+        try {
+            val upstream = run("start", directory.toString())
+            record(directory.resolve("tape.md").toString(), upstream) {
+                redactHeader("Authorization")
+                redactQueryParam("password")
+                redactJsonField("secretKey")
+            }.use { rec ->
+                run("drive", directory.toString(), rec.baseUrl())
+                assertEquals(Outcome.OK, rec.lastKind())
+            }
+            run("check", directory.toString())
+        } finally {
+            Files.list(directory).use { files -> files.forEach { Files.delete(it) } }
+            Files.delete(directory)
+        }
+    }
+
     private fun get(url: String): String =
         HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI.create(url)).build(),

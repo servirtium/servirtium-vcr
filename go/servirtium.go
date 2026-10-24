@@ -60,6 +60,9 @@ int    aether_vcr_embed_last_index(void* server);
 void   aether_vcr_embed_clear_last_error(void* server);
 
 char*  aether_vcr_embed_redact(void* server, int field, const char* pattern, const char* replacement);
+char*  aether_vcr_embed_redact_header(void* server, int field, const char* pattern, const char* replacement);
+char*  aether_vcr_embed_redact_query_param(void* server, int field, const char* pattern, const char* replacement);
+char*  aether_vcr_embed_redact_json_field(void* server, int field, const char* pattern, const char* replacement);
 char*  aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement);
 char*  aether_vcr_embed_remove_header(void* server, int field, const char* name);
 char*  aether_vcr_embed_normalize_whole_tape(void* server, const char* pattern, const char* name);
@@ -361,11 +364,17 @@ func Record(tapePath, upstreamBase string) *RecordBuilder {
 	return &RecordBuilder{baseBuilder: baseBuilder{tapePath: tapePath, host: "127.0.0.1"}, upstreamBase: upstreamBase}
 }
 
+type recordRule struct {
+	operation         string
+	field             Field
+	pattern, replacem string
+}
+
 // RecordBuilder configures and starts a record VCR server.
 type RecordBuilder struct {
 	baseBuilder
 	upstreamBase        string
-	redactions          []replacement
+	redactions          []recordRule
 	normalizations      []struct{ pattern, name string }
 	wholeTapeRedactions []struct{ pattern, repl string }
 	note                *struct{ title, body string }
@@ -391,7 +400,40 @@ func (b *RecordBuilder) RemoveHeader(field Field, name string) *RecordBuilder {
 
 // Redact scrubs a value out of the given field before it lands on the tape.
 func (b *RecordBuilder) Redact(field Field, pattern, repl string) *RecordBuilder {
-	b.redactions = append(b.redactions, replacement{field, pattern, repl})
+	b.redactions = append(b.redactions, recordRule{"redact", field, pattern, repl})
+	return b
+}
+
+// RedactHeader replaces the named request value with [REDACTED] on tape emission.
+func (b *RecordBuilder) RedactHeader(name string) *RecordBuilder {
+	return b.RedactHeaderWith(name, "[REDACTED]", Field(3))
+}
+
+// RedactHeaderWith configures a replacement and explicit field scope.
+func (b *RecordBuilder) RedactHeaderWith(name, replacement string, field Field) *RecordBuilder {
+	b.redactions = append(b.redactions, recordRule{"header", field, name, replacement})
+	return b
+}
+
+// RedactQueryParam replaces the named request value with [REDACTED] on tape emission.
+func (b *RecordBuilder) RedactQueryParam(name string) *RecordBuilder {
+	return b.RedactQueryParamWith(name, "[REDACTED]", Field(1))
+}
+
+// RedactQueryParamWith configures a replacement and explicit field scope.
+func (b *RecordBuilder) RedactQueryParamWith(name, replacement string, field Field) *RecordBuilder {
+	b.redactions = append(b.redactions, recordRule{"query_param", field, name, replacement})
+	return b
+}
+
+// RedactJSONField replaces the named request value with [REDACTED] on tape emission.
+func (b *RecordBuilder) RedactJSONField(name string) *RecordBuilder {
+	return b.RedactJSONFieldWith(name, "[REDACTED]", Field(4))
+}
+
+// RedactJSONFieldWith configures a replacement and explicit field scope.
+func (b *RecordBuilder) RedactJSONFieldWith(name, replacement string, field Field) *RecordBuilder {
+	b.redactions = append(b.redactions, recordRule{"json_field", field, name, replacement})
 	return b
 }
 
@@ -466,7 +508,17 @@ func (b *RecordBuilder) applyConfig(handle unsafe.Pointer) error {
 	}
 	for _, r := range b.redactions {
 		cPat, cRep := C.CString(r.pattern), C.CString(r.replacem)
-		res := C.aether_vcr_embed_redact(handle, C.int(r.field), cPat, cRep)
+		var res *C.char
+		switch r.operation {
+		case "header":
+			res = C.aether_vcr_embed_redact_header(handle, C.int(r.field), cPat, cRep)
+		case "query_param":
+			res = C.aether_vcr_embed_redact_query_param(handle, C.int(r.field), cPat, cRep)
+		case "json_field":
+			res = C.aether_vcr_embed_redact_json_field(handle, C.int(r.field), cPat, cRep)
+		default:
+			res = C.aether_vcr_embed_redact(handle, C.int(r.field), cPat, cRep)
+		}
 		C.free(unsafe.Pointer(cPat))
 		C.free(unsafe.Pointer(cRep))
 		if err := checkErr(res, "Redact"); err != nil {

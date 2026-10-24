@@ -48,6 +48,9 @@ lib LibVcr
 
   # Config. The char*-returning ones yield an error message ("" = OK).
   fun redact = aether_vcr_embed_redact(h : Void*, field : LibC::Int, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
+  fun redact_header = aether_vcr_embed_redact_header(h : Void*, field : LibC::Int, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
+  fun redact_query_param = aether_vcr_embed_redact_query_param(h : Void*, field : LibC::Int, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
+  fun redact_json_field = aether_vcr_embed_redact_json_field(h : Void*, field : LibC::Int, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
   fun unredact = aether_vcr_embed_unredact(h : Void*, field : LibC::Int, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
   fun normalize_whole_tape = aether_vcr_embed_normalize_whole_tape(h : Void*, pat : LibC::Char*, name : LibC::Char*) : LibC::Char*
   fun redact_whole_tape = aether_vcr_embed_redact_whole_tape(h : Void*, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
@@ -250,6 +253,18 @@ module Servirtium
 
     def redact(field : Field, pattern : String, replacement : String) : Nil
       check LibVcr.redact(@handle, field.value, pattern, replacement), "redact"
+    end
+
+    def redact_header(name : String, replacement : String = "[REDACTED]", field : Field = Field.new(3)) : Nil
+      check LibVcr.redact_header(@handle, field.value, name, replacement), "redact_header"
+    end
+
+    def redact_query_param(name : String, replacement : String = "[REDACTED]", field : Field = Field.new(1)) : Nil
+      check LibVcr.redact_query_param(@handle, field.value, name, replacement), "redact_query_param"
+    end
+
+    def redact_json_field(name : String, replacement : String = "[REDACTED]", field : Field = Field.new(4)) : Nil
+      check LibVcr.redact_json_field(@handle, field.value, name, replacement), "redact_json_field"
     end
 
     def unredact(field : Field, pattern : String, replacement : String) : Nil

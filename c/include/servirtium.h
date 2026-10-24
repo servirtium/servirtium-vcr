@@ -137,6 +137,15 @@ void sv_clear_last_error(sv_vcr *vcr);
 
 sv_str sv_redact(sv_vcr *vcr, sv_field field, const char *pattern,
                  const char *replacement);
+/* Structured recording redaction; the short form uses request scope and [REDACTED]. */
+sv_str sv_redact_header(sv_vcr *vcr, const char *name);
+sv_str sv_redact_header_with(sv_vcr *vcr, sv_field field, const char *name, const char *replacement);
+/* Structured recording redaction; the short form uses request scope and [REDACTED]. */
+sv_str sv_redact_query_param(sv_vcr *vcr, const char *name);
+sv_str sv_redact_query_param_with(sv_vcr *vcr, sv_field field, const char *name, const char *replacement);
+/* Structured recording redaction; the short form uses request scope and [REDACTED]. */
+sv_str sv_redact_json_field(sv_vcr *vcr, const char *name);
+sv_str sv_redact_json_field_with(sv_vcr *vcr, sv_field field, const char *name, const char *replacement);
 sv_str sv_unredact(sv_vcr *vcr, sv_field field, const char *pattern,
                    const char *replacement);
 /* Correlate every match into {{name-N}} tokens (UUIDs, CSRF tokens — things

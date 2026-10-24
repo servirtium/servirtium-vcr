@@ -188,6 +188,18 @@ public final class Vcr {
                   "redact")
     }
 
+    public func redactHeader(_ name: String, replacement: String = "[REDACTED]", field: Field = .requestHeaders) throws {
+        try check(aether_vcr_embed_redact_header(handle, field.rawValue, name, replacement), "redactHeader")
+    }
+
+    public func redactQueryParam(_ name: String, replacement: String = "[REDACTED]", field: Field = .path) throws {
+        try check(aether_vcr_embed_redact_query_param(handle, field.rawValue, name, replacement), "redactQueryParam")
+    }
+
+    public func redactJsonField(_ name: String, replacement: String = "[REDACTED]", field: Field = .requestBody) throws {
+        try check(aether_vcr_embed_redact_json_field(handle, field.rawValue, name, replacement), "redactJsonField")
+    }
+
     public func unredact(_ field: Field, _ pattern: String, _ replacement: String) throws {
         try check(aether_vcr_embed_unredact(handle, field.rawValue, pattern, replacement),
                   "unredact")

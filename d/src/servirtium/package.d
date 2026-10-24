@@ -67,6 +67,9 @@ private extern (C) nothrow @nogc {
 
     // config
     char* aether_vcr_embed_redact(void* h, int field, const(char)* pat, const(char)* repl);
+    char* aether_vcr_embed_redact_header(void* h, int field, const(char)* pat, const(char)* repl);
+    char* aether_vcr_embed_redact_query_param(void* h, int field, const(char)* pat, const(char)* repl);
+    char* aether_vcr_embed_redact_json_field(void* h, int field, const(char)* pat, const(char)* repl);
     char* aether_vcr_embed_unredact(void* h, int field, const(char)* pat, const(char)* repl);
     char* aether_vcr_embed_normalize_whole_tape(void* h, const(char)* pat, const(char)* name);
     char* aether_vcr_embed_redact_whole_tape(void* h, const(char)* pat, const(char)* repl);
@@ -252,6 +255,18 @@ struct Vcr {
     void redact(Field field, string pattern, string replacement) {
         check(aether_vcr_embed_redact(handle, field, pattern.toStringz,
                                       replacement.toStringz), "redact");
+    }
+
+    void redactHeader(string name, string replacement = "[REDACTED]", Field field = cast(Field)3) {
+        check(aether_vcr_embed_redact_header(handle, field, name.toStringz, replacement.toStringz), "redactHeader");
+    }
+
+    void redactQueryParam(string name, string replacement = "[REDACTED]", Field field = cast(Field)1) {
+        check(aether_vcr_embed_redact_query_param(handle, field, name.toStringz, replacement.toStringz), "redactQueryParam");
+    }
+
+    void redactJsonField(string name, string replacement = "[REDACTED]", Field field = cast(Field)4) {
+        check(aether_vcr_embed_redact_json_field(handle, field, name.toStringz, replacement.toStringz), "redactJsonField");
     }
 
     void unredact(Field field, string pattern, string replacement) {

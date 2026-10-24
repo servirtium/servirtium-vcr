@@ -358,6 +358,27 @@ defmodule Servirtium do
       check!(Native.redact(handle, field!(field), pat, repl), "redact")
     end
 
+    for name <- Keyword.get(opts, :redact_header, []) do
+      check!(Native.redact_header(handle, 3, name, "[REDACTED]"), "redact_header")
+    end
+    for {field, name, replacement} <- Keyword.get(opts, :redact_header_with, []) do
+      check!(Native.redact_header(handle, field!(field), name, replacement), "redact_header")
+    end
+
+    for name <- Keyword.get(opts, :redact_query_param, []) do
+      check!(Native.redact_query_param(handle, 1, name, "[REDACTED]"), "redact_query_param")
+    end
+    for {field, name, replacement} <- Keyword.get(opts, :redact_query_param_with, []) do
+      check!(Native.redact_query_param(handle, field!(field), name, replacement), "redact_query_param")
+    end
+
+    for name <- Keyword.get(opts, :redact_json_field, []) do
+      check!(Native.redact_json_field(handle, 4, name, "[REDACTED]"), "redact_json_field")
+    end
+    for {field, name, replacement} <- Keyword.get(opts, :redact_json_field_with, []) do
+      check!(Native.redact_json_field(handle, field!(field), name, replacement), "redact_json_field")
+    end
+
     for {pat, name} <- Keyword.get(opts, :normalize_whole_tape, []) do
       check!(Native.normalize_whole_tape(handle, pat, name), "normalize_whole_tape")
     end

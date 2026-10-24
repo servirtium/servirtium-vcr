@@ -99,3 +99,20 @@ http_status(url) =
         @test Int(ResponseBody) == 2
     end
 end
+
+
+@testset "Structured redaction helpers" begin
+    mktempdir() do directory
+        fixture = joinpath(@__DIR__, "../../core_tests/redaction_fixture.py")
+        fixture_run(args...) = strip(read(`python3 $fixture $args`, String))
+        upstream = fixture_run("start", directory)
+        record(joinpath(directory, "tape.md"), upstream) do rec
+            redact_header(rec, "Authorization")
+            redact_query_param(rec, "password")
+            redact_json_field(rec, "secretKey")
+            fixture_run("drive", directory, base_url(rec))
+            @test last_kind(rec) == Ok
+        end
+        fixture_run("check", directory)
+    end
+end

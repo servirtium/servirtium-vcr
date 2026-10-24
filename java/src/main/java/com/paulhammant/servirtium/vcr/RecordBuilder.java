@@ -8,7 +8,7 @@ import java.util.List;
 /** Configures and starts a record VCR server. */
 public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
 
-    private record Redaction(Field field, String pattern, String replacement) {
+    private record Redaction(java.lang.invoke.MethodHandle operation, Field field, String pattern, String replacement) {
     }
 
     private record Normalization(String pattern, String name) {
@@ -41,7 +41,40 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
 
     /** Scrub a value out of the given field before it lands on the tape. */
     public RecordBuilder redact(Field field, String pattern, String replacement) {
-        redactions.add(new Redaction(field, pattern, replacement));
+        redactions.add(new Redaction(NativeMethods.REDACT, field, pattern, replacement));
+        return this;
+    }
+
+    /** Redact a named header in the request, using [REDACTED]. */
+    public RecordBuilder redactHeader(String name) {
+        return redactHeader(name, "[REDACTED]", Field.REQUEST_HEADERS);
+    }
+
+    /** Configure the replacement and explicit field scope. */
+    public RecordBuilder redactHeader(String name, String replacement, Field field) {
+        redactions.add(new Redaction(NativeMethods.REDACT_HEADER, field, name, replacement));
+        return this;
+    }
+
+    /** Redact a named query param in the request, using [REDACTED]. */
+    public RecordBuilder redactQueryParam(String name) {
+        return redactQueryParam(name, "[REDACTED]", Field.PATH);
+    }
+
+    /** Configure the replacement and explicit field scope. */
+    public RecordBuilder redactQueryParam(String name, String replacement, Field field) {
+        redactions.add(new Redaction(NativeMethods.REDACT_QUERY_PARAM, field, name, replacement));
+        return this;
+    }
+
+    /** Redact a named json field in the request, using [REDACTED]. */
+    public RecordBuilder redactJsonField(String name) {
+        return redactJsonField(name, "[REDACTED]", Field.REQUEST_BODY);
+    }
+
+    /** Configure the replacement and explicit field scope. */
+    public RecordBuilder redactJsonField(String name, String replacement, Field field) {
+        redactions.add(new Redaction(NativeMethods.REDACT_JSON_FIELD, field, name, replacement));
         return this;
     }
 
@@ -137,7 +170,7 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
                 NativeMethods.EMPHASIZE_HTTP_VERBS.invokeExact(handle);
             }
             for (Redaction r : redactions) {
-                MemorySegment res = (MemorySegment) NativeMethods.REDACT.invokeExact(
+                MemorySegment res = (MemorySegment) r.operation().invokeExact(
                         handle,
                         r.field().code(),
                         NativeMethods.cString(arena, r.pattern()),

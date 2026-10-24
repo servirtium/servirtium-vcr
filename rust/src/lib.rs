@@ -368,7 +368,7 @@ impl PlaybackBuilder {
 pub struct RecordBuilder {
     common: Common,
     upstream_base: String,
-    redactions: Vec<(Field, String, String)>,
+    redactions: Vec<(&'static str, Field, String, String)>,
     normalize_whole_tape: Vec<(String, String)>,
     redact_whole_tape: Vec<(String, String)>,
     note: Option<(String, String)>,
@@ -425,7 +425,31 @@ impl RecordBuilder {
         replacement: impl Into<String>,
     ) -> Self {
         self.redactions
-            .push((field, pattern.into(), replacement.into()));
+            .push(("redact", field, pattern.into(), replacement.into()));
+        self
+    }
+    /// Redact every named header in the request when writing the tape.
+    pub fn redact_header(self, name: impl Into<String>) -> Self {
+        self.redact_header_with(name, "[REDACTED]", Field::RequestHeaders)
+    }
+    pub fn redact_header_with(mut self, name: impl Into<String>, replacement: impl Into<String>, field: Field) -> Self {
+        self.redactions.push(("header", field, name.into(), replacement.into()));
+        self
+    }
+    /// Redact every named query param in the request when writing the tape.
+    pub fn redact_query_param(self, name: impl Into<String>) -> Self {
+        self.redact_query_param_with(name, "[REDACTED]", Field::Path)
+    }
+    pub fn redact_query_param_with(mut self, name: impl Into<String>, replacement: impl Into<String>, field: Field) -> Self {
+        self.redactions.push(("query_param", field, name.into(), replacement.into()));
+        self
+    }
+    /// Redact every named json field in the request when writing the tape.
+    pub fn redact_json_field(self, name: impl Into<String>) -> Self {
+        self.redact_json_field_with(name, "[REDACTED]", Field::RequestBody)
+    }
+    pub fn redact_json_field_with(mut self, name: impl Into<String>, replacement: impl Into<String>, field: Field) -> Self {
+        self.redactions.push(("json_field", field, name.into(), replacement.into()));
         self
     }
     /// Tokenize every distinct regex match across the WHOLE tape (all fields
@@ -508,11 +532,17 @@ impl RecordBuilder {
         if self.emphasize_http_verbs {
             unsafe { (n.emphasize_http_verbs)(handle) };
         }
-        for (field, pattern, replacement) in &self.redactions {
+        for (operation, field, pattern, replacement) in &self.redactions {
+            let redact = match *operation {
+                "header" => n.redact_header,
+                "query_param" => n.redact_query_param,
+                "json_field" => n.redact_json_field,
+                _ => n.redact,
+            };
             check(
                 n,
                 unsafe {
-                    (n.redact)(handle, *field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
+                    (redact)(handle, *field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
                 },
                 "redact",
             )?;

@@ -208,13 +208,28 @@ module Servirtium
 
     # Scrub a value out of the given field before it lands on the tape.
     def redact(field, pattern, replacement)
-      @redactions << [field, pattern, replacement]
+      @redactions << [:redact, field, pattern, replacement]
       self
     end
 
     # Replace every distinct regex match across the WHOLE tape (all fields and
     # interactions, in first-appearance order) with a stable +{{name-N}}+ token
     # — for correlated ids that recur in later request paths.
+    def redact_header(name, replacement = '[REDACTED]', field: Field::REQUEST_HEADERS)
+      @redactions << [:redact_header, field, name, replacement]
+      self
+    end
+
+    def redact_query_param(name, replacement = '[REDACTED]', field: Field::PATH)
+      @redactions << [:redact_query_param, field, name, replacement]
+      self
+    end
+
+    def redact_json_field(name, replacement = '[REDACTED]', field: Field::REQUEST_BODY)
+      @redactions << [:redact_json_field, field, name, replacement]
+      self
+    end
+
     def normalize_whole_tape(pattern, name)
       @normalize_whole_tape << [pattern, name]
       self
@@ -287,8 +302,8 @@ module Servirtium
       super
       Native.call(:indent_code_blocks, handle) if @indent_code_blocks
       Native.call(:emphasize_http_verbs, handle) if @emphasize_http_verbs
-      @redactions.each do |field, pattern, replacement|
-        check(Native.call(:redact, handle, field, pattern, replacement), 'redact')
+      @redactions.each do |operation, field, pattern, replacement|
+        check(Native.call(operation, handle, field, pattern, replacement), 'redact')
       end
       @normalize_whole_tape.each do |pattern, name|
         check(Native.call(:normalize_whole_tape, handle, pattern, name), 'normalize_whole_tape')

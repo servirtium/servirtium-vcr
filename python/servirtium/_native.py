@@ -169,6 +169,9 @@ def _ensure_loaded() -> None:
 
     # ---- mutations / config (handle 1st arg; call BEFORE start) ----
     g["redact"] = _decl("aether_vcr_embed_redact", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
+    g["redact_header"] = _decl("aether_vcr_embed_redact_header", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
+    g["redact_query_param"] = _decl("aether_vcr_embed_redact_query_param", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
+    g["redact_json_field"] = _decl("aether_vcr_embed_redact_json_field", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
     g["normalize_whole_tape"] = _decl(
         "aether_vcr_embed_normalize_whole_tape", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p]
     )

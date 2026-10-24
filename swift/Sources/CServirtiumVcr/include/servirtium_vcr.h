@@ -41,6 +41,9 @@ void  aether_vcr_embed_clear_last_error(void *h);
 
 /* config */
 char *aether_vcr_embed_redact(void *h, int field, const char *pat, const char *repl);
+char *aether_vcr_embed_redact_header(void *h, int field, const char *pat, const char *repl);
+char *aether_vcr_embed_redact_query_param(void *h, int field, const char *pat, const char *repl);
+char *aether_vcr_embed_redact_json_field(void *h, int field, const char *pat, const char *repl);
 char *aether_vcr_embed_unredact(void *h, int field, const char *pat, const char *repl);
 char *aether_vcr_embed_normalize_whole_tape(void *h, const char *pat, const char *name);
 char *aether_vcr_embed_redact_whole_tape(void *h, const char *pat, const char *repl);

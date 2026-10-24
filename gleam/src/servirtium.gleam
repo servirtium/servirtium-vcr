@@ -22,6 +22,8 @@
 // The opaque server handle is a 64-bit integer (uintptr_t); 0 from open_*
 // means failure. String args/results are Erlang binaries == Gleam String.
 
+import servirtium_result
+
 @external(erlang, "servirtium_nif", "open_playback")
 fn nif_open_playback(label: String, tape: String, host: String, port: Int) -> Int
 
@@ -221,4 +223,35 @@ type Charlist
 /// (os:cmd works in charlists; we bridge to/from Gleam String == binary.)
 pub fn curl(url: String) -> String {
   charlist_to_binary(os_cmd(binary_to_charlist("curl -s " <> url)))
+}
+
+@external(erlang, "servirtium_nif", "redact_header")
+fn nif_redact_header(handle: Int, field: Int, name: String, replacement: String) -> String
+
+/// Redact a named request value when writing the tape.
+pub fn redact_header(vcr: Vcr, name: String) -> Result(Nil, String) {
+  redact_header_with(vcr, name, "[REDACTED]", 3)
+}
+pub fn redact_header_with(vcr: Vcr, name: String, replacement: String, field: Int) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_redact_header(vcr.handle, field, name, replacement))
+}
+@external(erlang, "servirtium_nif", "redact_query_param")
+fn nif_redact_query_param(handle: Int, field: Int, name: String, replacement: String) -> String
+
+/// Redact a named request value when writing the tape.
+pub fn redact_query_param(vcr: Vcr, name: String) -> Result(Nil, String) {
+  redact_query_param_with(vcr, name, "[REDACTED]", 1)
+}
+pub fn redact_query_param_with(vcr: Vcr, name: String, replacement: String, field: Int) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_redact_query_param(vcr.handle, field, name, replacement))
+}
+@external(erlang, "servirtium_nif", "redact_json_field")
+fn nif_redact_json_field(handle: Int, field: Int, name: String, replacement: String) -> String
+
+/// Redact a named request value when writing the tape.
+pub fn redact_json_field(vcr: Vcr, name: String) -> Result(Nil, String) {
+  redact_json_field_with(vcr, name, "[REDACTED]", 4)
+}
+pub fn redact_json_field_with(vcr: Vcr, name: String, replacement: String, field: Int) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_redact_json_field(vcr.handle, field, name, replacement))
 }

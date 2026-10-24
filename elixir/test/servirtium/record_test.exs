@@ -24,6 +24,26 @@ defmodule Servirtium.RecordTest do
     {status, to_string(body)}
   end
 
+
+  test "structured helpers forward original credentials and scrub the tape" do
+    directory = Path.join(System.tmp_dir!(), "vcr-helpers-#{System.unique_integer([:positive])}")
+    fixture = Path.expand("../../../core_tests/redaction_fixture.py", __DIR__)
+    run = fn args ->
+      {output, status} = System.cmd("python3", [fixture | args], stderr_to_stdout: true)
+      assert status == 0, output
+      String.trim(output)
+    end
+    try do
+      upstream = run.(["start", directory])
+      Servirtium.with_record(Path.join(directory, "tape.md"), upstream,
+        [redact_header: ["Authorization"], redact_query_param: ["password"], redact_json_field: ["secretKey"]], fn rec ->
+          run.(["drive", directory, Servirtium.base_url(rec)])
+          assert Servirtium.last_kind(rec) == :ok
+        end)
+      run.(["check", directory])
+    after File.rm_rf!(directory) end
+  end
+
   test "records then replays the same interaction", %{tape: tape} do
     up = TestUpstream.start("hello-from-upstream")
 

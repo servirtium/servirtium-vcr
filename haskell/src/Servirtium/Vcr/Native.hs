@@ -38,6 +38,9 @@ module Servirtium.Vcr.Native
     aether_vcr_embed_redact
   , aether_vcr_embed_normalize_whole_tape
   , aether_vcr_embed_redact_whole_tape
+  , aether_vcr_embed_redact_header
+  , aether_vcr_embed_redact_query_param
+  , aether_vcr_embed_redact_json_field
   , aether_vcr_embed_unredact
   , aether_vcr_embed_remove_header
   , aether_vcr_embed_match_header
@@ -203,3 +206,10 @@ takeString ptr
       s <- peekCString ptr
       aether_vcr_embed_free_string ptr
       pure s
+
+foreign import ccall unsafe "aether_vcr_embed_redact_header"
+  aether_vcr_embed_redact_header :: Handle -> CInt -> CString -> CString -> IO CString
+foreign import ccall unsafe "aether_vcr_embed_redact_query_param"
+  aether_vcr_embed_redact_query_param :: Handle -> CInt -> CString -> CString -> IO CString
+foreign import ccall unsafe "aether_vcr_embed_redact_json_field"
+  aether_vcr_embed_redact_json_field :: Handle -> CInt -> CString -> CString -> IO CString

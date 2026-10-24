@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int failures = 0;
 
@@ -136,6 +137,45 @@ int main(int argc, char **argv) {
     free(body);
     sv_free(base);
     sv_close(vcr);
+
+
+    {
+        char directory[] = "/tmp/vcr-helpers-c-XXXXXX";
+        char fixture[4096], command[16384], upstream[256], record_tape[4096];
+        char *part;
+        FILE *pipe;
+        sv_vcr *rec;
+        sv_str value;
+        ck("create structured fixture directory", mkdtemp(directory) != NULL);
+        snprintf(fixture, sizeof fixture, "%s", tape);
+        part = strrchr(fixture, '/'); if (part) *part = '\0';
+        part = strrchr(fixture, '/'); if (part) *part = '\0';
+        part = strrchr(fixture, '/'); if (part) *part = '\0';
+        strcat(fixture, "/core_tests/redaction_fixture.py");
+        snprintf(command, sizeof command, "python3 '%s' start '%s'", fixture, directory);
+        pipe = popen(command, "r");
+        ck("start structured upstream", pipe != NULL);
+        if (!pipe) return 1;
+        ck("upstream URL", fgets(upstream, sizeof upstream, pipe) != NULL);
+        ck("upstream fixture started", pclose(pipe) == 0);
+        upstream[strcspn(upstream, "\r\n")] = '\0';
+        snprintf(record_tape, sizeof record_tape, "%s/tape.md", directory);
+        rec = sv_record(record_tape, upstream);
+        ck("open structured recorder", rec != NULL);
+        value = sv_redact_header(rec, "Authorization"); ck("header helper", value.ptr && !value.ptr[0]); sv_free(value);
+        value = sv_redact_query_param(rec, "password"); ck("query helper", value.ptr && !value.ptr[0]); sv_free(value);
+        value = sv_redact_json_field(rec, "secretKey"); ck("JSON helper", value.ptr && !value.ptr[0]); sv_free(value);
+        value = sv_base_url(rec);
+        snprintf(command, sizeof command, "python3 '%s' drive '%s' '%s'", fixture, directory, value.ptr);
+        ck("structured upstream credentials", system(command) == 0); sv_free(value);
+        ck("structured outcome", sv_last_kind(rec) == SV_OK);
+        value = sv_close_and_flush(rec, NULL); ck("structured flush", value.ptr && !value.ptr[0]); sv_free(value);
+        snprintf(command, sizeof command, "python3 '%s' check '%s'", fixture, directory);
+        ck("structured tape", system(command) == 0);
+        { const char *files[] = {"url", "done", "capture.json", "tape.md"}; size_t i;
+          for (i=0; i<4; ++i) { snprintf(command, sizeof command, "%s/%s", directory, files[i]); remove(command); }
+          rmdir(directory); }
+    }
 
     if (failures == 0) {
         printf("PASS: c servirtium playback\n");

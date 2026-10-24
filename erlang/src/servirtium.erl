@@ -22,6 +22,9 @@
 -export([
     playback/1, playback/2,
     record/2, record/3,
+    redact_header/2, redact_header/4,
+    redact_query_param/2, redact_query_param/4,
+    redact_json_field/2, redact_json_field/4,
     base_url/1,
     port/1,
     tape_length/1,
@@ -166,4 +169,26 @@ close(#{mode := record, handle := H, tape := Tape}) ->
     case Res of
         <<>> -> ok;
         Msg when is_binary(Msg) -> {error, binary_to_list(Msg)}
+    end.
+
+%% Redact on tape emission; forwarding retains the original value.
+redact_header(Server, Name) -> redact_header(Server, Name, <<"[REDACTED]">>, 3).
+redact_header(#{handle := H}, Name, Replacement, Field) ->
+    case servirtium_nif:redact_header(H, Field, unicode:characters_to_binary(Name), unicode:characters_to_binary(Replacement)) of
+        <<>> -> ok;
+        Error -> error({servirtium, Error})
+    end.
+%% Redact on tape emission; forwarding retains the original value.
+redact_query_param(Server, Name) -> redact_query_param(Server, Name, <<"[REDACTED]">>, 1).
+redact_query_param(#{handle := H}, Name, Replacement, Field) ->
+    case servirtium_nif:redact_query_param(H, Field, unicode:characters_to_binary(Name), unicode:characters_to_binary(Replacement)) of
+        <<>> -> ok;
+        Error -> error({servirtium, Error})
+    end.
+%% Redact on tape emission; forwarding retains the original value.
+redact_json_field(Server, Name) -> redact_json_field(Server, Name, <<"[REDACTED]">>, 4).
+redact_json_field(#{handle := H}, Name, Replacement, Field) ->
+    case servirtium_nif:redact_json_field(H, Field, unicode:characters_to_binary(Name), unicode:characters_to_binary(Replacement)) of
+        <<>> -> ok;
+        Error -> error({servirtium, Error})
     end.

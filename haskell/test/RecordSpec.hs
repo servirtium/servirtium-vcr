@@ -5,14 +5,29 @@
 module RecordSpec (spec) where
 
 import Control.Exception (bracket_)
-import System.Directory (doesFileExist, getTemporaryDirectory, removeFile)
+import System.Directory (doesFileExist, getTemporaryDirectory, removeFile, createDirectory, removeDirectoryRecursive)
 import System.FilePath ((</>))
+import System.Process (readProcess)
 import Test.Hspec
 import Servirtium.Vcr
 import TestSupport (httpGet, withUpstream)
 
 spec :: Spec
-spec = describe "record then replay" $
+spec = describe "record then replay" $ do
+  it "structured helpers forward credentials and scrub tape" $ do
+    tmp <- getTemporaryDirectory
+    let directory = tmp </> "vcr-helpers-haskell"
+    createDirectory directory
+    let run args = readProcess "python3" ("../core_tests/redaction_fixture.py" : args) ""
+    bracket_ (pure ()) (removeDirectoryRecursive directory) $ do
+      upstream <- run ["start", directory]
+      withRecord (recordOptions (directory </> "tape.md") (takeWhile (/= '\n') upstream))
+        { recRedactHeader = ["Authorization"], recRedactQueryParam = ["password"], recRedactJsonField = ["secretKey"] } $ \rec -> do
+          url <- baseUrl rec
+          _ <- run ["drive", directory, url]
+          lastKind rec `shouldReturn` Ok
+      _ <- run ["check", directory]
+      pure ()
   it "records a GET from a live upstream and replays it from the tape" $ do
     tmp <- getTemporaryDirectory
     let tape = tmp </> "servirtium-haskell-record.md"

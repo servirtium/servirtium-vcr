@@ -40,6 +40,9 @@
     clear_last_error/1,
     %% mutations / config
     redact/4,
+    redact_header/4,
+    redact_query_param/4,
+    redact_json_field/4,
     unredact/4,
     normalize_whole_tape/3,
     redact_whole_tape/3,
@@ -107,6 +110,9 @@ clear_last_error(_Handle) -> erlang:nif_error(not_loaded).
 %% ---- mutations / config --------------------------------------------------
 
 redact(_Handle, _Field, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).
+redact_header(_Handle, _Field, _Name, _Replacement) -> erlang:nif_error(not_loaded).
+redact_query_param(_Handle, _Field, _Name, _Replacement) -> erlang:nif_error(not_loaded).
+redact_json_field(_Handle, _Field, _Name, _Replacement) -> erlang:nif_error(not_loaded).
 unredact(_Handle, _Field, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).
 normalize_whole_tape(_Handle, _Pattern, _Name) -> erlang:nif_error(not_loaded).
 redact_whole_tape(_Handle, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).

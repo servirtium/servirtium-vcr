@@ -111,6 +111,18 @@ final class NativeMethods {
             "aether_vcr_embed_redact",
             FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR, C_PTR));
 
+    static final MethodHandle REDACT_HEADER = down(
+            "aether_vcr_embed_redact_header",
+            FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR, C_PTR));
+
+    static final MethodHandle REDACT_QUERY_PARAM = down(
+            "aether_vcr_embed_redact_query_param",
+            FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR, C_PTR));
+
+    static final MethodHandle REDACT_JSON_FIELD = down(
+            "aether_vcr_embed_redact_json_field",
+            FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR, C_PTR));
+
     static final MethodHandle UNREDACT = down(
             "aether_vcr_embed_unredact",
             FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR, C_PTR));

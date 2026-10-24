@@ -17,6 +17,9 @@ wrapper over that one libservirtium_vcr, so they cannot drift from each other â€
 Servirtium compatibility across languages is a build-time guarantee, not a
 test target.
 
+Structured credential redaction is available across the bindings: see
+[redaction helpers](docs/redaction-helpers.md) for API names, scope and playback behaviour.
+
 ## Layout (Selenium-style, flat per language)
 
 ```

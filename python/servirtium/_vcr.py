@@ -223,7 +223,7 @@ class RecordBuilder(_BuilderBase):
     def __init__(self, tape_path: str, upstream_base: str) -> None:
         super().__init__(tape_path)
         self._upstream_base = upstream_base
-        self._redactions: list[tuple[Field, str, str]] = []
+        self._redactions: list[tuple[str, Field, str, str]] = []
         self._normalize_whole_tape: list[tuple[str, str]] = []
         self._redact_whole_tape: list[tuple[str, str]] = []
         self._note: tuple[str, str] | None = None
@@ -233,7 +233,22 @@ class RecordBuilder(_BuilderBase):
 
     def redact(self, field: Field, pattern: str, replacement: str):
         """Scrub a value out of the given field before it lands on the tape."""
-        self._redactions.append((field, pattern, replacement))
+        self._redactions.append(("redact", field, pattern, replacement))
+        return self
+
+    def redact_header(self, name: str, replacement: str = "[REDACTED]", *, field: Field = Field.REQUEST_HEADERS):
+        """Redact the named header when writing the tape; upstream is unchanged."""
+        self._redactions.append(("redact_header", field, name, replacement))
+        return self
+
+    def redact_query_param(self, name: str, replacement: str = "[REDACTED]", *, field: Field = Field.PATH):
+        """Redact the named query param when writing the tape; upstream is unchanged."""
+        self._redactions.append(("redact_query_param", field, name, replacement))
+        return self
+
+    def redact_json_field(self, name: str, replacement: str = "[REDACTED]", *, field: Field = Field.REQUEST_BODY):
+        """Redact the named json field when writing the tape; upstream is unchanged."""
+        self._redactions.append(("redact_json_field", field, name, replacement))
         return self
 
     def normalize_whole_tape(self, pattern: str, name: str):
@@ -278,9 +293,9 @@ class RecordBuilder(_BuilderBase):
             N.indent_code_blocks(handle)
         if self._emphasize_http_verbs:
             N.emphasize_http_verbs(handle)
-        for field, pattern, replacement in self._redactions:
+        for operation, field, pattern, replacement in self._redactions:
             _check(
-                N.redact(handle, int(field), N.encode(pattern), N.encode(replacement)),
+                getattr(N, operation)(handle, int(field), N.encode(pattern), N.encode(replacement)),
                 "redact",
             )
         for pattern, name in self._normalize_whole_tape:

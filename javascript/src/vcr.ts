@@ -248,7 +248,7 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 
 /** Configures and starts a record VCR server. */
 export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
-  private readonly redactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
+  private readonly redactions: Array<{ operation: typeof N.redact; field: VcrField; pattern: string; replacement: string }> = []
   private readonly wholeTapeNormalizations: Array<{ pattern: string; name: string }> = []
   private readonly wholeTapeRedactions: Array<{ pattern: string; replacement: string }> = []
   private pendingNote: { title: string; body: string } | null = null
@@ -266,7 +266,25 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
 
   /** Scrub a value out of the given field before it lands on the tape. */
   redact(field: VcrField, pattern: string, replacement: string): RecordBuilder {
-    this.redactions.push({ field, pattern, replacement })
+    this.redactions.push({ operation: N.redact, field, pattern, replacement })
+    return this
+  }
+
+  /** Redact a named header when emitting the tape. */
+  redactHeader(name: string, replacement = '[REDACTED]', field = VcrField.RequestHeaders): RecordBuilder {
+    this.redactions.push({ operation: N.redactHeader, field, pattern: name, replacement })
+    return this
+  }
+
+  /** Redact a named query param when emitting the tape. */
+  redactQueryParam(name: string, replacement = '[REDACTED]', field = VcrField.Path): RecordBuilder {
+    this.redactions.push({ operation: N.redactQueryParam, field, pattern: name, replacement })
+    return this
+  }
+
+  /** Redact a named json field when emitting the tape. */
+  redactJsonField(name: string, replacement = '[REDACTED]', field = VcrField.RequestBody): RecordBuilder {
+    this.redactions.push({ operation: N.redactJsonField, field, pattern: name, replacement })
     return this
   }
 
@@ -328,8 +346,8 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     super.applyConfig(handle)
     if (this.indentCodeBlocksOn) N.indentCodeBlocks(handle)
     if (this.emphasizeHttpVerbsOn) N.emphasizeHttpVerbs(handle)
-    for (const { field, pattern, replacement } of this.redactions) {
-      check(N.redact(handle, field, pattern, replacement), 'redact')
+    for (const { operation, field, pattern, replacement } of this.redactions) {
+      check(operation(handle, field, pattern, replacement), 'redact')
     }
     for (const { pattern, name } of this.wholeTapeNormalizations) {
       check(N.normalizeWholeTape(handle, pattern, name), 'normalizeWholeTape')

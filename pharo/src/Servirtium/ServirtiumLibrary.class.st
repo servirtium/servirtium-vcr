@@ -313,3 +313,18 @@ ServirtiumLibrary >> freeString: aRawPointer [
 
 	^ self ffiCall: #( void aether_vcr_embed_free_string ( void* aRawPointer ) )
 ]
+
+{ #category : 'mutations' }
+ServirtiumLibrary >> redactHeader: server field: field pattern: name replacement: replacement [
+    ^ self ffiCall: #( void* aether_vcr_embed_redact_header ( void* server, int field, String name, String replacement ) )
+]
+
+{ #category : 'mutations' }
+ServirtiumLibrary >> redactQueryParam: server field: field pattern: name replacement: replacement [
+    ^ self ffiCall: #( void* aether_vcr_embed_redact_query_param ( void* server, int field, String name, String replacement ) )
+]
+
+{ #category : 'mutations' }
+ServirtiumLibrary >> redactJsonField: server field: field pattern: name replacement: replacement [
+    ^ self ffiCall: #( void* aether_vcr_embed_redact_json_field ( void* server, int field, String name, String replacement ) )
+]

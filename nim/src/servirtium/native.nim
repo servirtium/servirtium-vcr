@@ -79,6 +79,12 @@ proc clear_last_error*(h: Handle)
 # --- mutations / config ---
 proc redact*(h: Handle, field: cint, pattern, replacement: cstring): cstring
   {.importc: "aether_vcr_embed_redact", cdecl.}
+proc redact_header*(h: Handle, field: cint, name, replacement: cstring): cstring
+  {.importc: "aether_vcr_embed_redact_header", cdecl.}
+proc redact_query_param*(h: Handle, field: cint, name, replacement: cstring): cstring
+  {.importc: "aether_vcr_embed_redact_query_param", cdecl.}
+proc redact_json_field*(h: Handle, field: cint, name, replacement: cstring): cstring
+  {.importc: "aether_vcr_embed_redact_json_field", cdecl.}
 proc unredact*(h: Handle, field: cint, pattern, replacement: cstring): cstring
   {.importc: "aether_vcr_embed_unredact", cdecl.}
 proc remove_header*(h: Handle, field: cint, name: cstring): cstring

@@ -7,6 +7,32 @@
 %% app + its priv/servirtium_nif.so resolve) from erlang/ (so tapes/ resolves).
 
 main(_) ->
+
+    Directory = "/tmp/vcr-helpers-erlang-" ++ os:getpid(),
+    ok = file:make_dir(Directory),
+    Run = fun(Action, Extra) ->
+        Command = "python3 ../core_tests/redaction_fixture.py " ++ Action ++ " '" ++ Directory ++ "'" ++ Extra,
+        Output = os:cmd(Command ++ " 2>&1; printf '\\nRC:%s' $?"),
+        [Text, "0"] = string:split(Output, "\nRC:", trailing),
+        string:trim(Text)
+    end,
+    try
+        Upstream = Run("start", ""),
+        Recorder = servirtium:record(Directory ++ "/tape.md", Upstream),
+        try
+            ok = servirtium:redact_header(Recorder, "Authorization"),
+            ok = servirtium:redact_query_param(Recorder, "password"),
+            ok = servirtium:redact_json_field(Recorder, "secretKey"),
+            Run("drive", " '" ++ servirtium:base_url(Recorder) ++ "'"),
+            ok = servirtium:last_kind(Recorder)
+        after ok = servirtium:close(Recorder) end,
+        Run("check", "")
+    after
+        {ok, Names} = file:list_dir(Directory),
+        [file:delete(filename:join(Directory, Name)) || Name <- Names],
+        file:del_dir(Directory)
+    end,
+
     Tape = "tapes/single_get.md",
     Vcr = servirtium:playback(Tape),
     BaseUrl = servirtium:base_url(Vcr),

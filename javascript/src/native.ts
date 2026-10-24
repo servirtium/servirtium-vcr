@@ -159,6 +159,12 @@ export const redactWholeTape = lazy(
   'void* aether_vcr_embed_redact_whole_tape(void* server, const char* pattern, const char* replacement)',
 )
 
+export const redactHeader = lazy('void* aether_vcr_embed_redact_header(void* server, int field, const char* name, const char* replacement)')
+
+export const redactQueryParam = lazy('void* aether_vcr_embed_redact_query_param(void* server, int field, const char* name, const char* replacement)')
+
+export const redactJsonField = lazy('void* aether_vcr_embed_redact_json_field(void* server, int field, const char* name, const char* replacement)')
+
 export const unredact = lazy(
   'void* aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement)',
 )

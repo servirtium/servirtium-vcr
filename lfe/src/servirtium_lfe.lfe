@@ -31,6 +31,9 @@
    ;; lifecycle
    (playback 1) (playback 2)
    (record 2) (record 3)
+   (redact_header 2) (redact_header 4)
+   (redact_query_param 2) (redact_query_param 4)
+   (redact_json_field 2) (redact_json_field 4)
    (close 1)
    ;; introspection
    (base_url 1)
@@ -155,3 +158,22 @@
 ;; Accept an LFE string (Erlang list) or a binary; the NIF takes binaries.
 (defun to-bin (x)
   (if (is_binary x) x (iolist_to_binary x)))
+
+(defun redact_header (vcr name)
+  (redact_header vcr name #"[REDACTED]" 3))
+(defun redact_header (vcr name replacement field)
+  (case (servirtium_nif:redact_header (maps:get 'handle vcr) field (to-bin name) (to-bin replacement))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
+(defun redact_query_param (vcr name)
+  (redact_query_param vcr name #"[REDACTED]" 1))
+(defun redact_query_param (vcr name replacement field)
+  (case (servirtium_nif:redact_query_param (maps:get 'handle vcr) field (to-bin name) (to-bin replacement))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
+(defun redact_json_field (vcr name)
+  (redact_json_field vcr name #"[REDACTED]" 4))
+(defun redact_json_field (vcr name replacement field)
+  (case (servirtium_nif:redact_json_field (maps:get 'handle vcr) field (to-bin name) (to-bin replacement))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))

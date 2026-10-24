@@ -139,3 +139,33 @@ ServirtiumRecordTest >> testFailIfChangedThrowsWhenAReRecordDrifts [
 		value.
 	self assert: (tape asFileReference contents includesSubstring: 'v2-changed')
 ]
+
+
+{ #category : 'tests' }
+ServirtiumRecordTest >> testStructuredRedactionHelpers [
+    | observed rec client bytes |
+    upstream onRequestRespond: [ :request |
+        observed := request.
+        ZnResponse ok: (ZnEntity text: 'upstream-ok') ].
+    rec := (Servirtium record: tape upstream: self upstreamBase)
+        redactHeader: 'Authorization';
+        redactQueryParam: 'password';
+        redactJsonField: 'secretKey';
+        start.
+    [ client := ZnClient new.
+      client url: rec baseUrl , '/ok?password=query-secret&keep=visible';
+        headerAt: 'Authorization' put: 'Bearer header-secret';
+        entity: (ZnEntity json: '{ "secretKey": "json-secret", "keep": "visible" }');
+        post.
+      self assert: observed entity contents equals: '{ "secretKey": "json-secret", "keep": "visible" }'.
+      self assert: (observed headers at: 'Authorization') equals: 'Bearer header-secret'.
+      self assert: (observed uri queryAt: 'password') equals: 'query-secret'.
+      self assert: rec lastKind equals: #ok
+    ] ensure: [ rec stop ].
+    bytes := tape asFileReference contents.
+    self deny: (bytes includesSubstring: '-secret').
+    self assert: (bytes includesSubstring: 'Authorization: [REDACTED]').
+    self assert: (bytes includesSubstring: 'password=%5BREDACTED%5D&keep=visible').
+    self assert: (bytes includesSubstring: '"secretKey": "[REDACTED]"').
+    self assert: (bytes includesSubstring: '"keep": "visible"')
+]

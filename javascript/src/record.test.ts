@@ -84,3 +84,21 @@ describe('record', () => {
     expect(onDisk).toContain('Establishes the session the next calls reuse')
   })
 })
+
+
+it('redacts structured credentials on tape while forwarding original values', () => {
+  const { execFileSync } = require('child_process')
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vcr-helpers-'))
+  const fixture = path.resolve(__dirname, '../../core_tests/redaction_fixture.py')
+  const run = (...args: string[]) => execFileSync('python3', [fixture, ...args], { encoding: 'utf8' }).trim()
+  try {
+    const upstream = run('start', directory)
+    const rec = Vcr.record(path.join(directory, 'tape.md'), upstream)
+      .redactHeader('Authorization').redactQueryParam('password').redactJsonField('secretKey').start()
+    try {
+      run('drive', directory, rec.baseUrl)
+      expect(rec.lastKind).toBe(VcrOutcome.Ok)
+    } finally { rec.close() }
+    run('check', directory)
+  } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+})

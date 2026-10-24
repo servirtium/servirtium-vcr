@@ -198,3 +198,28 @@ fn records_and_replays_a_post_with_a_body() {
     assert_eq!("created", replayed);
     assert_eq!(Outcome::Ok, play.last_kind());
 }
+
+
+#[test]
+fn structured_redaction_helpers_preserve_upstream_credentials() {
+    use std::process::Command;
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let directory = std::env::temp_dir().join(format!("vcr-helpers-rust-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir(&directory).unwrap();
+    let run = |args: &[&str]| {
+        let output = Command::new("python3").arg(root.join("../core_tests/redaction_fixture.py"))
+            .args(args).output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    let dir = directory.to_str().unwrap();
+    let upstream = run(&["start", dir]);
+    let rec = servirtium::Vcr::record(directory.join("tape.md").to_str().unwrap(), upstream)
+        .redact_header("Authorization").redact_query_param("password").redact_json_field("secretKey")
+        .start().unwrap();
+    run(&["drive", dir, &rec.base_url()]);
+    assert_eq!(rec.last_kind(), servirtium::Outcome::Ok);
+    drop(rec);
+    run(&["check", dir]);
+    std::fs::remove_dir_all(directory).unwrap();
+}

@@ -265,6 +265,17 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
 
 ## Gotchas / hard-won
 
+- **Named credential redaction is shared core logic.** `redact_header`,
+  `redact_query_param`, and `redact_json_field` register structured rules in
+  the same per-handle list as literal redactions (`Redaction.kind` 0–3).
+  All three ABI exports take `(handle, field, name, replacement)`; query scope
+  must be Path. Defaults in the bindings are request scope and `[REDACTED]`.
+  JSON redaction preserves unrelated bytes and fails flush on non-empty invalid
+  JSON; all tape-writing paths check `emit_error` before writing. Forwarding and
+  playback matching are unchanged. See `docs/redaction-helpers.md`, the core
+  `test_vcr_redaction_helpers.ae`, and the shared HTTP/tape contract fixture
+  `core_tests/redaction_fixture.py` used by the per-language recording tests.
+
 - **Ruby's consumer README exposed an obsolete version-manager pin.** A clean
   `ruby/` checkout contained `.ruby-version = ruby-2.5.7`, which made rbenv
   refuse even `gem build` despite Ruby 3.3 being installed. Removed that file;

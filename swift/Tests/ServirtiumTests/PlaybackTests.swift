@@ -45,6 +45,39 @@ final class PlaybackTests: XCTestCase {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+
+    func testStructuredRedactionHelpers() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("core_tests/redaction_fixture.py").path
+        func run(_ args: [String]) throws -> String {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["python3", fixture] + args
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = output
+            try process.run()
+            let bytes = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let text = String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            XCTAssertEqual(process.terminationStatus, 0, text)
+            return text
+        }
+        let upstream = try run(["start", directory.path])
+        try Vcr.withRecord(directory.appendingPathComponent("tape.md").path, upstreamBase: upstream) { rec in
+            try rec.redactHeader("Authorization")
+            try rec.redactQueryParam("password")
+            try rec.redactJsonField("secretKey")
+            _ = try run(["drive", directory.path, rec.baseUrl])
+            XCTAssertEqual(rec.lastKind, .ok)
+        }
+        _ = try run(["check", directory.path])
+    }
+
     func testReplaysTheCanonicalTapeBody() throws {
         try Vcr.withPlayback(tape) { vcr in
             XCTAssertEqual(try httpGet(vcr.baseUrl + "/ok"), "ok-body")

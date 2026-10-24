@@ -50,3 +50,29 @@ class ServirtiumScalaTest:
       assertEquals("hello-from-upstream", get(vcr.baseUrl() + "/greeting"))
       assertEquals(Outcome.OK, vcr.lastKind())
     }
+
+
+  @Test def structuredHelpersForwardCredentialsAndScrubTape(): Unit =
+    val directory = Files.createTempDirectory("vcr-helpers-")
+    def run(args: String*): String =
+      val cmd = new java.util.ArrayList[String]()
+      cmd.add("python3")
+      cmd.add("../core_tests/redaction_fixture.py")
+      args.foreach(cmd.add)
+      val process = new ProcessBuilder(cmd).redirectErrorStream(true).start()
+      val output = new String(process.getInputStream.readAllBytes())
+      assertEquals(0, process.waitFor(), output)
+      output.trim
+    try
+      val upstream = run("start", directory.toString)
+      using(Servirtium.record(directory.resolve("tape.md").toString, upstream) { builder =>
+        builder.redactHeader("Authorization").redactQueryParam("password").redactJsonField("secretKey")
+      }) { rec =>
+        run("drive", directory.toString, rec.baseUrl())
+        assertEquals(Outcome.OK, rec.lastKind())
+      }
+      run("check", directory.toString)
+    finally
+      val files = Files.list(directory)
+      try files.forEach(file => Files.delete(file)) finally files.close()
+      Files.delete(directory)

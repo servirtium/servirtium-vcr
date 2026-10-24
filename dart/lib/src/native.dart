@@ -252,6 +252,9 @@ class Native {
 
   // ---- mutations / config (call BEFORE start; return "" or an error) ------
   static final redact = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_redact');
+  static final redactHeader = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_redact_header');
+  static final redactQueryParam = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_redact_query_param');
+  static final redactJsonField = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_redact_json_field');
   static final unredact =
       _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_unredact');
   static final normalizeWholeTape = _lib.lookupFunction<_WholeTapeC, _WholeTapeD>(

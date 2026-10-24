@@ -49,6 +49,9 @@ extern int   aether_vcr_embed_last_index(void *server);
 extern void  aether_vcr_embed_clear_last_error(void *server);
 
 extern char *aether_vcr_embed_redact(void *server, int field, const char *pattern, const char *replacement);
+extern char *aether_vcr_embed_redact_header(void *server, int field, const char *pattern, const char *replacement);
+extern char *aether_vcr_embed_redact_query_param(void *server, int field, const char *pattern, const char *replacement);
+extern char *aether_vcr_embed_redact_json_field(void *server, int field, const char *pattern, const char *replacement);
 extern char *aether_vcr_embed_unredact(void *server, int field, const char *pattern, const char *replacement);
 extern char *aether_vcr_embed_remove_header(void *server, int field, const char *name);
 extern void  aether_vcr_embed_match_header(void *server, const char *name);
@@ -305,6 +308,22 @@ static ERL_NIF_TERM nif_redact(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv
     UNUSED(argc);
     return mut3(env, argv, aether_vcr_embed_redact);
 }
+static ERL_NIF_TERM nif_redact_header(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    return mut3(env, argv, aether_vcr_embed_redact_header);
+}
+static ERL_NIF_TERM nif_redact_query_param(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    return mut3(env, argv, aether_vcr_embed_redact_query_param);
+}
+static ERL_NIF_TERM nif_redact_json_field(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    return mut3(env, argv, aether_vcr_embed_redact_json_field);
+}
+
 
 static ERL_NIF_TERM nif_unredact(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
@@ -509,6 +528,9 @@ static ErlNifFunc nif_funcs[] = {
     {"clear_last_error", 1, nif_clear_last_error, 0},
 
     {"redact",         4, nif_redact,         0},
+    {"redact_header", 4, nif_redact_header, 0},
+    {"redact_query_param", 4, nif_redact_query_param, 0},
+    {"redact_json_field", 4, nif_redact_json_field, 0},
     {"unredact",       4, nif_unredact,       0},
     {"normalize_whole_tape", 3, nif_normalize_whole_tape, 0},
     {"redact_whole_tape",    3, nif_redact_whole_tape,    0},

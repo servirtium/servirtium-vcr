@@ -236,7 +236,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
 public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
 {
     private readonly string _upstreamBase;
-    private readonly List<(VcrField field, string pattern, string replacement)> _redactions = new();
+    private readonly List<(Func<IntPtr, int, string, string, IntPtr> operation, VcrField field, string pattern, string replacement)> _redactions = new();
     private readonly List<(string pattern, string name)> _normalizeWholeTape = new();
     private readonly List<(string pattern, string replacement)> _redactWholeTape = new();
     private (string title, string body)? _note;
@@ -252,7 +252,28 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     /// <summary>Scrub a value out of the given field before it lands on the tape.</summary>
     public RecordBuilder Redact(VcrField field, string pattern, string replacement)
     {
-        _redactions.Add((field, pattern, replacement));
+        _redactions.Add((NativeMethods.Redact, field, pattern, replacement));
+        return this;
+    }
+
+    /// <summary>Redact the named header value when emitting the tape.</summary>
+    public RecordBuilder RedactHeader(string name, string replacement = "[REDACTED]", VcrField field = VcrField.RequestHeaders)
+    {
+        _redactions.Add((NativeMethods.RedactHeader, field, name, replacement));
+        return this;
+    }
+
+    /// <summary>Redact the named query parameter when emitting the tape.</summary>
+    public RecordBuilder RedactQueryParam(string name, string replacement = "[REDACTED]", VcrField field = VcrField.Path)
+    {
+        _redactions.Add((NativeMethods.RedactQueryParam, field, name, replacement));
+        return this;
+    }
+
+    /// <summary>Redact the named JSON field value when emitting the tape.</summary>
+    public RecordBuilder RedactJsonField(string name, string replacement = "[REDACTED]", VcrField field = VcrField.RequestBody)
+    {
+        _redactions.Add((NativeMethods.RedactJsonField, field, name, replacement));
         return this;
     }
 
@@ -322,9 +343,9 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         base.ApplyConfig(handle);
         if (_indentCodeBlocks) NativeMethods.IndentCodeBlocks(handle);
         if (_emphasizeHttpVerbs) NativeMethods.EmphasizeHttpVerbs(handle);
-        foreach ((VcrField field, string pattern, string replacement) in _redactions)
+        foreach (var (operation, field, pattern, replacement) in _redactions)
         {
-            Check(NativeMethods.Redact(handle, (int)field, pattern, replacement), nameof(Redact));
+            Check(operation(handle, (int)field, pattern, replacement), nameof(Redact));
         }
         foreach ((string pattern, string name) in _normalizeWholeTape)
         {

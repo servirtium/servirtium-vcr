@@ -9,6 +9,27 @@ import 'package:test/test.dart';
 import 'support.dart';
 
 void main() {
+
+  test('structured helpers forward credentials and scrub the tape', () {
+    final directory = Directory.systemTemp.createTempSync('vcr-helpers-');
+    final fixture = File('../core_tests/redaction_fixture.py').absolute.path;
+    String run(List<String> args) {
+      final result = Process.runSync('python3', [fixture, ...args]);
+      expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+      return (result.stdout as String).trim();
+    }
+    try {
+      final upstream = run(['start', directory.path]);
+      final rec = Vcr.record('${directory.path}/tape.md', upstream)
+          .redactHeader('Authorization').redactQueryParam('password').redactJsonField('secretKey').start();
+      try {
+        run(['drive', directory.path, rec.baseUrl]);
+        expect(rec.lastKind, VcrOutcome.ok);
+      } finally { rec.close(); }
+      run(['check', directory.path]);
+    } finally { directory.deleteSync(recursive: true); }
+  });
+
   late HttpServer upstream;
   late String upstreamBase;
   late String tapePath;

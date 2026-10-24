@@ -53,6 +53,9 @@ pub(crate) struct Native {
     pub clear_last_error: unsafe extern "C" fn(Handle),
 
     pub redact: unsafe extern "C" fn(Handle, c_int, *const c_char, *const c_char) -> *mut c_char,
+    pub redact_header: unsafe extern "C" fn(Handle, c_int, *const c_char, *const c_char) -> *mut c_char,
+    pub redact_query_param: unsafe extern "C" fn(Handle, c_int, *const c_char, *const c_char) -> *mut c_char,
+    pub redact_json_field: unsafe extern "C" fn(Handle, c_int, *const c_char, *const c_char) -> *mut c_char,
     pub normalize_whole_tape:
         unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> *mut c_char,
     pub redact_whole_tape:
@@ -209,6 +212,9 @@ fn load() -> Result<Native, String> {
         last_index: sym!(b"aether_vcr_embed_last_index\0"),
         clear_last_error: sym!(b"aether_vcr_embed_clear_last_error\0"),
         redact: sym!(b"aether_vcr_embed_redact\0"),
+        redact_header: sym!(b"aether_vcr_embed_redact_header\0"),
+        redact_query_param: sym!(b"aether_vcr_embed_redact_query_param\0"),
+        redact_json_field: sym!(b"aether_vcr_embed_redact_json_field\0"),
         normalize_whole_tape: sym!(b"aether_vcr_embed_normalize_whole_tape\0"),
         redact_whole_tape: sym!(b"aether_vcr_embed_redact_whole_tape\0"),
         unredact: sym!(b"aether_vcr_embed_unredact\0"),

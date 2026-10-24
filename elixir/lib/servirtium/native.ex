@@ -60,6 +60,9 @@ defmodule Servirtium.Native do
   # ---- mutations / config --------------------------------------------------
 
   defdelegate redact(handle, field, pattern, replacement), to: :servirtium_nif
+  defdelegate redact_header(handle, field, name, replacement), to: :servirtium_nif
+  defdelegate redact_query_param(handle, field, name, replacement), to: :servirtium_nif
+  defdelegate redact_json_field(handle, field, name, replacement), to: :servirtium_nif
   defdelegate unredact(handle, field, pattern, replacement), to: :servirtium_nif
   defdelegate normalize_whole_tape(handle, pattern, name), to: :servirtium_nif
   defdelegate redact_whole_tape(handle, pattern, replacement), to: :servirtium_nif

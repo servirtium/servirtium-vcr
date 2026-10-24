@@ -86,3 +86,32 @@ describe Servirtium do
     end
   end
 end
+
+
+describe "Structured redaction helpers" do
+  it "forwards credentials and scrubs the tape" do
+    directory = File.tempname("vcr-helpers")
+    Dir.mkdir(directory)
+    fixture = File.expand_path("../../core_tests/redaction_fixture.py", __DIR__)
+    run = ->(args : Array(String)) do
+      output = IO::Memory.new
+      status = Process.run("python3", [fixture] + args, output: output, error: output)
+      status.success?.should be_true
+      output.to_s.strip
+    end
+    begin
+      upstream = run.call(["start", directory])
+      Servirtium.record(File.join(directory, "tape.md"), upstream) do |rec|
+        rec.redact_header("Authorization")
+        rec.redact_query_param("password")
+        rec.redact_json_field("secretKey")
+        run.call(["drive", directory, rec.base_url])
+        rec.last_kind.should eq(Servirtium::Outcome::Ok)
+      end
+      run.call(["check", directory])
+    ensure
+      Dir.glob(File.join(directory, "*")).each { |file| File.delete(file) }
+      Dir.delete(directory)
+    end
+  end
+end

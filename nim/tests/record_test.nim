@@ -7,7 +7,7 @@
 ## upstream runs its async accept loop on a dedicated thread; forking curl
 ## while that loop is live is unreliable on this stdlib).
 
-import std/[os, strutils, unittest, httpclient]
+import std/[os, osproc, strutils, unittest, httpclient]
 import servirtium
 import upstream
 
@@ -69,3 +69,28 @@ suite "servirtium record":
     let replayed = postBody(play.baseUrl(), "/submit", "ping")
     check replayed.strip() == "created"
     check play.lastKind() == Ok
+
+
+suite "structured redaction helpers":
+  test "forwards credentials and scrubs the tape":
+    let directory = getTempDir() / ("vcr-helpers-nim-" & $getCurrentProcessId())
+    createDir(directory)
+    defer: removeDir(directory)
+    let fixture = currentSourcePath().parentDir.parentDir.parentDir / "core_tests/redaction_fixture.py"
+    proc fixtureRun(args: seq[string]): string =
+      var command = "python3 " & quoteShell(fixture)
+      for arg in args: command.add(" " & quoteShell(arg))
+      let output = execCmdEx(command)
+      doAssert output.exitCode == 0, output.output
+      output.output.strip()
+    let upstream = fixtureRun(@["start", directory])
+    let rec = record(directory / "tape.md", upstream)
+    check rec.redactHeader("Authorization") == ""
+    check rec.redactQueryParam("password") == ""
+    check rec.redactJsonField("secretKey") == ""
+    check rec.start()
+    defer: rec.close()
+    discard fixtureRun(@["drive", directory, rec.baseUrl()])
+    check rec.lastKind() == Ok
+    rec.close()
+    discard fixtureRun(@["check", directory])

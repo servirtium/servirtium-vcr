@@ -56,4 +56,31 @@ do
     os.remove(tape)
 end
 
+
+do
+    h.case("structured redaction helpers")
+    local directory = os.tmpname()
+    os.remove(directory)
+    assert(os.execute("mkdir -p '" .. directory .. "'"))
+    local fixture = here .. "/../../core_tests/redaction_fixture.py"
+    local function fixture_run(action, url)
+        local command = "python3 '" .. fixture .. "' " .. action .. " '" .. directory .. "'"
+        if url then command = command .. " '" .. url .. "'" end
+        local process = assert(io.popen(command .. " 2>&1"))
+        local output = process:read("*a")
+        local ok = process:close()
+        assert(ok, output)
+        return output:gsub("%s+$", "")
+    end
+    local upstream = fixture_run("start")
+    local rec = assert(servirtium.record(directory .. "/tape.md", upstream)
+        :redact_header("Authorization"):redact_query_param("password"):redact_json_field("secretKey"):start())
+    fixture_run("drive", rec:base_url())
+    h.eq(rec:last_kind(), servirtium.OK, "structured record outcome")
+    h.eq(rec:close(), "", "structured flush")
+    fixture_run("check")
+    for _, name in ipairs({"url", "done", "capture.json", "tape.md"}) do os.remove(directory .. "/" .. name) end
+    os.remove(directory)
+end
+
 h.done("record")

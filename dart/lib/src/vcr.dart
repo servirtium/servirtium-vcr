@@ -292,7 +292,7 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   RecordBuilder._(super.tapePath, this._upstreamBase);
 
   final String _upstreamBase;
-  final List<(VcrField, String, String)> _redactions = [];
+  final List<(String, VcrField, String, String)> _redactions = [];
   final List<(String, String)> _normalizeWholeTape = [];
   final List<(String, String)> _redactWholeTape = [];
   (String, String)? _note;
@@ -305,7 +305,22 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
 
   /// Scrub a value out of the given field before it lands on the tape.
   RecordBuilder redact(VcrField field, String pattern, String replacement) {
-    _redactions.add((field, pattern, replacement));
+    _redactions.add(('redact', field, pattern, replacement));
+    return this;
+  }
+
+  RecordBuilder redactHeader(String name, {String replacement = '[REDACTED]', VcrField field = VcrField.requestHeaders}) {
+    _redactions.add(('header', field, name, replacement));
+    return this;
+  }
+
+  RecordBuilder redactQueryParam(String name, {String replacement = '[REDACTED]', VcrField field = VcrField.path}) {
+    _redactions.add(('query_param', field, name, replacement));
+    return this;
+  }
+
+  RecordBuilder redactJsonField(String name, {String replacement = '[REDACTED]', VcrField field = VcrField.requestBody}) {
+    _redactions.add(('json_field', field, name, replacement));
     return this;
   }
 
@@ -357,9 +372,15 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     super._applyConfig(handle);
     if (_indentCodeBlocks) Native.indentCodeBlocks(handle);
     if (_emphasizeHttpVerbs) Native.emphasizeHttpVerbs(handle);
-    for (final (field, pattern, replacement) in _redactions) {
+    for (final (operation, field, pattern, replacement) in _redactions) {
+      final call = switch (operation) {
+        'header' => Native.redactHeader,
+        'query_param' => Native.redactQueryParam,
+        'json_field' => Native.redactJsonField,
+        _ => Native.redact,
+      };
       withUtf8(pattern, (p) => withUtf8(replacement,
-          (r) => _check(Native.redact(handle, field.value, p, r), 'redact')));
+          (r) => _check(call(handle, field.value, p, r), 'redact')));
     }
     for (final (pattern, name) in _normalizeWholeTape) {
       withUtf8(pattern, (p) => withUtf8(name,

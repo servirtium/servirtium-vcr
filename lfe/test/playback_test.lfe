@@ -13,6 +13,27 @@
   (export (main 1)))
 
 (defun main (_args)
+
+  (let* ((directory (++ "/tmp/vcr-helpers-lfe-" (os:getpid)))
+         (fixture "python3 ../core_tests/redaction_fixture.py "))
+    (file:make_dir directory)
+    (let* ((upstream (string:trim (os:cmd (++ fixture "start '" directory "'"))))
+           (rec (servirtium_lfe:record (++ directory "/tape.md") upstream)))
+      (try
+        (progn
+          (require-ok (servirtium_lfe:redact_header rec "Authorization"))
+          (require-ok (servirtium_lfe:redact_query_param rec "password"))
+          (require-ok (servirtium_lfe:redact_json_field rec "secretKey"))
+          (let ((out (os:cmd (++ fixture "drive '" directory "' '" (servirtium_lfe:base_url rec) "' && echo DRIVE_OK"))))
+            (case (string:find out "DRIVE_OK") ('nomatch (erlang:error (tuple 'redaction_fixture out))) (_ 'ok))) )
+        (after (servirtium_lfe:close rec))))
+    (let ((out (os:cmd (++ fixture "check '" directory "' && echo CHECK_OK"))))
+      (case (string:find out "CHECK_OK")
+        ('nomatch (erlang:error (tuple 'redaction_fixture out)))
+        (_ 'ok)))
+    (let (((tuple 'ok files) (file:list_dir directory)))
+      (lists:foreach (lambda (name) (file:delete (++ directory "/" name))) files))
+    (file:del_dir directory))
   (let* ((tape "tapes/single_get.md")
          (vcr (servirtium_lfe:playback tape))
          (url (servirtium_lfe:base_url vcr)))
@@ -38,3 +59,8 @@
   (if cond
       (progn (io:format "  ok: ~s~n" (list label)) 0)
       (progn (io:format "FAIL: ~s~n" (list label)) 1)))
+
+(defun require-ok (value)
+  (case value
+    ('ok 'ok)
+    (err (erlang:error (tuple 'redaction_config err)))))

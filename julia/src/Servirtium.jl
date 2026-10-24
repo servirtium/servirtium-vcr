@@ -29,6 +29,7 @@ export Vcr, VcrError, Field, Outcome,
     playback, playback_url, record,
     base_url, port, tape_length, reset_cursor,
     last_kind, last_error, last_index, clear_last_error, matched_cleanly,
+    redact_header, redact_query_param, redact_json_field,
     redact, unredact, normalize_whole_tape, redact_whole_tape, remove_header,
     match_header, note, static_content, untaped,
     strict_ignore_common_headers, set_strict_headers,
@@ -246,6 +247,21 @@ redact(vcr::Vcr, field::Field, pattern, replacement) =
     check(ccall((:aether_vcr_embed_redact, LIB), Ptr{Cchar},
                 (Ptr{Cvoid}, Cint, Cstring, Cstring),
                 vcr.handle, Int(field), pattern, replacement), "redact")
+
+redact_header(vcr::Vcr, name; replacement="[REDACTED]", field::Field=RequestHeaders) =
+    check(ccall((:aether_vcr_embed_redact_header, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cint, Cstring, Cstring),
+                vcr.handle, Int(field), name, replacement), "redact_header")
+
+redact_query_param(vcr::Vcr, name; replacement="[REDACTED]", field::Field=Path) =
+    check(ccall((:aether_vcr_embed_redact_query_param, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cint, Cstring, Cstring),
+                vcr.handle, Int(field), name, replacement), "redact_query_param")
+
+redact_json_field(vcr::Vcr, name; replacement="[REDACTED]", field::Field=RequestBody) =
+    check(ccall((:aether_vcr_embed_redact_json_field, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cint, Cstring, Cstring),
+                vcr.handle, Int(field), name, replacement), "redact_json_field")
 
 unredact(vcr::Vcr, field::Field, pattern, replacement) =
     check(ccall((:aether_vcr_embed_unredact, LIB), Ptr{Cchar},

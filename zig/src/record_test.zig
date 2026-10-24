@@ -124,3 +124,46 @@ test "record and replay a POST with a body" {
         try std.testing.expectEqual(Outcome.ok, play.lastKind());
     }
 }
+
+
+fn fixtureRun(allocator: std.mem.Allocator, args: []const []const u8) ![]u8 {
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(allocator);
+    try argv.appendSlice(allocator, &.{"python3", "../core_tests/redaction_fixture.py"});
+    try argv.appendSlice(allocator, args);
+    const result = try std.process.run(allocator, std.testing.io, .{ .argv = argv.items });
+    defer allocator.free(result.stderr);
+    errdefer allocator.free(result.stdout);
+    switch (result.term) {
+        .exited => |code| if (code != 0) {
+            std.debug.print("fixture failed: {s}{s}\n", .{result.stdout, result.stderr});
+            return error.FixtureFailed;
+        },
+        else => return error.FixtureFailed,
+    }
+    return result.stdout;
+}
+
+test "structured redaction helpers preserve upstream credentials" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tape = try tapePathZ(allocator, &tmp, "tape.md");
+    defer allocator.free(tape);
+    const directory = std.fs.path.dirname(tape).?;
+    const upstream_output = try fixtureRun(allocator, &.{"start", directory});
+    defer allocator.free(upstream_output);
+    const upstream = try allocator.dupeZ(u8, std.mem.trim(u8, upstream_output, "\r\n "));
+    defer allocator.free(upstream);
+    var rec = try servirtium.Record.init(allocator, tape, upstream)
+        .redactHeader("Authorization").redactQueryParam("password").redactJsonField("secretKey").start();
+    defer rec.close() catch {};
+    const base = try rec.baseUrl();
+    defer allocator.free(base);
+    const driven = try fixtureRun(allocator, &.{"drive", directory, base});
+    allocator.free(driven);
+    try std.testing.expectEqual(Outcome.ok, rec.lastKind());
+    try rec.close();
+    const checked = try fixtureRun(allocator, &.{"check", directory});
+    allocator.free(checked);
+}

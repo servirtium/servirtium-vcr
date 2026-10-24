@@ -146,6 +146,15 @@ proc redact*(s: VcrServer; field: Field; pattern, replacement: string): string {
   ## written/compared. Returns "" on success, or an error message.
   takeString(native.redact(s.handle, cint(field), cstring(pattern), cstring(replacement)))
 
+proc redactHeader*(s: VcrServer; name: string; replacement = "[REDACTED]"; field = RequestHeaders): string {.discardable.} =
+  takeString(native.redact_header(s.handle, cint(field), cstring(name), cstring(replacement)))
+
+proc redactQueryParam*(s: VcrServer; name: string; replacement = "[REDACTED]"; field = Path): string {.discardable.} =
+  takeString(native.redact_query_param(s.handle, cint(field), cstring(name), cstring(replacement)))
+
+proc redactJsonField*(s: VcrServer; name: string; replacement = "[REDACTED]"; field = RequestBody): string {.discardable.} =
+  takeString(native.redact_json_field(s.handle, cint(field), cstring(name), cstring(replacement)))
+
 proc unredact*(s: VcrServer; field: Field; pattern, replacement: string): string {.discardable.} =
   takeString(native.unredact(s.handle, cint(field), cstring(pattern), cstring(replacement)))
 

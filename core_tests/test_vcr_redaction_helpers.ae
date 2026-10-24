@@ -1,0 +1,76 @@
+// Structured redaction semantics. HTTP forwarding is covered by binding tests.
+import core.vcr
+import std.fs
+import std.string
+import std.io
+extern exit(code: int)
+check(ok: int, label: string) {
+    if ok == 0 { println("FAIL: ${label}"); exit(1) }
+}
+main() {
+    tmp = io.getenv("TEMP")
+    if tmp == 0 { tmp = io.getenv("TMPDIR") }
+    if tmp == 0 { tmp = "/tmp" }
+    failed_tape = "${tmp}/vcr-helper-fail.md"
+    empty_tape = "${tmp}/vcr-helper-empty.md"
+    vcr.clear_recording()
+    vcr.clear_redactions()
+    check(vcr.redact_header(vcr.FIELD_REQUEST_HEADERS, "Authorization", "[REDACTED]") == "", "header config")
+    check(vcr.redact_query_param("password", "[REDACTED]") == "", "query config")
+    check(vcr.redact_json_field(vcr.FIELD_REQUEST_BODY, "secretKey", "[REDACTED]") == "", "JSON config")
+    check(vcr.redact_header(vcr.FIELD_RESPONSE_HEADERS, "Set-Cookie", "safe") == "", "response header config")
+    check(vcr.redact_json_field(vcr.FIELD_RESPONSE_BODY, "token", "quoted\"\\value") == "", "response JSON config")
+    body = "{ \"secretKey\" : {\"nested\":\"json-secret\"}, \"items\": [{\"secretKey\": 123}, {\"secret\\u004bey\": true}], \"safe\": \"keep\" }"
+    err = vcr.record_full_response("POST", "/ok?password=query-secret&safe=a%2Fb&pass%77ord=other-secret&password#frag", 200, "application/json", "{\"token\":null,\"keep\":1}", "aUtHoRiZaTiOn: first-secret\nAuthorization: second-secret\nX-Safe: keep\n", body, "Set-Cookie: response-secret\nX-Safe: keep\n")
+    check(err == "", "record")
+    blob = vcr.emit_tape()
+    check(string.contains(blob, "-secret") == 0, "secrets removed")
+    check(string.contains(blob, "password=%5BREDACTED%5D&safe=a%2Fb&pass%77ord=%5BREDACTED%5D&password=%5BREDACTED%5D#frag") == 1, "query shape preserved")
+    check(string.contains(blob, "aUtHoRiZaTiOn: [REDACTED]") == 1, "header casing retained")
+    check(string.contains(blob, "Authorization: [REDACTED]") == 1, "duplicate headers")
+    check(string.contains(blob, "\"secretKey\" : \"[REDACTED]\"") == 1, "object value replaced")
+    check(string.contains(blob, "\"secret\\u004bey\": \"[REDACTED]\"") == 1, "escaped key")
+    check(string.contains(blob, "\"safe\": \"keep\" }") == 1, "JSON formatting retained")
+    check(string.contains(blob, "Set-Cookie: safe") == 1, "response scope")
+    // Capture stays intact. Clearing removes all three kinds.
+    vcr.clear_redactions()
+    blob = vcr.emit_tape()
+    check(string.contains(blob, "query-secret") == 1, "clear resets structured rules")
+    check(string.contains(blob, "json-secret") == 1, "raw capture unchanged")
+    check(vcr.redact_header(vcr.FIELD_PATH, "Auth", "safe") != "", "reject scope")
+    check(vcr.redact_header(vcr.FIELD_REQUEST_HEADERS, "Bad:Name", "safe") != "", "reject invalid header")
+    check(vcr.redact_query_param("", "safe") != "", "reject empty name")
+    check(vcr.redact_header(vcr.FIELD_REQUEST_HEADERS, "Auth", "bad\nvalue") != "", "reject multiline header replacement")
+    // No match leaves bytes unchanged; query names are case-sensitive.
+    check(vcr.redact_query_param("Password", "safe") == "", "query config")
+    check(vcr.emit_tape() == blob, "case-sensitive query")
+    vcr.clear_recording()
+    vcr.clear_redactions()
+    err = vcr.record_full("POST", "/ok", 200, "text/plain", "ok", "", "{broken-json-secret")
+    check(vcr.redact_json_field(vcr.FIELD_REQUEST_BODY, "key", "safe") == "", "invalid JSON config")
+    check(fs.write(failed_tape, "original") == "", "sentinel")
+    check(vcr.flush(failed_tape) != "", "invalid JSON fails flush")
+    existing, _ = fs.read(failed_tape)
+    check(existing == "original", "failed flush preserves existing file")
+    check(vcr.flush_or_check(failed_tape) != "", "invalid JSON fails drift check")
+    check(vcr.flush_and_fail_if_changed(failed_tape) != "", "invalid JSON fails overwrite check")
+    vcr.clear_recording()
+    err = vcr.record("GET", "/empty", 200, "text/plain", "ok")
+    check(vcr.flush(empty_tape) == "", "empty request body is allowed")
+    // Structured rules participate in registration order with literal rules.
+    vcr.clear_recording()
+    vcr.clear_redactions()
+    err = vcr.record_full("POST", "/ok?p%20word=one&safe=two&p+word=three", 200, "text/plain", "ok", "Authorization: abc\r\nX-Safe: keep\r\n", "{\"key\":null,\"key\":[1,2],\"KEY\":true}")
+    check(vcr.redact_query_param("p word", "a&= ") == "", "decoded query name")
+    check(vcr.redact_header(vcr.FIELD_REQUEST_HEADERS, "authorization", "first") == "", "header replacement")
+    check(vcr.redact(vcr.FIELD_REQUEST_HEADERS, "first", "second") == "", "literal follows structured rule")
+    check(vcr.redact_json_field(vcr.FIELD_REQUEST_BODY, "key", "safe") == "", "duplicate JSON key")
+    blob = vcr.emit_tape()
+    check(string.contains(blob, "p%20word=a%26%3D%20&safe=two&p+word=a%26%3D%20") == 1, "query decoding and replacement encoding")
+    check(string.contains(blob, "Authorization: second") == 1, "redaction order")
+    check(vcr.apply_redactions_for("Authorization: abc\r\nX-Safe: keep\r\n", vcr.FIELD_REQUEST_HEADERS) == "Authorization: second\r\nX-Safe: keep\r\n", "header CRLF preserved")
+    check(string.contains(blob, "{\"key\":\"safe\",\"key\":\"safe\",\"KEY\":true}") == 1, "duplicate keys and case-sensitive JSON")
+    fs.delete(failed_tape)
+    fs.delete(empty_tape)
+    println("structured redaction helpers: passed")
+}

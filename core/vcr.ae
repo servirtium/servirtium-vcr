@@ -169,6 +169,8 @@ exports (
     icmp_aether, sort_lines, normalize_recorded_headers,
     parse_one_interaction, parse_tape_file,
     use_handle,
+    redact_header, redact_query_param, redact_json_field,
+    redact_header_h, redact_query_param_h, redact_json_field_h,
     redact_h, unredact_h, remove_header_h, note_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
@@ -225,6 +227,7 @@ struct Interaction {
 }
 
 struct Redaction {
+    kind: int                // 0 literal, 1 header, 2 query parameter, 3 JSON key
     field: int
     pattern: string
     replacement: string
@@ -760,6 +763,7 @@ redaction_add(l: ptr, field: int, pattern: string, replacement: string, api: str
         return 0
     }
     r = malloc(sizeof(Redaction)) as *Redaction
+    r.kind = 0
     r.field = field
     r.pattern = string.copy(pattern)
     r.replacement = string.copy(replacement)
@@ -2638,6 +2642,8 @@ ensure_parent_dir(path: string) -> string {
 // retained as a fallback during the C→Aether migration.
 flush(tape_path: string) -> string {
     blob = emit_tape()
+    emit_err = config.get(slot(cur_key(), "emit_error"))
+    if emit_err != "" { return emit_err }
     derr = ensure_parent_dir(tape_path)
     if derr != "" { return derr }
     werr = fs.write(tape_path, blob)
@@ -2901,6 +2907,8 @@ har_import(har_path: string, tape_path: string) -> string {
 
     set_cur_key(key)
     blob = emit_tape()
+    emit_err = config.get(slot(cur_key(), "emit_error"))
+    if emit_err != "" { return emit_err }
     derr = ensure_parent_dir(tape_path)
     if derr != "" {
         list_reset(slot(key, "tape"))
@@ -3084,6 +3092,8 @@ canonical_check_tape(tape_path: string) -> string {
     perr = parse_tape_file(tape_path)
     if perr != "" { return perr }
     blob = emit_tape()
+    emit_err = config.get(slot(cur_key(), "emit_error"))
+    if emit_err != "" { return emit_err }
     list_reset(slot(key, "tape"))
     existing, eerr = fs.read(tape_path)
     if eerr != "" { return eerr }
@@ -3118,6 +3128,8 @@ flush_or_check(tape_path: string) -> string {
     // On-disk tape present. Build the in-memory tape and write to
     // the .actual sibling for inspection.
     blob = emit_tape()
+    emit_err = config.get(slot(cur_key(), "emit_error"))
+    if emit_err != "" { return emit_err }
     werr = fs.write(actual_path, blob)
     if werr != "" { return werr }
 
@@ -3141,6 +3153,8 @@ flush_or_check(tape_path: string) -> string {
 flush_and_fail_if_changed(tape_path: string) -> string {
     existing, eerr = fs.read(tape_path)
     blob = emit_tape()
+    emit_err = config.get(slot(cur_key(), "emit_error"))
+    if emit_err != "" { return emit_err }
 
     derr = ensure_parent_dir(tape_path)
     if derr != "" { return derr }
@@ -3195,6 +3209,59 @@ redact(field: int, pattern: string, replacement: string) -> string {
     ok = vcr_add_redaction(field, pattern, replacement)
     if ok == 0 { return vcr_load_err() }
     return ""
+}
+
+// Structured recording rules share storage, reset behaviour and registration
+// order with literal rules. Only the emitter applies them; forwarding is intact.
+structured_redaction(kind: int, field: int, name: string, replacement: string) -> string {
+    if string.length(name) == 0 { return "redaction name must not be empty" }
+    if kind == 1 && field != FIELD_REQUEST_HEADERS && field != FIELD_RESPONSE_HEADERS {
+        return "header redaction requires a header field"
+    }
+    if kind == 3 && field != FIELD_REQUEST_BODY && field != FIELD_RESPONSE_BODY {
+        return "JSON redaction requires a body field"
+    }
+    if kind == 1 {
+        i = 0
+        while i < string.length(name) {
+            c = string.char_at(name, i)
+            if c <= 32 || c >= 127 || c == 92 || string.contains("()<>@,;:\"/[]?={}", string.substring(name, i, i + 1)) == 1 {
+                return "invalid header name"
+            }
+            i = i + 1
+        }
+        if string.contains(replacement, "\r") == 1 || string.contains(replacement, "\n") == 1 {
+            return "header replacement must be a single line"
+        }
+    }
+    r = malloc(sizeof(Redaction)) as *Redaction
+    r.kind = kind
+    r.field = field
+    r.pattern = string.copy(name)
+    r.replacement = string.copy(replacement)
+    list_add_raw(redactions(), r)
+    return ""
+}
+redact_header(field: int, name: string, replacement: string) -> string {
+    return structured_redaction(1, field, name, replacement)
+}
+redact_query_param(name: string, replacement: string) -> string {
+    return structured_redaction(2, FIELD_PATH, name, replacement)
+}
+redact_json_field(field: int, name: string, replacement: string) -> string {
+    return structured_redaction(3, field, name, replacement)
+}
+redact_header_h(h: ptr, field: int, name: string, replacement: string) -> string {
+    set_cur_key(key_for(h))
+    return redact_header(field, name, replacement)
+}
+redact_query_param_h(h: ptr, name: string, replacement: string) -> string {
+    set_cur_key(key_for(h))
+    return redact_query_param(name, replacement)
+}
+redact_json_field_h(h: ptr, field: int, name: string, replacement: string) -> string {
+    set_cur_key(key_for(h))
+    return redact_json_field(field, name, replacement)
 }
 
 // Drop all registered redactions. Call between tests in the same
@@ -3503,15 +3570,177 @@ str_replace_all(src: string, pattern: string, replacement: string) -> string {
 
 // Apply every registered redaction whose field matches `field` to
 // `s`. No-op when no redactions registered.
-apply_redactions_for(s: string, field: int) -> string {
-    n = vcr_get_redaction_count()
-    if n == 0 { return s }
-    out = s
+// JSON bodies are validated before emission. Scan validated tokens to preserve
+// every byte outside selected values (including duplicate/escaped object keys).
+json_string_end(s: string, start: int) -> int {
+    i = start + 1
+    while i < string.length(s) {
+        c = string.char_at(s, i)
+        if c == 92 { i = i + 2 }
+        else if c == 34 { return i + 1 }
+        else { i = i + 1 }
+    }
+    return i
+}
+json_skip_space(s: string, start: int) -> int {
+    i = start
+    while i < string.length(s) {
+        c = string.char_at(s, i)
+        if c != 32 && c != 9 && c != 10 && c != 13 { return i }
+        i = i + 1
+    }
+    return i
+}
+json_value_end(s: string, start: int) -> int {
+    i = start
+    depth = 0
+    while i < string.length(s) {
+        c = string.char_at(s, i)
+        if c == 34 { i = json_string_end(s, i) }
+        else {
+            if depth == 0 && (c == 44 || c == 93 || c == 125 || c == 32 || c == 9 || c == 10 || c == 13) { return i }
+            if c == 91 || c == 123 { depth = depth + 1 }
+            if c == 93 || c == 125 { depth = depth - 1 }
+            i = i + 1
+            if depth == 0 && (c == 93 || c == 125) { return i }
+        }
+    }
+    return i
+}
+redact_json_text(s: string, name: string, replacement: string) -> string {
+    value = json.str(replacement)
+    quoted, _ = json.encode(value)
+    json.json_free(value)
+    out = string.copy("")
+    copied = 0
     i = 0
+    while i < string.length(s) {
+        if string.char_at(s, i) == 34 {
+            end = json_string_end(s, i)
+            colon = json_skip_space(s, end)
+            if colon < string.length(s) && string.char_at(s, colon) == 58 {
+                key, _ = json.parse(string.substring(s, i, end))
+                matches = string.equals(json.json_get_string_raw(key), name)
+                json.json_free(key)
+                if matches == 1 {
+                    start = json_skip_space(s, colon + 1)
+                    end = json_value_end(s, start)
+                    out = string_concat(out, string.substring(s, copied, start))
+                    out = string_concat(out, quoted)
+                    copied = end
+                }
+            }
+            i = end
+        } else { i = i + 1 }
+    }
+    return string_concat(out, string.substring(s, copied, string.length(s)))
+}
+
+hex_digit(c: int) -> int {
+    if c >= 48 && c <= 57 { return c - 48 }
+    if c >= 65 && c <= 70 { return c - 55 }
+    if c >= 97 && c <= 102 { return c - 87 }
+    return -1
+}
+query_decode(s: string) -> string {
+    out = string.copy("")
+    i = 0
+    while i < string.length(s) {
+        c = string.char_at(s, i)
+        if c == 43 { out = string_concat(out, " ") }
+        else if c == 37 && i + 2 < string.length(s) {
+            a = hex_digit(string.char_at(s, i + 1))
+            b = hex_digit(string.char_at(s, i + 2))
+            if a >= 0 && b >= 0 {
+                out = string_concat(out, string.from_char(a * 16 + b))
+                i = i + 2
+            } else { out = string_concat(out, "%") }
+        } else { out = string_concat(out, string.substring(s, i, i + 1)) }
+        i = i + 1
+    }
+    return out
+}
+query_encode(s: string) -> string {
+    out = string.copy("")
+    digits = "0123456789ABCDEF"
+    i = 0
+    while i < string.length(s) {
+        c = string.char_at(s, i)
+        if (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 45 || c == 46 || c == 95 || c == 126 {
+            out = string_concat(out, string.substring(s, i, i + 1))
+        } else {
+            out = string_concat(out, "%")
+            a = c / 16
+            b = c % 16
+            out = string_concat(out, string.substring(digits, a, a + 1))
+            out = string_concat(out, string.substring(digits, b, b + 1))
+        }
+        i = i + 1
+    }
+    return out
+}
+redact_query_text(s: string, name: string, replacement: string) -> string {
+    q = string.index_of(s, "?")
+    if q < 0 { return s }
+    limit = string.index_of_from(s, "#", q)
+    if limit < 0 { limit = string.length(s) }
+    out = string.substring(s, 0, q + 1)
+    i = q + 1
+    while i < limit {
+        end = string.index_of_from(s, "&", i)
+        if end < 0 || end > limit { end = limit }
+        eq = string.index_of_from(s, "=", i)
+        if eq < 0 || eq > end { eq = end }
+        if query_decode(string.substring(s, i, eq)) == name {
+            out = string_concat(out, string.substring(s, i, eq))
+            out = string_concat(out, "=")
+            out = string_concat(out, query_encode(replacement))
+        } else { out = string_concat(out, string.substring(s, i, end)) }
+        if end < limit { out = string_concat(out, "&") }
+        i = end + 1
+    }
+    return string_concat(out, string.substring(s, limit, string.length(s)))
+}
+redact_header_text(s: string, name: string, replacement: string) -> string {
+    out = string.copy("")
+    i = 0
+    n = string.length(s)
     while i < n {
-        if vcr_get_redaction_field(i) == field {
-            out = str_replace_all(out, vcr_get_redaction_pattern(i),
-                                       vcr_get_redaction_replacement(i))
+        end = string.index_of_from(s, "\n", i)
+        if end < 0 { end = n }
+        line_end = end
+        if line_end > i && string.char_at(s, line_end - 1) == 13 { line_end = line_end - 1 }
+        colon = string.index_of_from(s, ":", i)
+        if colon >= i && colon < line_end && icmp_aether(string.substring(s, i, colon), name) == 0 {
+            out = string_concat(out, string.substring(s, i, colon + 1))
+            out = string_concat(out, " ")
+            out = string_concat(out, replacement)
+            out = string_concat(out, string.substring(s, line_end, end))
+        } else { out = string_concat(out, string.substring(s, i, end)) }
+        if end < n { out = string_concat(out, "\n") }
+        i = end + 1
+    }
+    return out
+}
+apply_redactions_for(s: string, field: int) -> string {
+    out = s
+    l = redactions()
+    i = 0
+    while i < list_size(l) {
+        r = list_get_raw(l, i) as *Redaction
+        if r.field == field {
+            if r.kind == 0 { out = str_replace_all(out, r.pattern, r.replacement) }
+            if r.kind == 1 { out = redact_header_text(out, r.pattern, r.replacement) }
+            if r.kind == 2 { out = redact_query_text(out, r.pattern, r.replacement) }
+            if r.kind == 3 && string.length(out) > 0 {
+                tree, err = json.parse(out)
+                if err != "" || tree == null {
+                    config.put(slot(cur_key(), "emit_error"), "JSON field redaction requires valid JSON")
+                    return ""
+                }
+                json.json_free(tree)
+                out = redact_json_text(out, r.pattern, r.replacement)
+            }
         }
         i = i + 1
     }
@@ -3758,6 +3987,7 @@ emit_one_interaction(i: int) -> string {
 // Equivalent to the old C emit_tape_to_fp(fp), just delivering a
 // string instead of writing to FILE*.
 emit_tape() -> string {
+    config.put(slot(cur_key(), "emit_error"), "")
     build_normalization_map()
     n = vcr_get_tape_count()
     out = string.copy("")

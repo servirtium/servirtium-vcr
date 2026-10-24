@@ -185,6 +185,18 @@ public:
                       "redact");
     }
 
+    void redact_header(const std::string& name, const std::string& replacement = "[REDACTED]", Field field = static_cast<Field>(3)) {
+        detail::check(sv_redact_header_with(vcr_, static_cast<sv_field>(field), name.c_str(), replacement.c_str()), "redact_header");
+    }
+
+    void redact_query_param(const std::string& name, const std::string& replacement = "[REDACTED]", Field field = static_cast<Field>(1)) {
+        detail::check(sv_redact_query_param_with(vcr_, static_cast<sv_field>(field), name.c_str(), replacement.c_str()), "redact_query_param");
+    }
+
+    void redact_json_field(const std::string& name, const std::string& replacement = "[REDACTED]", Field field = static_cast<Field>(4)) {
+        detail::check(sv_redact_json_field_with(vcr_, static_cast<sv_field>(field), name.c_str(), replacement.c_str()), "redact_json_field");
+    }
+
     void unredact(Field field, const std::string& pattern, const std::string& replacement) {
         detail::check(sv_unredact(vcr_, static_cast<sv_field>(field), pattern.c_str(),
                                   replacement.c_str()),

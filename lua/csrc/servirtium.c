@@ -56,6 +56,12 @@ extern void  aether_vcr_embed_clear_last_error(void *handle);
 /* config / mutation */
 extern char *aether_vcr_embed_redact(void *h, int field, const char *pat,
                                      const char *repl);
+extern char *aether_vcr_embed_redact_header(void *h, int field, const char *pat,
+                                     const char *repl);
+extern char *aether_vcr_embed_redact_query_param(void *h, int field, const char *pat,
+                                     const char *repl);
+extern char *aether_vcr_embed_redact_json_field(void *h, int field, const char *pat,
+                                     const char *repl);
 extern char *aether_vcr_embed_unredact(void *h, int field, const char *pat,
                                        const char *repl);
 extern char *aether_vcr_embed_remove_header(void *h, int field, const char *name);
@@ -281,6 +287,31 @@ static int l_redact(lua_State *L)
     const char *repl = luaL_checkstring(L, 4);
     return push_owned_string(L, aether_vcr_embed_redact(h, field, pat, repl));
 }
+static int l_redact_header(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int field = (int)luaL_checkinteger(L, 2);
+    const char *pat  = luaL_checkstring(L, 3);
+    const char *repl = luaL_checkstring(L, 4);
+    return push_owned_string(L, aether_vcr_embed_redact_header(h, field, pat, repl));
+}
+static int l_redact_query_param(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int field = (int)luaL_checkinteger(L, 2);
+    const char *pat  = luaL_checkstring(L, 3);
+    const char *repl = luaL_checkstring(L, 4);
+    return push_owned_string(L, aether_vcr_embed_redact_query_param(h, field, pat, repl));
+}
+static int l_redact_json_field(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int field = (int)luaL_checkinteger(L, 2);
+    const char *pat  = luaL_checkstring(L, 3);
+    const char *repl = luaL_checkstring(L, 4);
+    return push_owned_string(L, aether_vcr_embed_redact_json_field(h, field, pat, repl));
+}
+
 
 /* unredact(handle, field, pat, repl) -> string (empty == ok) */
 static int l_unredact(lua_State *L)
@@ -417,6 +448,9 @@ static const luaL_Reg servirtium_funcs[] = {
     {"stop_and_flush_fail_if_changed",  l_stop_and_flush_fail_if_changed},
     {"stop_and_flush_or_check",         l_stop_and_flush_or_check},
     {"redact",                          l_redact},
+    {"redact_header", l_redact_header},
+    {"redact_query_param", l_redact_query_param},
+    {"redact_json_field", l_redact_json_field},
     {"unredact",                        l_unredact},
     {"remove_header",                   l_remove_header},
     {"match_header",                    l_match_header},

@@ -34,6 +34,18 @@ module Servirtium =
     let record (upstreamBase: string) (tapePath: string) : VcrServer =
         Vcr.Record(tapePath, upstreamBase).Start()
 
+    /// Configure a request redaction before starting the record builder.
+    let redactHeader (name: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.RedactHeader(name)
+
+    /// Configure a request redaction before starting the record builder.
+    let redactQueryParam (name: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.RedactQueryParam(name)
+
+    /// Configure a request redaction before starting the record builder.
+    let redactJsonField (name: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.RedactJsonField(name)
+
     // ---- loan patterns ----------------------------------------------------
     // The F#-idiomatic way to scope a VCR: run `body` against a live server and
     // dispose it on every path, including exceptions. In record mode disposal is

@@ -70,3 +70,26 @@ RSpec.describe 'Servirtium record' do
     expect(contents).to include('Establishes the session the next calls reuse')
   end
 end
+
+
+RSpec.describe 'Structured redaction helpers' do
+  it 'forwards original credentials and scrubs the tape' do
+    require 'open3'
+    fixture = File.expand_path('../../../core_tests/redaction_fixture.py', __dir__)
+    Dir.mktmpdir('vcr-helpers-') do |dir|
+      run = lambda do |*args|
+        output, status = Open3.capture2e('python3', fixture, *args)
+        expect(status.success?).to be(true), output
+        output.strip
+      end
+      upstream = run.call('start', dir)
+      Servirtium.record(File.join(dir, 'tape.md'), upstream)
+        .redact_header('Authorization').redact_query_param('password').redact_json_field('secretKey')
+        .start do |rec|
+          run.call('drive', dir, rec.base_url)
+          expect(rec.last_kind).to eq(:ok)
+        end
+      run.call('check', dir)
+    end
+  end
+end

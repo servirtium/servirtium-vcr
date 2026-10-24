@@ -43,6 +43,9 @@ extern int   aether_vcr_embed_last_index(sv_handle h);
 extern void  aether_vcr_embed_clear_last_error(sv_handle h);
 
 extern char *aether_vcr_embed_redact(sv_handle h, int field, const char *pat, const char *repl);
+extern char *aether_vcr_embed_redact_header(sv_handle h, int field, const char *pat, const char *repl);
+extern char *aether_vcr_embed_redact_query_param(sv_handle h, int field, const char *pat, const char *repl);
+extern char *aether_vcr_embed_redact_json_field(sv_handle h, int field, const char *pat, const char *repl);
 extern char *aether_vcr_embed_unredact(sv_handle h, int field, const char *pat, const char *repl);
 extern char *aether_vcr_embed_normalize_whole_tape(sv_handle h, const char *pat, const char *name);
 extern char *aether_vcr_embed_redact_whole_tape(sv_handle h, const char *pat, const char *repl);
@@ -241,6 +244,30 @@ sv_str sv_redact(sv_vcr *vcr, sv_field field, const char *pattern,
                  const char *replacement) {
     if (vcr == NULL) return empty_str();
     return adopt(aether_vcr_embed_redact(vcr->h, (int)field, pattern, replacement));
+}
+
+sv_str sv_redact_header(sv_vcr *vcr, const char *name) {
+    return sv_redact_header_with(vcr, (sv_field)3, name, "[REDACTED]");
+}
+sv_str sv_redact_header_with(sv_vcr *vcr, sv_field field, const char *name, const char *replacement) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_redact_header(vcr->h, (int)field, name, replacement));
+}
+
+sv_str sv_redact_query_param(sv_vcr *vcr, const char *name) {
+    return sv_redact_query_param_with(vcr, (sv_field)1, name, "[REDACTED]");
+}
+sv_str sv_redact_query_param_with(sv_vcr *vcr, sv_field field, const char *name, const char *replacement) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_redact_query_param(vcr->h, (int)field, name, replacement));
+}
+
+sv_str sv_redact_json_field(sv_vcr *vcr, const char *name) {
+    return sv_redact_json_field_with(vcr, (sv_field)4, name, "[REDACTED]");
+}
+sv_str sv_redact_json_field_with(sv_vcr *vcr, sv_field field, const char *name, const char *replacement) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_redact_json_field(vcr->h, (int)field, name, replacement));
 }
 
 sv_str sv_unredact(sv_vcr *vcr, sv_field field, const char *pattern,
