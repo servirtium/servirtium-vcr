@@ -289,6 +289,11 @@ port helper under `target/test-tools/`; every binding's `.tests.ae` depends on
 that leaf. Invoke those binaries directly, without a Python interpreter.
 `core_tests/.diagnostics.ae` loads the built `.so` via `std.dl` and typed C
 function pointers (`native_probe.ae`), preserving the black-box ABI boundary.
+It and `release/.tests.ae` use `aether.program_test()` with `env()` for artifact
+paths and normal test reporting; this needs the pinned aeb v0.337 or later.
+Resolve `_get` and `dep_artifact` before entering the test builder, then pass
+those values to `env`: inside the builder, the implicit context is its config.
+Shared fixtures use `serve_until` and monotonic deadlines from `fixture_support`.
 The aeb manual-link path emits imported modules separately: keep user-module
 helper names distinct, including private functions, and avoid libc names such
 as `open`, `listen` and `pause`. Programs importing helper modules with FS/OS

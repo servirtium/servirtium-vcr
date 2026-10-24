@@ -3921,8 +3921,9 @@ emit_code_block(body: string) -> string {
 // Header-block newlines delimit header lines; they are not payload bytes.
 // Keep their canonical form while body blocks preserve terminal newlines.
 emit_header_block(headers: string) -> string {
+    const NEWLINE = 10
     end = string.length(headers)
-    while end > 0 && string.char_at(headers, end - 1) == 10 { end -= 1 }
+    while end > 0 && string.char_at(headers, end - 1) == NEWLINE { end -= 1 }
     return emit_code_block(string.substring(headers, 0, end))
 }
 

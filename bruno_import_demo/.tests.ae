@@ -8,9 +8,9 @@ aeb(cap) {
         dep("bruno_import_demo/.build.ae")
         root = _get("root"); td = _get("target_dir")
         err = fs.mkdir_p(td)
-        if err != "" { bldr.fail(builder_context(), err); return 1 }
+        if err != "" { bldr.fail(err); return 1 }
         rc = os.system("TAPE=\"${td}/widgets.md\" \"${root}/bruno_import_demo/run-demo.sh\"")
-        if rc != 0 { bldr.fail(builder_context(), "Bruno import/record/replay demo failed"); return 1 }
+        if rc != 0 { bldr.fail("Bruno import/record/replay demo failed"); return 1 }
         println("test: Aether widget service and Bruno round trip")
     }
 }

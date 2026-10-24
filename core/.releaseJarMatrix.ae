@@ -18,7 +18,8 @@ aeb(cap) {
         root = string.concat(srcdir, "/..")
         tag_text, read_err = fs.read(string.concat(root, "/SERVIRTIUM_VCR_VERSION"))
         if string.length(read_err) > 0 {
-            bldr.fail(builder_context(), "cannot read SERVIRTIUM_VCR_VERSION")
+            bldr.fail("cannot read SERVIRTIUM_VCR_VERSION")
+            return 1
         }
         tag = string.trim(tag_text)
         target = bldr.target_dir(builder_context())
@@ -31,12 +32,12 @@ aeb(cap) {
         p4 = string.concat(root, string.concat("/release/dist/libservirtium_vcr-", string.concat(tag, "-macos-arm64.dylib")))
         p5 = string.concat(root, string.concat("/release/dist/libservirtium_vcr-", string.concat(tag, "-windows-x86_64.dll")))
         p6 = string.concat(root, string.concat("/release/dist/libservirtium_vcr-", string.concat(tag, "-windows-arm64.dll")))
-        if fs.exists(p1) == 0 { bldr.fail(builder_context(), string.concat("release jar library missing: ", p1)) }
-        if fs.exists(p2) == 0 { bldr.fail(builder_context(), string.concat("release jar library missing: ", p2)) }
-        if fs.exists(p3) == 0 { bldr.fail(builder_context(), string.concat("release jar library missing: ", p3)) }
-        if fs.exists(p4) == 0 { bldr.fail(builder_context(), string.concat("release jar library missing: ", p4)) }
-        if fs.exists(p5) == 0 { bldr.fail(builder_context(), string.concat("release jar library missing: ", p5)) }
-        if fs.exists(p6) == 0 { bldr.fail(builder_context(), string.concat("release jar library missing: ", p6)) }
+        if fs.exists(p1) == 0 { bldr.fail(string.concat("release jar library missing: ", p1)); return 1 }
+        if fs.exists(p2) == 0 { bldr.fail(string.concat("release jar library missing: ", p2)); return 1 }
+        if fs.exists(p3) == 0 { bldr.fail(string.concat("release jar library missing: ", p3)); return 1 }
+        if fs.exists(p4) == 0 { bldr.fail(string.concat("release jar library missing: ", p4)); return 1 }
+        if fs.exists(p5) == 0 { bldr.fail(string.concat("release jar library missing: ", p5)); return 1 }
+        if fs.exists(p6) == 0 { bldr.fail(string.concat("release jar library missing: ", p6)); return 1 }
 
         o1 = string.concat(libdir, "/libservirtium_vcr-linux-x86_64.so")
         o2 = string.concat(libdir, "/libservirtium_vcr-linux-arm64.so")

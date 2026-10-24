@@ -31,15 +31,18 @@ _stage_release_native(root: string, source_name: string, rid: string, native_nam
     destination_dir = string.concat(root, string.concat("/dotnet/Servirtium.Vcr/native/", rid))
     destination = string.concat(destination_dir, string.concat("/", native_name))
     if fs.exists(source) == 0 {
-        bldr.fail(builder_context(), string.concat("release NuGet library missing: ", source))
+        bldr.fail(string.concat("release NuGet library missing: ", source))
+        return ""
     } else {
         mkdir_err = fs.mkdir_p(destination_dir)
         if string.length(mkdir_err) > 0 {
-            bldr.fail(builder_context(), string.concat("cannot stage NuGet library dir: ", destination_dir))
+            bldr.fail(string.concat("cannot stage NuGet library dir: ", destination_dir))
+            return ""
         } else {
             copied, _copy_kind, copy_err = fs.copy(source, destination)
             if copied == 0 {
-                bldr.fail(builder_context(), string.concat("cannot stage NuGet library: ", copy_err))
+                bldr.fail(string.concat("cannot stage NuGet library: ", copy_err))
+                return ""
             }
         }
     }
@@ -52,7 +55,8 @@ aeb(cap) {
         root = string.concat(srcdir, "/../..")
         tag_text, read_err = fs.read(string.concat(root, "/SERVIRTIUM_VCR_VERSION"))
         if string.length(read_err) > 0 {
-            bldr.fail(builder_context(), "cannot read SERVIRTIUM_VCR_VERSION")
+            bldr.fail("cannot read SERVIRTIUM_VCR_VERSION")
+            return 1
         }
         tag = string.trim(tag_text)
 

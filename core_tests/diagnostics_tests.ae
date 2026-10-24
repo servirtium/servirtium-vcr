@@ -2,6 +2,7 @@
 import core_tests.native_probe
 import core_tests.diagnostic_fixture
 import core_tests.fixture_support
+import core_tests.fixture_support (check)
 import std.bytes
 import std.fs
 import std.json
@@ -10,18 +11,17 @@ import std.os
 import std.string
 var root = ""
 struct Server { handle: ptr; base: string }
-assert_case(ok: bool, detail: string) { fixture_support.check(ok, detail) }
 field(node: ptr, key: string) -> ptr { return json.object_get(node, key)! }
 text(node: ptr, key: string) -> string { return json.get_string(field(node, key))! }
 number(node: ptr, key: string) -> int { return json.json_get_int(field(node, key)) }
-first(h: ptr) -> ptr { return json.array_get(json.parse(native_probe.events(h, 1))!, 0)! }
+first_event(events: ptr) -> ptr { return json.array_get(events, 0)! }
 server(file: string) -> Server {
     tape = file
     if tape == "" { tape = "${root}/core_tests/diagnostics/playback.md" }
     h = native_probe.open_playback(tape)
-    assert_case(h != null, "open ABI scenario")
+    check(h != null, "open ABI scenario")
     native_probe.context(h, "UsersTest.rejectsAdmin", "tests/users.test", 42)
-    assert_case(native_probe.start(h) >= 0, "start ABI scenario")
+    check(native_probe.start(h) >= 0, "start ABI scenario")
     return Server { handle: h, base: "http://127.0.0.1:${native_probe.port(h)}" }
 }
 post(s: Server, body: string, headers: ptr) -> int {
@@ -31,44 +31,48 @@ post(s: Server, body: string, headers: ptr) -> int {
 retrieved(h: ptr, a: int, b: int) {
     data = json.parse(native_probe.events(h, 0))!
     defer json.json_free(data)
-    assert_case(json.json_array_size(data) == 2, "two retained events")
-    assert_case(number(json.array_get(data, 0)!, "retrieved") == a && number(json.array_get(data, 1)!, "retrieved") == b, "event acknowledgements")
+    check(json.json_array_size(data) == 2, "two retained events")
+    check(number(json.array_get(data, 0)!, "retrieved") == a && number(json.array_get(data, 1)!, "retrieved") == b, "event acknowledgements")
 }
 retention() {
     s = server(""); h = s.handle
     defer native_probe.stop(h)
-    assert_case(native_probe.assert_clean(h) == "", "initially clean")
+    check(native_probe.assert_clean(h) == "", "initially clean")
     diagnostic_fixture.drive(s.base)
-    assert_case(native_probe.kind(h) == 0, "successful request updates latest outcome")
+    check(native_probe.kind(h) == 0, "successful request updates latest outcome")
     retrieved(h, 0, 0)
     data = json.parse(native_probe.events(h, 0))!
     defer json.json_free(data)
     item = json.array_get(data, 0)!
-    assert_case(text(item, "test") == "UsersTest.rejectsAdmin" && number(item, "source_line") == 42, "ABI coordinates")
-    assert_case(text(field(item, "expected"), "body") == "{\"role\":\"reader\"}" && text(field(item, "actual"), "body") == "{\"role\":\"admin\"}", "diagnostic bodies")
-    assert_case(number(item, "kind") == 6 && number(item, "interaction") == 0, "body mismatch coordinates")
+    check(text(item, "test") == "UsersTest.rejectsAdmin" && number(item, "source_line") == 42, "ABI coordinates")
+    check(text(field(item, "expected"), "body") == "{\"role\":\"reader\"}" && text(field(item, "actual"), "body") == "{\"role\":\"admin\"}", "diagnostic bodies")
+    check(number(item, "kind") == 6 && number(item, "interaction") == 0, "body mismatch coordinates")
     diff = text(item, "diff")
-    assert_case(string.contains(diff, "- {\"role\":\"reader\"}") == 1 && string.contains(diff, "+ {\"role\":\"admin\"}") == 1, "inline side-channel diff")
-    assert_case(native_probe.last(h, 0) == native_probe.last(h, 0), "observer reads are stable")
+    check(string.contains(diff, "- {\"role\":\"reader\"}") == 1 && string.contains(diff, "+ {\"role\":\"admin\"}") == 1, "inline side-channel diff")
+    check(native_probe.last(h, 0) == native_probe.last(h, 0), "observer reads are stable")
     retrieved(h, 0, 0)
     latest = native_probe.last(h, 1)
-    assert_case(string.contains(latest, "owner") == 1 && string.contains(latest, "users.test:42") == 1, "latest diagnostic")
+    check(string.contains(latest, "owner") == 1 && string.contains(latest, "users.test:42") == 1, "latest diagnostic")
     retrieved(h, 0, 1)
     native_probe.reset(h)
-    assert_case(string.contains(native_probe.last(h, 0), "owner") == 1, "reset retains failures")
+    check(string.contains(native_probe.last(h, 0), "owner") == 1, "reset retains failures")
     assertion = native_probe.assert_clean(h)
-    assert_case(string.contains(assertion, "admin") == 1 && string.contains(assertion, "owner") == 1, "assertion covers all events")
+    check(string.contains(assertion, "admin") == 1 && string.contains(assertion, "owner") == 1, "assertion covers all events")
     retrieved(h, 1, 1)
-    assert_case(native_probe.assert_clean(h) == assertion, "acknowledgement is not deletion")
+    check(native_probe.assert_clean(h) == assertion, "acknowledgement is not deletion")
     native_probe.context(h, "next test", "next.test", 7)
-    assert_case(native_probe.events(h, 0) == "[]" && native_probe.assert_clean(h) == "", "test boundary resets events")
+    check(native_probe.events(h, 0) == "[]" && native_probe.assert_clean(h) == "", "test boundary resets events")
     status, _body = diagnostic_fixture.request(s.base, "admin")
-    assert_case(status == 599 && number(first(h), "sequence") == 3, "monotonic sequence")
+    sequence_events = json.parse(native_probe.events(h, 1))!
+    defer json.json_free(sequence_events)
+    check(status == 599 && number(first_event(sequence_events), "sequence") == 3, "monotonic sequence")
     native_probe.clear(h)
-    assert_case(native_probe.events(h, 0) == "[]", "explicit clear")
+    check(native_probe.events(h, 0) == "[]", "explicit clear")
     native_probe.match_multiple(h, 1)
     status, _body = diagnostic_fixture.request(s.base, "admin")
-    assert_case(status == 599 && number(first(h), "candidate") == 1 && string.contains(native_probe.last(h, 0), "candidate") == 1, "match-multiple candidate")
+    candidate_events = json.parse(native_probe.events(h, 1))!
+    defer json.json_free(candidate_events)
+    check(status == 599 && number(first_event(candidate_events), "candidate") == 1 && string.contains(native_probe.last(h, 0), "candidate") == 1, "match-multiple candidate")
 }
 child(mode: string) {
     s = server(""); h = s.handle
@@ -83,88 +87,127 @@ stderr_checks() {
     const MODES[] = ["unread", "observed", "latest", "all", "boundary"]
     const COUNTS[] = [2, 2, 1, 0, 2]
     for i in 0..MODES.len {
-        args = list_new(); list_add(args, MODES[i])
+        args = list.new(); list.add(args, MODES[i])
         _out, errout, status, err = os.run_full(os.argv0(), args, null, "")
-        list_free(args)
-        assert_case(err == "" && status == 0, "diagnostic child ${MODES[i]}")
+        list.free(args)
+        check(err == "" && status == 0, "diagnostic child ${MODES[i]}")
         pieces = string.split(errout, "UNRETRIEVED REPLAY MISMATCH")
-        assert_case(string.array_size(pieces) - 1 == COUNTS[i], "stderr count for ${MODES[i]}")
+        check(string.array_size(pieces) - 1 == COUNTS[i], "stderr count for ${MODES[i]}")
         string.array_free(pieces)
-        if COUNTS[i] > 0 { assert_case(string.contains(errout, "UsersTest.rejectsAdmin") == 1 && string.contains(errout, "tests/users.test:42") == 1, "stderr retains old coordinates") }
+        if COUNTS[i] > 0 { check(string.contains(errout, "UsersTest.rejectsAdmin") == 1 && string.contains(errout, "tests/users.test:42") == 1, "stderr retains old coordinates") }
     }
 }
-projection() {
+credential_projection() {
     s = server(""); h = s.handle
-    assert_case(native_probe.unredact(h, 4, "reader", "restored-secret") == "", "unredact")
+    check(native_probe.unredact(h, 4, "reader", "restored-secret") == "", "unredact")
     headers = json.parse("{\"Authorization\":\"Bearer auth-secret\",\"Cookie\":\"session=cookie-secret\",\"X-Api-Key\":\"api-secret\"}")!
-    assert_case(post(s, "{\"role\":\"restored-secret\",\"password\":\"password-secret\",\"secretKey\":\"key-secret\"}", headers) == 599, "credential mismatch")
+    check(post(s, "{\"role\":\"restored-secret\",\"password\":\"password-secret\",\"secretKey\":\"key-secret\"}", headers) == 599, "credential mismatch")
     json.json_free(headers)
     encoded = native_probe.events(h, 1)
     const SECRETS[] = ["restored-secret", "password-secret", "key-secret", "auth-secret", "cookie-secret", "api-secret"]
-    for i in 0..SECRETS.len { assert_case(string.contains(encoded, SECRETS[i]) == 0, "secret leaked into diagnostics") }
-    assert_case(string.contains(encoded, "[REDACTED]") == 1, "redacted diagnostic")
-    native_probe.clear(h)
+    for i in 0..SECRETS.len { check(string.contains(encoded, SECRETS[i]) == 0, "secret leaked into diagnostics") }
+    check(string.contains(encoded, "[REDACTED]") == 1, "redacted diagnostic")
+    native_probe.stop(h)
+}
+binary_projection() {
+    s = server(""); h = s.handle
     binary = bytes.new(5)
     bytes.set(binary, 0, 255); bytes.set(binary, 1, 0); bytes.set(binary, 2, 97); bytes.set(binary, 3, 98); bytes.set(binary, 4, 99)
-    assert_case(post(s, bytes.string_from_ptr(bytes.data(binary), 5), null) == 599, "binary mismatch")
+    check(post(s, bytes.string_from_ptr(bytes.data(binary), 5), null) == 599, "binary mismatch")
     bytes.free(binary)
-    item = first(h)
-    assert_case(string.contains(text(item, "diff"), "binary") == 1 && string.contains(text(item, "diff"), "byte 0") == 1 && string.contains(text(field(item, "actual"), "body"), "binary body") == 1, "bounded binary diagnostic")
+    events = json.parse(native_probe.events(h, 1))!
+    defer json.json_free(events)
+    item = first_event(events)
+    check(string.contains(text(item, "diff"), "binary") == 1 && string.contains(text(item, "diff"), "byte 0") == 1 && string.contains(text(field(item, "actual"), "body"), "binary body") == 1, "bounded binary diagnostic")
     native_probe.stop(h)
+}
+large_projection() {
     dir = fs.make_temp_dir(os.temp_dir(), "vcr-diagnostic-")!
     defer fs.remove_tree(dir)
     golden = fs.read("${root}/core_tests/diagnostics/playback.md")!
     file = "${dir}/large.md"
-    prefix = string.pad_end("", 6000, 120)
-    assert_case(fs.write(file, string.replace_all(golden, "{\"role\":\"reader\"}", "${prefix}EXPECTED")) == "", "write large tape")
+    const PAD_X = 120 // 'x'
+    prefix = string.pad_end("", 6000, PAD_X)
+    check(fs.write(file, string.replace_all(golden, "{\"role\":\"reader\"}", "${prefix}EXPECTED")) == "", "write large tape")
     large = server(file)
-    assert_case(post(large, "${prefix}ACTUAL", null) == 599, "large mismatch")
+    check(post(large, "${prefix}ACTUAL", null) == 599, "large mismatch")
     encoded = native_probe.events(large.handle, 1)
-    item = json.array_get(json.parse(encoded)!, 0)!
+    events = json.parse(encoded)!
+    defer json.json_free(events)
+    item = first_event(events)
     diff = text(item, "diff")
-    assert_case(string.contains(diff, "byte 6000") == 1 && string.contains(diff, "EXPECTED") == 1 && string.contains(diff, "ACTUAL") == 1, "large diff coordinates")
-    assert_case(string.length(diff) < 1500 && string.length(encoded) < 14000, "bounded excerpts")
+    check(string.contains(diff, "byte 6000") == 1 && string.contains(diff, "EXPECTED") == 1 && string.contains(diff, "ACTUAL") == 1, "large diff coordinates")
+    check(string.length(diff) < 1500 && string.length(encoded) < 14000, "bounded excerpts")
     native_probe.stop(large.handle)
-    prefix = string.pad_end("", 4095, 97)
-    assert_case(fs.write(file, string.replace_all(golden, "{\"role\":\"reader\"}", "${prefix}éEXPECTED")) == "", "write UTF-8 tape")
+}
+utf8_projection() {
+    dir = fs.make_temp_dir(os.temp_dir(), "vcr-diagnostic-")!
+    defer fs.remove_tree(dir)
+    golden = fs.read("${root}/core_tests/diagnostics/playback.md")!
+    file = "${dir}/scenario.md"
+    const PAD_A = 97 // 'a'
+    prefix = string.pad_end("", 4095, PAD_A)
+    check(fs.write(file, string.replace_all(golden, "{\"role\":\"reader\"}", "${prefix}éEXPECTED")) == "", "write UTF-8 tape")
     utf8 = server(file)
-    assert_case(post(utf8, "${prefix}éACTUAL", null) == 599, "UTF-8 mismatch")
-    item = first(utf8.handle); diff = text(item, "diff")
-    assert_case(string.contains(diff, "EXPECTED") == 1 && string.contains(diff, "ACTUAL") == 1 && string.contains(text(field(item, "actual"), "body"), "[binary") == 0, "UTF-8 boundary")
+    check(post(utf8, "${prefix}éACTUAL", null) == 599, "UTF-8 mismatch")
+    events = json.parse(native_probe.events(utf8.handle, 1))!
+    defer json.json_free(events)
+    item = first_event(events); diff = text(item, "diff")
+    check(string.contains(diff, "EXPECTED") == 1 && string.contains(diff, "ACTUAL") == 1 && string.contains(text(field(item, "actual"), "body"), "[binary") == 0, "UTF-8 boundary")
     native_probe.stop(utf8.handle)
+}
+semantic_projection() {
     semantic = server("")
     native_probe.match_json(semantic.handle, 1)
-    assert_case(post(semantic, "{ \"role\" : \"reader\" }", null) == 200 && native_probe.events(semantic.handle, 0) == "[]", "semantic match has no diagnostic")
-    assert_case(post(semantic, "{\"role\":\"reader\"}", null) == 599, "exhausted tape")
-    item = first(semantic.handle)
-    assert_case(number(item, "kind") == 5 && number(item, "interaction") == 1 && text(field(item, "expected"), "method") == "" && string.contains(text(item, "diff"), "no expected interaction") == 1, "exhaustion diagnostic")
+    check(post(semantic, "{ \"role\" : \"reader\" }", null) == 200 && native_probe.events(semantic.handle, 0) == "[]", "semantic match has no diagnostic")
+    check(post(semantic, "{\"role\":\"reader\"}", null) == 599, "exhausted tape")
+    events = json.parse(native_probe.events(semantic.handle, 1))!
+    defer json.json_free(events)
+    item = first_event(events)
+    check(number(item, "kind") == 5 && number(item, "interaction") == 1 && text(field(item, "expected"), "method") == "" && string.contains(text(item, "diff"), "no expected interaction") == 1, "exhaustion diagnostic")
     native_probe.stop(semantic.handle)
-    assert_case(fs.write(file, string.replace_all(golden, "### Request headers recorded for playback:\n\n```\n```", "### Request headers recorded for playback:\n\n```\nX-Choice: expected\n```")) == "", "write header tape")
+}
+selected_header_projection() {
+    dir = fs.make_temp_dir(os.temp_dir(), "vcr-diagnostic-")!
+    defer fs.remove_tree(dir)
+    golden = fs.read("${root}/core_tests/diagnostics/playback.md")!
+    file = "${dir}/scenario.md"
+    check(fs.write(file, string.replace_all(golden, "### Request headers recorded for playback:\n\n```\n```", "### Request headers recorded for playback:\n\n```\nX-Choice: expected\n```")) == "", "write header tape")
     selected = server(file)
     native_probe.match_header(selected.handle, "X-Choice")
     headers = json.parse("{\"X-Choice\":\"actual\",\"X-Noise\":\"ignore-me\"}")!
     for multiple in 0..2 {
         native_probe.clear(selected.handle); native_probe.match_multiple(selected.handle, multiple)
-        assert_case(post(selected, "{\"role\":\"reader\"}", headers) == 599, "selected-header mismatch")
-        item = first(selected.handle); diff = string.to_lower(text(item, "diff"))
-        assert_case(string.contains(diff, "x-choice") == 1 && string.contains(diff, "actual") == 1 && string.contains(diff, "expected") == 1, "selected-header diff")
-        assert_case(string.contains(diff, "ignore-me") == 0 && string.contains(diff, "accept") == 0 && number(item, "candidate") == multiple, "unselected headers excluded")
+        check(post(selected, "{\"role\":\"reader\"}", headers) == 599, "selected-header mismatch")
+        events = json.parse(native_probe.events(selected.handle, 1))!
+        defer json.json_free(events)
+        item = first_event(events); diff = string.to_lower(text(item, "diff"))
+        check(string.contains(diff, "x-choice") == 1 && string.contains(diff, "actual") == 1 && string.contains(diff, "expected") == 1, "selected-header diff")
+        check(string.contains(diff, "ignore-me") == 0 && string.contains(diff, "accept") == 0 && number(item, "candidate") == multiple, "unselected headers excluded")
     }
     json.json_free(headers); native_probe.stop(selected.handle)
+}
+handle_isolation() {
     a = server(""); b = server("")
     native_probe.context(b.handle, "other test", "other.test", 9)
     diagnostic_fixture.drive(a.base)
-    assert_case(native_probe.events(b.handle, 0) == "[]", "independent handles")
-    assert_case(post(b, "{\"role\":\"invalid\"}", null) == 599, "second handle mismatch")
-    assert_case(text(first(a.handle), "test") == "UsersTest.rejectsAdmin" && text(first(b.handle), "test") == "other test", "independent coordinates")
+    check(native_probe.events(b.handle, 0) == "[]", "independent handles")
+    check(post(b, "{\"role\":\"invalid\"}", null) == 599, "second handle mismatch")
+    a_events = json.parse(native_probe.events(a.handle, 1))!
+    defer json.json_free(a_events)
+    b_events = json.parse(native_probe.events(b.handle, 1))!
+    defer json.json_free(b_events)
+    check(text(first_event(a_events), "test") == "UsersTest.rejectsAdmin" && text(first_event(b_events), "test") == "other test", "independent coordinates")
     native_probe.stop(a.handle); native_probe.stop(b.handle)
 }
 main() {
     root = os.getenv("SVCR_TEST_ROOT")
-    assert_case(string.length(root) > 0, "SVCR_TEST_ROOT is required")
+    check(string.length(root) > 0, "SVCR_TEST_ROOT is required")
     native_probe.load(os.getenv("SERVIRTIUM_VCR_LIB"))
     mode = os.args_get(1)
     if mode != "" { child(mode); return }
-    retention(); stderr_checks(); projection()
+    retention(); stderr_checks()
+    credential_projection(); binary_projection(); large_projection(); utf8_projection()
+    semantic_projection(); selected_header_projection(); handle_isolation()
     println("diagnostic C ABI: passed")
 }

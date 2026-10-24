@@ -1,17 +1,18 @@
 // C ABI black-box contract: load and call the built library through std.dl.
 import bldr
 import aether
-import aether (source, output, lib, caps)
-import std.os
+import aether (source, lib, caps)
+import bldr (env)
 
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
-        aether.program() { source("diagnostics_tests.ae"); output("diagnostics-tests"); lib(".."); caps("fs,net,os,extern") }
-        root = _get("root"); td = _get("target_dir")
+        root = _get("root")
         library = dep_artifact("core/.build.ae", "shared_lib")
-        rc = os.system("SVCR_TEST_ROOT=\"${root}\" SERVIRTIUM_VCR_LIB=\"${library}\" \"${td}/bin/diagnostics-tests\"")
-        if rc != 0 { return 1 }
-        println("test: replay diagnostic side channel")
+        aether.program_test() {
+            source("diagnostics_tests.ae"); lib(".."); caps("fs,net,os,extern")
+            env("SVCR_TEST_ROOT", root)
+            env("SERVIRTIUM_VCR_LIB", library)
+        }
     }
 }

@@ -6,21 +6,20 @@ import std.fs
 
 aeb(cap) {
     bldr.build() {
-        aether.program() { source("redaction_fixture.ae"); output("redaction_fixture"); lib(".."); caps("fs,net,os,extern") }
-        aether.program() { source("secret_fixture.ae"); output("secret_fixture"); lib(".."); caps("fs,net,os,extern") }
-        aether.program() { source("diagnostic_fixture.ae"); output("diagnostic_fixture"); lib(".."); caps("fs,net,os,extern") }
-        aether.program() { source("test_upstream.ae"); output("test_upstream"); lib(".."); caps("fs,net,os,extern") }
-        aether.program() { source("free_port.ae"); output("free_port"); lib(".."); caps("fs,net,os,extern") }
         root = _get("root"); td = _get("target_dir")
         err = fs.mkdir_p("${root}/target/test-tools")
-        if err != "" { bldr.fail(builder_context(), err) }
+        if err != "" { bldr.fail(err); return 1 }
+        const EXECUTABLE_MODE = 493 // 0755
         const TOOLS[] = ["redaction_fixture", "secret_fixture", "diagnostic_fixture", "test_upstream", "free_port"]
         for i in 0..TOOLS.len {
             tool = TOOLS[i]
+            capabilities = "fs,net,os,extern"
+            if tool == "free_port" { capabilities = "net" }
+            aether.program() { source("${tool}.ae"); output(tool); lib(".."); caps(capabilities) }
             _copied, _kind, err = fs.copy("${td}/bin/${tool}", "${root}/target/test-tools/${tool}")
-            if err != "" { bldr.fail(builder_context(), err) }
-            _changed, _mode_kind, err = fs.chmod("${root}/target/test-tools/${tool}", 493)
-            if err != "" { bldr.fail(builder_context(), err) }
+            if err != "" { bldr.fail(err); return 1 }
+            _changed, _mode_kind, err = fs.chmod("${root}/target/test-tools/${tool}", EXECUTABLE_MODE)
+            if err != "" { bldr.fail(err); return 1 }
         }
     }
 }

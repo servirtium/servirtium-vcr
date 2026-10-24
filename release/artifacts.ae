@@ -75,9 +75,9 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
         err = check_manifest(raw, manifest)
         if err != "" { return err }
         if string.starts_with(platform, "linux-") == 1 {
-            args = list_new(); list_add(args, "-d"); list_add(args, raw)
+            args = list.new(); list.add(args, "-d"); list.add(args, raw)
             dynamic, status, run_err = os.run_capture("readelf", args, null)
-            list_free(args)
+            list.free(args)
             if run_err != "" || status != 0 { return "readelf failed for ${raw}: ${run_err}" }
             needed = replace_pattern("(?m)^.*[(]NEEDED[)].*\\[([^]]+)\\].*$", dynamic, "NEEDED:$1")!
             libc = "libc.so.6"; other = "libc.so"
@@ -110,7 +110,7 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
         symbol, err = dl.symbol(library, "aether_${name}")
         if symbol == null || err != "" { return "missing Linux ABI export: aether_${name}" }
     }
-    println("Verified nine libraries, Windows import libraries, nine ae-add packages, checksums, and ${count} Linux ABI exports.")
+    println("Verified ${PLATFORMS.len} libraries, Windows import libraries, ${PLATFORMS.len} ae-add packages, checksums, and ${count} Linux ABI exports.")
     return ""
 }
 check_packages(dist: string) -> string {

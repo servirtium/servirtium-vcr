@@ -42,9 +42,9 @@ aeb(cap) {
         // native resources from a previous Maven build.
         root_j = _get("root")
         cleaned = os.system("cd \"${root_j}/java\" && mvn -q clean")
-        if cleaned != 0 { bldr.fail(builder_context(), "java package: Maven clean failed"); return 1 }
+        if cleaned != 0 { bldr.fail("java package: Maven clean failed"); return 1 }
         cleaned = os.system("rm -rf \"${root_j}/java/src/main/resources/native\"")
-        if cleaned != 0 { bldr.fail(builder_context(), "java package: clearing staged natives failed"); return 1 }
+        if cleaned != 0 { bldr.fail("java package: clearing staged natives failed"); return 1 }
         if string.length(release) > 0 {
             // RELEASE path: bundle all six verified release libraries (fat jar).
             // core/.build.ae is overridden to core/.releaseJarMatrix.ae by

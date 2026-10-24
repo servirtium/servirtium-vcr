@@ -14,9 +14,11 @@ copy_json(value: ptr) -> ptr { return json.parse(json.encode(value)!)! }
 // Preserve the demo's sorted keys and spaced JSON without a custom sorter.
 render(value: ptr) -> string {
     kind = json.json_type(value)
-    if kind != 4 && kind != 5 { return json.encode(value)! }
+    const JSON_ARRAY = 4
+    const JSON_OBJECT = 5
+    if kind != JSON_ARRAY && kind != JSON_OBJECT { return json.encode(value)! }
     out = strbuilder.new(128)
-    if kind == 4 {
+    if kind == JSON_ARRAY {
         strbuilder.append(out, "[")
         for i in 0..json.json_array_size(value) {
             if i > 0 { strbuilder.append(out, ", ") }
@@ -66,9 +68,9 @@ write_widget(writer: ptr, widget: ptr) {
 }
 new_widget(name: ptr, colour: ptr) -> ptr {
     widget = json.obj()
-    json.set(widget, "id", json.from_int(list_size(widgets) + 1))
+    json.set(widget, "id", json.from_int(list.size(widgets) + 1))
     json.set(widget, "name", name); json.set(widget, "colour", colour)
-    list_add_raw(widgets, widget)
+    list.add_raw(widgets, widget)
     return widget
 }
 input_json(req: ptr) -> ptr {
@@ -91,8 +93,8 @@ handle(req: ptr, res: ptr, _data: ptr) {
         writer = xml.writer()
         defer xml.free_builder(writer)
         xml.start(writer, "widgets")
-        for i in 0..list_size(widgets) {
-            widget = list_get_raw(widgets, i)
+        for i in 0..list.size(widgets) {
+            widget = list.get_raw(widgets, i)
             if widget != null { write_widget(writer, widget) }
         }
         xml.end(writer, "widgets")
@@ -100,8 +102,8 @@ handle(req: ptr, res: ptr, _data: ptr) {
     }
     if method == "GET" && path == "/widgets" {
         values = json.arr()
-        for i in 0..list_size(widgets) {
-            widget = list_get_raw(widgets, i)
+        for i in 0..list.size(widgets) {
+            widget = list.get_raw(widgets, i)
             if widget != null { json.push(values, copy_json(widget)) }
         }
         result = json.obj(); json.set(result, "widgets", values)
@@ -136,7 +138,7 @@ handle(req: ptr, res: ptr, _data: ptr) {
     }
     id, _id_err = string.to_int(fs_basename(path))
     var widget: ptr = null
-    if id > 0 && id <= list_size(widgets) { widget = list_get_raw(widgets, id - 1) }
+    if id > 0 && id <= list.size(widgets) { widget = list.get_raw(widgets, id - 1) }
     if widget == null { json_response(res, 404, json.parse("{\"error\":\"no such widget\"}")!); return }
     if method == "GET" { json_response(res, 200, copy_json(widget)); return }
     if method == "PUT" {
@@ -149,7 +151,7 @@ handle(req: ptr, res: ptr, _data: ptr) {
         json_response(res, 200, copy_json(widget)); return
     }
     if method == "DELETE" {
-        list_set(widgets, id - 1, null); json.json_free(widget)
+        list.set(widgets, id - 1, null); json.json_free(widget)
         result = json.obj(); json.set(result, "deleted", json.from_int(id))
         json_response(res, 200, result); return
     }
@@ -161,7 +163,7 @@ fs_basename(path: string) -> string {
     return string.array_get(parts, string.array_size(parts) - 1)
 }
 main() {
-    widgets = list_new()
+    widgets = list.new()
     new_widget(json.str("sprocket"), json.str("red"))
     port = 0
     if os.args_count() > 1 { port = string.to_int(os.args_get(1))! }

@@ -1,16 +1,18 @@
 // Positive and negative release verification using temporary artifact fixtures.
 import bldr
 import aether
-import aether (source, output, lib, caps)
-import std.os
+import aether (source, lib, caps)
+import bldr (env)
 
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
-        aether.program() { source("artifact_tests.ae"); output("artifact-tests"); lib(".."); caps("fs,net,os,extern") }
-        root = _get("root"); td = _get("target_dir")
+        root = _get("root")
         library = dep_artifact("core/.build.ae", "shared_lib")
-        rc = os.system("SVCR_TEST_ROOT=\"${root}\" SERVIRTIUM_VCR_LIB=\"${library}\" \"${td}/bin/artifact-tests\"")
-        if rc != 0 { bldr.fail(builder_context(), "artifact verification regression tests failed"); return 1 }
+        aether.program_test() {
+            source("artifact_tests.ae"); lib(".."); caps("fs,net,os,extern")
+            env("SVCR_TEST_ROOT", root)
+            env("SERVIRTIUM_VCR_LIB", library)
+        }
     }
 }

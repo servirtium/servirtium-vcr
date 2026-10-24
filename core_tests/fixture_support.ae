@@ -6,12 +6,33 @@ import std.json
 import std.list
 import std.os
 import std.string
-exports(check, post_request, launch, listen_upstream, header, full_path, poll_pause)
-extern sleep(ms: int)
+exports(check, post_request, launch, listen_upstream, serve_until, dispatch, wait_for_file, header, full_path, poll_pause)
 check(ok: bool, detail: string) {
     if !ok { println("fixture: ${detail}"); os.exit(1) }
 }
 poll_pause() { sleep(10) }
+wait_for_file(file: string, timeout_ms: long) -> bool {
+    deadline = os.now_monotonic_ms() + timeout_ms
+    while fs.exists(file) == 0 && os.now_monotonic_ms() < deadline { poll_pause() }
+    return fs.exists(file) == 1
+}
+serve_until(dir: string, handler: fn(ptr, ptr, ptr), done_file: string) {
+    server = listen_upstream(handler)
+    check(fs.write_atomic("${dir}/url", string.bytes("http://127.0.0.1:${http.server_port(server)}")) == "", "publish upstream URL")
+    received = wait_for_file(done_file, 45000)
+    http.server_stop(server)
+    http.server_free(server)
+    check(received, "upstream timed out")
+    check(fs.write("${dir}/done", "done") == "", "publish completion")
+}
+dispatch(serve: fn(string), drive: fn(string, string), check_tape: fn(string)) {
+    action = os.args_get(1); location = os.args_get(2)
+    if action == "serve" { serve(location) }
+    else if action == "start" { println(launch(location)) }
+    else if action == "drive" { drive(location, os.args_get(3)) }
+    else if action == "check" { check_tape(location) }
+    else { check(false, "expected start, drive or check") }
+}
 header(req: ptr, name: string) -> string {
     value = http.get_header(req, name)
     if string.length(value) == 0 { return "" }
@@ -49,17 +70,13 @@ listen_upstream(handler: fn(ptr, ptr, ptr)) -> ptr {
 launch(directory: string) -> string {
     check(fs.mkdir_p(directory) == "", "create fixture directory")
     fs.delete("${directory}/url"); fs.delete("${directory}/done"); fs.delete("${directory}/capture.json")
-    args = list_new()
-    defer list_free(args)
-    list_add(args, "serve"); list_add(args, directory)
+    args = list.new()
+    defer list.free(args)
+    list.add(args, "serve"); list.add(args, directory)
     sink = "/dev/null"
     if os.platform() == "windows" { sink = "NUL" }
     _token, err = os.spawn_proc_to(os.argv0(), args, null, sink)
     check(err == "", "launch upstream: ${err}")
-    for attempt in 0..500 {
-        if fs.exists("${directory}/url") == 1 { return string.trim(fs.read("${directory}/url")!) }
-        poll_pause()
-    }
-    check(false, "upstream did not become ready")
-    return ""
+    check(wait_for_file("${directory}/url", 5000), "upstream did not become ready")
+    return string.trim(fs.read("${directory}/url")!)
 }

@@ -304,6 +304,6 @@ aeb(cap) {
         if old_err != "" { bad = "cannot read SERVIRTIUM_VCR_VERSION" }
         else if set_tag != "" && check_tag != "" { bad = "set SVCR_RELEASE_SET or SVCR_RELEASE_TAG, not both" }
         else { bad = release(root, tag, old, set_tag != "") }
-        if bad != "" { bldr.fail(builder_context(), bad) }
+        if bad != "" { bldr.fail(bad); return 1 }
     }
 }

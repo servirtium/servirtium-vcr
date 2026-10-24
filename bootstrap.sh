@@ -17,7 +17,7 @@
 # Env overrides:
 #   PREFIX        install prefix                 (default: $HOME/.local; no sudo)
 #   AETHER_REF    ae tag/branch/SHA to install   (default: $AE_FETCH below)
-#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.335)
+#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.337)
 #   MIN_AE        minimum acceptable ae version  (default: $AE_PIN below)
 #   AEB_TIMEOUT   passed through to aeb (seconds)  (optional)
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
@@ -54,7 +54,9 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-10-23 (latest): aeb v0.334 -> v0.335 (skips dependents of a failed node;
+# 2026-10-24 (latest): aeb v0.337 adds env() support to aether.program_test;
+# diagnostics and release-verifier tests now use that SDK runner. ae stays 0.841.0.
+# 2026-10-23: aeb v0.334 -> v0.335 (skips dependents of a failed node;
 # the sequential loop runs deps first). ae stays 0.841.0.
 # 2026-10-23 (later): bumped to the verified pair 0.841.0 / aeb v0.334. ae 0.841
 # makes `--emit=lib` REJECT a net/fs/os/extern import without a matching
@@ -330,7 +332,7 @@ AE_FETCH="v0.841.0"
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.335 == the verified release for this cut.
+#   aeb floor == AEB_REF == v0.337 == the verified release for this cut.
 #
 # v0.327 (from v0.326) is REQUIRED, coupled with AE_PIN 0.824: v0.326's bldr
 # does not compile on ae 0.818+ (E0902), and v0.327 is the first release that
@@ -383,7 +385,7 @@ AE_FETCH="v0.841.0"
 #
 # Released aeb bundles now report their version. Enforce the release floor;
 # an unversioned development build cannot establish that it meets the pin.
-AEB_REF="${AEB_REF:-v0.335}"
+AEB_REF="${AEB_REF:-v0.337}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX
