@@ -14,7 +14,10 @@ module playback_test;
 
 import std.stdio : writeln, writefln;
 import std.process : executeShell;
-import std.string : strip, startsWith;
+import std.string : strip, startsWith, split, toUpper, toLower, replace;
+import std.file : mkdir, rmdirRecurse;
+import std.datetime.systime : Clock;
+import std.conv : to;
 import std.path : dirName, buildNormalizedPath;
 import std.exception : assertThrown, collectExceptionMsg;
 import std.algorithm : canFind;
@@ -43,7 +46,29 @@ private string httpStatus(string url) {
         .output.strip;
 }
 
+private void namedSecrets() {
+    auto dir = "/tmp/vcr-secrets-d-" ~ Clock.currTime.stdTime.to!string;
+    mkdir(dir); scope(exit) rmdirRecurse(dir);
+    auto fixture = buildNormalizedPath(__FILE__.dirName, "../../core_tests/secret_fixture.py");
+    string run(string action, string arg) {
+        auto result = executeShell("python3 '" ~ fixture ~ "' " ~ action ~ " '" ~ arg ~ "'");
+        ck("secret fixture " ~ action, result.status == 0); return result.output.strip;
+    }
+    auto tape = dir ~ "/tape.md";
+    auto rec = Vcr.record(tape, run("start", dir)); int count;
+    rec.secretRedactor((string key, SecretRequest request) {
+        if (key != "password") return Nullable!string.init;
+        count++; return nullable(request.path.split("/")[1].toUpper ~ "_PASSWORD");
+    });
+    run("drive", rec.baseUrl); ck("deferred callback", count == 0); rec.flush();
+    ck("secret count", count == 20); run("check", tape);
+    auto replay = Vcr.playback(tape, "127.0.0.1", 0, (string token) { return nullable("pw-" ~ token.replace("_PASSWORD", "").toLower ~ "&secret"); });
+    scope(exit) replay.close();
+    run("drive", replay.baseUrl); replay.assertNoMismatches(); run("check", tape);
+}
+
 int main() {
+    namedSecrets();
 
     {
         import std.file : tempDir, mkdir, rmdirRecurse;

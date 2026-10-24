@@ -83,6 +83,18 @@ typedef struct sv_vcr sv_vcr;
  * reason is available from sv_open_error(). */
 sv_vcr *sv_playback(const char *tape_path);
 
+typedef struct {
+    const char *method, *path, *location, *format, *field_path;
+    int interaction;
+} sv_secret_request;
+/* Return NULL to skip; an empty string is a valid replacement. Returned strings
+ * must remain valid until the next callback. Metadata is borrowed for that invocation. */
+typedef const char *(*sv_secret_redactor_fn)(const char *key, const sv_secret_request *, void *context);
+typedef const char *(*sv_secret_resolver_fn)(const char *token, void *context);
+sv_vcr *sv_playback_with_secrets(const char *tape, const char *host, int port,
+                                 sv_secret_resolver_fn resolver, void *context);
+void sv_secret_redactor(sv_vcr *, sv_secret_redactor_fn, void *context);
+
 /* Replay a tape bound to a specific host/port. port 0 = OS-assigned. */
 sv_vcr *sv_playback_on(const char *tape_path, const char *host, int port);
 

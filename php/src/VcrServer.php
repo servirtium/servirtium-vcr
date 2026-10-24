@@ -20,6 +20,7 @@ final class VcrServer
     private bool $recordMode;
     private bool $failIfChanged;
     private ?string $baseUrl = null;
+    private $secretRedactor;
 
     public function __construct(
         CData $handle,
@@ -27,7 +28,9 @@ final class VcrServer
         string $tapePath,
         bool $recordMode,
         bool $failIfChanged,
+        ?callable $secretRedactor = null,
     ) {
+        $this->secretRedactor = $secretRedactor;
         $this->handle = $handle;
         $this->host = $host;
         $this->tapePath = $tapePath;
@@ -147,6 +150,7 @@ final class VcrServer
             return;
         }
 
+        if ($this->secretRedactor !== null) { Secrets::stage($handle, $this->secretRedactor, false); }
         $resultPtr = $this->failIfChanged
             ? $lib->aether_vcr_embed_stop_and_flush_fail_if_changed($handle, $this->tapePath)
             : $lib->aether_vcr_embed_stop_and_flush($handle, $this->tapePath);

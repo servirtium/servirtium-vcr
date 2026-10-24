@@ -181,6 +181,8 @@ One libservirtium_vcr; every binding exposes the same surface.
     be run the same way after exporting a session to HAR (`servirtium import`),
     or exported/converted to `.bru` first.
 
+Named secrets can be selected by request context at tape emission and restored before playback starts. The same core implementation discovers query/form fields, headers, JSON, XML and YAML across all bindings. See [named secret callbacks](docs/secrets.md) for examples, language APIs and format limits.
+
 ## Compared with other mocking / virtualization tools
 
 There's a rich ecosystem here, and these are all good tools — the choice mostly

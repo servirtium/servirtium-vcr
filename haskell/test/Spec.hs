@@ -8,10 +8,12 @@ import Test.Hspec (hspec)
 import qualified MismatchSpec
 import qualified PlaybackSpec
 import qualified RecordSpec
+import qualified SecretSpec
 import qualified RedactionSpec
 
 main :: IO ()
 main = hspec $ do
+  SecretSpec.spec
   PlaybackSpec.spec
   MismatchSpec.spec
   RecordSpec.spec

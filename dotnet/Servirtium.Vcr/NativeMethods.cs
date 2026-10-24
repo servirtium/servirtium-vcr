@@ -112,6 +112,14 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_test_context", CharSet = CharSet.Ansi)]
     internal static extern void TestContext(IntPtr server, string name, string file, int line);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_secret_begin")] internal static extern IntPtr SecretBegin(IntPtr h, int resolving);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_secret_next")] internal static extern int SecretNext(IntPtr h);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_secret_get")] internal static extern IntPtr SecretGet(IntPtr h, int part);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_secret_interaction")] internal static extern int SecretInteraction(IntPtr h);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_secret_apply", CharSet = CharSet.Ansi)] internal static extern IntPtr SecretApply(IntPtr h, string value);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_secret_finish")] internal static extern IntPtr SecretFinish(IntPtr h);
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_secret_abort")] internal static extern void SecretAbort(IntPtr h);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_kind")]
     internal static extern int LastKind(IntPtr server);
 

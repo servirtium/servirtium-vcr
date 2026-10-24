@@ -63,6 +63,46 @@ static char *http_status(const char *url) {
     }
 }
 
+static const char *secret_names[] = {"ACCOUNTS_PASSWORD", "BILLING_PASSWORD", "SHIPPING_PASSWORD", "SUPPORT_PASSWORD"};
+static const char *secret_services[] = {"accounts", "billing", "shipping", "support"};
+static const char *redact_secret(const char *key, const sv_secret_request *request, void *context) {
+    int i;
+    if (strcmp(key, "password")) return NULL;
+    ++*(int *)context;
+    ck("secret metadata", request->field_path[0] != 0);
+    for (i=0; i<4; ++i) if (strncmp(request->path+1, secret_services[i], strlen(secret_services[i]))==0) return secret_names[i];
+    return NULL;
+}
+static const char *resolve_secret(const char *token, void *context) {
+    static char value[128]; int i; (void)context;
+    for (i=0; i<4; ++i) if (!strcmp(token, secret_names[i])) {
+        snprintf(value, sizeof value, "pw-%s&secret", secret_services[i]); return value;
+    }
+    return NULL;
+}
+static void named_secrets(const char *tape) {
+    char directory[]="/tmp/vcr-secrets-c-XXXXXX", fixture[4096], command[16384], upstream[256], target[4096];
+    char *part; FILE *pipe; sv_vcr *rec, *replay; sv_str value; int count=0;
+    ck("secret temp dir", mkdtemp(directory)!=NULL);
+    snprintf(fixture,sizeof fixture,"%s",tape);
+    part=strrchr(fixture,'/'); if(part)*part=0; part=strrchr(fixture,'/'); if(part)*part=0; part=strrchr(fixture,'/'); if(part)*part=0;
+    strcat(fixture,"/core_tests/secret_fixture.py");
+    snprintf(command,sizeof command,"python3 '%s' start '%s'",fixture,directory);
+    pipe=popen(command,"r"); if(!pipe){ck("secret upstream",0);return;}
+    upstream[0]=0; fgets(upstream,sizeof upstream,pipe); ck("secret start",pclose(pipe)==0); upstream[strcspn(upstream,"\r\n")]=0;
+    snprintf(target,sizeof target,"%s/tape.md",directory);
+    rec=sv_record(target,upstream); if(!rec){ck("secret record open",0);return;}
+    sv_secret_redactor(rec,redact_secret,&count); value=sv_base_url(rec);
+    snprintf(command,sizeof command,"python3 '%s' drive '%s'",fixture,value.ptr); sv_free(value);
+    ck("secret recording driver",system(command)==0); ck("deferred callback",count==0);
+    value=sv_close_and_flush(rec,NULL); ck("secret flush",value.len==0); sv_free(value); ck("secret count",count==20);
+    snprintf(command,sizeof command,"python3 '%s' check '%s'",fixture,target); ck("secret tape",system(command)==0);
+    replay=sv_playback_with_secrets(target,"127.0.0.1",0,resolve_secret,NULL); if(!replay){ck("secret playback open",0);return;}
+    value=sv_base_url(replay); snprintf(command,sizeof command,"python3 '%s' drive '%s'",fixture,value.ptr); sv_free(value);
+    ck("secret playback driver",system(command)==0); value=sv_assert_no_mismatches(replay); ck("secret matches",value.len==0); sv_free(value); sv_close(replay);
+    unlink(target); snprintf(target,sizeof target,"%s/url",directory); unlink(target); snprintf(target,sizeof target,"%s/done",directory); unlink(target); rmdir(directory);
+}
+
 int main(int argc, char **argv) {
     const char *tape = (argc > 1 && argv[1][0] != '\0')
                            ? argv[1]
@@ -204,6 +244,8 @@ int main(int argc, char **argv) {
         value = sv_diagnostics_json(server, 0); ck("new test empty", strcmp(value.ptr, "[]") == 0); sv_free(value);
         sv_close(server);
     }
+
+    named_secrets(tape);
 
     if (failures == 0) {
         printf("PASS: c servirtium playback\n");

@@ -28,6 +28,13 @@ lib LibVcr
   fun open_playback = aether_vcr_embed_open_playback(label : LibC::Char*, tape : LibC::Char*, host : LibC::Char*, port : LibC::Int) : Void*
   fun open_playback_url = aether_vcr_embed_open_playback_url(label : LibC::Char*, url : LibC::Char*, host : LibC::Char*, port : LibC::Int) : Void*
   fun open_record = aether_vcr_embed_open_record(label : LibC::Char*, tape : LibC::Char*, upstream : LibC::Char*, host : LibC::Char*, port : LibC::Int) : Void*
+  fun secret_begin = aether_vcr_embed_secret_begin(h : Void*, resolving : LibC::Int) : LibC::Char*
+  fun secret_next = aether_vcr_embed_secret_next(h : Void*) : LibC::Int
+  fun secret_get = aether_vcr_embed_secret_get(h : Void*, part : LibC::Int) : LibC::Char*
+  fun secret_interaction = aether_vcr_embed_secret_interaction(h : Void*) : LibC::Int
+  fun secret_apply = aether_vcr_embed_secret_apply(h : Void*, value : LibC::Char*) : LibC::Char*
+  fun secret_finish = aether_vcr_embed_secret_finish(h : Void*) : LibC::Char*
+  fun secret_abort = aether_vcr_embed_secret_abort(h : Void*) : Void
   fun start = aether_vcr_embed_start(h : Void*) : LibC::Int
   fun stop = aether_vcr_embed_stop(h : Void*) : Void
   fun stop_and_flush = aether_vcr_embed_stop_and_flush(h : Void*, tape : LibC::Char*) : LibC::Char*
@@ -129,8 +136,41 @@ module Servirtium
   # Replay a markdown tape from disk. With a block, the server is closed when
   # the block ends (on every path, including an exception) and the block's
   # value is returned; without one, the caller owns it and must `#close`.
-  def self.playback(tape_path : String, host : String = "127.0.0.1", port : Int32 = 0) : Vcr
+  record SecretRequest, method : String, path : String, location : String, format : String, field_path : String, interaction : Int32
+  alias SecretRedactor = Proc(String, SecretRequest, String?)
+  alias SecretResolver = Proc(String, String?)
+
+  def self.secret_stage(handle : Void*, redactor : SecretRedactor? = nil, resolver : SecretResolver? = nil)
+    check_secret(LibVcr.secret_begin(handle, resolver ? 1 : 0))
+    loop do
+      status = LibVcr.secret_next(handle)
+      raise Error.new("Secret staging aborted") if status < 0
+      break if status == 0
+      value = if resolve = resolver
+        resolve.call(take(LibVcr.secret_get(handle, 2)))
+      else
+        redact = redactor.not_nil!
+        request = SecretRequest.new(take(LibVcr.secret_get(handle, 3)), take(LibVcr.secret_get(handle, 4)),
+          take(LibVcr.secret_get(handle, 5)), take(LibVcr.secret_get(handle, 6)),
+          take(LibVcr.secret_get(handle, 7)), LibVcr.secret_interaction(handle))
+        redact.call(take(LibVcr.secret_get(handle, 1)), request)
+      end
+      check_secret(LibVcr.secret_apply(handle, value)) if value
+    end
+    check_secret(LibVcr.secret_finish(handle))
+  rescue ex
+    LibVcr.secret_abort(handle)
+    LibVcr.stop(handle)
+    raise ex
+  end
+  private def self.check_secret(ptr : LibC::Char*)
+    error = take(ptr)
+    raise Error.new(error) unless error.empty?
+  end
+
+  def self.playback(tape_path : String, host : String = "127.0.0.1", port : Int32 = 0, secret_resolver : SecretResolver? = nil) : Vcr
     handle = LibVcr.open_playback("", tape_path, host, port)
+    secret_stage(handle, resolver: secret_resolver) if secret_resolver && !handle.null?
     Vcr.new(started(handle, "playback open failed: #{tape_path}"), host, tape_path)
   end
 
@@ -204,6 +244,12 @@ module Servirtium
   class Vcr
     @handle : Void*
     @closed = false
+    @secret_redactor : SecretRedactor?
+
+    def secret_redactor(&callback : String, SecretRequest -> String?) : self
+      @secret_redactor = callback
+      self
+    end
 
     # :nodoc: constructed by the Servirtium module's factories.
     def initialize(@handle : Void*, @host : String, @tape : String?)
@@ -411,6 +457,7 @@ module Servirtium
     private def flush_via(tape_path : String?, &block : Void*, String -> LibC::Char*)
       return if @closed
       @closed = true
+      Servirtium.secret_stage(@handle, redactor: @secret_redactor) if @secret_redactor
       path = tape_path || @tape || ""
       check block.call(@handle, path), "flush"
     end

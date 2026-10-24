@@ -52,6 +52,7 @@ defmodule Servirtium.Native do
 
   # ---- diagnostics ---------------------------------------------------------
 
+  defdelegate secret_stage(handle, callback, resolving), to: :servirtium_nif
   defdelegate last_error(handle), to: :servirtium_nif
   defdelegate last_error_ex(handle, consume), to: :servirtium_nif
   defdelegate diagnostics_json(handle, consume), to: :servirtium_nif

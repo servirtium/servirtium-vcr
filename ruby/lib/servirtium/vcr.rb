@@ -3,6 +3,7 @@
 require 'servirtium/native'
 require 'servirtium/field'
 require 'servirtium/server'
+require 'servirtium/secrets'
 
 module Servirtium
   # Shared bind options for both builders.
@@ -125,6 +126,11 @@ module Servirtium
     # Compare the SUT's request headers against the recorded block on every
     # interaction (Servirtium step 10), surfacing mismatches via
     # {Server#last_error}.
+    def secret_resolver(callback = nil, &block)
+      @secret_resolver = callback || block
+      self
+    end
+
     def strict_headers(on: true)
       @strict_headers = on
       self
@@ -169,6 +175,7 @@ module Servirtium
               "vcr playback failed to start for tape '#{@tape_path}'"
       end
       apply_config(handle)
+      Secrets.stage(handle, @secret_resolver, resolving: true) if @secret_resolver
       if Native.call(:start, handle).negative?
         raise Servirtium::Error,
               "vcr playback failed to begin serving for tape '#{@tape_path}': #{drain_start_error(handle)}"
@@ -207,6 +214,11 @@ module Servirtium
     end
 
     # Scrub a value out of the given field before it lands on the tape.
+    def secret_redactor(callback = nil, &block)
+      @secret_redactor = callback || block
+      self
+    end
+
     def redact(field, pattern, replacement)
       @redactions << [:redact, field, pattern, replacement]
       self
@@ -283,7 +295,7 @@ module Servirtium
               "vcr record failed to begin serving for tape '#{@tape_path}': #{drain_start_error(handle)}"
       end
       server = Server.new(handle, @host, @tape_path, record_mode: true,
-                                                     fail_if_changed: @fail_if_changed)
+                                                     fail_if_changed: @fail_if_changed, secret_redactor: @secret_redactor)
       with_server(server, &)
     end
 

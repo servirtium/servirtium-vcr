@@ -8,6 +8,7 @@ Class {
 	#name : 'ServirtiumRecordBuilder',
 	#superclass : 'ServirtiumBuilder',
 	#instVars : [
+        'secretRedactor',
 		'upstreamBase',
 		'redactions',
 		'normalizations',
@@ -153,7 +154,7 @@ ServirtiumRecordBuilder >> start [
 		self library stop: handle.
 		ServirtiumError signal:
 			'vcr record failed to begin serving for tape ''' , tapePath , ''': ' , detail ].
-	^ ServirtiumServer handle: handle host: host tape: tapePath recordMode: true failIfChanged: failIfChanged
+	^ (ServirtiumServer handle: handle host: host tape: tapePath recordMode: true failIfChanged: failIfChanged) secretRedactor: secretRedactor
 ]
 
 { #category : 'starting' }
@@ -196,5 +197,11 @@ ServirtiumRecordBuilder >> redactJsonField: aName [
 { #category : 'configuring' }
 ServirtiumRecordBuilder >> redactJsonField: aName replacement: aReplacement field: aField [
     redactions add: { #redactJsonField:field:pattern:replacement:. aField. aName. aReplacement }.
+    ^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> secretRedactor: callback [
+    secretRedactor := callback.
     ^ self
 ]

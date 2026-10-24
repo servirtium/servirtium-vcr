@@ -22,6 +22,12 @@
   RecordBuilder, returning the builder for further chaining/start."
   [builder {:keys [port] :as _opts}]
   (when port (.port builder (int port)))
+  (when-let [callback (:secret-redactor _opts)]
+    (.secretRedactor builder (reify java.util.function.BiFunction
+      (apply [_ key request] (callback key request)))))
+  (when-let [callback (:secret-resolver _opts)]
+    (.secretResolver builder (reify java.util.function.Function
+      (apply [_ token] (callback token)))))
   builder)
 
 (defn playback

@@ -20,7 +20,8 @@
 -module(servirtium).
 
 -export([
-    playback/1, playback/2,
+    playback/1, playback/2, playback_with_secrets/2,
+    secret_redactor/2,
     record/2, record/3,
     redact_header/2, redact_header/4,
     redact_query_param/2, redact_query_param/4,
@@ -77,7 +78,12 @@ playback(TapePath) ->
     playback(TapePath, "127.0.0.1").
 
 -spec playback(string(), string()) -> server().
-playback(TapePath, Host) ->
+playback(TapePath, Host) -> playback_open(TapePath, Host, undefined).
+
+playback_with_secrets(TapePath, Resolver) when is_function(Resolver, 1) ->
+    playback_open(TapePath, "127.0.0.1", Resolver).
+
+playback_open(TapePath, Host, Resolver) ->
     Handle = servirtium_nif:open_playback(
         list_to_binary(""),
         list_to_binary(TapePath),
@@ -88,6 +94,7 @@ playback(TapePath, Host) ->
         0 -> error({servirtium, {playback_open_failed, TapePath}});
         _ -> ok
     end,
+    case Resolver of undefined -> ok; _ -> servirtium_nif:secret_stage(Handle, Resolver, true) end,
     case servirtium_nif:start(Handle) of
         Rc when Rc < 0 ->
             Detail = binary_to_list(servirtium_nif:last_error(Handle)),
@@ -165,7 +172,11 @@ last_index(#{handle := H}) ->
 close(#{mode := playback, handle := H}) ->
     servirtium_nif:stop(H),
     ok;
-close(#{mode := record, handle := H, tape := Tape}) ->
+close(#{mode := record, handle := H, tape := Tape} = Server) ->
+    case maps:get(secret_redactor, Server, undefined) of
+        undefined -> ok;
+        Callback -> servirtium_nif:secret_stage(H, Callback, false)
+    end,
     Res = servirtium_nif:stop_and_flush(H, list_to_binary(Tape)),
     case Res of
         <<>> -> ok;
@@ -205,3 +216,6 @@ assert_no_mismatches(#{handle := H}) ->
     end.
 test_context(#{handle := H}, Name, File, Line) ->
     servirtium_nif:test_context(H, unicode:characters_to_binary(Name), unicode:characters_to_binary(File), Line).
+
+secret_redactor(#{mode := record} = Server, Callback) when is_function(Callback, 2) ->
+    Server#{secret_redactor => Callback}.

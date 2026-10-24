@@ -48,6 +48,30 @@ M.TAPE_EXHAUSTED      = C.TAPE_EXHAUSTED
 M.BODY_DIFF           = C.BODY_DIFF
 M.RECORD_ERROR        = C.RECORD_ERROR
 
+-- Staging never calls Lua from a native HTTP worker.
+local function secret_stage(handle, callback, resolving)
+    local function check(message) if message ~= "" then error(message, 0) end end
+    local function get(part) return C.secret_get(handle, part) end
+    local ok, err = pcall(function()
+        check(C.secret_begin(handle, resolving and 1 or 0))
+        while true do
+            local next = C.secret_next(handle)
+            if next < 0 then error("Secret staging aborted", 0) end
+            if next == 0 then break end
+            local value
+            if resolving then value = callback(get(2))
+            else value = callback(get(1), {method=get(3), path=get(4), location=get(5),
+                format=get(6), field_path=get(7), interaction=C.secret_interaction(handle)}) end
+            if value ~= nil then
+                if type(value) ~= "string" then error("Secret callbacks must return a string or nil", 0) end
+                check(C.secret_apply(handle, value))
+            end
+        end
+        check(C.secret_finish(handle))
+    end)
+    if not ok then C.secret_abort(handle); C.stop(handle); error(err, 0) end
+end
+
 -- ---- Server ---------------------------------------------------------------
 
 local Server = {}
@@ -109,6 +133,7 @@ end
 function Server:close()
     if self._closed then return "" end
     self._closed = true
+    if self._secret_redactor then secret_stage(self._handle, self._secret_redactor, false) end
     if self._mode == "record" then
         if self._fail_if_changed then
             return C.stop_and_flush_fail_if_changed(self._handle, self._tape)
@@ -225,6 +250,10 @@ end
 
 -- start() opens the playback server, applies this fixture's config to its
 -- handle, then begins serving. Returns a Server, or nil + message on failure.
+function PlaybackBuilder:secret_resolver(callback)
+    assert(type(callback) == "function"); self._secret_resolver = callback; return self
+end
+
 function PlaybackBuilder:start()
     local handle, err = C.open_playback(self._tape, self._host, self._port, self._label)
     if not handle then return nil, err end
@@ -252,6 +281,7 @@ function PlaybackBuilder:start()
         return nil, tostring(perr)
     end
 
+    if self._secret_resolver then secret_stage(handle, self._secret_resolver, true) end
     if C.start(handle) < 0 then
         local msg = C.last_error(handle)
         C.stop(handle)
@@ -337,6 +367,10 @@ end
 -- start() opens the record server, applies config to its handle, stages the
 -- builder note (after open_record reloaded the tape), then begins serving.
 -- Returns a Server (whose :close() flushes the tape), or nil + message.
+function RecordBuilder:secret_redactor(callback)
+    assert(type(callback) == "function"); self._secret_redactor = callback; return self
+end
+
 function RecordBuilder:start()
     local handle, err = C.open_record(self._tape, self._upstream, self._host,
                                       self._port, self._label)
@@ -375,7 +409,9 @@ function RecordBuilder:start()
         C.stop(handle)
         return nil, (msg ~= "" and msg) or "record failed to begin serving"
     end
-    return new_server(handle, "record", self._tape, self._host, self._fail_if_changed)
+    local server = new_server(handle, "record", self._tape, self._host, self._fail_if_changed)
+    server._secret_redactor = self._secret_redactor
+    return server
 end
 
 -- ---- builder entry points -------------------------------------------------

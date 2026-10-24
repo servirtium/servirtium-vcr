@@ -69,11 +69,47 @@ private func check(_ ptr: UnsafeMutablePointer<CChar>?, _ what: String) throws {
 
 /// A running VCR server. One handle per instance, so N servers can run
 /// concurrently in one process — one per port.
+public struct SecretRequest {
+    public let method, path, location, format, fieldPath: String
+    public let interaction: Int32
+}
+public typealias SecretRedactor = (String, SecretRequest) throws -> String?
+public typealias SecretResolver = (String) throws -> String?
+
+private func secretStage(_ handle: UnsafeMutableRawPointer, redactor: SecretRedactor? = nil,
+                         resolver: SecretResolver? = nil) throws {
+    func get(_ part: Int32) -> String { take(aether_vcr_embed_secret_get(handle, part)) }
+    do {
+        try check(aether_vcr_embed_secret_begin(handle, resolver == nil ? 0 : 1), "secretBegin")
+        while true {
+            let next = aether_vcr_embed_secret_next(handle)
+            if next < 0 { throw VcrError("Secret staging aborted") }
+            if next == 0 { break }
+            let value: String?
+            if let resolver = resolver { value = try resolver(get(2)) }
+            else { value = try redactor!(get(1), SecretRequest(method: get(3), path: get(4),
+                location: get(5), format: get(6), fieldPath: get(7),
+                interaction: aether_vcr_embed_secret_interaction(handle))) }
+            if let value = value { try check(aether_vcr_embed_secret_apply(handle, value), "secretApply") }
+        }
+        try check(aether_vcr_embed_secret_finish(handle), "secretFinish")
+    } catch {
+        aether_vcr_embed_secret_abort(handle)
+        aether_vcr_embed_stop(handle)
+        throw error
+    }
+}
+
 public final class Vcr {
     private let handle: UnsafeMutableRawPointer
     private let host: String
     private let tape: String?
     private var closed = false
+    private var redactor: SecretRedactor?
+
+    @discardableResult public func secretRedactor(_ callback: @escaping SecretRedactor) -> Vcr {
+        redactor = callback; return self
+    }
 
     private init(handle: UnsafeMutableRawPointer, host: String, tape: String?) {
         self.handle = handle
@@ -85,8 +121,9 @@ public final class Vcr {
 
     /// Replay a Servirtium markdown tape from disk.
     public static func playback(_ tapePath: String, host: String = "127.0.0.1",
-                                port: Int32 = 0) throws -> Vcr {
+                                port: Int32 = 0, secretResolver: SecretResolver? = nil) throws -> Vcr {
         let h = aether_vcr_embed_open_playback("", tapePath, host, port)
+        if let resolver = secretResolver, let handle = h { try secretStage(handle, resolver: resolver) }
         return Vcr(handle: try started(h, "playback open failed: \(tapePath)"),
                    host: host, tape: tapePath)
     }
@@ -316,6 +353,7 @@ public final class Vcr {
     ) throws {
         if closed { return }
         closed = true
+        if let redactor = redactor { try secretStage(handle, redactor: redactor) }
         try check(call(handle, tapePath ?? tape ?? ""), "flush")
     }
 }

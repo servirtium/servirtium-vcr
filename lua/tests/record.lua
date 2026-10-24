@@ -70,7 +70,7 @@ do
         local output = process:read("*a")
         local ok = process:close()
         assert(ok, output)
-        return output:gsub("%s+$", "")
+        return (output:gsub("%s+$", ""))
     end
     local upstream = fixture_run("start")
     local rec = assert(servirtium.record(directory .. "/tape.md", upstream)
@@ -101,6 +101,30 @@ do
     server:assert_no_mismatches()
     h.eq(server:diagnostics_json(), "[]", "test boundary clears events")
     server:close()
+end
+
+do
+    h.case("named secrets round trip")
+    local directory = os.tmpname(); os.remove(directory)
+    assert(os.execute("mkdir -p '" .. directory .. "'"))
+    local fixture = here .. "/../../core_tests/secret_fixture.py"
+    local function run(action, arg)
+        local process = assert(io.popen("python3 '" .. fixture .. "' " .. action .. " '" .. arg .. "' 2>&1"))
+        local output = process:read("*a"); local ok = process:close(); assert(ok, output)
+        return (output:gsub("%s+$", ""))
+    end
+    local count = 0; local tape = directory .. "/tape.md"
+    local rec = assert(servirtium.record(tape, run("start", directory)):secret_redactor(function(key, request)
+        if key == "password" then count = count + 1; return request.path:match("^/([^/]+)"):upper() .. "_PASSWORD" end
+    end):start())
+    run("drive", rec:base_url()); h.eq(count, 0, "deferred callback")
+    h.eq(rec:close(), "", "secret flush"); h.eq(count, 20, "field count"); run("check", tape)
+    local replay = assert(servirtium.playback(tape):secret_resolver(function(token)
+        return "pw-" .. token:gsub("_PASSWORD$", ""):lower() .. "&secret"
+    end):start())
+    run("drive", replay:base_url()); replay:assert_no_mismatches(); replay:close(); run("check", tape)
+    for _, name in ipairs({"url", "done", "tape.md"}) do os.remove(directory .. "/" .. name) end
+    os.remove(directory)
 end
 
 h.done("record")

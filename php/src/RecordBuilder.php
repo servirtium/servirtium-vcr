@@ -11,6 +11,14 @@ use FFI\CData;
 final class RecordBuilder extends VcrBuilderBase
 {
     private string $upstreamBase;
+    private $secretRedactorCallback = null;
+
+    public function secretRedactor(callable $callback): static
+    {
+        $this->secretRedactorCallback = $callback;
+        return $this;
+    }
+
 
     /** @var list<array{0: string, 1: VcrField, 2: string, 3: string}> */
     private array $redactions = [];
@@ -183,6 +191,7 @@ final class RecordBuilder extends VcrBuilderBase
             $this->tapePath,
             recordMode: true,
             failIfChanged: $this->failIfChangedOn,
+            secretRedactor: $this->secretRedactorCallback,
         );
     }
 }

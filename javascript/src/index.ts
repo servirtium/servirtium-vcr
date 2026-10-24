@@ -7,3 +7,5 @@ export {
   VcrOutcome,
   VcrError,
 } from './vcr'
+
+export type { SecretRequest, SecretRedactor, SecretResolver } from './vcr'

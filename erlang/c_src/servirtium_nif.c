@@ -44,6 +44,13 @@ extern int   aether_vcr_embed_tape_length(void *server);
 extern void  aether_vcr_embed_reset_cursor(void *server);
 
 extern char *aether_vcr_embed_last_error(void *server);
+extern char *aether_vcr_embed_secret_begin(void *, int);
+extern int aether_vcr_embed_secret_next(void *);
+extern char *aether_vcr_embed_secret_get(void *, int);
+extern int aether_vcr_embed_secret_interaction(void *);
+extern char *aether_vcr_embed_secret_apply(void *, const char *);
+extern char *aether_vcr_embed_secret_finish(void *);
+extern void aether_vcr_embed_secret_abort(void *);
 extern char *aether_vcr_embed_last_error_ex(void *h, int consume);
 extern char *aether_vcr_embed_diagnostics_json(void *h, int consume);
 extern char *aether_vcr_embed_assert_no_mismatches(void *h);
@@ -275,6 +282,44 @@ static ERL_NIF_TERM nif_last_index(ErlNifEnv *env, int argc, const ERL_NIF_TERM 
     return enif_make_int(env, aether_vcr_embed_last_index(h));
 }
 
+static ERL_NIF_TERM nif_secret_begin(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    int part; if (!enif_get_int(env, argv[1], &part)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_secret_begin(h, part));
+}
+static ERL_NIF_TERM nif_secret_next(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return enif_make_int(env, aether_vcr_embed_secret_next(h));
+}
+static ERL_NIF_TERM nif_secret_get(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    int part; if (!enif_get_int(env, argv[1], &part)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_secret_get(h, part));
+}
+static ERL_NIF_TERM nif_secret_interaction(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return enif_make_int(env, aether_vcr_embed_secret_interaction(h));
+}
+static ERL_NIF_TERM nif_secret_apply(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    char *value = term_to_cstr(env, argv[1]); if (!value) return enif_make_badarg(env);
+    char *result = aether_vcr_embed_secret_apply(h, value); enif_free(value); return take_cstr(env, result);
+}
+static ERL_NIF_TERM nif_secret_finish(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_secret_finish(h));
+}
+static ERL_NIF_TERM nif_secret_abort(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    aether_vcr_embed_secret_abort(h); return enif_make_atom(env, "ok");
+}
 static ERL_NIF_TERM nif_last_error_ex(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     UNUSED(argc);
     void *h; int consume;
@@ -557,6 +602,13 @@ static ErlNifFunc nif_funcs[] = {
     {"last_error",       1, nif_last_error,       0},
     {"last_kind",        1, nif_last_kind,        0},
     {"last_index",       1, nif_last_index,       0},
+    {"secret_begin", 2, nif_secret_begin, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"secret_next", 1, nif_secret_next, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"secret_get", 2, nif_secret_get, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"secret_interaction", 1, nif_secret_interaction, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"secret_apply", 2, nif_secret_apply, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"secret_finish", 1, nif_secret_finish, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"secret_abort", 1, nif_secret_abort, ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"last_error_ex", 2, nif_last_error_ex, 0},
     {"diagnostics_json", 2, nif_diagnostics_json, 0},
     {"assert_no_mismatches", 1, nif_assert_no_mismatches, 0},

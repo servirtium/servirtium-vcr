@@ -115,3 +115,39 @@ let ``retained replay diagnostics support observers and assertions`` () =
     Servirtium.testContext "next test" "" 0 server
     Servirtium.assertNoMismatches server
     Assert.Equal("[]", Servirtium.diagnosticsJson false server)
+
+[<Fact>]
+let ``named secrets round trip`` () =
+    let directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vcr-secrets-fsharp-" + System.Guid.NewGuid().ToString())
+    System.IO.Directory.CreateDirectory(directory) |> ignore
+    let tape = System.IO.Path.Combine(directory, "tape.md")
+    let fixture = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../../core_tests/secret_fixture.py"))
+    let run action arg =
+        let info = System.Diagnostics.ProcessStartInfo("python3", RedirectStandardOutput = true)
+        info.ArgumentList.Add(fixture)
+        info.ArgumentList.Add(action)
+        info.ArgumentList.Add(arg)
+        use child = System.Diagnostics.Process.Start(info)
+        let output = child.StandardOutput.ReadToEnd()
+        child.WaitForExit()
+        Assert.Equal(0, child.ExitCode)
+        output.Trim()
+    try
+        let mutable count = 0
+        let builder = Vcr.Record(tape, run "start" directory) |> Servirtium.secretRedactor (fun key request ->
+            if key <> "password" then None else
+                count <- count + 1
+                Some(request.Path.Split('/').[1].ToUpperInvariant() + "_PASSWORD"))
+        do
+            use recorder = builder.Start()
+            run "drive" recorder.BaseUrl |> ignore
+            Assert.Equal(0, count)
+        Assert.Equal(20, count)
+        run "check" tape |> ignore
+        do
+            use replay = (Vcr.Playback(tape) |> Servirtium.secretResolver (fun token -> Some("pw-" + token.Replace("_PASSWORD", "").ToLowerInvariant() + "&secret"))).Start()
+            run "drive" replay.BaseUrl |> ignore
+            replay.AssertNoMismatches()
+        run "check" tape |> ignore
+    finally
+        System.IO.Directory.Delete(directory, true)

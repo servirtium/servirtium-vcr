@@ -42,6 +42,13 @@ final class Native
         int    aether_vcr_embed_tape_length(void* server);
         void   aether_vcr_embed_reset_cursor(void* server);
         char*  aether_vcr_embed_last_error(void* server);
+        char* aether_vcr_embed_secret_begin(void*, int);
+        int aether_vcr_embed_secret_next(void*);
+        char* aether_vcr_embed_secret_get(void*, int);
+        int aether_vcr_embed_secret_interaction(void*);
+        char* aether_vcr_embed_secret_apply(void*, const char*);
+        char* aether_vcr_embed_secret_finish(void*);
+        void aether_vcr_embed_secret_abort(void*);
         char* aether_vcr_embed_last_error_ex(void* server, int consume);
         char* aether_vcr_embed_diagnostics_json(void* server, int consume);
         char* aether_vcr_embed_assert_no_mismatches(void* server);

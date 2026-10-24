@@ -19,6 +19,7 @@ from ._vcr import (
     PlaybackBuilder,
     RecordBuilder,
     VcrError,
+    SecretRequest,
     VcrServer,
     playback,
     record,
@@ -33,6 +34,7 @@ __all__ = [
     "Field",
     "Outcome",
     "VcrError",
+    "SecretRequest",
 ]
 
 __version__ = "2.0.0"

@@ -80,8 +80,18 @@ extern void  aether_vcr_embed_free_string(char *s);
 
 /* ---- the running server ------------------------------------------------ */
 
+extern char *aether_vcr_embed_secret_begin(sv_handle, int);
+extern int aether_vcr_embed_secret_next(sv_handle);
+extern char *aether_vcr_embed_secret_get(sv_handle, int);
+extern int aether_vcr_embed_secret_interaction(sv_handle);
+extern char *aether_vcr_embed_secret_apply(sv_handle, const char *);
+extern char *aether_vcr_embed_secret_finish(sv_handle);
+extern void aether_vcr_embed_secret_abort(sv_handle);
+
 struct sv_vcr {
     sv_handle h;
+    sv_secret_redactor_fn secret_redactor;
+    void *secret_context;
     char *host;   /* owned; base_url needs it after open */
     char *tape;   /* owned; the flush default */
 };
@@ -148,6 +158,39 @@ static void capture_open_error(sv_handle h, const char *fallback) {
     if (raw != NULL) aether_vcr_embed_free_string(raw);
 }
 
+static char *secret_stage(sv_handle h, sv_secret_redactor_fn redactor,
+                          sv_secret_resolver_fn resolver, void *context) {
+    char *error = aether_vcr_embed_secret_begin(h, resolver != NULL);
+    int next, i;
+    if (error && error[0]) goto failed;
+    aether_vcr_embed_free_string(error);
+    while ((next = aether_vcr_embed_secret_next(h)) > 0) {
+        char *parts[7];
+        const char *value;
+        sv_secret_request request;
+        for (i = 0; i < 7; ++i) parts[i] = aether_vcr_embed_secret_get(h, i + 1);
+        request.method = parts[2]; request.path = parts[3]; request.location = parts[4];
+        request.format = parts[5]; request.field_path = parts[6];
+        request.interaction = aether_vcr_embed_secret_interaction(h);
+        value = resolver ? resolver(parts[1], context) : redactor(parts[0], &request, context);
+        error = value ? aether_vcr_embed_secret_apply(h, value) : NULL;
+        for (i = 0; i < 7; ++i) aether_vcr_embed_free_string(parts[i]);
+        if (error && error[0]) goto failed;
+        aether_vcr_embed_free_string(error);
+    }
+    error = aether_vcr_embed_secret_finish(h);
+    if (error && error[0]) goto failed;
+    return error;
+failed:
+    aether_vcr_embed_secret_abort(h);
+    aether_vcr_embed_stop(h);
+    return error;
+}
+
+void sv_secret_redactor(sv_vcr *vcr, sv_secret_redactor_fn callback, void *context) {
+    if (vcr) { vcr->secret_redactor = callback; vcr->secret_context = context; }
+}
+
 /* Wrap an opened handle: start it, and on success own a copy of host + tape.
  * On any failure the handle is stopped and NULL returned, so a caller never
  * has to clean up after a failed open. */
@@ -180,6 +223,18 @@ static sv_vcr *wrap_started(sv_handle h, const char *host, const char *tape,
 sv_vcr *sv_playback_on(const char *tape_path, const char *host, int port) {
     sv_handle h = aether_vcr_embed_open_playback("", tape_path, host, port);
     return wrap_started(h, host, tape_path, "playback open failed");
+}
+
+sv_vcr *sv_playback_with_secrets(const char *tape, const char *host, int port,
+                                 sv_secret_resolver_fn resolver, void *context) {
+    sv_handle h = aether_vcr_embed_open_playback("", tape, host, port);
+    char *error;
+    if (h && resolver) {
+        error = secret_stage(h, NULL, resolver, context);
+        if (error && error[0]) { set_open_error(error); aether_vcr_embed_free_string(error); return NULL; }
+        aether_vcr_embed_free_string(error);
+    }
+    return wrap_started(h, host, tape, "playback open failed");
 }
 
 sv_vcr *sv_playback(const char *tape_path) {
@@ -413,6 +468,11 @@ static sv_str close_flushing(sv_vcr *vcr, const char *tape_path, int which) {
     tape = (tape_path != NULL) ? tape_path : vcr->tape;
     if (tape == NULL) tape = "";
 
+    if (vcr->secret_redactor) {
+        err = secret_stage(vcr->h, vcr->secret_redactor, NULL, vcr->secret_context);
+        if (err && err[0]) { free_wrapper(vcr); return adopt(err); }
+        aether_vcr_embed_free_string(err);
+    }
     if (which == 1) {
         err = aether_vcr_embed_stop_and_flush_fail_if_changed(vcr->h, tape);
     } else if (which == 2) {

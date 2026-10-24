@@ -54,6 +54,13 @@ char*  aether_vcr_embed_base_url(void* server, const char* host);
 int    aether_vcr_embed_tape_length(void* server);
 void   aether_vcr_embed_reset_cursor(void* server);
 
+char* aether_vcr_embed_secret_begin(void* h, int resolving);
+int aether_vcr_embed_secret_next(void* h);
+char* aether_vcr_embed_secret_get(void* h, int part);
+int aether_vcr_embed_secret_interaction(void* h);
+char* aether_vcr_embed_secret_apply(void* h, const char* value);
+char* aether_vcr_embed_secret_finish(void* h);
+void aether_vcr_embed_secret_abort(void* h);
 char*  aether_vcr_embed_last_error(void* server);
 char* aether_vcr_embed_last_error_ex(void* server, int consume);
 char* aether_vcr_embed_diagnostics_json(void* server, int consume);
@@ -236,7 +243,62 @@ func Playback(tapePath string) *PlaybackBuilder {
 }
 
 // PlaybackBuilder configures and starts a playback VCR server.
+// SecretRequest is a snapshot of the field and its recorded request context.
+type SecretRequest struct {
+	Method, Path, Location, Format, FieldPath string
+	Interaction                               int
+}
+type SecretRedactor func(string, SecretRequest) (string, bool)
+type SecretResolver func(string) (string, bool)
+
+func secretStage(handle unsafe.Pointer, redactor SecretRedactor, resolver SecretResolver) (err error) {
+	complete := false
+	defer func() {
+		if !complete {
+			C.aether_vcr_embed_secret_abort(handle)
+			C.aether_vcr_embed_stop(handle)
+		}
+	}()
+	mode := 0
+	if resolver != nil {
+		mode = 1
+	}
+	if err = checkErr(C.aether_vcr_embed_secret_begin(handle, C.int(mode)), "secretBegin"); err != nil {
+		return err
+	}
+	for {
+		status := C.aether_vcr_embed_secret_next(handle)
+		if status == 0 {
+			break
+		}
+		if status < 0 {
+			return fmt.Errorf("secret iteration failed")
+		}
+		get := func(part int) string { return takeString(C.aether_vcr_embed_secret_get(handle, C.int(part))) }
+		var value string
+		var apply bool
+		if resolver != nil {
+			value, apply = resolver(get(2))
+		} else {
+			request := SecretRequest{get(3), get(4), get(5), get(6), get(7), int(C.aether_vcr_embed_secret_interaction(handle))}
+			value, apply = redactor(get(1), request)
+		}
+		if apply {
+			ptr := C.CString(value)
+			err = checkErr(C.aether_vcr_embed_secret_apply(handle, ptr), "secretApply")
+			C.free(unsafe.Pointer(ptr))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	err = checkErr(C.aether_vcr_embed_secret_finish(handle), "secretFinish")
+	complete = err == nil
+	return err
+}
+
 type PlaybackBuilder struct {
+	secretResolver SecretResolver
 	baseBuilder
 	strictHeaders bool
 	matchJSONBody bool
@@ -246,6 +308,11 @@ type PlaybackBuilder struct {
 }
 
 // Host binds the host. Defaults to 127.0.0.1.
+func (b *PlaybackBuilder) SecretResolver(callback SecretResolver) *PlaybackBuilder {
+	b.secretResolver = callback
+	return b
+}
+
 func (b *PlaybackBuilder) Host(host string) *PlaybackBuilder { b.host = host; return b }
 
 // Port binds the port. 0 (the default) asks the OS for a free port.
@@ -351,6 +418,11 @@ func (b *PlaybackBuilder) Start() (*Server, error) {
 		C.aether_vcr_embed_stop(handle)
 		return nil, err
 	}
+	if b.secretResolver != nil {
+		if err := secretStage(handle, nil, b.secretResolver); err != nil {
+			return nil, err
+		}
+	}
 	if C.aether_vcr_embed_start(handle) < 0 {
 		err := drainStartError(handle)
 		C.aether_vcr_embed_stop(handle)
@@ -376,6 +448,7 @@ type recordRule struct {
 
 // RecordBuilder configures and starts a record VCR server.
 type RecordBuilder struct {
+	secretRedactor SecretRedactor
 	baseBuilder
 	upstreamBase        string
 	redactions          []recordRule
@@ -388,6 +461,11 @@ type RecordBuilder struct {
 }
 
 // Host binds the host. Defaults to 127.0.0.1.
+func (b *RecordBuilder) SecretRedactor(callback SecretRedactor) *RecordBuilder {
+	b.secretRedactor = callback
+	return b
+}
+
 func (b *RecordBuilder) Host(host string) *RecordBuilder { b.host = host; return b }
 
 // Port binds the port. 0 (the default) asks the OS for a free port.
@@ -573,7 +651,7 @@ func (b *RecordBuilder) Start() (*Server, error) {
 		return nil, err
 	}
 
-	srv := &Server{handle: handle, host: b.host, tapePath: b.tapePath, recordMode: true, failIfChanged: b.failIfChanged}
+	srv := &Server{handle: handle, host: b.host, tapePath: b.tapePath, recordMode: true, failIfChanged: b.failIfChanged, secretRedactor: b.secretRedactor}
 
 	// Stage the note now (open_record cleared the tape) so it attaches to the
 	// first interaction the SUT triggers — before serving begins.
@@ -603,12 +681,13 @@ func drainStartError(handle unsafe.Pointer) string {
 // Server is a running VCR server. Close it to stop; in record mode Close also
 // flushes the captured tape to disk.
 type Server struct {
-	handle        unsafe.Pointer
-	host          string
-	tapePath      string
-	recordMode    bool
-	failIfChanged bool
-	baseURL       string
+	secretRedactor SecretRedactor
+	handle         unsafe.Pointer
+	host           string
+	tapePath       string
+	recordMode     bool
+	failIfChanged  bool
+	baseURL        string
 }
 
 // Port reports the OS-resolved port the server is listening on.
@@ -689,6 +768,11 @@ func (s *Server) Close() error {
 		return nil
 	}
 
+	if s.secretRedactor != nil {
+		if err := secretStage(h, s.secretRedactor, nil); err != nil {
+			return err
+		}
+	}
 	cTape := C.CString(s.tapePath)
 	defer C.free(unsafe.Pointer(cTape))
 	var res *C.char

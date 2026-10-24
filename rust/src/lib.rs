@@ -43,6 +43,36 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use native::{configure, cstr, native, take_string, Handle, Native};
 
+/// Immutable field coordinates passed to an emission-time callback.
+#[derive(Debug, Clone)]
+pub struct SecretRequest {
+    pub method: String, pub path: String, pub location: String, pub format: String,
+    pub field_path: String, pub interaction: i32,
+}
+type SecretRedactor = Box<dyn FnMut(&str, &SecretRequest) -> Option<String>>;
+type SecretResolver = Box<dyn FnMut(&str) -> Option<String>>;
+fn secret_stage(n: &Native, handle: Handle, mut redactor: Option<&mut dyn FnMut(&str, &SecretRequest) -> Option<String>>,
+                mut resolver: Option<&mut dyn FnMut(&str) -> Option<String>>) -> Result<(), VcrError> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), VcrError> {
+        check(n, unsafe { (n.secret_begin)(handle, if resolver.is_some() { 1 } else { 0 }) }, "secret_begin")?;
+        loop {
+            let status = unsafe { (n.secret_next)(handle) };
+            if status == 0 { break; }
+            if status < 0 { return Err(VcrError::new("secret iteration failed")); }
+            let get = |part| take_string(n, unsafe { (n.secret_get)(handle, part) });
+            let replacement = if let Some(resolve) = resolver.as_mut() { resolve(&get(2)) } else {
+                let request = SecretRequest { method: get(3), path: get(4), location: get(5), format: get(6), field_path: get(7),
+                                              interaction: unsafe { (n.secret_interaction)(handle) } };
+                redactor.as_mut().unwrap()(&get(1), &request)
+            };
+            if let Some(value) = replacement { check(n, unsafe { (n.secret_apply)(handle, cstr(&value)?.as_ptr()) }, "secret_apply")?; }
+        }
+        check(n, unsafe { (n.secret_finish)(handle) }, "secret_finish")
+    }));
+    if !matches!(&result, Ok(Ok(()))) { unsafe { (n.secret_abort)(handle); (n.stop)(handle); } }
+    match result { Ok(result) => result, Err(panic) => std::panic::resume_unwind(panic) }
+}
+
 /// Field selector for redactions / unredactions / header removals. Values
 /// mirror the `FIELD_*` constants in `core/vcr.ae`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,6 +160,7 @@ impl Vcr {
     pub fn playback(tape_path: impl Into<String>) -> PlaybackBuilder {
         PlaybackBuilder {
             common: Common::new(tape_path.into()),
+            secret_resolver: None,
             unredactions: Vec::new(),
             strict_headers: false,
             match_json_body: false,
@@ -148,6 +179,7 @@ impl Vcr {
         RecordBuilder {
             common: Common::new(tape_path.into()),
             upstream_base: upstream_base.into(),
+            secret_redactor: None,
             redactions: Vec::new(),
             normalize_whole_tape: Vec::new(),
             redact_whole_tape: Vec::new(),
@@ -214,6 +246,7 @@ fn check(n: &Native, ptr: *mut std::ffi::c_char, op: &str) -> Result<(), VcrErro
 
 /// Configures and starts a playback VCR server.
 pub struct PlaybackBuilder {
+    secret_resolver: Option<SecretResolver>,
     common: Common,
     unredactions: Vec<(Field, String, String)>,
     strict_headers: bool,
@@ -223,6 +256,10 @@ pub struct PlaybackBuilder {
 }
 
 impl PlaybackBuilder {
+    pub fn secret_resolver(mut self, callback: impl FnMut(&str) -> Option<String> + 'static) -> Self {
+        self.secret_resolver = Some(Box::new(callback)); self
+    }
+
     /// Pin an explicit path to libservirtium_vcr library for this run — the
     /// first-class way to say *where the `.so` is* at launch, instead of
     /// relying on discovery. Wins over the bundled-`native/` default and the
@@ -307,7 +344,7 @@ impl PlaybackBuilder {
     /// Open the playback server, apply this fixture's config to its handle,
     /// then begin serving. Acquires the wrapper lock, held until the returned
     /// [`VcrServer`] is dropped.
-    pub fn start(self) -> Result<VcrServer, VcrError> {
+    pub fn start(mut self) -> Result<VcrServer, VcrError> {
         configure(self.common.native_lib.clone());
         let n = native().map_err(VcrError::new)?;
         let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -352,6 +389,7 @@ impl PlaybackBuilder {
             )?;
         }
 
+        if let Some(resolver) = self.secret_resolver.as_mut() { secret_stage(n, handle, None, Some(&mut **resolver))?; }
         if unsafe { (n.start)(handle) } < 0 {
             let err = drain_start_error(n, handle);
             unsafe { (n.stop)(handle) };
@@ -360,12 +398,13 @@ impl PlaybackBuilder {
                 self.common.tape_path, err
             )));
         }
-        Ok(VcrServer::new(n, guard, handle, self.common.host, self.common.tape_path, Mode::Playback))
+        Ok(VcrServer::new(n, guard, handle, self.common.host, self.common.tape_path, Mode::Playback, None))
     }
 }
 
 /// Configures and starts a record VCR server.
 pub struct RecordBuilder {
+    secret_redactor: Option<SecretRedactor>,
     common: Common,
     upstream_base: String,
     redactions: Vec<(&'static str, Field, String, String)>,
@@ -378,6 +417,10 @@ pub struct RecordBuilder {
 }
 
 impl RecordBuilder {
+    pub fn secret_redactor(mut self, callback: impl FnMut(&str, &SecretRequest) -> Option<String> + 'static) -> Self {
+        self.secret_redactor = Some(Box::new(callback)); self
+    }
+
     /// Pin an explicit path to libservirtium_vcr library for this run (see
     /// [`PlaybackBuilder::native_lib`]). Set before `.start()`.
     pub fn native_lib(mut self, path: impl Into<String>) -> Self {
@@ -587,6 +630,7 @@ impl RecordBuilder {
             self.common.host,
             self.common.tape_path,
             Mode::Record { fail_if_changed: self.fail_if_changed },
+            self.secret_redactor,
         ))
     }
 }
@@ -612,6 +656,7 @@ enum Mode {
 /// check — call [`finish`](VcrServer::finish) explicitly instead of relying
 /// on `Drop` (which can only panic on error).
 pub struct VcrServer {
+    secret_redactor: Option<SecretRedactor>,
     n: &'static Native,
     // Holds the wrapper's process-wide serialization lock for this server's lifetime.
     _guard: MutexGuard<'static, ()>,
@@ -630,8 +675,10 @@ impl VcrServer {
         host: String,
         tape_path: String,
         mode: Mode,
+        secret_redactor: Option<SecretRedactor>,
     ) -> VcrServer {
         VcrServer {
+            secret_redactor,
             n,
             _guard: guard,
             handle,
@@ -725,6 +772,10 @@ impl VcrServer {
                 Ok(())
             }
             Mode::Record { fail_if_changed } => {
+                if let Some(redactor) = self.secret_redactor.as_mut() {
+                    if std::thread::panicking() { unsafe { (self.n.stop)(h) }; return Ok(()); }
+                    secret_stage(self.n, h, Some(&mut **redactor), None)?;
+                }
                 let path = cstr(&self.tape_path)?;
                 let ptr = unsafe {
                     if fail_if_changed {

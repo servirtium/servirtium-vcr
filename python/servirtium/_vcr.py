@@ -135,16 +135,62 @@ class _BuilderBase:
             _check(N.untaped(handle, N.encode(path)), "untaped")
 
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class SecretRequest:
+    method: str
+    path: str
+    location: str
+    format: str
+    field_path: str
+    interaction: int
+
+
+def _secret_stage(handle, callback, resolving: bool):
+    try:
+        _check(N.secret_begin(handle, int(resolving)), "secret_begin")
+        while True:
+            status = N.secret_next(handle)
+            if status == 0:
+                break
+            if status < 0:
+                raise VcrError("secret iteration failed")
+            def get(part):
+                return N.take_string(N.secret_get(handle, part))
+            if resolving:
+                replacement = callback(get(2))
+            else:
+                context = SecretRequest(get(3), get(4), get(5), get(6), get(7), N.secret_interaction(handle))
+                replacement = callback(get(1), context)
+            if replacement is not None:
+                if not isinstance(replacement, str):
+                    raise TypeError("secret callbacks must return a string or None")
+                _check(N.secret_apply(handle, N.encode(replacement)), "secret_apply")
+        _check(N.secret_finish(handle), "secret_finish")
+    except BaseException:
+        N.secret_abort(handle)
+        N.stop(handle)
+        raise
+
+
 class PlaybackBuilder(_BuilderBase):
     """Configures and starts a playback VCR server."""
 
     def __init__(self, tape_path: str) -> None:
         super().__init__(tape_path)
         self._unredactions: list[tuple[Field, str, str]] = []
+        self._secret_resolver = None
         self._strict_headers = False
         self._match_json_body = False
         self._match_multiple = False
         self._match_headers: list[str] = []
+
+    def secret_resolver(self, callback):
+        """Resolve designated token names before playback starts; None means unresolved."""
+        self._secret_resolver = callback
+        return self
 
     def strict_headers(self, on: bool = True):
         """Compare the SUT's request headers against the recorded block on
@@ -209,6 +255,8 @@ class PlaybackBuilder(_BuilderBase):
                 f"{_drain_start_error(None)}"
             )
         self._apply_config(handle)
+        if self._secret_resolver is not None:
+            _secret_stage(handle, self._secret_resolver, True)
         if N.start(handle) < 0:
             raise VcrError(
                 f"vcr playback failed to begin serving for tape "
@@ -224,12 +272,18 @@ class RecordBuilder(_BuilderBase):
         super().__init__(tape_path)
         self._upstream_base = upstream_base
         self._redactions: list[tuple[str, Field, str, str]] = []
+        self._secret_redactor = None
         self._normalize_whole_tape: list[tuple[str, str]] = []
         self._redact_whole_tape: list[tuple[str, str]] = []
         self._note: tuple[str, str] | None = None
         self._indent_code_blocks = False
         self._emphasize_http_verbs = False
         self._fail_if_changed = False
+
+    def secret_redactor(self, callback):
+        """Choose token names from (key, request) during emission; None leaves a field unchanged."""
+        self._secret_redactor = callback
+        return self
 
     def redact(self, field: Field, pattern: str, replacement: str):
         """Scrub a value out of the given field before it lands on the tape."""
@@ -340,6 +394,7 @@ class RecordBuilder(_BuilderBase):
             self._tape_path,
             record_mode=True,
             fail_if_changed=self._fail_if_changed,
+            secret_redactor=self._secret_redactor,
         )
 
 
@@ -360,11 +415,12 @@ class VcrServer:
     disk (and raises on drift if ``fail_if_changed`` was set).
     """
 
-    def __init__(self, handle, host, tape_path, *, record_mode, fail_if_changed) -> None:
+    def __init__(self, handle, host, tape_path, *, record_mode, fail_if_changed, secret_redactor=None) -> None:
         self._handle = handle
         self._host = host
         self._tape_path = tape_path
         self._record_mode = record_mode
+        self._secret_redactor = secret_redactor
         self._fail_if_changed = fail_if_changed
         self._base_url: str | None = None
 
@@ -447,6 +503,9 @@ class VcrServer:
         if not self._record_mode:
             N.stop(handle)
             return
+
+        if self._secret_redactor is not None:
+            _secret_stage(handle, self._secret_redactor, False)
 
         if self._fail_if_changed:
             result = N.stop_and_flush_fail_if_changed(handle, N.encode(self._tape_path))

@@ -43,6 +43,10 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <exception>
 
 namespace servirtium {
 
@@ -96,8 +100,29 @@ inline void check(sv_str s, const char* what) {
 
 // A running VCR server. Move-only: the handle has one owner, and the
 // destructor stops it.
+struct SecretRequest {
+    std::string method, path, location, format, field_path;
+    int interaction;
+};
+using SecretRedactor = std::function<std::optional<std::string>(const std::string&, const SecretRequest&)>;
+using SecretResolver = std::function<std::optional<std::string>(const std::string&)>;
+
 class Vcr {
 public:
+    static Vcr playback(const std::string& tape_path, SecretResolver resolver) {
+        SecretContext context;
+        context.resolver = std::move(resolver);
+        auto h = sv_playback_with_secrets(tape_path.c_str(), "127.0.0.1", 0, resolve_secret, &context);
+        if (context.error) { if (h) sv_close(h); std::rethrow_exception(context.error); }
+        return Vcr(h, "playback");
+    }
+    Vcr& secret_redactor(SecretRedactor callback) {
+        if (vcr_ == nullptr) throw Error("Vcr is closed");
+        secret_context_ = std::make_shared<SecretContext>();
+        secret_context_->redactor = std::move(callback);
+        sv_secret_redactor(vcr_, redact_secret, secret_context_.get());
+        return *this;
+    }
     // Replay a markdown tape from disk on an OS-chosen free port (127.0.0.1).
     static Vcr playback(const std::string& tape_path) {
         return Vcr(sv_playback(tape_path.c_str()), "playback");
@@ -131,12 +156,13 @@ public:
     Vcr(const Vcr&) = delete;
     Vcr& operator=(const Vcr&) = delete;
 
-    Vcr(Vcr&& other) noexcept : vcr_(other.vcr_) { other.vcr_ = nullptr; }
+    Vcr(Vcr&& other) noexcept : vcr_(other.vcr_), secret_context_(std::move(other.secret_context_)) { other.vcr_ = nullptr; }
 
     Vcr& operator=(Vcr&& other) noexcept {
         if (this != &other) {
             close();
             vcr_ = other.vcr_;
+            secret_context_ = std::move(other.secret_context_);
             other.vcr_ = nullptr;
         }
         return *this;
@@ -278,7 +304,7 @@ public:
     void flush(const std::string& tape_path = "") {
         sv_vcr* h = release();
         if (h == nullptr) return;
-        detail::check(sv_close_and_flush(h, tape_path.empty() ? nullptr : tape_path.c_str()),
+        check_flush(sv_close_and_flush(h, tape_path.empty() ? nullptr : tape_path.c_str()),
                       "flush");
     }
 
@@ -287,7 +313,7 @@ public:
     void flush_fail_if_changed(const std::string& tape_path = "") {
         sv_vcr* h = release();
         if (h == nullptr) return;
-        detail::check(
+        check_flush(
             sv_close_and_flush_fail_if_changed(h, tape_path.empty() ? nullptr
                                                                     : tape_path.c_str()),
             "flush_fail_if_changed");
@@ -298,7 +324,7 @@ public:
     void flush_or_check(const std::string& tape_path = "") {
         sv_vcr* h = release();
         if (h == nullptr) return;
-        detail::check(
+        check_flush(
             sv_close_and_flush_or_check(h, tape_path.empty() ? nullptr : tape_path.c_str()),
             "flush_or_check");
     }
@@ -324,6 +350,35 @@ private:
         return h;
     }
 
+    void check_flush(sv_str error, const char* operation) {
+        if (secret_context_ && secret_context_->error) {
+            sv_free(error);
+            std::rethrow_exception(secret_context_->error);
+        }
+        detail::check(error, operation);
+    }
+    struct SecretContext {
+        SecretRedactor redactor;
+        SecretResolver resolver;
+        std::optional<std::string> value;
+        std::exception_ptr error;
+    };
+    static const char* redact_secret(const char* key, const sv_secret_request* request, void* data) noexcept {
+        auto& context = *static_cast<SecretContext*>(data);
+        try {
+            context.value = context.redactor(key, SecretRequest{request->method, request->path,
+                request->location, request->format, request->field_path, request->interaction});
+            return context.value ? context.value->c_str() : nullptr;
+        } catch (...) { context.error = std::current_exception(); return "!callback-failed!"; }
+    }
+    static const char* resolve_secret(const char* token, void* data) noexcept {
+        auto& context = *static_cast<SecretContext*>(data);
+        try {
+            context.value = context.resolver(token);
+            return context.value ? context.value->c_str() : nullptr;
+        } catch (...) { context.error = std::current_exception(); return nullptr; }
+    }
+    std::shared_ptr<SecretContext> secret_context_;
     sv_vcr* vcr_;
 };
 

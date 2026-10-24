@@ -153,7 +153,35 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
 }
 
 /** Configures and starts a playback VCR server. */
+export interface SecretRequest {
+  readonly method: string; readonly path: string; readonly location: string; readonly format: string
+  readonly fieldPath: string; readonly interaction: number
+}
+export type SecretRedactor = (key: string, request: SecretRequest) => string | null | undefined
+export type SecretResolver = (token: string) => string | null | undefined
+function secretStage(handle: unknown, redactor?: SecretRedactor, resolver?: SecretResolver): void {
+  try {
+    check(N.secretBegin(handle, resolver ? 1 : 0), 'secretBegin')
+    for (;;) {
+      const status = N.secretNext(handle)
+      if (status === 0) break
+      if (status < 0) throw new VcrError('secret iteration failed')
+      const get = (part: number): string => N.takeString(N.secretGet(handle, part))
+      const replacement = resolver ? resolver(get(2)) : redactor!(get(1), Object.freeze({
+        method: get(3), path: get(4), location: get(5), format: get(6), fieldPath: get(7), interaction: N.secretInteraction(handle),
+      }))
+      if (replacement != null) {
+        if (typeof replacement !== 'string') throw new TypeError('secret callbacks must synchronously return a string or null')
+        check(N.secretApply(handle, replacement), 'secretApply')
+      }
+    }
+    check(N.secretFinish(handle), 'secretFinish')
+  } catch (error) { N.secretAbort(handle); N.stop(handle); throw error }
+}
+
 export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
+  private secretResolverValue?: SecretResolver
+  secretResolver(callback: SecretResolver): this { this.secretResolverValue = callback; return this }
   private readonly unredactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
   private strictHeadersOn = false
   private matchJsonBodyOn = false
@@ -235,6 +263,7 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
       throw new VcrError(`vcr playback failed to start for tape '${this.tapePath}'`)
     }
     this.applyConfig(handle)
+    if (this.secretResolverValue) secretStage(handle, undefined, this.secretResolverValue)
     if (N.start(handle) < 0) {
       const err = drainStartError(handle)
       N.stop(handle)
@@ -248,6 +277,8 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 
 /** Configures and starts a record VCR server. */
 export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
+  private secretRedactorValue?: SecretRedactor
+  secretRedactor(callback: SecretRedactor): this { this.secretRedactorValue = callback; return this }
   private readonly redactions: Array<{ operation: typeof N.redact; field: VcrField; pattern: string; replacement: string }> = []
   private readonly wholeTapeNormalizations: Array<{ pattern: string; name: string }> = []
   private readonly wholeTapeRedactions: Array<{ pattern: string; replacement: string }> = []
@@ -384,7 +415,7 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
         `vcr record failed to begin serving for tape '${this.tapePath}': ${err}`,
       )
     }
-    return new VcrServer(handle, this.hostValue, this.tapePath, true, this.failIfChangedOn)
+    return new VcrServer(handle, this.hostValue, this.tapePath, true, this.failIfChangedOn, this.secretRedactorValue)
   }
 }
 
@@ -408,6 +439,7 @@ export class VcrServer {
     private readonly tapePath: string,
     private readonly recordMode: boolean,
     private readonly failIfChangedOn: boolean,
+    private readonly secretRedactorValue?: SecretRedactor,
   ) {
     this.handle = handle
   }
@@ -498,6 +530,7 @@ export class VcrServer {
       return
     }
 
+    if (this.secretRedactorValue) secretStage(h, this.secretRedactorValue)
     const resultPtr = this.failIfChangedOn
       ? N.stopAndFlushFailIfChanged(h, this.tapePath)
       : N.stopAndFlush(h, this.tapePath)

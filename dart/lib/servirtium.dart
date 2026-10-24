@@ -16,4 +16,4 @@
 /// ```
 library;
 
-export 'src/vcr.dart' show Vcr, PlaybackBuilder, RecordBuilder, VcrServer, VcrField, VcrOutcome, VcrException;
+export 'src/vcr.dart' show SecretRequest, SecretRedactor, SecretResolver, Vcr, PlaybackBuilder, RecordBuilder, VcrServer, VcrField, VcrOutcome, VcrException;

@@ -98,6 +98,14 @@ final class NativeMethods {
     static final MethodHandle ASSERT_NO_MISMATCHES = down("aether_vcr_embed_assert_no_mismatches", FunctionDescriptor.of(C_STR, C_PTR));
     static final MethodHandle TEST_CONTEXT = down("aether_vcr_embed_test_context", FunctionDescriptor.ofVoid(C_PTR, C_PTR, C_PTR, C_INT));
 
+    static final MethodHandle SECRET_BEGIN = down("aether_vcr_embed_secret_begin", FunctionDescriptor.of(C_STR, C_PTR, C_INT));
+    static final MethodHandle SECRET_NEXT = down("aether_vcr_embed_secret_next", FunctionDescriptor.of(C_INT, C_PTR));
+    static final MethodHandle SECRET_GET = down("aether_vcr_embed_secret_get", FunctionDescriptor.of(C_STR, C_PTR, C_INT));
+    static final MethodHandle SECRET_INTERACTION = down("aether_vcr_embed_secret_interaction", FunctionDescriptor.of(C_INT, C_PTR));
+    static final MethodHandle SECRET_APPLY = down("aether_vcr_embed_secret_apply", FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+    static final MethodHandle SECRET_FINISH = down("aether_vcr_embed_secret_finish", FunctionDescriptor.of(C_STR, C_PTR));
+    static final MethodHandle SECRET_ABORT = down("aether_vcr_embed_secret_abort", FunctionDescriptor.ofVoid(C_PTR));
+
     static final MethodHandle LAST_KIND = down(
             "aether_vcr_embed_last_kind",
             FunctionDescriptor.of(C_INT, C_PTR));

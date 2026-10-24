@@ -78,4 +78,12 @@ char *aether_vcr_embed_har_export(const char *tape_path, const char *har_path);
 /* every returned char* is released with this */
 void  aether_vcr_embed_free_string(char *s);
 
+char *aether_vcr_embed_secret_begin(void *, int);
+int aether_vcr_embed_secret_next(void *);
+char *aether_vcr_embed_secret_get(void *, int);
+int aether_vcr_embed_secret_interaction(void *);
+char *aether_vcr_embed_secret_apply(void *, const char *);
+char *aether_vcr_embed_secret_finish(void *);
+void aether_vcr_embed_secret_abort(void *);
+
 #endif /* SERVIRTIUM_VCR_H */

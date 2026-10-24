@@ -29,7 +29,8 @@
 (defmodule servirtium_lfe
   (export
    ;; lifecycle
-   (playback 1) (playback 2)
+   (playback 1) (playback 2) (playback_with_secrets 2)
+   (secret_redactor 2)
    (record 2) (record 3)
    (redact_header 2) (redact_header 4)
    (redact_query_param 2) (redact_query_param 4)
@@ -128,6 +129,9 @@
   (case (maps:get 'mode vcr)
     ('playback (servirtium_nif:stop (maps:get 'handle vcr)) 'ok)
     ('record
+     (case (maps:get 'secret_redactor vcr 'undefined)
+       ('undefined 'ok)
+       (callback (servirtium_nif:secret_stage (maps:get 'handle vcr) callback 'false)))
      (case (servirtium_nif:stop_and_flush (maps:get 'handle vcr)
                                           (to-bin (maps:get 'tape vcr)))
        (#"" 'ok)
@@ -190,3 +194,8 @@
     (err (erlang:error (tuple 'servirtium err)))))
 (defun test_context (vcr name source-file source-line)
   (servirtium_nif:test_context (maps:get 'handle vcr) (to-bin name) (to-bin source-file) source-line))
+
+(defun playback_with_secrets (tape resolver)
+  (servirtium:playback_with_secrets tape resolver))
+(defun secret_redactor (server callback)
+  (maps:put 'secret_redactor callback server))

@@ -136,3 +136,47 @@ describe "Retained replay diagnostics" do
     end
   end
 end
+
+describe "named secrets" do
+  it "redacts at emission and resolves four services" do
+    directory = File.tempname("vcr-secrets-")
+    Dir.mkdir(directory)
+    tape = File.join(directory, "tape.md")
+    fixture = File.expand_path("../../core_tests/secret_fixture.py", __DIR__)
+    run = ->(action : String, arg : String) {
+      output = IO::Memory.new
+      status = Process.run("python3", [fixture, action, arg], output: output, error: output)
+      status.success?.should be_true
+      output.to_s.strip
+    }
+    begin
+      count = 0
+      rec = Servirtium.record(tape, run.call("start", directory))
+      rec.secret_redactor do |key, request|
+        if key == "password"
+          count += 1
+          request.path.split('/')[1].upcase + "_PASSWORD"
+        else
+          nil
+        end
+      end
+      begin
+        run.call("drive", rec.base_url); count.should eq(0)
+      ensure
+        rec.flush
+      end
+      count.should eq(20); run.call("check", tape)
+      resolver = ->(token : String) : String? { "pw-" + token.gsub("_PASSWORD", "").downcase + "&secret" }
+      replay = Servirtium.playback(tape, secret_resolver: resolver)
+      begin
+        run.call("drive", replay.base_url); replay.assert_no_mismatches
+      ensure
+        replay.close
+      end
+      run.call("check", tape)
+    ensure
+      Dir.each_child(directory) { |file| File.delete(File.join(directory, file)) }
+      Dir.delete(directory)
+    end
+  end
+end

@@ -23,6 +23,7 @@
 // means failure. String args/results are Erlang binaries == Gleam String.
 
 import servirtium_result
+import gleam/option.{type Option, None, Some}
 
 @external(erlang, "servirtium_nif", "open_playback")
 fn nif_open_playback(label: String, tape: String, host: String, port: Int) -> Int
@@ -73,7 +74,7 @@ pub type Mode {
 
 /// A running VCR server. Treat it as an opaque token.
 pub opaque type Vcr {
-  Vcr(handle: Int, host: String, mode: Mode, tape: String)
+  Vcr(handle: Int, host: String, mode: Mode, tape: String, secret_redactor: Option(fn(String, SecretRequest) -> Option(String)))
 }
 
 /// Outcome of the most-recent dispatch (mirrors VCR_KIND_* in core/vcr.ae).
@@ -112,18 +113,37 @@ pub fn playback(tape: String) -> Vcr {
 
 /// As `playback`, but bind a specific host.
 pub fn playback_on(tape: String, host: String) -> Vcr {
+  playback_open(tape, host, None)
+}
+
+pub type SecretRequest {
+  SecretRequest(method: String, path: String, location: String, format: String, field_path: String, interaction: Int)
+}
+@external(erlang, "servirtium_nif", "secret_stage_gleam")
+fn stage_redactor(handle: Int, callback: fn(String, SecretRequest) -> Option(String), resolving: Bool) -> Nil
+@external(erlang, "servirtium_nif", "secret_stage_gleam")
+fn stage_resolver(handle: Int, callback: fn(String) -> Option(String), resolving: Bool) -> Nil
+
+pub fn secret_redactor(vcr: Vcr, callback: fn(String, SecretRequest) -> Option(String)) -> Vcr {
+  Vcr(..vcr, secret_redactor: Some(callback))
+}
+pub fn playback_with_secrets(tape: String, callback: fn(String) -> Option(String)) -> Vcr {
+  playback_open(tape, "127.0.0.1", Some(callback))
+}
+fn playback_open(tape: String, host: String, resolver: Option(fn(String) -> Option(String))) -> Vcr {
   let handle = nif_open_playback("", tape, host, 0)
   case handle {
     0 -> panic as "servirtium: playback open failed"
     _ -> Nil
   }
+  case resolver { Some(callback) -> stage_resolver(handle, callback, True) None -> Nil }
   case nif_start(handle) {
     rc if rc < 0 -> {
       let detail = nif_last_error(handle)
       let _ = nif_stop(handle)
       panic as { "servirtium: playback start failed: " <> detail }
     }
-    _ -> Vcr(handle: handle, host: host, mode: Playback, tape: tape)
+    _ -> Vcr(handle: handle, host: host, mode: Playback, tape: tape, secret_redactor: None)
   }
 }
 
@@ -146,7 +166,7 @@ pub fn record_on(tape: String, upstream: String, host: String) -> Vcr {
       let _ = nif_stop(handle)
       panic as { "servirtium: record start failed: " <> detail }
     }
-    _ -> Vcr(handle: handle, host: host, mode: Record, tape: tape)
+    _ -> Vcr(handle: handle, host: host, mode: Record, tape: tape, secret_redactor: None)
   }
 }
 
@@ -197,11 +217,13 @@ pub fn close(vcr: Vcr) -> Closed {
       let _ = nif_stop(vcr.handle)
       Closed
     }
-    Record ->
+    Record -> {
+      case vcr.secret_redactor { Some(callback) -> stage_redactor(vcr.handle, callback, False) None -> Nil }
       case nif_stop_and_flush(vcr.handle, vcr.tape) {
         "" -> Closed
         msg -> CloseError(msg)
       }
+    }
   }
 }
 

@@ -10,6 +10,7 @@ import java.lang.foreign.MemorySegment;
  */
 public final class VcrServer implements AutoCloseable {
 
+    java.util.function.BiFunction<String, SecretRequest, String> secretRedactor;
     private MemorySegment handle;
     private final String host;
     private final String tapePath;
@@ -170,6 +171,7 @@ public final class VcrServer implements AutoCloseable {
                 NativeMethods.STOP.invokeExact(h);
                 return;
             }
+            if (secretRedactor != null) SecretCallbacks.stage(h, secretRedactor, null);
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment tape = NativeMethods.cString(arena, tapePath);
                 MemorySegment res = failIfChanged

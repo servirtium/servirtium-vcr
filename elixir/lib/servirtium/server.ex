@@ -8,7 +8,7 @@ defmodule Servirtium.Server do
   """
 
   @enforce_keys [:handle, :host, :tape_path, :mode, :fail_if_changed]
-  defstruct [:handle, :host, :tape_path, :mode, :fail_if_changed]
+  defstruct [:handle, :host, :tape_path, :mode, :fail_if_changed, :secret_redactor]
 
   @type t :: %__MODULE__{
           handle: non_neg_integer(),

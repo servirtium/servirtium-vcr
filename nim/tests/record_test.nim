@@ -115,3 +115,33 @@ suite "retained replay diagnostics":
     server.testContext("next test")
     server.assertNoMismatches()
     check server.diagnosticsJson() == "[]"
+
+suite "named secrets":
+  test "redact at flush and resolve four services":
+    let directory = getTempDir() / ("vcr-secrets-nim-" & $getCurrentProcessId())
+    createDir(directory)
+    defer: removeDir(directory)
+    let fixture = currentSourcePath().parentDir.parentDir.parentDir / "core_tests/secret_fixture.py"
+    proc run(args: seq[string]): string =
+      var command = "python3 " & quoteShell(fixture)
+      for arg in args: command.add(" " & quoteShell(arg))
+      let output = execCmdEx(command)
+      doAssert output.exitCode == 0, output.output
+      output.output.strip()
+    let tape = directory / "tape.md"
+    let rec = record(tape, run(@["start", directory]))
+    var count = 0
+    rec.secretRedactor(proc(key: string; request: SecretRequest): Option[string] =
+      if key != "password": return none(string)
+      inc count
+      some(request.path.split('/')[1].toUpperAscii() & "_PASSWORD"))
+    check rec.start()
+    discard run(@["drive", rec.baseUrl()]); check count == 0
+    rec.close(); check count == 20
+    discard run(@["check", tape])
+    let replay = playback(tape).secretResolver(proc(token: string): Option[string] =
+      some("pw-" & token.replace("_PASSWORD", "").toLowerAscii() & "&secret"))
+    check replay.start()
+    defer: replay.close()
+    discard run(@["drive", replay.baseUrl()]); replay.assertNoMismatches()
+    discard run(@["check", tape])

@@ -133,3 +133,19 @@ proc clear_format_options*(h: Handle)
 # --- string ownership bridge ---
 proc free_string*(s: cstring)
   {.importc: "aether_vcr_embed_free_string", cdecl.}
+
+# Staged host-thread secret callbacks.
+proc secret_begin*(h: Handle; resolving: cint): cstring
+  {.importc: "aether_vcr_embed_secret_begin", cdecl.}
+proc secret_next*(h: Handle): cint
+  {.importc: "aether_vcr_embed_secret_next", cdecl.}
+proc secret_get*(h: Handle; part: cint): cstring
+  {.importc: "aether_vcr_embed_secret_get", cdecl.}
+proc secret_interaction*(h: Handle): cint
+  {.importc: "aether_vcr_embed_secret_interaction", cdecl.}
+proc secret_apply*(h: Handle; value: cstring): cstring
+  {.importc: "aether_vcr_embed_secret_apply", cdecl.}
+proc secret_finish*(h: Handle): cstring
+  {.importc: "aether_vcr_embed_secret_finish", cdecl.}
+proc secret_abort*(h: Handle)
+  {.importc: "aether_vcr_embed_secret_abort", cdecl.}

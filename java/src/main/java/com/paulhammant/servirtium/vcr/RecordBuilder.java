@@ -20,6 +20,7 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     private record Note(String title, String body) {
     }
 
+    private java.util.function.BiFunction<String, SecretRequest, String> secretRedactor;
     private final String upstreamBase;
     private final List<Redaction> redactions = new ArrayList<>();
     private final List<Normalization> normalizations = new ArrayList<>();
@@ -40,6 +41,12 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     }
 
     /** Scrub a value out of the given field before it lands on the tape. */
+    /** Choose a token name during emission, or null to leave the field unchanged. */
+    public RecordBuilder secretRedactor(java.util.function.BiFunction<String, SecretRequest, String> callback) {
+        secretRedactor = callback;
+        return this;
+    }
+
     public RecordBuilder redact(Field field, String pattern, String replacement) {
         redactions.add(new Redaction(NativeMethods.REDACT, field, pattern, replacement));
         return this;
@@ -231,6 +238,8 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
         } catch (Throwable t) {
             throw rethrow("record start", t);
         }
-        return new VcrServer(handle, host, tapePath, true, failIfChanged);
+        var server = new VcrServer(handle, host, tapePath, true, failIfChanged);
+        server.secretRedactor = secretRedactor;
+        return server;
     }
 }

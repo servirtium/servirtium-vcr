@@ -248,6 +248,13 @@ class Native {
   // ---- diagnostics (handle-based) -----------------------------------------
   static final lastError =
       _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_last_error');
+  static final secretBegin = _lib.lookupFunction<_DiagC, _DiagD>('aether_vcr_embed_secret_begin');
+  static final secretNext = _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_secret_next');
+  static final secretGet = _lib.lookupFunction<_DiagC, _DiagD>('aether_vcr_embed_secret_get');
+  static final secretInteraction = _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_secret_interaction');
+  static final secretApply = _lib.lookupFunction<_FlushC, _FlushD>('aether_vcr_embed_secret_apply');
+  static final secretFinish = _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_secret_finish');
+  static final secretAbort = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_secret_abort');
   static final lastErrorEx = _lib.lookupFunction<_DiagC, _DiagD>('aether_vcr_embed_last_error_ex');
   static final diagnosticsJson = _lib.lookupFunction<_DiagC, _DiagD>('aether_vcr_embed_diagnostics_json');
   static final assertNoMismatches = _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_assert_no_mismatches');

@@ -169,3 +169,39 @@ ServirtiumRecordTest >> testStructuredRedactionHelpers [
     self assert: (bytes includesSubstring: '"secretKey": "[REDACTED]"').
     self assert: (bytes includesSubstring: '"keep": "visible"')
 ]
+
+{ #category : 'tests' }
+ServirtiumRecordTest >> testNamedSecretsRoundTrip [
+    | rec replay count owner calls send bytes |
+    count := 0. calls := 0. owner := Processor activeProcess.
+    upstream onRequestRespond: [ :request |
+        calls := calls + 1.
+        ZnResponse ok: (ZnEntity json: request entity contents) ].
+    rec := (Servirtium record: tape upstream: self upstreamBase)
+        secretRedactor: [ :key :request |
+            self assert: Processor activeProcess identicalTo: owner.
+            key = 'password' ifTrue: [
+                count := count + 1.
+                self assert: request fieldPath notEmpty.
+                (request path includesSubstring: '/billing/')
+                    ifTrue: [ 'BILLING_PASSWORD' ] ifFalse: [ 'ACCOUNTS_PASSWORD' ] ] ifFalse: [ nil ] ];
+        start.
+    send := [ :server |
+        #('accounts' 'billing') do: [ :service | | password client |
+            password := service = 'billing' ifTrue: [ 'other' ] ifFalse: [ 'qwerty' ].
+            client := ZnClient new.
+            client url: server baseUrl , '/' , service , '/login?password=' , password;
+                entity: (ZnEntity json: '{ "password": "' , password , '", "safe": 1 }'); post.
+            self assert: client contents equals: '{ "password": "' , password , '", "safe": 1 }' ] ].
+    [ send value: rec. self assert: count equals: 0 ] ensure: [ rec stop ].
+    self assert: count equals: 6.
+    bytes := tape asFileReference contents.
+    self deny: (bytes includesSubstring: 'qwerty'). self deny: (bytes includesSubstring: 'other').
+    self assert: (bytes includesSubstring: 'BILLING_PASSWORD').
+    replay := (Servirtium playback: tape) secretResolver: [ :token |
+        self assert: Processor activeProcess identicalTo: owner.
+        token = 'BILLING_PASSWORD' ifTrue: [ 'other' ] ifFalse: [ 'qwerty' ] ]; start.
+    [ send value: replay. replay assertNoMismatches ] ensure: [ replay stop ].
+    self assert: calls equals: 2.
+    self assert: tape asFileReference contents equals: bytes
+]

@@ -7,11 +7,12 @@ module Servirtium
   # A running VCR server. Call {#close} to stop it; in record mode {#close}
   # also flushes the captured tape to disk.
   class Server
-    def initialize(handle, host, tape_path, record_mode:, fail_if_changed: false)
+    def initialize(handle, host, tape_path, record_mode:, fail_if_changed: false, secret_redactor: nil)
       @handle = handle
       @host = host
       @tape_path = tape_path
       @record_mode = record_mode
+      @secret_redactor = secret_redactor
       @fail_if_changed = fail_if_changed
       @base_url = nil
     end
@@ -97,6 +98,7 @@ module Servirtium
     private
 
     def flush(handle)
+      Secrets.stage(handle, @secret_redactor, resolving: false) if @secret_redactor
       result_ptr = if @fail_if_changed
                      Native.call(:stop_and_flush_fail_if_changed, handle, @tape_path)
                    else

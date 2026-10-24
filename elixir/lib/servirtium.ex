@@ -138,6 +138,9 @@ defmodule Servirtium do
     apply_shared_config(handle, opts)
     apply_playback_config(handle, opts)
 
+    if resolver = Keyword.get(opts, :secret_resolver) do
+      Native.secret_stage(handle, resolver, true)
+    end
     if Native.start(handle) < 0 do
       detail = drain_start_error(handle)
       Native.stop(handle)
@@ -190,6 +193,7 @@ defmodule Servirtium do
       host: host,
       tape_path: tape_path,
       mode: :record,
+      secret_redactor: Keyword.get(opts, :secret_redactor),
       fail_if_changed: Keyword.get(opts, :fail_if_changed, false)
     }
 
@@ -311,7 +315,8 @@ defmodule Servirtium do
     :ok
   end
 
-  def stop(%Server{mode: :record, handle: h, tape_path: tape, fail_if_changed: fail?}) do
+  def stop(%Server{mode: :record, handle: h, tape_path: tape, fail_if_changed: fail?, secret_redactor: redactor}) do
+    if redactor, do: Native.secret_stage(h, redactor, false)
     result =
       if fail? do
         Native.stop_and_flush_fail_if_changed(h, tape)

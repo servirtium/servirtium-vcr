@@ -144,6 +144,13 @@ export const diagnosticsJson = lazy('void* aether_vcr_embed_diagnostics_json(voi
 export const assertNoMismatches = lazy('void* aether_vcr_embed_assert_no_mismatches(void* server)')
 export const testContext = lazy('void aether_vcr_embed_test_context(void* server, const char* name, const char* file, int line)')
 
+export const secretBegin = lazy('void* aether_vcr_embed_secret_begin(void* server, int resolving)')
+export const secretNext = lazy('int aether_vcr_embed_secret_next(void* server)')
+export const secretGet = lazy('void* aether_vcr_embed_secret_get(void* server, int part)')
+export const secretInteraction = lazy('int aether_vcr_embed_secret_interaction(void* server)')
+export const secretApply = lazy('void* aether_vcr_embed_secret_apply(void* server, const char* value)')
+export const secretFinish = lazy('void* aether_vcr_embed_secret_finish(void* server)')
+export const secretAbort = lazy('void aether_vcr_embed_secret_abort(void* server)')
 export const lastKind = lazy('int aether_vcr_embed_last_kind(void* server)')
 
 export const lastIndex = lazy('int aether_vcr_embed_last_index(void* server)')

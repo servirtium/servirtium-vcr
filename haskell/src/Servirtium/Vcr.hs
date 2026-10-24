@@ -31,7 +31,10 @@
 -- open -> configure(handle) -> start. See @docs\/architecture.md@.
 module Servirtium.Vcr
   ( -- * Building a fixture
-    PlaybackOptions (..)
+    SecretRequest (..)
+  , SecretRedactor
+  , SecretResolver
+  , PlaybackOptions (..)
   , RecordOptions (..)
   , playbackOptions
   , recordOptions
@@ -63,7 +66,7 @@ module Servirtium.Vcr
   , clearLastError
   ) where
 
-import Control.Exception (Exception, bracket, throwIO)
+import Control.Exception (Exception, bracket, throwIO, onException)
 import Control.Monad (unless, when)
 import Foreign.C.Types (CInt (..))
 import Foreign.C.String (CString, withCString)
@@ -126,7 +129,8 @@ instance Exception VcrException
 -- override fields with record-update syntax. Defaults: host @127.0.0.1@,
 -- port @0@ (OS-assigned), no mutations, non-strict.
 data PlaybackOptions = PlaybackOptions
-  { pbTapePath       :: FilePath
+  { pbSecretResolver :: Maybe SecretResolver
+  , pbTapePath       :: FilePath
     -- ^ The markdown tape to replay.
   , pbHost           :: String
     -- ^ Bind host (default @127.0.0.1@).
@@ -163,7 +167,8 @@ data PlaybackOptions = PlaybackOptions
 -- | Options for a __record__ fixture. Build with 'recordOptions' and override
 -- fields with record-update syntax.
 data RecordOptions = RecordOptions
-  { recTapePath          :: FilePath
+  { recSecretRedactor :: Maybe SecretRedactor
+  , recTapePath          :: FilePath
     -- ^ Where the captured markdown tape is written on stop.
   , recUpstreamBase      :: String
     -- ^ Upstream base URL each request is forwarded to.
@@ -221,7 +226,8 @@ data RecordOptions = RecordOptions
 -- | A playback options record with sensible defaults for the given tape path.
 playbackOptions :: FilePath -> PlaybackOptions
 playbackOptions tape = PlaybackOptions
-  { pbTapePath      = tape
+  { pbSecretResolver = Nothing
+  , pbTapePath      = tape
   , pbHost          = "127.0.0.1"
   , pbPort          = 0
   , pbLabel         = ""
@@ -239,7 +245,8 @@ playbackOptions tape = PlaybackOptions
 -- and upstream base URL.
 recordOptions :: FilePath -> String -> RecordOptions
 recordOptions tape upstream = RecordOptions
-  { recTapePath           = tape
+  { recSecretRedactor = Nothing
+  , recTapePath           = tape
   , recUpstreamBase       = upstream
   , recHost               = "127.0.0.1"
   , recPort               = 0
@@ -271,6 +278,7 @@ data VcrServer = VcrServer
   { vcrHandle   :: N.Handle
   , vcrHost     :: String
   , vcrTapePath :: FilePath
+  , vcrRedactor :: Maybe SecretRedactor
   , vcrMode     :: Mode
   }
 
@@ -315,6 +323,40 @@ drainStartError h = do
            then "(no detail; check tape path and port availability)"
            else err
 
+data SecretRequest = SecretRequest
+  { secretMethod :: String, secretPath :: String, secretLocation :: String
+  , secretFormat :: String, secretFieldPath :: String, secretInteraction :: Int
+  } deriving (Eq, Show)
+type SecretRedactor = String -> SecretRequest -> IO (Maybe String)
+type SecretResolver = String -> IO (Maybe String)
+
+secretStage :: N.Handle -> Maybe SecretRedactor -> Maybe SecretResolver -> IO ()
+secretStage h redactor resolver = stage `onException` cleanup
+  where
+    cleanup = N.aether_vcr_embed_secret_abort h >> N.aether_vcr_embed_stop h
+    get n = N.takeString =<< N.aether_vcr_embed_secret_get h n
+    stage = do
+      check "secret_begin" $ N.aether_vcr_embed_secret_begin h (maybe 0 (const 1) resolver)
+      loop
+      check "secret_finish" $ N.aether_vcr_embed_secret_finish h
+    loop = do
+      next <- N.aether_vcr_embed_secret_next h
+      when (next < 0) $ throwIO (VcrException "Secret staging aborted")
+      when (next > 0) $ do
+        value <- case resolver of
+          Just callback -> get 2 >>= callback
+          Nothing -> case redactor of
+            Nothing -> pure Nothing
+            Just callback -> do
+              key <- get 1
+              request <- SecretRequest <$> get 3 <*> get 4 <*> get 5 <*> get 6 <*> get 7
+                <*> (fromIntegral <$> N.aether_vcr_embed_secret_interaction h)
+              callback key request
+        case value of
+          Nothing -> pure ()
+          Just v -> check "secret_apply" $ withCString v $ N.aether_vcr_embed_secret_apply h
+        loop
+
 -- Starting ------------------------------------------------------------------
 
 -- | Open the playback server, apply the options to its handle, then begin
@@ -346,6 +388,7 @@ startPlayback opts = do
                       N.aether_vcr_embed_unredact handle (fieldCode f) cPat cRepl)
             (pbUnredactions opts)
       applyStaticAndUntaped handle (pbStaticContent opts) (pbUntaped opts)
+      maybe (pure ()) (\callback -> secretStage handle Nothing (Just callback)) (pbSecretResolver opts)
       rc <- N.aether_vcr_embed_start handle
       if rc < 0
         then do
@@ -357,6 +400,7 @@ startPlayback opts = do
           { vcrHandle   = handle
           , vcrHost     = pbHost opts
           , vcrTapePath = pbTapePath opts
+          , vcrRedactor = Nothing
           , vcrMode     = Playback
           }
 
@@ -420,6 +464,7 @@ startRecord opts = do
             { vcrHandle   = handle
             , vcrHost     = recHost opts
             , vcrTapePath = recTapePath opts
+            , vcrRedactor = recSecretRedactor opts
             , vcrMode     = Record (recFailIfChanged opts)
             }
       -- Stage the note now (open_record cleared the tape) so it attaches to
@@ -454,6 +499,7 @@ stop :: VcrServer -> IO ()
 stop server = case vcrMode server of
   Playback -> N.aether_vcr_embed_stop (vcrHandle server)
   Record failIfChanged -> do
+    maybe (pure ()) (\callback -> secretStage (vcrHandle server) (Just callback) Nothing) (vcrRedactor server)
     err <-
       withCString (vcrTapePath server) $ \cTape ->
         N.takeString =<<

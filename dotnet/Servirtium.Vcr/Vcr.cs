@@ -129,6 +129,8 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
 /// <summary>Configures and starts a playback VCR server.</summary>
 public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
 {
+    private Func<string, string?>? _secretResolver;
+    public PlaybackBuilder SecretResolver(Func<string, string?> callback) { _secretResolver = callback; return this; }
     private readonly List<(VcrField field, string pattern, string replacement)> _unredactions = new();
     private readonly List<string> _matchHeaders = new();
     private bool _strictHeaders;
@@ -216,6 +218,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
             throw new VcrException($"vcr playback failed to start for tape '{TapePath}'");
         }
         ApplyConfig(handle);
+        if (_secretResolver != null) SecretCallbacks.Stage(handle, null, _secretResolver);
         if (NativeMethods.Start(handle) < 0)
         {
             string detail = DrainStartError(handle);
@@ -235,6 +238,8 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
 /// <summary>Configures and starts a record VCR server.</summary>
 public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
 {
+    private Func<string, SecretRequest, string?>? _secretRedactor;
+    public RecordBuilder SecretRedactor(Func<string, SecretRequest, string?> callback) { _secretRedactor = callback; return this; }
     private readonly string _upstreamBase;
     private readonly List<(Func<IntPtr, int, string, string, IntPtr> operation, VcrField field, string pattern, string replacement)> _redactions = new();
     private readonly List<(string pattern, string name)> _normalizeWholeTape = new();
@@ -378,7 +383,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
             NativeMethods.Stop(handle);
             throw new VcrException($"vcr record failed to begin serving for tape '{TapePath}': {detail}");
         }
-        return new VcrServer(handle, HostValue, TapePath, recordMode: true, failIfChanged: _failIfChanged);
+        return new VcrServer(handle, HostValue, TapePath, recordMode: true, failIfChanged: _failIfChanged) { SecretRedactorCallback = _secretRedactor };
     }
 }
 
@@ -388,6 +393,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
 /// </summary>
 public sealed class VcrServer : IDisposable
 {
+    internal Func<string, SecretRequest, string?>? SecretRedactorCallback;
     private IntPtr _handle;
     private readonly string _host;
     private readonly string _tapePath;
@@ -468,6 +474,7 @@ public sealed class VcrServer : IDisposable
             return;
         }
 
+        if (SecretRedactorCallback != null) SecretCallbacks.Stage(h, SecretRedactorCallback, null);
         IntPtr resultPtr = _failIfChanged
             ? NativeMethods.StopAndFlushFailIfChanged(h, _tapePath)
             : NativeMethods.StopAndFlush(h, _tapePath);

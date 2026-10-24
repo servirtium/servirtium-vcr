@@ -7,6 +7,7 @@ Class {
 	#name : 'ServirtiumPlaybackBuilder',
 	#superclass : 'ServirtiumBuilder',
 	#instVars : [
+        'secretResolver',
 		'unredactions',
 		'strictHeaders',
 		'matchJsonBody',
@@ -123,6 +124,7 @@ ServirtiumPlaybackBuilder >> start [
 		ServirtiumError signal:
 			'vcr playback failed to start for tape ''' , tapePath , '''' ].
 	self applyConfig: handle.
+	secretResolver ifNotNil: [ self library stageSecrets: handle callback: secretResolver resolving: true ].
 	(self library start: handle) < 0 ifTrue: [
 		| detail |
 		detail := self drainStartError: handle.
@@ -139,4 +141,10 @@ ServirtiumPlaybackBuilder >> startThenDo: aBlock [
 	| server |
 	server := self start.
 	^ [ aBlock value: server ] ensure: [ server stop ]
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> secretResolver: callback [
+    secretResolver := callback.
+    ^ self
 ]

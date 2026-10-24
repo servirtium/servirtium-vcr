@@ -61,6 +61,7 @@
 //
 //   import std.http.server.vcr
 //   import std.http
+import secret_fields
 import std.io
 //   import std.http.client
 //
@@ -114,6 +115,7 @@ import std.encoding
 
 // Export the public wrappers once; their vcr_* implementations stay internal.
 exports (
+    secret_check_ready_h, secret_begin_h, secret_next_h, secret_get_h, secret_interaction_h, secret_apply_h, secret_finish_h, secret_abort_h,
     vcr_load_err,
     vcr_record_interaction,
     vcr_add_redaction, vcr_add_unredaction, vcr_add_header_removal,
@@ -1959,12 +1961,13 @@ emit_playback_response(srvkey: string, e: *Interaction, req: ptr, res: ptr) {
 // (+ optional header / body / json rules) the ordered path checks, but as a
 // pure predicate with no diagnostics. Live values are pre-read once by the
 // caller so the request body isn't consumed per candidate.
-interaction_matches_pre(srvkey: string, e: *Interaction, req: ptr, got_method: string,
+interaction_matches_pre(srvkey: string, index: int, e: *Interaction, req: ptr, got_method: string,
                         got_path_plain: string, got_path_q: string,
                         live_headers: string, live_body: string) -> int {
     expected_path = rt_apply_unredactions_for_k(srvkey, e.path, FIELD_PATH)
     got_path = got_path_plain
     if expected_path_includes_query(expected_path) == 1 { got_path = got_path_q }
+    got_path = secret_canonical_live_k(srvkey, index, FIELD_PATH, got_path)
     if string.equals(got_method, e.method) == 0 { return 0 }
     if string.length(got_path) == 0 || string.equals(got_path, expected_path) == 0 { return 0 }
 
@@ -1981,7 +1984,8 @@ interaction_matches_pre(srvkey: string, e: *Interaction, req: ptr, got_method: s
 
     expected_req_body = rt_apply_unredactions_for_k(srvkey, e.req_body, FIELD_REQUEST_BODY)
     if is_blank(expected_req_body) == 0 {
-        bm = string.equals(live_body, expected_req_body)
+        canonical_body = secret_canonical_live_k(srvkey, index, FIELD_REQUEST_BODY, live_body)
+        bm = string.equals(canonical_body, expected_req_body)
         if bm == 0 && vcr_get_match_json_body_k(srvkey) == 1 {
             bm = json_bodies_equal(live_body, expected_req_body)
         }
@@ -2004,7 +2008,7 @@ do_playback_multiple(srvkey: string, req: ptr, res: ptr) {
     i = 0
     while i < n {
         e = tape_get_k(srvkey, i)
-        if interaction_matches_pre(srvkey, e, req, got_method, got_path_plain, got_path_q, live_headers, live_body) == 1 {
+        if interaction_matches_pre(srvkey, i, e, req, got_method, got_path_plain, got_path_q, live_headers, live_body) == 1 {
             found = i
             break
         }
@@ -2069,6 +2073,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
     if expected_path_includes_query(expected_path) == 1 {
         got_path = build_recorded_path(req)
     }
+    got_path = secret_canonical_live_k(srvkey, cur, FIELD_PATH, got_path)
     if string.length(got_method) == 0 || string.equals(got_method, e.method) == 0 ||
        string.length(got_path) == 0 || string.equals(got_path, expected_path) == 0 {
         gm = got_method
@@ -2187,7 +2192,8 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
     // equality (key order / whitespace ignored) before being called a mismatch.
     if is_blank(expected_req_body) == 0 {
         live_body = read_full_request_body(req)
-        bodies_match = string.equals(live_body, expected_req_body)
+        canonical_body = secret_canonical_live_k(srvkey, cur, FIELD_REQUEST_BODY, live_body)
+        bodies_match = string.equals(canonical_body, expected_req_body)
         if bodies_match == 0 && vcr_get_match_json_body_k(srvkey) == 1 {
             bodies_match = json_bodies_equal(live_body, expected_req_body)
         }
@@ -3900,23 +3906,16 @@ emit_code_block(body: string) -> string {
             out = string_concat(out, "\n")
             cursor = nl_idx + 1
         }
-        return out
+        return string_concat(out, "    \n")
     }
     // Fenced default.
     if string.length(body) == 0 {
         return "```\n```\n"
     }
-    last_idx = string.length(body) - 1
-    last_char = string.char_at(body, last_idx)
-    // 10 == '\n'. Ensure trailing newline before close fence.
-    if last_char == 10 {
-        out = string_concat("```\n", body)
-        out = string_concat(out, "```\n")
-        return out
-    }
+    // The separator before the closing fence is not part of the payload.
+    // Always add it, including when the payload itself ends in a newline.
     out = string_concat("```\n", body)
-    out = string_concat(out, "\n```\n")
-    return out
+    return string_concat(out, "\n```\n")
 }
 
 // Emit one Interaction at index `i` as a markdown chunk.
@@ -3946,6 +3945,12 @@ emit_one_interaction(i: int) -> string {
     resp_h_out = apply_redactions_for(resp_h, FIELD_RESPONSE_HEADERS)
     req_h_out  = remove_headers_for(req_h_out, FIELD_REQUEST_HEADERS)
     resp_h_out = remove_headers_for(resp_h_out, FIELD_RESPONSE_HEADERS)
+
+    path_out = secret_emission_field(i, FIELD_PATH, path_out)
+    req_h_out = secret_emission_field(i, FIELD_REQUEST_HEADERS, req_h_out)
+    req_b_out = secret_emission_field(i, FIELD_REQUEST_BODY, req_b_out)
+    resp_h_out = secret_emission_field(i, FIELD_RESPONSE_HEADERS, resp_h_out)
+    body_out = secret_emission_field(i, FIELD_RESPONSE_BODY, body_out)
 
     // Whole-tape normalization runs last, on the post-redaction text, so the
     // value->token table (built across the whole tape in emit_tape) collapses
@@ -4014,6 +4019,15 @@ emit_one_interaction(i: int) -> string {
 // string instead of writing to FILE*.
 emit_tape() -> string {
     config.put(slot(cur_key(), "emit_error"), "")
+    secret_state = config.get(slot(cur_key(), "secret_state"))
+    if cfg_get_int(slot(cur_key(), "secret_materialized"), 0) != 0 {
+        config.put(slot(cur_key(), "emit_error"), "resolved playback secrets cannot be emitted")
+        return ""
+    }
+    if secret_state == "pending" || secret_state == "failed" {
+        config.put(slot(cur_key(), "emit_error"), "secret callback staging did not complete; tape was not written")
+        return ""
+    }
     build_normalization_map()
     n = vcr_get_tape_count()
     out = string.copy("")
@@ -4653,6 +4667,12 @@ diagnostic_safe_k(key: string, src: string, field: int) -> string {
             if parsed != null { json.json_free(parsed) }
         }
     }
+    resolved = secret_values_k(key); ri = 0
+    while ri < list_size(resolved) {
+        item = list_get_raw(resolved, ri) as *SecretValue
+        if item.value != "" { out = str_replace_all(out, item.value, "[REDACTED]") }
+        ri = ri + 1
+    }
     return out
 }
 first_difference(a: string, b: string) -> int {
@@ -4918,7 +4938,319 @@ diagnostic_open_h(h: ptr, test_name: string, tape: string) {
     test_context_h(h, test_name, "", 0)
     cfg_set_str(slot(key, "diagnostic_tape"), tape)
     cfg_set_int(slot(key, "diagnostic_sequence"), 0)
+    cfg_set_str(slot(key, "secret_state"), "")
+    list_reset(slot(key, "secret_values"))
+    cfg_set_int(slot(key, "secret_materialized"), 0)
 }
 last_error_ex_h(h: ptr, consume: int) -> string { return replay_last_error_k(key_for(h), consume) }
 diagnostics_json_h(h: ptr, consume: int) -> string { return diagnostics_json_k(key_for(h), consume) }
 assert_no_mismatches_h(h: ptr) -> string { return assert_no_mismatches_k(key_for(h)) }
+
+// ---- staged named secrets: no HLL callbacks execute on HTTP worker threads ----
+struct SecretCandidate {
+    interaction: int; field: int; start: int; end: int; style: int
+    key: string; path: string; format: string; token: string; indent: string
+    applied: int; replacement: string; resolved_value: string; ordinal: int
+}
+struct SecretValue { value: string }
+secret_candidates_k(key: string) -> ptr { return list_handle(slot(key, "secret_candidates")) }
+secret_values_k(key: string) -> ptr { return list_handle(slot(key, "secret_values")) }
+secret_current_k(key: string) -> *SecretCandidate {
+    index = cfg_get_int(slot(key, "secret_cursor"), -1); items = secret_candidates_k(key)
+    if index < 0 || index >= list_size(items) { return null }
+    return list_get_raw(items, index) as *SecretCandidate
+}
+secret_raw_field(e: *Interaction, field: int) -> string {
+    if field == FIELD_PATH { return e.path }
+    if field == FIELD_REQUEST_HEADERS { return e.req_headers }
+    if field == FIELD_RESPONSE_HEADERS { return e.resp_headers }
+    if field == FIELD_REQUEST_BODY { return e.req_body }
+    return e.body
+}
+secret_source_k(key: string, index: int, field: int) -> string {
+    src = secret_raw_field(tape_get_k(key, index), field)
+    if cfg_get_int(slot(key, "secret_resolving"), 0) == 0 {
+        // Called only on the test thread after stopping recording.
+        src = apply_redactions_for(src, field)
+        if field == FIELD_REQUEST_HEADERS || field == FIELD_RESPONSE_HEADERS { src = remove_headers_for(src, field) }
+    }
+    return src
+}
+secret_valid_name(name: string) -> int {
+    if string.length(name) == 0 || string.length(name) > 128 { return 0 }
+    i = 0
+    while i < string.length(name) {
+        c = string.char_at(name, i)
+        if !((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 || c == 45 || c == 46 || c == 58) { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+secret_parse_marker(value: string, fallback_style: int) -> {
+    if string.substring(value, 0, 9) != "{{secret:" { return "", fallback_style, "" }
+    n = string.length(value)
+    if n < 12 || string.substring(value, n - 2, n) != "}}" { return "", 0, "invalid named secret marker" }
+    inner = string.substring(value, 9, n - 2); bar = string.index_of(inner, "|"); style = fallback_style; name = inner
+    if bar >= 0 {
+        name = string.substring(inner, 0, bar); digits = string.substring(inner, bar + 1, string.length(inner))
+        if digits == "" { return "", 0, "secret marker has no encoding" }
+        style = 0; i = 0
+        while i < string.length(digits) { c = string.char_at(digits, i); if c < 48 || c > 57 { return "", 0, "invalid secret marker encoding" }; style = style * 10 + c - 48; i = i + 1 }
+        if style < 1 || style > 13 { return "", 0, "unknown secret marker encoding" }
+    }
+    if secret_valid_name(name) == 0 { return "", 0, "invalid named secret identifier" }
+    return name, style, ""
+}
+secret_body_format(e: *Interaction, field: int, src: string, resolving: int) -> string {
+    mime = e.content_type
+    if field == FIELD_REQUEST_BODY { mime = header_value_in_block(e.req_headers, "Content-Type") }
+    // Explicit MIME wins. JSON/XML can also be identified after volatile headers
+    // were removed. YAML/form inference is restricted to designated markers.
+    if ascii_ci_contains(mime, "json") == 1 { return "json" }
+    if ascii_ci_contains(mime, "xml") == 1 { return "xml" }
+    if ascii_ci_contains(mime, "yaml") == 1 || ascii_ci_contains(mime, "yml") == 1 { return "yaml" }
+    if ascii_ci_contains(mime, "application/x-www-form-urlencoded") == 1 { return "form" }
+    if ascii_ci_contains(mime, "multipart/form-data") == 1 {
+        start = 0
+        while start + 9 <= string.length(mime) && icmp_rt(string.substring(mime, start, start + 9), "boundary=") != 0 { start = start + 1 }
+        if start + 9 > string.length(mime) { return "multipart:" }
+        start = start + 9; end = string.length(mime)
+        if string.char_at(mime, start) == 34 { start = start + 1; end = string.index_of_from(mime, "\"", start); if end < 0 { return "multipart:" } }
+        else { semicolon = string.index_of_from(mime, ";", start); if semicolon >= 0 { end = semicolon } }
+        return string_concat("multipart:", rtrim(string.substring(mime, start, end)))
+    }
+    first = json_skip_space(src, 0)
+    if first < string.length(src) {
+        c = string.char_at(src, first)
+        if c == 123 || c == 91 {
+            node, err = json.parse(src)
+            if node != null && err == "" { json.json_free(node); return "json" }
+            if node != null { json.json_free(node) }
+            if resolving == 1 && string.contains(src, "{{secret:") == 1 { return "yaml" }
+        }
+        if c == 60 { return "xml" }
+    }
+    if resolving == 1 {
+        if ascii_ci_contains(src, "%7B%7Bsecret%3A") == 1 { return "form" }
+        if string.contains(src, "{{secret:") == 1 && string.contains(src, ":") == 1 {
+            // Markers themselves contain a colon: require a mapping separator.
+            if string.contains(src, ": ") == 1 || string.contains(src, ":\n") == 1 { return "yaml" }
+        }
+    }
+    return "opaque"
+}
+secret_begin_h(h: ptr, resolving: int) -> string {
+    key = key_for(h); set_cur_key(key)
+    if config.get(slot(key, "secret_state")) == "pending" { return "secret staging is already in progress" }
+    if resolving != 0 && cfg_get_int(slot(key, "secret_materialized"), 0) != 0 { return "playback secrets have already been resolved" }
+    if resolving != 0 && mode_k(key) == "record" { return "secret resolver requires playback mode" }
+    if resolving == 0 && mode_k(key) != "record" { return "secret redactor requires record mode" }
+    if resolving == 0 { http.server_stop(h) }
+    generic = resolving == 1
+    if resolving != 0 { resolving = 1 }
+    cfg_set_int(slot(key, "secret_resolving"), resolving)
+    cfg_set_str(slot(key, "secret_state"), "pending")
+    cfg_set_int(slot(key, "secret_cursor"), -1)
+    list_reset(slot(key, "secret_candidates"))
+    config.put(slot(key, "emit_error"), "")
+    items = secret_candidates_k(key); index = 0
+    while index < list_size(tape_list_k(key)) {
+        e = tape_get_k(key, index); order = 0
+        while order < 5 {
+            field = FIELD_PATH
+            if order == 1 { field = FIELD_REQUEST_HEADERS }
+            if order == 2 { field = FIELD_REQUEST_BODY }
+            if order == 3 { field = FIELD_RESPONSE_HEADERS }
+            if order == 4 { field = FIELD_RESPONSE_BODY }
+            src = secret_source_k(key, index, field)
+            if config.get(slot(key, "emit_error")) != "" { return secret_fail_k(key, "pre-existing redaction failed") }
+            if src != "" {
+                format = "query"
+                if field == FIELD_REQUEST_HEADERS || field == FIELD_RESPONSE_HEADERS { format = "header" }
+                if field == FIELD_REQUEST_BODY || field == FIELD_RESPONSE_BODY { format = secret_body_format(e, field, src, resolving) }
+                spans = list_new(); err = ""
+                has_marker = string.contains(src, "{{secret:") == 1 || ascii_ci_contains(src, "%7B%7Bsecret%3A") == 1
+                if generic && (string.contains(src, "[REDACTED]") == 1 || ascii_ci_contains(src, "%5BREDACTED%5D") == 1) { has_marker = true }
+                if resolving == 0 || has_marker { spans, err = secret_fields.scan(src, format) }
+                if err != "" { return secret_fail_k(key, "interaction ${index}: secret field extraction failed (${format}): ${err}") }
+                i = 0
+                while i < secret_fields.count(spans) {
+                    name = ""; style = secret_fields.style_at(spans, i)
+                    if resolving != 0 {
+                        value = secret_fields.value_at(spans, i)
+                        original_style = style
+                        name, style, err = secret_parse_marker(value, style)
+                        if generic && value == "[REDACTED]" { name = string.copy(secret_fields.key_at(spans, i)) }
+                        compatible = style == original_style || ((original_style == 3 || original_style == 8) && (style == 3 || style == 4 || style == 8 || style == 10))
+                        if name != "" && !compatible { return secret_fail_k(key, "secret marker encoding does not match its field") }
+                        if err != "" { return secret_fail_k(key, "interaction ${index}: ${err}") }
+                    }
+                    if resolving == 0 || name != "" {
+                        candidate = malloc(sizeof(SecretCandidate)) as *SecretCandidate
+                        candidate.interaction = index; candidate.field = field
+                        candidate.start = secret_fields.begin_at(spans, i); candidate.end = secret_fields.end_at(spans, i)
+                        candidate.style = style; candidate.key = string.copy(secret_fields.key_at(spans, i)); candidate.path = string.copy(secret_fields.path_at(spans, i))
+                        candidate.format = string.copy(format); candidate.token = string.copy(name); candidate.indent = string.copy(secret_fields.indent_at(spans, i))
+                        candidate.applied = 0; candidate.replacement = ""; candidate.resolved_value = ""; candidate.ordinal = i
+                        list_add_raw(items, candidate)
+                    }
+                    i = i + 1
+                }
+            }
+            order = order + 1
+        }
+        index = index + 1
+    }
+    return ""
+}
+secret_fail_k(key: string, error: string) -> string { cfg_set_str(slot(key, "secret_state"), "failed"); cfg_set_str(slot(key, "load_err"), error); return error }
+secret_next_h(h: ptr) -> int {
+    key = key_for(h)
+    if config.get(slot(key, "secret_state")) != "pending" { return -1 }
+    index = cfg_get_int(slot(key, "secret_cursor"), -1) + 1
+    cfg_set_int(slot(key, "secret_cursor"), index)
+    if index >= list_size(secret_candidates_k(key)) { return 0 }
+    return 1
+}
+secret_get_h(h: ptr, part: int) -> string {
+    key = key_for(h); current = secret_current_k(key)
+    if current == null { return "" }
+    if part == 1 { return current.key }
+    if part == 2 { return current.token }
+    e = tape_get_k(key, current.interaction)
+    if part == 3 { return e.method }
+    if part == 4 { return e.path }
+    if part == 5 {
+        if current.field == FIELD_PATH { return "request.query" }
+        if current.field == FIELD_REQUEST_HEADERS { return "request.headers" }
+        if current.field == FIELD_RESPONSE_HEADERS { return "response.headers" }
+        if current.field == FIELD_REQUEST_BODY { return "request.body" }
+        return "response.body"
+    }
+    if part == 6 { return current.format }
+    if part == 7 { return current.path }
+    return ""
+}
+secret_interaction_h(h: ptr) -> int { current = secret_current_k(key_for(h)); if current == null { return -1 }; return current.interaction }
+secret_apply_h(h: ptr, value: string) -> string {
+    key = key_for(h); current = secret_current_k(key)
+    if current == null || config.get(slot(key, "secret_state")) != "pending" { return "no current secret candidate" }
+    if current.applied == 1 { return secret_fail_k(key, "secret candidate already has a decision") }
+    resolving = cfg_get_int(slot(key, "secret_resolving"), 0)
+    replacement = value
+    if resolving == 0 {
+        if secret_valid_name(value) == 0 { return secret_fail_k(key, "invalid secret token name (use letters, digits, dot, underscore, dash or colon)") }
+        style = current.style
+        replacement = "{{secret:${value}|${style}}}"
+        current.token = string.copy(value)
+    }
+    if string.substring(current.format, 0, 10) == "multipart:" && string.contains(replacement, "\n--") == 1 { return secret_fail_k(key, "multipart secret would introduce a delimiter") }
+    encoded, err = secret_fields.render(replacement, current.style, 1 - resolving, current.indent)
+    if err != "" { return secret_fail_k(key, err) }
+    current.replacement = string.copy(encoded); current.applied = 1
+    if resolving != 0 { current.resolved_value = string.copy(value) }
+    if resolving != 0 && value != "" {
+        secret = malloc(sizeof(SecretValue)) as *SecretValue; secret.value = string.copy(value); list_add_raw(secret_values_k(key), secret)
+        // Diagnostics can contain the wire encoding instead of the decoded value.
+        wire_value = encoded
+        if current.style == 3 || current.style == 8 || current.style == 9 { wire_value = string.substring(encoded, 1, string.length(encoded) - 1) }
+        secret = malloc(sizeof(SecretValue)) as *SecretValue; secret.value = string.copy(wire_value); list_add_raw(secret_values_k(key), secret)
+        url_value = secret_fields.encode_url(value)
+        secret = malloc(sizeof(SecretValue)) as *SecretValue; secret.value = string.copy(url_value); list_add_raw(secret_values_k(key), secret)
+        secret = malloc(sizeof(SecretValue)) as *SecretValue; secret.value = str_replace_all(url_value, "%20", "+"); list_add_raw(secret_values_k(key), secret)
+    }
+    return ""
+}
+secret_patch_k(key: string, index: int, field: int, source: string) -> string {
+    out = string.copy(""); cursor = 0; items = secret_candidates_k(key); i = 0
+    while i < list_size(items) {
+        item = list_get_raw(items, i) as *SecretCandidate
+        if item.interaction == index && item.field == field && item.applied == 1 {
+            if item.start < cursor { cfg_set_str(slot(key, "secret_state"), "failed"); return "" }
+            out = string_concat(out, string.substring(source, cursor, item.start)); out = string_concat(out, item.replacement); cursor = item.end
+        }
+        i = i + 1
+    }
+    return string_concat(out, string.substring(source, cursor, string.length(source)))
+}
+secret_finish_h(h: ptr) -> string {
+    key = key_for(h); set_cur_key(key)
+    if config.get(slot(key, "secret_state")) != "pending" { return "secret staging did not complete" }
+    items = secret_candidates_k(key); resolving = cfg_get_int(slot(key, "secret_resolving"), 0); i = 0
+    if cfg_get_int(slot(key, "secret_cursor"), -1) < list_size(items) { return secret_fail_k(key, "not all secret candidates were visited") }
+    while i < list_size(items) {
+        item = list_get_raw(items, i) as *SecretCandidate
+        if resolving != 0 && item.applied == 0 {
+            name = item.token; index = item.interaction; path = item.path
+            return secret_fail_k(key, "unresolved secret '${name}' at interaction ${index}, field ${path}")
+        }
+        i = i + 1
+    }
+    if resolving != 0 {
+        // Decisions and all encodings have been validated before mutating any
+        // playback expectation. Each patch is scoped to its original occurrence.
+        i = 0
+        while i < list_size(tape_list_k(key)) {
+            e = tape_get_k(key, i)
+            e.path = secret_patch_k(key, i, FIELD_PATH, e.path)
+            e.req_headers = secret_patch_k(key, i, FIELD_REQUEST_HEADERS, e.req_headers)
+            e.req_body = secret_patch_k(key, i, FIELD_REQUEST_BODY, e.req_body)
+            e.resp_headers = secret_patch_k(key, i, FIELD_RESPONSE_HEADERS, e.resp_headers)
+            e.body = secret_patch_k(key, i, FIELD_RESPONSE_BODY, e.body)
+            i = i + 1
+        }
+    }
+    if resolving != 0 && list_size(items) > 0 { cfg_set_int(slot(key, "secret_materialized"), 1) }
+    cfg_set_str(slot(key, "secret_state"), "ready")
+    return ""
+}
+secret_abort_h(h: ptr) { cfg_set_str(slot(key_for(h), "secret_state"), "failed") }
+secret_emission_field(index: int, field: int, source: string) -> string {
+    key = cur_key()
+    if cfg_get_int(slot(key, "secret_resolving"), 0) == 0 && config.get(slot(key, "secret_state")) == "ready" { return secret_patch_k(key, index, field, source) }
+    return source
+}
+
+secret_check_ready_h(h: ptr) -> string {
+    key = key_for(h)
+    if mode_k(key) == "record" { return "" }
+    state = config.get(slot(key, "secret_state"))
+    if state == "ready" { return "" }
+    if state != "" { return "secret resolution did not complete" }
+    err = secret_begin_h(h, 2)
+    if err != "" { return err }
+    while secret_next_h(h) > 0 {}
+    return secret_finish_h(h)
+}
+
+// Only resolved secret values receive encoding equivalence. The surrounding
+// path/body, other fields, scalar types and field order remain byte-exact.
+secret_canonical_live_k(key: string, index: int, field: int, source: string) -> string {
+    if cfg_get_int(slot(key, "secret_materialized"), 0) == 0 { return source }
+    items = secret_candidates_k(key); i = 0; format = ""
+    while i < list_size(items) {
+        item = list_get_raw(items, i) as *SecretCandidate
+        if item.interaction == index && item.field == field { format = item.format; break }
+        i = i + 1
+    }
+    if format == "" { return source }
+    spans, err = secret_fields.scan(source, format)
+    if err != "" { return source }
+    out = string.copy(""); cursor = 0; i = 0
+    while i < list_size(items) {
+        item = list_get_raw(items, i) as *SecretCandidate
+        if item.interaction == index && item.field == field && item.applied == 1 {
+            n = item.ordinal
+            if n < secret_fields.count(spans) && secret_fields.path_at(spans, n) == item.path &&
+                secret_fields.style_at(spans, n) == item.style && secret_fields.value_at(spans, n) == item.resolved_value {
+                start = secret_fields.begin_at(spans, n); end = secret_fields.end_at(spans, n)
+                if start >= cursor {
+                    out = string_concat(out, string.substring(source, cursor, start))
+                    out = string_concat(out, item.replacement); cursor = end
+                }
+            }
+        }
+        i = i + 1
+    }
+    return string_concat(out, string.substring(source, cursor, string.length(source)))
+}

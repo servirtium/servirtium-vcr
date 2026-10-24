@@ -7,6 +7,7 @@
 %% app + its priv/servirtium_nif.so resolve) from erlang/ (so tapes/ resolves).
 
 main(_) ->
+    named_secrets(),
 
     Directory = "/tmp/vcr-helpers-erlang-" ++ os:getpid(),
     ok = file:make_dir(Directory),
@@ -71,3 +72,32 @@ main(_) ->
                 [Body, Kind]),
             halt(1)
     end.
+
+named_secrets() ->
+    Dir = "/tmp/vcr-secrets-erlang-" ++ os:getpid(), ok = file:make_dir(Dir),
+    Tape = Dir ++ "/tape.md", Owner = self(),
+    Run = fun(Action, Arg) ->
+        Output = os:cmd("python3 ../core_tests/secret_fixture.py " ++ Action ++ " '" ++ Arg ++ "' 2>&1; printf '\nRC:%s' $?"),
+        [Text, "0"] = string:split(Output, "\nRC:", trailing), string:trim(Text)
+    end,
+    Rec = servirtium:secret_redactor(servirtium:record(Tape, Run("start", Dir)), fun(Key, R) ->
+        Owner = self(),
+        case Key of <<"password">> ->
+            Owner ! redacted,
+            [_, Service | _] = binary:split(maps:get(path,R), <<"/">>, [global]),
+            <<(string:uppercase(Service))/binary, "_PASSWORD">>;
+            _ -> undefined
+        end
+    end),
+    Run("drive", servirtium:base_url(Rec)),
+    receive redacted -> error(early_callback) after 0 -> ok end,
+    ok = servirtium:close(Rec),
+    lists:foreach(fun(_) -> receive redacted -> ok after 0 -> error(missing_callback) end end, lists:seq(1,20)),
+    Run("check", Tape),
+    Replay = servirtium:playback_with_secrets(Tape, fun(Token) ->
+        Owner = self(), [Service, <<>>] = binary:split(Token, <<"_PASSWORD">>),
+        <<"pw-", (string:lowercase(Service))/binary, "&secret">>
+    end),
+    Run("drive", servirtium:base_url(Replay)), ok = servirtium:assert_no_mismatches(Replay),
+    ok = servirtium:close(Replay), Run("check", Tape),
+    {ok, Files} = file:list_dir(Dir), [file:delete(Dir ++ "/" ++ F) || F <- Files], file:del_dir(Dir), ok.

@@ -12,6 +12,7 @@
 //// directly and `halt`s 0/1 so `gleam test` reports pass/fail correctly.
 
 import gleam/string
+import gleam/option.{None, Some}
 import gleeunit/should
 import servirtium
 
@@ -22,6 +23,7 @@ fn halt(code: Int) -> a
 fn io_format(fmt: String, args: List(String)) -> a
 
 pub fn main() {
+  named_secrets_test()
   structured_redaction_test()
   replay_diagnostics_test()
   playback_single_get_test()
@@ -120,4 +122,30 @@ pub fn replay_diagnostics_test() {
   servirtium.assert_no_mismatches(server) |> should.equal(Ok(Nil))
   servirtium.diagnostics_json(server, False) |> should.equal("[]")
   let _ = servirtium.close(server)
+}
+
+pub fn named_secrets_test() {
+  let directory = "/tmp/vcr-secrets-gleam-" <> from_charlist(getpid())
+  let fixture = "python3 ../core_tests/secret_fixture.py "
+  let upstream = shell(fixture <> "start '" <> directory <> "'") |> trim_trailing_newlines()
+  let tape = directory <> "/tape.md"
+  let rec = servirtium.record(tape, upstream) |> servirtium.secret_redactor(fn(key, request) {
+    case key {
+      "password" -> {
+        let assert [_, service, ..] = string.split(request.path, "/")
+        Some(string.uppercase(service) <> "_PASSWORD")
+      }
+      _ -> None
+    }
+  })
+  shell(fixture <> "drive '" <> servirtium.base_url(rec) <> "' && echo OK") |> should.equal("OK\n")
+  servirtium.close(rec) |> should.equal(servirtium.Closed)
+  shell(fixture <> "check '" <> tape <> "' && echo OK") |> should.equal("OK\n")
+  let replay = servirtium.playback_with_secrets(tape, fn(token) {
+    Some("pw-" <> string.lowercase(string.replace(token, "_PASSWORD", "")) <> "&secret")
+  })
+  shell(fixture <> "drive '" <> servirtium.base_url(replay) <> "' && echo OK") |> should.equal("OK\n")
+  servirtium.assert_no_mismatches(replay) |> should.equal(Ok(Nil))
+  servirtium.close(replay) |> should.equal(servirtium.Closed)
+  let _ = shell("rm -r '" <> directory <> "'")
 }

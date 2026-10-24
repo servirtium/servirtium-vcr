@@ -95,6 +95,33 @@ String _drainStartError(Pointer<Void> handle) {
 }
 
 /// Entry point for record/replay fixtures backed by the in-repo `core/vcr.ae` libservirtium_vcr.
+final class SecretRequest {
+  const SecretRequest(this.method, this.path, this.location, this.format, this.fieldPath, this.interaction);
+  final String method, path, location, format, fieldPath;
+  final int interaction;
+}
+typedef SecretRedactor = String? Function(String key, SecretRequest request);
+typedef SecretResolver = String? Function(String token);
+
+void _secretStage(Pointer<Void> handle, {SecretRedactor? redactor, SecretResolver? resolver}) {
+  String get(int part) => takeString(Native.secretGet(handle, part));
+  try {
+    _check(Native.secretBegin(handle, resolver != null ? 1 : 0), 'secretBegin');
+    int next;
+    while ((next = Native.secretNext(handle)) > 0) {
+      final value = resolver != null ? resolver(get(2)) : redactor!(get(1), SecretRequest(
+          get(3), get(4), get(5), get(6), get(7), Native.secretInteraction(handle)));
+      if (value != null) { withUtf8(value, (v) => _check(Native.secretApply(handle, v), 'secretApply')); }
+    }
+    if (next < 0) throw VcrException('Secret staging aborted');
+    _check(Native.secretFinish(handle), 'secretFinish');
+  } catch (_) {
+    Native.secretAbort(handle);
+    Native.stop(handle);
+    rethrow;
+  }
+}
+
 abstract final class Vcr {
   /// Replay a Servirtium markdown tape from disk. [nativeLib] optionally pins
   /// `libservirtium_vcr.so` path explicitly (see `BuilderBase.nativeLib`); by default
@@ -200,6 +227,9 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
 
 /// Configures and starts a playback VCR server.
 class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
+  SecretResolver? _secretResolver;
+  PlaybackBuilder secretResolver(SecretResolver callback) { _secretResolver = callback; return this; }
+
   PlaybackBuilder._(super.tapePath);
 
   final List<(VcrField, String, String)> _unredactions = [];
@@ -277,6 +307,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
       throw VcrException("vcr playback failed to start for tape '$_tapePath'");
     }
     _applyConfig(handle);
+    if (_secretResolver != null) { _secretStage(handle, resolver: _secretResolver); }
     if (Native.start(handle) < 0) {
       final err = _drainStartError(handle);
       Native.stop(handle);
@@ -289,6 +320,9 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
 
 /// Configures and starts a record VCR server.
 class RecordBuilder extends _BuilderBase<RecordBuilder> {
+  SecretRedactor? _secretRedactor;
+  RecordBuilder secretRedactor(SecretRedactor callback) { _secretRedactor = callback; return this; }
+
   RecordBuilder._(super.tapePath, this._upstreamBase);
 
   final String _upstreamBase;
@@ -424,7 +458,7 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
           "vcr record failed to begin serving for tape '$_tapePath': $err");
     }
     return VcrServer._(handle, _host, _tapePath,
-        recordMode: true, failIfChanged: _failIfChanged);
+        recordMode: true, failIfChanged: _failIfChanged, secretRedactor: _secretRedactor);
   }
 }
 
@@ -432,15 +466,17 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
 /// flushes the captured tape to disk (and throws on drift if `failIfChanged`).
 class VcrServer {
   VcrServer._(this._handle, this._host, this._tapePath,
-      {required bool recordMode, required bool failIfChanged})
+      {required bool recordMode, required bool failIfChanged, SecretRedactor? secretRedactor})
       : _recordMode = recordMode,
-        _failIfChanged = failIfChanged;
+        _failIfChanged = failIfChanged,
+        _secretRedactor = secretRedactor;
 
   Pointer<Void> _handle;
   final String _host;
   final String _tapePath;
   final bool _recordMode;
   final bool _failIfChanged;
+  final SecretRedactor? _secretRedactor;
   String? _baseUrl;
 
   Pointer<Void> get _requireHandle {
@@ -499,6 +535,7 @@ class VcrServer {
       return;
     }
 
+    if (_secretRedactor != null) { _secretStage(h, redactor: _secretRedactor); }
     final resultPtr = withUtf8(
         _tapePath,
         (t) => _failIfChanged

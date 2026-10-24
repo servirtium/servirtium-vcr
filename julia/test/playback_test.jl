@@ -137,3 +137,29 @@ end
         @test diagnostics_json(server) == "[]"
     end
 end
+
+@testset "named secrets round trip" begin
+    mktempdir() do directory
+        fixture = normpath(joinpath(@__DIR__, "../../core_tests/secret_fixture.py"))
+        run_fixture(action, arg) = strip(read(`python3 $fixture $action $arg`, String))
+        tape = joinpath(directory, "tape.md")
+        rec = record(tape, run_fixture("start", directory))
+        count = Ref(0)
+        secret_redactor!(rec, (key, request) -> begin
+            key == "password" || return nothing
+            count[] += 1
+            uppercase(split(request.path, '/')[2]) * "_PASSWORD"
+        end)
+        try
+            run_fixture("drive", base_url(rec)); @test count[] == 0
+        finally
+            flush!(rec)
+        end
+        @test count[] == 20
+        run_fixture("check", tape)
+        playback(tape; secret_resolver=token -> "pw-" * lowercase(replace(token, "_PASSWORD" => "")) * "&secret") do replay
+            run_fixture("drive", base_url(replay)); assert_no_mismatches(replay)
+        end
+        run_fixture("check", tape)
+    end
+end

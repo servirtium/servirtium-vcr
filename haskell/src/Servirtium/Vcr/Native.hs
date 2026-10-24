@@ -15,6 +15,13 @@
 -- "Servirtium.Vcr".
 module Servirtium.Vcr.Native
   ( Handle
+  , aether_vcr_embed_secret_begin
+  , aether_vcr_embed_secret_next
+  , aether_vcr_embed_secret_get
+  , aether_vcr_embed_secret_interaction
+  , aether_vcr_embed_secret_apply
+  , aether_vcr_embed_secret_finish
+  , aether_vcr_embed_secret_abort
   , takeString
   , -- * Lifecycle
     aether_vcr_embed_open_playback
@@ -226,3 +233,18 @@ foreign import ccall unsafe "aether_vcr_embed_assert_no_mismatches"
   aether_vcr_embed_assert_no_mismatches :: Handle -> IO CString
 foreign import ccall unsafe "aether_vcr_embed_test_context"
   aether_vcr_embed_test_context :: Handle -> CString -> CString -> CInt -> IO ()
+
+foreign import ccall safe "aether_vcr_embed_secret_begin"
+  aether_vcr_embed_secret_begin :: Handle -> CInt -> IO CString
+foreign import ccall safe "aether_vcr_embed_secret_next"
+  aether_vcr_embed_secret_next :: Handle -> IO CInt
+foreign import ccall safe "aether_vcr_embed_secret_get"
+  aether_vcr_embed_secret_get :: Handle -> CInt -> IO CString
+foreign import ccall safe "aether_vcr_embed_secret_interaction"
+  aether_vcr_embed_secret_interaction :: Handle -> IO CInt
+foreign import ccall safe "aether_vcr_embed_secret_apply"
+  aether_vcr_embed_secret_apply :: Handle -> CString -> IO CString
+foreign import ccall safe "aether_vcr_embed_secret_finish"
+  aether_vcr_embed_secret_finish :: Handle -> IO CString
+foreign import ccall safe "aether_vcr_embed_secret_abort"
+  aether_vcr_embed_secret_abort :: Handle -> IO ()

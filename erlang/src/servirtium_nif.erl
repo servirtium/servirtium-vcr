@@ -35,6 +35,14 @@
     reset_cursor/1,
     %% diagnostics
     last_error/1,
+    secret_begin/2,
+    secret_next/1,
+    secret_get/2,
+    secret_interaction/1,
+    secret_apply/2,
+    secret_finish/1,
+    secret_abort/1,
+    secret_stage/3, secret_stage_gleam/3,
     last_error_ex/2,
     diagnostics_json/2,
     assert_no_mismatches/1,
@@ -142,3 +150,53 @@ last_error_ex(_H, _Consume) -> erlang:nif_error(not_loaded).
 diagnostics_json(_H, _Consume) -> erlang:nif_error(not_loaded).
 assert_no_mismatches(_H) -> erlang:nif_error(not_loaded).
 test_context(_H, _Name, _File, _Line) -> erlang:nif_error(not_loaded).
+
+secret_begin(_A0, _A1) -> erlang:nif_error(not_loaded).
+secret_next(_A0) -> erlang:nif_error(not_loaded).
+secret_get(_A0, _A1) -> erlang:nif_error(not_loaded).
+secret_interaction(_A0) -> erlang:nif_error(not_loaded).
+secret_apply(_A0, _A1) -> erlang:nif_error(not_loaded).
+secret_finish(_A0) -> erlang:nif_error(not_loaded).
+secret_abort(_A0) -> erlang:nif_error(not_loaded).
+
+%% This is host-side marshalling, never a callback from a native worker.
+secret_stage(H, Callback, Resolving) ->
+    try
+        secret_check(secret_begin(H, case Resolving of true -> 1; false -> 0 end)),
+        secret_loop(H, Callback, Resolving),
+        secret_check(secret_finish(H))
+    catch Class:Reason:Stack ->
+        secret_abort(H), stop(H), erlang:raise(Class, Reason, Stack)
+    end.
+secret_check(<<>>) -> ok;
+secret_check(Error) -> error({servirtium, Error}).
+secret_loop(H, Callback, Resolving) ->
+    case secret_next(H) of
+        0 -> ok;
+        N when N < 0 -> error({servirtium, secret_staging_aborted});
+        _ ->
+            Value = case Resolving of
+                true -> Callback(secret_get(H, 2));
+                false -> Callback(secret_get(H, 1), #{method => secret_get(H, 3),
+                    path => secret_get(H, 4), location => secret_get(H, 5),
+                    format => secret_get(H, 6), field_path => secret_get(H, 7),
+                    interaction => secret_interaction(H)})
+            end,
+            case Value of
+                undefined -> ok;
+                nil -> ok;
+                V when is_binary(V) -> secret_check(secret_apply(H, V));
+                _ -> error({servirtium, invalid_secret_callback_result})
+            end,
+            secret_loop(H, Callback, Resolving)
+    end.
+secret_stage_gleam(H, Callback, Resolving) ->
+    Convert = fun({some, Value}) -> Value; (none) -> undefined end,
+    Wrapped = case Resolving of
+        true -> fun(Token) -> Convert(Callback(Token)) end;
+        false -> fun(Key, R) -> Convert(Callback(Key, {secret_request,
+            maps:get(method,R), maps:get(path,R), maps:get(location,R),
+            maps:get(format,R), maps:get(field_path,R), maps:get(interaction,R)})) end
+    end,
+    secret_stage(H, Wrapped, Resolving),
+    nil.

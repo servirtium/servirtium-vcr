@@ -86,3 +86,29 @@
     (vcr/test-context server "next test" "" 0)
     (vcr/assert-no-mismatches server)
     (is (= "[]" (vcr/diagnostics-json server)))))
+
+(deftest named-secrets-round-trip
+  (let [dir (Files/createTempDirectory "vcr-secrets-clojure-" (make-array FileAttribute 0))
+        tape (str (.resolve dir "tape.md"))
+        run (fn [action arg]
+              (let [process (-> (ProcessBuilder. ^java.util.List ["python3" (if (.isFile (java.io.File. "core_tests/secret_fixture.py")) "core_tests/secret_fixture.py" "../core_tests/secret_fixture.py") action arg]) (.redirectErrorStream true) (.start))
+                    output (slurp (.getInputStream process))]
+                (is (= 0 (.waitFor process)) output)
+                (.trim output)))
+        count (atom 0)]
+    (try
+      (with-open [rec (vcr/record tape (run "start" (str dir))
+                        {:secret-redactor (fn [key request]
+                          (when (= key "password")
+                            (swap! count inc)
+                            (str (.toUpperCase ^String (nth (.split (.path request) "/") 1) java.util.Locale/ROOT) "_PASSWORD")))})]
+        (run "drive" (.baseUrl rec)) (is (= 0 @count)))
+      (is (= 20 @count)) (run "check" tape)
+      (with-open [replay (vcr/playback tape {:secret-resolver (fn [token]
+                            (str "pw-" (.toLowerCase (.replace ^String token "_PASSWORD" "") java.util.Locale/ROOT) "&secret"))})]
+        (run "drive" (.baseUrl replay)) (vcr/assert-no-mismatches replay))
+      (run "check" tape)
+      (finally
+        (with-open [files (Files/list dir)]
+          (doseq [file (iterator-seq (.iterator files))] (Files/delete file)))
+        (Files/delete dir)))))

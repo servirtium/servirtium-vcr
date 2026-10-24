@@ -118,6 +118,7 @@ vcr_embed_open_record(label: string, tape_path: string, upstream_base: string, h
 vcr_embed_start(s: ptr) -> int {
     // Returns once the accept loop is live (not merely spawned), so an
     // immediate stop is never lost -- see vcr.start_background_h.
+    if vcr.secret_check_ready_h(s) != "" { return -1 }
     return vcr.start_background_h(s, 10000)
 }
 
@@ -359,3 +360,12 @@ vcr_embed_clear_format_options(s: ptr) {
 vcr_embed_free_string(s: ptr) {
     vcr_embed_free(s)
 }
+
+// Staged secret callbacks: the host invokes its callback between these calls.
+vcr_embed_secret_begin(s: ptr, resolving: int) -> ptr { return vcr_embed_dup(vcr.secret_begin_h(s, resolving)) }
+vcr_embed_secret_next(s: ptr) -> int { return vcr.secret_next_h(s) }
+vcr_embed_secret_get(s: ptr, part: int) -> ptr { return vcr_embed_dup(vcr.secret_get_h(s, part)) }
+vcr_embed_secret_interaction(s: ptr) -> int { return vcr.secret_interaction_h(s) }
+vcr_embed_secret_apply(s: ptr, value: string) -> ptr { return vcr_embed_dup(vcr.secret_apply_h(s, value)) }
+vcr_embed_secret_finish(s: ptr) -> ptr { return vcr_embed_dup(vcr.secret_finish_h(s)) }
+vcr_embed_secret_abort(s: ptr) { vcr.secret_abort_h(s) }

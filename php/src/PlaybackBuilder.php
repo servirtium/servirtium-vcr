@@ -12,6 +12,14 @@ final class PlaybackBuilder extends VcrBuilderBase
 {
     /** @var list<array{0: VcrField, 1: string, 2: string}> */
     private array $unredactions = [];
+    private $secretResolverCallback = null;
+
+    public function secretResolver(callable $callback): static
+    {
+        $this->secretResolverCallback = $callback;
+        return $this;
+    }
+
 
     private bool $strictHeadersOn = false;
 
@@ -121,6 +129,7 @@ final class PlaybackBuilder extends VcrBuilderBase
             throw new VcrException("vcr playback failed to start for tape '{$this->tapePath}'");
         }
         $this->applyConfig($handle);
+        if ($this->secretResolverCallback !== null) { Secrets::stage($handle, $this->secretResolverCallback, true); }
         if ($lib->aether_vcr_embed_start($handle) < 0) {
             $err = self::drainStartError($handle);
             $lib->aether_vcr_embed_stop($handle);

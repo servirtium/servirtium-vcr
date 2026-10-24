@@ -205,3 +205,57 @@ test "retained replay diagnostics and observer reads" {
     defer allocator.free(empty);
     try std.testing.expectEqualStrings("[]", empty);
 }
+
+fn secretFixtureRun(allocator: std.mem.Allocator, args: []const []const u8) ![]u8 {
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(allocator);
+    try argv.appendSlice(allocator, &.{"python3", "../core_tests/secret_fixture.py"});
+    try argv.appendSlice(allocator, args);
+    const result = try std.process.run(allocator, std.testing.io, .{ .argv = argv.items });
+    defer allocator.free(result.stderr);
+    errdefer allocator.free(result.stdout);
+    switch (result.term) {
+        .exited => |code| if (code != 0) {
+            std.debug.print("fixture failed: {s}{s}\n", .{result.stdout, result.stderr});
+            return error.FixtureFailed;
+        },
+        else => return error.FixtureFailed,
+    }
+    return result.stdout;
+}
+
+const secretServices = [_][]const u8{"accounts", "billing", "shipping", "support"};
+const secretNames = [_][:0]const u8{"ACCOUNTS_PASSWORD", "BILLING_PASSWORD", "SHIPPING_PASSWORD", "SUPPORT_PASSWORD"};
+const secretPasswords = [_][:0]const u8{"pw-accounts&secret", "pw-billing&secret", "pw-shipping&secret", "pw-support&secret"};
+fn secretRedact(context: ?*anyopaque, key: []const u8, request: servirtium.SecretRequest) anyerror!?[:0]const u8 {
+    if (!std.mem.eql(u8, key, "password")) return null;
+    const count: *usize = @ptrCast(@alignCast(context.?)); count.* += 1;
+    for (secretServices, 0..) |service, i| {
+        if (std.mem.startsWith(u8, request.path[1..], service)) return secretNames[i];
+    }
+    return null;
+}
+fn secretResolve(_: ?*anyopaque, token: []const u8) anyerror!?[:0]const u8 {
+    for (secretNames, 0..) |name, i| { if (std.mem.eql(u8, token, name)) return secretPasswords[i]; }
+    return null;
+}
+test "named secrets round trip across four services" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{}); defer tmp.cleanup();
+    const tape = try tapePathZ(allocator, &tmp, "tape.md"); defer allocator.free(tape);
+    const directory = std.fs.path.dirname(tape).?;
+    const upstream_output = try secretFixtureRun(allocator, &.{"start", directory}); defer allocator.free(upstream_output);
+    const upstream = try allocator.dupeZ(u8, std.mem.trim(u8, upstream_output, "\r\n ")); defer allocator.free(upstream);
+    var count: usize = 0;
+    var rec = try servirtium.Record.init(allocator, tape, upstream).secretRedactor(.{.context=&count, .call=secretRedact}).start();
+    defer rec.close() catch {};
+    const base = try rec.baseUrl(); defer allocator.free(base);
+    allocator.free(try secretFixtureRun(allocator, &.{"drive", base}));
+    try std.testing.expectEqual(@as(usize,0), count); try rec.close(); try std.testing.expectEqual(@as(usize,20),count);
+    allocator.free(try secretFixtureRun(allocator, &.{"check", tape}));
+    var replay = try servirtium.Playback.init(allocator,tape).secretResolver(.{.call=secretResolve}).start();
+    defer replay.close() catch {};
+    const replay_base = try replay.baseUrl(); defer allocator.free(replay_base);
+    allocator.free(try secretFixtureRun(allocator, &.{"drive", replay_base})); try replay.assertNoMismatches();
+    allocator.free(try secretFixtureRun(allocator, &.{"check", tape}));
+}

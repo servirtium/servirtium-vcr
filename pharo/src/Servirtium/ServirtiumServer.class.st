@@ -11,6 +11,7 @@ Class {
 	#name : 'ServirtiumServer',
 	#superclass : 'Object',
 	#instVars : [
+        'secretRedactor',
 		'handle',
 		'host',
 		'tapePath',
@@ -145,6 +146,7 @@ ServirtiumServer >> stop [
 		self library stop: h.
 		^ self ].
 
+	secretRedactor ifNotNil: [ self library stageSecrets: h callback: secretRedactor resolving: false ].
 	err := self library takeString: (failIfChanged
 		ifTrue: [ self library stopAndFlushFailIfChanged: h tape: tapePath ]
 		ifFalse: [ self library stopAndFlush: h tape: tapePath ]).
@@ -168,4 +170,10 @@ ServirtiumServer >> assertNoMismatches [
 { #category : 'diagnostics' }
 ServirtiumServer >> testContext: name file: file line: line [
     self library testContext: self handle name: name file: file line: line
+]
+
+{ #category : 'configuring' }
+ServirtiumServer >> secretRedactor: callback [
+    secretRedactor := callback.
+    ^ self
 ]

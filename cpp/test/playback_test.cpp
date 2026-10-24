@@ -170,6 +170,42 @@ int main(int argc, char** argv) {
         ck("new test empty", server.diagnostics_json() == "[]");
     }
 
+    {
+        char pattern[] = "/tmp/vcr-secrets-cpp-XXXXXX";
+        const std::string directory = mkdtemp(pattern);
+        const auto fixture = (std::filesystem::path(tape).parent_path().parent_path().parent_path() / "core_tests/secret_fixture.py").string();
+        const auto run = [&](const std::string& action, const std::string& arg) {
+            auto result = run_cmd("python3 '" + fixture + "' " + action + " '" + arg + "' && echo SECRET_OK");
+            ck(("secret fixture " + action).c_str(), result.size() >= 9 && result.substr(result.size()-9) == "SECRET_OK");
+            if (result.size() >= 9) result.resize(result.size()-9);
+            while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
+            return result;
+        };
+        const auto target = directory + "/tape.md";
+        int count = 0;
+        auto rec = servirtium::Vcr::record(target, run("start", directory));
+        rec.secret_redactor([&](const std::string& key, const servirtium::SecretRequest& request) -> std::optional<std::string> {
+            if (key != "password") return std::nullopt;
+            ++count; ck("secret metadata", !request.field_path.empty());
+            for (const auto& service : {"accounts", "billing", "shipping", "support"}) {
+                if (request.path.find(std::string("/") + service + "/") == 0) {
+                    std::string name(service); for (auto& c : name) c = static_cast<char>(std::toupper(c));
+                    return name + "_PASSWORD";
+                }
+            }
+            return std::nullopt;
+        });
+        run("drive", rec.base_url()); ck("deferred secret callback", count == 0); rec.flush();
+        ck("secret count", count == 20); run("check", target);
+        auto replay = servirtium::Vcr::playback(target, [](const std::string& token) -> std::optional<std::string> {
+            std::string service = token.substr(0, token.size()-9);
+            for (auto& c : service) c = static_cast<char>(std::tolower(c));
+            return "pw-" + service + "&secret";
+        });
+        run("drive", replay.base_url()); replay.assert_no_mismatches(); replay.close(); run("check", target);
+        std::filesystem::remove_all(directory);
+    }
+
     if (failures == 0) {
         std::cout << "PASS: cpp servirtium playback\n";
         return 0;

@@ -345,3 +345,64 @@ ServirtiumLibrary >> assertNoMismatches: server [
 ServirtiumLibrary >> testContext: server name: name file: file line: line [
     ^ self ffiCall: #( void aether_vcr_embed_test_context ( void* server, String name, String file, int line ) )
 ]
+
+{ #category : 'ffi - secrets' }
+ServirtiumLibrary >> secretBegin: server resolving: resolving [
+    ^ self ffiCall: #( void* aether_vcr_embed_secret_begin ( void* server, int resolving ) )
+]
+
+{ #category : 'ffi - secrets' }
+ServirtiumLibrary >> secretNext: server [
+    ^ self ffiCall: #( int aether_vcr_embed_secret_next ( void* server ) )
+]
+
+{ #category : 'ffi - secrets' }
+ServirtiumLibrary >> secretGet: server part: part [
+    ^ self ffiCall: #( void* aether_vcr_embed_secret_get ( void* server, int part ) )
+]
+
+{ #category : 'ffi - secrets' }
+ServirtiumLibrary >> secretInteraction: server [
+    ^ self ffiCall: #( int aether_vcr_embed_secret_interaction ( void* server ) )
+]
+
+{ #category : 'ffi - secrets' }
+ServirtiumLibrary >> secretApply: server value: value [
+    ^ self ffiCall: #( void* aether_vcr_embed_secret_apply ( void* server, String value ) )
+]
+
+{ #category : 'ffi - secrets' }
+ServirtiumLibrary >> secretFinish: server [
+    ^ self ffiCall: #( void* aether_vcr_embed_secret_finish ( void* server ) )
+]
+
+{ #category : 'ffi - secrets' }
+ServirtiumLibrary >> secretAbort: server [
+    ^ self ffiCall: #( void aether_vcr_embed_secret_abort ( void* server ) )
+]
+
+{ #category : 'secrets' }
+ServirtiumLibrary >> stageSecrets: handle callback: callback resolving: resolving [
+    | check get next value request |
+    check := [ :pointer | | message |
+        message := self takeString: pointer.
+        message isEmpty ifFalse: [ ServirtiumError signal: message ] ].
+    get := [ :part | self takeString: (self secretGet: handle part: part) ].
+    [
+        check value: (self secretBegin: handle resolving: (resolving ifTrue: [ 1 ] ifFalse: [ 0 ])).
+        [ next := self secretNext: handle. next > 0 ] whileTrue: [
+            value := resolving ifTrue: [ callback value: (get value: 2) ] ifFalse: [
+                request := ServirtiumSecretRequest new
+                    initializeMethod: (get value: 3) path: (get value: 4) location: (get value: 5)
+                    format: (get value: 6) fieldPath: (get value: 7) interaction: (self secretInteraction: handle).
+                callback value: (get value: 1) value: request ].
+            value ifNotNil: [
+                value isString ifFalse: [ ServirtiumError signal: 'Secret callbacks must return a String or nil' ].
+                check value: (self secretApply: handle value: value) ] ].
+        next < 0 ifTrue: [ ServirtiumError signal: 'Secret staging aborted' ].
+        check value: (self secretFinish: handle)
+    ] on: Error do: [ :error |
+        self secretAbort: handle.
+        self stop: handle.
+        error pass ]
+]

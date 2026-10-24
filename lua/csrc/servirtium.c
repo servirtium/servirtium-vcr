@@ -49,6 +49,13 @@ extern void  aether_vcr_embed_reset_cursor(void *handle);
 
 /* diagnostics */
 extern char *aether_vcr_embed_last_error(void *handle);
+extern char *aether_vcr_embed_secret_begin(void *, int);
+extern int aether_vcr_embed_secret_next(void *);
+extern char *aether_vcr_embed_secret_get(void *, int);
+extern int aether_vcr_embed_secret_interaction(void *);
+extern char *aether_vcr_embed_secret_apply(void *, const char *);
+extern char *aether_vcr_embed_secret_finish(void *);
+extern void aether_vcr_embed_secret_abort(void *);
 extern char *aether_vcr_embed_last_error_ex(void *h, int consume);
 extern char *aether_vcr_embed_diagnostics_json(void *h, int consume);
 extern char *aether_vcr_embed_assert_no_mismatches(void *h);
@@ -448,6 +455,13 @@ static int l_emphasize_http_verbs(lua_State *L)
 
 /* ---- module registration ------------------------------------------------ */
 
+static int l_secret_begin(lua_State *L) { return push_owned_string(L, aether_vcr_embed_secret_begin(check_handle(L, 1), (int)luaL_checkinteger(L, 2))); }
+static int l_secret_next(lua_State *L) { lua_pushinteger(L, aether_vcr_embed_secret_next(check_handle(L, 1))); return 1; }
+static int l_secret_get(lua_State *L) { return push_owned_string(L, aether_vcr_embed_secret_get(check_handle(L, 1), (int)luaL_checkinteger(L, 2))); }
+static int l_secret_interaction(lua_State *L) { lua_pushinteger(L, aether_vcr_embed_secret_interaction(check_handle(L, 1))); return 1; }
+static int l_secret_apply(lua_State *L) { return push_owned_string(L, aether_vcr_embed_secret_apply(check_handle(L, 1), luaL_checkstring(L, 2))); }
+static int l_secret_finish(lua_State *L) { return push_owned_string(L, aether_vcr_embed_secret_finish(check_handle(L, 1))); }
+static int l_secret_abort(lua_State *L) { aether_vcr_embed_secret_abort(check_handle(L, 1)); return 0; }
 static const luaL_Reg servirtium_funcs[] = {
     {"open_playback",                   l_open_playback},
     {"open_playback_url",               l_open_playback_url},
@@ -460,6 +474,13 @@ static const luaL_Reg servirtium_funcs[] = {
     {"last_kind",                       l_last_kind},
     {"last_index",                      l_last_index},
     {"last_error",                      l_last_error},
+    {"secret_begin", l_secret_begin},
+    {"secret_next", l_secret_next},
+    {"secret_get", l_secret_get},
+    {"secret_interaction", l_secret_interaction},
+    {"secret_apply", l_secret_apply},
+    {"secret_finish", l_secret_finish},
+    {"secret_abort", l_secret_abort},
     {"last_error_ex", l_last_error_ex},
     {"diagnostics_json", l_diagnostics_json},
     {"assert_no_mismatches", l_assert_no_mismatches},

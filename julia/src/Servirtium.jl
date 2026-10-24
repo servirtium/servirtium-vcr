@@ -26,7 +26,7 @@ export Vcr, VcrError, Field, Outcome,
     Path, ResponseBody, RequestHeaders, RequestBody, ResponseHeaders,
     Ok, PathOrMethodDiff, HeaderMissing, HeaderValueDiff, HeaderUnexpected,
     TapeExhausted, BodyDiff, RecordError,
-    playback, playback_url, record,
+    playback, playback_url, record, SecretRequest, secret_redactor!,
     base_url, port, tape_length, reset_cursor,
     diagnostics_json, assert_no_mismatches, test_context,
     last_kind, last_error, last_index, clear_last_error, matched_cleanly,
@@ -108,6 +108,40 @@ mutable struct Vcr
     host::String
     tape::Union{String,Nothing}
     closed::Bool
+    secret_redactor::Union{Function,Nothing}
+end
+Vcr(handle, host, tape, closed) = Vcr(handle, host, tape, closed, nothing)
+
+struct SecretRequest
+    method::String
+    path::String
+    location::String
+    format::String
+    field_path::String
+    interaction::Int
+end
+secret_redactor!(vcr::Vcr, callback::Function) = (vcr.secret_redactor = callback; vcr)
+function secret_stage(handle; redactor=nothing, resolver=nothing)
+    get(part) = take(ccall((:aether_vcr_embed_secret_get, LIB), Ptr{Cchar}, (Ptr{Cvoid}, Cint), handle, part))
+    try
+        check(ccall((:aether_vcr_embed_secret_begin, LIB), Ptr{Cchar}, (Ptr{Cvoid}, Cint), handle, resolver === nothing ? 0 : 1), "secret_begin")
+        while true
+            next = ccall((:aether_vcr_embed_secret_next, LIB), Cint, (Ptr{Cvoid},), handle)
+            next < 0 && throw(VcrError("Secret staging aborted"))
+            next == 0 && break
+            value = resolver === nothing ? redactor(get(1), SecretRequest(get(3), get(4), get(5), get(6), get(7),
+                ccall((:aether_vcr_embed_secret_interaction, LIB), Cint, (Ptr{Cvoid},), handle))) : resolver(get(2))
+            if value !== nothing
+                value isa AbstractString || throw(ArgumentError("Secret callbacks must return a string or nothing"))
+                check(ccall((:aether_vcr_embed_secret_apply, LIB), Ptr{Cchar}, (Ptr{Cvoid}, Cstring), handle, value), "secret_apply")
+            end
+        end
+        check(ccall((:aether_vcr_embed_secret_finish, LIB), Ptr{Cchar}, (Ptr{Cvoid},), handle), "secret_finish")
+    catch
+        ccall((:aether_vcr_embed_secret_abort, LIB), Cvoid, (Ptr{Cvoid},), handle)
+        ccall((:aether_vcr_embed_stop, LIB), Cvoid, (Ptr{Cvoid},), handle)
+        rethrow()
+    end
 end
 
 # ---- the caller-owned-string discipline, in exactly one place -------------
@@ -150,9 +184,10 @@ Replay a Servirtium markdown tape from disk. The do-block form closes the
 server when the block ends, on every path including an exception.
 """
 function playback(tape_path::AbstractString; host::AbstractString="127.0.0.1",
-                  port::Integer=0)
+                  port::Integer=0, secret_resolver=nothing)
     h = ccall((:aether_vcr_embed_open_playback, LIB), Ptr{Cvoid},
               (Cstring, Cstring, Cstring, Cint), "", tape_path, host, port)
+    secret_resolver === nothing || secret_stage(h; resolver=secret_resolver)
     Vcr(started(h, "playback open failed: $tape_path"), String(host),
         String(tape_path), false)
 end
@@ -369,6 +404,7 @@ recorder was opened with. Idempotent."""
 function flush!(vcr::Vcr, tape_path::Union{AbstractString,Nothing}=nothing)
     vcr.closed && return nothing
     vcr.closed = true
+    vcr.secret_redactor === nothing || secret_stage(vcr.handle; redactor=vcr.secret_redactor)
     tape = tape_path === nothing ? something(vcr.tape, "") : tape_path
     check(ccall((:aether_vcr_embed_stop_and_flush, LIB), Ptr{Cchar},
                 (Ptr{Cvoid}, Cstring), vcr.handle, tape), "flush")
@@ -379,6 +415,7 @@ on disk (drift detection for a checked-in tape)."""
 function flush_fail_if_changed!(vcr::Vcr, tape_path::Union{AbstractString,Nothing}=nothing)
     vcr.closed && return nothing
     vcr.closed = true
+    vcr.secret_redactor === nothing || secret_stage(vcr.handle; redactor=vcr.secret_redactor)
     tape = tape_path === nothing ? something(vcr.tape, "") : tape_path
     check(ccall((:aether_vcr_embed_stop_and_flush_fail_if_changed, LIB), Ptr{Cchar},
                 (Ptr{Cvoid}, Cstring), vcr.handle, tape), "flush_fail_if_changed")
@@ -389,6 +426,7 @@ it when one is already present."""
 function flush_or_check!(vcr::Vcr, tape_path::Union{AbstractString,Nothing}=nothing)
     vcr.closed && return nothing
     vcr.closed = true
+    vcr.secret_redactor === nothing || secret_stage(vcr.handle; redactor=vcr.secret_redactor)
     tape = tape_path === nothing ? something(vcr.tape, "") : tape_path
     check(ccall((:aether_vcr_embed_stop_and_flush_or_check, LIB), Ptr{Cchar},
                 (Ptr{Cvoid}, Cstring), vcr.handle, tape), "flush_or_check")

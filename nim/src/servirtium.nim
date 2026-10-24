@@ -29,7 +29,8 @@
 ## tape, replay cursor, mutations, static mounts, and diagnostics are scoped
 ## to its handle, so two servers can be alive at once without interfering.
 
-import std/strformat
+import std/[strformat, options]
+export options
 import servirtium/native
 
 type
@@ -56,11 +57,18 @@ type
   ## A running VCR server. `recording` selects the close semantics: a record
   ## server flushes its tape on close, a playback server just stops.
   ## `failIfChanged` selects the drift-detecting flush variant.
+  SecretRequest* = object
+    `method`*, path*, location*, format*, fieldPath*: string
+    interaction*: int
+  SecretRedactor* = proc(key: string; request: SecretRequest): Option[string] {.closure.}
+  SecretResolver* = proc(token: string): Option[string] {.closure.}
   VcrServer* = ref object
     handle: native.Handle
     recording: bool
     failIfChanged: bool
     tapePath: string
+    secretRedactorCallback: SecretRedactor
+    secretResolverCallback: SecretResolver
 
   VcrError* = object of CatchableError
 
@@ -102,9 +110,39 @@ proc record*(tapePath, upstream: string; host = defaultHost; port: cint = 0): Vc
     raise newException(VcrError, &"failed to open record for tape {tapePath}")
   VcrServer(handle: h, recording: true, tapePath: tapePath)
 
+proc secretRedactor*(s: VcrServer; callback: SecretRedactor): VcrServer {.discardable.} =
+  s.secretRedactorCallback = callback
+  s
+proc secretResolver*(s: VcrServer; callback: SecretResolver): VcrServer {.discardable.} =
+  s.secretResolverCallback = callback
+  s
+proc secretStage(s: VcrServer; resolving: bool) =
+  let h = s.handle
+  proc check(p: cstring) =
+    let err = takeString(p)
+    if err.len > 0: raise newException(VcrError, err)
+  proc get(part: cint): string = takeString(native.secret_get(h, part))
+  try:
+    check(native.secret_begin(h, cint(ord(resolving))))
+    while true:
+      let next = native.secret_next(h)
+      if next < 0: raise newException(VcrError, "Secret staging aborted")
+      if next == 0: break
+      let value = if resolving: s.secretResolverCallback(get(2)) else:
+        s.secretRedactorCallback(get(1), SecretRequest(`method`: get(3), path: get(4),
+          location: get(5), format: get(6), fieldPath: get(7), interaction: int(native.secret_interaction(h))))
+      if value.isSome: check(native.secret_apply(h, cstring(value.get)))
+    check(native.secret_finish(h))
+  except:
+    native.secret_abort(h)
+    native.stop(h)
+    s.handle = nil
+    raise
+
 proc start*(s: VcrServer): bool {.discardable.} =
   ## Bind and start the listener. Returns false (and leaves `lastError`
   ## populated) on failure.
+  if s.secretResolverCallback != nil: s.secretStage(true)
   native.start(s.handle) >= 0
 
 proc baseUrl*(s: VcrServer; host = defaultHost): string =
@@ -214,6 +252,7 @@ proc emphasizeHttpVerbs*(s: VcrServer) =
   native.emphasize_http_verbs(s.handle)
 
 proc close*(s: VcrServer) =
+  if s.handle != nil and s.recording and s.secretRedactorCallback != nil: s.secretStage(false)
   ## Stop the server. For a record server, flush the tape to disk first.
   if s.handle == nil:
     return

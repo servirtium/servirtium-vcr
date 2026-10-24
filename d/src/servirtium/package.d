@@ -33,6 +33,8 @@ module servirtium;
 import std.exception : enforce;
 import std.string : toStringz, fromStringz;
 import std.conv : to;
+import std.typecons : Nullable, nullable;
+public import std.typecons : Nullable, nullable;
 
 // ---- the flat C ABI (aether_vcr_embed_*) -----------------------------------
 // Handle-based: N independent VCR servers can run concurrently in one process,
@@ -47,6 +49,13 @@ private extern (C) nothrow @nogc {
     void* aether_vcr_embed_open_record(const(char)* label, const(char)* tape,
                                        const(char)* upstreamBase,
                                        const(char)* host, int port);
+    char* aether_vcr_embed_secret_begin(void*, int);
+    int aether_vcr_embed_secret_next(void*);
+    char* aether_vcr_embed_secret_get(void*, int);
+    int aether_vcr_embed_secret_interaction(void*);
+    char* aether_vcr_embed_secret_apply(void*, const(char)*);
+    char* aether_vcr_embed_secret_finish(void*);
+    void aether_vcr_embed_secret_abort(void*);
     int   aether_vcr_embed_start(void* h);
     void  aether_vcr_embed_stop(void* h);
     char* aether_vcr_embed_stop_and_flush(void* h, const(char)* tape);
@@ -169,11 +178,34 @@ private void check(char* raw, string what) {
  * vcr.close()` is the idiomatic D scoping. Copying one would give two owners of
  * the same handle, so copying is disabled.
  */
+struct SecretRequest {
+    string method, path, location, format, fieldPath;
+    int interaction;
+}
+alias SecretRedactor = Nullable!string delegate(string, SecretRequest);
+alias SecretResolver = Nullable!string delegate(string);
+private void secretStage(void* h, SecretRedactor redactor, SecretResolver resolver) {
+    scope(failure) { aether_vcr_embed_secret_abort(h); aether_vcr_embed_stop(h); }
+    check(aether_vcr_embed_secret_begin(h, resolver is null ? 0 : 1), "secretBegin");
+    string get(int part) { return takeString(aether_vcr_embed_secret_get(h, part)); }
+    while (true) {
+        auto next = aether_vcr_embed_secret_next(h);
+        enforce(next >= 0, new VcrException("Secret staging aborted"));
+        if (next == 0) break;
+        auto value = resolver is null ? redactor(get(1), SecretRequest(get(3), get(4), get(5), get(6), get(7), aether_vcr_embed_secret_interaction(h))) : resolver(get(2));
+        if (!value.isNull) check(aether_vcr_embed_secret_apply(h, value.get.toStringz), "secretApply");
+    }
+    check(aether_vcr_embed_secret_finish(h), "secretFinish");
+}
+
 struct Vcr {
     private void* handle;
     private string host;
     private string tape;
     private bool closed;
+    private SecretRedactor secretRedactorCallback;
+    ref Vcr secretRedactor(SecretRedactor callback) { secretRedactorCallback = callback; return this; }
+
 
     @disable this(this);          // one owner per handle
 
@@ -186,9 +218,10 @@ struct Vcr {
     // ---- lifecycle -------------------------------------------------------
 
     /// Replay a Servirtium markdown tape from disk.
-    static Vcr playback(string tapePath, string host = "127.0.0.1", int port = 0) {
+    static Vcr playback(string tapePath, string host = "127.0.0.1", int port = 0, SecretResolver secretResolver = null) {
         auto h = aether_vcr_embed_open_playback("", tapePath.toStringz,
                                                 host.toStringz, port);
+        if (h !is null && secretResolver !is null) secretStage(h, null, secretResolver);
         return Vcr(started(h, "playback open failed: " ~ tapePath), host, tapePath);
     }
 
@@ -386,6 +419,7 @@ struct Vcr {
     private void flushVia(string tapePath, FlushFn call) {
         if (closed) return;
         closed = true;
+        if (secretRedactorCallback !is null) secretStage(handle, secretRedactorCallback, null);
         const target = tapePath !is null ? tapePath : (tape !is null ? tape : "");
         check(call(handle, target.toStringz), "flush");
     }

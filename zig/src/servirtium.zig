@@ -31,6 +31,14 @@ pub extern "c" fn aether_vcr_embed_open_playback(label: [*c]const u8, tape_path:
 pub extern "c" fn aether_vcr_embed_open_playback_url(label: [*c]const u8, tape_path: [*c]const u8, host: [*c]const u8, port: c_int) Handle;
 pub extern "c" fn aether_vcr_embed_open_record(label: [*c]const u8, tape_path: [*c]const u8, upstream_base: [*c]const u8, host: [*c]const u8, port: c_int) Handle;
 
+pub extern "c" fn aether_vcr_embed_secret_begin(handle: Handle, resolving: c_int) [*c]u8;
+pub extern "c" fn aether_vcr_embed_secret_next(handle: Handle) c_int;
+pub extern "c" fn aether_vcr_embed_secret_get(handle: Handle, part: c_int) [*c]u8;
+pub extern "c" fn aether_vcr_embed_secret_interaction(handle: Handle) c_int;
+pub extern "c" fn aether_vcr_embed_secret_apply(handle: Handle, value: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_secret_finish(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_secret_abort(handle: Handle) void;
+
 pub extern "c" fn aether_vcr_embed_start(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_stop(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_stop_and_flush(handle: Handle, tape_path: [*c]const u8) [*c]u8;
@@ -126,6 +134,44 @@ fn checkErr(allocator: std.mem.Allocator, ptr: [*c]u8) !void {
     const msg = try takeString(allocator, ptr);
     defer allocator.free(msg);
     if (msg.len != 0) return Error.VcrError;
+}
+
+pub const SecretRequest = struct {
+    method: []const u8, path: []const u8, location: []const u8,
+    format: []const u8, field_path: []const u8, interaction: c_int,
+};
+pub const SecretRedactor = struct {
+    context: ?*anyopaque = null,
+    call: *const fn (?*anyopaque, []const u8, SecretRequest) anyerror!?[:0]const u8,
+};
+pub const SecretResolver = struct {
+    context: ?*anyopaque = null,
+    call: *const fn (?*anyopaque, []const u8) anyerror!?[:0]const u8,
+};
+fn secretStage(allocator: std.mem.Allocator, handle: Handle, redactor: ?SecretRedactor, resolver: ?SecretResolver) !void {
+    errdefer { aether_vcr_embed_secret_abort(handle); aether_vcr_embed_stop(handle); }
+    try checkErr(allocator, aether_vcr_embed_secret_begin(handle, if (resolver != null) 1 else 0));
+    while (true) {
+        const next = aether_vcr_embed_secret_next(handle);
+        if (next < 0) return Error.VcrError;
+        if (next == 0) break;
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const key = try takeString(a, aether_vcr_embed_secret_get(handle, 1));
+        const token = try takeString(a, aether_vcr_embed_secret_get(handle, 2));
+        const request = SecretRequest{
+            .method = try takeString(a, aether_vcr_embed_secret_get(handle, 3)),
+            .path = try takeString(a, aether_vcr_embed_secret_get(handle, 4)),
+            .location = try takeString(a, aether_vcr_embed_secret_get(handle, 5)),
+            .format = try takeString(a, aether_vcr_embed_secret_get(handle, 6)),
+            .field_path = try takeString(a, aether_vcr_embed_secret_get(handle, 7)),
+            .interaction = aether_vcr_embed_secret_interaction(handle),
+        };
+        const value = if (resolver) |r| try r.call(r.context, token) else try redactor.?.call(redactor.?.context, key, request);
+        if (value) |v| try checkErr(allocator, aether_vcr_embed_secret_apply(handle, v.ptr));
+    }
+    try checkErr(allocator, aether_vcr_embed_secret_finish(handle));
 }
 
 // ===========================================================================
@@ -306,6 +352,8 @@ fn applyBase(
 
 /// A builder that replays a Servirtium markdown tape from disk.
 pub const Playback = struct {
+    secret_resolver: ?SecretResolver = null,
+
     allocator: std.mem.Allocator,
     tape_path: [:0]const u8,
     host_str: [:0]const u8 = "127.0.0.1",
@@ -324,6 +372,10 @@ pub const Playback = struct {
     /// call `start`. The builder uses value semantics: each method consumes
     /// the builder and returns the modified copy, so `init(...).port(0)...`
     /// chains on a temporary (Zig won't take a `*` to an rvalue).
+    pub fn secretResolver(self: Playback, callback: SecretResolver) Playback {
+        var b = self; b.secret_resolver = callback; return b;
+    }
+
     pub fn init(allocator: std.mem.Allocator, tape_path: [:0]const u8) Playback {
         return .{ .allocator = allocator, .tape_path = tape_path };
     }
@@ -441,6 +493,7 @@ pub const Playback = struct {
             try checkErr(self.allocator, aether_vcr_embed_unredact(handle, @intFromEnum(u.field), u.pattern.ptr, u.repl.ptr));
         }
 
+        if (self.secret_resolver) |resolver| try secretStage(self.allocator, handle, null, resolver);
         if (aether_vcr_embed_start(handle) < 0) return Error.StartFailed;
         return .{
             .handle = handle,
@@ -457,6 +510,8 @@ pub const Playback = struct {
 /// `upstream_base`, return the real response, capture the exchange, and write
 /// the tape on `Server.close`.
 pub const Record = struct {
+    secret_redactor: ?SecretRedactor = null,
+
     allocator: std.mem.Allocator,
     tape_path: [:0]const u8,
     upstream_base: [:0]const u8,
@@ -477,6 +532,10 @@ pub const Record = struct {
     /// Begin a record fixture that forwards to `upstream_base` and writes
     /// `tape_path` on close. Configure fluently, then call `start`. Like
     /// `Playback`, the builder uses value semantics so it chains on a temporary.
+    pub fn secretRedactor(self: Record, callback: SecretRedactor) Record {
+        var b = self; b.secret_redactor = callback; return b;
+    }
+
     pub fn init(allocator: std.mem.Allocator, tape_path: [:0]const u8, upstream_base: [:0]const u8) Record {
         return .{ .allocator = allocator, .tape_path = tape_path, .upstream_base = upstream_base };
     }
@@ -655,6 +714,7 @@ pub const Record = struct {
             .tape_path = self.tape_path,
             .record_mode = true,
             .fail_if_changed = self.fail_if_changed,
+            .secret_redactor = self.secret_redactor,
         };
     }
 };
@@ -669,6 +729,7 @@ pub const Server = struct {
     tape_path: [:0]const u8,
     record_mode: bool,
     fail_if_changed: bool,
+    secret_redactor: ?SecretRedactor = null,
 
     /// The OS-resolved port the server is listening on.
     pub fn port(self: *Server) c_int {
@@ -745,6 +806,7 @@ pub const Server = struct {
             aether_vcr_embed_stop(h);
             return;
         }
+        if (self.secret_redactor) |redactor| try secretStage(self.allocator, h, redactor, null);
         const res = if (self.fail_if_changed)
             aether_vcr_embed_stop_and_flush_fail_if_changed(h, self.tape_path.ptr)
         else

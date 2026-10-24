@@ -13,12 +13,18 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 
     private final List<Unredaction> unredactions = new ArrayList<>();
     private final List<String> matchHeaders = new ArrayList<>();
+    private java.util.function.Function<String, String> secretResolver;
     private boolean strictHeaders;
     private boolean matchJsonBody;
     private boolean matchMultiple;
 
     PlaybackBuilder(String tapePath) {
         super(tapePath);
+    }
+
+    public PlaybackBuilder secretResolver(java.util.function.Function<String, String> callback) {
+        secretResolver = callback;
+        return this;
     }
 
     @Override
@@ -129,6 +135,7 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
                 throw new VcrException("vcr playback failed to start for tape '" + tapePath + "'");
             }
             applyConfig(arena, handle);
+            if (secretResolver != null) SecretCallbacks.stage(handle, null, secretResolver);
             int rc = (int) NativeMethods.START.invokeExact(handle);
             if (rc < 0) {
                 String detail = drainStartError(handle);

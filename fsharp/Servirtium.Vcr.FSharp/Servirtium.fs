@@ -46,6 +46,14 @@ module Servirtium =
     let redactJsonField (name: string) (builder: RecordBuilder) : RecordBuilder =
         builder.RedactJsonField(name)
 
+    /// Return None to leave a field alone; Some token names the playback secret.
+    let secretRedactor (callback: string -> SecretRequest -> string option) (builder: RecordBuilder) =
+        builder.SecretRedactor(System.Func<string, SecretRequest, string>(fun key request ->
+            callback key request |> Option.toObj))
+
+    let secretResolver (callback: string -> string option) (builder: PlaybackBuilder) =
+        builder.SecretResolver(System.Func<string, string>(fun token -> callback token |> Option.toObj))
+
     // ---- loan patterns ----------------------------------------------------
     // The F#-idiomatic way to scope a VCR: run `body` against a live server and
     // dispose it on every path, including exceptions. In record mode disposal is

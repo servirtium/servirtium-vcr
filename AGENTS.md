@@ -263,6 +263,24 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   forwarding with a query was also broken). Now both re-insert the `?`. No
   existing tape had a query string, so no back-compat impact.
 
+## Named secret callbacks
+
+`docs/secrets.md` documents the emission-time `secretRedactor` / setup-time
+`secretResolver` contract and every language surface. `core/secret_fields.ae`
+extracts source spans for query/form/header/JSON/XML/YAML/multipart text; the
+staging state, named markers, encoding and patches live in `core/vcr.ae`.
+Bindings only iterate the seven `aether_vcr_embed_secret_*` ABI calls and invoke
+host callbacks between calls. Never register native-to-HLL callbacks on the HTTP
+worker. Recording staging stops/joins first; resolution finishes before start.
+`secret_materialized` permanently prevents resolved playback being emitted;
+do not tie that protection to the current candidate list. Named marker encoding
+suffixes preserve scalar style, and only resolved secret spans receive encoding
+equivalence during matching. Failed/interrupted staging must never write a tape.
+`core_tests/secret_fixture.py` exercises four services/passwords on one port;
+binding tests record against it, inspect redaction, then replay without it.
+Fenced/indented emitters add a separate separator newline so terminal payload
+newlines survive parsing.
+
 ## Gotchas / hard-won
 
 - **Replay diagnostics are a side channel, not HTTP payload extensions.** Core
