@@ -103,8 +103,8 @@ end
 
 @testset "Structured redaction helpers" begin
     mktempdir() do directory
-        fixture = joinpath(@__DIR__, "../../core_tests/redaction_fixture.py")
-        fixture_run(args...) = strip(read(`python3 $fixture $args`, String))
+        fixture = joinpath(@__DIR__, "../../target/test-tools/redaction_fixture")
+        fixture_run(args...) = strip(read(`$fixture $args`, String))
         upstream = fixture_run("start", directory)
         record(joinpath(directory, "tape.md"), upstream) do rec
             redact_header(rec, "Authorization")
@@ -122,9 +122,9 @@ end
     root = joinpath(@__DIR__, "../..")
     playback(joinpath(root, "core_tests/diagnostics/playback.md")) do server
         test_context(server, "Julia scenario"; source_file="scenario.test", source_line=123)
-        driver = joinpath(root, "core_tests/diagnostic_fixture.py")
+        driver = joinpath(root, "target/test-tools/diagnostic_fixture")
         url = base_url(server)
-        run(`python3 $driver $url`)
+        run(`$driver $url`)
         @test occursin("owner", last_error(server; consume=false))
         @test occursin("scenario.test:123", last_error(server; consume=false))
         @test !occursin("\"retrieved\":1", diagnostics_json(server))
@@ -140,8 +140,8 @@ end
 
 @testset "named secrets round trip" begin
     mktempdir() do directory
-        fixture = normpath(joinpath(@__DIR__, "../../core_tests/secret_fixture.py"))
-        run_fixture(action, arg) = strip(read(`python3 $fixture $action $arg`, String))
+        fixture = normpath(joinpath(@__DIR__, "../../target/test-tools/secret_fixture"))
+        run_fixture(action, arg) = strip(read(`$fixture $action $arg`, String))
         tape = joinpath(directory, "tape.md")
         rec = record(tape, run_fixture("start", directory))
         count = Ref(0)

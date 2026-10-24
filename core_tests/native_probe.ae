@@ -1,0 +1,73 @@
+// The C ABI under test is resolved from the built library, never core.vcr.
+import std.bytes
+import std.dl
+import std.os
+import std.string
+exports(load, open_playback, start, stop, port, last, events, assert_clean, context, kind, clear, reset, unredact, match_multiple, match_header, match_json)
+extern strlen(p: ptr) -> long
+cfn Open(string, string, string, int) -> ptr
+cfn IntHandle(ptr) -> int
+cfn VoidHandle(ptr)
+cfn TextHandle(ptr) -> ptr
+cfn Read(ptr, int) -> ptr
+cfn Context(ptr, string, string, int)
+cfn Unredact(ptr, int, string, string) -> ptr
+cfn SetInt(ptr, int)
+cfn Header(ptr, string)
+var library: ptr = null
+var open_fn: Open = null
+var start_fn: IntHandle = null
+var stop_fn: VoidHandle = null
+var port_fn: IntHandle = null
+var free_fn: VoidHandle = null
+var last_fn: Read = null
+var events_fn: Read = null
+var assert_fn: TextHandle = null
+var context_fn: Context = null
+var kind_fn: IntHandle = null
+var clear_fn: VoidHandle = null
+var reset_fn: VoidHandle = null
+var unredact_fn: Unredact = null
+var multiple_fn: SetInt = null
+var header_fn: Header = null
+var json_fn: SetInt = null
+symbol(name: string) -> ptr { return dl.symbol(library, "aether_vcr_embed_${name}")! }
+load(file: string) {
+    library = dl.open(file)!
+    open_fn = symbol("open_playback") as Open
+    start_fn = symbol("start") as IntHandle
+    stop_fn = symbol("stop") as VoidHandle
+    port_fn = symbol("port") as IntHandle
+    free_fn = symbol("free_string") as VoidHandle
+    last_fn = symbol("last_error_ex") as Read
+    events_fn = symbol("diagnostics_json") as Read
+    assert_fn = symbol("assert_no_mismatches") as TextHandle
+    context_fn = symbol("test_context") as Context
+    kind_fn = symbol("last_kind") as IntHandle
+    clear_fn = symbol("clear_last_error") as VoidHandle
+    reset_fn = symbol("reset_cursor") as VoidHandle
+    unredact_fn = symbol("unredact") as Unredact
+    multiple_fn = symbol("set_match_multiple") as SetInt
+    header_fn = symbol("match_header") as Header
+    json_fn = symbol("set_match_json_body") as SetInt
+}
+owned_text(p: ptr) -> string {
+    if p == null { return "" }
+    defer free_fn(p)
+    return bytes.string_from_ptr(p, strlen(p) as int)
+}
+open_playback(tape: string) -> ptr { return open_fn("ABI scenario", tape, "127.0.0.1", 0) }
+start(h: ptr) -> int { return start_fn(h) }
+stop(h: ptr) { stop_fn(h) }
+port(h: ptr) -> int { return port_fn(h) }
+last(h: ptr, consume: int) -> string { return owned_text(last_fn(h, consume)) }
+events(h: ptr, consume: int) -> string { return owned_text(events_fn(h, consume)) }
+assert_clean(h: ptr) -> string { return owned_text(assert_fn(h)) }
+context(h: ptr, name: string, file: string, line: int) { context_fn(h, name, file, line) }
+kind(h: ptr) -> int { return kind_fn(h) }
+clear(h: ptr) { clear_fn(h) }
+reset(h: ptr) { reset_fn(h) }
+unredact(h: ptr, field: int, pattern: string, value: string) -> string { return owned_text(unredact_fn(h, field, pattern, value)) }
+match_multiple(h: ptr, enabled: int) { multiple_fn(h, enabled) }
+match_header(h: ptr, name: string) { header_fn(h, name) }
+match_json(h: ptr, enabled: int) { json_fn(h, enabled) }

@@ -2,8 +2,8 @@ require 'tmpdir'
 require 'open3'
 RSpec.describe 'Named secrets' do
   it 'redacts at emission and resolves four services on the calling thread' do
-    fixture = File.expand_path('../../../core_tests/secret_fixture.py', __dir__)
-    run = ->(*args) { output, status = Open3.capture2e('python3', fixture, *args); expect(status.success?).to be(true), output; output.strip }
+    fixture = File.expand_path('../../../target/test-tools/secret_fixture', __dir__)
+    run = ->(*args) { output, status = Open3.capture2e(fixture, *args); expect(status.success?).to be(true), output; output.strip }
     Dir.mktmpdir('vcr-secrets-') do |dir|
       tape = File.join(dir, 'tape.md'); upstream = run.call('start', dir)
       thread = Thread.current; count = 0

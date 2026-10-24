@@ -11,6 +11,16 @@ import std/[os, osproc, strutils, unittest, httpclient]
 import servirtium
 import upstream
 
+proc fixtureOutput(command, directory: string): string =
+  # Nim's capture pipe leaves a writer inherited by detached grandchildren.
+  # Capture via a file so waiting for the launcher does not wait for upstream.
+  let outputFile = directory / "fixture-output.txt"
+  let status = execCmd(command & " > " & quoteShell(outputFile) & " 2>&1")
+  defer: removeFile(outputFile)
+  let output = readFile(outputFile)
+  doAssert status == 0, output
+  output.strip()
+
 proc tempTape(name: string): string =
   let dir = getTempDir() / "servirtium_nim_rec_" & $getCurrentProcessId() & "_" & name
   createDir(dir)
@@ -76,13 +86,11 @@ suite "structured redaction helpers":
     let directory = getTempDir() / ("vcr-helpers-nim-" & $getCurrentProcessId())
     createDir(directory)
     defer: removeDir(directory)
-    let fixture = currentSourcePath().parentDir.parentDir.parentDir / "core_tests/redaction_fixture.py"
+    let fixture = currentSourcePath().parentDir.parentDir.parentDir / "target/test-tools/redaction_fixture"
     proc fixtureRun(args: seq[string]): string =
-      var command = "python3 " & quoteShell(fixture)
+      var command = quoteShell(fixture)
       for arg in args: command.add(" " & quoteShell(arg))
-      let output = execCmdEx(command)
-      doAssert output.exitCode == 0, output.output
-      output.output.strip()
+      fixtureOutput(command, directory)
     let upstream = fixtureRun(@["start", directory])
     let rec = record(directory / "tape.md", upstream)
     check rec.redactHeader("Authorization") == ""
@@ -103,7 +111,7 @@ suite "retained replay diagnostics":
     server.testContext("Nim scenario", "scenario.test", 123)
     check server.start()
     defer: server.close()
-    let driven = execCmdEx("python3 " & quoteShell(root / "core_tests/diagnostic_fixture.py") & " " & quoteShell(server.baseUrl()))
+    let driven = execCmdEx(quoteShell(root / "target/test-tools/diagnostic_fixture") & " " & quoteShell(server.baseUrl()))
     check driven.exitCode == 0
     check server.lastError(false).contains("owner")
     check server.lastError(false).contains("scenario.test:123")
@@ -121,13 +129,11 @@ suite "named secrets":
     let directory = getTempDir() / ("vcr-secrets-nim-" & $getCurrentProcessId())
     createDir(directory)
     defer: removeDir(directory)
-    let fixture = currentSourcePath().parentDir.parentDir.parentDir / "core_tests/secret_fixture.py"
+    let fixture = currentSourcePath().parentDir.parentDir.parentDir / "target/test-tools/secret_fixture"
     proc run(args: seq[string]): string =
-      var command = "python3 " & quoteShell(fixture)
+      var command = quoteShell(fixture)
       for arg in args: command.add(" " & quoteShell(arg))
-      let output = execCmdEx(command)
-      doAssert output.exitCode == 0, output.output
-      output.output.strip()
+      fixtureOutput(command, directory)
     let tape = directory / "tape.md"
     let rec = record(tape, run(@["start", directory]))
     var count = 0

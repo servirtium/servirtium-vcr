@@ -84,7 +84,7 @@ same revision as these bindings.
 
 `core_tests/test_vcr_redaction_helpers.ae` covers the shared semantics. Every
 language's normal test suite exercises its public API by recording real HTTP
-traffic. Most use `core_tests/redaction_fixture.py`: its single-request upstream
+traffic. Most use `target/test-tools/redaction_fixture`: its single-request upstream
 checks original credentials, and its tape check verifies replacements plus
 untouched neighbouring values. It uses Python's standard library and exits after
 one request, or times out after 45 seconds. Pharo uses its existing Zinc fixture.

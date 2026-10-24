@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class RedactionHelpersTest {
     private String run(String... args) throws Exception {
-        var cmd = new ArrayList<>(List.of("python3", "../core_tests/redaction_fixture.py"));
+        var cmd = new ArrayList<>(List.of("../target/test-tools/redaction_fixture"));
         cmd.addAll(List.of(args));
         var process = new ProcessBuilder(cmd).redirectErrorStream(true).start();
         var output = new String(process.getInputStream().readAllBytes());

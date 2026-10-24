@@ -207,7 +207,7 @@ fn structured_redaction_helpers_preserve_upstream_credentials() {
     let directory = std::env::temp_dir().join(format!("vcr-helpers-rust-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
     std::fs::create_dir(&directory).unwrap();
     let run = |args: &[&str]| {
-        let output = Command::new("python3").arg(root.join("../core_tests/redaction_fixture.py"))
+        let output = Command::new(root.join("../target/test-tools/redaction_fixture"))
             .args(args).output().unwrap();
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
         String::from_utf8(output.stdout).unwrap().trim().to_owned()

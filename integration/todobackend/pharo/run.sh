@@ -28,6 +28,7 @@ set -euo pipefail
 
 PHASE="${1:-playback}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
 BASE="$(cd "$HERE/.." && pwd)"            # integration/todobackend — suite/ + tapes/ live here
 PHARO_DIR="${PHARO_DIR:-$HOME/.local/pharo}"
 SELENIUM_SERVER_JAR="${SELENIUM_SERVER_JAR:-$HOME/.cache/selenium/selenium-server.jar}"
@@ -70,7 +71,8 @@ run_pharo eval --save "
 " || die "Metacello load (Servirtium + Parasol) failed."
 
 # ---- Selenium server on an ephemeral port, backed by the cached chromedriver ----
-SELENIUM_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
+[ -x "$ROOT/target/test-tools/free_port" ] || die "build test tools first: aeb core_tests/.fixtures.ae"
+SELENIUM_PORT="$("$ROOT/target/test-tools/free_port")"
 export SELENIUM_PORT
 say "starting Selenium server on :$SELENIUM_PORT (driver: $DRIVER)"
 java -jar "$SELENIUM_SERVER_JAR" standalone \

@@ -7,7 +7,7 @@
 // The rpath makes libservirtium_vcr resolvable at runtime; SERVIRTIUM_VCR_LIB is also
 // passed for parity with the other bindings. tests/run_all.lua drives the full
 // suite (playback + record + mutation, ~14 cases): playback shells out to curl
-// against the VCR server; record/mutation spawn a throwaway python3 upstream
+// against the VCR server; record/mutation spawn a throwaway Aether upstream
 // (Lua 5.4 has no stdlib sockets) and record to temp tapes.
 import bldr
 import lua
@@ -15,6 +15,7 @@ import bldr (env, step)
 import std.path
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
         core = path.dirname(lib)

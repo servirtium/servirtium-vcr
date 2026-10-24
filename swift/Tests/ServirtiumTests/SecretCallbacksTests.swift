@@ -7,11 +7,11 @@ final class SecretCallbacksTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let tape = directory.appendingPathComponent("tape.md").path
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core_tests/secret_fixture.py").path
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("target/test-tools/secret_fixture").path
         func run(_ action: String, _ arg: String) throws -> String {
             let process = Process(); let output = Pipe()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["python3", fixture, action, arg]; process.standardOutput = output
+            process.arguments = [fixture, action, arg]; process.standardOutput = output
             try process.run()
             let data = output.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
             XCTAssertEqual(process.terminationStatus, 0)

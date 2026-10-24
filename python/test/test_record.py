@@ -69,11 +69,10 @@ def test_records_and_replays_a_post_with_a_body(upstream):
 def test_structured_redaction_helpers(tmp_path):
     import pathlib
     import subprocess
-    import sys
 
-    fixture = pathlib.Path(__file__).resolve().parents[2] / "core_tests/redaction_fixture.py"
+    fixture = pathlib.Path(__file__).resolve().parents[2] / "target/test-tools/redaction_fixture"
     def run(*args):
-        return subprocess.check_output([sys.executable, str(fixture), *map(str, args)], text=True).strip()
+        return subprocess.check_output([str(fixture), *map(str, args)], text=True).strip()
 
     upstream = run("start", tmp_path)
     with (servirtium.record(str(tmp_path / "tape.md"), upstream)
@@ -88,11 +87,10 @@ def test_structured_redaction_helpers(tmp_path):
 def test_structured_redactions_are_isolated_between_live_handles(tmp_path):
     import pathlib
     import subprocess
-    import sys
 
-    fixture = pathlib.Path(__file__).resolve().parents[2] / "core_tests/redaction_fixture.py"
+    fixture = pathlib.Path(__file__).resolve().parents[2] / "target/test-tools/redaction_fixture"
     def run(*args):
-        return subprocess.check_output([sys.executable, str(fixture), *map(str, args)], text=True).strip()
+        return subprocess.check_output([str(fixture), *map(str, args)], text=True).strip()
 
     left, right = tmp_path / "left", tmp_path / "right"
     first_upstream, second_upstream = run("start", left), run("start", right)

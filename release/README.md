@@ -22,7 +22,7 @@ that will be published at that tag. For example, for a future alpha:
 # current SERVIRTIUM_VCR_VERSION to the new tag; all-or-nothing:
 SVCR_RELEASE_SET=v2.0.0-alpha.3 aeb release/.version.ae
 SVCR_RELEASE_TAG=v2.0.0-alpha.3 aeb release/.version.ae   # check every pin against the tag
-python3 release/check-artifacts.py v2.0.0-alpha.3 --check-version
+SVCR_RELEASE_TAG=v2.0.0-alpha.3 SVCR_ARTIFACTS_MODE=version aeb release/.artifacts.ae
 # Stage and commit the release preparation, then:
 git tag -a v2.0.0-alpha.3 -m 'Servirtium core v2.0.0-alpha.3'
 git push origin main
@@ -193,3 +193,11 @@ suite=<what ran>  notes=<e.g. "ruby Fiddle + go cgo bindings; no https upstream 
 
 A verifier re-hashes the artifact they hold, matches `sha256`, and trusts the
 `result` for that `coverage` on that `target`.
+
+Release verification is implemented by `release/.artifacts.ae`. Its default mode
+checks the engine files under `release/dist`, including hashes, libc identities,
+ae-add byte identity, Windows import libraries and Linux ABI exports. Set
+`SVCR_ARTIFACTS_MODE=bindings` to require the fat Java jar and .NET nupkg too,
+or `version` for the version/toolchain preflight. `SVCR_ARTIFACTS_DIST` selects
+another directory, such as downloaded release assets. These checks run through
+the pinned Aether/aeb toolchain; Python is not required.

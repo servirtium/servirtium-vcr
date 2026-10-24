@@ -5,6 +5,7 @@ import rust
 import bldr (env)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
         rust.cargo_test_existing() { env("SERVIRTIUM_VCR_LIB", lib) }

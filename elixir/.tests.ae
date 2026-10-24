@@ -12,6 +12,7 @@ import bldr (env)
 import elixir (deps_get_first)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("erlang/.build.ae")
         ebin = dep_artifact("erlang/.build.ae", "nif_ebin")
         elixir.test() {

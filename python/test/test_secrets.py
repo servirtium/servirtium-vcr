@@ -1,19 +1,18 @@
 import pathlib
 import subprocess
-import sys
 import threading
 
 import pytest
 import servirtium
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-FIXTURE = ROOT / 'core_tests/secret_fixture.py'
-sys.path.insert(0, str(ROOT / 'core_tests'))
-from secret_fixture import PASSWORDS
+FIXTURE = ROOT / 'target/test-tools/secret_fixture'
+PASSWORDS = {name.upper() + '_PASSWORD': 'pw-' + name + '&secret'
+             for name in ('accounts', 'billing', 'shipping', 'support')}
 
 
 def run(*args):
-    return subprocess.check_output([sys.executable, str(FIXTURE), *map(str, args)], text=True).strip()
+    return subprocess.check_output([str(FIXTURE), *map(str, args)], text=True).strip()
 
 
 def test_four_services_resolve_named_secrets_without_live_upstream(tmp_path):

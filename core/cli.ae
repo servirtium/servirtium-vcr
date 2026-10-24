@@ -72,7 +72,7 @@ run_serve(argc: int) {
     ordered = 0
     i = 2
     while i < argc {
-        a = os.aether_args_get(i)
+        a = os.args_get(i)
         if string.equals(a, "--ordered") == 1 {
             ordered = 1
         } else {
@@ -150,7 +150,7 @@ run_check(argc: int) {
     fails = 0
     i = 2
     while i < argc {
-        a = os.aether_args_get(i)
+        a = os.args_get(i)
         if string.equals(a, "--canonical") == 1 {
             canonical = 1
         } else {
@@ -206,14 +206,14 @@ run_import_bru(argc: int) {
     i = 2
     npos = 0
     while i < argc {
-        a = os.aether_args_get(i)
+        a = os.args_get(i)
         if string.equals(a, "--var") == 1 {
             i = i + 1
-            if i < argc { basevar = os.aether_args_get(i) }
+            if i < argc { basevar = os.args_get(i) }
         } else if string.equals(a, "--port") == 1 {
             i = i + 1
             if i < argc {
-                p, perr = string.to_int(os.aether_args_get(i))
+                p, perr = string.to_int(os.args_get(i))
                 if perr == "" && p > 0 && p <= 65535 { port = p }
             }
         } else {
@@ -344,12 +344,12 @@ run_import_bru(argc: int) {
 
 main() {
     // aether_args_get(0) is argv0; the sub-command and its args follow.
-    argc = os.aether_args_count()
+    argc = os.args_count()
     if argc < 2 {
         usage()
         exit(2)
     }
-    cmd = os.aether_args_get(1)
+    cmd = os.args_get(1)
 
     if string.equals(cmd, "serve") == 1 { run_serve(argc) }
     if string.equals(cmd, "check") == 1 { run_check(argc) }
@@ -357,8 +357,8 @@ main() {
 
     if string.equals(cmd, "import") == 1 {
         if argc < 4 { usage(); exit(2) }
-        src = os.aether_args_get(2)
-        dst = os.aether_args_get(3)
+        src = os.args_get(2)
+        dst = os.args_get(3)
         err = vcr.har_import(src, dst)
         if err != "" { println("servirtium: ${err}"); exit(1) }
         println("servirtium: imported ${src} -> ${dst}")
@@ -366,8 +366,8 @@ main() {
     }
     if string.equals(cmd, "export") == 1 {
         if argc < 4 { usage(); exit(2) }
-        src = os.aether_args_get(2)
-        dst = os.aether_args_get(3)
+        src = os.args_get(2)
+        dst = os.args_get(3)
         err = vcr.har_export(src, dst)
         if err != "" { println("servirtium: ${err}"); exit(1) }
         println("servirtium: exported ${src} -> ${dst}")

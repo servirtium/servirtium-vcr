@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 release/check-artifacts.py "$RELEASE_TAG" --check-version
+          test "$(cat SERVIRTIUM_VCR_VERSION)" = "$RELEASE_TAG"
           test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
 
       - name: Install native build dependencies
@@ -104,6 +104,9 @@ jobs:
           echo "PREFIX=$tools/prefix" >> "$GITHUB_ENV"
           echo "AETHER_SYSROOT=$tools/freebsd" >> "$GITHUB_ENV"
 
+      - name: Verify release version and toolchain pins
+        run: SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_MODE=version aeb release/.artifacts.ae
+
       - name: Build all nine libraries, nine ae-add packages, and the two binding packages
         env:
           TARGETS: x86_64-linux aarch64-linux x86_64-linux-musl aarch64-linux-musl x86_64-macos aarch64-macos x86_64-windows aarch64-windows x86_64-freebsd
@@ -121,7 +124,7 @@ jobs:
           compgen -G 'release/dist/Servirtium.Vcr.*.nupkg' >/dev/null
 
       - name: Verify release artifacts and Linux ABI
-        run: python3 release/check-artifacts.py "$RELEASE_TAG" --binding-packages
+        run: SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_MODE=bindings aeb release/.artifacts.ae
 
       - name: Publish binaries and checksums
         env:
@@ -165,5 +168,5 @@ jobs:
           set -euo pipefail
           downloaded="$RUNNER_TEMP/published-core"
           gh release download "$RELEASE_TAG" --dir "$downloaded"
-          python3 release/check-artifacts.py "$RELEASE_TAG" --dist "$downloaded" --binding-packages
+          SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_DIST="$downloaded" SVCR_ARTIFACTS_MODE=bindings aeb release/.artifacts.ae
           echo "Downloaded and verified all nine libraries, nine ae-add packages, the fat Java jar, the multi-RID .NET nupkg, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

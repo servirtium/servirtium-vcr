@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class SecretCallbacksTest {
     String run(String... args) throws Exception {
-        var command = new ArrayList<>(List.of("python3", "../core_tests/secret_fixture.py"));
+        var command = new ArrayList<>(List.of("../target/test-tools/secret_fixture"));
         command.addAll(List.of(args));
         var process = new ProcessBuilder(command).redirectErrorStream(true).start();
         var output = new String(process.getInputStream().readAllBytes());

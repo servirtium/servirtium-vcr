@@ -1,14 +1,17 @@
-// C ABI black-box diagnostics contract, independent of any binding.
+// C ABI black-box contract: load and call the built library through std.dl.
 import bldr
+import aether
+import aether (source, output, lib, caps)
 import std.os
+
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
-        root = _get("root")
-        lib = dep_artifact("core/.build.ae", "shared_lib")
-        rc = os.system("SERVIRTIUM_VCR_LIB=\"${lib}\" python3 \"${root}/core_tests/diagnostics-tests.py\"")
+        aether.program() { source("diagnostics_tests.ae"); output("diagnostics-tests"); lib(".."); caps("fs,net,os,extern") }
+        root = _get("root"); td = _get("target_dir")
+        library = dep_artifact("core/.build.ae", "shared_lib")
+        rc = os.system("SVCR_TEST_ROOT=\"${root}\" SERVIRTIUM_VCR_LIB=\"${library}\" \"${td}/bin/diagnostics-tests\"")
         if rc != 0 { return 1 }
         println("test: replay diagnostic side channel")
-        return 0
     }
 }

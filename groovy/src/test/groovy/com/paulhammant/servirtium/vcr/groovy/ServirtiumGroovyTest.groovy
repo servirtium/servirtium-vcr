@@ -26,7 +26,7 @@ class ServirtiumGroovyTest {
     @Test void structuredHelpersForwardCredentialsAndScrubTape() {
         def directory = Files.createTempDirectory('vcr-helpers-')
         def run = { String... args ->
-            def process = new ProcessBuilder(['python3', '../core_tests/redaction_fixture.py'] + args.toList())
+            def process = new ProcessBuilder(['../target/test-tools/redaction_fixture'] + args.toList())
                 .redirectErrorStream(true).start()
             def output = process.inputStream.text
             assertEquals(0, process.waitFor(), output)
@@ -54,7 +54,7 @@ class ServirtiumGroovyTest {
         def server = playback('../core_tests/diagnostics/playback.md')
         try {
             server.testContext('Groovy scenario', 'scenario.test', 123)
-            def driver = new ProcessBuilder('python3', '../core_tests/diagnostic_fixture.py', server.baseUrl()).inheritIO().start()
+            def driver = new ProcessBuilder('../target/test-tools/diagnostic_fixture', server.baseUrl()).inheritIO().start()
             assertEquals(0, driver.waitFor())
             assert server.lastError(false).contains('owner')
             assert server.lastError(false).contains('scenario.test:123')

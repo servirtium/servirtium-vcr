@@ -16,7 +16,7 @@
   (named-secrets)
 
   (let* ((directory (++ "/tmp/vcr-helpers-lfe-" (os:getpid)))
-         (fixture "python3 ../core_tests/redaction_fixture.py "))
+         (fixture "../target/test-tools/redaction_fixture "))
     (file:make_dir directory)
     (let* ((upstream (string:trim (os:cmd (++ fixture "start '" directory "'"))))
            (rec (servirtium_lfe:record (++ directory "/tape.md") upstream)))
@@ -38,7 +38,7 @@
 
   (let ((server (servirtium_lfe:playback "../core_tests/diagnostics/playback.md")))
     (servirtium_lfe:test_context server "LFE scenario" "scenario.test" 123)
-    (let ((out (os:cmd (++ "python3 ../core_tests/diagnostic_fixture.py '" (servirtium_lfe:base_url server) "' && echo DRIVER_OK"))))
+    (let ((out (os:cmd (++ "../target/test-tools/diagnostic_fixture '" (servirtium_lfe:base_url server) "' && echo DRIVER_OK"))))
       (require-found out "DRIVER_OK"))
     (require-found (servirtium_lfe:last_error server 'false) "owner")
     (require-found (servirtium_lfe:last_error server 'false) "scenario.test:123")
@@ -93,7 +93,7 @@
     (_ 'ok)))
 
 (defun secret-run (action arg)
-  (let* ((out (os:cmd (++ "python3 ../core_tests/secret_fixture.py " action " '" arg "' 2>&1 && echo SECRET_OK"))))
+  (let* ((out (os:cmd (++ "../target/test-tools/secret_fixture " action " '" arg "' 2>&1 && echo SECRET_OK"))))
     (require-found out "SECRET_OK")
     (string:trim (string:replace out "SECRET_OK" "" 'all))))
 (defun named-secrets ()

@@ -4,11 +4,11 @@ Turns a [Bruno](https://www.usebruno.com/) collection into a replayable
 Servirtium tape, then serves the tape with the real service switched off.
 
 ```sh
-aeb core/.cli.ae            # build ./target/servirtium
+aeb bruno_import_demo/.build.ae  # build the CLI and Aether widget service
 ./bruno_import_demo/run-demo.sh
 ```
 
-Needs `python3` (stdlib only — no pip, no venv) and `curl`.
+Needs the Aether/aeb toolchain to build, and `curl` to run. The compiled service uses Aether’s HTTP, JSON and XML standard libraries.
 
 ## Why a contrived service rather than a public API
 

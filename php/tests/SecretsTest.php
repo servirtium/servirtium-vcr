@@ -9,7 +9,7 @@ final class SecretsTest extends TestCase {
         $dir = sys_get_temp_dir() . '/vcr-secrets-php-' . uniqid(); mkdir($dir);
         $tape = $dir . '/tape.md';
         $run = function (string ...$args): string {
-            $cmd = array_map('escapeshellarg', ['python3', __DIR__ . '/../../core_tests/secret_fixture.py', ...$args]);
+            $cmd = array_map('escapeshellarg', [__DIR__ . '/../../target/test-tools/secret_fixture', ...$args]);
             exec(implode(' ', $cmd) . ' 2>&1', $output, $status);
             self::assertSame(0, $status, implode("\n", $output)); return trim(implode("\n", $output));
         };

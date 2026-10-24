@@ -43,7 +43,7 @@ it('retains replay diffs and distinguishes observers from consuming reads', () =
   const server = Vcr.playback(path.join(root, 'core_tests/diagnostics/playback.md')).start()
   try {
     server.testContext('JavaScript scenario', 'scenario.test', 123)
-    execFileSync('python3', [path.join(root, 'core_tests/diagnostic_fixture.py'), server.baseUrl])
+    execFileSync(path.join(root, 'target/test-tools/diagnostic_fixture'), [server.baseUrl])
     expect(server.readLastError(false)).toContain('owner')
     expect(server.readLastError(false)).toContain('scenario.test:123')
     expect(JSON.parse(server.diagnosticsJson()).map((e: any) => e.retrieved)).toEqual([0, 0])

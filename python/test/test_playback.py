@@ -32,12 +32,11 @@ def test_retained_diagnostics_and_explicit_consumption():
     import json
     import pathlib
     import subprocess
-    import sys
     import pytest
     root = pathlib.Path(__file__).resolve().parents[2]
     with servirtium.playback(str(root / "core_tests/diagnostics/playback.md")).start() as server:
         server.test_context("Python scenario", "scenario.test", 123)
-        subprocess.run([sys.executable, str(root / "core_tests/diagnostic_fixture.py"), server.base_url], check=True)
+        subprocess.run([str(root / "target/test-tools/diagnostic_fixture"), server.base_url], check=True)
         assert server.last_kind == servirtium.Outcome.OK
         assert "owner" in server.read_last_error(False)
         assert "scenario.test:123" in server.read_last_error(False)

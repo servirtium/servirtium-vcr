@@ -1,0 +1,31 @@
+// Verify release pins, then engine assets and optionally binding packages.
+// SVCR_RELEASE_TAG defaults to SERVIRTIUM_VCR_VERSION.
+// SVCR_ARTIFACTS_MODE: version, engine (default), or bindings.
+// SVCR_ARTIFACTS_DIST defaults to release/dist; absolute paths are accepted.
+import bldr
+import release.artifacts
+import std.fs
+import std.os
+import std.string
+
+aeb(cap) {
+    bldr.build() {
+        root = _get("root")
+        tag = os.getenv("SVCR_RELEASE_TAG")
+        if string.length(tag) == 0 { tag = string.trim(fs.read("${root}/SERVIRTIUM_VCR_VERSION")!) }
+        dist = os.getenv("SVCR_ARTIFACTS_DIST")
+        if string.length(dist) == 0 { dist = "${root}/release/dist" }
+        else if fs.path_is_absolute(dist) == 0 { dist = "${root}/${dist}" }
+        mode = os.getenv("SVCR_ARTIFACTS_MODE")
+        if string.length(mode) == 0 { mode = "engine" }
+        if mode != "version" && mode != "engine" && mode != "bindings" {
+            bldr.fail(builder_context(), "SVCR_ARTIFACTS_MODE must be version, engine or bindings")
+            return 1
+        }
+        bad = artifacts.check_version(root, tag)
+        if bad == "" && mode != "version" { bad = artifacts.check_artifacts(root, tag, dist) }
+        if bad == "" && mode == "bindings" { bad = artifacts.check_packages(dist) }
+        if bad != "" { bldr.fail(builder_context(), bad); return 1 }
+        if mode == "version" { println("Release version and toolchain pins match ${tag}.") }
+    }
+}

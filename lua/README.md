@@ -189,8 +189,8 @@ lua5.4 tests/run_all.lua
   not leak between fixtures; `:fail_if_changed()` returns an error on drift.
 
 Record-mode tests need a live upstream. Lua 5.4 has no stdlib sockets, so the
-suite spawns a throwaway one-process `python3` HTTP server
-(`/usr/bin/python3`) that returns a fixed body/headers and echoes the request
+suite spawns a compiled Aether HTTP server
+(`target/test-tools/test_upstream`) that returns a fixed body/headers and echoes the request
 method+body, then kills it. Recorded tapes are written to the OS temp dir, never
 into `tapes/`.
 

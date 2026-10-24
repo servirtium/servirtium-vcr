@@ -1,8 +1,8 @@
 use servirtium::Vcr;
 use std::{process::Command, sync::{Arc, atomic::{AtomicUsize, Ordering}}};
 fn run(args: &[&str]) -> String {
-    let fixture = format!("{}/../core_tests/secret_fixture.py", env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new("python3").arg(fixture).args(args).output().unwrap();
+    let fixture = format!("{}/../target/test-tools/secret_fixture", env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new(fixture).args(args).output().unwrap();
     assert!(output.status.success(), "{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
     String::from_utf8(output.stdout).unwrap().trim().into()
 }

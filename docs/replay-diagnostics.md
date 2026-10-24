@@ -156,6 +156,6 @@ boolean flags, with zero for observer reads and nonzero for consuming reads.
 
 Core behaviour is tested through the ABI by `core_tests/.diagnostics.ae`, also a
 dependency of the normal `core_tests/.tests.ae`. Per-language playback tests drive
-the shared `core_tests/diagnostic_fixture.py`, which produces two failures and a
+the shared `target/test-tools/diagnostic_fixture`, which produces two failures and a
 subsequent success, then check observer reads, acknowledgements, assertions and
 test boundaries through their public API.

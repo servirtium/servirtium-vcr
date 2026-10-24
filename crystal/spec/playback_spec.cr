@@ -92,10 +92,10 @@ describe "Structured redaction helpers" do
   it "forwards credentials and scrubs the tape" do
     directory = File.tempname("vcr-helpers")
     Dir.mkdir(directory)
-    fixture = File.expand_path("../../core_tests/redaction_fixture.py", __DIR__)
+    fixture = File.expand_path("../../target/test-tools/redaction_fixture", __DIR__)
     run = ->(args : Array(String)) do
       output = IO::Memory.new
-      status = Process.run("python3", [fixture] + args, output: output, error: output)
+      status = Process.run(fixture, args, output: output, error: output)
       status.success?.should be_true
       output.to_s.strip
     end
@@ -122,7 +122,7 @@ describe "Retained replay diagnostics" do
     root = File.expand_path("../..", __DIR__)
     Servirtium.playback(File.join(root, "core_tests/diagnostics/playback.md")) do |server|
       server.test_context("Crystal scenario", "scenario.test", 123)
-      Process.run("python3", [File.join(root, "core_tests/diagnostic_fixture.py"), server.base_url]).success?.should be_true
+      Process.run(File.join(root, "target/test-tools/diagnostic_fixture"), [server.base_url]).success?.should be_true
       server.last_error(false).should contain("owner")
       server.last_error(false).should contain("scenario.test:123")
       server.diagnostics_json.should_not contain("\"retrieved\":1")
@@ -142,10 +142,10 @@ describe "named secrets" do
     directory = File.tempname("vcr-secrets-")
     Dir.mkdir(directory)
     tape = File.join(directory, "tape.md")
-    fixture = File.expand_path("../../core_tests/secret_fixture.py", __DIR__)
+    fixture = File.expand_path("../../target/test-tools/secret_fixture", __DIR__)
     run = ->(action : String, arg : String) {
       output = IO::Memory.new
-      status = Process.run("python3", [fixture, action, arg], output: output, error: output)
+      status = Process.run(fixture, [action, arg], output: output, error: output)
       status.success?.should be_true
       output.to_s.strip
     }

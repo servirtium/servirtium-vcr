@@ -1,0 +1,175 @@
+// Deterministic widget HTTP service for the Bruno collection demo.
+import std.http
+import std.json
+import std.list
+import std.os
+import std.sort
+import std.strarr
+import std.strbuilder
+import std.string
+import std.xml
+extern fflush(stream: ptr) -> int
+var widgets: ptr = null
+copy_json(value: ptr) -> ptr { return json.parse(json.encode(value)!)! }
+// Preserve the demo's sorted keys and spaced JSON without a custom sorter.
+render(value: ptr) -> string {
+    kind = json.json_type(value)
+    if kind != 4 && kind != 5 { return json.encode(value)! }
+    out = strbuilder.new(128)
+    if kind == 4 {
+        strbuilder.append(out, "[")
+        for i in 0..json.json_array_size(value) {
+            if i > 0 { strbuilder.append(out, ", ") }
+            strbuilder.append(out, render(json.array_get(value, i)!))
+        }
+        strbuilder.append(out, "]")
+    } else {
+        keys = strarr.new()
+        defer strarr.free(keys)
+        for i in 0..json.object_size(value) {
+            key, _item, _err = json.object_entry(value, i)
+            strarr.push_copy(keys, key)
+        }
+        sort.strings(strarr.array(keys))
+        strbuilder.append(out, "{")
+        for i in 0..strarr.size(keys) {
+            if i > 0 { strbuilder.append(out, ", ") }
+            key = strarr.get(keys, i)
+            quoted_key = json.str(key)
+            strbuilder.append(out, json.encode(quoted_key)!)
+            json.json_free(quoted_key)
+            strbuilder.append(out, ": ")
+            strbuilder.append(out, render(json.object_get(value, key)!))
+        }
+        strbuilder.append(out, "}")
+    }
+    return strbuilder.finish(out)
+}
+json_response(res: ptr, status: int, value: ptr) {
+    defer json.json_free(value)
+    http.response_set_status(res, status)
+    http.response_set_header(res, "Content-Type", "application/json")
+    http.response_set_body(res, render(value))
+}
+xml_reply(res: ptr, status: int, body: string) {
+    http.response_set_status(res, status)
+    http.response_set_header(res, "Content-Type", "application/xml")
+    http.response_set_body(res, body)
+}
+text_field(widget: ptr, key: string) -> string { return json.get_string(json.object_get(widget, key)!)! }
+write_widget(writer: ptr, widget: ptr) {
+    xml.start(writer, "widget")
+    xml.attribute(writer, "id", "${json.json_get_int(json.object_get(widget, "id")!)}")
+    xml.element(writer, "name", text_field(widget, "name"))
+    xml.element(writer, "colour", text_field(widget, "colour"))
+    xml.end(writer, "widget")
+}
+new_widget(name: ptr, colour: ptr) -> ptr {
+    widget = json.obj()
+    json.set(widget, "id", json.from_int(list_size(widgets) + 1))
+    json.set(widget, "name", name); json.set(widget, "colour", colour)
+    list_add_raw(widgets, widget)
+    return widget
+}
+input_json(req: ptr) -> ptr {
+    value, err = json.parse(http.request_body(req))
+    if err != "" { return json.obj() }
+    return value
+}
+input_field(input: ptr, key: string, fallback: string) -> ptr {
+    value, err = json.object_get(input, key)
+    if err != "" { return json.str(fallback) }
+    return copy_json(value)
+}
+handle(req: ptr, res: ptr, _data: ptr) {
+    path = http.request_path(req)
+    while string.ends_with(path, "/") == 1 { path = string.substring(path, 0, string.length(path) - 1) }
+    query = http.request_query(req)
+    if string.length(query) > 0 { path = "${path}?${query}" }
+    method = http.request_method(req)
+    if method == "GET" && path == "/widgets.xml" {
+        writer = xml.writer()
+        defer xml.free_builder(writer)
+        xml.start(writer, "widgets")
+        for i in 0..list_size(widgets) {
+            widget = list_get_raw(widgets, i)
+            if widget != null { write_widget(writer, widget) }
+        }
+        xml.end(writer, "widgets")
+        xml_reply(res, 200, xml.finish(writer)); return
+    }
+    if method == "GET" && path == "/widgets" {
+        values = json.arr()
+        for i in 0..list_size(widgets) {
+            widget = list_get_raw(widgets, i)
+            if widget != null { json.push(values, copy_json(widget)) }
+        }
+        result = json.obj(); json.set(result, "widgets", values)
+        json_response(res, 200, result); return
+    }
+    if method == "POST" {
+        if path == "/widgets.xml" {
+            source = http.request_body(req)
+            if source == "" { source = "<widget/>" }
+            parser = xml.parser(source)
+            defer xml.free(parser)
+            key = ""; name = "unnamed"; colour = "grey"
+            while true {
+                event = xml.next(parser)
+                if event == xml.EVENT_ERROR { xml_reply(res, 400, "<error>malformed xml</error>"); return }
+                if event == xml.EVENT_EOF { break }
+                if event == xml.EVENT_START { key = xml.name(parser) }
+                if event == xml.EVENT_TEXT && key == "name" { name = string.trim(xml.text(parser)) }
+                if event == xml.EVENT_TEXT && key == "colour" { colour = string.trim(xml.text(parser)) }
+                if event == xml.EVENT_END { key = "" }
+            }
+            widget = new_widget(json.str(name), json.str(colour))
+            writer = xml.writer()
+            defer xml.free_builder(writer)
+            write_widget(writer, widget)
+            xml_reply(res, 201, xml.finish(writer)); return
+        }
+        input = input_json(req)
+        defer json.json_free(input)
+        widget = new_widget(input_field(input, "name", "unnamed"), input_field(input, "colour", "grey"))
+        json_response(res, 201, copy_json(widget)); return
+    }
+    id, _id_err = string.to_int(fs_basename(path))
+    var widget: ptr = null
+    if id > 0 && id <= list_size(widgets) { widget = list_get_raw(widgets, id - 1) }
+    if widget == null { json_response(res, 404, json.parse("{\"error\":\"no such widget\"}")!); return }
+    if method == "GET" { json_response(res, 200, copy_json(widget)); return }
+    if method == "PUT" {
+        input = input_json(req)
+        defer json.json_free(input)
+        for i in 0..json.object_size(input) {
+            key, value, _err = json.object_entry(input, i)
+            if key != "id" { json.set(widget, key, copy_json(value)) }
+        }
+        json_response(res, 200, copy_json(widget)); return
+    }
+    if method == "DELETE" {
+        list_set(widgets, id - 1, null); json.json_free(widget)
+        result = json.obj(); json.set(result, "deleted", json.from_int(id))
+        json_response(res, 200, result); return
+    }
+    http.response_set_status(res, 405)
+}
+fs_basename(path: string) -> string {
+    parts = string.split(path, "/")
+    defer string.array_free(parts)
+    return string.array_get(parts, string.array_size(parts) - 1)
+}
+main() {
+    widgets = list_new()
+    new_widget(json.str("sprocket"), json.str("red"))
+    port = 0
+    if os.args_count() > 1 { port = string.to_int(os.args_get(1))! }
+    server = http.server_create(port)
+    err = http.server_bind(server, "127.0.0.1", port)
+    if err != "" { panic(err) }
+    http.server_get(server, "/*", handle, null); http.server_post(server, "/*", handle, null)
+    http.server_put(server, "/*", handle, null); http.server_delete(server, "/*", handle, null)
+    println("${http.server_port(server)}"); fflush(null)
+    http.server_start(server)
+}

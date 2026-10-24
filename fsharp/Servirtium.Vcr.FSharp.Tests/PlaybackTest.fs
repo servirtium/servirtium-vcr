@@ -70,10 +70,9 @@ let ``reset cursor allows the tape to be replayed twice`` () =
 let ``structured helpers forward credentials and scrub tape`` () =
     let directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vcr-helpers-" + System.Guid.NewGuid().ToString())
     System.IO.Directory.CreateDirectory(directory) |> ignore
-    let fixture = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../../core_tests/redaction_fixture.py"))
+    let fixture = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../../target/test-tools/redaction_fixture"))
     let run args =
-        let info = System.Diagnostics.ProcessStartInfo("python3", RedirectStandardOutput = true)
-        info.ArgumentList.Add(fixture)
+        let info = System.Diagnostics.ProcessStartInfo(fixture, RedirectStandardOutput = true)
         for arg in args do info.ArgumentList.Add(arg)
         use proc = System.Diagnostics.Process.Start(info)
         let output = proc.StandardOutput.ReadToEnd()
@@ -100,8 +99,7 @@ let ``retained replay diagnostics support observers and assertions`` () =
     let root = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../.."))
     use server = Vcr.Playback(System.IO.Path.Combine(root, "core_tests/diagnostics/playback.md")).Start()
     Servirtium.testContext "FSharp scenario" "scenario.test" 123 server
-    let info = System.Diagnostics.ProcessStartInfo("python3")
-    info.ArgumentList.Add(System.IO.Path.Combine(root, "core_tests/diagnostic_fixture.py"))
+    let info = System.Diagnostics.ProcessStartInfo(System.IO.Path.Combine(root, "target/test-tools/diagnostic_fixture"))
     info.ArgumentList.Add(server.BaseUrl)
     use driver = System.Diagnostics.Process.Start(info)
     driver.WaitForExit()
@@ -121,10 +119,9 @@ let ``named secrets round trip`` () =
     let directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vcr-secrets-fsharp-" + System.Guid.NewGuid().ToString())
     System.IO.Directory.CreateDirectory(directory) |> ignore
     let tape = System.IO.Path.Combine(directory, "tape.md")
-    let fixture = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../../core_tests/secret_fixture.py"))
+    let fixture = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../../target/test-tools/secret_fixture"))
     let run action arg =
-        let info = System.Diagnostics.ProcessStartInfo("python3", RedirectStandardOutput = true)
-        info.ArgumentList.Add(fixture)
+        let info = System.Diagnostics.ProcessStartInfo(fixture, RedirectStandardOutput = true)
         info.ArgumentList.Add(action)
         info.ArgumentList.Add(arg)
         use child = System.Diagnostics.Process.Start(info)

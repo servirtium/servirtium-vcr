@@ -1,6 +1,6 @@
 -- run_all.lua — aggregating runner for the Lua binding suite. Runs each
 -- tests/*.lua file in a fresh lua5.4 subprocess (so a crash in one is isolated
--- and the python3 upstreams are reaped) and fails if any file fails.
+-- and the Aether upstreams are reaped) and fails if any file fails.
 --
 -- Invoked by .tests.ae as:
 --   LUA_CPATH="./?.so;;" SERVIRTIUM_VCR_LIB=<abs> lua5.4 tests/run_all.lua

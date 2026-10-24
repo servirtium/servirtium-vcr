@@ -129,7 +129,7 @@ test "record and replay a POST with a body" {
 fn fixtureRun(allocator: std.mem.Allocator, args: []const []const u8) ![]u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
-    try argv.appendSlice(allocator, &.{"python3", "../core_tests/redaction_fixture.py"});
+    try argv.appendSlice(allocator, &.{"../target/test-tools/redaction_fixture"});
     try argv.appendSlice(allocator, args);
     const result = try std.process.run(allocator, std.testing.io, .{ .argv = argv.items });
     defer allocator.free(result.stderr);
@@ -178,7 +178,7 @@ test "retained replay diagnostics and observer reads" {
     server.testContext("Zig scenario", "scenario.test", 123);
     const base = try server.baseUrl();
     defer allocator.free(base);
-    const driven = try std.process.run(allocator, std.testing.io, .{ .argv = &.{ "python3", "../core_tests/diagnostic_fixture.py", base } });
+    const driven = try std.process.run(allocator, std.testing.io, .{ .argv = &.{ "../target/test-tools/diagnostic_fixture", base } });
     defer allocator.free(driven.stdout);
     defer allocator.free(driven.stderr);
     switch (driven.term) {
@@ -209,7 +209,7 @@ test "retained replay diagnostics and observer reads" {
 fn secretFixtureRun(allocator: std.mem.Allocator, args: []const []const u8) ![]u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
-    try argv.appendSlice(allocator, &.{"python3", "../core_tests/secret_fixture.py"});
+    try argv.appendSlice(allocator, &.{"../target/test-tools/secret_fixture"});
     try argv.appendSlice(allocator, args);
     const result = try std.process.run(allocator, std.testing.io, .{ .argv = argv.items });
     defer allocator.free(result.stderr);

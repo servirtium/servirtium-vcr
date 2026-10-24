@@ -89,7 +89,7 @@ fn shell(cmd: String) -> String {
 }
 pub fn structured_redaction_test() {
   let directory = "/tmp/vcr-helpers-gleam-" <> from_charlist(getpid())
-  let fixture = "python3 ../core_tests/redaction_fixture.py "
+  let fixture = "../target/test-tools/redaction_fixture "
   let upstream = shell(fixture <> "start '" <> directory <> "'") |> trim_trailing_newlines()
   let rec = servirtium.record(directory <> "/tape.md", upstream)
   servirtium.redact_header(rec, "Authorization") |> should.equal(Ok(Nil))
@@ -108,7 +108,7 @@ pub fn structured_redaction_test() {
 pub fn replay_diagnostics_test() {
   let server = servirtium.playback("../core_tests/diagnostics/playback.md")
   let _ = servirtium.test_context(server, "Gleam scenario", "scenario.test", 123)
-  shell("python3 ../core_tests/diagnostic_fixture.py '" <> servirtium.base_url(server) <> "' && echo DRIVER_OK") |> should.equal("DRIVER_OK\n")
+  shell("../target/test-tools/diagnostic_fixture '" <> servirtium.base_url(server) <> "' && echo DRIVER_OK") |> should.equal("DRIVER_OK\n")
   servirtium.last_error_with(server, False) |> string.contains("owner") |> should.be_true()
   servirtium.last_error_with(server, False) |> string.contains("scenario.test:123") |> should.be_true()
   servirtium.diagnostics_json(server, False) |> string.contains("\"retrieved\":1") |> should.be_false()
@@ -126,7 +126,7 @@ pub fn replay_diagnostics_test() {
 
 pub fn named_secrets_test() {
   let directory = "/tmp/vcr-secrets-gleam-" <> from_charlist(getpid())
-  let fixture = "python3 ../core_tests/secret_fixture.py "
+  let fixture = "../target/test-tools/secret_fixture "
   let upstream = shell(fixture <> "start '" <> directory <> "'") |> trim_trailing_newlines()
   let tape = directory <> "/tape.md"
   let rec = servirtium.record(tape, upstream) |> servirtium.secret_redactor(fn(key, request) {

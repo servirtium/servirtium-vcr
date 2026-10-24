@@ -1,0 +1,19 @@
+// Drive mismatch scenarios without depending on a binding's own HTTP client.
+import core_tests.fixture_support
+import std.os
+import std.string
+exports(request, drive)
+request(base: string, role: string) -> (int, string) {
+    return fixture_support.post_request(base, "/items", "{\"role\":\"${role}\"}", "application/json", null)
+}
+drive(base: string) {
+    const ROLES[] = ["admin", "owner"]
+    for i in 0..ROLES.len {
+        status, body = request(base, ROLES[i])
+        fixture_support.check(status == 599, "expected mismatch")
+        fixture_support.check(string.contains(body, "recorded=") == 1 && string.contains(body, "--- expected") == 0, "diff must remain on side channel")
+    }
+    status, body = request(base, "reader")
+    fixture_support.check(status == 200 && body == "ok-body", "successful replay")
+}
+main() { drive(os.args_get(1)) }

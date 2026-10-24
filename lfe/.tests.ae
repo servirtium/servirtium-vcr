@@ -17,6 +17,7 @@ import lfe
 import lfe (src, test_src, run_main, pa)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("erlang/.build.ae")
         libs = dep_artifact("erlang/.build.ae", "erl_libs")
         ebin = dep_artifact("erlang/.build.ae", "nif_ebin")

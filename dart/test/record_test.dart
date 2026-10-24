@@ -12,9 +12,9 @@ void main() {
 
   test('structured helpers forward credentials and scrub the tape', () {
     final directory = Directory.systemTemp.createTempSync('vcr-helpers-');
-    final fixture = File('../core_tests/redaction_fixture.py').absolute.path;
+    final fixture = File('../target/test-tools/redaction_fixture').absolute.path;
     String run(List<String> args) {
-      final result = Process.runSync('python3', [fixture, ...args]);
+      final result = Process.runSync(fixture, args);
       expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
       return (result.stdout as String).trim();
     }
@@ -34,7 +34,7 @@ void main() {
     final server = Vcr.playback('../core_tests/diagnostics/playback.md').start();
     try {
       server.testContext('Dart scenario', sourceFile: 'scenario.test', sourceLine: 123);
-      final result = Process.runSync('python3', ['../core_tests/diagnostic_fixture.py', server.baseUrl]);
+      final result = Process.runSync('../target/test-tools/diagnostic_fixture', [server.baseUrl]);
       expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
       expect(server.readLastError(consume: false), contains('owner'));
       expect(server.readLastError(consume: false), contains('scenario.test:123'));

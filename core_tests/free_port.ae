@@ -1,0 +1,9 @@
+// Reserve an ephemeral loopback port, release it, and print it for Selenium.
+import std.http
+main() {
+    server = http.server_create(0)
+    defer http.server_free(server)
+    err = http.server_bind(server, "127.0.0.1", 0)
+    if err != "" { panic(err) }
+    println("${http.server_port(server)}")
+}

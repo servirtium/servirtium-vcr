@@ -13,7 +13,7 @@ spec = describe "named secrets" $ it "redacts at flush and resolves four service
   tmp <- getTemporaryDirectory
   let dir = tmp </> "vcr-secrets-haskell"
   createDirectory dir
-  let run action arg = dropWhileEnd (`elem` "\r\n ") <$> readProcess "python3" ["../core_tests/secret_fixture.py", action, arg] ""
+  let run action arg = dropWhileEnd (`elem` "\r\n ") <$> readProcess "../target/test-tools/secret_fixture" [action, arg] ""
       tape = dir </> "tape.md"
   flip finally (removePathForcibly dir) $ do
     upstream <- run "start" dir

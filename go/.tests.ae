@@ -9,6 +9,7 @@ import go
 
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         go.go_test() { }
     }

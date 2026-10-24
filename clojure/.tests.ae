@@ -8,6 +8,7 @@ import clojure (source_layout)
 import bldr (env)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         dep("clojure/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")

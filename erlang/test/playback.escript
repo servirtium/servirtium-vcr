@@ -12,7 +12,7 @@ main(_) ->
     Directory = "/tmp/vcr-helpers-erlang-" ++ os:getpid(),
     ok = file:make_dir(Directory),
     Run = fun(Action, Extra) ->
-        Command = "python3 ../core_tests/redaction_fixture.py " ++ Action ++ " '" ++ Directory ++ "'" ++ Extra,
+        Command = "../target/test-tools/redaction_fixture " ++ Action ++ " '" ++ Directory ++ "'" ++ Extra,
         Output = os:cmd(Command ++ " 2>&1; printf '\\nRC:%s' $?"),
         [Text, "0"] = string:split(Output, "\nRC:", trailing),
         string:trim(Text)
@@ -37,7 +37,7 @@ main(_) ->
 
     DiagnosticServer = servirtium:playback("../core_tests/diagnostics/playback.md"),
     ok = servirtium:test_context(DiagnosticServer, "Erlang scenario", "scenario.test", 123),
-    Driven = os:cmd("python3 ../core_tests/diagnostic_fixture.py '" ++ servirtium:base_url(DiagnosticServer) ++ "' && echo DRIVER_OK"),
+    Driven = os:cmd("../target/test-tools/diagnostic_fixture '" ++ servirtium:base_url(DiagnosticServer) ++ "' && echo DRIVER_OK"),
     true = string:find(Driven, "DRIVER_OK") =/= nomatch,
     true = string:find(servirtium:last_error(DiagnosticServer, false), "owner") =/= nomatch,
     true = string:find(servirtium:last_error(DiagnosticServer, false), "scenario.test:123") =/= nomatch,
@@ -77,7 +77,7 @@ named_secrets() ->
     Dir = "/tmp/vcr-secrets-erlang-" ++ os:getpid(), ok = file:make_dir(Dir),
     Tape = Dir ++ "/tape.md", Owner = self(),
     Run = fun(Action, Arg) ->
-        Output = os:cmd("python3 ../core_tests/secret_fixture.py " ++ Action ++ " '" ++ Arg ++ "' 2>&1; printf '\nRC:%s' $?"),
+        Output = os:cmd("../target/test-tools/secret_fixture " ++ Action ++ " '" ++ Arg ++ "' 2>&1; printf '\nRC:%s' $?"),
         [Text, "0"] = string:split(Output, "\nRC:", trailing), string:trim(Text)
     end,
     Rec = servirtium:secret_redactor(servirtium:record(Tape, Run("start", Dir)), fun(Key, R) ->

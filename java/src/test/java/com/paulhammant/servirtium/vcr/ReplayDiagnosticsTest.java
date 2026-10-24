@@ -5,7 +5,7 @@ class ReplayDiagnosticsTest {
     @Test void retainedEventsHaveExplicitConsumption() throws Exception {
         try (var server = Vcr.playback("../core_tests/diagnostics/playback.md").start()) {
             server.testContext("Java scenario", "scenario.test", 123);
-            var driver = new ProcessBuilder("python3", "../core_tests/diagnostic_fixture.py", server.baseUrl()).inheritIO().start();
+            var driver = new ProcessBuilder("../target/test-tools/diagnostic_fixture", server.baseUrl()).inheritIO().start();
             assertEquals(0, driver.waitFor());
             assertEquals(Outcome.OK, server.lastKind());
             assertTrue(server.lastError(false).contains("owner"));

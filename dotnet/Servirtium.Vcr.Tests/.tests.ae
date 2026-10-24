@@ -9,6 +9,7 @@ import bldr (env)
 import dotnet (roll_forward)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         dep("dotnet/Servirtium.Vcr.Tests/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")

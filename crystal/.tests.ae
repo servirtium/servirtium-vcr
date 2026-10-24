@@ -15,6 +15,7 @@ import crystal
 import copy
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         native_lib = dep_artifact("core/.build.ae", "shared_lib")
         copy.file() {

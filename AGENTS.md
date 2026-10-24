@@ -276,10 +276,37 @@ worker. Recording staging stops/joins first; resolution finishes before start.
 do not tie that protection to the current candidate list. Named marker encoding
 suffixes preserve scalar style, and only resolved secret spans receive encoding
 equivalence during matching. Failed/interrupted staging must never write a tape.
-`core_tests/secret_fixture.py` exercises four services/passwords on one port;
+`core_tests/secret_fixture.ae` exercises four services/passwords on one port;
 binding tests record against it, inspect redaction, then replay without it.
 Fenced/indented emitters add a separate separator newline so terminal payload
 newlines survive parsing.
+
+## Shared test tools and release verification
+
+Generic tooling is Aether. `core_tests/.fixtures.ae` builds the shared HTTP
+redaction/secret/diagnostic drivers, configurable Lua upstream and Selenium
+port helper under `target/test-tools/`; every binding's `.tests.ae` depends on
+that leaf. Invoke those binaries directly, without a Python interpreter.
+`core_tests/.diagnostics.ae` loads the built `.so` via `std.dl` and typed C
+function pointers (`native_probe.ae`), preserving the black-box ABI boundary.
+The aeb manual-link path emits imported modules separately: keep user-module
+helper names distinct, including private functions, and avoid libc names such
+as `open`, `listen` and `pause`. Programs importing helper modules with FS/OS
+access need matching `caps(...)` when aeb emits those modules as libraries.
+
+`release/.artifacts.ae` replaces the Python artifact checker. Environment:
+`SVCR_RELEASE_TAG`, `SVCR_ARTIFACTS_MODE=version|engine|bindings`, and optional
+`SVCR_ARTIFACTS_DIST`. `release/.tests.ae` covers positive/negative fixtures,
+including the nested build layout and flat downloaded layout. It intentionally
+reuses host-library bytes for foreign fixture slots; it does not cross-build or
+claim to execute those platforms. `bruno_import_demo/.build.ae` builds both
+CLI and Aether widget service; its `.tests.ae` hydrates/lints/replays the demo.
+Python binding tests, packaging and Python-specific browser examples stay Python.
+Nim's `execCmdEx` capture pipe leaves extra writers inherited by detached
+children: waiting for EOF then waits for the upstream to exit. Its fixture
+commands capture stdout/stderr through a temporary file and wait for the
+launcher process instead. Keep that test-harness accommodation when changing
+process launchers; the shared fixture itself stays language-neutral.
 
 ## Gotchas / hard-won
 
@@ -305,7 +332,7 @@ newlines survive parsing.
   JSON; all tape-writing paths check `emit_error` before writing. Forwarding and
   playback matching are unchanged. See `docs/redaction-helpers.md`, the core
   `test_vcr_redaction_helpers.ae`, and the shared HTTP/tape contract fixture
-  `core_tests/redaction_fixture.py` used by the per-language recording tests.
+  `core_tests/redaction_fixture.ae` used by the per-language recording tests.
 
 - **Ruby's consumer README exposed an obsolete version-manager pin.** A clean
   `ruby/` checkout contained `.ruby-version = ruby-2.5.7`, which made rbenv

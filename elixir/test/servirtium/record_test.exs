@@ -27,9 +27,9 @@ defmodule Servirtium.RecordTest do
 
   test "structured helpers forward original credentials and scrub the tape" do
     directory = Path.join(System.tmp_dir!(), "vcr-helpers-#{System.unique_integer([:positive])}")
-    fixture = Path.expand("../../../core_tests/redaction_fixture.py", __DIR__)
+    fixture = Path.expand("../../../target/test-tools/redaction_fixture", __DIR__)
     run = fn args ->
-      {output, status} = System.cmd("python3", [fixture | args], stderr_to_stdout: true)
+      {output, status} = System.cmd(fixture, args, stderr_to_stdout: true)
       assert status == 0, output
       String.trim(output)
     end
@@ -47,7 +47,7 @@ defmodule Servirtium.RecordTest do
   test "retained diagnostics distinguish observer reads" do
     Servirtium.with_playback("../core_tests/diagnostics/playback.md", [], fn server ->
       Servirtium.test_context(server, "Elixir scenario", "scenario.test", 123)
-      {out, status} = System.cmd("python3", ["../core_tests/diagnostic_fixture.py", Servirtium.base_url(server)], stderr_to_stdout: true)
+      {out, status} = System.cmd(Path.expand("../target/test-tools/diagnostic_fixture"), [Servirtium.base_url(server)], stderr_to_stdout: true)
       assert status == 0, out
       assert Servirtium.last_error(server, false) =~ "owner"
       assert Servirtium.last_error(server, false) =~ "scenario.test:123"

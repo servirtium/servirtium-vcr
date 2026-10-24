@@ -28,7 +28,7 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Format options (indent / emphasize) | ✅ | ✅ | `:indent_code_blocks()` / `:emphasize_http_verbs()` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `:last_error()` / `:last_kind()` / `:last_index()` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
-| Chunked de-chunk on record | ✅ | ✅ | (automatic) | ✅ (python upstream chunks) |
+| Chunked de-chunk on record | ✅ | ✅ | (automatic) | ✅ (Aether upstream chunks) |
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `:port(0)` → `Server:port()` | ✅ |
 | One server per port (N servers / process) | ✅ | ✅ | (each `:start()` owns its handle) | ✅ |

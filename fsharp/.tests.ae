@@ -16,6 +16,7 @@ import dotnet
 import bldr (env, workdir)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         dep("dotnet/Servirtium.Vcr/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")

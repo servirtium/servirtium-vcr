@@ -11,6 +11,7 @@ import gleam
 import bldr (env, step)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("erlang/.build.ae")
         libs = dep_artifact("erlang/.build.ae", "erl_libs")
         gleam.test_existing() {

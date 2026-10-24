@@ -4,9 +4,9 @@ defmodule Servirtium.SecretsTest do
     directory = Path.join(System.tmp_dir!(), "vcr-secrets-elixir-#{System.unique_integer([:positive])}")
     File.mkdir_p!(directory)
     tape = Path.join(directory, "tape.md")
-    fixture = Path.expand("../../../core_tests/secret_fixture.py", __DIR__)
+    fixture = Path.expand("../../../target/test-tools/secret_fixture", __DIR__)
     run = fn args ->
-      {output, code} = System.cmd("python3", [fixture | args], stderr_to_stdout: true)
+      {output, code} = System.cmd(fixture, args, stderr_to_stdout: true)
       assert code == 0, output
       String.trim(output)
     end

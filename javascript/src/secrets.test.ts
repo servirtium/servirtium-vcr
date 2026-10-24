@@ -6,7 +6,7 @@ import { Vcr } from './index'
 test('named secrets redact at flush and resolve four services', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vcr-secrets-'))
   const tape = path.join(directory, 'tape.md')
-  const run = (...args: string[]) => execFileSync('python3', ['../core_tests/secret_fixture.py', ...args], {encoding: 'utf8'}).trim()
+  const run = (...args: string[]) => execFileSync('../target/test-tools/secret_fixture', args, {encoding: 'utf8'}).trim()
   try {
     let count = 0
     const rec = Vcr.record(tape, run('start', directory)).secretRedactor((key, request) => {

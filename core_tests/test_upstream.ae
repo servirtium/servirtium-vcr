@@ -1,0 +1,41 @@
+// Configurable external upstream used by Lua's own client tests.
+// Arguments: body-file content-type port-file request-file headers-file chunked.
+import std.fs
+import std.http
+import std.os
+import std.string
+var body = ""
+var mime = ""
+var request_file = ""
+var headers = ""
+var chunked = false
+handle(req: ptr, res: ptr, _data: ptr) {
+    err = fs.write(request_file, "${http.request_method(req)}\n${http.request_body(req)}")
+    if err != "" { panic(err) }
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", mime)
+    lines = string.split(headers, "\n")
+    defer string.array_free(lines)
+    for i in 0..string.array_size(lines) {
+        line = string.array_get(lines, i); colon = string.index_of(line, ":")
+        if colon > 0 { http.response_set_header(res, string.substring(line, 0, colon), string.trim(string.substring(line, colon + 1, string.length(line)))) }
+    }
+    if chunked {
+        stream = http.response_begin_chunked(res)!
+        http.chunked_write(stream, string.bytes(body))
+        http.chunked_end(stream)
+    } else { http.response_set_body(res, body) }
+}
+main() {
+    body = fs.read(os.args_get(1))!; mime = os.args_get(2)
+    port_file = os.args_get(3); request_file = os.args_get(4)
+    headers = fs.read(os.args_get(5))!; chunked = os.args_get(6) == "1"
+    server = http.server_create(0)
+    if http.server_bind(server, "127.0.0.1", 0) != "" { panic("bind test upstream") }
+    http.server_get(server, "/*", handle, null)
+    http.server_post(server, "/*", handle, null)
+    http.server_put(server, "/*", handle, null)
+    err = fs.write(port_file, "${http.server_port(server)}")
+    if err != "" { panic(err) }
+    http.server_start(server)
+}

@@ -9,6 +9,7 @@ import c
 import c (run)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         prereq("gcc")
         dep("c/.build.ae")
         root = _get("root")

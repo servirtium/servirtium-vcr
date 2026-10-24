@@ -1,0 +1,134 @@
+// Release verification shared by the aeb node and its negative-path tests.
+import std.cryptography
+import std.dl
+import std.fs
+import std.list
+import std.map
+import std.os
+import std.regex
+import std.string
+exports(check_version, check_artifacts, check_packages)
+
+const PLATFORMS[] = ["linux-x86_64.so", "linux-arm64.so", "macos-x86_64.dylib", "macos-arm64.dylib",
+    "windows-x86_64.dll", "windows-arm64.dll", "freebsd-x86_64.so", "linux-x86_64-musl.so", "linux-arm64-musl.so"]
+
+// Match only the value: the surrounding pin syntax is part of the contract.
+pin(file: string, pattern: string) -> string {
+    text = fs.read(file)!
+    re = regex.compile_flags(pattern, regex.FLAG_MULTILINE)!
+    defer regex.free(re)
+    hits = regex.find_all(re, text)!
+    defer regex.find_all_free(hits)
+    if hits == null || regex.find_all_count(hits) != 1 { return "" }
+    return string.substring(text, regex.find_all_start(hits, 0), regex.find_all_end(hits, 0))
+}
+replace_pattern(pattern: string, text: string, replacement: string) -> (string, string) {
+    re = regex.compile(pattern)!
+    defer regex.free(re)
+    return regex.replace_all(re, text, replacement)
+}
+check_version(root: string, tag: string) -> string {
+    if regex.matches_lit("^v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$", tag)! == 0 { return "invalid release tag: ${tag}" }
+    want = string.trim(fs.read("${root}/SERVIRTIUM_VCR_VERSION")!)
+    if want != tag { return "SERVIRTIUM_VCR_VERSION is ${want}, expected ${tag}; commit the pin before tagging" }
+    ae = pin("${root}/bootstrap.sh", "^AE_FETCH=\"\\K[^\"]+(?=\"$)")
+    pinned_ae = pin("${root}/release/toolchain.env", "^AETHER_REF=\\K\\S+$")
+    if ae == "" || ae != pinned_ae { return "release/toolchain.env AETHER_REF must match bootstrap.sh AE_FETCH" }
+    aeb = pin("${root}/bootstrap.sh", "^AEB_REF=\"[$][{]AEB_REF:-\\K[^}]+(?=[}]\"$)")
+    pinned_aeb = pin("${root}/release/toolchain.env", "^AEB_REF=\\K\\S+$")
+    if aeb == "" || aeb != pinned_aeb { return "release/toolchain.env AEB_REF must match bootstrap.sh's default AEB_REF" }
+    return ""
+}
+checksum(file: string) -> (string, string) {
+    size, err = fs.size(file)
+    if err != "" || size == 0 { return "", "missing or empty artifact: ${file}" }
+    digest = cryptography.sha256_file(file)!
+    sidecar = string.trim(fs.read("${file}.sha256")!)
+    if regex.matches_lit("^${digest}\\s+\\Q${fs.path_basename(file)}\\E$", sidecar)! == 0 { return "", "checksum mismatch: ${file}" }
+    return digest, ""
+}
+check_manifest(file: string, manifest: ptr) -> string {
+    digest, err = checksum(file)
+    if err != "" { return err }
+    listed, _missing = map.get_string(manifest, fs.path_basename(file))
+    if listed != digest { return "manifest mismatch: ${file}" }
+    return ""
+}
+check_artifacts(root: string, tag: string, dist: string) -> string {
+    manifest = map.map_new()
+    defer map.map_free(manifest)
+    lines = string.split(string.trim(fs.read("${dist}/SHA256SUMS.txt")!), "\n")
+    defer string.array_free(lines)
+    for i in 0..string.array_size(lines) {
+        line = string.array_get(lines, i)
+        fields = string.split(replace_pattern("\\s+", string.trim(line), " ")!, " ")
+        if string.array_size(fields) != 2 { string.array_free(fields); return "invalid SHA256SUMS.txt entry" }
+        name, _stripped = string.strip_prefix(string.array_get(fields, 1), "./")
+        map.map_put(manifest, name, string.array_get(fields, 0))
+        string.array_free(fields)
+    }
+    packages = dist
+    if fs.dir_exists("${dist}/ae-add") == 1 { packages = "${dist}/ae-add" }
+    for i in 0..PLATFORMS.len {
+        platform = PLATFORMS[i]
+        raw = "${dist}/libservirtium_vcr-${tag}-${platform}"
+        err = check_manifest(raw, manifest)
+        if err != "" { return err }
+        if string.starts_with(platform, "linux-") == 1 {
+            args = list_new(); list_add(args, "-d"); list_add(args, raw)
+            dynamic, status, run_err = os.run_capture("readelf", args, null)
+            list_free(args)
+            if run_err != "" || status != 0 { return "readelf failed for ${raw}: ${run_err}" }
+            needed = replace_pattern("(?m)^.*[(]NEEDED[)].*\\[([^]]+)\\].*$", dynamic, "NEEDED:$1")!
+            libc = "libc.so.6"; other = "libc.so"
+            if string.contains(platform, "-musl") == 1 { libc = "libc.so"; other = "libc.so.6" }
+            if string.contains(needed, "NEEDED:${libc}\n") == 0 || string.contains(needed, "NEEDED:${other}\n") == 1 { return "wrong Linux libc for ${raw}" }
+        }
+        package = "${packages}/servirtium_vcr-${tag}-${platform}"
+        packaged, package_err = checksum(package)
+        if package_err != "" { return package_err }
+        raw_digest, _err = map.get_string(manifest, fs.path_basename(raw))
+        if packaged != raw_digest { return "ae-add package differs from raw library: ${package}" }
+        if string.starts_with(platform, "windows-") == 1 {
+            err = check_manifest("${raw}.lib", manifest)
+            if err != "" { return err }
+        }
+    }
+    toml = fs.read("${packages}/aether.toml")!
+    if regex.matches_lit("(?m)^binary = \"servirtium_vcr\"$", toml)! == 0 || regex.matches_lit("(?m)^modules = \"[.]\"$", toml)! == 0 { return "ae-add manifest must export binary servirtium_vcr at modules = '.'" }
+    library = dl.open("${dist}/libservirtium_vcr-${tag}-linux-x86_64.so")!
+    defer dl.close(library)
+    source = fs.read("${root}/core/embed.ae")!
+    re = regex.compile_flags("^vcr_embed_\\w+(?=[(])", regex.FLAG_MULTILINE)!
+    defer regex.free(re)
+    symbols = regex.find_all(re, source)!
+    defer regex.find_all_free(symbols)
+    count = regex.find_all_count(symbols)
+    if count == 0 { return "no C ABI declarations found" }
+    for i in 0..count {
+        name = string.substring(source, regex.find_all_start(symbols, i), regex.find_all_end(symbols, i))
+        symbol, err = dl.symbol(library, "aether_${name}")
+        if symbol == null || err != "" { return "missing Linux ABI export: aether_${name}" }
+    }
+    println("Verified nine libraries, Windows import libraries, nine ae-add packages, checksums, and ${count} Linux ABI exports.")
+    return ""
+}
+check_packages(dist: string) -> string {
+    jars = 0; nupkgs = 0
+    entries = fs.list_dir(dist)!
+    defer fs.dir_list_free(entries)
+    for i in 0..fs.dir_list_count(entries) {
+        name = fs.dir_list_get(entries, i)
+        jar = string.starts_with(name, "servirtium-vcr-") == 1 && string.ends_with(name, ".jar") == 1 && string.ends_with(name, "-sources.jar") == 0 && string.ends_with(name, "-javadoc.jar") == 0
+        nupkg = string.starts_with(name, "Servirtium.Vcr.") == 1 && string.ends_with(name, ".nupkg") == 1
+        if jar || nupkg {
+            _digest, err = checksum("${dist}/${name}")
+            if err != "" { return err }
+            if jar { jars += 1 } else { nupkgs += 1 }
+        }
+    }
+    if jars == 0 { return "no fat Java jar (servirtium-vcr-*.jar) in dist" }
+    if nupkgs == 0 { return "no multi-RID .NET nupkg (Servirtium.Vcr.*.nupkg) in dist" }
+    println("Verified ${jars} fat Java jar(s) and ${nupkgs} multi-RID .NET nupkg(s) with checksums.")
+    return ""
+}

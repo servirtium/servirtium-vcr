@@ -49,9 +49,9 @@ private string httpStatus(string url) {
 private void namedSecrets() {
     auto dir = "/tmp/vcr-secrets-d-" ~ Clock.currTime.stdTime.to!string;
     mkdir(dir); scope(exit) rmdirRecurse(dir);
-    auto fixture = buildNormalizedPath(__FILE__.dirName, "../../core_tests/secret_fixture.py");
+    auto fixture = buildNormalizedPath(__FILE__.dirName, "../../target/test-tools/secret_fixture");
     string run(string action, string arg) {
-        auto result = executeShell("python3 '" ~ fixture ~ "' " ~ action ~ " '" ~ arg ~ "'");
+        auto result = executeShell("'" ~ fixture ~ "' " ~ action ~ " '" ~ arg ~ "'");
         ck("secret fixture " ~ action, result.status == 0); return result.output.strip;
     }
     auto tape = dir ~ "/tape.md";
@@ -77,10 +77,10 @@ int main() {
         const directory = tempDir() ~ "/vcr-helpers-d-" ~ getpid().to!string;
         mkdir(directory);
         scope (exit) rmdirRecurse(directory);
-        const fixture = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "../../core_tests/redaction_fixture.py");
+        const fixture = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "../../target/test-tools/redaction_fixture");
         string fixtureRun(string[] args) {
             import std.process : execute;
-            auto result = execute(["python3", fixture] ~ args);
+            auto result = execute([fixture] ~ args);
             assert(result.status == 0, result.output);
             return result.output.strip;
         }
@@ -102,7 +102,7 @@ int main() {
         scope (exit) server.close();
         server.testContext("D scenario", "scenario.test", 123);
         import std.process : execute;
-        const result = execute(["python3", buildNormalizedPath(root, "core_tests/diagnostic_fixture.py"), server.baseUrl()]);
+        const result = execute([buildNormalizedPath(root, "target/test-tools/diagnostic_fixture"), server.baseUrl()]);
         ck("diagnostic driver", result.status == 0);
         ck("observer diff", server.lastError(false).canFind("owner"));
         ck("diagnostic coordinates", server.lastError(false).canFind("scenario.test:123"));

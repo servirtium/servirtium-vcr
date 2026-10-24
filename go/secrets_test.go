@@ -12,7 +12,7 @@ func TestNamedSecretsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	tape := filepath.Join(dir, "tape.md")
 	run := func(args ...string) string {
-		out, err := exec.Command("python3", append([]string{"../core_tests/secret_fixture.py"}, args...)...).CombinedOutput()
+		out, err := exec.Command("../target/test-tools/secret_fixture", args...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("fixture: %v: %s", err, out)
 		}

@@ -1,7 +1,7 @@
 -- mutation.lua — the Lua binding's record-mode mutation suite, mirroring the
 -- Go binding's mutation_test.go: redaction, notes, header removal, no-leak
 -- between fixtures, and fail-if-changed drift detection. Upstream is the
--- throwaway python3 server (helpers.start_upstream); tapes go to temp paths.
+-- throwaway Aether server (helpers.start_upstream); tapes go to temp paths.
 --   LUA_CPATH="./?.so;;" SERVIRTIUM_VCR_LIB=<abs>/libservirtium_vcr.so lua5.4 tests/mutation.lua
 
 local here = arg[0]:match("^(.*)[/\\]") or "."

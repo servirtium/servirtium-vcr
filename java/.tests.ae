@@ -9,6 +9,7 @@ import java (source_layout, jvm_args, release)
 import bldr (env)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         dep("java/.build.ae")
         dep("libs/java/selenium/.selenium.jar.ae")

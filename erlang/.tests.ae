@@ -10,6 +10,7 @@ import bldr (env)
 import erlang (escript)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("erlang/.build.ae")
         libs = dep_artifact("erlang/.build.ae", "erl_libs")
         erlang.eunit() {

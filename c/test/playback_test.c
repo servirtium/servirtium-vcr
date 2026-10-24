@@ -86,19 +86,19 @@ static void named_secrets(const char *tape) {
     ck("secret temp dir", mkdtemp(directory)!=NULL);
     snprintf(fixture,sizeof fixture,"%s",tape);
     part=strrchr(fixture,'/'); if(part)*part=0; part=strrchr(fixture,'/'); if(part)*part=0; part=strrchr(fixture,'/'); if(part)*part=0;
-    strcat(fixture,"/core_tests/secret_fixture.py");
-    snprintf(command,sizeof command,"python3 '%s' start '%s'",fixture,directory);
+    strcat(fixture,"/target/test-tools/secret_fixture");
+    snprintf(command,sizeof command,"'%s' start '%s'",fixture,directory);
     pipe=popen(command,"r"); if(!pipe){ck("secret upstream",0);return;}
     upstream[0]=0; fgets(upstream,sizeof upstream,pipe); ck("secret start",pclose(pipe)==0); upstream[strcspn(upstream,"\r\n")]=0;
     snprintf(target,sizeof target,"%s/tape.md",directory);
     rec=sv_record(target,upstream); if(!rec){ck("secret record open",0);return;}
     sv_secret_redactor(rec,redact_secret,&count); value=sv_base_url(rec);
-    snprintf(command,sizeof command,"python3 '%s' drive '%s'",fixture,value.ptr); sv_free(value);
+    snprintf(command,sizeof command,"'%s' drive '%s'",fixture,value.ptr); sv_free(value);
     ck("secret recording driver",system(command)==0); ck("deferred callback",count==0);
     value=sv_close_and_flush(rec,NULL); ck("secret flush",value.len==0); sv_free(value); ck("secret count",count==20);
-    snprintf(command,sizeof command,"python3 '%s' check '%s'",fixture,target); ck("secret tape",system(command)==0);
+    snprintf(command,sizeof command,"'%s' check '%s'",fixture,target); ck("secret tape",system(command)==0);
     replay=sv_playback_with_secrets(target,"127.0.0.1",0,resolve_secret,NULL); if(!replay){ck("secret playback open",0);return;}
-    value=sv_base_url(replay); snprintf(command,sizeof command,"python3 '%s' drive '%s'",fixture,value.ptr); sv_free(value);
+    value=sv_base_url(replay); snprintf(command,sizeof command,"'%s' drive '%s'",fixture,value.ptr); sv_free(value);
     ck("secret playback driver",system(command)==0); value=sv_assert_no_mismatches(replay); ck("secret matches",value.len==0); sv_free(value); sv_close(replay);
     unlink(target); snprintf(target,sizeof target,"%s/url",directory); unlink(target); snprintf(target,sizeof target,"%s/done",directory); unlink(target); rmdir(directory);
 }
@@ -191,8 +191,8 @@ int main(int argc, char **argv) {
         part = strrchr(fixture, '/'); if (part) *part = '\0';
         part = strrchr(fixture, '/'); if (part) *part = '\0';
         part = strrchr(fixture, '/'); if (part) *part = '\0';
-        strcat(fixture, "/core_tests/redaction_fixture.py");
-        snprintf(command, sizeof command, "python3 '%s' start '%s'", fixture, directory);
+        strcat(fixture, "/target/test-tools/redaction_fixture");
+        snprintf(command, sizeof command, "'%s' start '%s'", fixture, directory);
         pipe = popen(command, "r");
         ck("start structured upstream", pipe != NULL);
         if (!pipe) return 1;
@@ -206,11 +206,11 @@ int main(int argc, char **argv) {
         value = sv_redact_query_param(rec, "password"); ck("query helper", value.ptr && !value.ptr[0]); sv_free(value);
         value = sv_redact_json_field(rec, "secretKey"); ck("JSON helper", value.ptr && !value.ptr[0]); sv_free(value);
         value = sv_base_url(rec);
-        snprintf(command, sizeof command, "python3 '%s' drive '%s' '%s'", fixture, directory, value.ptr);
+        snprintf(command, sizeof command, "'%s' drive '%s' '%s'", fixture, directory, value.ptr);
         ck("structured upstream credentials", system(command) == 0); sv_free(value);
         ck("structured outcome", sv_last_kind(rec) == SV_OK);
         value = sv_close_and_flush(rec, NULL); ck("structured flush", value.ptr && !value.ptr[0]); sv_free(value);
-        snprintf(command, sizeof command, "python3 '%s' check '%s'", fixture, directory);
+        snprintf(command, sizeof command, "'%s' check '%s'", fixture, directory);
         ck("structured tape", system(command) == 0);
         { const char *files[] = {"url", "done", "capture.json", "tape.md"}; size_t i;
           for (i=0; i<4; ++i) { snprintf(command, sizeof command, "%s/%s", directory, files[i]); remove(command); }
@@ -228,7 +228,7 @@ int main(int argc, char **argv) {
         ck("diagnostic server", server != NULL);
         sv_test_context(server, "C scenario", "scenario.test", 123);
         value = sv_base_url(server);
-        snprintf(cmd, sizeof cmd, "python3 '%s/core_tests/diagnostic_fixture.py' '%s'", root, value.ptr);
+        snprintf(cmd, sizeof cmd, "'%s/target/test-tools/diagnostic_fixture' '%s'", root, value.ptr);
         ck("diagnostic driver", system(cmd) == 0); sv_free(value);
         value = sv_last_error_ex(server, 0);
         ck("observer diagnostic", strstr(value.ptr, "owner") != NULL && strstr(value.ptr, "scenario.test:123") != NULL); sv_free(value);

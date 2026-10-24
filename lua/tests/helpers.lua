@@ -4,7 +4,7 @@
 -- are pointed at lua/ (so servirtium + helpers both resolve). Provides:
 --   * a tiny assert-style harness (h.eq / h.contains / h.truthy)
 --   * GET/POST over curl (the binding has no stdlib HTTP client)
---   * a throwaway python3 upstream for record-mode tests (fixed body, header,
+--   * a throwaway Aether upstream for record-mode tests (fixed body, header,
 --     echoes the request method/body to a sidecar file)
 --   * temp-tape paths under the OS temp dir (never into tapes/)
 
@@ -128,110 +128,46 @@ function H.read_file(path)
     return data
 end
 
--- ---- python3 throwaway upstream -------------------------------------------
+-- ---- compiled Aether throwaway upstream -----------------------------------
 
--- start_upstream(opts) launches a one-process python3 HTTP server bound to a
--- free 127.0.0.1 port and returns a table { base_url, port, close(), last() }.
---   opts.body          response body (default "upstream-body")
---   opts.content_type  Content-Type (default "text/plain")
---   opts.extra_headers map of extra response headers
---   opts.chunked       if true, omit Content-Length so python chunks the reply
---
--- The server echoes the last request method + body to a sidecar file so tests
--- can assert what the VCR forwarded (last() reads it).
+-- Response configuration crosses the process boundary as files, never source.
 function H.start_upstream(opts)
     opts = opts or {}
-    local body = opts.body or "upstream-body"
-    local content_type = opts.content_type or "text/plain"
-    local extra = opts.extra_headers or {}
-    local chunked = opts.chunked and "1" or "0"
-
-    local port_file = H.temp_tape("port.txt"):gsub("%.md$", "")
-    local sidecar   = H.temp_tape("last.txt"):gsub("%.md$", "")
-    local script    = H.temp_tape("upstream.py"):gsub("%.md$", "")
-
-    -- Build a python source file. The server writes the bound port to port_file
-    -- once listening, and the last request (method\nbody) to sidecar per call.
-    local extra_lines = {}
-    for k, v in pairs(extra) do
-        table.insert(extra_lines, string.format("        self.send_header(%q, %q)", k, v))
+    local port_file = H.temp_tape("port.txt")
+    local sidecar = H.temp_tape("last.txt")
+    local body_file = H.temp_tape("body.txt")
+    local headers_file = H.temp_tape("headers.txt")
+    local function write(path, value)
+        local file = assert(io.open(path, "wb")); file:write(value); file:close()
     end
-    local py = ([[
-import http.server, socketserver, sys
-
-BODY = %s
-CTYPE = %q
-CHUNKED = %s
-PORTFILE = %q
-SIDECAR = %q
-
-class H(http.server.BaseHTTPRequestHandler):
-    def _handle(self):
-        length = int(self.headers.get('Content-Length') or 0)
-        data = self.rfile.read(length) if length else b''
-        with open(SIDECAR, 'wb') as f:
-            f.write(self.command.encode() + b'\n' + data)
-        payload = BODY
-        self.send_response(200)
-        self.send_header('Content-Type', CTYPE)
-%s
-        if CHUNKED:
-            self.send_header('Transfer-Encoding', 'chunked')
-            self.end_headers()
-            chunk = ('%%x\r\n' %% len(payload)).encode() + payload + b'\r\n0\r\n\r\n'
-            self.wfile.write(chunk)
-        else:
-            self.send_header('Content-Length', str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-    def do_GET(self): self._handle()
-    def do_POST(self): self._handle()
-    def do_PUT(self): self._handle()
-    def log_message(self, *a): pass
-
-with socketserver.TCPServer(('127.0.0.1', 0), H) as srv:
-    with open(PORTFILE, 'w') as f:
-        f.write(str(srv.server_address[1]))
-    srv.serve_forever()
-]]):format(string.format("%q", body):gsub("\\\n", "\\n"), content_type, chunked,
-           port_file, sidecar, table.concat(extra_lines, "\n"))
-
-    -- BODY must be bytes in python; wrap the quoted literal as a b"..." string.
-    py = py:gsub("BODY = (%b\"\")", "BODY = b%1", 1)
-
-    local f = assert(io.open(script, "w"))
-    f:write(py)
-    f:close()
-
-    -- Launch detached; capture pid so we can kill it.
-    local pidp = io.popen("python3 " .. script .. " >/dev/null 2>&1 & echo $!")
-    local pid = pidp:read("*a"):gsub("%s+", "")
-    pidp:close()
-
-    -- Wait for the port file.
+    write(body_file, opts.body or "upstream-body")
+    local headers = {}
+    for key, value in pairs(opts.extra_headers or {}) do headers[#headers + 1] = key .. ": " .. value end
+    write(headers_file, table.concat(headers, "\n"))
+    local function quote(value) return "'" .. value:gsub("'", "'\\''") .. "'" end
+    local tool = H.here .. "/../../target/test-tools/test_upstream"
+    local args = {tool, body_file, opts.content_type or "text/plain", port_file, sidecar, headers_file, opts.chunked and "1" or "0"}
+    for i, value in ipairs(args) do args[i] = quote(value) end
+    local child = assert(io.popen(table.concat(args, " ") .. " >/dev/null 2>&1 & echo $!"))
+    local pid = child:read("*a"):gsub("%s+", ""); child:close()
     local port
     for _ = 1, 200 do
-        local pf = io.open(port_file, "r")
-        if pf then
-            local s = pf:read("*a")
-            pf:close()
-            if s and #s > 0 then port = tonumber(s); break end
-        end
+        local value = H.read_file(port_file)
+        if value and #value > 0 then port = tonumber(value); break end
         os.execute("sleep 0.02")
     end
-    assert(port, "python3 upstream did not report a port")
-
+    assert(port, "Aether upstream did not report a port")
     return {
         base_url = "http://127.0.0.1:" .. port,
         port = port,
         close = function()
             os.execute("kill " .. pid .. " >/dev/null 2>&1")
-            os.remove(script); os.remove(port_file); os.remove(sidecar)
+            for _, path in ipairs({port_file, sidecar, body_file, headers_file}) do os.remove(path) end
         end,
         last = function()
-            local s = H.read_file(sidecar) or ""
-            local method, b = s:match("^(.-)\n(.*)$")
-            return method or "", b or ""
+            local value = H.read_file(sidecar) or ""
+            local method, request_body = value:match("^(.-)\n(.*)$")
+            return method or "", request_body or ""
         end,
     }
 end

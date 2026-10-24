@@ -1,0 +1,64 @@
+// Shared forwarding/redaction contract. start DIR | drive DIR URL | check DIR.
+import core_tests.fixture_support
+import std.fs
+import std.http
+import std.json
+import std.os
+import std.string
+const BODY = "{ \"secretKey\": \"json-secret\", \"items\": [{\"secretKey\": 17}], \"keep\": \"visible\" }"
+const PATH = "/ok?password=query-secret&keep=a%2Fb&pass%77ord=second-secret"
+var directory = ""
+handle(req: ptr, res: ptr, _data: ptr) {
+    capture = json.obj()
+    defer json.json_free(capture)
+    json.set(capture, "path", json.str(fixture_support.full_path(req)))
+    json.set(capture, "authorization", json.str(fixture_support.header(req, "Authorization")))
+    json.set(capture, "body", json.str(http.request_body(req)))
+    fixture_support.check(fs.write("${directory}/capture.json", json.encode(capture)!) == "", "capture request")
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "text/plain")
+    http.response_set_body(res, "upstream-ok")
+}
+serve(dir: string) {
+    directory = dir
+    server = fixture_support.listen_upstream(handle)
+    fixture_support.check(fs.write_atomic("${dir}/url", string.bytes("http://127.0.0.1:${http.server_port(server)}")) == "", "publish upstream URL")
+    deadline = os.now_monotonic_ms() + 45000
+    while fs.exists("${dir}/capture.json") == 0 && os.now_monotonic_ms() < deadline { fixture_support.poll_pause() }
+    http.server_stop(server)
+    fixture_support.check(fs.exists("${dir}/capture.json") == 1, "upstream timed out")
+    fixture_support.check(fs.write("${dir}/done", "") == "", "publish completion")
+}
+drive(dir: string, base: string) {
+    headers = json.obj()
+    defer json.json_free(headers)
+    json.set(headers, "Authorization", json.str("Bearer header-secret"))
+    status, body = fixture_support.post_request(base, PATH, BODY, "application/json", headers)
+    fixture_support.check(status == 200 && body == "upstream-ok", "upstream response: status ${status}, body ${body}")
+    for attempt in 0..500 {
+        if fs.exists("${dir}/done") == 1 { break }
+        fixture_support.poll_pause()
+    }
+    fixture_support.check(fs.exists("${dir}/done") == 1, "upstream did not finish")
+    capture = json.parse(fs.read("${dir}/capture.json")!)!
+    defer json.json_free(capture)
+    fixture_support.check(json.get_string(json.object_get(capture, "path")!)! == PATH, "forwarded path")
+    fixture_support.check(json.get_string(json.object_get(capture, "authorization")!)! == "Bearer header-secret", "forwarded authorization")
+    fixture_support.check(json.get_string(json.object_get(capture, "body")!)! == BODY, "forwarded body")
+}
+check_tape(dir: string) {
+    tape = fs.read("${dir}/tape.md")!
+    const SECRETS[] = ["header-secret", "query-secret", "second-secret", "json-secret"]
+    const EXPECTED[] = ["Authorization: [REDACTED]", "password=%5BREDACTED%5D", "pass%77ord=%5BREDACTED%5D", "keep=a%2Fb", "\"secretKey\": \"[REDACTED]\"", "\"keep\": \"visible\"", "\"items\": [{\"secretKey\": \"[REDACTED]\"}]", "upstream-ok"]
+    for i in 0..SECRETS.len { fixture_support.check(string.contains(tape, SECRETS[i]) == 0, "credential leaked into tape") }
+    for i in 0..EXPECTED.len { fixture_support.check(string.contains(tape, EXPECTED[i]) == 1, "missing ${EXPECTED[i]}") }
+    println("structured redaction: upstream intact, tape scrubbed")
+}
+main() {
+    action = os.args_get(1); location = os.args_get(2)
+    if action == "serve" { serve(location) }
+    else if action == "start" { println(fixture_support.launch(location)) }
+    else if action == "drive" { drive(location, os.args_get(3)) }
+    else if action == "check" { check_tape(location) }
+    else { fixture_support.check(false, "expected start, drive or check") }
+}

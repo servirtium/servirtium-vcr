@@ -8,7 +8,7 @@ class SecretCallbacksTest {
         def dir = Files.createTempDirectory('vcr-secrets-groovy-')
         def tape = dir.resolve('tape.md').toString()
         def run = { String action, String arg ->
-            def process = new ProcessBuilder('python3', '../core_tests/secret_fixture.py', action, arg).redirectErrorStream(true).start()
+            def process = new ProcessBuilder('../target/test-tools/secret_fixture', action, arg).redirectErrorStream(true).start()
             def output = process.inputStream.text
             assertEquals(0, process.waitFor(), output); output.trim()
         }

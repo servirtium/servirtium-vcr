@@ -19,7 +19,7 @@ spec = describe "record then replay" $ do
     tmp <- getTemporaryDirectory
     let directory = tmp </> "vcr-helpers-haskell"
     createDirectory directory
-    let run args = readProcess "python3" ("../core_tests/redaction_fixture.py" : args) ""
+    let run args = readProcess "../target/test-tools/redaction_fixture" args ""
     bracket_ (pure ()) (removeDirectoryRecursive directory) $ do
       upstream <- run ["start", directory]
       withRecord (recordOptions (directory </> "tape.md") (takeWhile (/= '\n') upstream))
@@ -33,7 +33,7 @@ spec = describe "record then replay" $ do
     withPlayback (playbackOptions "../core_tests/diagnostics/playback.md") $ \server -> do
       testContext "Haskell scenario" "scenario.test" 123 server
       url <- baseUrl server
-      _ <- readProcess "python3" ["../core_tests/diagnostic_fixture.py", url] ""
+      _ <- readProcess "../target/test-tools/diagnostic_fixture" [url] ""
       diagnostic <- lastErrorWith False server
       diagnostic `shouldSatisfy` isInfixOf "owner"
       diagnostic `shouldSatisfy` isInfixOf "scenario.test:123"

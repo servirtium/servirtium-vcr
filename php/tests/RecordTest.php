@@ -27,9 +27,9 @@ final class RecordTest extends TestCase
     {
         $dir = sys_get_temp_dir() . '/vcr-helpers-' . uniqid();
         mkdir($dir);
-        $fixture = dirname(__DIR__, 2) . '/core_tests/redaction_fixture.py';
+        $fixture = dirname(__DIR__, 2) . '/target/test-tools/redaction_fixture';
         $run = function (string ...$args) use ($fixture): string {
-            $command = implode(' ', array_map('escapeshellarg', ['python3', $fixture, ...$args]));
+            $command = implode(' ', array_map('escapeshellarg', [$fixture, ...$args]));
             exec($command . ' 2>&1', $output, $status);
             self::assertSame(0, $status, implode("\n", $output));
             return trim(implode("\n", $output));
@@ -55,7 +55,7 @@ final class RecordTest extends TestCase
         $server = Vcr::playback($root . '/core_tests/diagnostics/playback.md')->start();
         try {
             $server->testContext('PHP scenario', 'scenario.test', 123);
-            $command = implode(' ', array_map('escapeshellarg', ['python3', $root . '/core_tests/diagnostic_fixture.py', $server->baseUrl()]));
+            $command = implode(' ', array_map('escapeshellarg', [$root . '/target/test-tools/diagnostic_fixture', $server->baseUrl()]));
             exec($command . ' 2>&1', $output, $status);
             self::assertSame(0, $status, implode("\n", $output));
             self::assertStringContainsString('owner', $server->lastError(false));

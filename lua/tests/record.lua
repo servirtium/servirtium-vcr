@@ -1,6 +1,6 @@
 -- record.lua — the Lua binding's record test suite, mirroring the Go binding's
 -- record_test.go. Record-mode tests need a live upstream: we spawn a throwaway
--- python3 HTTP server (see helpers.start_upstream) since Lua 5.4 has no stdlib
+-- HTTP server (see helpers.start_upstream) since Lua 5.4 has no stdlib
 -- sockets. Tapes are written to temp paths (never into tapes/). Run from lua/:
 --   LUA_CPATH="./?.so;;" SERVIRTIUM_VCR_LIB=<abs>/libservirtium_vcr.so lua5.4 tests/record.lua
 
@@ -62,9 +62,9 @@ do
     local directory = os.tmpname()
     os.remove(directory)
     assert(os.execute("mkdir -p '" .. directory .. "'"))
-    local fixture = here .. "/../../core_tests/redaction_fixture.py"
+    local fixture = here .. "/../../target/test-tools/redaction_fixture"
     local function fixture_run(action, url)
-        local command = "python3 '" .. fixture .. "' " .. action .. " '" .. directory .. "'"
+        local command = "'" .. fixture .. "' " .. action .. " '" .. directory .. "'"
         if url then command = command .. " '" .. url .. "'" end
         local process = assert(io.popen(command .. " 2>&1"))
         local output = process:read("*a")
@@ -88,7 +88,7 @@ do
     local root = here .. "/../.."
     local server = assert(servirtium.playback(root .. "/core_tests/diagnostics/playback.md"):start())
     server:test_context("Lua scenario", "scenario.test", 123)
-    local success = os.execute("python3 '" .. root .. "/core_tests/diagnostic_fixture.py' '" .. server:base_url() .. "'")
+    local success = os.execute("'" .. root .. "/target/test-tools/diagnostic_fixture' '" .. server:base_url() .. "'")
     h.truthy(success, "HTTP mismatch driver")
     h.truthy(server:last_error(false):find("owner", 1, true), "observer last error")
     h.truthy(server:last_error(false):find("scenario.test:123", 1, true), "coordinates")
@@ -107,9 +107,9 @@ do
     h.case("named secrets round trip")
     local directory = os.tmpname(); os.remove(directory)
     assert(os.execute("mkdir -p '" .. directory .. "'"))
-    local fixture = here .. "/../../core_tests/secret_fixture.py"
+    local fixture = here .. "/../../target/test-tools/secret_fixture"
     local function run(action, arg)
-        local process = assert(io.popen("python3 '" .. fixture .. "' " .. action .. " '" .. arg .. "' 2>&1"))
+        local process = assert(io.popen("'" .. fixture .. "' " .. action .. " '" .. arg .. "' 2>&1"))
         local output = process:read("*a"); local ok = process:close(); assert(ok, output)
         return (output:gsub("%s+$", ""))
     end

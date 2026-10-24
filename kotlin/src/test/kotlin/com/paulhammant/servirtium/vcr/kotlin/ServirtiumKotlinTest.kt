@@ -22,7 +22,7 @@ class ServirtiumKotlinTest {
     @Test fun `structured helpers forward credentials and scrub tape`() {
         val directory = Files.createTempDirectory("vcr-helpers-")
         fun run(vararg args: String): String {
-            val process = ProcessBuilder(listOf("python3", "../core_tests/redaction_fixture.py") + args)
+            val process = ProcessBuilder(listOf("../target/test-tools/redaction_fixture") + args)
                 .redirectErrorStream(true).start()
             val output = process.inputStream.bufferedReader().readText()
             assertEquals(0, process.waitFor(), output)
@@ -48,7 +48,7 @@ class ServirtiumKotlinTest {
     @Test fun `replay diagnostics have explicit consumption`() {
         playback("../core_tests/diagnostics/playback.md").use { server ->
             server.testContext("Kotlin scenario", "scenario.test", 123)
-            val driver = ProcessBuilder("python3", "../core_tests/diagnostic_fixture.py", server.baseUrl()).inheritIO().start()
+            val driver = ProcessBuilder("../target/test-tools/diagnostic_fixture", server.baseUrl()).inheritIO().start()
             assertEquals(0, driver.waitFor())
             org.junit.jupiter.api.Assertions.assertTrue(server.lastError(false).contains("owner"))
             org.junit.jupiter.api.Assertions.assertTrue(server.lastError(false).contains("scenario.test:123"))

@@ -185,11 +185,11 @@ func TestRecordAndReplayPostWithBody(t *testing.T) {
 
 func TestStructuredRedactionHelpers(t *testing.T) {
 	_, source, _, _ := runtime.Caller(0)
-	fixture := filepath.Join(filepath.Dir(source), "../core_tests/redaction_fixture.py")
+	fixture := filepath.Join(filepath.Dir(source), "../target/test-tools/redaction_fixture")
 	directory := t.TempDir()
 	run := func(args ...string) string {
 		t.Helper()
-		output, err := exec.Command("python3", append([]string{fixture}, args...)...).CombinedOutput()
+		output, err := exec.Command(fixture, args...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("fixture: %v: %s", err, output)
 		}
@@ -221,7 +221,7 @@ func TestRetainedReplayDiagnostics(t *testing.T) {
 	}
 	defer server.Close()
 	server.TestContext("Go scenario", "scenario.test", 123)
-	output, err := exec.Command("python3", filepath.Join(root, "core_tests/diagnostic_fixture.py"), server.BaseURL()).CombinedOutput()
+	output, err := exec.Command(filepath.Join(root, "target/test-tools/diagnostic_fixture"), server.BaseURL()).CombinedOutput()
 	if err != nil {
 		t.Fatalf("driver: %v: %s", err, output)
 	}

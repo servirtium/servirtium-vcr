@@ -1,0 +1,65 @@
+// Shared test plumbing: argv-based process launch and bounded local HTTP calls.
+import std.fs
+import std.http
+import std.http.client
+import std.json
+import std.list
+import std.os
+import std.string
+exports(check, post_request, launch, listen_upstream, header, full_path, poll_pause)
+extern sleep(ms: int)
+check(ok: bool, detail: string) {
+    if !ok { println("fixture: ${detail}"); os.exit(1) }
+}
+poll_pause() { sleep(10) }
+header(req: ptr, name: string) -> string {
+    value = http.get_header(req, name)
+    if string.length(value) == 0 { return "" }
+    return value
+}
+full_path(req: ptr) -> string {
+    path = http.request_path(req); query = http.request_query(req)
+    if string.length(query) > 0 { return "${path}?${query}" }
+    return path
+}
+post_request(base: string, path: string, body: string, mime: string, headers: ptr) -> (int, string) {
+    req = client.request("POST", "${base}${path}")
+    defer client.request_free(req)
+    client.set_timeout(req, 10s)
+    check(client.set_body(req, string.bytes(body), mime) == "", "set request body")
+    if headers != null {
+        for i in 0..json.object_size(headers) {
+            key, value, _err = json.object_entry(headers, i)
+            client.set_header(req, key, json.get_string(value)!)
+        }
+    }
+    response = client.send_request(req)!
+    defer client.response_free(response)
+    return client.response_status(response), client.response_body(response)
+}
+listen_upstream(handler: fn(ptr, ptr, ptr)) -> ptr {
+    server = http.server_create(0)
+    check(server != null, "create upstream")
+    check(http.server_bind(server, "127.0.0.1", 0) == "", "bind upstream")
+    check(http.server_set_keepalive(server, 0, 1, 0ns) == "", "disable fixture keep-alive")
+    http.server_post(server, "/*", handler, null)
+    check(http.server_start_background(server) == "", "start upstream")
+    return server
+}
+launch(directory: string) -> string {
+    check(fs.mkdir_p(directory) == "", "create fixture directory")
+    fs.delete("${directory}/url"); fs.delete("${directory}/done"); fs.delete("${directory}/capture.json")
+    args = list_new()
+    defer list_free(args)
+    list_add(args, "serve"); list_add(args, directory)
+    sink = "/dev/null"
+    if os.platform() == "windows" { sink = "NUL" }
+    _token, err = os.spawn_proc_to(os.argv0(), args, null, sink)
+    check(err == "", "launch upstream: ${err}")
+    for attempt in 0..500 {
+        if fs.exists("${directory}/url") == 1 { return string.trim(fs.read("${directory}/url")!) }
+        poll_pause()
+    }
+    check(false, "upstream did not become ready")
+    return ""
+}

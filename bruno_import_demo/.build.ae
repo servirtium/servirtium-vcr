@@ -1,0 +1,17 @@
+// Build the demo service alongside the standalone Servirtium CLI.
+import bldr
+import aether
+import aether (source, output, lib, caps)
+import std.fs
+
+aeb(cap) {
+    bldr.build() {
+        dep("core/.cli.ae")
+        aether.program() { source("service.ae"); output("widget-service"); lib(".."); caps("fs,net,os,extern") }
+        root = _get("root"); td = _get("target_dir")
+        _ok, _kind, err = fs.copy("${td}/bin/widget-service", "${root}/target/widget-service")
+        if err != "" { bldr.fail(builder_context(), err) }
+        _changed, _mode, err = fs.chmod("${root}/target/widget-service", 493)
+        if err != "" { bldr.fail(builder_context(), err) }
+    }
+}

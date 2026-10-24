@@ -89,8 +89,8 @@ describe('record', () => {
 it('redacts structured credentials on tape while forwarding original values', () => {
   const { execFileSync } = require('child_process')
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vcr-helpers-'))
-  const fixture = path.resolve(__dirname, '../../core_tests/redaction_fixture.py')
-  const run = (...args: string[]) => execFileSync('python3', [fixture, ...args], { encoding: 'utf8' }).trim()
+  const fixture = path.resolve(__dirname, '../../target/test-tools/redaction_fixture')
+  const run = (...args: string[]) => execFileSync(fixture, args, { encoding: 'utf8' }).trim()
   try {
     const upstream = run('start', directory)
     const rec = Vcr.record(path.join(directory, 'tape.md'), upstream)

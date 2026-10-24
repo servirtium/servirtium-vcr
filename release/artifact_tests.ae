@@ -1,0 +1,115 @@
+// Controlled artifact matrix: exercise verification, not cross compilation.
+// Only the host library is loaded. Other slots intentionally reuse fixture
+// bytes; the musl slot changes the ELF NEEDED name without moving its offsets.
+import release.artifacts
+import std.cryptography
+import std.fs
+import std.os
+import std.string
+import std.strbuilder
+
+const PLATFORMS[] = ["linux-x86_64.so", "linux-arm64.so", "macos-x86_64.dylib", "macos-arm64.dylib", "windows-x86_64.dll", "windows-arm64.dll", "freebsd-x86_64.so", "linux-x86_64-musl.so", "linux-arm64-musl.so"]
+const TAG = "v2.0.0-alpha.3"
+check(ok: bool, detail: string) { if !ok { println("FAIL: ${detail}"); os.exit(1) } }
+write_fixture(file: string, data: string) { check(fs.write_binary(file, string.bytes(data)) == "", "write ${file}") }
+asset(file: string, data: string) {
+    write_fixture(file, data)
+    digest = cryptography.sha256_file(file)!
+    write_fixture("${file}.sha256", "${digest}  ${fs.path_basename(file)}\n")
+}
+manifest(dist: string) {
+    out = strbuilder.new(2048)
+    entries = fs.list_dir(dist)!
+    defer fs.dir_list_free(entries)
+    for i in 0..fs.dir_list_count(entries) {
+        name = fs.dir_list_get(entries, i)
+        if string.starts_with(name, "libservirtium_vcr-") == 1 && string.ends_with(name, ".sha256") == 0 {
+            digest = cryptography.sha256_file("${dist}/${name}")!
+            strbuilder.append(out, "${digest}  ./${name}\n")
+        }
+    }
+    write_fixture("${dist}/SHA256SUMS.txt", strbuilder.finish(out))
+}
+expect_failure(root: string, dist: string, expected: string) {
+    error = artifacts.check_artifacts(root, TAG, dist)
+    check(string.contains(error, expected) == 1, "expected '${expected}', got '${error}'")
+}
+main() {
+    root = fs.make_temp_dir(os.temp_dir(), "vcr-artifact-tests-")!
+    defer fs.remove_tree(root)
+    check(fs.mkdir_p("${root}/release") == "" && fs.mkdir_p("${root}/core") == "", "fixture root")
+    source_root = os.getenv("SVCR_TEST_ROOT")
+    write_fixture("${root}/SERVIRTIUM_VCR_VERSION", TAG)
+    write_fixture("${root}/bootstrap.sh", fs.read("${source_root}/bootstrap.sh")!)
+    write_fixture("${root}/release/toolchain.env", fs.read("${source_root}/release/toolchain.env")!)
+    source = fs.read("${source_root}/core/embed.ae")!
+    write_fixture("${root}/core/embed.ae", source)
+    check(artifacts.check_version(root, TAG) == "", "valid release pins")
+    check(artifacts.check_version(root, "not-a-tag") != "", "invalid release tag")
+    check(artifacts.check_version(root, "v9.9.9") != "", "wrong release pin")
+    toolchain = fs.read("${root}/release/toolchain.env")!
+    write_fixture("${root}/release/toolchain.env", string.replace_all(toolchain, "AETHER_REF=", "AETHER_REF=wrong-"))
+    check(artifacts.check_version(root, TAG) != "", "toolchain mismatch")
+    write_fixture("${root}/release/toolchain.env", toolchain)
+    data, _n, err = fs.read_binary(os.getenv("SERVIRTIUM_VCR_LIB"))
+    check(err == "", "read host library")
+    library = data
+    musl = string.replace_all(library, "libc.so.6", "libc.so${string.from_char(0)}${string.from_char(0)}")
+    dist = "${root}/dist"
+    check(fs.mkdir_p("${dist}/ae-add") == "", "fixture artifacts directory")
+    for i in 0..PLATFORMS.len {
+        platform = PLATFORMS[i]; payload = library
+        if string.contains(platform, "-musl") == 1 { payload = musl }
+        asset("${dist}/libservirtium_vcr-${TAG}-${platform}", payload)
+        asset("${dist}/ae-add/servirtium_vcr-${TAG}-${platform}", payload)
+        if string.starts_with(platform, "windows-") == 1 { asset("${dist}/libservirtium_vcr-${TAG}-${platform}.lib", "fixture import library") }
+    }
+    manifest(dist)
+    toml = "binary = \"servirtium_vcr\"\nmodules = \".\"\n"
+    write_fixture("${dist}/ae-add/aether.toml", toml)
+    check(artifacts.check_artifacts(root, TAG, dist) == "", "valid artifact matrix")
+    check(artifacts.check_packages(dist) != "", "missing binding packages")
+    asset("${dist}/servirtium-vcr-1-sources.jar", "sources")
+    check(artifacts.check_packages(dist) != "", "sources jar is not a fat jar")
+    asset("${dist}/servirtium-vcr-1.jar", "fixture fat jar")
+    check(artifacts.check_packages(dist) != "", "missing .NET package")
+    asset("${dist}/Servirtium.Vcr.1.nupkg", "fixture NuGet package")
+    check(artifacts.check_packages(dist) == "", "binding packages")
+    raw = "${dist}/libservirtium_vcr-${TAG}-linux-x86_64.so"
+    sidecar = fs.read("${raw}.sha256")!
+    write_fixture("${raw}.sha256", "wrong")
+    expect_failure(root, dist, "checksum mismatch")
+    write_fixture("${raw}.sha256", string.replace_all(sidecar, ".so", "Xso"))
+    expect_failure(root, dist, "checksum mismatch")
+    write_fixture("${raw}.sha256", sidecar)
+    package = "${dist}/ae-add/servirtium_vcr-${TAG}-linux-x86_64.so"
+    asset(package, "different validly-checksummed bytes")
+    expect_failure(root, dist, "ae-add package differs")
+    asset(package, library)
+    sums = fs.read("${dist}/SHA256SUMS.txt")!
+    write_fixture("${dist}/SHA256SUMS.txt", "")
+    expect_failure(root, dist, "invalid SHA256SUMS")
+    write_fixture("${dist}/SHA256SUMS.txt", sums)
+    write_fixture("${dist}/ae-add/aether.toml", "binary = \"other\"\nmodules = \".\"\n")
+    expect_failure(root, dist, "ae-add manifest")
+    write_fixture("${dist}/ae-add/aether.toml", toml)
+    asset(raw, musl); manifest(dist)
+    expect_failure(root, dist, "wrong Linux libc")
+    asset(raw, library); manifest(dist)
+    write_fixture("${root}/core/embed.ae", "${source}\nvcr_embed_missing_for_test() {}\n")
+    expect_failure(root, dist, "missing Linux ABI export")
+    write_fixture("${root}/core/embed.ae", source)
+    // Published downloads flatten the ae-add directory.
+    entries = fs.list_dir("${dist}/ae-add")!
+    for i in 0..fs.dir_list_count(entries) {
+        name = fs.dir_list_get(entries, i)
+        _ok, _kind, copy_err = fs.copy("${dist}/ae-add/${name}", "${dist}/${name}")
+        check(copy_err == "", "flatten ae-add package")
+    }
+    fs.dir_list_free(entries)
+    fs.remove_tree("${dist}/ae-add")
+    check(artifacts.check_artifacts(root, TAG, dist) == "", "flat published download layout")
+    asset(raw, "")
+    expect_failure(root, dist, "missing or empty artifact")
+    println("artifact verification: passed")
+}

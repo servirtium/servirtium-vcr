@@ -183,6 +183,11 @@ One libservirtium_vcr; every binding exposes the same surface.
 
 Named secrets can be selected by request context at tape emission and restored before playback starts. The same core implementation discovers query/form fields, headers, JSON, XML and YAML across all bindings. See [named secret callbacks](docs/secrets.md) for examples, language APIs and format limits.
 
+Shared test drivers and release verification are Aether too: `aeb core_tests/.fixtures.ae`
+builds the HTTP fixtures under `target/test-tools/`, and `aeb release/.tests.ae`
+checks the release verifier’s success and failure paths. Binding test leaves build
+the fixtures automatically.
+
 ## Compared with other mocking / virtualization tools
 
 There's a rich ecosystem here, and these are all good tools — the choice mostly

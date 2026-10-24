@@ -136,17 +136,17 @@ int main(int argc, char** argv) {
         if (!made) return 1;
         const std::string directory = made;
         const auto fixture = (std::filesystem::path(tape).parent_path().parent_path().parent_path()
-                              / "core_tests/redaction_fixture.py").string();
-        const auto upstream = run_cmd("python3 '" + fixture + "' start '" + directory + "'");
+                              / "target/test-tools/redaction_fixture").string();
+        const auto upstream = run_cmd("'" + fixture + "' start '" + directory + "'");
         try {
             auto rec = servirtium::Vcr::record(directory + "/tape.md", upstream);
             rec.redact_header("Authorization");
             rec.redact_query_param("password");
             rec.redact_json_field("secretKey");
-            ck("structured upstream credentials", std::system(("python3 '" + fixture + "' drive '" + directory + "' '" + rec.base_url() + "'").c_str()) == 0);
+            ck("structured upstream credentials", std::system(("'" + fixture + "' drive '" + directory + "' '" + rec.base_url() + "'").c_str()) == 0);
             ck("structured outcome", rec.last_kind() == servirtium::Outcome::Ok);
             rec.flush();
-            ck("structured tape", std::system(("python3 '" + fixture + "' check '" + directory + "'").c_str()) == 0);
+            ck("structured tape", std::system(("'" + fixture + "' check '" + directory + "'").c_str()) == 0);
         } catch (...) { std::filesystem::remove_all(directory); throw; }
         std::filesystem::remove_all(directory);
     }
@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
         const auto root = std::filesystem::path(tape).parent_path().parent_path().parent_path();
         auto server = servirtium::Vcr::playback((root / "core_tests/diagnostics/playback.md").string());
         server.test_context("C++ scenario", "scenario.test", 123);
-        const auto command = "python3 '" + (root / "core_tests/diagnostic_fixture.py").string() + "' '" + server.base_url() + "'";
+        const auto command = "'" + (root / "target/test-tools/diagnostic_fixture").string() + "' '" + server.base_url() + "'";
         ck("diagnostic driver", std::system(command.c_str()) == 0);
         ck("observer diagnostic", server.last_error(false).find("owner") != std::string::npos);
         ck("coordinates", server.last_error(false).find("scenario.test:123") != std::string::npos);
@@ -173,9 +173,9 @@ int main(int argc, char** argv) {
     {
         char pattern[] = "/tmp/vcr-secrets-cpp-XXXXXX";
         const std::string directory = mkdtemp(pattern);
-        const auto fixture = (std::filesystem::path(tape).parent_path().parent_path().parent_path() / "core_tests/secret_fixture.py").string();
+        const auto fixture = (std::filesystem::path(tape).parent_path().parent_path().parent_path() / "target/test-tools/secret_fixture").string();
         const auto run = [&](const std::string& action, const std::string& arg) {
-            auto result = run_cmd("python3 '" + fixture + "' " + action + " '" + arg + "' && echo SECRET_OK");
+            auto result = run_cmd("'" + fixture + "' " + action + " '" + arg + "' && echo SECRET_OK");
             ck(("secret fixture " + action).c_str(), result.size() >= 9 && result.substr(result.size()-9) == "SECRET_OK");
             if (result.size() >= 9) result.resize(result.size()-9);
             while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();

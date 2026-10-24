@@ -75,10 +75,10 @@ end
 RSpec.describe 'Structured redaction helpers' do
   it 'forwards original credentials and scrubs the tape' do
     require 'open3'
-    fixture = File.expand_path('../../../core_tests/redaction_fixture.py', __dir__)
+    fixture = File.expand_path('../../../target/test-tools/redaction_fixture', __dir__)
     Dir.mktmpdir('vcr-helpers-') do |dir|
       run = lambda do |*args|
-        output, status = Open3.capture2e('python3', fixture, *args)
+        output, status = Open3.capture2e(fixture, *args)
         expect(status.success?).to be(true), output
         output.strip
       end

@@ -52,11 +52,11 @@ final class PlaybackTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("core_tests/redaction_fixture.py").path
+            .appendingPathComponent("target/test-tools/redaction_fixture").path
         func run(_ args: [String]) throws -> String {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["python3", fixture] + args
+            process.arguments = [fixture] + args
             let output = Pipe()
             process.standardOutput = output
             process.standardError = output
@@ -85,7 +85,7 @@ final class PlaybackTests: XCTestCase {
             server.testContext("Swift scenario", sourceFile: "scenario.test", sourceLine: 123)
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["python3", root.appendingPathComponent("core_tests/diagnostic_fixture.py").path, server.baseUrl]
+            process.arguments = [root.appendingPathComponent("target/test-tools/diagnostic_fixture").path, server.baseUrl]
             try process.run()
             process.waitUntilExit()
             XCTAssertEqual(process.terminationStatus, 0)

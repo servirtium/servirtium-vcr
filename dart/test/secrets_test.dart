@@ -6,7 +6,7 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('vcr-secrets-');
     final tape = '${dir.path}/tape.md';
     String run(List<String> args) {
-      final result = Process.runSync('python3', ['../core_tests/secret_fixture.py', ...args]);
+      final result = Process.runSync('../target/test-tools/secret_fixture', args);
       expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
       return (result.stdout as String).trim();
     }

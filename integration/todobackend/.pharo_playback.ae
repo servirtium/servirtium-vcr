@@ -18,6 +18,7 @@ import std.os
 import std.string
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         root = _get("root")
         lib = dep_artifact("core/.build.ae", "shared_lib")

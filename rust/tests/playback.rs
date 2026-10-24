@@ -143,7 +143,7 @@ fn retained_replay_diagnostics_support_nonconsuming_observers() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let server = servirtium::Vcr::playback(root.join("core_tests/diagnostics/playback.md").to_str().unwrap()).start().unwrap();
     server.test_context("Rust scenario", "scenario.test", 123).unwrap();
-    let output = std::process::Command::new("python3").arg(root.join("core_tests/diagnostic_fixture.py"))
+    let output = std::process::Command::new(root.join("target/test-tools/diagnostic_fixture"))
         .arg(server.base_url()).output().unwrap();
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     assert!(server.last_error_with(false).contains("owner"));

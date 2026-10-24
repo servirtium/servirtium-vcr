@@ -61,10 +61,10 @@ lua5.4 tests/run_all.lua
 `LUA_CPATH="./?.so;;"` lets `require("servirtium_native")` find the compiled
 `.so` in the current dir.
 
-### Record-mode tests need python3
+### Record-mode tests use Aether
 
 `record.lua` / `mutation.lua` spin up a throwaway HTTP **upstream** to record
 against. Lua 5.4 has no stdlib sockets, so the suite spawns a one-process
-`python3` HTTP server (`/usr/bin/python3`) that returns a fixed body/headers
+`Aether` HTTP server (`target/test-tools/test_upstream`) that returns a fixed body/headers
 and echoes the request method+body to a sidecar file, then kills it. Recorded
 tapes are written to the OS temp dir, never into `tapes/`.

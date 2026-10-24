@@ -12,11 +12,10 @@ public class SecretCallbacksTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "vcr-helpers-" + Guid.NewGuid());
         Directory.CreateDirectory(directory);
-        var fixture = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Source())!, "../../core_tests/secret_fixture.py"));
+        var fixture = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Source())!, "../../target/test-tools/secret_fixture"));
         string Run(params string[] args)
         {
-            var info = new ProcessStartInfo("python3") { RedirectStandardOutput = true };
-            info.ArgumentList.Add(fixture);
+            var info = new ProcessStartInfo(fixture) { RedirectStandardOutput = true };
             foreach (var arg in args) info.ArgumentList.Add(arg);
             using var process = Process.Start(info)!;
             var output = process.StandardOutput.ReadToEnd();

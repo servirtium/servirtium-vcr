@@ -17,6 +17,7 @@ import d
 import d (d_source, test_file, d_flag)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         prereq("dmd")
         dep("core/.build.ae")
         d.test() {

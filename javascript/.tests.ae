@@ -7,6 +7,7 @@ import javascript (npm_install, jest)
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
+        dep("core_tests/.fixtures.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
         javascript.test() {
             env("SERVIRTIUM_VCR_LIB", lib)

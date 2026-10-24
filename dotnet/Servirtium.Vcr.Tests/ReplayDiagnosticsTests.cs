@@ -11,8 +11,7 @@ public class ReplayDiagnosticsTests {
         string root = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Source())!, "../.."));
         using var server = Vcr.Playback(Path.Combine(root, "core_tests/diagnostics/playback.md")).Start();
         server.TestContext("Dotnet scenario", "scenario.test", 123);
-        var info = new ProcessStartInfo("python3");
-        info.ArgumentList.Add(Path.Combine(root, "core_tests/diagnostic_fixture.py"));
+        var info = new ProcessStartInfo(Path.Combine(root, "target/test-tools/diagnostic_fixture"));
         info.ArgumentList.Add(server.BaseUrl);
         using var driver = Process.Start(info)!;
         driver.WaitForExit();

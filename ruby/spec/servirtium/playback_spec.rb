@@ -79,7 +79,7 @@ RSpec.describe 'Retained replay diagnostics' do
     root = File.expand_path('../../..', __dir__)
     Servirtium.playback(File.join(root, 'core_tests/diagnostics/playback.md')).start do |server|
       server.test_context('Ruby scenario', source_file: 'scenario.test', source_line: 123)
-      output, status = Open3.capture2e('python3', File.join(root, 'core_tests/diagnostic_fixture.py'), server.base_url)
+      output, status = Open3.capture2e(File.join(root, 'target/test-tools/diagnostic_fixture'), server.base_url)
       expect(status.success?).to be(true), output
       expect(server.last_error(consume: false)).to include('owner', 'scenario.test:123')
       expect(JSON.parse(server.diagnostics_json).map { |e| e['retrieved'] }).to eq([0, 0])

@@ -56,8 +56,7 @@ class ServirtiumScalaTest:
     val directory = Files.createTempDirectory("vcr-helpers-")
     def run(args: String*): String =
       val cmd = new java.util.ArrayList[String]()
-      cmd.add("python3")
-      cmd.add("../core_tests/redaction_fixture.py")
+      cmd.add("../target/test-tools/redaction_fixture")
       args.foreach(cmd.add)
       val process = new ProcessBuilder(cmd).redirectErrorStream(true).start()
       val output = new String(process.getInputStream.readAllBytes())
@@ -81,7 +80,7 @@ class ServirtiumScalaTest:
   @Test def retainedReplayDiagnostics(): Unit =
     using(Servirtium.playback("../core_tests/diagnostics/playback.md")()) { server =>
       server.testContext("Scala scenario", "scenario.test", 123)
-      val driver = new ProcessBuilder("python3", "../core_tests/diagnostic_fixture.py", server.baseUrl()).inheritIO().start()
+      val driver = new ProcessBuilder("../target/test-tools/diagnostic_fixture", server.baseUrl()).inheritIO().start()
       assertEquals(0, driver.waitFor())
       org.junit.jupiter.api.Assertions.assertTrue(server.lastError(false).contains("owner"))
       org.junit.jupiter.api.Assertions.assertTrue(server.lastError(false).contains("scenario.test:123"))

@@ -52,7 +52,7 @@
   (let [directory (Files/createTempDirectory "vcr-helpers-" (make-array FileAttribute 0))
         run (fn [& args]
               (let [process (-> (ProcessBuilder. ^java.util.List
-                                      (vec (concat ["python3" "core_tests/redaction_fixture.py"] args)))
+                                      (vec (concat ["target/test-tools/redaction_fixture"] args)))
                                 (.redirectErrorStream true) (.start))
                     output (slurp (.getInputStream process))]
                 (is (= 0 (.waitFor process)) output)
@@ -74,7 +74,7 @@
 (deftest retained-replay-diagnostics
   (with-open [server (vcr/playback "core_tests/diagnostics/playback.md")]
     (vcr/test-context server "Clojure scenario" "scenario.test" 123)
-    (let [driver (-> (ProcessBuilder. ^java.util.List ["python3" "core_tests/diagnostic_fixture.py" (.baseUrl server)])
+    (let [driver (-> (ProcessBuilder. ^java.util.List ["target/test-tools/diagnostic_fixture" (.baseUrl server)])
                      (.inheritIO) (.start))]
       (is (= 0 (.waitFor driver))))
     (is (.contains (vcr/last-error server false) "owner"))
@@ -91,7 +91,7 @@
   (let [dir (Files/createTempDirectory "vcr-secrets-clojure-" (make-array FileAttribute 0))
         tape (str (.resolve dir "tape.md"))
         run (fn [action arg]
-              (let [process (-> (ProcessBuilder. ^java.util.List ["python3" (if (.isFile (java.io.File. "core_tests/secret_fixture.py")) "core_tests/secret_fixture.py" "../core_tests/secret_fixture.py") action arg]) (.redirectErrorStream true) (.start))
+              (let [process (-> (ProcessBuilder. ^java.util.List [(if (.isFile (java.io.File. "target/test-tools/secret_fixture")) "target/test-tools/secret_fixture" "../target/test-tools/secret_fixture") action arg]) (.redirectErrorStream true) (.start))
                     output (slurp (.getInputStream process))]
                 (is (= 0 (.waitFor process)) output)
                 (.trim output)))

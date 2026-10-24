@@ -9,7 +9,7 @@ class SecretCallbacksTest {
         val dir = Files.createTempDirectory("vcr-secrets-kotlin-")
         val tape = dir.resolve("tape.md").toString()
         fun run(vararg args: String): String {
-            val process = ProcessBuilder(listOf("python3", "../core_tests/secret_fixture.py") + args).redirectErrorStream(true).start()
+            val process = ProcessBuilder(listOf("../target/test-tools/secret_fixture") + args).redirectErrorStream(true).start()
             val output = process.inputStream.bufferedReader().readText()
             assertEquals(0, process.waitFor(), output); return output.trim()
         }

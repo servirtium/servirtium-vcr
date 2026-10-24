@@ -15,6 +15,7 @@ import groovy (source_layout, target_bytecode)
 import bldr (env)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         dep("groovy/.build.ae")
         dep("libs/java/junit-jupiter/.junit-jupiter.jar.ae")

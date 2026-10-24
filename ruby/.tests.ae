@@ -4,6 +4,7 @@ import ruby
 import ruby (rspec, env)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         lib = dep_artifact("core/.build.ae", "shared_lib")
         ruby.bundle() { rspec() env("SERVIRTIUM_VCR_LIB", lib) }

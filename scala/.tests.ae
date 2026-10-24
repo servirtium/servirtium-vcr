@@ -17,6 +17,7 @@ import scala (scala_version, source_layout)
 import bldr (env)
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.fixtures.ae")
         dep("core/.build.ae")
         dep("scala/.build.ae")
         dep("libs/java/junit-jupiter/.junit-jupiter.jar.ae")

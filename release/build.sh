@@ -196,9 +196,9 @@ fi
 if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
   have aeb || die "RELEASE_BINDING_PACKAGES=1 requires aeb"
   # Validate the raw release libraries before any package is allowed to embed
-  # one (proves the Linux C ABI exports too). --engine-only verifies the libs
+  # one (proves the Linux C ABI exports too). Engine mode verifies the libs
   # and ae-add set without demanding the jar/nupkg yet.
-  python3 "$HERE/check-artifacts.py" "$TAG" --engine-only || die "engine artifact verification failed"
+  ( cd "$ROOT" && SVCR_RELEASE_TAG="$TAG" SVCR_ARTIFACTS_MODE=engine aeb release/.artifacts.ae ) || die "engine artifact verification failed"
 
   # -- the fat multi-platform Java jar (mvn, via java/.package.ae) --
   say "building the fat multi-platform Java jar (6 natives) …"
