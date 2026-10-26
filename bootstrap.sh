@@ -54,7 +54,12 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-10-24 (latest): aeb v0.337 adds env() support to aether.program_test;
+# 2026-10-26 (latest): pin ae 0.849.0 ahead of its imminent publication, as
+# requested. The HTTP monitor API replaces the removed server_on_start hook.
+# Compatibility verified against Aether commit 6d36a042 (ABI diagnostics,
+# Python/CLI suites and 200 immediate-stop cycles); the 0.849.0 release binary
+# has not yet been tested. aeb stays v0.337.
+# 2026-10-24: aeb v0.337 adds env() support to aether.program_test;
 # diagnostics and release-verifier tests now use that SDK runner. ae stays 0.841.0.
 # 2026-10-23: aeb v0.334 -> v0.335 (skips dependents of a failed node;
 # the sequential loop runs deps first). ae stays 0.841.0.
@@ -73,8 +78,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.841.0"
-AE_FETCH="v0.841.0"
+AE_PIN="0.849.0"
+AE_FETCH="v0.849.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
