@@ -2448,25 +2448,20 @@ eject(server: ptr) {
 // binding test that fails before its first request) HANGS the host
 // process. The root fix is upstream (start_raw must not clobber a stop that
 // arrived first); this handshake makes start mean "serving", which is the
-// embed contract anyway: std.http fires on_start on the server thread after
-// is_running is set and before the accept loop, so once it has fired a stop
-// is never lost. Waits up to `timeout_ms`; returns 0, or -1 on a failed
+// embed contract anyway: std.http fires the monitor's listening event on the
+// server thread after is_running is set and before the accept loop, so once
+// it has fired a stop is never lost. Waits up to `timeout_ms`; returns 0, or -1 on a failed
 // spawn or a thread that never reached the loop.
 //
 // The signal is a config key that exists only once the hook has run, polled
 // with config.has: config.get hands back a BORROWED value that a concurrent
 // put of the same key frees, so flipping one key "0" -> "1" under a polling
 // reader would be a use-after-free. Each start gets its own key (a
-// per-server generation, passed to the hook through user_data), so a
+// per-server generation, in the key the listening closure captures), so a
 // restarted handle -- or a freed one whose address is reused -- never sees an
 // earlier start's signal. Cost: one tiny config entry per start.
 bg_started_key(server: ptr, gen: long) -> string {
     return slot(key_for(server), string_concat("bg_started.", string.from_long(gen)))
-}
-
-@c_callback
-bg_started_hook(server: ptr, ud: ptr) {
-    config.put(bg_started_key(server, mem.ptr_to_long(ud)), "1")
 }
 
 start_background_h(server: ptr, timeout_ms: int) -> int {
@@ -2474,7 +2469,9 @@ start_background_h(server: ptr, timeout_ms: int) -> int {
     gen = cfg_get_int(gen_slot, 0) + 1
     cfg_set_int(gen_slot, gen)
     started = bg_started_key(server, gen)
-    http.server_on_start(server, bg_started_hook, mem.long_to_ptr(gen))
+    http.monitor(server) {
+        listening() | host: string, port: int | { config.put(started, "1") }
+    }
     if http.http_server_start_background_raw(server) < 0 {
         return -1
     }
