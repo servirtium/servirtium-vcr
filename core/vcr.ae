@@ -137,7 +137,7 @@ exports (
     vcr_get_normalization_name, vcr_get_normalization_replacement,
     vcr_get_header_removal_count, vcr_get_header_removal_field,
     vcr_get_header_removal_name,
-    vcr_aether_clear_tape, vcr_aether_append_interaction,
+    vcr_aether_clear_tape_k, vcr_aether_append_interaction_k,
     vcr_aether_set_load_err, vcr_aether_set_resp_headers,
     vcr_get_strict_headers,
     KIND_OK, KIND_PATH_OR_METHOD_DIFF, KIND_HEADER_MISSING,
@@ -479,7 +479,8 @@ vcr_quiet() -> int { return cfg_get_int("vcrrt.quiet", 0) }
 
 vcr_load_err_k(key: string) -> string { return config.get(slot(key, "load_err")) }
 vcr_load_err() -> string { return vcr_load_err_k(cur_key()) }
-set_load_err(msg: string) { cfg_set_str(slot(cur_key(), "load_err"), msg) }
+set_load_err_k(key: string, msg: string) { cfg_set_str(slot(key, "load_err"), msg) }
+set_load_err(msg: string) { set_load_err_k(cur_key(), msg) }
 vcr_aether_set_load_err(msg: string) { set_load_err(msg) }
 
 vcr_last_error_k(key: string) -> string { return config.get(slot(key, "last_error")) }
@@ -547,7 +548,8 @@ vcr_set_emphasize_http_verbs(on: int) {
     if on != 0 { cfg_set_int(slot(cur_key(), "emph"), 1) } else { cfg_set_int(slot(cur_key(), "emph"), 0) }
 }
 vcr_get_indent_code_blocks() -> int { return cfg_get_int(slot(cur_key(), "indent"), 0) }
-vcr_get_emphasize_http_verbs() -> int { return cfg_get_int(slot(cur_key(), "emph"), 0) }
+vcr_get_emphasize_http_verbs_k(key: string) -> int { return cfg_get_int(slot(key, "emph"), 0) }
+vcr_get_emphasize_http_verbs() -> int { return vcr_get_emphasize_http_verbs_k(cur_key()) }
 
 cursor_k(key: string) -> int { return cfg_get_int(slot(key, "cursor"), 0) }
 set_cursor_k(key: string, i: int) { cfg_set_int(slot(key, "cursor"), i) }
@@ -660,33 +662,35 @@ vcr_record_interaction_full(method: string, path: string, status: int,
 
 // ---- aether-side parser populators ----
 
-vcr_aether_clear_tape() {
-    key = cur_key()
+// Keyed: clear THIS handle's tape store. The parse path threads srvkey rather
+// than reading the process-global cur_key(), so two servers can load() in
+// parallel without appending each other's interactions (the per-handle
+// isolation the design promises; see the concurrency regression test).
+vcr_aether_clear_tape_k(key: string) {
     list_reset(slot(key, "tape"))
     set_cursor_k(key, 0)
     cfg_set_str(slot(key, "last_error"), "")
     set_last_kind_k(key, KIND_OK)
     set_last_index_k(key, -1)
-    clear_pending_note()
+    clear_pending_note_k(key)
     set_record_upstream_base_k(key, "")
-    // mirror vcr_load_tape: load_err reset to "".
-    set_load_err("")
+    set_load_err_k(key, "")
 }
 
-vcr_aether_append_interaction(method: string, path: string, status: int,
-                              content_type: string, body: string,
-                              req_headers: string, req_body: string,
-                              note_title: string, note_body: string) -> int {
+vcr_aether_append_interaction_k(key: string, method: string, path: string, status: int,
+                                content_type: string, body: string,
+                                req_headers: string, req_body: string,
+                                note_title: string, note_body: string) -> int {
     if string.length(note_title) > 0 {
-        cfg_set_int(slot(cur_key(), "pending_note_present"), 1)
-        cfg_set_str(slot(cur_key(), "pending_note_title"), string.copy(note_title))
-        cfg_set_str(slot(cur_key(), "pending_note_body"), string.copy(note_body))
+        cfg_set_int(slot(key, "pending_note_present"), 1)
+        cfg_set_str(slot(key, "pending_note_title"), string.copy(note_title))
+        cfg_set_str(slot(key, "pending_note_body"), string.copy(note_body))
     }
     has_ct = 0
     ct = content_type
     if string.length(content_type) > 0 { has_ct = 1 } else { ct = "" }
-    if tape_append(method, path, status, body, ct, has_ct, req_headers, req_body) != 0 {
-        set_load_err("OOM appending parsed interaction")
+    if tape_append_k(key, method, path, status, body, ct, has_ct, req_headers, req_body) != 0 {
+        set_load_err_k(key, "OOM appending parsed interaction")
         return 0
     }
     return 1
@@ -849,8 +853,8 @@ vcr_get_normalization_replacement(i: int) -> string {
 }
 
 // Look up the token already assigned to `val` this emit, or "" if none yet.
-norm_token_for(val: string) -> string {
-    l = normtokens()
+norm_token_for_k(key: string, val: string) -> string {
+    l = normtokens_k(key)
     nt = list_size(l)
     i = 0
     while i < nt {
@@ -860,18 +864,24 @@ norm_token_for(val: string) -> string {
     }
     return ""
 }
+norm_token_for(val: string) -> string {
+    return norm_token_for_k(cur_key(), val)
+}
 
-norm_token_add(value: string, token: string) {
+norm_token_add_k(key: string, value: string, token: string) {
     e = malloc(sizeof(NormToken)) as *NormToken
     e.value = string.copy(value)
     e.token = string.copy(token)
-    list_add_raw(normtokens(), e)
+    list_add_raw(normtokens_k(key), e)
+}
+norm_token_add(value: string, token: string) {
+    norm_token_add_k(cur_key(), value, token)
 }
 
 // Scan one field string for every match of `re`, assigning a fresh
 // {{name-N}} token to each value not seen before this emit. `counter` is the
 // running per-rule index; returns it advanced past any tokens minted here.
-scan_field_for_norm(re: ptr, name: string, s: string, counter: int) -> int {
+scan_field_for_norm_k(key: string, re: ptr, name: string, s: string, counter: int) -> int {
     if string.length(s) == 0 { return counter }
     fa, ferr = regex.find_all(re, s)
     if ferr != "" { return counter }
@@ -882,13 +892,13 @@ scan_field_for_norm(re: ptr, name: string, s: string, counter: int) -> int {
         st = regex.find_all_start(fa, i)
         en = regex.find_all_end(fa, i)
         val = string.substring(s, st, en)
-        if norm_token_for(val) == "" {
+        if norm_token_for_k(key, val) == "" {
             c = c + 1
             tok = string_concat("{{", name)
             tok = string_concat(tok, "-")
             tok = string_concat(tok, string.from_int(c))
             tok = string_concat(tok, "}}")
-            norm_token_add(val, tok)
+            norm_token_add_k(key, val, tok)
         }
         i = i + 1
     }
@@ -901,16 +911,18 @@ scan_field_for_norm(re: ptr, name: string, s: string, counter: int) -> int {
 // request body, response headers, response body). First appearance wins the
 // next token index, so the table — and therefore the flushed tape — is
 // deterministic across re-records regardless of the live values seen.
-build_normalization_map() {
-    list_reset(slot(cur_key(), "normtokens"))
-    nr = vcr_get_normalization_count()
+build_normalization_map_k(key: string) {
+    list_reset(slot(key, "normtokens"))
+    norms = normalizations_k(key)
+    nr = list_size(norms)
     if nr == 0 { return }
-    n = vcr_get_tape_count()
+    n = list_size(tape_list_k(key))
     ri = 0
     while ri < nr {
-        pattern = string.copy(vcr_get_normalization_pattern(ri))
-        name = string.copy(vcr_get_normalization_name(ri))
-        repl = string.copy(vcr_get_normalization_replacement(ri))
+        r = list_get_raw(norms, ri) as *Normalization
+        pattern = string.copy(r.pattern)
+        name = string.copy(r.name)
+        repl = r.replacement
         // Collapse rules (replacement set) need no token table — they're a
         // straight regex replace_all in apply_normalizations. Only correlate
         // rules build first-appearance tokens here.
@@ -922,11 +934,12 @@ build_normalization_map() {
             counter = 0
             ii = 0
             while ii < n {
-                counter = scan_field_for_norm(re, name, string.copy(vcr_get_path(ii)), counter)
-                counter = scan_field_for_norm(re, name, string.copy(vcr_get_req_headers(ii)), counter)
-                counter = scan_field_for_norm(re, name, string.copy(vcr_get_req_body(ii)), counter)
-                counter = scan_field_for_norm(re, name, string.copy(vcr_get_resp_headers(ii)), counter)
-                counter = scan_field_for_norm(re, name, string.copy(vcr_get_body(ii)), counter)
+                e = tape_get_k(key, ii)
+                counter = scan_field_for_norm_k(key, re, name, string.copy(e.path), counter)
+                counter = scan_field_for_norm_k(key, re, name, string.copy(e.req_headers), counter)
+                counter = scan_field_for_norm_k(key, re, name, string.copy(e.req_body), counter)
+                counter = scan_field_for_norm_k(key, re, name, string.copy(e.resp_headers), counter)
+                counter = scan_field_for_norm_k(key, re, name, string.copy(e.body), counter)
                 ii = ii + 1
             }
             regex.free(re)
@@ -935,22 +948,27 @@ build_normalization_map() {
         }
     }
 }
+build_normalization_map() {
+    build_normalization_map_k(cur_key())
+}
 
 // Apply the built value->token table to one field string. Substitution is a
 // literal replace of each captured value (the regex already ran in the build
 // pass). Tokens are applied in first-appearance order; this assumes captured
 // values are not substrings of one another (true for ids/uuids/etags) — the
 // common Servirtium normalization shapes.
-apply_normalizations(s: string) -> string {
+apply_normalizations_k(key: string, s: string) -> string {
     out = s
 
     // Collapse rules first: regex replace_all every match to its constant.
-    nr = vcr_get_normalization_count()
+    norms = normalizations_k(key)
+    nr = list_size(norms)
     i = 0
     while i < nr {
-        repl = string.copy(vcr_get_normalization_replacement(i))
+        r = list_get_raw(norms, i) as *Normalization
+        repl = r.replacement
         if string.length(repl) > 0 {
-            re, err = regex.compile(string.copy(vcr_get_normalization_pattern(i)))
+            re, err = regex.compile(string.copy(r.pattern))
             if err == "" {
                 rep, rerr = regex.replace_all(re, out, repl)
                 if rerr == "" { out = rep }
@@ -961,7 +979,7 @@ apply_normalizations(s: string) -> string {
     }
 
     // Correlate rules: literal replace of each captured value with its token.
-    l = normtokens()
+    l = normtokens_k(key)
     nt = list_size(l)
     j = 0
     while j < nt {
@@ -970,6 +988,9 @@ apply_normalizations(s: string) -> string {
         j = j + 1
     }
     return out
+}
+apply_normalizations(s: string) -> string {
+    return apply_normalizations_k(cur_key(), s)
 }
 
 valid_header_removal_field(field: int) -> int {
@@ -2362,7 +2383,7 @@ load(tape_path: string, port: int) -> ptr {
     diagnostic_open_h(raw, tape_path, tape_path)
     set_mode_k(key, "playback")
 
-    perr = parse_tape_file(tape_path)
+    perr = parse_tape_file(key, tape_path)
     if perr != "" {
         diag("vcr.load: ${perr}")
         http.server_stop(raw)
@@ -2391,7 +2412,7 @@ load_url(tape_url: string, port: int) -> ptr {
     set_cur_key(key)
     diagnostic_open_h(raw, tape_url, tape_url)
     set_mode_k(key, "playback")
-    vcr_aether_clear_tape()
+    vcr_aether_clear_tape_k(key)
 
     // Fetch the tape over HTTP using raw client (30s timeout)
     resp = http_get_with_timeout_raw(tape_url, 30000)
@@ -2417,7 +2438,7 @@ load_url(tape_url: string, port: int) -> ptr {
     http_response_free(resp)
 
     // Parse the fetched markdown using the same path as load()
-    perr = parse_tape_text("http-sourced", tape_markdown)
+    perr = parse_tape_text(key, "http-sourced", tape_markdown)
     if perr != "" {
         diag("vcr.load_url: ${perr}")
         http.server_stop(raw)
@@ -2635,7 +2656,7 @@ load_record(tape_path: string, upstream_base: string, port: int) -> ptr {
     key = key_for(raw)
     set_cur_key(key)
     diagnostic_open_h(raw, tape_path, tape_path)
-    vcr_aether_clear_tape()
+    vcr_aether_clear_tape_k(key)
 
     ok = vcr_register_record_routes(raw, upstream_base)
     if ok == 0 {
@@ -2652,31 +2673,32 @@ load_record(tape_path: string, upstream_base: string, port: int) -> ptr {
 // the developer reviews git diff to decide whether upstream changed
 // legitimately or unexpectedly.
 eject_record(server: ptr, tape_path: string) -> string {
-    set_cur_key(key_for(server))
+    key = key_for(server)
     http.server_stop(server)
-    dump_unretrieved_k(key_for(server))
-    return flush(tape_path)
+    dump_unretrieved_k(key)
+    return flush_k(key, tape_path)
 }
 
-// Handle-based flush drift variants for the embed ABI. They select the
-// server's state, stop it, then flush/check that server's captured tape.
+// Handle-based flush drift variants for the embed ABI. They stop the server,
+// then flush/check THAT server's captured tape via the keyed flush path — no
+// ambient cur_key(), so a concurrent flush on another handle can't interleave.
 stop_and_flush_h(server: ptr, tape_path: string) -> string {
-    set_cur_key(key_for(server))
+    key = key_for(server)
     http.server_stop(server)
-    dump_unretrieved_k(key_for(server))
-    return flush(tape_path)
+    dump_unretrieved_k(key)
+    return flush_k(key, tape_path)
 }
 stop_and_flush_fail_if_changed_h(server: ptr, tape_path: string) -> string {
-    set_cur_key(key_for(server))
+    key = key_for(server)
     http.server_stop(server)
-    dump_unretrieved_k(key_for(server))
-    return flush_and_fail_if_changed(tape_path)
+    dump_unretrieved_k(key)
+    return flush_and_fail_if_changed_k(key, tape_path)
 }
 stop_and_flush_or_check_h(server: ptr, tape_path: string) -> string {
-    set_cur_key(key_for(server))
+    key = key_for(server)
     http.server_stop(server)
-    dump_unretrieved_k(key_for(server))
-    return flush_or_check(tape_path)
+    dump_unretrieved_k(key)
+    return flush_or_check_k(key, tape_path)
 }
 
 // ---- Record mode -----------------------------------------------------
@@ -2703,7 +2725,7 @@ record(method: string, path: string, status: int, content_type: string, body: st
 // calls this automatically before binding its server; this wrapper is
 // for tests that drive record()/record_full*() without a server.
 clear_recording() {
-    vcr_aether_clear_tape()
+    vcr_aether_clear_tape_k(cur_key())
 }
 
 // Ensure the parent directory of `path` exists before we write to it.
@@ -2726,15 +2748,18 @@ ensure_parent_dir(path: string) -> string {
 // emit_tape() and written via fs.write. The pre-port C path (still
 // shipped as vcr_flush_to_tape) is unused by this surface but
 // retained as a fallback during the C→Aether migration.
-flush(tape_path: string) -> string {
-    blob = emit_tape()
-    emit_err = config.get(slot(cur_key(), "emit_error"))
+flush_k(key: string, tape_path: string) -> string {
+    blob = emit_tape_k(key)
+    emit_err = config.get(slot(key, "emit_error"))
     if emit_err != "" { return emit_err }
     derr = ensure_parent_dir(tape_path)
     if derr != "" { return derr }
     werr = fs.write(tape_path, blob)
     if werr != "" { return werr }
     return ""
+}
+flush(tape_path: string) -> string {
+    return flush_k(cur_key(), tape_path)
 }
 
 // ---- HAR import (HTTP Archive JSON -> Servirtium markdown tape) ----
@@ -3061,7 +3086,7 @@ har_export(tape_path: string, har_path: string) -> string {
     key = "__har_export__"
     set_cur_key(key)
     list_reset(slot(key, "tape"))
-    perr = parse_tape_file(tape_path)
+    perr = parse_tape_file(key, tape_path)
     if perr != "" { return string_concat("har export: cannot parse tape: ", perr) }
 
     entries = json.arr()
@@ -3157,7 +3182,7 @@ check_tape(tape_path: string) -> (int, string) {
     key = "__check__"
     set_cur_key(key)
     list_reset(slot(key, "tape"))
-    perr = parse_tape_file(tape_path)
+    perr = parse_tape_file(key, tape_path)
     if perr != "" { return 0, perr }
     n = vcr_get_tape_count()
     list_reset(slot(key, "tape"))
@@ -3175,7 +3200,7 @@ canonical_check_tape(tape_path: string) -> string {
     key = "__check__"
     set_cur_key(key)
     list_reset(slot(key, "tape"))
-    perr = parse_tape_file(tape_path)
+    perr = parse_tape_file(key, tape_path)
     if perr != "" { return perr }
     blob = emit_tape()
     emit_err = config.get(slot(cur_key(), "emit_error"))
@@ -3202,19 +3227,19 @@ canonical_check_tape(tape_path: string) -> string {
 // different bytes than when the tape was first recorded — so either
 // the tape needs updating, the upstream has changed semantically, or
 // the client's wire format drifted).
-flush_or_check(tape_path: string) -> string {
+flush_or_check_k(key: string, tape_path: string) -> string {
     actual_path = "${tape_path}.actual"
 
     // First-record case: no on-disk tape yet → just flush.
     existing, eerr = fs.read(tape_path)
     if eerr != "" {
-        return flush(tape_path)
+        return flush_k(key, tape_path)
     }
 
     // On-disk tape present. Build the in-memory tape and write to
     // the .actual sibling for inspection.
-    blob = emit_tape()
-    emit_err = config.get(slot(cur_key(), "emit_error"))
+    blob = emit_tape_k(key)
+    emit_err = config.get(slot(key, "emit_error"))
     if emit_err != "" { return emit_err }
     werr = fs.write(actual_path, blob)
     if werr != "" { return werr }
@@ -3231,15 +3256,18 @@ flush_or_check(tape_path: string) -> string {
     actual_len   = string.length(blob)
     return "tape mismatch: expected=${expected_len} bytes, actual=${actual_len} bytes; .actual sibling left at ${actual_path}"
 }
+flush_or_check(tape_path: string) -> string {
+    return flush_or_check_k(cur_key(), tape_path)
+}
 
 // Servirtium-style re-record check. Unlike flush_or_check(), this
 // writes the newly recorded tape to `tape_path` even when bytes differ,
 // so a normal git diff shows the drift. The non-empty return value lets
 // the test fail loudly after preserving the new recording.
-flush_and_fail_if_changed(tape_path: string) -> string {
+flush_and_fail_if_changed_k(key: string, tape_path: string) -> string {
     existing, eerr = fs.read(tape_path)
-    blob = emit_tape()
-    emit_err = config.get(slot(cur_key(), "emit_error"))
+    blob = emit_tape_k(key)
+    emit_err = config.get(slot(key, "emit_error"))
     if emit_err != "" { return emit_err }
 
     derr = ensure_parent_dir(tape_path)
@@ -3258,6 +3286,9 @@ flush_and_fail_if_changed(tape_path: string) -> string {
     expected_len = string.length(existing)
     actual_len   = string.length(blob)
     return "tape mismatch: expected=${expected_len} bytes, actual=${actual_len} bytes; updated tape written to ${tape_path}"
+}
+flush_and_fail_if_changed(tape_path: string) -> string {
+    return flush_and_fail_if_changed_k(cur_key(), tape_path)
 }
 
 // ---- Mutation mode (Servirtium roadmap step 8) -----------------------
@@ -3808,9 +3839,9 @@ redact_header_text(s: string, name: string, replacement: string) -> string {
     }
     return out
 }
-apply_redactions_for(s: string, field: int) -> string {
+apply_redactions_for_k(key: string, s: string, field: int) -> string {
     out = s
-    l = redactions()
+    l = redactions_k(key)
     i = 0
     while i < list_size(l) {
         r = list_get_raw(l, i) as *Redaction
@@ -3821,7 +3852,7 @@ apply_redactions_for(s: string, field: int) -> string {
             if r.kind == 3 && string.length(out) > 0 {
                 tree, err = json.parse(out)
                 if err != "" || tree == null {
-                    config.put(slot(cur_key(), "emit_error"), "JSON field redaction requires valid JSON")
+                    config.put(slot(key, "emit_error"), "JSON field redaction requires valid JSON")
                     return ""
                 }
                 json.json_free(tree)
@@ -3831,6 +3862,9 @@ apply_redactions_for(s: string, field: int) -> string {
         i = i + 1
     }
     return out
+}
+apply_redactions_for(s: string, field: int) -> string {
+    return apply_redactions_for_k(cur_key(), s, field)
 }
 
 // Apply every registered playback unredaction whose field matches
@@ -3902,7 +3936,7 @@ header_removed_for(field: int, name: string) -> int {
     return 0
 }
 
-remove_headers_for(headers: string, field: int) -> string {
+remove_headers_for_k(key: string, headers: string, field: int) -> string {
     if string.length(headers) == 0 { return headers }
     out = string.copy("")
     cursor = 0
@@ -3920,7 +3954,7 @@ remove_headers_for(headers: string, field: int) -> string {
         colon_idx = string.index_of(line, ":")
         if colon_idx > 0 {
             name = string.substring(line, 0, colon_idx)
-            if header_removed_for(field, name) == 1 { keep = 0 }
+            if header_removed_for_field_k(key, field, name) == 1 { keep = 0 }
         }
         if keep == 1 && string.length(line) > 0 {
             out = string_concat(out, line)
@@ -3930,6 +3964,9 @@ remove_headers_for(headers: string, field: int) -> string {
         cursor = nl_idx + 1
     }
     return out
+}
+remove_headers_for(headers: string, field: int) -> string {
+    return remove_headers_for_k(cur_key(), headers, field)
 }
 
 // Emit one fenced or indented code block. Body may be empty —
@@ -3987,52 +4024,56 @@ emit_header_block(headers: string) -> string {
 // rather than "${out}..." interpolation. Interpolation recycles a
 // backing buffer in v0.90 and rebuild-in-loop overwrites earlier
 // content. string_concat returns a fresh AetherString each call.
-emit_one_interaction(i: int) -> string {
-    // Copy every accessor result. The accessors return `const char*`
-    // that points into the C-side g_tape — without copying, AetherString
-    // machinery would borrow the pointer and could see it change
-    // underfoot when later string ops touch the same slot.
-    method   = string.copy(vcr_get_method(i))
-    path     = string.copy(vcr_get_path(i))
-    status   = vcr_get_status(i)
-    ctype    = string.copy(vcr_get_content_type(i))
-    body     = string.copy(vcr_get_body(i))
-    req_h    = string.copy(vcr_get_req_headers(i))
-    req_b    = string.copy(vcr_get_req_body(i))
-    resp_h   = string.copy(vcr_get_resp_headers(i))
+emit_one_interaction_k(key: string, i: int) -> string {
+    // Read fields from THIS handle's tape via the keyed struct accessor — no
+    // ambient cur_key(), so a concurrent flush on another handle cannot change
+    // which tape we serialize. Copy each string: the struct's strings may be
+    // rewritten by the redaction/normalization steps below.
+    e = tape_get_k(key, i)
+    method   = string.copy(e.method)
+    path     = string.copy(e.path)
+    status   = e.status
+    ctype    = string.copy(e.content_type)
+    body     = string.copy(e.body)
+    req_h    = string.copy(e.req_headers)
+    req_b    = string.copy(e.req_body)
+    resp_h   = string.copy(e.resp_headers)
+    note_present = e.has_note
+    note_title_v = string.copy(e.note_title)
+    note_body_v  = string.copy(e.note_body)
 
-    path_out   = apply_redactions_for(path, FIELD_PATH)
-    body_out   = apply_redactions_for(body, FIELD_RESPONSE_BODY)
-    req_h_out  = apply_redactions_for(req_h, FIELD_REQUEST_HEADERS)
-    req_b_out  = apply_redactions_for(req_b, FIELD_REQUEST_BODY)
-    resp_h_out = apply_redactions_for(resp_h, FIELD_RESPONSE_HEADERS)
-    req_h_out  = remove_headers_for(req_h_out, FIELD_REQUEST_HEADERS)
-    resp_h_out = remove_headers_for(resp_h_out, FIELD_RESPONSE_HEADERS)
+    path_out   = apply_redactions_for_k(key, path, FIELD_PATH)
+    body_out   = apply_redactions_for_k(key, body, FIELD_RESPONSE_BODY)
+    req_h_out  = apply_redactions_for_k(key, req_h, FIELD_REQUEST_HEADERS)
+    req_b_out  = apply_redactions_for_k(key, req_b, FIELD_REQUEST_BODY)
+    resp_h_out = apply_redactions_for_k(key, resp_h, FIELD_RESPONSE_HEADERS)
+    req_h_out  = remove_headers_for_k(key, req_h_out, FIELD_REQUEST_HEADERS)
+    resp_h_out = remove_headers_for_k(key, resp_h_out, FIELD_RESPONSE_HEADERS)
 
-    path_out = secret_emission_field(i, FIELD_PATH, path_out)
-    req_h_out = secret_emission_field(i, FIELD_REQUEST_HEADERS, req_h_out)
-    req_b_out = secret_emission_field(i, FIELD_REQUEST_BODY, req_b_out)
-    resp_h_out = secret_emission_field(i, FIELD_RESPONSE_HEADERS, resp_h_out)
-    body_out = secret_emission_field(i, FIELD_RESPONSE_BODY, body_out)
+    path_out = secret_emission_field_k(key, i, FIELD_PATH, path_out)
+    req_h_out = secret_emission_field_k(key, i, FIELD_REQUEST_HEADERS, req_h_out)
+    req_b_out = secret_emission_field_k(key, i, FIELD_REQUEST_BODY, req_b_out)
+    resp_h_out = secret_emission_field_k(key, i, FIELD_RESPONSE_HEADERS, resp_h_out)
+    body_out = secret_emission_field_k(key, i, FIELD_RESPONSE_BODY, body_out)
 
     // Whole-tape normalization runs last, on the post-redaction text, so the
     // value->token table (built across the whole tape in emit_tape) collapses
     // every recurrence of a server-minted value to one stable token.
-    path_out   = apply_normalizations(path_out)
-    body_out   = apply_normalizations(body_out)
-    req_h_out  = apply_normalizations(req_h_out)
-    req_b_out  = apply_normalizations(req_b_out)
-    resp_h_out = apply_normalizations(resp_h_out)
+    path_out   = apply_normalizations_k(key, path_out)
+    body_out   = apply_normalizations_k(key, body_out)
+    req_h_out  = apply_normalizations_k(key, req_h_out)
+    req_b_out  = apply_normalizations_k(key, req_b_out)
+    resp_h_out = apply_normalizations_k(key, resp_h_out)
 
     heading = "## Interaction ${i}: ${method} ${path_out}\n\n"
-    if vcr_get_emphasize_http_verbs() == 1 {
+    if vcr_get_emphasize_http_verbs_k(key) == 1 {
         heading = "## Interaction ${i}: *${method}* ${path_out}\n\n"
     }
     out = string.copy(heading)
 
-    if vcr_get_note_present(i) == 1 {
-        title = vcr_get_note_title(i)
-        nbody = vcr_get_note_body(i)
+    if note_present == 1 {
+        title = note_title_v
+        nbody = note_body_v
         note_head = "## [Note] ${title}:\n\n"
         out = string_concat(out, note_head)
         if string.length(nbody) > 0 {
@@ -4077,30 +4118,40 @@ emit_one_interaction(i: int) -> string {
     return out
 }
 
+// Bare (no-handle) interaction emitter, for the record()/flush() convenience
+// API that operates on cur_key()'s tape.
+emit_one_interaction(i: int) -> string {
+    return emit_one_interaction_k(cur_key(), i)
+}
+
 // Emit the entire in-memory tape as one big markdown blob.
 // Equivalent to the old C emit_tape_to_fp(fp), just delivering a
-// string instead of writing to FILE*.
-emit_tape() -> string {
-    config.put(slot(cur_key(), "emit_error"), "")
-    secret_state = config.get(slot(cur_key(), "secret_state"))
-    if cfg_get_int(slot(cur_key(), "secret_materialized"), 0) != 0 {
-        config.put(slot(cur_key(), "emit_error"), "resolved playback secrets cannot be emitted")
+// string instead of writing to FILE*. Keyed so concurrent flushes on
+// different handles each serialize THEIR OWN tape.
+emit_tape_k(key: string) -> string {
+    config.put(slot(key, "emit_error"), "")
+    secret_state = config.get(slot(key, "secret_state"))
+    if cfg_get_int(slot(key, "secret_materialized"), 0) != 0 {
+        config.put(slot(key, "emit_error"), "resolved playback secrets cannot be emitted")
         return ""
     }
     if secret_state == "pending" || secret_state == "failed" {
-        config.put(slot(cur_key(), "emit_error"), "secret callback staging did not complete; tape was not written")
+        config.put(slot(key, "emit_error"), "secret callback staging did not complete; tape was not written")
         return ""
     }
-    build_normalization_map()
-    n = vcr_get_tape_count()
+    build_normalization_map_k(key)
+    n = list_size(tape_list_k(key))
     out = string.copy("")
     i = 0
     while i < n {
-        chunk = emit_one_interaction(i)
+        chunk = emit_one_interaction_k(key, i)
         out = string_concat(out, chunk)
         i = i + 1
     }
     return out
+}
+emit_tape() -> string {
+    return emit_tape_k(cur_key())
 }
 
 // ---- Aether-side tape parser ---------------------------------------
@@ -4440,7 +4491,7 @@ normalize_recorded_headers(raw: string) -> string {
 // and ending at the start of the next "## Interaction " (or end of file).
 // On success, calls vcr_aether_append_interaction. Returns "" on
 // success, error string otherwise.
-parse_one_interaction(chunk: string) -> string {
+parse_one_interaction(key: string, chunk: string) -> string {
     chunk_len = string.length(chunk)
     nl_idx = string.index_of(chunk, "\n")
     if nl_idx < 0 { return "interaction missing header line" }
@@ -4528,15 +4579,14 @@ parse_one_interaction(chunk: string) -> string {
     if status == 0 { return "interaction has no Response body section" }
 
     // Append. note_title="" → setter doesn't stage a note.
-    ok = vcr_aether_append_interaction(method, path, status, ctype, body, req_h, req_b, "", "")
+    ok = vcr_aether_append_interaction_k(key, method, path, status, ctype, body, req_h, req_b, "", "")
     if ok == 0 { return "OOM appending parsed interaction" }
     // Attach response headers to the just-appended interaction.
-    // vcr_get_tape_count() returns the count after the append, so
-    // the new entry's index is count - 1. Empty resp_h → setter
-    // is still safe (writes "" which the dispatcher treats as no-op).
+    // tape count after the append, so the new entry's index is count - 1.
+    // Empty resp_h → setter is still safe (writes "" = no-op).
     if string.length(resp_h) > 0 {
-        idx = vcr_get_tape_count() - 1
-        vcr_aether_set_resp_headers(idx, resp_h)
+        idx = list_size(tape_list_k(key)) - 1
+        set_resp_headers_k(key, idx, resp_h)
     }
     return ""
 }
@@ -4547,17 +4597,17 @@ parse_one_interaction(chunk: string) -> string {
 // Parse a Servirtium markdown string into the in-memory tape.
 // Used by both load (filesystem) and load_url (HTTP) to avoid duplication.
 // Label is for error messages (e.g., "http-sourced" or a file path).
-parse_tape_text(label: string, contents: string) -> string {
-    vcr_aether_clear_tape()
-    return parse_tape_text_append(label, contents)
+parse_tape_text(key: string, label: string, contents: string) -> string {
+    vcr_aether_clear_tape_k(key)
+    return parse_tape_text_append(key, label, contents)
 }
 
 // Append-parse: like parse_tape_text but WITHOUT clearing the in-memory
 // tape first, so several markdown files concatenate into one interaction
 // list (the multi-tape loader, load_append_h). Ordered playback then
 // treats the result as one long script; MatchMultiple as one union store.
-parse_tape_text_append(label: string, contents: string) -> string {
-    start_count = vcr_get_tape_count()
+parse_tape_text_append(key: string, label: string, contents: string) -> string {
+    start_count = list_size(tape_list_k(key))
 
     delim = "\n## Interaction "
     cursor = 0
@@ -4579,25 +4629,25 @@ parse_tape_text_append(label: string, contents: string) -> string {
         chunk_end = n
         if next_idx >= 0 { chunk_end = next_idx }
         chunk = string.substring(contents, cursor, chunk_end)
-        err = parse_one_interaction(chunk)
+        err = parse_one_interaction(key, chunk)
         if err != "" {
-            vcr_aether_set_load_err(err)
+            set_load_err_k(key, err)
             return err
         }
         if next_idx < 0 { break }
         cursor = next_idx + string.length(delim)
     }
 
-    if vcr_get_tape_count() == start_count {
+    if list_size(tape_list_k(key)) == start_count {
         return "tape (${label}) parsed but yielded zero interactions"
     }
     return ""
 }
 
-parse_tape_file(tape_path: string) -> string {
+parse_tape_file(key: string, tape_path: string) -> string {
     contents, rerr = fs.read(tape_path)
     if rerr != "" { return rerr }
-    return parse_tape_text(tape_path, contents)
+    return parse_tape_text(key, tape_path, contents)
 }
 
 // Append another tape's interactions to an already-loaded server (the
@@ -4606,10 +4656,10 @@ parse_tape_file(tape_path: string) -> string {
 // Returns "" on success, else the parse/read error. The playback cursor
 // and all config are untouched.
 load_append_h(server: ptr, tape_path: string) -> string {
-    set_cur_key(key_for(server))
+    key = key_for(server)
     contents, rerr = fs.read(tape_path)
     if rerr != "" { return rerr }
-    return parse_tape_text_append(tape_path, contents)
+    return parse_tape_text_append(key, tape_path, contents)
 }
 
 // Valid UTF-8 is kept intact; invalid binary bytes never reach JSON strings.
@@ -5268,10 +5318,12 @@ secret_finish_h(h: ptr) -> string {
     return ""
 }
 secret_abort_h(h: ptr) { cfg_set_str(slot(key_for(h), "secret_state"), "failed") }
-secret_emission_field(index: int, field: int, source: string) -> string {
-    key = cur_key()
+secret_emission_field_k(key: string, index: int, field: int, source: string) -> string {
     if cfg_get_int(slot(key, "secret_resolving"), 0) == 0 && config.get(slot(key, "secret_state")) == "ready" { return secret_patch_k(key, index, field, source) }
     return source
+}
+secret_emission_field(index: int, field: int, source: string) -> string {
+    return secret_emission_field_k(cur_key(), index, field, source)
 }
 
 secret_check_ready_h(h: ptr) -> string {
