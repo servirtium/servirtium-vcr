@@ -136,6 +136,13 @@ module Servirtium
       [:clear_untaped,         'aether_vcr_embed_clear_untaped',         VOID, [VOIDP]],
       [:clear_format_options,  'aether_vcr_embed_clear_format_options',  VOID, [VOIDP]],
 
+      [:set_tls,             'aether_vcr_embed_set_tls',             VOIDP, [VOIDP, VOIDP, VOIDP]],
+      [:last_tls_protocol,   'aether_vcr_embed_last_tls_protocol',   VOIDP, [VOIDP]],
+      [:substitute,          'aether_vcr_embed_substitute',          VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
+      [:clear_substitutions, 'aether_vcr_embed_clear_substitutions', VOID,  [VOIDP]],
+      [:assert_all_consumed, 'aether_vcr_embed_assert_all_consumed', VOIDP, [VOIDP]],
+      [:assert_all_redactions_used, 'aether_vcr_embed_assert_all_redactions_used', VOIDP, [VOIDP]],
+
       # ---- string ownership ----
       [:free_string, 'aether_vcr_embed_free_string', VOID, [VOIDP]]
     ].freeze

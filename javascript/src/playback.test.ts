@@ -1,5 +1,5 @@
 import * as path from 'path'
-import { Vcr, VcrOutcome } from './index'
+import { Vcr, VcrField, VcrOutcome } from './index'
 
 const tape = (name: string) => path.join(__dirname, '..', 'tapes', name)
 
@@ -54,4 +54,21 @@ it('retains replay diffs and distinguishes observers from consuming reads', () =
     server.assertNoMismatches()
     expect(server.diagnosticsJson()).toBe('[]')
   } finally { server.close() }
+})
+
+it('substitutes a custom placeholder and tracks full replay', async () => {
+  const vcr = Vcr.playback(tape('base_url.md'))
+    .substitute(VcrField.ResponseBody, '@@HOST@@', 'http://sub.example')
+    .port(0)
+    .start()
+  try {
+    expect(() => vcr.assertAllConsumed()).toThrow()
+    const res = await fetch(`${vcr.baseUrl}/where`)
+    expect((await res.text()).trimEnd()).toBe('at http://sub.example/x')
+    vcr.assertAllConsumed()
+    vcr.assertAllRedactionsUsed()
+    expect(vcr.lastTlsProtocol).toBe('')
+  } finally {
+    vcr.close()
+  }
 })

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	servirtium "github.com/servirtium/servirtium-go"
@@ -183,5 +184,33 @@ func TestPlaybackUntapedReturns404WithoutConsumingTape(t *testing.T) {
 	}
 	if body != "ok-body" {
 		t.Fatalf("expected %q from tape, got %q", "ok-body", body)
+	}
+}
+
+func TestSubstituteFillsPlaceholderAndAssertAllConsumed(t *testing.T) {
+	srv, err := servirtium.Playback(tapePath("base_url.md")).
+		Substitute(servirtium.ResponseBody, "@@HOST@@", "http://sub.example").
+		Port(0).
+		Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	if srv.AssertAllConsumed() == nil {
+		t.Fatal("expected AssertAllConsumed to fail before any replay")
+	}
+	_, body := get(t, srv.BaseURL(), "/where")
+	if strings.TrimRight(body, "\n") != "at http://sub.example/x" {
+		t.Fatalf("unexpected body %q", body)
+	}
+	if err := srv.AssertAllConsumed(); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.AssertAllRedactionsUsed(); err != nil {
+		t.Fatal(err)
+	}
+	if p := srv.LastTLSProtocol(); p != "" {
+		t.Fatalf("expected no TLS, got %q", p)
 	}
 }

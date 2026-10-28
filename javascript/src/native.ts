@@ -245,6 +245,20 @@ export const clearUntaped = lazy(
 
 export const clearFormatOptions = lazy('void aether_vcr_embed_clear_format_options(void* server)')
 
+export const setTls = lazy('void* aether_vcr_embed_set_tls(void* server, const char* cert_path, const char* key_path)')
+
+export const lastTlsProtocol = lazy('void* aether_vcr_embed_last_tls_protocol(void* server)')
+
+export const substitute = lazy(
+  'void* aether_vcr_embed_substitute(void* server, int field, const char* pattern, const char* replacement)',
+)
+
+export const clearSubstitutions = lazy('void aether_vcr_embed_clear_substitutions(void* server)')
+
+export const assertAllConsumed = lazy('void* aether_vcr_embed_assert_all_consumed(void* server)')
+
+export const assertAllRedactionsUsed = lazy('void* aether_vcr_embed_assert_all_redactions_used(void* server)')
+
 // ---- string ownership -----------------------------------------------------
 
 const freeString = lazy('void aether_vcr_embed_free_string(void* s)')

@@ -232,3 +232,30 @@ test "two playback servers run at once (one server per port)" {
         try std.testing.expectEqual(Outcome.ok, b.lastKind());
     }
 }
+
+test "playback substitute fills a placeholder and assertAllConsumed tracks replay" {
+    const allocator = std.testing.allocator;
+
+    var srv = try servirtium.Playback.init(allocator, "tapes/base_url.md")
+        .substitute(Field.response_body, "@@HOST@@", "http://sub.example")
+        .port(0)
+        .start();
+    defer srv.close() catch {};
+
+    try std.testing.expectError(servirtium.Error.VcrError, srv.assertAllConsumed());
+
+    const base = try srv.baseUrl();
+    defer allocator.free(base);
+    const url = try std.fmt.allocPrint(allocator, "{s}/where", .{base});
+    defer allocator.free(url);
+
+    var res = try testutil.curl(allocator, std.testing.io, .{ .url = url });
+    defer res.deinit(allocator);
+    try std.testing.expectEqualStrings("at http://sub.example/x", std.mem.trimEnd(u8, res.body, "\n"));
+
+    try srv.assertAllConsumed();
+    try srv.assertAllRedactionsUsed();
+    const proto = try srv.lastTlsProtocol();
+    defer allocator.free(proto);
+    try std.testing.expectEqualStrings("", proto);
+}

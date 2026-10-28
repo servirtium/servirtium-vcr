@@ -158,3 +158,19 @@ fn retained_replay_diagnostics_support_nonconsuming_observers() {
     server.assert_no_mismatches().unwrap();
     assert_eq!(server.diagnostics_json(false), "[]");
 }
+
+#[test]
+fn substitute_fills_base_url_and_assert_all_consumed_tracks_replay() {
+    let vcr = Vcr::playback(tape_path("base_url.md"))
+        .substitute(Field::ResponseBody, "@@HOST@@", "http://sub.example")
+        .port(0)
+        .start()
+        .unwrap();
+
+    assert!(vcr.assert_all_consumed().is_err(), "nothing replayed yet");
+    let body = ureq::get(&format!("{}/where", vcr.base_url())).call().unwrap().into_string().unwrap();
+    assert_eq!("at http://sub.example/x", body.trim_end());
+    vcr.assert_all_consumed().expect("every interaction replayed");
+    vcr.assert_all_redactions_used().expect("substitution matched");
+    assert_eq!("", vcr.last_tls_protocol());
+}

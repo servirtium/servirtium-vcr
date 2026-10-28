@@ -55,4 +55,21 @@ void main() {
       vcr.close();
     }
   });
+
+  test('substitute fills a custom placeholder and assertAllConsumed tracks replay', () async {
+    final vcr = Vcr.playback(_tape('base_url.md'))
+        .substitute(VcrField.responseBody, '@@HOST@@', 'http://sub.example')
+        .port(0)
+        .start();
+    try {
+      expect(() => vcr.assertAllConsumed(), throwsA(isA<VcrException>()));
+      final (_, body) = await httpGet('${vcr.baseUrl}/where');
+      expect(body.trimRight(), 'at http://sub.example/x');
+      vcr.assertAllConsumed();
+      vcr.assertAllRedactionsUsed();
+      expect(vcr.lastTlsProtocol, isEmpty);
+    } finally {
+      vcr.close();
+    }
+  });
 }

@@ -2,6 +2,7 @@
 -- body, the clean 'Ok' outcome, and the tape length.
 module PlaybackSpec (spec) where
 
+import Control.Exception (try)
 import Test.Hspec
 import Servirtium.Vcr
 import TestSupport (httpGet, httpGetStatus)
@@ -30,3 +31,16 @@ spec = describe "playback" $ do
       body `shouldBe` "ok-body"
       k <- lastKind vcr
       k `shouldBe` Ok
+
+  it "substitutes a placeholder and tracks assertAllConsumed" $
+    withPlayback (playbackOptions "test/tapes/base_url.md")
+      { pbSubstitutions = [(ResponseBody, "@@HOST@@", "http://sub.example")] } $ \vcr -> do
+      before <- try (assertAllConsumed vcr) :: IO (Either VcrException ())
+      before `shouldSatisfy` either (const True) (const False)
+      url <- baseUrl vcr
+      body <- httpGet (url ++ "/where")
+      body `shouldBe` "at http://sub.example/x"
+      assertAllConsumed vcr
+      assertAllRedactionsUsed vcr
+      proto <- lastTlsProtocol vcr
+      proto `shouldBe` ""

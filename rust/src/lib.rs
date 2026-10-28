@@ -162,6 +162,7 @@ impl Vcr {
             common: Common::new(tape_path.into()),
             secret_resolver: None,
             unredactions: Vec::new(),
+            substitutions: Vec::new(),
             strict_headers: false,
             match_json_body: false,
             match_multiple: false,
@@ -201,6 +202,7 @@ struct Common {
     header_removals: Vec<(Field, String)>,
     static_content: Vec<(String, String)>,
     untaped: Vec<String>,
+    tls: Option<(String, String)>,
 }
 
 impl Common {
@@ -214,6 +216,7 @@ impl Common {
             header_removals: Vec::new(),
             static_content: Vec::new(),
             untaped: Vec::new(),
+            tls: None,
         }
     }
 
@@ -229,6 +232,9 @@ impl Common {
         }
         for path in &self.untaped {
             check(n, unsafe { (n.untaped)(h, cstr(path)?.as_ptr()) }, "untaped")?;
+        }
+        if let Some((cert, key)) = &self.tls {
+            check(n, unsafe { (n.set_tls)(h, cstr(cert)?.as_ptr(), cstr(key)?.as_ptr()) }, "set_tls")?;
         }
         Ok(())
     }
@@ -249,6 +255,7 @@ pub struct PlaybackBuilder {
     secret_resolver: Option<SecretResolver>,
     common: Common,
     unredactions: Vec<(Field, String, String)>,
+    substitutions: Vec<(Field, String, String)>,
     strict_headers: bool,
     match_json_body: bool,
     match_multiple: bool,
@@ -327,10 +334,29 @@ impl PlaybackBuilder {
             .push((field, pattern.into(), replacement.into()));
         self
     }
+    /// Rewrite the replayed response at playback time: regex `pattern` ->
+    /// `replacement` in the response body (`Field::ResponseBody`) or headers
+    /// (`Field::ResponseHeaders`), e.g. fill a custom placeholder (`{{baseUrl}}` is already expanded by core).
+    pub fn substitute(
+        mut self,
+        field: Field,
+        pattern: impl Into<String>,
+        replacement: impl Into<String>,
+    ) -> Self {
+        self.substitutions
+            .push((field, pattern.into(), replacement.into()));
+        self
+    }
     /// Serve a path prefix from an on-disk directory instead of the tape.
     /// Works in both playback and record mode.
     pub fn static_content(mut self, mount_path: impl Into<String>, fs_dir: impl Into<String>) -> Self {
         self.common.static_content.push((mount_path.into(), fs_dir.into()));
+        self
+    }
+    /// Terminate TLS in the VCR and serve `https://` using the PEM cert and
+    /// key at these paths (ECDSA P-256 key). Applied at `start()`.
+    pub fn tls(mut self, cert_path: impl Into<String>, key_path: impl Into<String>) -> Self {
+        self.common.tls = Some((cert_path.into(), key_path.into()));
         self
     }
     /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers
@@ -386,6 +412,15 @@ impl PlaybackBuilder {
                     (n.unredact)(handle, *field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
                 },
                 "unredact",
+            )?;
+        }
+        for (field, pattern, replacement) in &self.substitutions {
+            check(
+                n,
+                unsafe {
+                    (n.substitute)(handle, *field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
+                },
+                "substitute",
             )?;
         }
 
@@ -452,6 +487,12 @@ impl RecordBuilder {
     /// same-origin from the VCR (no CORS preflights).
     pub fn static_content(mut self, mount_path: impl Into<String>, fs_dir: impl Into<String>) -> Self {
         self.common.static_content.push((mount_path.into(), fs_dir.into()));
+        self
+    }
+    /// Terminate TLS in the VCR and serve `https://` using the PEM cert and
+    /// key at these paths (ECDSA P-256 key). Applied at `start()`.
+    pub fn tls(mut self, cert_path: impl Into<String>, key_path: impl Into<String>) -> Self {
+        self.common.tls = Some((cert_path.into(), key_path.into()));
         self
     }
     /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers
@@ -719,6 +760,22 @@ impl VcrServer {
     }
     pub fn assert_no_mismatches(&self) -> Result<(), VcrError> {
         check(self.n, unsafe { (self.n.assert_no_mismatches)(self.handle) }, "assert_no_mismatches")
+    }
+    /// TLS protocol negotiated by the listener (`"TLSv1.3"`), or `""` when TLS is off.
+    pub fn last_tls_protocol(&self) -> String {
+        take_string(self.n, unsafe { (self.n.last_tls_protocol)(self.handle) })
+    }
+    /// Playback: error unless every recorded interaction was replayed.
+    pub fn assert_all_consumed(&self) -> Result<(), VcrError> {
+        check(self.n, unsafe { (self.n.assert_all_consumed)(self.handle) }, "assert_all_consumed")
+    }
+    /// Error unless every redaction / unredaction / substitution rule matched at least once.
+    pub fn assert_all_redactions_used(&self) -> Result<(), VcrError> {
+        check(self.n, unsafe { (self.n.assert_all_redactions_used)(self.handle) }, "assert_all_redactions_used")
+    }
+    /// Drop all registered substitutions on the running server.
+    pub fn clear_substitutions(&self) {
+        unsafe { (self.n.clear_substitutions)(self.handle) };
     }
     pub fn test_context(&self, name: &str, source_file: &str, source_line: i32) -> Result<(), VcrError> {
         unsafe { (self.n.test_context)(self.handle, cstr(name)?.as_ptr(), cstr(source_file)?.as_ptr(), source_line) };

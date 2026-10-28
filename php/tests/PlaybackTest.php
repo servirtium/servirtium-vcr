@@ -6,6 +6,8 @@ namespace Servirtium\Tests;
 
 use PHPUnit\Framework\TestCase;
 use Servirtium\Vcr;
+use Servirtium\VcrException;
+use Servirtium\VcrField;
 use Servirtium\VcrOutcome;
 
 /**
@@ -75,6 +77,28 @@ final class PlaybackTest extends TestCase
             $this->httpGet($vcr->baseUrl() . '/nope');
             $this->assertNotSame(VcrOutcome::Ok, $vcr->lastKind());
             $this->assertNotSame('', $vcr->lastError(), 'expected a mismatch diagnostic');
+        } finally {
+            $vcr->stop();
+        }
+    }
+
+    public function testSubstituteFillsPlaceholderAndAssertAllConsumedTracksReplay(): void
+    {
+        $vcr = Vcr::playback($this->tape('base_url.md'))
+            ->substitute(VcrField::ResponseBody, '@@HOST@@', 'http://sub.example')
+            ->port(0)->start();
+        try {
+            try {
+                $vcr->assertAllConsumed();
+                $this->fail('expected unconsumed interaction error');
+            } catch (VcrException $e) {
+                $this->addToAssertionCount(1);
+            }
+            [, $body] = $this->httpGet($vcr->baseUrl() . '/where');
+            $this->assertSame('at http://sub.example/x', rtrim($body));
+            $vcr->assertAllConsumed();
+            $vcr->assertAllRedactionsUsed();
+            $this->assertSame('', $vcr->lastTlsProtocol());
         } finally {
             $vcr->stop();
         }

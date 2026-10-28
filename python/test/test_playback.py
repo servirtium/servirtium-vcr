@@ -49,3 +49,18 @@ def test_retained_diagnostics_and_explicit_consumption():
         server.test_context("next test", "next.test", 5)
         server.assert_no_mismatches()
         assert server.diagnostics_json() == "[]"
+
+
+def test_substitute_fills_placeholder_and_assert_all_consumed_tracks_replay():
+    import pytest
+    b = servirtium.playback(tape("base_url.md")).substitute(
+        servirtium.Field.RESPONSE_BODY, "@@HOST@@", "http://sub.example"
+    )
+    with b.port(0).start() as vcr:
+        with pytest.raises(servirtium.VcrError):
+            vcr.assert_all_consumed()
+        status, body = http_get(vcr.base_url, "/where")
+        assert body.rstrip() == "at http://sub.example/x"
+        vcr.assert_all_consumed()
+        vcr.assert_all_redactions_used()
+        assert vcr.last_tls_protocol == ""

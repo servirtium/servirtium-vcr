@@ -156,6 +156,7 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
   final List<(VcrField, String)> _headerRemovals = [];
   final List<(String, String)> _staticContent = [];
   final List<String> _untaped = [];
+  (String, String)? _tls;
 
   T get _self;
 
@@ -209,6 +210,12 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     return _self;
   }
 
+  /// Serve `https://` using this PEM cert and key (ECDSA P-256 key). Applied at start.
+  T tls(String certPath, String keyPath) {
+    _tls = (certPath, keyPath);
+    return _self;
+  }
+
   /// Apply accumulated config to the opened handle, before serving starts.
   /// Subclasses extend this.
   void _applyConfig(Pointer<Void> handle) {
@@ -222,6 +229,10 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     for (final path in _untaped) {
       withUtf8(path, (p) => _check(Native.untaped(handle, p), 'untaped'));
     }
+    final tls = _tls;
+    if (tls != null) {
+      withUtf8(tls.$1, (c) => withUtf8(tls.$2, (k) => _check(Native.setTls(handle, c, k), 'tls')));
+    }
   }
 }
 
@@ -233,6 +244,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   PlaybackBuilder._(super.tapePath);
 
   final List<(VcrField, String, String)> _unredactions = [];
+  final List<(VcrField, String, String)> _substitutions = [];
   bool _strictHeaders = false;
   bool _matchJsonBody = false;
   bool _matchMultiple = false;
@@ -278,6 +290,13 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     return this;
   }
 
+  /// Rewrite the replayed response: regex [pattern] -> [replacement] in the
+  /// response body or headers (`{{baseUrl}}` is already expanded by core).
+  PlaybackBuilder substitute(VcrField field, String pattern, String replacement) {
+    _substitutions.add((field, pattern, replacement));
+    return this;
+  }
+
   @override
   void _applyConfig(Pointer<Void> handle) {
     super._applyConfig(handle);
@@ -290,6 +309,10 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     for (final (field, pattern, replacement) in _unredactions) {
       withUtf8(pattern, (p) => withUtf8(replacement,
           (r) => _check(Native.unredact(handle, field.value, p, r), 'unredact')));
+    }
+    for (final (field, pattern, replacement) in _substitutions) {
+      withUtf8(pattern, (p) => withUtf8(replacement,
+          (r) => _check(Native.substitute(handle, field.value, p, r), 'substitute')));
     }
   }
 
@@ -501,6 +524,20 @@ class VcrServer {
   String readLastError({bool consume = true}) => takeString(Native.lastErrorEx(_requireHandle, consume ? 1 : 0));
   String diagnosticsJson({bool consume = false}) => takeString(Native.diagnosticsJson(_requireHandle, consume ? 1 : 0));
   void assertNoMismatches() => _check(Native.assertNoMismatches(_requireHandle), 'assertNoMismatches');
+
+  /// TLS protocol negotiated by the listener (`TLSv1.3`), or '' when TLS is off.
+  String get lastTlsProtocol => takeString(Native.lastTlsProtocol(_requireHandle));
+
+  /// Playback: throws [VcrException] unless every recorded interaction was replayed.
+  void assertAllConsumed() => _check(Native.assertAllConsumed(_requireHandle), 'assertAllConsumed');
+
+  /// Throws unless every redaction / unredaction / substitution rule matched at least once.
+  void assertAllRedactionsUsed() =>
+      _check(Native.assertAllRedactionsUsed(_requireHandle), 'assertAllRedactionsUsed');
+
+  /// Drop all registered substitutions on the running server.
+  void clearSubstitutions() => Native.clearSubstitutions(_requireHandle);
+
   void testContext(String name, {String sourceFile = '', int sourceLine = 0}) {
     withUtf8(name, (n) => withUtf8(sourceFile, (f) => Native.testContext(_requireHandle, n, f, sourceLine)));
   }

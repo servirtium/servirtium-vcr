@@ -27,6 +27,8 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     private final List<HeaderRemoval> headerRemovals = new ArrayList<>();
     private final List<StaticMount> staticContent = new ArrayList<>();
     private final List<String> untaped = new ArrayList<>();
+    private String tlsCert;
+    private String tlsKey;
 
     VcrBuilderBase(String tapePath) {
         this.tapePath = tapePath;
@@ -92,6 +94,13 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
         return self();
     }
 
+    /** Serve over HTTPS using this PEM certificate and key (ECDSA P-256). Playback and record. */
+    public S tls(String certPath, String keyPath) {
+        this.tlsCert = certPath;
+        this.tlsKey = keyPath;
+        return self();
+    }
+
     /**
      * Apply this builder's accumulated config to the opened handle, before
      * serving starts. Subclasses extend this.
@@ -115,6 +124,15 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
                 check(r, "staticContent");
             } catch (Throwable t) {
                 throw rethrow("staticContent", t);
+            }
+        }
+        if (tlsCert != null) {
+            try {
+                MemorySegment r = (MemorySegment) NativeMethods.SET_TLS.invokeExact(
+                        handle, NativeMethods.cString(arena, tlsCert), NativeMethods.cString(arena, tlsKey));
+                check(r, "tls");
+            } catch (Throwable t) {
+                throw rethrow("tls", t);
             }
         }
         for (String p : untaped) {

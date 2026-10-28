@@ -91,6 +91,13 @@ pub(crate) struct Native {
     pub clear_untaped: unsafe extern "C" fn(Handle),
     pub clear_format_options: unsafe extern "C" fn(Handle),
 
+    pub set_tls: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> *mut c_char,
+    pub last_tls_protocol: unsafe extern "C" fn(Handle) -> *mut c_char,
+    pub substitute: unsafe extern "C" fn(Handle, c_int, *const c_char, *const c_char) -> *mut c_char,
+    pub clear_substitutions: unsafe extern "C" fn(Handle),
+    pub assert_all_consumed: unsafe extern "C" fn(Handle) -> *mut c_char,
+    pub assert_all_redactions_used: unsafe extern "C" fn(Handle) -> *mut c_char,
+
     pub free_string: unsafe extern "C" fn(*mut c_char),
 }
 
@@ -258,6 +265,12 @@ fn load() -> Result<Native, String> {
         clear_static_content: sym!(b"aether_vcr_embed_clear_static_content\0"),
         clear_untaped: sym!(b"aether_vcr_embed_clear_untaped\0"),
         clear_format_options: sym!(b"aether_vcr_embed_clear_format_options\0"),
+        set_tls: sym!(b"aether_vcr_embed_set_tls\0"),
+        last_tls_protocol: sym!(b"aether_vcr_embed_last_tls_protocol\0"),
+        substitute: sym!(b"aether_vcr_embed_substitute\0"),
+        clear_substitutions: sym!(b"aether_vcr_embed_clear_substitutions\0"),
+        assert_all_consumed: sym!(b"aether_vcr_embed_assert_all_consumed\0"),
+        assert_all_redactions_used: sym!(b"aether_vcr_embed_assert_all_redactions_used\0"),
         free_string: sym!(b"aether_vcr_embed_free_string\0"),
         _lib: lib,
     })

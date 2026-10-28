@@ -12,6 +12,8 @@ final class PlaybackBuilder extends VcrBuilderBase
 {
     /** @var list<array{0: VcrField, 1: string, 2: string}> */
     private array $unredactions = [];
+    /** @var list<array{0: VcrField, 1: string, 2: string}> */
+    private array $substitutions = [];
     private $secretResolverCallback = null;
 
     public function secretResolver(callable $callback): static
@@ -94,6 +96,17 @@ final class PlaybackBuilder extends VcrBuilderBase
         return $this;
     }
 
+    /**
+     * Rewrite the replayed response: regex $pattern -> $replacement in the
+     * response body or headers ({{baseUrl}} is already expanded by core).
+     */
+    public function substitute(VcrField $field, string $pattern, string $replacement): static
+    {
+        $this->substitutions[] = [$field, $pattern, $replacement];
+
+        return $this;
+    }
+
     protected function applyConfig(CData $handle): void
     {
         parent::applyConfig($handle);
@@ -112,6 +125,9 @@ final class PlaybackBuilder extends VcrBuilderBase
         }
         foreach ($this->unredactions as [$field, $pattern, $replacement]) {
             self::check($lib->aether_vcr_embed_unredact($handle, $field->value, $pattern, $replacement), 'unredact');
+        }
+        foreach ($this->substitutions as [$field, $pattern, $replacement]) {
+            self::check($lib->aether_vcr_embed_substitute($handle, $field->value, $pattern, $replacement), 'substitute');
         }
     }
 

@@ -81,6 +81,12 @@ final class Native
         void   aether_vcr_embed_clear_static_content(void* server);
         void   aether_vcr_embed_clear_untaped(void* server);
         void   aether_vcr_embed_clear_format_options(void* server);
+        char*  aether_vcr_embed_set_tls(void* server, const char* cert_path, const char* key_path);
+        char*  aether_vcr_embed_last_tls_protocol(void* server);
+        char*  aether_vcr_embed_substitute(void* server, int field, const char* pattern, const char* replacement);
+        void   aether_vcr_embed_clear_substitutions(void* server);
+        char*  aether_vcr_embed_assert_all_consumed(void* server);
+        char*  aether_vcr_embed_assert_all_redactions_used(void* server);
         void   aether_vcr_embed_free_string(char* s);
         C;
 

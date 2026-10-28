@@ -75,6 +75,7 @@ class _BuilderBase:
         self._header_removals: list[tuple[Field, str]] = []
         self._static_content: list[tuple[str, str]] = []
         self._untaped: list[str] = []
+        self._tls: tuple[str, str] | None = None
 
     def native_lib(self, path: str):
         """Pin an explicit path to libservirtium_vcr library for this run.
@@ -122,6 +123,11 @@ class _BuilderBase:
         self._untaped.append(path)
         return self
 
+    def tls(self, cert_path: str, key_path: str):
+        """Serve ``https://`` using this PEM cert and key (ECDSA P-256 key)."""
+        self._tls = (cert_path, key_path)
+        return self
+
     def _apply_config(self, handle) -> None:
         """Apply accumulated config to the opened handle, before start.
 
@@ -133,6 +139,8 @@ class _BuilderBase:
             _check(N.static_content(handle, N.encode(mount), N.encode(fs_dir)), "static_content")
         for path in self._untaped:
             _check(N.untaped(handle, N.encode(path)), "untaped")
+        if self._tls is not None:
+            _check(N.set_tls(handle, N.encode(self._tls[0]), N.encode(self._tls[1])), "set_tls")
 
 
 from dataclasses import dataclass
@@ -181,6 +189,7 @@ class PlaybackBuilder(_BuilderBase):
     def __init__(self, tape_path: str) -> None:
         super().__init__(tape_path)
         self._unredactions: list[tuple[Field, str, str]] = []
+        self._substitutions: list[tuple[Field, str, str]] = []
         self._secret_resolver = None
         self._strict_headers = False
         self._match_json_body = False
@@ -225,6 +234,12 @@ class PlaybackBuilder(_BuilderBase):
         self._unredactions.append((field, pattern, replacement))
         return self
 
+    def substitute(self, field: Field, pattern: str, replacement: str):
+        """Rewrite the replayed response: regex ``pattern`` -> ``replacement`` in
+        the response body or headers (``{{baseUrl}}`` is already expanded by core)."""
+        self._substitutions.append((field, pattern, replacement))
+        return self
+
     def _apply_config(self, handle) -> None:
         super()._apply_config(handle)
         if self._strict_headers:
@@ -239,6 +254,11 @@ class PlaybackBuilder(_BuilderBase):
             _check(
                 N.unredact(handle, int(field), N.encode(pattern), N.encode(replacement)),
                 "unredact",
+            )
+        for field, pattern, replacement in self._substitutions:
+            _check(
+                N.substitute(handle, int(field), N.encode(pattern), N.encode(replacement)),
+                "substitute",
             )
 
     def start(self) -> "VcrServer":
@@ -464,6 +484,23 @@ class VcrServer:
 
     def assert_no_mismatches(self) -> None:
         _check(N.assert_no_mismatches(self._require_handle()), "assert_no_mismatches")
+
+    @property
+    def last_tls_protocol(self) -> str:
+        """TLS protocol negotiated by the listener (``TLSv1.3``), or '' when TLS is off."""
+        return N.take_string(N.last_tls_protocol(self._require_handle()))
+
+    def assert_all_consumed(self) -> None:
+        """Playback: raise unless every recorded interaction was replayed."""
+        _check(N.assert_all_consumed(self._require_handle()), "assert_all_consumed")
+
+    def assert_all_redactions_used(self) -> None:
+        """Raise unless every redaction/unredaction/substitution rule matched at least once."""
+        _check(N.assert_all_redactions_used(self._require_handle()), "assert_all_redactions_used")
+
+    def clear_substitutions(self) -> None:
+        """Drop all registered substitutions on the running server."""
+        N.clear_substitutions(self._require_handle())
 
     def test_context(self, name: str, source_file: str = "", source_line: int = 0) -> None:
         """Start a test boundary, reporting unretrieved failures from the previous test."""

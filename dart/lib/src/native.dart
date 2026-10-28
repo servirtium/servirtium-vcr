@@ -311,6 +311,17 @@ class Native {
   static final clearFormatOptions = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
       'aether_vcr_embed_clear_format_options');
 
+  static final setTls = _lib.lookupFunction<_StaticC, _StaticD>('aether_vcr_embed_set_tls');
+  static final lastTlsProtocol =
+      _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_last_tls_protocol');
+  static final substitute = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_substitute');
+  static final clearSubstitutions = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
+      'aether_vcr_embed_clear_substitutions');
+  static final assertAllConsumed =
+      _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_assert_all_consumed');
+  static final assertAllRedactionsUsed = _lib
+      .lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_assert_all_redactions_used');
+
   // ---- string ownership ---------------------------------------------------
   static final freeString =
       _lib.lookupFunction<_FreeStringC, _FreeStringD>('aether_vcr_embed_free_string');

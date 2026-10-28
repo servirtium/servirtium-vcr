@@ -95,6 +95,13 @@ void   aether_vcr_embed_clear_static_content(void* server);
 void   aether_vcr_embed_clear_untaped(void* server);
 void   aether_vcr_embed_clear_format_options(void* server);
 
+char*  aether_vcr_embed_set_tls(void* server, const char* cert_path, const char* key_path);
+char*  aether_vcr_embed_last_tls_protocol(void* server);
+char*  aether_vcr_embed_substitute(void* server, int field, const char* pattern, const char* replacement);
+void   aether_vcr_embed_clear_substitutions(void* server);
+char*  aether_vcr_embed_assert_all_consumed(void* server);
+char*  aether_vcr_embed_assert_all_redactions_used(void* server);
+
 void   aether_vcr_embed_free_string(char* s);
 */
 import "C"
@@ -190,13 +197,14 @@ type replacement struct {
 }
 
 type baseBuilder struct {
-	tapePath       string
-	host           string
-	port           int
-	label          string
-	headerRemovals []headerRemoval
-	staticContent  []struct{ mount, dir string }
-	untaped        []string
+	tapePath        string
+	host            string
+	port            int
+	label           string
+	headerRemovals  []headerRemoval
+	staticContent   []struct{ mount, dir string }
+	untaped         []string
+	tlsCert, tlsKey string
 }
 
 // applyBase registers the config shared by both builders: header removals,
@@ -228,6 +236,15 @@ func (b *baseBuilder) applyBase(handle unsafe.Pointer) error {
 		res := C.aether_vcr_embed_untaped(handle, cPath)
 		C.free(unsafe.Pointer(cPath))
 		if err := checkErr(res, "Untaped"); err != nil {
+			return err
+		}
+	}
+	if b.tlsCert != "" {
+		cCert, cKey := C.CString(b.tlsCert), C.CString(b.tlsKey)
+		res := C.aether_vcr_embed_set_tls(handle, cCert, cKey)
+		C.free(unsafe.Pointer(cCert))
+		C.free(unsafe.Pointer(cKey))
+		if err := checkErr(res, "Tls"); err != nil {
 			return err
 		}
 	}
@@ -305,6 +322,7 @@ type PlaybackBuilder struct {
 	matchMultiple bool
 	matchHeaders  []string
 	unredactions  []replacement
+	substitutions []replacement
 }
 
 // Host binds the host. Defaults to 127.0.0.1.
@@ -357,6 +375,20 @@ func (b *PlaybackBuilder) Unredact(field Field, pattern, repl string) *PlaybackB
 	return b
 }
 
+// Substitute rewrites the replayed response at playback time: regex pattern ->
+// repl in the response body or headers (e.g. fill a custom placeholder).
+func (b *PlaybackBuilder) Substitute(field Field, pattern, repl string) *PlaybackBuilder {
+	b.substitutions = append(b.substitutions, replacement{field, pattern, repl})
+	return b
+}
+
+// Tls terminates TLS in the VCR and serves https:// using the PEM cert and key
+// (ECDSA P-256). Applied at Start.
+func (b *PlaybackBuilder) Tls(certPath, keyPath string) *PlaybackBuilder {
+	b.tlsCert, b.tlsKey = certPath, keyPath
+	return b
+}
+
 // StaticContent serves a path prefix from an on-disk directory instead of the
 // tape (Servirtium step 11). Honored in both playback and record mode.
 func (b *PlaybackBuilder) StaticContent(mountPath, fsDir string) *PlaybackBuilder {
@@ -396,6 +428,15 @@ func (b *PlaybackBuilder) applyConfig(handle unsafe.Pointer) error {
 		C.free(unsafe.Pointer(cPat))
 		C.free(unsafe.Pointer(cRep))
 		if err := checkErr(res, "Unredact"); err != nil {
+			return err
+		}
+	}
+	for _, u := range b.substitutions {
+		cPat, cRep := C.CString(u.pattern), C.CString(u.replacem)
+		res := C.aether_vcr_embed_substitute(handle, C.int(u.field), cPat, cRep)
+		C.free(unsafe.Pointer(cPat))
+		C.free(unsafe.Pointer(cRep))
+		if err := checkErr(res, "Substitute"); err != nil {
 			return err
 		}
 	}
@@ -549,6 +590,13 @@ func (b *RecordBuilder) RedactWholeTape(pattern, repl string) *RecordBuilder {
 // CORS/OPTIONS noise on the tape), matching how it's replayed.
 func (b *RecordBuilder) StaticContent(mountPath, fsDir string) *RecordBuilder {
 	b.staticContent = append(b.staticContent, struct{ mount, dir string }{mountPath, fsDir})
+	return b
+}
+
+// Tls terminates TLS in the VCR and serves https:// using the PEM cert and key
+// (ECDSA P-256). Applied at Start.
+func (b *RecordBuilder) Tls(certPath, keyPath string) *RecordBuilder {
+	b.tlsCert, b.tlsKey = certPath, keyPath
 	return b
 }
 
@@ -725,6 +773,25 @@ func (s *Server) DiagnosticsJSON(consume bool) string {
 func (s *Server) AssertNoMismatches() error {
 	return checkErr(C.aether_vcr_embed_assert_no_mismatches(s.handle), "AssertNoMismatches")
 }
+
+// LastTLSProtocol is the TLS protocol negotiated ("TLSv1.3"), or "" when TLS is off.
+func (s *Server) LastTLSProtocol() string {
+	return takeString(C.aether_vcr_embed_last_tls_protocol(s.handle))
+}
+
+// AssertAllConsumed errors unless every recorded interaction was replayed.
+func (s *Server) AssertAllConsumed() error {
+	return checkErr(C.aether_vcr_embed_assert_all_consumed(s.handle), "AssertAllConsumed")
+}
+
+// AssertAllRedactionsUsed errors unless every redaction/unredaction/substitution rule matched.
+func (s *Server) AssertAllRedactionsUsed() error {
+	return checkErr(C.aether_vcr_embed_assert_all_redactions_used(s.handle), "AssertAllRedactionsUsed")
+}
+
+// ClearSubstitutions drops all registered substitutions on the running server.
+func (s *Server) ClearSubstitutions() { C.aether_vcr_embed_clear_substitutions(s.handle) }
+
 func (s *Server) TestContext(name, sourceFile string, sourceLine int) {
 	cName, cFile := C.CString(name), C.CString(sourceFile)
 	defer C.free(unsafe.Pointer(cName))

@@ -28,6 +28,9 @@ abstract class VcrBuilderBase
     /** @var list<string> */
     private array $untaped = [];
 
+    /** @var array{0: string, 1: string}|null */
+    private ?array $tls = null;
+
     protected function __construct(string $tapePath)
     {
         $this->tapePath = $tapePath;
@@ -104,6 +107,14 @@ abstract class VcrBuilderBase
         return $this;
     }
 
+    /** Serve https:// using this PEM cert and key (ECDSA P-256 key). Applied at start. */
+    public function tls(string $certPath, string $keyPath): static
+    {
+        $this->tls = [$certPath, $keyPath];
+
+        return $this;
+    }
+
     /**
      * Apply this builder's accumulated config to the opened handle, before
      * serving starts. Subclasses extend this.
@@ -119,6 +130,9 @@ abstract class VcrBuilderBase
         }
         foreach ($this->untaped as $path) {
             self::check($lib->aether_vcr_embed_untaped($handle, $path), 'untaped');
+        }
+        if ($this->tls !== null) {
+            self::check($lib->aether_vcr_embed_set_tls($handle, $this->tls[0], $this->tls[1]), 'tls');
         }
     }
 

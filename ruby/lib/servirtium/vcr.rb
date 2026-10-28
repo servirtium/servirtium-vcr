@@ -21,6 +21,7 @@ module Servirtium
       @header_removals = []
       @static_content = []
       @untaped = []
+      @tls = nil
     end
 
     # Pin an explicit path to libservirtium_vcr library for this run — the
@@ -73,6 +74,12 @@ module Servirtium
       self
     end
 
+    # Serve +https://+ using this PEM cert and key (ECDSA P-256 key).
+    def tls(cert_path, key_path)
+      @tls = [cert_path, key_path]
+      self
+    end
+
     private
 
     # Apply config common to both builders to the opened handle, before
@@ -87,6 +94,7 @@ module Servirtium
       @untaped.each do |path|
         check(Native.call(:untaped, handle, path), 'untaped')
       end
+      check(Native.call(:set_tls, handle, *@tls), 'set_tls') if @tls
     end
 
     # Raise if a mutation call returned a non-empty error string ("" = ok).
@@ -117,6 +125,7 @@ module Servirtium
     def initialize(tape_path)
       super
       @unredactions = []
+      @substitutions = []
       @strict_headers = false
       @match_json_body = false
       @match_multiple = false
@@ -166,6 +175,13 @@ module Servirtium
       self
     end
 
+    # Rewrite the replayed response: regex +pattern+ -> +replacement+ in the
+    # response body or headers (+{{baseUrl}}+ is already expanded by core).
+    def substitute(field, pattern, replacement)
+      @substitutions << [field, pattern, replacement]
+      self
+    end
+
     # Start the server. With a block, yields the {Server} and closes it after.
     def start(&)
       Native.configure(@native_lib)
@@ -195,6 +211,9 @@ module Servirtium
       end
       @unredactions.each do |field, pattern, replacement|
         check(Native.call(:unredact, handle, field, pattern, replacement), 'unredact')
+      end
+      @substitutions.each do |field, pattern, replacement|
+        check(Native.call(:substitute, handle, field, pattern, replacement), 'substitute')
       end
     end
   end

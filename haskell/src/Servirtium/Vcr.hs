@@ -58,6 +58,10 @@ module Servirtium.Vcr
   , lastErrorWith
   , diagnosticsJson
   , assertNoMismatches
+  , assertAllConsumed
+  , assertAllRedactionsUsed
+  , lastTlsProtocol
+  , clearSubstitutions
   , testContext
   , lastKind
   , lastIndex
@@ -155,6 +159,11 @@ data PlaybackOptions = PlaybackOptions
   , pbUnredactions   :: [(Field, String, String)]
     -- ^ @(field, pattern, replacement)@: rewrite a recorded placeholder to
     -- the real value the live SUT sends, so a scrubbed tape still matches.
+  , pbSubstitutions  :: [(Field, String, String)]
+    -- ^ @(field, pattern, replacement)@: rewrite the replayed response body
+    -- or headers at playback time (e.g. fill a custom placeholder).
+  , pbTls            :: Maybe (FilePath, FilePath)
+    -- ^ @(certPath, keyPath)@: serve @https:\/\/@ (PEM, ECDSA P-256 key).
   , pbRemoveHeaders  :: [(Field, String)]
     -- ^ @(field, name)@: drop a header by name (case-insensitive).
   , pbStaticContent  :: [(String, String)]
@@ -218,6 +227,8 @@ data RecordOptions = RecordOptions
     -- forwarding upstream. libservirtium_vcr honors static mounts in record mode too,
     -- so a browser suite can be recorded served same-origin from the VCR (no
     -- CORS\/preflight noise), matching how it's replayed.
+  , recTls               :: Maybe (FilePath, FilePath)
+    -- ^ @(certPath, keyPath)@: serve @https:\/\/@ (PEM, ECDSA P-256 key).
   , recUntaped           :: [String]
     -- ^ Request paths (e.g. @\/favicon.ico@) the record-mode VCR answers 404
     -- without forwarding upstream and never puts on the tape.
@@ -236,6 +247,8 @@ playbackOptions tape = PlaybackOptions
   , pbMatchMultiple = False
   , pbMatchHeaders  = []
   , pbUnredactions  = []
+  , pbSubstitutions = []
+  , pbTls           = Nothing
   , pbRemoveHeaders = []
   , pbStaticContent = []
   , pbUntaped       = []
@@ -267,6 +280,7 @@ recordOptions tape upstream = RecordOptions
   , recFailIfChanged      = False
   , recStaticContent      = []
   , recUntaped            = []
+  , recTls                = Nothing
   }
 
 -- | Mode a running server was started in; drives 'stop' behaviour.
@@ -314,6 +328,15 @@ applyStaticAndUntaped h statics untaped = do
               withCString path $ \cPath ->
                 N.aether_vcr_embed_untaped h cPath)
         untaped
+
+-- | Apply a TLS cert\/key pair (playback and record).
+applyTls :: N.Handle -> Maybe (FilePath, FilePath) -> IO ()
+applyTls h =
+  maybe (pure ()) (\(cert, key) ->
+    check "set_tls" $
+      withCString cert $ \cCert ->
+        withCString key $ \cKey ->
+          N.aether_vcr_embed_set_tls h cCert cKey)
 
 -- | Build a useful error string from a handle's last-error slot.
 drainStartError :: N.Handle -> IO String
@@ -387,7 +410,14 @@ startPlayback opts = do
                     withCString repl $ \cRepl ->
                       N.aether_vcr_embed_unredact handle (fieldCode f) cPat cRepl)
             (pbUnredactions opts)
+      mapM_ (\(f, pat, repl) ->
+                check "substitute" $
+                  withCString pat $ \cPat ->
+                    withCString repl $ \cRepl ->
+                      N.aether_vcr_embed_substitute handle (fieldCode f) cPat cRepl)
+            (pbSubstitutions opts)
       applyStaticAndUntaped handle (pbStaticContent opts) (pbUntaped opts)
+      applyTls handle (pbTls opts)
       maybe (pure ()) (\callback -> secretStage handle Nothing (Just callback)) (pbSecretResolver opts)
       rc <- N.aether_vcr_embed_start handle
       if rc < 0
@@ -460,6 +490,7 @@ startRecord opts = do
                       N.aether_vcr_embed_redact_whole_tape handle cPat cRepl)
             (recRedactWholeTape opts)
       applyStaticAndUntaped handle (recStaticContent opts) (recUntaped opts)
+      applyTls handle (recTls opts)
       let server = VcrServer
             { vcrHandle   = handle
             , vcrHost     = recHost opts
@@ -559,6 +590,22 @@ lastErrorWith :: Bool -> VcrServer -> IO String
 lastErrorWith consume server = N.takeString =<< N.aether_vcr_embed_last_error_ex (vcrHandle server) (if consume then 1 else 0)
 diagnosticsJson :: Bool -> VcrServer -> IO String
 diagnosticsJson consume server = N.takeString =<< N.aether_vcr_embed_diagnostics_json (vcrHandle server) (if consume then 1 else 0)
+-- | Throw 'VcrException' unless every recorded interaction was replayed.
+assertAllConsumed :: VcrServer -> IO ()
+assertAllConsumed server = check "assertAllConsumed" $ N.aether_vcr_embed_assert_all_consumed (vcrHandle server)
+
+-- | Throw 'VcrException' unless every redaction\/unredaction\/substitution rule matched.
+assertAllRedactionsUsed :: VcrServer -> IO ()
+assertAllRedactionsUsed server = check "assertAllRedactionsUsed" $ N.aether_vcr_embed_assert_all_redactions_used (vcrHandle server)
+
+-- | Negotiated TLS protocol (@\"TLSv1.3\"@), or @\"\"@ when TLS is off.
+lastTlsProtocol :: VcrServer -> IO String
+lastTlsProtocol server = N.takeString =<< N.aether_vcr_embed_last_tls_protocol (vcrHandle server)
+
+-- | Drop all registered substitutions on the running server.
+clearSubstitutions :: VcrServer -> IO ()
+clearSubstitutions server = N.aether_vcr_embed_clear_substitutions (vcrHandle server)
+
 assertNoMismatches :: VcrServer -> IO ()
 assertNoMismatches server = check "assertNoMismatches" $ N.aether_vcr_embed_assert_no_mismatches (vcrHandle server)
 testContext :: String -> String -> Int -> VcrServer -> IO ()

@@ -75,6 +75,7 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected readonly headerRemovals: HeaderRemoval[] = []
   protected readonly staticMounts: Array<{ mount: string; dir: string }> = []
   protected readonly untapedPaths: string[] = []
+  protected tlsPair?: { cert: string; key: string }
 
   protected constructor(protected readonly tapePath: string) {}
 
@@ -135,6 +136,12 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
     return this.self()
   }
 
+  /** Serve `https://` using this PEM cert and key (ECDSA P-256 key). Applied at start. */
+  tls(certPath: string, keyPath: string): TSelf {
+    this.tlsPair = { cert: certPath, key: keyPath }
+    return this.self()
+  }
+
   /**
    * Apply this builder's accumulated config to the opened handle, before
    * serving starts. Subclasses extend this.
@@ -149,6 +156,7 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
     for (const path of this.untapedPaths) {
       check(N.untaped(handle, path), 'untaped')
     }
+    if (this.tlsPair) check(N.setTls(handle, this.tlsPair.cert, this.tlsPair.key), 'setTls')
   }
 }
 
@@ -183,6 +191,7 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   private secretResolverValue?: SecretResolver
   secretResolver(callback: SecretResolver): this { this.secretResolverValue = callback; return this }
   private readonly unredactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
+  private readonly substitutions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
   private strictHeadersOn = false
   private matchJsonBodyOn = false
   private matchMultipleOn = false
@@ -243,6 +252,15 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     return this
   }
 
+  /**
+   * Rewrite the replayed response: regex `pattern` -> `replacement` in the
+   * response body or headers (`{{baseUrl}}` is already expanded by core).
+   */
+  substitute(field: VcrField, pattern: string, replacement: string): PlaybackBuilder {
+    this.substitutions.push({ field, pattern, replacement })
+    return this
+  }
+
   protected applyConfig(handle: unknown): void {
     super.applyConfig(handle)
     if (this.strictHeadersOn) N.setStrictHeaders(handle, 1)
@@ -253,6 +271,9 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
     for (const { field, pattern, replacement } of this.unredactions) {
       check(N.unredact(handle, field, pattern, replacement), 'unredact')
+    }
+    for (const { field, pattern, replacement } of this.substitutions) {
+      check(N.substitute(handle, field, pattern, replacement), 'substitute')
     }
   }
 
@@ -484,6 +505,26 @@ export class VcrServer {
 
   assertNoMismatches(): void {
     check(N.assertNoMismatches(this.requireHandle()), 'assertNoMismatches')
+  }
+
+  /** TLS protocol negotiated by the listener (`TLSv1.3`), or '' when TLS is off. */
+  get lastTlsProtocol(): string {
+    return N.takeString(N.lastTlsProtocol(this.requireHandle()))
+  }
+
+  /** Playback: throws unless every recorded interaction was replayed. */
+  assertAllConsumed(): void {
+    check(N.assertAllConsumed(this.requireHandle()), 'assertAllConsumed')
+  }
+
+  /** Throws unless every redaction / unredaction / substitution rule matched at least once. */
+  assertAllRedactionsUsed(): void {
+    check(N.assertAllRedactionsUsed(this.requireHandle()), 'assertAllRedactionsUsed')
+  }
+
+  /** Drop all registered substitutions on the running server. */
+  clearSubstitutions(): void {
+    N.clearSubstitutions(this.requireHandle())
   }
 
   testContext(name: string, sourceFile = '', sourceLine = 0): void {

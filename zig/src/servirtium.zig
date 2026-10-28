@@ -85,6 +85,12 @@ pub extern "c" fn aether_vcr_embed_clear_static_content(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_untaped(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_format_options(handle: Handle) void;
 
+pub extern "c" fn aether_vcr_embed_set_tls(handle: Handle, cert: [*c]const u8, key: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_last_tls_protocol(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_substitute(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_clear_substitutions(handle: Handle) void;
+pub extern "c" fn aether_vcr_embed_assert_all_consumed(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_assert_all_redactions_used(handle: Handle) [*c]u8;
 pub extern "c" fn aether_vcr_embed_free_string(s: [*c]u8) void;
 
 /// Mutation target field ids (used by redact / unredact / remove_header).
@@ -330,6 +336,7 @@ const Replacement = struct { operation: enum { literal, header, query_param, jso
 const PatName = struct { pattern: [:0]const u8, name: [:0]const u8 };
 const PatRepl = struct { pattern: [:0]const u8, repl: [:0]const u8 };
 const Mount = struct { mount: [:0]const u8, dir: [:0]const u8 };
+const TlsPaths = struct { cert: [:0]const u8, key: [:0]const u8 };
 const NoteText = struct { title: [:0]const u8, body: [:0]const u8 };
 
 fn applyBase(
@@ -338,6 +345,7 @@ fn applyBase(
     header_removals: []const HeaderRemoval,
     static_content: []const Mount,
     untaped_paths: []const [:0]const u8,
+    tls: ?TlsPaths,
 ) !void {
     for (header_removals) |hr| {
         try checkErr(allocator, aether_vcr_embed_remove_header(handle, @intFromEnum(hr.field), hr.name.ptr));
@@ -348,6 +356,7 @@ fn applyBase(
     for (untaped_paths) |p| {
         try checkErr(allocator, aether_vcr_embed_untaped(handle, p.ptr));
     }
+    if (tls) |t| try checkErr(allocator, aether_vcr_embed_set_tls(handle, t.cert.ptr, t.key.ptr));
 }
 
 /// A builder that replays a Servirtium markdown tape from disk.
@@ -366,6 +375,8 @@ pub const Playback = struct {
     static_content: std.ArrayList(Mount) = .empty,
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
     unredactions: std.ArrayList(Replacement) = .empty,
+    substitutions: std.ArrayList(Replacement) = .empty,
+    tls_paths: ?TlsPaths = null,
     match_headers: std.ArrayList([:0]const u8) = .empty,
 
     /// Begin a playback fixture for `tape_path`. Configure fluently, then
@@ -410,6 +421,19 @@ pub const Playback = struct {
         b.static_content.append(b.allocator, .{ .mount = mount, .dir = dir }) catch {};
         return b;
     }
+    /// Terminate TLS in the VCR (PEM cert + ECDSA P-256 key); applied at `start`.
+    pub fn tls(self: Playback, cert: [:0]const u8, key: [:0]const u8) Playback {
+        var b = self;
+        b.tls_paths = .{ .cert = cert, .key = key };
+        return b;
+    }
+    /// Rewrite the replayed response at playback time (regex `pattern` ->
+    /// `repl` in the response body or headers).
+    pub fn substitute(self: Playback, field: Field, pattern: [:0]const u8, repl: [:0]const u8) Playback {
+        var b = self;
+        b.substitutions.append(b.allocator, .{ .field = field, .pattern = pattern, .repl = repl }) catch {};
+        return b;
+    }
     /// Mark an incidental request path the VCR 404s without consuming the
     /// cursor (e.g. "/favicon.ico").
     pub fn untaped(self: Playback, path: [:0]const u8) Playback {
@@ -423,6 +447,7 @@ pub const Playback = struct {
         self.static_content.deinit(self.allocator);
         self.untaped_paths.deinit(self.allocator);
         self.unredactions.deinit(self.allocator);
+        self.substitutions.deinit(self.allocator);
         self.match_headers.deinit(self.allocator);
     }
 
@@ -482,7 +507,7 @@ pub const Playback = struct {
         if (handle == null) return Error.OpenFailed;
         errdefer aether_vcr_embed_stop(handle);
 
-        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items);
+        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items, self.tls_paths);
         if (self.strict_headers) aether_vcr_embed_set_strict_headers(handle, 1);
         if (self.match_json_body) aether_vcr_embed_set_match_json_body(handle, 1);
         if (self.match_multiple) aether_vcr_embed_set_match_multiple(handle, 1);
@@ -491,6 +516,9 @@ pub const Playback = struct {
         }
         for (self.unredactions.items) |u| {
             try checkErr(self.allocator, aether_vcr_embed_unredact(handle, @intFromEnum(u.field), u.pattern.ptr, u.repl.ptr));
+        }
+        for (self.substitutions.items) |u| {
+            try checkErr(self.allocator, aether_vcr_embed_substitute(handle, @intFromEnum(u.field), u.pattern.ptr, u.repl.ptr));
         }
 
         if (self.secret_resolver) |resolver| try secretStage(self.allocator, handle, null, resolver);
@@ -522,6 +550,7 @@ pub const Record = struct {
     static_content: std.ArrayList(Mount) = .empty,
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
     redactions: std.ArrayList(Replacement) = .empty,
+    tls_paths: ?TlsPaths = null,
     normalizations: std.ArrayList(PatName) = .empty,
     whole_tape_redactions: std.ArrayList(PatRepl) = .empty,
     note_text: ?NoteText = null,
@@ -568,6 +597,12 @@ pub const Record = struct {
     pub fn staticContent(self: Record, mount: [:0]const u8, dir: [:0]const u8) Record {
         var b = self;
         b.static_content.append(b.allocator, .{ .mount = mount, .dir = dir }) catch {};
+        return b;
+    }
+    /// Terminate TLS in the VCR (PEM cert + ECDSA P-256 key); applied at `start`.
+    pub fn tls(self: Record, cert: [:0]const u8, key: [:0]const u8) Record {
+        var b = self;
+        b.tls_paths = .{ .cert = cert, .key = key };
         return b;
     }
     /// Mark an incidental request path the VCR 404s without forwarding or
@@ -682,7 +717,7 @@ pub const Record = struct {
         if (handle == null) return Error.OpenFailed;
         errdefer aether_vcr_embed_stop(handle);
 
-        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items);
+        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items, self.tls_paths);
         if (self.indent_code_blocks) aether_vcr_embed_indent_code_blocks(handle);
         if (self.emphasize_http_verbs) aether_vcr_embed_emphasize_http_verbs(handle);
         for (self.redactions.items) |r| {
@@ -753,6 +788,22 @@ pub const Server = struct {
     }
     pub fn diagnosticsJson(self: *Server, consume: bool) ![]u8 {
         return takeString(self.allocator, aether_vcr_embed_diagnostics_json(self.handle, @intFromBool(consume)));
+    }
+    /// Negotiated TLS protocol ("TLSv1.3"), or "" when TLS is off. Caller frees.
+    pub fn lastTlsProtocol(self: *Server) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_last_tls_protocol(self.handle));
+    }
+    /// Error unless every recorded interaction was replayed.
+    pub fn assertAllConsumed(self: *Server) !void {
+        try checkErr(self.allocator, aether_vcr_embed_assert_all_consumed(self.handle));
+    }
+    /// Error unless every redaction/unredaction/substitution rule matched.
+    pub fn assertAllRedactionsUsed(self: *Server) !void {
+        try checkErr(self.allocator, aether_vcr_embed_assert_all_redactions_used(self.handle));
+    }
+    /// Drop all registered substitutions on the running server.
+    pub fn clearSubstitutions(self: *Server) void {
+        aether_vcr_embed_clear_substitutions(self.handle);
     }
     pub fn assertNoMismatches(self: *Server) !void {
         const diagnostic = try takeString(self.allocator, aether_vcr_embed_assert_no_mismatches(self.handle));

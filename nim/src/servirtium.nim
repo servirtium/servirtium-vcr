@@ -204,6 +204,33 @@ proc redactJsonField*(s: VcrServer; name: string; replacement = "[REDACTED]"; fi
 proc unredact*(s: VcrServer; field: Field; pattern, replacement: string): string {.discardable.} =
   takeString(native.unredact(s.handle, cint(field), cstring(pattern), cstring(replacement)))
 
+proc substitute*(s: VcrServer; field: Field; pattern, replacement: string): string {.discardable.} =
+  ## Playback only: rewrite the replayed response (regex `pattern` ->
+  ## `replacement`) in the response body or headers. Returns "" or an error.
+  takeString(native.substitute(s.handle, cint(field), cstring(pattern), cstring(replacement)))
+
+proc clearSubstitutions*(s: VcrServer) =
+  native.clear_substitutions(s.handle)
+
+proc tls*(s: VcrServer; certPath, keyPath: string): string {.discardable.} =
+  ## Serve https:// using the PEM cert and key (ECDSA P-256). Playback and
+  ## record; call before `start`. Returns "" or an error message.
+  takeString(native.set_tls(s.handle, cstring(certPath), cstring(keyPath)))
+
+proc lastTlsProtocol*(s: VcrServer): string =
+  ## Negotiated TLS protocol ("TLSv1.3"), or "" when TLS is off.
+  takeString(native.last_tls_protocol(s.handle))
+
+proc assertAllConsumed*(s: VcrServer) =
+  ## Raise `VcrError` unless every recorded interaction was replayed.
+  let diagnostic = takeString(native.assert_all_consumed(s.handle))
+  if diagnostic.len > 0: raise newException(VcrError, diagnostic)
+
+proc assertAllRedactionsUsed*(s: VcrServer) =
+  ## Raise `VcrError` unless every redaction/unredaction/substitution matched.
+  let diagnostic = takeString(native.assert_all_redactions_used(s.handle))
+  if diagnostic.len > 0: raise newException(VcrError, diagnostic)
+
 proc removeHeader*(s: VcrServer; field: Field; name: string): string {.discardable.} =
   takeString(native.remove_header(s.handle, cint(field), cstring(name)))
 

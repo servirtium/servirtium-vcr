@@ -71,6 +71,12 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_clear_static_content
   , aether_vcr_embed_clear_untaped
   , aether_vcr_embed_clear_format_options
+  , aether_vcr_embed_set_tls
+  , aether_vcr_embed_last_tls_protocol
+  , aether_vcr_embed_substitute
+  , aether_vcr_embed_clear_substitutions
+  , aether_vcr_embed_assert_all_consumed
+  , aether_vcr_embed_assert_all_redactions_used
   , aether_vcr_embed_free_string
   ) where
 
@@ -203,6 +209,24 @@ foreign import ccall unsafe "aether_vcr_embed_clear_untaped"
 
 foreign import ccall unsafe "aether_vcr_embed_clear_format_options"
   aether_vcr_embed_clear_format_options :: Handle -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_set_tls"
+  aether_vcr_embed_set_tls :: Handle -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_last_tls_protocol"
+  aether_vcr_embed_last_tls_protocol :: Handle -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_substitute"
+  aether_vcr_embed_substitute :: Handle -> CInt -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_clear_substitutions"
+  aether_vcr_embed_clear_substitutions :: Handle -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_assert_all_consumed"
+  aether_vcr_embed_assert_all_consumed :: Handle -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_assert_all_redactions_used"
+  aether_vcr_embed_assert_all_redactions_used :: Handle -> IO CString
 
 foreign import ccall unsafe "aether_vcr_embed_free_string"
   aether_vcr_embed_free_string :: CString -> IO ()

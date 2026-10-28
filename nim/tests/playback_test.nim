@@ -149,3 +149,17 @@ suite "servirtium playback":
       b.baseUrl(), "/secure", "Authorization: Bearer real-token")
     check bodyB.strip() == "secret-ok"
     check b.lastKind() == Ok
+
+  test "substitute fills a placeholder and assertAllConsumed tracks replay":
+    let vcr = playback(tapePath("base_url.md"))
+    check vcr.substitute(ResponseBody, "@@HOST@@", "http://sub.example") == ""
+    check vcr.start()
+    defer: vcr.close()
+
+    expect VcrError:
+      vcr.assertAllConsumed()
+    let (_, body) = get(vcr.baseUrl(), "/where")
+    check body.strip() == "at http://sub.example/x"
+    vcr.assertAllConsumed()
+    vcr.assertAllRedactionsUsed()
+    check vcr.lastTlsProtocol() == ""

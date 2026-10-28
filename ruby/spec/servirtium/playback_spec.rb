@@ -69,6 +69,19 @@ RSpec.describe 'Servirtium playback' do
     expect { Servirtium.playback('does/not/exist.md').port(0).start }
       .to raise_error(Servirtium::Error, /failed to start/)
   end
+
+  it 'substitutes a custom placeholder and tracks full replay' do
+    base_tape = File.expand_path('../tapes/base_url.md', __dir__)
+    builder = Servirtium.playback(base_tape)
+                        .substitute(Servirtium::Field::RESPONSE_BODY, '@@HOST@@', 'http://sub.example')
+    builder.port(0).start do |server|
+      expect { server.assert_all_consumed }.to raise_error(Servirtium::Error)
+      expect(get(server, '/where').body.rstrip).to eq('at http://sub.example/x')
+      server.assert_all_consumed
+      server.assert_all_redactions_used
+      expect(server.last_tls_protocol).to eq('')
+    end
+  end
 end
 
 

@@ -89,6 +89,28 @@ final class VcrServer
         $error = Native::takeString(Native::lib()->aether_vcr_embed_assert_no_mismatches($this->requireHandle()));
         if ($error !== '') { throw new VcrException($error); }
     }
+    /** TLS protocol negotiated by the listener ("TLSv1.3"), or "" when TLS is off. */
+    public function lastTlsProtocol(): string
+    {
+        return Native::takeString(Native::lib()->aether_vcr_embed_last_tls_protocol($this->requireHandle()));
+    }
+    /** Playback: throws unless every recorded interaction was replayed. */
+    public function assertAllConsumed(): void
+    {
+        $error = Native::takeString(Native::lib()->aether_vcr_embed_assert_all_consumed($this->requireHandle()));
+        if ($error !== '') { throw new VcrException($error); }
+    }
+    /** Throws unless every redaction / unredaction / substitution rule matched at least once. */
+    public function assertAllRedactionsUsed(): void
+    {
+        $error = Native::takeString(Native::lib()->aether_vcr_embed_assert_all_redactions_used($this->requireHandle()));
+        if ($error !== '') { throw new VcrException($error); }
+    }
+    /** Drop all registered substitutions on the running server. */
+    public function clearSubstitutions(): void
+    {
+        Native::lib()->aether_vcr_embed_clear_substitutions($this->requireHandle());
+    }
     public function testContext(string $name, string $sourceFile = '', int $sourceLine = 0): void
     {
         Native::lib()->aether_vcr_embed_test_context($this->requireHandle(), $name, $sourceFile, $sourceLine);

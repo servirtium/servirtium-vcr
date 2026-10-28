@@ -46,6 +46,28 @@ module Servirtium
       raise Servirtium::Error, error unless error.empty?
     end
 
+    # TLS protocol negotiated by the listener ("TLSv1.3"), or "" when TLS is off.
+    def last_tls_protocol
+      Native.take_string(Native.call(:last_tls_protocol, handle))
+    end
+
+    # Playback: raise unless every recorded interaction was replayed.
+    def assert_all_consumed
+      error = Native.take_string(Native.call(:assert_all_consumed, handle))
+      raise Servirtium::Error, error unless error.empty?
+    end
+
+    # Raise unless every redaction / unredaction / substitution rule matched at least once.
+    def assert_all_redactions_used
+      error = Native.take_string(Native.call(:assert_all_redactions_used, handle))
+      raise Servirtium::Error, error unless error.empty?
+    end
+
+    # Drop all registered substitutions on the running server.
+    def clear_substitutions
+      Native.call(:clear_substitutions, handle)
+    end
+
     def test_context(name, source_file: '', source_line: 0)
       Native.call(:test_context, handle, name, source_file, source_line)
     end

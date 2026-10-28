@@ -211,6 +211,13 @@ def _ensure_loaded() -> None:
     g["clear_untaped"] = _decl("aether_vcr_embed_clear_untaped", None, [_HANDLE])
     g["clear_format_options"] = _decl("aether_vcr_embed_clear_format_options", None, [_HANDLE])
 
+    g["set_tls"] = _decl("aether_vcr_embed_set_tls", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p])
+    g["last_tls_protocol"] = _decl("aether_vcr_embed_last_tls_protocol", _CSTR, [_HANDLE])
+    g["substitute"] = _decl("aether_vcr_embed_substitute", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
+    g["clear_substitutions"] = _decl("aether_vcr_embed_clear_substitutions", None, [_HANDLE])
+    g["assert_all_consumed"] = _decl("aether_vcr_embed_assert_all_consumed", _CSTR, [_HANDLE])
+    g["assert_all_redactions_used"] = _decl("aether_vcr_embed_assert_all_redactions_used", _CSTR, [_HANDLE])
+
     # ---- string ownership ----
     g["free_string"] = _decl("aether_vcr_embed_free_string", None, [ctypes.c_void_p])
 

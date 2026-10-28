@@ -14,6 +14,10 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     private final List<Unredaction> unredactions = new ArrayList<>();
     private final List<String> matchHeaders = new ArrayList<>();
     private java.util.function.Function<String, String> secretResolver;
+    private record Substitution(Field field, String pattern, String replacement) {
+    }
+
+    private final List<Substitution> substitutions = new ArrayList<>();
     private boolean strictHeaders;
     private boolean matchJsonBody;
     private boolean matchMultiple;
@@ -93,6 +97,16 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
         return this;
     }
 
+    /**
+     * Replace your own placeholder (e.g. {@code @@HOST@@}) in the replayed
+     * response at serve time. Not for {{baseUrl}}/{{request.*}}, which core
+     * expands itself.
+     */
+    public PlaybackBuilder substitute(Field field, String pattern, String replacement) {
+        substitutions.add(new Substitution(field, pattern, replacement));
+        return this;
+    }
+
     @Override
     void applyConfig(Arena arena, MemorySegment handle) {
         super.applyConfig(arena, handle);
@@ -108,6 +122,14 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
             }
             for (String name : matchHeaders) {
                 NativeMethods.MATCH_HEADER.invokeExact(handle, NativeMethods.cString(arena, name));
+            }
+            for (Substitution s : substitutions) {
+                MemorySegment r = (MemorySegment) NativeMethods.SUBSTITUTE.invokeExact(
+                        handle,
+                        s.field().code(),
+                        NativeMethods.cString(arena, s.pattern()),
+                        NativeMethods.cString(arena, s.replacement()));
+                check(r, "substitute");
             }
             for (Unredaction u : unredactions) {
                 MemorySegment r = (MemorySegment) NativeMethods.UNREDACT.invokeExact(

@@ -97,6 +97,36 @@ public final class VcrServer implements AutoCloseable {
         } catch (Throwable t) { throw VcrBuilderBase.rethrow("assertNoMismatches", t); }
     }
 
+    /** Throw unless every tape interaction has been replayed. */
+    public void assertAllConsumed() {
+        try {
+            String error = NativeMethods.takeString((MemorySegment) NativeMethods.ASSERT_ALL_CONSUMED.invokeExact(handle()));
+            if (!error.isEmpty()) throw new VcrException(error);
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("assertAllConsumed", t); }
+    }
+
+    /** Throw if any redaction rule never matched. */
+    public void assertAllRedactionsUsed() {
+        try {
+            String error = NativeMethods.takeString((MemorySegment) NativeMethods.ASSERT_ALL_REDACTIONS_USED.invokeExact(handle()));
+            if (!error.isEmpty()) throw new VcrException(error);
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("assertAllRedactionsUsed", t); }
+    }
+
+    /** Negotiated TLS protocol of the latest TLS request (e.g. "TLSv1.3"), or "". */
+    public String lastTlsProtocol() {
+        try {
+            return NativeMethods.takeString((MemorySegment) NativeMethods.LAST_TLS_PROTOCOL.invokeExact(handle()));
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("lastTlsProtocol", t); }
+    }
+
+    /** Remove all response substitutions on the running server. */
+    public void clearSubstitutions() {
+        try {
+            NativeMethods.CLEAR_SUBSTITUTIONS.invokeExact(handle());
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("clearSubstitutions", t); }
+    }
+
     public void testContext(String name, String sourceFile, int sourceLine) {
         try (Arena arena = Arena.ofConfined()) {
             NativeMethods.TEST_CONTEXT.invokeExact(handle(), NativeMethods.cString(arena, name), NativeMethods.cString(arena, sourceFile), sourceLine);
