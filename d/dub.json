@@ -1,6 +1,6 @@
 {
     "name": "servirtium",
-    "version": "2.0.0-alpha.4",
+    "version": "2.0.0-alpha.5",
     "description": "Record/replay for HTTP service tests in the Servirtium markdown tape format \u2014 a thin D binding over libservirtium_vcr.",
     "authors": [
         "Paul Hammant"

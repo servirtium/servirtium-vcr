@@ -133,7 +133,7 @@ matches the release just published; see the [release instructions](../release/RE
 
 ## Version strings differ per ecosystem — and one of them can't comply
 
-The release tag is `v2.0.0-alpha.4`, but almost every packaging system spells a
+The release tag is `v2.0.0-alpha.5`, but almost every packaging system spells a
 prerelease its own way, and a consumer copying the tag string gets an
 unresolvable coordinate. Audited 2026-09-20:
 

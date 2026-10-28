@@ -32,7 +32,7 @@ final class NativeLoader {
      * ABI-mismatch diagnostic when a required {@code aether_vcr_embed_*} export
      * is missing from the loaded library (i.e. the {@code .so} is too old).
      */
-    static final String ENGINE_VERSION = "v2.0.0-alpha.4";
+    static final String ENGINE_VERSION = "v2.0.0-alpha.5";
 
     private static final Arena GLOBAL = Arena.global();
 
