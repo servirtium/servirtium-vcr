@@ -1,5 +1,5 @@
 name = "servirtium_gleam"
-version = "2.0.0-alpha.6"
+version = "2.0.0-alpha.7"
 target = "erlang"
 
 description = "Record/replay HTTP service tests (Servirtium markdown tapes) for Gleam — over the Aether VCR core's C NIF on the BEAM."

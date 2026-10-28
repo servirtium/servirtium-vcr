@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='servirtium',
-    version='2.0.0a6',
+    version='2.0.0a7',
     description='Record/replay HTTP service tests in the Servirtium markdown '
                 'tape format — a thin Python (ctypes) wrapper over the Aether VCR core',
     author='Paul Hammant',
