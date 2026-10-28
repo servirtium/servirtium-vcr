@@ -1,0 +1,14 @@
+// Response-side substitution probe (field report #1, the paging blocker): the
+// VCR fills {{request.host}}/{{request.scheme}}/{{baseUrl}} + caller-registered
+// placeholders in the RESPONSE body and headers on playback. Standalone:
+//   aeb core_tests/.substitute.ae
+import bldr
+import aether
+import aether (source, lib, caps)
+aeb(cap) {
+    bldr.build() {
+        aether.program_test() {
+            source("subst_probe.ae"); lib(".."); caps("fs,net,os,extern")
+        }
+    }
+}

@@ -188,11 +188,12 @@ fi
 #
 # Gated on RELEASE_BINDING_PACKAGES=1 so a normal `release/build.sh` is unchanged.
 # The fat jar embeds the SIX verified glibc/macos/windows release libraries (via
-# core/.releaseJarMatrix.ae, overriding java's core/.build.ae dep); the nupkg
-# embeds all EIGHT NuGet RIDs — .releaseBuild.ae stages them DIRECTLY from
-# release/dist (overriding dotnet/Servirtium.Vcr/.build.ae), not via a matrix
-# node, because a node substituted through --overrideDep does not get its own
-# dep() edges resolved (that left the csproj with empty <None Include> / MSB4035).
+# core/.releaseJarMatrix.ae, overriding java's core/.build.ae dep). The nupkg is
+# built from the hand-written multi-TFM dotnet/Servirtium.Vcr/Servirtium.Vcr.pkg.csproj
+# (net8.0 + net48, so a legacy .NET Framework 4.8 consumer works alongside modern
+# .NET) with all EIGHT NuGet RIDs staged from release/dist — see the nupkg block
+# below. The in-repo dev build / tests / fsharp are unaffected (they use the
+# aeb-generated net8.0 csproj).
 if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
   have aeb || die "RELEASE_BINDING_PACKAGES=1 requires aeb"
   # Validate the raw release libraries before any package is allowed to embed
@@ -224,12 +225,40 @@ if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
     die "fat Java jar build failed — see $DIST/.jar.log"
   fi
 
-  # -- the multi-RID .NET nupkg (dotnet pack, via the release build node) --
-  say "building the multi-RID .NET nupkg (8 RIDs) …"
-  if ( cd "$ROOT" && AEB_PER_NODE=0 aeb \
-         dotnet/Servirtium.Vcr/.dist.ae \
-         --overrideDep dotnet/Servirtium.Vcr/.build.ae=dotnet/Servirtium.Vcr/.releaseBuild.ae ) >"$DIST/.nupkg.log" 2>&1; then
-    # dotnet.pack writes the .nupkg under target/dist/dotnet/Servirtium.Vcr/nupkg/.
+  # -- the multi-TFM, multi-RID .NET nupkg (dotnet pack, hand-written csproj) --
+  say "building the multi-TFM, multi-RID .NET nupkg (net8.0 + net48, 8 RIDs) …"
+  # The shipped nupkg is built from the HAND-WRITTEN multi-target packaging
+  # project dotnet/Servirtium.Vcr/Servirtium.Vcr.pkg.csproj (net8.0;net48 — two
+  # DLLs, one package, so a legacy .NET Framework 4.8 consumer works alongside
+  # modern .NET). aeb's dotnet SDK only emits a single <TargetFramework>, so this
+  # one leaf uses dotnet pack directly. The in-repo dev build/tests/fsharp are
+  # unaffected — they still use the aeb-generated net8.0 csproj.
+  #
+  # Stage the 8 verified release libraries into dotnet/Servirtium.Vcr/native/<rid>/
+  # where the pkg.csproj's <None> globs read them (same dirs .releaseBuild.ae used).
+  if ( set -e
+       cd "$ROOT"
+       # Relative to $ROOT (we just cd'd there), so an empty var can never make
+       # this an absolute path like /native.
+       rm -rf dotnet/Servirtium.Vcr/native
+       stage_rid() { # <release-dist-name> <rid> <packaged-name>
+         local src="$DIST/$1" rid="$2" name="$3"
+         [ -f "$src" ] || { echo "release NuGet library missing: $src" >&2; return 1; }
+         mkdir -p "dotnet/Servirtium.Vcr/native/$rid"
+         cp "$src" "dotnet/Servirtium.Vcr/native/$rid/$name"
+       }
+       stage_rid "libservirtium_vcr-$TAG-linux-x86_64.so"       linux-x64        libservirtium_vcr.so
+       stage_rid "libservirtium_vcr-$TAG-linux-arm64.so"        linux-arm64      libservirtium_vcr.so
+       stage_rid "libservirtium_vcr-$TAG-linux-x86_64-musl.so"  linux-musl-x64   libservirtium_vcr.so
+       stage_rid "libservirtium_vcr-$TAG-linux-arm64-musl.so"   linux-musl-arm64 libservirtium_vcr.so
+       stage_rid "libservirtium_vcr-$TAG-macos-x86_64.dylib"    osx-x64          libservirtium_vcr.dylib
+       stage_rid "libservirtium_vcr-$TAG-macos-arm64.dylib"     osx-arm64        libservirtium_vcr.dylib
+       stage_rid "libservirtium_vcr-$TAG-windows-x86_64.dll"    win-x64          servirtium_vcr.dll
+       stage_rid "libservirtium_vcr-$TAG-windows-arm64.dll"     win-arm64        servirtium_vcr.dll
+       dotnet pack dotnet/Servirtium.Vcr/Servirtium.Vcr.pkg.csproj -c Release \
+         -o target/dist/dotnet/Servirtium.Vcr/nupkg --nologo
+     ) >"$DIST/.nupkg.log" 2>&1; then
+    # dotnet pack writes the .nupkg under target/dist/dotnet/Servirtium.Vcr/nupkg/.
     nupkgdir="$ROOT/target/dist/dotnet/Servirtium.Vcr/nupkg"
     [ -d "$nupkgdir" ] || die "nupkg output directory missing: $nupkgdir"
     found=0

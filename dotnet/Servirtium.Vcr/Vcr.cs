@@ -152,6 +152,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     private Func<string, string?>? _secretResolver;
     public PlaybackBuilder SecretResolver(Func<string, string?> callback) { _secretResolver = callback; return this; }
     private readonly List<(VcrField field, string pattern, string replacement)> _unredactions = new();
+    private readonly List<(VcrField field, string pattern, string replacement)> _substitutions = new();
     private readonly List<string> _matchHeaders = new();
     private bool _strictHeaders;
     private bool _matchJsonBody;
@@ -214,6 +215,25 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         return this;
     }
 
+    /// <summary>
+    /// Rewrite <paramref name="pattern"/> to <paramref name="replacement"/> in
+    /// the recorded RESPONSE body (<see cref="VcrField.ResponseBody"/>) or
+    /// RESPONSE headers (<see cref="VcrField.ResponseHeaders"/>) on playback,
+    /// so a taped <c>nextLink</c> / <c>id</c> / absolute URL resolves against
+    /// the test's own host (paging / HATEOAS). The placeholders
+    /// <c>{{request.host}}</c>, <c>{{request.scheme}}</c> and
+    /// <c>{{baseUrl}}</c> are filled from the live request automatically —
+    /// use <c>Substitute</c> only for your own placeholders (e.g.
+    /// <c>Substitute(VcrField.ResponseBody, "{{vault}}", "https://" + host)</c>).
+    /// Only the two response fields are accepted; anything else throws from
+    /// <see cref="Start"/>. Request-side matching is unaffected.
+    /// </summary>
+    public PlaybackBuilder Substitute(VcrField field, string pattern, string replacement)
+    {
+        _substitutions.Add((field, pattern, replacement));
+        return this;
+    }
+
     private protected override void ApplyConfig(IntPtr handle)
     {
         base.ApplyConfig(handle);
@@ -227,6 +247,10 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         foreach ((VcrField field, string pattern, string replacement) in _unredactions)
         {
             Check(NativeMethods.Unredact(handle, (int)field, pattern, replacement), nameof(Unredact));
+        }
+        foreach ((VcrField field, string pattern, string replacement) in _substitutions)
+        {
+            Check(NativeMethods.Substitute(handle, (int)field, pattern, replacement), nameof(Substitute));
         }
     }
 
@@ -453,6 +477,28 @@ public sealed class VcrServer : IDisposable
         string error = NativeMethods.TakeString(NativeMethods.AssertNoMismatches(Handle));
         if (!string.IsNullOrEmpty(error)) throw new VcrException(error);
     }
+
+    /// <summary>
+    /// Throw unless every recorded interaction was replayed at least once since
+    /// load/reset. Catches a system-under-test that skipped a taped step (e.g.
+    /// never performed the recorded 401 sign-in) — which a per-request outcome
+    /// check cannot see. Works in ordered and MatchMultiple playback. Call after
+    /// the SUT has finished driving the server. The exception lists the unused
+    /// interactions (index + method + path).
+    /// </summary>
+    public void AssertAllConsumed()
+    {
+        string error = NativeMethods.TakeString(NativeMethods.AssertAllConsumed(Handle));
+        if (!string.IsNullOrEmpty(error)) throw new VcrException(error);
+    }
+
+    /// <summary>
+    /// The TLS protocol this listener serves over — "TLSv1.3" when TLS is
+    /// enabled (libservirtium_vcr's pure-Aether TLS 1.3 server), or "" for plain
+    /// HTTP. Lets a test assert the server negotiated 1.3, not merely that the
+    /// client was configured for it.
+    /// </summary>
+    public string LastTlsProtocol => NativeMethods.TakeString(NativeMethods.LastTlsProtocol(Handle));
     public void TestContext(string name, string sourceFile = "", int sourceLine = 0) => NativeMethods.TestContext(Handle, name, sourceFile, sourceLine);
 
     /// <summary>Outcome of the most-recent dispatch.</summary>

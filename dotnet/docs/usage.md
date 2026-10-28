@@ -92,7 +92,7 @@ disappear consistently.
 ## Replaying a scrubbed tape (unredaction)
 
 When a committed tape holds a placeholder but the live SUT sends the real
-value, rewrite the recorded expectation before matching:
+value, rewrite the recorded **request** expectation before matching:
 
 ```csharp
 Vcr.Playback(tape)
@@ -100,6 +100,31 @@ Vcr.Playback(tape)
     .Unredact(VcrField.RequestHeaders, "Bearer REDACTED", realToken)
     .Start();
 ```
+
+> **`Unredact` only affects the request side** (path, request headers, request
+> body) — it rewrites what the tape *expects to receive* so a scrubbed tape
+> still matches the live request. It does **not** change the response the VCR
+> sends back. To rewrite values in the **response** that goes to the SUT (e.g. a
+> taped `nextLink` / absolute URL so paging resolves against the test's own
+> host), use [`Substitute`](#rewriting-response-values-substitution) instead.
+
+## Rewriting response values (substitution)
+
+On playback the VCR fills `{{request.host}}`, `{{request.scheme}}` and
+`{{baseUrl}}` (from the live request) plus any `Substitute` placeholders in the
+recorded **response** body and headers — so a taped absolute URL points back at
+the test's own host:
+
+```csharp
+Vcr.Playback(tape)
+    // {{baseUrl}}/{{request.host}}/{{request.scheme}} are filled automatically;
+    // register your own placeholders explicitly:
+    .Substitute(VcrField.ResponseBody,    "{{vault}}", "https://" + host)
+    .Substitute(VcrField.ResponseHeaders, "{{vault}}", "https://" + host)
+    .Start();
+```
+
+Only `VcrField.ResponseBody` and `VcrField.ResponseHeaders` are accepted.
 
 ## Removing headers
 
@@ -136,6 +161,39 @@ Two further opt-in matchers relax the default strict ordered playback:
 sequence) without consuming it — reusable and order-independent, for polling or
 non-deterministic request order — and `.MatchHeader(name)` matches on a single
 named request header's value, ignoring the rest of the recorded header block.
+
+`.MatchHeader` works for **any** header, including `Host` — so to require that
+the SUT called the right virtual host (e.g. a specific `vault.example` rather
+than whatever host the tape was recorded against), add `.MatchHeader("Host")`:
+
+```csharp
+Vcr.Playback(tape).MatchHeader("Host").Start();
+```
+
+## Asserting every interaction was used
+
+`AssertNoMismatches()` catches *wrong* requests, but not a test that stops early
+and leaves taped interactions unused (e.g. the SUT skipped a recorded sign-in
+step). After the SUT has finished, `AssertAllConsumed()` throws unless every
+recorded interaction was replayed at least once (works in ordered and
+`MatchMultiple` playback); the exception lists the unused ones:
+
+```csharp
+using var vcr = Vcr.Playback(tape).Start();
+// ... drive the SUT ...
+vcr.AssertAllConsumed();   // throws listing [i] METHOD /path for any unused
+```
+
+## Asserting the TLS version (server side)
+
+With TLS enabled, `LastTlsProtocol` reports what the **server** served over, so
+a test can assert TLS 1.3 was actually used rather than only setting the client
+to it:
+
+```csharp
+using var vcr = Vcr.Playback(tape).Tls(certPath, keyPath).Start();
+Assert.Equal("TLSv1.3", vcr.LastTlsProtocol);
+```
 
 ## Notes
 

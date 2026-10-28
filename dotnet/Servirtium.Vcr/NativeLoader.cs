@@ -36,6 +36,38 @@ internal static class NativeLoader
         }
     }
 
+#if NETFRAMEWORK
+    // .NET Framework (net48) has no NativeLibrary / custom DllImport resolver.
+    // Instead the CLR resolves a bare [DllImport("servirtium_vcr")] through Win32
+    // LoadLibrary with the process's DLL search path, so we prepend the right
+    // directory via SetDllDirectory before the first P/Invoke. There is no
+    // export-level ValidateAbi here (no TryGetExport) — a too-old native library
+    // surfaces as an EntryPointNotFoundException from the missing export instead,
+    // which is the same failure mode, just without the pre-emptive message.
+    // This path exists only for the legacy .NET Framework test bed; modern .NET
+    // uses the NativeLibrary resolver below.
+    [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetDllDirectory(string? lpPathName);
+
+    internal static void Register()
+    {
+        if (Interlocked.Exchange(ref _registered, 1) == 1) return;
+        foreach (string candidate in CandidatePaths())
+        {
+            if (!string.IsNullOrEmpty(candidate) && File.Exists(candidate))
+            {
+                string? dir = Path.GetDirectoryName(Path.GetFullPath(candidate));
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    SetDllDirectory(dir);
+                    return;
+                }
+            }
+        }
+        // Nothing staged — leave the default search path (the .dll may sit next
+        // to the exe, or SERVIRTIUM_VCR_LIB's dir); the DllImport will try.
+    }
+#else
     // ModuleInitializer is exactly the right hook for a native-lib resolver:
     // it runs once, before any P/Invoke in this assembly. CA2255 warns it's
     // "intended for app code" — benign here; this is the advanced scenario it
@@ -101,6 +133,7 @@ internal static class NativeLoader
                 "and set SERVIRTIUM_VCR_LIB to its path).");
         }
     }
+#endif
 
     private static IEnumerable<string> CandidatePaths()
     {
@@ -142,10 +175,14 @@ internal static class NativeLoader
                 Architecture.X64 => "x64",
                 _ => RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant(),
             };
+#if !NETFRAMEWORK
+            // musl RID only matters on Linux, which .NET Framework never runs on,
+            // so the probe is modern-.NET-only (RuntimeIdentifier isn't on net48).
             if (os == "linux" && RuntimeInformation.RuntimeIdentifier.Contains("-musl", StringComparison.Ordinal))
             {
                 yield return $"linux-musl-{arch}";
             }
+#endif
             yield return $"{os}-{arch}";
         }
     }

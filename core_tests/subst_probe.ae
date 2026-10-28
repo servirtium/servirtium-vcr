@@ -1,0 +1,74 @@
+// Response-side substitution (field report #1, the paging blocker): on playback
+// the VCR rewrites {{request.host}}/{{request.scheme}}/{{baseUrl}} (from the live
+// request) and caller-registered placeholders in the RESPONSE body and headers,
+// so a taped nextLink/id/absolute URL resolves against the test's own host.
+// This probe loads a tape whose response carries those tokens, registers one
+// caller substitution ({{vault}} -> a literal), serves it, and asserts the
+// fetched body + Link header came back filled in.
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+
+extern exit(code: int)
+
+const PORT = 18293
+const TAPE = "core_tests/tapes/substitute.tape"
+
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+
+main() {
+    println("=== response-side substitution: {{baseUrl}}/{{request.host}}/{{vault}} on playback ===\n")
+
+    srv = vcr.load(TAPE, PORT)
+    if srv == null { fail("load: ${vcr.load_error()}") }
+
+    // Caller substitution for a non-request-derived placeholder.
+    serr = vcr.substitute_h(srv, vcr.FIELD_RESPONSE_BODY, "{{vault}}", "https://vault.example")
+    if serr != "" { fail("substitute body: ${serr}") }
+    // A non-response field must be rejected.
+    e_bad = vcr.substitute_h(srv, vcr.FIELD_PATH, "{{x}}", "y")
+    if e_bad == "" { fail("substitute should reject a non-response field") }
+
+    rc = vcr.start_background_h(srv, 10000)
+    if rc != 0 { fail("start: ${vcr.last_error_h(srv)}") }
+    port = http.server_port(srv)
+    expect_base = "http://127.0.0.1:${port}"
+
+    req = client.request("GET", "${expect_base}/page1")
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail("GET failed: ${err}") }
+    status = client.response_status(resp)
+    body = string.copy(client.response_body(resp))
+    headers = string.copy(client.response_headers(resp))
+    client.response_free(resp)
+
+    if status != 200 { fail("status ${status}") }
+
+    // {{baseUrl}} in the body -> http://127.0.0.1:<port>
+    if string.index_of(body, "${expect_base}/page2") < 0 {
+        fail("body {{baseUrl}} not filled; got: ${body}")
+    }
+    // {{vault}} caller substitution
+    if string.index_of(body, "https://vault.example/secret") < 0 {
+        fail("body {{vault}} not filled; got: ${body}")
+    }
+    // {{request.host}} -> the live Host header (127.0.0.1:<port>)
+    if string.index_of(body, "127.0.0.1:${port}") < 0 {
+        fail("body {{request.host}} not filled; got: ${body}")
+    }
+    // No raw placeholder left behind.
+    if string.index_of(body, "{{") >= 0 {
+        fail("body still has a raw placeholder; got: ${body}")
+    }
+    // {{baseUrl}} in the Link RESPONSE HEADER
+    if string.index_of(headers, "${expect_base}/page2") < 0 {
+        fail("Link header {{baseUrl}} not filled; got: ${headers}")
+    }
+
+    vcr.eject(srv)
+    println("\nPASS: response body + headers filled ({{baseUrl}}, {{request.host}}, {{vault}})")
+    exit(0)
+}

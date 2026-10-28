@@ -49,6 +49,14 @@ public enum VcrOutcome
 /// </summary>
 internal static class NativeMethods
 {
+#if NETFRAMEWORK
+    // .NET Framework has no [ModuleInitializer], so the NativeLoader can't
+    // self-register. A static constructor on this type runs before the first
+    // access to any member of NativeMethods — which is the first P/Invoke — so
+    // it is the right hook to point the Win32 DLL search path at the native dir.
+    static NativeMethods() => NativeLoader.Register();
+#endif
+
     /// <summary>
     /// Native library base name. .NET resolves this to
     /// libservirtium_vcr.so / .dylib / servirtium_vcr.dll via the
@@ -109,6 +117,12 @@ internal static class NativeMethods
     internal static extern IntPtr DiagnosticsJson(IntPtr server, int consume);
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_assert_no_mismatches", CharSet = CharSet.Ansi)]
     internal static extern IntPtr AssertNoMismatches(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_assert_all_consumed", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr AssertAllConsumed(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_tls_protocol", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr LastTlsProtocol(IntPtr server);
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_test_context", CharSet = CharSet.Ansi)]
     internal static extern void TestContext(IntPtr server, string name, string file, int line);
 
@@ -166,6 +180,9 @@ internal static class NativeMethods
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_tls", CharSet = CharSet.Ansi)]
     internal static extern IntPtr SetTls(IntPtr server, string certPath, string keyPath);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_substitute", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr Substitute(IntPtr server, int field, string pattern, string replacement);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_untaped", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Untaped(IntPtr server, string path);

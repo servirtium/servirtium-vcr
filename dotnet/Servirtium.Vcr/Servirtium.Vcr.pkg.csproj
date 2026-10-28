@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    HAND-MAINTAINED packaging project for the shippable NuGet package ONLY.
+
+    The in-repo dev build + tests + the F# binding use aeb's GENERATED
+    .Servirtium.Vcr.generated.csproj (net8.0, single-TFM) — this file does not
+    touch that path. This one exists solely to produce a multi-target nupkg so a
+    legacy .NET Framework 4.8 consumer (e.g. an SSH test bed) can reference the
+    package, alongside modern .NET. "Two DLLs, one package": the SDK compiles the
+    SAME source twice, into lib/net8.0/ and lib/net48/. The only per-target code
+    is NativeLoader (NativeLibrary resolver on modern .NET vs Win32
+    SetDllDirectory under #if NETFRAMEWORK) + the IsExternalInit shim for records.
+
+    net48 is targeted directly (not netstandard2.0) because only a net4x TFM
+    defines the NETFRAMEWORK symbol the loader's #if needs, and NativeLibrary is
+    absent from both anyway. This whole file is niche legacy support and is
+    expected to retire when net48 does.
+
+    Packed by dotnet/Servirtium.Vcr/.package.ae, which stages the per-RID native
+    libraries into native/<rid>/ next to this file first (so the <None> globs
+    below resolve). Versions/metadata are stamped by release/.version.ae.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net48</TargetFrameworks>
+    <RootNamespace>Servirtium.Vcr</RootNamespace>
+    <AssemblyName>Servirtium.Vcr</AssemblyName>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>true</IsPackable>
+    <PackageId>Servirtium.Vcr</PackageId>
+    <Version>2.0.0-alpha.7</Version>
+    <Description>Idiomatic .NET record/replay (Servirtium) over the Aether VCR core, via P/Invoke to a precompiled native library.</Description>
+    <!-- Keep the aeb-generated csproj (same dir) out of this build. -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <!-- The shared source, compiled into BOTH target assemblies. -->
+  <ItemGroup>
+    <Compile Include="NativeMethods.cs" />
+    <Compile Include="NativeLoader.cs" />
+    <Compile Include="Vcr.cs" />
+    <Compile Include="SecretCallbacks.cs" />
+    <Compile Include="IsExternalInit.cs" />
+  </ItemGroup>
+
+  <!--
+    Build the net48 TFM on a non-Windows CI runner (ubuntu + setup-dotnet):
+    the .NET Framework 4.8 reference assemblies ship as this NuGet package, not
+    with the SDK. PrivateAssets=all keeps it a build-only dependency that never
+    flows to consumers of the package. No-op for the net8.0 TFM.
+  -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    Per-RID native libraries, packed under runtimes/<rid>/native/. Both the
+    net8.0 and net48 assemblies resolve them the same way (CandidatePaths probes
+    runtimes/<rid>/native/ under AppContext.BaseDirectory). .package.ae stages
+    these into native/<rid>/ before packing; the globs no-op if a rid is absent.
+  -->
+  <ItemGroup>
+    <None Include="native/linux-x64/libservirtium_vcr.so" Pack="true" PackagePath="runtimes/linux-x64/native/" Condition="Exists('native/linux-x64/libservirtium_vcr.so')" />
+    <None Include="native/linux-arm64/libservirtium_vcr.so" Pack="true" PackagePath="runtimes/linux-arm64/native/" Condition="Exists('native/linux-arm64/libservirtium_vcr.so')" />
+    <None Include="native/linux-musl-x64/libservirtium_vcr.so" Pack="true" PackagePath="runtimes/linux-musl-x64/native/" Condition="Exists('native/linux-musl-x64/libservirtium_vcr.so')" />
+    <None Include="native/linux-musl-arm64/libservirtium_vcr.so" Pack="true" PackagePath="runtimes/linux-musl-arm64/native/" Condition="Exists('native/linux-musl-arm64/libservirtium_vcr.so')" />
+    <None Include="native/osx-x64/libservirtium_vcr.dylib" Pack="true" PackagePath="runtimes/osx-x64/native/" Condition="Exists('native/osx-x64/libservirtium_vcr.dylib')" />
+    <None Include="native/osx-arm64/libservirtium_vcr.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native/" Condition="Exists('native/osx-arm64/libservirtium_vcr.dylib')" />
+    <None Include="native/win-x64/servirtium_vcr.dll" Pack="true" PackagePath="runtimes/win-x64/native/" Condition="Exists('native/win-x64/servirtium_vcr.dll')" />
+    <None Include="native/win-arm64/servirtium_vcr.dll" Pack="true" PackagePath="runtimes/win-arm64/native/" Condition="Exists('native/win-arm64/servirtium_vcr.dll')" />
+  </ItemGroup>
+
+</Project>
