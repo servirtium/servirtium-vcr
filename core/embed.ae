@@ -212,6 +212,13 @@ vcr_embed_assert_all_consumed(s: ptr) -> ptr {
     return vcr_embed_dup(vcr.assert_all_consumed_h(s))
 }
 
+// "" if every registered redaction / unredaction / substitution rule actually
+// matched something, else a message listing the rules that never fired (a
+// verifyNoMoreInteractions()-style check for scrubbing config). Caller frees.
+vcr_embed_assert_all_redactions_used(s: ptr) -> ptr {
+    return vcr_embed_dup(vcr.assert_all_redactions_used_h(s))
+}
+
 vcr_embed_tape_length(s: ptr) -> int {
     return vcr.tape_length_h(s)
 }

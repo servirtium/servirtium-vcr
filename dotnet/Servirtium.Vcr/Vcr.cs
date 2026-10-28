@@ -493,6 +493,20 @@ public sealed class VcrServer : IDisposable
     }
 
     /// <summary>
+    /// Throw unless every registered <see cref="PlaybackBuilder.Unredact"/> /
+    /// <see cref="PlaybackBuilder.Substitute"/> / record-mode redaction rule
+    /// actually matched something — the <c>verifyNoMoreInteractions()</c>
+    /// analogue for scrubbing config. Catches a stale test: a rule whose pattern
+    /// no longer appears in the tape, so it silently does nothing. Call at the
+    /// end of the test; the exception lists the rules that never fired.
+    /// </summary>
+    public void AssertAllRedactionsUsed()
+    {
+        string error = NativeMethods.TakeString(NativeMethods.AssertAllRedactionsUsed(Handle));
+        if (!string.IsNullOrEmpty(error)) throw new VcrException(error);
+    }
+
+    /// <summary>
     /// The TLS protocol this listener serves over — "TLSv1.3" when TLS is
     /// enabled (libservirtium_vcr's pure-Aether TLS 1.3 server), or "" for plain
     /// HTTP. Lets a test assert the server negotiated 1.3, not merely that the

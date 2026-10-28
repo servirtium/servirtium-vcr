@@ -121,6 +121,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_assert_all_consumed", CharSet = CharSet.Ansi)]
     internal static extern IntPtr AssertAllConsumed(IntPtr server);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_assert_all_redactions_used", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr AssertAllRedactionsUsed(IntPtr server);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_tls_protocol", CharSet = CharSet.Ansi)]
     internal static extern IntPtr LastTlsProtocol(IntPtr server);
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_test_context", CharSet = CharSet.Ansi)]

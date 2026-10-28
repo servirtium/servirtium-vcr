@@ -185,7 +185,7 @@ exports (
     clear_static_content_h, clear_untaped_h, clear_format_options_h,
     diagnostic_open_h, test_context_h, last_error_ex_h, diagnostics_json_h, assert_no_mismatches_h,
     last_error_h, last_kind_h, last_index_h, clear_last_error_h,
-    tape_length_h, reset_cursor_h, load_error_h, assert_all_consumed_h,
+    tape_length_h, reset_cursor_h, load_error_h, assert_all_consumed_h, assert_all_redactions_used_h,
     stop_and_flush_h, stop_and_flush_fail_if_changed_h, stop_and_flush_or_check_h
 )
 
@@ -240,6 +240,9 @@ struct Redaction {
     field: int
     pattern: string
     replacement: string
+    used: int                // 1 once this rule's pattern actually matched text
+                              // it was applied to (for assert_all_redactions_used;
+                              // shared by redactions / unredactions / substitutions).
 }
 
 // A whole-tape rewrite rule applied across ALL fields and interactions. Two
@@ -794,6 +797,7 @@ redaction_add(l: ptr, field: int, pattern: string, replacement: string, api: str
     r.field = field
     r.pattern = string.copy(pattern)
     r.replacement = string.copy(replacement)
+    r.used = 0
     list_add_raw(l, r)
     return 1
 }
@@ -1303,7 +1307,9 @@ rt_apply_unredactions_for_k(srvkey: string, src: string, field: int) -> string {
     while i < n {
         r = list_get_raw(l, i) as *Redaction
         if r.field == field {
+            before = out
             out = replace_all(out, r.pattern, r.replacement)
+            if out != before { r.used = 1 }
         }
         i = i + 1
     }
@@ -2593,6 +2599,7 @@ substitute_h(server: ptr, field: int, pattern: string, replacement: string) -> s
     r.field = field
     r.pattern = string.copy(pattern)
     r.replacement = string.copy(replacement)
+    r.used = 0
     list_add_raw(substitutions_k(key_for(server)), r)
     return ""
 }
@@ -2624,7 +2631,9 @@ apply_substitutions_k(key: string, req: ptr, text: string, field: int) -> string
     while i < n {
         r = list_get_raw(l, i) as *Redaction
         if r.field == field {
+            before = out
             out = str_replace_all(out, r.pattern, r.replacement)
+            if out != before { r.used = 1 }
         }
         i = i + 1
     }
@@ -2736,6 +2745,36 @@ last_index_h(server: ptr) -> int { return vcr_last_index_k(key_for(server)) }
 clear_last_error_h(server: ptr) { vcr_clear_last_error_k(key_for(server)) }
 tape_length_h(server: ptr) -> int { return list_size(tape_list_k(key_for(server))) }
 reset_cursor_h(server: ptr) { vcr_reset_cursor_k(key_for(server)) }
+
+// "" if every registered redaction / unredaction / substitution rule actually
+// matched something, else a message listing the rules that never fired (the
+// verifyNoMoreInteractions() analogue for scrubbing rules). Catches a stale
+// test config — an .Unredact/.Redact/.Substitute whose pattern no longer
+// appears in the tape, so it silently does nothing. Call at end of test.
+assert_all_redactions_used_h(server: ptr) -> string {
+    key = key_for(server)
+    unused = 0
+    detail = ""
+    detail, unused = _collect_unused_rules(redactions_k(key), "redact", detail, unused)
+    detail, unused = _collect_unused_rules(unredactions_k(key), "unredact", detail, unused)
+    detail, unused = _collect_unused_rules(substitutions_k(key), "substitute", detail, unused)
+    if unused == 0 { return "" }
+    return "vcr: ${unused} configured scrubbing rule(s) never matched anything:${detail}"
+}
+
+_collect_unused_rules(l: ptr, label: string, detail: string, unused: int) -> (string, int) {
+    n = list_size(l)
+    i = 0
+    while i < n {
+        r = list_get_raw(l, i) as *Redaction
+        if r.used == 0 {
+            unused = unused + 1
+            detail = string_concat(detail, "\n  ${label}(field ${r.field}, \"${r.pattern}\")")
+        }
+        i = i + 1
+    }
+    return detail, unused
+}
 
 // "" if EVERY recorded interaction was replayed at least once since load/reset,
 // else a message listing the ones that were not (index + method + path). Lets a
@@ -3484,6 +3523,7 @@ structured_redaction(kind: int, field: int, name: string, replacement: string) -
     r.field = field
     r.pattern = string.copy(name)
     r.replacement = string.copy(replacement)
+    r.used = 0
     list_add_raw(redactions(), r)
     return ""
 }
@@ -3974,6 +4014,7 @@ apply_redactions_for_k(key: string, s: string, field: int) -> string {
     while i < list_size(l) {
         r = list_get_raw(l, i) as *Redaction
         if r.field == field {
+            before = out
             if r.kind == 0 { out = str_replace_all(out, r.pattern, r.replacement) }
             if r.kind == 1 { out = redact_header_text(out, r.pattern, r.replacement) }
             if r.kind == 2 { out = redact_query_text(out, r.pattern, r.replacement) }
@@ -3986,6 +4027,9 @@ apply_redactions_for_k(key: string, s: string, field: int) -> string {
                 json.json_free(tree)
                 out = redact_json_text(out, r.pattern, r.replacement)
             }
+            // "Used" = this rule actually rewrote something (its pattern was
+            // present), for assert_all_redactions_used.
+            if out != before { r.used = 1 }
         }
         i = i + 1
     }

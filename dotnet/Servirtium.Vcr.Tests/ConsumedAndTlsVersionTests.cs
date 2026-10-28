@@ -39,6 +39,34 @@ public class ConsumedAndTlsVersionTests
     }
 
     [Fact]
+    public async Task AssertAllRedactionsUsed_passes_when_the_unredaction_matched_and_throws_when_not()
+    {
+        // The unredaction's pattern IS present in the tape → used → no throw.
+        using (var ok = Vcr.Playback(TapePath("secure_get.md"))
+                   .Port(0)
+                   .Unredact(VcrField.RequestHeaders, "Bearer REDACTED", "Bearer real-token")
+                   .Start())
+        {
+            using var client = new HttpClient { BaseAddress = new Uri(ok.BaseUrl) };
+            var req = new HttpRequestMessage(HttpMethod.Get, "/secure");
+            req.Headers.TryAddWithoutValidation("Authorization", "Bearer real-token");
+            await client.SendAsync(req);
+            ok.AssertAllRedactionsUsed();   // should not throw
+        }
+
+        // A pattern that never appears in the tape → unused → throws with it listed.
+        using (var stale = Vcr.Playback(TapePath("secure_get.md"))
+                   .Port(0)
+                   .Unredact(VcrField.RequestHeaders, "Bearer NOPE-NEVER-THERE", "x")
+                   .Start())
+        {
+            VcrException ex = Assert.Throws<VcrException>(() => stale.AssertAllRedactionsUsed());
+            Assert.Contains("never matched", ex.Message);
+            Assert.Contains("NOPE-NEVER-THERE", ex.Message);
+        }
+    }
+
+    [Fact]
     public async Task LastTlsProtocol_is_TLS13_when_tls_enabled_else_empty()
     {
         // Plain HTTP: no TLS protocol.
