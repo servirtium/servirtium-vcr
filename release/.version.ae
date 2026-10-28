@@ -59,6 +59,7 @@ const PINS[] = [
     "dotnet/Servirtium.Vcr/.releaseBuild.ae", "package_version\\(\"@S@\"\\)",
     "dotnet/example/ServirtiumConsumerExample.csproj", "Include=\"Servirtium\\.Vcr\" Version=\"@S@\"",
     "fsharp/Servirtium.Vcr.FSharp/Servirtium.Vcr.FSharp.fsproj", "<Version>@S@</Version>",
+    "dotnet/Servirtium.Vcr/Servirtium.Vcr.pkg.csproj", "<Version>@S@</Version>",
     "fsharp/example/ServirtiumConsumerExample.fsproj", "Include=\"Servirtium\\.Vcr\\.FSharp\" Version=\"@S@\"",
     // consumer-facing snippet + prose in the crystal README
     "crystal/README.md", "(?:^    version: |Naming `)@S@(?:      # REQUIRED|` resolves)",

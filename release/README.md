@@ -20,13 +20,13 @@ that will be published at that tag. For example, for a future alpha:
 ```sh
 # Rewrite every version pin (per-ecosystem spellings + doc download URLs) from the
 # current SERVIRTIUM_VCR_VERSION to the new tag; all-or-nothing:
-SVCR_RELEASE_SET=v2.0.0-alpha.7 aeb release/.version.ae
-SVCR_RELEASE_TAG=v2.0.0-alpha.7 aeb release/.version.ae   # check every pin against the tag
-SVCR_RELEASE_TAG=v2.0.0-alpha.7 SVCR_ARTIFACTS_MODE=version aeb release/.artifacts.ae
+SVCR_RELEASE_SET=v2.0.0-alpha.8 aeb release/.version.ae
+SVCR_RELEASE_TAG=v2.0.0-alpha.8 aeb release/.version.ae   # check every pin against the tag
+SVCR_RELEASE_TAG=v2.0.0-alpha.8 SVCR_ARTIFACTS_MODE=version aeb release/.artifacts.ae
 # Stage and commit the release preparation, then:
-git tag -a v2.0.0-alpha.7 -m 'Servirtium core v2.0.0-alpha.7'
+git tag -a v2.0.0-alpha.8 -m 'Servirtium core v2.0.0-alpha.8'
 git push origin main
-git push origin v2.0.0-alpha.7
+git push origin v2.0.0-alpha.8
 ```
 
 Use a new unused version; pushing `main` alone does not publish a release.
@@ -98,10 +98,10 @@ tag, so the two publishers do not race. The script still builds and uploads raw
 libraries and the matching `ae add` assets, without publishing language packages.
 
 ```sh
-release/publish.sh v2.0.0-alpha.7              # build the matrix + create the release, assets attached
-release/publish.sh v2.0.0-alpha.7 --prerelease # mark it a pre-release on GitHub (do this for -alpha/-beta/-rc)
-release/publish.sh v2.0.0-alpha.7 --draft      # create as a draft to review first
-release/publish.sh v2.0.0-alpha.7 --no-build   # attach whatever is already in release/dist
+release/publish.sh v2.0.0-alpha.8              # build the matrix + create the release, assets attached
+release/publish.sh v2.0.0-alpha.8 --prerelease # mark it a pre-release on GitHub (do this for -alpha/-beta/-rc)
+release/publish.sh v2.0.0-alpha.8 --draft      # create as a draft to review first
+release/publish.sh v2.0.0-alpha.8 --no-build   # attach whatever is already in release/dist
 ```
 
 `publish.sh` builds (unless `--no-build`), then `gh release create <tag>` with
@@ -122,7 +122,7 @@ The canonical version is a SemVer **pre-release** (`2.0.0-alpha.2`). Two gotchas
   let GitHub's own "Latest" flag (set at publish, cleared by `--prerelease`)
   decide, or compare with a real SemVer parser.
 - **Each package ecosystem spells the pre-release differently** — the git tag is
-  `v2.0.0-alpha.7`, but the per-language manifests carry the ecosystem-valid form:
+  `v2.0.0-alpha.8`, but the per-language manifests carry the ecosystem-valid form:
   Python `2.0.0a2` (PEP 440), RubyGems `2.0.0.alpha.2`, Maven `2.0.0-alpha2`,
   and plain SemVer `2.0.0-alpha.2` everywhere else (npm/cargo/pub/NuGet/hex/…).
   A single literal string is **not** portable across all of them.
