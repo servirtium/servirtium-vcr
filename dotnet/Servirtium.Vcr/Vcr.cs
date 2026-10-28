@@ -49,6 +49,7 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     private readonly List<(VcrField field, string name)> _headerRemovals = new();
     private readonly List<(string mount, string dir)> _staticContent = new();
     private readonly List<string> _untaped = new();
+    private (string cert, string key)? _tls;
 
     private protected VcrBuilderBase(string tapePath) => TapePath = tapePath;
 
@@ -84,6 +85,21 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     }
 
     /// <summary>
+    /// Terminate TLS: the VCR serves <c>https://</c> instead of <c>http://</c>,
+    /// for client libraries that refuse plain HTTP. <paramref name="certPath"/>
+    /// and <paramref name="keyPath"/> are PEM files (a certificate and its
+    /// matching private key). Honored in both playback and record mode; the
+    /// <see cref="Vcr.BaseUrl"/> then carries the <c>https</c> scheme. A bad or
+    /// mismatched PEM (or a native library built without OpenSSL) throws from
+    /// <see cref="Build"/>. Configure before building/starting.
+    /// </summary>
+    public TSelf Tls(string certPath, string keyPath)
+    {
+        _tls = (certPath, keyPath);
+        return Self;
+    }
+
+    /// <summary>
     /// Mark an incidental request path (e.g. "/favicon.ico") the VCR answers
     /// 404 for without consuming the tape cursor, so a normal interaction
     /// recorded after it still matches. Honored in both playback and record
@@ -112,6 +128,10 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
         foreach (string path in _untaped)
         {
             Check(NativeMethods.Untaped(handle, path), nameof(Untaped));
+        }
+        if (_tls is (string cert, string key))
+        {
+            Check(NativeMethods.SetTls(handle, cert, key), nameof(Tls));
         }
     }
 

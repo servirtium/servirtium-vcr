@@ -164,6 +164,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_static_content", CharSet = CharSet.Ansi)]
     internal static extern IntPtr StaticContent(IntPtr server, string mountPath, string fsDir);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_tls", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr SetTls(IntPtr server, string certPath, string keyPath);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_untaped", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Untaped(IntPtr server, string path);
 
