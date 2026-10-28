@@ -55,7 +55,7 @@ aeb(cap) {
             aether.shared_lib() {
                 source("embed.ae")
                 extra_source("_embed_strdup.c")
-                caps("fs,net,extern")
+                caps("fs,net,os,extern")
                 size()
                 output("libservirtium_vcr.so")
                 target(t)
@@ -72,7 +72,7 @@ aeb(cap) {
         aether.shared_lib() {
             source("embed.ae")
             extra_source("_embed_strdup.c")
-            caps("fs,net,extern")
+            caps("fs,net,os,extern")
             output("libservirtium_vcr.so")
         }
         root = _get("root")

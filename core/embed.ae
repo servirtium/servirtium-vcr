@@ -38,6 +38,15 @@
 
 import vcr
 import std.http
+// Pulls Aether's PURE-Aether TLS 1.3 server (RFC 8446, NO OpenSSL) into the
+// link: server_set_tls reaches it through weak symbols (aether_pure_tls_server_*)
+// that only resolve when this module is imported. Without it, TLS falls back to
+// OpenSSL, and the cross-built release libs — built with no OpenSSL in the zig
+// sysroot — fail at runtime with "built without OpenSSL". This makes HTTPS work
+// on every platform with zero native TLS dependency. Needs --with=fs (the cert
+// and key are read with std.fs); core/.build.ae already declares caps(fs,…).
+// NB the pure server requires an ECDSA P-256 key (no RSA path).
+import std.cryptography.tls13_server
 
 // Caller-owned-string helpers (core/_embed_strdup.c). malloc/strdup-style
 // dup + free for the caller-owned-return contract.

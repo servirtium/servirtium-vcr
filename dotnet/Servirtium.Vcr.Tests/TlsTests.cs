@@ -32,8 +32,12 @@ public class TlsTests : IDisposable
         _certPath = Path.Combine(_dir, "cert.pem");
         _keyPath = Path.Combine(_dir, "key.pem");
 
-        using var rsa = RSA.Create(2048);
-        var req = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        // ECDSA P-256, not RSA: libservirtium_vcr's HTTPS uses Aether's pure-Aether
+        // TLS 1.3 server (no OpenSSL dependency, so it works on every cross-built
+        // platform), and that server signs CertificateVerify with ECDSA P-256 only
+        // — an RSA key would fail the handshake on an OpenSSL-free build.
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var req = new CertificateRequest("CN=localhost", ecdsa, HashAlgorithmName.SHA256);
         var san = new SubjectAlternativeNameBuilder();
         san.AddDnsName("localhost");
         san.AddIpAddress(IPAddress.Loopback);
@@ -41,7 +45,7 @@ public class TlsTests : IDisposable
         using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(2));
 
         File.WriteAllText(_certPath, cert.ExportCertificatePem() + Environment.NewLine);
-        File.WriteAllText(_keyPath, rsa.ExportPkcs8PrivateKeyPem() + Environment.NewLine);
+        File.WriteAllText(_keyPath, ecdsa.ExportPkcs8PrivateKeyPem() + Environment.NewLine);
     }
 
     private static string TapePath(string name) =>

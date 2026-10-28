@@ -19,7 +19,7 @@
 // <None Include=""> (MSB4035). Reading release/dist directly sidesteps that.
 import bldr
 import dotnet
-import dotnet (target_framework, root_namespace, nullable, package_id, package_version, package_description, native_runtime)
+import dotnet (target_framework, root_namespace, assembly_name, nullable, package_id, package_version, package_description, native_runtime)
 import std.fs
 import std.string
 
@@ -74,6 +74,7 @@ aeb(cap) {
             // the regenerated csproj differs only in the native_runtime grid.
             target_framework("net8.0")
             root_namespace("Servirtium.Vcr")
+            assembly_name("Servirtium.Vcr")
             nullable()
             package_id("Servirtium.Vcr")
             package_version("2.0.0-alpha.5")

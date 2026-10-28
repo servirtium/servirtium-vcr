@@ -21,7 +21,9 @@ aeb(cap) {
         cert = "${certdir}/cert.pem"
         key = "${certdir}/key.pem"
 
-        mkcmd = "mkdir -p \"${certdir}\" && openssl req -x509 -newkey rsa:2048 -nodes -keyout \"${key}\" -out \"${cert}\" -days 2 -subj \"/CN=localhost\" -addext \"subjectAltName=DNS:localhost,IP:127.0.0.1\" >/dev/null 2>&1"
+        // ECDSA P-256 (not RSA): libservirtium_vcr's HTTPS uses Aether's pure-Aether
+        // TLS 1.3 server, which signs CertificateVerify with ECDSA P-256 only.
+        mkcmd = "mkdir -p \"${certdir}\" && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout \"${key}\" -out \"${cert}\" -days 2 -subj \"/CN=localhost\" -addext \"subjectAltName=DNS:localhost,IP:127.0.0.1\" >/dev/null 2>&1"
         mk = os.system(mkcmd)
         if mk != 0 {
             println("core_tests/tls: openssl failed to mint a self-signed cert (is openssl installed?)")

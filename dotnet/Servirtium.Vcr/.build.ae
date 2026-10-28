@@ -11,7 +11,7 @@
 // the other native_runtime() calls at CI pack time.
 import bldr
 import dotnet
-import dotnet (target_framework, root_namespace, nullable, package_id, package_version, package_description, native_runtime)
+import dotnet (target_framework, root_namespace, assembly_name, nullable, package_id, package_version, package_description, native_runtime)
 aeb(cap) {
     bldr.build() {
         dep("core/.build.ae")
@@ -19,6 +19,9 @@ aeb(cap) {
         dotnet.build_project() {
             target_framework("net8.0")
             root_namespace("Servirtium.Vcr")
+            // Without this the assembly is named after the generated csproj
+            // (.Servirtium.Vcr.generated.dll) — an odd dll for consumers to see.
+            assembly_name("Servirtium.Vcr")
             nullable()
             package_id("Servirtium.Vcr")
             // Without this the generated csproj carries no <Version> and NuGet
