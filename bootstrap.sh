@@ -17,7 +17,7 @@
 # Env overrides:
 #   PREFIX        install prefix                 (default: $HOME/.local; no sudo)
 #   AETHER_REF    ae tag/branch/SHA to install   (default: $AE_FETCH below)
-#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.337)
+#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.338)
 #   MIN_AE        minimum acceptable ae version  (default: $AE_PIN below)
 #   AEB_TIMEOUT   passed through to aeb (seconds)  (optional)
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
@@ -54,11 +54,19 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-10-26 (latest): pin ae 0.849.0 ahead of its imminent publication, as
-# requested. The HTTP monitor API replaces the removed server_on_start hook.
-# Compatibility verified against Aether commit 6d36a042 (ABI diagnostics,
-# Python/CLI suites and 200 immediate-stop cycles); the 0.849.0 release binary
-# has not yet been tested. aeb stays v0.337.
+# 2026-10-28 (latest): ae 0.849.0 -> 0.855.0 / aeb v0.337 -> v0.338, for the
+# HTTPS-listener feature (std.http's server_set_tls). The bump was BLOCKED until
+# aeb v0.338: Aether 0.854/0.855 added the extern-param ownership attributes
+# @frees/@moves (the #1300 use-after-free work) and 0.855's std USES them, but
+# aeb <= v0.337 regenerated std with a cached 0.840 aetherc that rejects @frees
+# (error[E0100] unknown extern-param attribute). aeb v0.338 raises its own
+# AETHER_PIN/AETHER_FETCH to 0.855.0, so its std-regen parses the new attributes.
+# VERIFIED here on 0.855 + v0.338: core build (840KB .so) + go/rust .tests.ae
+# 1/1 + release/.version.ae pins pass; aetherc AETHER_WEAK_DEF markers present
+# (=5). 0.855 is a PUBLISHED release (unlike the 0.849 pin it replaces, which was
+# pinned ahead of publication).
+# 2026-10-26: pinned ae 0.849.0 ahead of publication for the HTTP monitor API
+# (replaces the removed server_on_start hook); superseded by the 0.855 bump above.
 # 2026-10-24: aeb v0.337 adds env() support to aether.program_test;
 # diagnostics and release-verifier tests now use that SDK runner. ae stays 0.841.0.
 # 2026-10-23: aeb v0.334 -> v0.335 (skips dependents of a failed node;
@@ -78,8 +86,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.849.0"
-AE_FETCH="v0.849.0"
+AE_PIN="0.855.0"
+AE_FETCH="v0.855.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
@@ -337,7 +345,7 @@ AE_FETCH="v0.849.0"
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.337 == the verified release for this cut.
+#   aeb floor == AEB_REF == v0.338 == the verified release for this cut.
 #
 # v0.327 (from v0.326) is REQUIRED, coupled with AE_PIN 0.824: v0.326's bldr
 # does not compile on ae 0.818+ (E0902), and v0.327 is the first release that
@@ -390,7 +398,7 @@ AE_FETCH="v0.849.0"
 #
 # Released aeb bundles now report their version. Enforce the release floor;
 # an unversioned development build cannot establish that it meets the pin.
-AEB_REF="${AEB_REF:-v0.337}"
+AEB_REF="${AEB_REF:-v0.338}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX
