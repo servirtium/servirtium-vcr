@@ -112,6 +112,27 @@ function Server:test_context(name, source_file, source_line)
     C.test_context(self._handle, name, source_file or "", source_line or 0)
 end
 
+-- "TLSv1.3" (or similar) of the last TLS connection, "" if none.
+function Server:last_tls_protocol()
+    return C.last_tls_protocol(self._handle)
+end
+
+function Server:clear_substitutions()
+    C.clear_substitutions(self._handle)
+end
+
+-- Raises if any recorded interaction was not replayed.
+function Server:assert_all_consumed()
+    local err = C.assert_all_consumed(self._handle)
+    if err ~= "" then error(err, 2) end
+end
+
+-- Raises if any redaction rule never matched.
+function Server:assert_all_redactions_used()
+    local err = C.assert_all_redactions_used(self._handle)
+    if err ~= "" then error(err, 2) end
+end
+
 function Server:clear_last_error()
     C.clear_last_error(self._handle)
 end
@@ -177,6 +198,9 @@ local function apply_base(b, handle)
     for _, p in ipairs(b._untaped) do
         check(C.untaped(handle, p), "untaped")
     end
+    if b._tls then
+        check(C.set_tls(handle, b._tls.cert, b._tls.key), "set_tls")
+    end
 end
 
 local function base_builder(tape, host)
@@ -188,6 +212,7 @@ local function base_builder(tape, host)
         _header_removals = {},
         _static_content = {},
         _untaped = {},
+        _tls = nil,
     }
 end
 
@@ -238,6 +263,18 @@ function PlaybackBuilder:unredact(field, pattern, repl)
     return self
 end
 
+-- Serve https:// using this PEM certificate and key (ECDSA P-256).
+function PlaybackBuilder:tls(cert_path, key_path)
+    self._tls = { cert = cert_path, key = key_path }
+    return self
+end
+
+-- Rewrite playback responses: replace pattern with repl in the given field.
+function PlaybackBuilder:substitute(field, pattern, repl)
+    table.insert(self._substitutions, { field = field, pattern = pattern, repl = repl })
+    return self
+end
+
 function PlaybackBuilder:static_content(mount, dir)
     table.insert(self._static_content, { mount = mount, dir = dir })
     return self
@@ -274,6 +311,9 @@ function PlaybackBuilder:start()
         end
         for _, u in ipairs(self._unredactions) do
             check(C.unredact(handle, u.field, u.pattern, u.repl), "unredact")
+        end
+        for _, s in ipairs(self._substitutions) do
+            check(C.substitute(handle, s.field, s.pattern, s.repl), "substitute")
         end
     end)
     if not ok then
@@ -331,6 +371,11 @@ end
 
 function RecordBuilder:redact_whole_tape(pattern, repl)
     table.insert(self._whole_tape_redactions, { pattern = pattern, repl = repl })
+    return self
+end
+
+function RecordBuilder:tls(cert_path, key_path)
+    self._tls = { cert = cert_path, key = key_path }
     return self
 end
 
@@ -427,6 +472,8 @@ local SERVER_METHODS = {
     base_url = true, port = true, tape_length = true, last_kind = true,
     last_index = true, last_error = true, clear_last_error = true,
     reset_cursor = true, note = true, close = true,
+    last_tls_protocol = true, clear_substitutions = true,
+    assert_all_consumed = true, assert_all_redactions_used = true,
 }
 
 local function attach_lazy_start(builder, builder_mt)
@@ -452,6 +499,7 @@ end
 function M.playback(tapePath, opts)
     local b = base_builder(tapePath, opts and opts.host)
     b._unredactions = {}
+    b._substitutions = {}
     b._strict_headers = false
     b._match_json_body = false
     b._match_multiple = false

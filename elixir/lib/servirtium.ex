@@ -46,6 +46,7 @@ defmodule Servirtium do
     * `:remove_header` — list of `{field, name}` (case-insensitive name match)
     * `:static_content` — list of `{mount_path, fs_dir}` served from disk
       instead of the tape (works in both playback and record mode)
+    * `:tls` — `{cert_path, key_path}` PEM files; serve https:// (ECDSA P-256 key)
     * `:untaped` — list of paths the VCR answers 404 without consuming the
       tape cursor / forwarding upstream (e.g. `"/favicon.ico"`)
 
@@ -62,6 +63,8 @@ defmodule Servirtium do
     * `:match_header` — list of request header names; match playback on each
       header's value (ignoring the rest of the recorded header block)
     * `:unredact` — list of `{field, pattern, replacement}`
+    * `:substitute` — list of `{field, pattern, replacement}` applied to replayed
+      responses (e.g. swap a tape placeholder for the live base URL)
 
   Record only:
 
@@ -276,6 +279,14 @@ defmodule Servirtium do
   def last_error(%Server{handle: h}, consume) when is_boolean(consume), do: Native.last_error_ex(h, if(consume, do: 1, else: 0))
   def diagnostics_json(%Server{handle: h}, consume \\ false), do: Native.diagnostics_json(h, if(consume, do: 1, else: 0))
   def assert_no_mismatches(%Server{handle: h}), do: check!(Native.assert_no_mismatches(h), "assert_no_mismatches")
+  @doc "Raise unless every tape interaction was replayed."
+  def assert_all_consumed(%Server{handle: h}), do: check!(Native.assert_all_consumed(h), "assert_all_consumed")
+  @doc "Raise if any registered redaction never fired."
+  def assert_all_redactions_used(%Server{handle: h}), do: check!(Native.assert_all_redactions_used(h), "assert_all_redactions_used")
+  @doc "Negotiated TLS protocol of the last request (e.g. \"TLSv1.3\"), or \"\"."
+  def last_tls_protocol(%Server{handle: h}), do: Native.last_tls_protocol(h)
+  @doc "Remove all response substitutions."
+  def clear_substitutions(%Server{handle: h}), do: Native.clear_substitutions(h)
   def test_context(%Server{handle: h}, name, source_file \\ "", source_line \\ 0), do: Native.test_context(h, name, source_file, source_line)
 
   @doc "Outcome atom of the most-recent dispatch (`:ok`, `:body_diff`, …)."
@@ -334,6 +345,11 @@ defmodule Servirtium do
       check!(Native.remove_header(handle, field!(field), name), "remove_header")
     end
 
+    case Keyword.get(opts, :tls) do
+      {cert, key} -> check!(Native.set_tls(handle, cert, key), "set_tls")
+      nil -> :ok
+    end
+
     # static_content/untaped work in both playback and record mode — recording
     # a browser suite is cleaner served same-origin from the VCR (no CORS
     # preflights), so apply them on the shared path for both directions.
@@ -357,6 +373,10 @@ defmodule Servirtium do
 
     for {field, pat, repl} <- Keyword.get(opts, :unredact, []) do
       check!(Native.unredact(handle, field!(field), pat, repl), "unredact")
+    end
+
+    for {field, pat, repl} <- Keyword.get(opts, :substitute, []) do
+      check!(Native.substitute(handle, field!(field), pat, repl), "substitute")
     end
   end
 

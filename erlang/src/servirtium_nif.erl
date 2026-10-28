@@ -56,6 +56,12 @@
     redact_query_param/4,
     redact_json_field/4,
     unredact/4,
+    substitute/4,
+    set_tls/3,
+    last_tls_protocol/1,
+    assert_all_consumed/1,
+    assert_all_redactions_used/1,
+    clear_substitutions/1,
     normalize_whole_tape/3,
     redact_whole_tape/3,
     remove_header/3,
@@ -126,6 +132,12 @@ redact_header(_Handle, _Field, _Name, _Replacement) -> erlang:nif_error(not_load
 redact_query_param(_Handle, _Field, _Name, _Replacement) -> erlang:nif_error(not_loaded).
 redact_json_field(_Handle, _Field, _Name, _Replacement) -> erlang:nif_error(not_loaded).
 unredact(_Handle, _Field, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).
+substitute(_Handle, _Field, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).
+set_tls(_Handle, _CertPath, _KeyPath) -> erlang:nif_error(not_loaded).
+last_tls_protocol(_Handle) -> erlang:nif_error(not_loaded).
+assert_all_consumed(_Handle) -> erlang:nif_error(not_loaded).
+assert_all_redactions_used(_Handle) -> erlang:nif_error(not_loaded).
+clear_substitutions(_Handle) -> erlang:nif_error(not_loaded).
 normalize_whole_tape(_Handle, _Pattern, _Name) -> erlang:nif_error(not_loaded).
 redact_whole_tape(_Handle, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).
 remove_header(_Handle, _Field, _Name) -> erlang:nif_error(not_loaded).

@@ -89,6 +89,13 @@ extern char *aether_vcr_embed_static_content(void *h, const char *mount,
 extern char *aether_vcr_embed_untaped(void *h, const char *path);
 extern void  aether_vcr_embed_set_strict_headers(void *h, int on);
 extern void  aether_vcr_embed_set_match_json_body(void *h, int on);
+extern char *aether_vcr_embed_set_tls(void *h, const char *cert, const char *key);
+extern char *aether_vcr_embed_last_tls_protocol(void *h);
+extern char *aether_vcr_embed_substitute(void *h, int field, const char *pat,
+                                         const char *repl);
+extern void  aether_vcr_embed_clear_substitutions(void *h);
+extern char *aether_vcr_embed_assert_all_consumed(void *h);
+extern char *aether_vcr_embed_assert_all_redactions_used(void *h);
 extern void  aether_vcr_embed_set_match_multiple(void *h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(void *h);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *h);
@@ -428,6 +435,54 @@ static int l_set_match_json_body(lua_State *L)
     return 0;
 }
 
+/* set_tls(handle, cert_path, key_path) -> string (empty == ok) */
+static int l_set_tls(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *cert = luaL_checkstring(L, 2);
+    const char *key  = luaL_checkstring(L, 3);
+    return push_owned_string(L, aether_vcr_embed_set_tls(h, cert, key));
+}
+
+/* last_tls_protocol(handle) -> string ("TLSv1.3" or "") */
+static int l_last_tls_protocol(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    return push_owned_string(L, aether_vcr_embed_last_tls_protocol(h));
+}
+
+/* substitute(handle, field, pat, repl) -> string (empty == ok) */
+static int l_substitute(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int field = (int)luaL_checkinteger(L, 2);
+    const char *pat  = luaL_checkstring(L, 3);
+    const char *repl = luaL_checkstring(L, 4);
+    return push_owned_string(L, aether_vcr_embed_substitute(h, field, pat, repl));
+}
+
+/* clear_substitutions(handle) */
+static int l_clear_substitutions(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    aether_vcr_embed_clear_substitutions(h);
+    return 0;
+}
+
+/* assert_all_consumed(handle) -> string (empty == all replayed) */
+static int l_assert_all_consumed(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    return push_owned_string(L, aether_vcr_embed_assert_all_consumed(h));
+}
+
+/* assert_all_redactions_used(handle) -> string (empty == ok) */
+static int l_assert_all_redactions_used(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    return push_owned_string(L, aether_vcr_embed_assert_all_redactions_used(h));
+}
+
 /* set_match_multiple(handle, on) */
 static int l_set_match_multiple(lua_State *L)
 {
@@ -504,6 +559,12 @@ static const luaL_Reg servirtium_funcs[] = {
     {"untaped",                         l_untaped},
     {"set_strict_headers",              l_set_strict_headers},
     {"set_match_json_body",             l_set_match_json_body},
+    {"set_tls",                         l_set_tls},
+    {"last_tls_protocol",               l_last_tls_protocol},
+    {"substitute",                      l_substitute},
+    {"clear_substitutions",             l_clear_substitutions},
+    {"assert_all_consumed",             l_assert_all_consumed},
+    {"assert_all_redactions_used",      l_assert_all_redactions_used},
     {"set_match_multiple",              l_set_match_multiple},
     {"indent_code_blocks",              l_indent_code_blocks},
     {"emphasize_http_verbs",            l_emphasize_http_verbs},

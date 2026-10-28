@@ -18,7 +18,9 @@ Class {
 		'label',
 		'headerRemovals',
 		'staticContents',
-		'untapedPaths'
+		'untapedPaths',
+		'tlsCert',
+		'tlsKey'
 	],
 	#category : 'Servirtium',
 	#package : 'Servirtium'
@@ -101,6 +103,15 @@ ServirtiumBuilder >> untaped: aPath [
 	^ self
 ]
 
+{ #category : 'configuring' }
+ServirtiumBuilder >> tlsCert: aCertPath key: aKeyPath [
+	"Serve https:// using this PEM certificate and key (ECDSA P-256)."
+
+	tlsCert := aCertPath.
+	tlsKey := aKeyPath.
+	^ self
+]
+
 { #category : 'private' }
 ServirtiumBuilder >> applyConfig: handle [
 	"Apply config common to both builders to the opened handle, before serving
@@ -115,7 +126,11 @@ ServirtiumBuilder >> applyConfig: handle [
 	untapedPaths do: [ :path |
 		self
 			check: (self library untaped: handle path: path)
-			op: 'untaped' ]
+			op: 'untaped' ].
+	tlsCert ifNotNil: [
+		self
+			check: (self library setTls: handle cert: tlsCert key: tlsKey)
+			op: 'setTls' ]
 ]
 
 { #category : 'private' }

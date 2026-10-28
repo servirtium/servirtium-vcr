@@ -177,3 +177,30 @@ ServirtiumServer >> secretRedactor: callback [
     secretRedactor := callback.
     ^ self
 ]
+
+{ #category : 'diagnostics' }
+ServirtiumServer >> lastTlsProtocol [
+    "TLS protocol of the last connection (e.g. 'TLSv1.3'), '' if none."
+    ^ self library takeString: (self library lastTlsProtocol: self handle)
+]
+
+{ #category : 'configuring' }
+ServirtiumServer >> clearSubstitutions [
+    self library clearSubstitutions: self handle
+]
+
+{ #category : 'diagnostics' }
+ServirtiumServer >> assertAllConsumed [
+    "Raise if any recorded interaction was not replayed."
+    | err |
+    err := self library takeString: (self library assertAllConsumed: self handle).
+    err ifNotEmpty: [ ServirtiumError signal: err ]
+]
+
+{ #category : 'diagnostics' }
+ServirtiumServer >> assertAllRedactionsUsed [
+    "Raise if any redaction rule never matched."
+    | err |
+    err := self library takeString: (self library assertAllRedactionsUsed: self handle).
+    err ifNotEmpty: [ ServirtiumError signal: err ]
+]

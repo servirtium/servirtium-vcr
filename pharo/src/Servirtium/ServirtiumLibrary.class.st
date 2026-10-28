@@ -249,6 +249,42 @@ ServirtiumLibrary >> setMatchJsonBody: server on: on [
 ]
 
 { #category : 'ffi - mutations' }
+ServirtiumLibrary >> setTls: server cert: certPath key: keyPath [
+
+	^ self ffiCall: #( void* aether_vcr_embed_set_tls ( void* server, String certPath, String keyPath ) )
+]
+
+{ #category : 'ffi - diagnostics' }
+ServirtiumLibrary >> lastTlsProtocol: server [
+
+	^ self ffiCall: #( void* aether_vcr_embed_last_tls_protocol ( void* server ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> substitute: server field: field pattern: pattern replacement: replacement [
+
+	^ self ffiCall: #( void* aether_vcr_embed_substitute ( void* server, int field, String pattern, String replacement ) )
+]
+
+{ #category : 'ffi - clearing' }
+ServirtiumLibrary >> clearSubstitutions: server [
+
+	^ self ffiCall: #( void aether_vcr_embed_clear_substitutions ( void* server ) )
+]
+
+{ #category : 'ffi - diagnostics' }
+ServirtiumLibrary >> assertAllConsumed: server [
+
+	^ self ffiCall: #( void* aether_vcr_embed_assert_all_consumed ( void* server ) )
+]
+
+{ #category : 'ffi - diagnostics' }
+ServirtiumLibrary >> assertAllRedactionsUsed: server [
+
+	^ self ffiCall: #( void* aether_vcr_embed_assert_all_redactions_used ( void* server ) )
+]
+
+{ #category : 'ffi - mutations' }
 ServirtiumLibrary >> setMatchMultiple: server on: on [
 
 	^ self ffiCall: #( void aether_vcr_embed_set_match_multiple ( void* server, int on ) )

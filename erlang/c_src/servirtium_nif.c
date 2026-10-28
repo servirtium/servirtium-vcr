@@ -84,6 +84,12 @@ extern void  aether_vcr_embed_clear_header_removals(void *server);
 extern void  aether_vcr_embed_clear_static_content(void *server);
 extern void  aether_vcr_embed_clear_untaped(void *server);
 extern void  aether_vcr_embed_clear_format_options(void *server);
+extern char *aether_vcr_embed_set_tls(void *server, const char *cert_path, const char *key_path);
+extern char *aether_vcr_embed_last_tls_protocol(void *server);
+extern char *aether_vcr_embed_substitute(void *server, int field, const char *pattern, const char *replacement);
+extern void  aether_vcr_embed_clear_substitutions(void *server);
+extern char *aether_vcr_embed_assert_all_consumed(void *server);
+extern char *aether_vcr_embed_assert_all_redactions_used(void *server);
 extern void  aether_vcr_embed_free_string(char *s);
 
 /* ---- string marshalling helpers --------------------------------------- */
@@ -408,6 +414,53 @@ static ERL_NIF_TERM nif_unredact(ErlNifEnv *env, int argc, const ERL_NIF_TERM ar
     return mut3(env, argv, aether_vcr_embed_unredact);
 }
 
+static ERL_NIF_TERM nif_substitute(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    return mut3(env, argv, aether_vcr_embed_substitute);
+}
+
+static ERL_NIF_TERM nif_set_tls(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    char *cert = term_to_cstr(env, argv[1]);
+    char *key  = term_to_cstr(env, argv[2]);
+    if (!cert || !key) {
+        if (cert) enif_free(cert);
+        if (key)  enif_free(key);
+        return enif_make_badarg(env);
+    }
+    char *res = aether_vcr_embed_set_tls(h, cert, key);
+    enif_free(cert); enif_free(key);
+    return take_cstr(env, res);
+}
+
+static ERL_NIF_TERM nif_last_tls_protocol(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_last_tls_protocol(h));
+}
+
+static ERL_NIF_TERM nif_assert_all_consumed(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_assert_all_consumed(h));
+}
+
+static ERL_NIF_TERM nif_assert_all_redactions_used(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_assert_all_redactions_used(h));
+}
+
 static ERL_NIF_TERM nif_remove_header(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -581,6 +634,7 @@ CLEAR_NIF(nif_clear_unredactions,    aether_vcr_embed_clear_unredactions)
 CLEAR_NIF(nif_clear_header_removals, aether_vcr_embed_clear_header_removals)
 CLEAR_NIF(nif_clear_match_headers,   aether_vcr_embed_clear_match_headers)
 CLEAR_NIF(nif_clear_static_content,  aether_vcr_embed_clear_static_content)
+CLEAR_NIF(nif_clear_substitutions,   aether_vcr_embed_clear_substitutions)
 CLEAR_NIF(nif_clear_untaped,         aether_vcr_embed_clear_untaped)
 CLEAR_NIF(nif_clear_format_options,  aether_vcr_embed_clear_format_options)
 
@@ -620,6 +674,12 @@ static ErlNifFunc nif_funcs[] = {
     {"redact_query_param", 4, nif_redact_query_param, 0},
     {"redact_json_field", 4, nif_redact_json_field, 0},
     {"unredact",       4, nif_unredact,       0},
+    {"substitute",     4, nif_substitute,     0},
+    {"set_tls",        3, nif_set_tls,        0},
+    {"last_tls_protocol", 1, nif_last_tls_protocol, 0},
+    {"assert_all_consumed", 1, nif_assert_all_consumed, 0},
+    {"assert_all_redactions_used", 1, nif_assert_all_redactions_used, 0},
+    {"clear_substitutions", 1, nif_clear_substitutions, 0},
     {"normalize_whole_tape", 3, nif_normalize_whole_tape, 0},
     {"redact_whole_tape",    3, nif_redact_whole_tape,    0},
     {"remove_header",  3, nif_remove_header,  0},

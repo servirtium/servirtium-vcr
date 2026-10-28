@@ -29,6 +29,18 @@ defmodule Servirtium.PlaybackTest do
     end
   end
 
+  test "substitute rewrites a placeholder; assert_all_consumed tracks replay" do
+    Servirtium.with_playback(
+      tape("substitute.md"),
+      [port: 0, substitute: [{:response_body, "@@HOST@@", "http://sub.example"}]],
+      fn srv ->
+        assert_raise Servirtium.Error, fn -> Servirtium.assert_all_consumed(srv) end
+        assert {200, "at http://sub.example/x"} = get(Servirtium.base_url(srv), "/sub")
+        assert Servirtium.assert_all_consumed(srv) == :ok
+      end
+    )
+  end
+
   test "with_playback auto-stops" do
     body =
       Servirtium.with_playback(tape("single_get.md"), [port: 0], fn srv ->

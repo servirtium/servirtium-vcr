@@ -8,7 +8,7 @@
 
 local here = arg[0]:match("^(.*)[/\\]") or "."
 
-local files = { "playback.lua", "record.lua", "mutation.lua" }
+local files = { "playback.lua", "record.lua", "mutation.lua", "substitute.lua" }
 
 local failed = 0
 for _, f in ipairs(files) do

@@ -83,3 +83,19 @@ ServirtiumPlaybackTest >> testRetainedReplayDiagnostics [
       self assert: (server diagnosticsJsonConsume: false) equals: '[]'
     ] ensure: [ server stop ]
 ]
+
+{ #category : 'tests' }
+ServirtiumPlaybackTest >> testSubstituteRewritesCustomPlaceholderAndAssertAllConsumed [
+
+	| server body |
+	server := (Servirtium playback: (self tapePath: 'substitute.md'))
+		substituteField: ServirtiumField responseBody pattern: '@@HOST@@' replacement: 'http://sub.example';
+		port: 0;
+		start.
+	[
+		self should: [ server assertAllConsumed ] raise: ServirtiumError.
+		body := ZnClient new get: server baseUrl , '/sub'.
+		self assert: body equals: 'at http://sub.example/x'.
+		self assert: server lastKind equals: #ok.
+		server assertAllConsumed ] ensure: [ server stop ]
+]

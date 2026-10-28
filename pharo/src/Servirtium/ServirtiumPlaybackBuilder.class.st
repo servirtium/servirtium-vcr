@@ -12,7 +12,8 @@ Class {
 		'strictHeaders',
 		'matchJsonBody',
 		'matchMultiple',
-		'matchHeaders'
+		'matchHeaders',
+		'substitutions'
 	],
 	#category : 'Servirtium',
 	#package : 'Servirtium'
@@ -26,7 +27,8 @@ ServirtiumPlaybackBuilder >> initializeTape: aTapePath [
 	strictHeaders := false.
 	matchJsonBody := false.
 	matchMultiple := false.
-	matchHeaders := OrderedCollection new
+	matchHeaders := OrderedCollection new.
+	substitutions := OrderedCollection new
 ]
 
 { #category : 'configuring' }
@@ -94,6 +96,14 @@ ServirtiumPlaybackBuilder >> unredactField: aField pattern: aPattern replacement
 	^ self
 ]
 
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> substituteField: aField pattern: aPattern replacement: aReplacement [
+	"Rewrite playback responses: replace aPattern with aReplacement in aField."
+
+	substitutions add: { aField. aPattern. aReplacement }.
+	^ self
+]
+
 { #category : 'private' }
 ServirtiumPlaybackBuilder >> applyConfig: handle [
 
@@ -106,7 +116,11 @@ ServirtiumPlaybackBuilder >> applyConfig: handle [
 	unredactions do: [ :tuple |
 		self
 			check: (self library unredact: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
-			op: 'unredact' ]
+			op: 'unredact' ].
+	substitutions do: [ :tuple |
+		self
+			check: (self library substitute: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
+			op: 'substitute' ]
 ]
 
 { #category : 'starting' }

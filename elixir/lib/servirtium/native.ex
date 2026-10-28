@@ -69,6 +69,12 @@ defmodule Servirtium.Native do
   defdelegate redact_query_param(handle, field, name, replacement), to: :servirtium_nif
   defdelegate redact_json_field(handle, field, name, replacement), to: :servirtium_nif
   defdelegate unredact(handle, field, pattern, replacement), to: :servirtium_nif
+  defdelegate substitute(handle, field, pattern, replacement), to: :servirtium_nif
+  defdelegate set_tls(handle, cert_path, key_path), to: :servirtium_nif
+  defdelegate last_tls_protocol(handle), to: :servirtium_nif
+  defdelegate assert_all_consumed(handle), to: :servirtium_nif
+  defdelegate assert_all_redactions_used(handle), to: :servirtium_nif
+  defdelegate clear_substitutions(handle), to: :servirtium_nif
   defdelegate normalize_whole_tape(handle, pattern, name), to: :servirtium_nif
   defdelegate redact_whole_tape(handle, pattern, replacement), to: :servirtium_nif
   defdelegate remove_header(handle, field, name), to: :servirtium_nif
