@@ -1,0 +1,37 @@
+// HTTPS LISTENER probe: the VCR terminates TLS and serves https://. Mints a
+// fresh self-signed PEM cert/key for localhost with openssl, then runs
+// tls_probe, which opens a playback handle, stages the cert via
+// vcr.set_tls_h, starts (through the same start_background_h path
+// vcr_embed_start uses), and fetches the recorded body over https:// with
+// peer verification skipped. Proves the end-to-end TLS serving path.
+//
+// Its own leaf so it can run standalone:  aeb core_tests/.tls.ae
+// (openssl is a near-universal dev prereq; the leaf fails loudly without it.)
+import bldr
+import aether
+import aether (source, lib, caps)
+import bldr (env)
+import std.os
+
+aeb(cap) {
+    bldr.build() {
+        root = _get("root")
+        td = _get("target_dir")
+        certdir = "${td}/tls"
+        cert = "${certdir}/cert.pem"
+        key = "${certdir}/key.pem"
+
+        mkcmd = "mkdir -p \"${certdir}\" && openssl req -x509 -newkey rsa:2048 -nodes -keyout \"${key}\" -out \"${cert}\" -days 2 -subj \"/CN=localhost\" -addext \"subjectAltName=DNS:localhost,IP:127.0.0.1\" >/dev/null 2>&1"
+        mk = os.system(mkcmd)
+        if mk != 0 {
+            println("core_tests/tls: openssl failed to mint a self-signed cert (is openssl installed?)")
+            return 1
+        }
+
+        aether.program_test() {
+            source("tls_probe.ae"); lib(".."); caps("fs,net,os,extern")
+            env("SVCR_TLS_CERT", cert)
+            env("SVCR_TLS_KEY", key)
+        }
+    }
+}

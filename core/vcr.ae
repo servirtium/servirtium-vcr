@@ -177,6 +177,7 @@ exports (
     redact_h, unredact_h, remove_header_h, note_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
+    set_tls_h, tls_enabled_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h,
     indent_code_blocks_h, emphasize_http_verbs_h,
     clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
@@ -2465,6 +2466,17 @@ bg_started_key(server: ptr, gen: long) -> string {
 }
 
 start_background_h(server: ptr, timeout_ms: int) -> int {
+    // Apply any staged TLS config BEFORE the server goes live. set_tls_h only
+    // stashes the cert/key paths (configure-before-start, like every other
+    // handle setter); the actual std.http TLS context is built here, once, at
+    // the one point where the server exists but has not yet bound. A TLS
+    // failure (unreadable/parse/mismatched PEM, or a build without OpenSSL)
+    // fails the start -- the handle's last_error carries the reason.
+    terr = apply_tls_h(server)
+    if terr != "" {
+        set_last_error_k(key_for(server), string_concat("tls: ", terr))
+        return -1
+    }
     gen_slot = slot(key_for(server), "bg_gen")
     gen = cfg_get_int(gen_slot, 0) + 1
     cfg_set_int(gen_slot, gen)
@@ -2533,6 +2545,51 @@ static_content_h(server: ptr, mount_path: string, fs_dir: string) -> string {
 untaped_h(server: ptr, path: string) -> string {
     set_cur_key(key_for(server))
     return untaped(path)
+}
+
+// ---- HTTPS listener (TLS termination) --------------------------------
+//
+// An increasing number of HTTP client libraries refuse plain http:// to
+// anything but localhost, so the VCR can terminate TLS and the SUT points
+// at https://<host>:<port>. TLS is a std.http server capability
+// (server_set_tls); libservirtium_vcr just threads the PEM cert+key paths
+// through and applies them at start. Like every other config call, set it
+// AFTER open and BEFORE start.
+//
+// set_tls_h stashes the paths in per-handle config; apply_tls_h (called by
+// start_background_h) builds the TLS context once the server exists but has
+// not yet bound. Both paths must be PEM files and must match; the cert+key
+// validation and OpenSSL-availability check are std.http's, surfaced as the
+// returned error string. Passing one path without the other is an error.
+set_tls_h(server: ptr, cert_path: string, key_path: string) -> string {
+    if string.length(cert_path) == 0 {
+        return "cert_path is empty (need a PEM certificate file)"
+    }
+    if string.length(key_path) == 0 {
+        return "key_path is empty (need a PEM private-key file)"
+    }
+    key = key_for(server)
+    cfg_set_str(slot(key, "tls_cert"), cert_path)
+    cfg_set_str(slot(key, "tls_key"), key_path)
+    return ""
+}
+
+// 1 when a TLS cert has been staged on this handle (so base_url returns the
+// https:// scheme), 0 otherwise.
+tls_enabled_h(server: ptr) -> int {
+    cert = cfg_get_str(slot(key_for(server), "tls_cert"))
+    if string.length(cert) > 0 { return 1 }
+    return 0
+}
+
+// Build the staged TLS context on `server`, if any. "" when there is nothing
+// to do or TLS was enabled successfully; the std.http error string otherwise.
+apply_tls_h(server: ptr) -> string {
+    key = key_for(server)
+    cert = cfg_get_str(slot(key, "tls_cert"))
+    if string.length(cert) == 0 { return "" }
+    tkey = cfg_get_str(slot(key, "tls_key"))
+    return http.server_set_tls(server, cert, tkey)
 }
 set_strict_headers_h(server: ptr, on: int) { vcr_set_strict_headers_k(key_for(server), on) }
 set_match_json_body_h(server: ptr, on: int) { vcr_set_match_json_body_k(key_for(server), on) }

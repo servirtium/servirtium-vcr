@@ -6,6 +6,7 @@ import std.os
 aeb(cap) {
     bldr.build() {
         dep("core_tests/.diagnostics.ae")
+        dep("core_tests/.tls.ae")
         root = _get("root")
         rc = os.system("cd \"${root}/core_tests\" && ./run-tests.sh")
         if rc != 0 { println("core_tests: libservirtium_vcr tests failed"); return 1 }

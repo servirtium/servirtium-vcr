@@ -1,0 +1,82 @@
+// HTTPS LISTENER: the VCR terminates TLS and serves https:// instead of
+// http://, for client libraries that refuse plain HTTP. This proves the
+// end-to-end path: open a playback handle, stage a self-signed PEM cert/key
+// via vcr.set_tls_h, start, and fetch the recorded body over https:// with
+// peer verification skipped (curl -k equivalent, set_insecure) — exactly how
+// a SUT with a trusted cert would reach it, minus the trust check.
+//
+// The cert/key paths come in on argv (the .tests.ae leaf mints a fresh
+// self-signed pair for localhost with openssl, then runs this). Starting
+// goes through vcr.start_background_h — the SAME path vcr_embed_start uses —
+// so this exercises the real apply_tls_h hook every binding gets.
+
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.os
+
+extern exit(code: int)
+
+const PORT = 18291
+const TAPE = "core_tests/tapes/single_get.tape"
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+main() {
+    // cert/key paths come from the env (the .tls.ae leaf mints a fresh
+    // self-signed pair), with an argv fallback for running the probe by hand.
+    cert = os.getenv("SVCR_TLS_CERT")
+    key = os.getenv("SVCR_TLS_KEY")
+    if string.length(cert) == 0 { cert = os.args_get(1) }
+    if string.length(key) == 0 { key = os.args_get(2) }
+    if string.length(cert) == 0 || string.length(key) == 0 {
+        fail("need SVCR_TLS_CERT + SVCR_TLS_KEY (or argv <cert.pem> <key.pem>)")
+    }
+
+    println("=== HTTPS listener: serve single_get over TLS, fetch with https:// ===\n")
+
+    srv = vcr.load(TAPE, PORT)
+    if srv == null { fail("load: ${vcr.load_error()}") }
+
+    // Before start: scheme is http (no TLS staged yet).
+    if vcr.tls_enabled_h(srv) != 0 { fail("tls_enabled_h should be 0 before set_tls_h") }
+
+    terr = vcr.set_tls_h(srv, cert, key)
+    if terr != "" { fail("set_tls_h: ${terr}") }
+    if vcr.tls_enabled_h(srv) != 1 { fail("tls_enabled_h should be 1 after set_tls_h") }
+
+    // A missing-path call must be rejected, not silently ignored.
+    e_empty = vcr.set_tls_h(srv, "", key)
+    if e_empty == "" { fail("set_tls_h with empty cert should error") }
+
+    rc = vcr.start_background_h(srv, 10000)
+    if rc != 0 { fail("start_background_h (tls) rc=${rc}; last_error=${vcr.last_error_h(srv)}") }
+
+    port = http.server_port(srv)
+    url = "https://127.0.0.1:${port}/ok"
+    println("serving TLS on ${url}")
+
+    req = client.request("GET", url)
+    client.set_timeout(req, 5s)
+    ierr = client.set_insecure(req, 1)   // self-signed cert: skip verify (curl -k)
+    if ierr != "" { fail("set_insecure: ${ierr}") }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail("https GET failed: ${err}") }
+
+    status = client.response_status(resp)
+    body = string.copy(client.response_body(resp))
+    client.response_free(resp)
+
+    if status != 200 { fail("status ${status} (want 200)") }
+    if body != "ok-body" { fail("body '${body}' (want 'ok-body')") }
+    if vcr.last_kind_h(srv) != vcr.KIND_OK { fail("last_kind ${vcr.last_kind_h(srv)} (want OK)") }
+
+    vcr.eject(srv)
+    println("\nPASS: HTTPS listener served the recorded tape over TLS (status 200, body ok-body)")
+    exit(0)
+}

@@ -153,11 +153,24 @@ vcr_embed_port(s: ptr) -> int {
     return http_server_port(s)
 }
 
-// "http://<host>:<port>" for the running server — caller frees.
+// "http://<host>:<port>" (or "https://…" when TLS is enabled on this handle)
+// for the running server — caller frees.
 vcr_embed_base_url(s: ptr, host: string) -> ptr {
     p = http_server_port(s)
-    url = "http://${host}:${p}"
+    scheme = "http"
+    if vcr.tls_enabled_h(s) != 0 { scheme = "https" }
+    url = "${scheme}://${host}:${p}"
     return vcr_embed_dup(url)
+}
+
+// Terminate TLS on this listener: the VCR serves https:// instead of http://,
+// for client libraries that refuse plain HTTP. cert_path/key_path are PEM
+// files (certificate and its matching private key). Configure AFTER open and
+// BEFORE start. Returns "" on success or an error string (empty path, a PEM
+// that is unreadable / unparseable / mismatched, or a core built without
+// OpenSSL). On error, start() also fails and last_error carries the reason.
+vcr_embed_set_tls(s: ptr, cert_path: string, key_path: string) -> ptr {
+    return vcr_embed_dup(vcr.set_tls_h(s, cert_path, key_path))
 }
 
 vcr_embed_tape_length(s: ptr) -> int {
