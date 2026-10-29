@@ -90,9 +90,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.8/libservirtium_vcr-v2.0.0-alpha.8-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.8/libservirtium_vcr-v2.0.0-alpha.8-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.8-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.9/libservirtium_vcr-v2.0.0-alpha.9-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.9/libservirtium_vcr-v2.0.0-alpha.9-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.9-linux-x86_64.so.sha256   # -> OK
 ```
 
 **Build the package locally**
@@ -102,9 +102,9 @@ drop the downloaded library at the package-relative path below, then consume it
 from source (a local `nimble` path / this checkout).
 
 ```sh
-# from the nim binding directory, with libservirtium_vcr-v2.0.0-alpha.8-linux-x86_64.so downloaded:
+# from the nim binding directory, with libservirtium_vcr-v2.0.0-alpha.9-linux-x86_64.so downloaded:
 mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.8-linux-x86_64.so native/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.9-linux-x86_64.so native/libservirtium_vcr.so
 # the package now carries the native library; consume it from source (see this README's usage/examples).
 ```
 
@@ -120,7 +120,7 @@ rename or symlink it first), before `nim c`:
 
 ```sh
 # optional override: point at a DIRECTORY containing libservirtium_vcr.so
-mkdir -p /some/dir && cp libservirtium_vcr-v2.0.0-alpha.8-linux-x86_64.so /some/dir/libservirtium_vcr.so
+mkdir -p /some/dir && cp libservirtium_vcr-v2.0.0-alpha.9-linux-x86_64.so /some/dir/libservirtium_vcr.so
 export SERVIRTIUM_VCR_LIB=/some/dir
 ```
 
