@@ -46,7 +46,8 @@ defmodule Servirtium do
     * `:remove_header` — list of `{field, name}` (case-insensitive name match)
     * `:static_content` — list of `{mount_path, fs_dir}` served from disk
       instead of the tape (works in both playback and record mode)
-    * `:tls` — `{cert_path, key_path}` PEM files; serve https:// (ECDSA P-256 key)
+    * `:tls` — `{cert_path, key_path}` PEM files; serve https:// (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384)
+    * `:tls_pem` — `{cert_pem, key_pem}`; like `:tls`, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk
     * `:untaped` — list of paths the VCR answers 404 without consuming the
       tape cursor / forwarding upstream (e.g. `"/favicon.ico"`)
 
@@ -347,6 +348,11 @@ defmodule Servirtium do
 
     case Keyword.get(opts, :tls) do
       {cert, key} -> check!(Native.set_tls(handle, cert, key), "set_tls")
+      nil -> :ok
+    end
+
+    case Keyword.get(opts, :tls_pem) do
+      {cert_pem, key_pem} -> check!(Native.set_tls_pem(handle, cert_pem, key_pem), "set_tls_pem")
       nil -> :ok
     end
 

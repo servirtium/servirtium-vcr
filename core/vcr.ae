@@ -177,7 +177,7 @@ exports (
     redact_h, unredact_h, remove_header_h, note_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
-    set_tls_h, tls_enabled_h, last_tls_protocol_h,
+    set_tls_h, set_tls_pem_h, tls_enabled_h, last_tls_protocol_h,
     substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h,
     indent_code_blocks_h, emphasize_http_verbs_h,
@@ -2695,6 +2695,23 @@ set_tls_h(server: ptr, cert_path: string, key_path: string) -> string {
     return ""
 }
 
+// Like set_tls_h, but the certificate and key are PEM TEXT passed in memory
+// (not file paths), so a test never writes a private key to disk. Applied at
+// start via http.server_set_tls_pem (aether #3362), which runs the same
+// set-time checks as the path form. Configure after open, before start.
+set_tls_pem_h(server: ptr, cert_pem: string, key_pem: string) -> string {
+    if string.length(cert_pem) == 0 {
+        return "cert_pem is empty (need a PEM certificate)"
+    }
+    if string.length(key_pem) == 0 {
+        return "key_pem is empty (need a PEM private key)"
+    }
+    key = key_for(server)
+    cfg_set_str(slot(key, "tls_cert_pem"), cert_pem)
+    cfg_set_str(slot(key, "tls_key_pem"), key_pem)
+    return ""
+}
+
 // The TLS protocol this listener serves over, so a test can assert the server
 // side (not just that the client was set to TLS 1.3). "TLSv1.3" when TLS is on
 // — libservirtium_vcr's HTTPS is the pure-Aether TLS 1.3 server (RFC 8446), which
@@ -2709,6 +2726,8 @@ last_tls_protocol_h(server: ptr) -> string {
 tls_enabled_h_key(key: string) -> int {
     cert = cfg_get_str(slot(key, "tls_cert"))
     if string.length(cert) > 0 { return 1 }
+    cert_pem = cfg_get_str(slot(key, "tls_cert_pem"))
+    if string.length(cert_pem) > 0 { return 1 }
     return 0
 }
 tls_enabled_h(server: ptr) -> int {
@@ -2719,6 +2738,12 @@ tls_enabled_h(server: ptr) -> int {
 // to do or TLS was enabled successfully; the std.http error string otherwise.
 apply_tls_h(server: ptr) -> string {
     key = key_for(server)
+    // In-memory PEM wins if set (the private key never touched disk).
+    cert_pem = cfg_get_str(slot(key, "tls_cert_pem"))
+    if string.length(cert_pem) > 0 {
+        key_pem = cfg_get_str(slot(key, "tls_key_pem"))
+        return http.server_set_tls_pem(server, cert_pem, key_pem)
+    }
     cert = cfg_get_str(slot(key, "tls_cert"))
     if string.length(cert) == 0 { return "" }
     tkey = cfg_get_str(slot(key, "tls_key"))

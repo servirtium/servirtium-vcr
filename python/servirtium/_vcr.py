@@ -76,6 +76,7 @@ class _BuilderBase:
         self._static_content: list[tuple[str, str]] = []
         self._untaped: list[str] = []
         self._tls: tuple[str, str] | None = None
+        self._tls_pem: tuple[str, str] | None = None
 
     def native_lib(self, path: str):
         """Pin an explicit path to libservirtium_vcr library for this run.
@@ -124,8 +125,13 @@ class _BuilderBase:
         return self
 
     def tls(self, cert_path: str, key_path: str):
-        """Serve ``https://`` using this PEM cert and key (ECDSA P-256 key)."""
+        """Serve ``https://`` using this PEM cert and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384)."""
         self._tls = (cert_path, key_path)
+        return self
+
+    def tls_from_pem(self, cert_pem: str, key_pem: str):
+        """Like ``tls``, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk."""
+        self._tls_pem = (cert_pem, key_pem)
         return self
 
     def _apply_config(self, handle) -> None:
@@ -141,6 +147,8 @@ class _BuilderBase:
             _check(N.untaped(handle, N.encode(path)), "untaped")
         if self._tls is not None:
             _check(N.set_tls(handle, N.encode(self._tls[0]), N.encode(self._tls[1])), "set_tls")
+        if self._tls_pem is not None:
+            _check(N.set_tls_pem(handle, N.encode(self._tls_pem[0]), N.encode(self._tls_pem[1])), "set_tls_pem")
 
 
 from dataclasses import dataclass

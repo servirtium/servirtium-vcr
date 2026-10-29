@@ -22,6 +22,7 @@ module Servirtium
       @static_content = []
       @untaped = []
       @tls = nil
+      @tls_pem = nil
     end
 
     # Pin an explicit path to libservirtium_vcr library for this run — the
@@ -74,9 +75,15 @@ module Servirtium
       self
     end
 
-    # Serve +https://+ using this PEM cert and key (ECDSA P-256 key).
+    # Serve +https://+ using this PEM cert and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384).
     def tls(cert_path, key_path)
       @tls = [cert_path, key_path]
+      self
+    end
+
+    # Like +tls+, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+    def tls_from_pem(cert_pem, key_pem)
+      @tls_pem = [cert_pem, key_pem]
       self
     end
 
@@ -95,6 +102,7 @@ module Servirtium
         check(Native.call(:untaped, handle, path), 'untaped')
       end
       check(Native.call(:set_tls, handle, *@tls), 'set_tls') if @tls
+      check(Native.call(:set_tls_pem, handle, *@tls_pem), 'set_tls_pem') if @tls_pem
     end
 
     # Raise if a mutation call returned a non-empty error string ("" = ok).

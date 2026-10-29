@@ -213,9 +213,13 @@ proc clearSubstitutions*(s: VcrServer) =
   native.clear_substitutions(s.handle)
 
 proc tls*(s: VcrServer; certPath, keyPath: string): string {.discardable.} =
-  ## Serve https:// using the PEM cert and key (ECDSA P-256). Playback and
+  ## Serve https:// using the PEM cert and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Playback and
   ## record; call before `start`. Returns "" or an error message.
   takeString(native.set_tls(s.handle, cstring(certPath), cstring(keyPath)))
+
+proc tlsFromPem*(s: VcrServer; certPem, keyPem: string): string {.discardable.} =
+  ## Like tls, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+  takeString(native.set_tls_pem(s.handle, cstring(certPem), cstring(keyPem)))
 
 proc lastTlsProtocol*(s: VcrServer): string =
   ## Negotiated TLS protocol ("TLSv1.3"), or "" when TLS is off.

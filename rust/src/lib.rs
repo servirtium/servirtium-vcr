@@ -203,6 +203,7 @@ struct Common {
     static_content: Vec<(String, String)>,
     untaped: Vec<String>,
     tls: Option<(String, String)>,
+    tls_pem: Option<(String, String)>,
 }
 
 impl Common {
@@ -217,6 +218,7 @@ impl Common {
             static_content: Vec::new(),
             untaped: Vec::new(),
             tls: None,
+            tls_pem: None,
         }
     }
 
@@ -235,6 +237,9 @@ impl Common {
         }
         if let Some((cert, key)) = &self.tls {
             check(n, unsafe { (n.set_tls)(h, cstr(cert)?.as_ptr(), cstr(key)?.as_ptr()) }, "set_tls")?;
+        }
+        if let Some((cert, key)) = &self.tls_pem {
+            check(n, unsafe { (n.set_tls_pem)(h, cstr(cert)?.as_ptr(), cstr(key)?.as_ptr()) }, "set_tls_pem")?;
         }
         Ok(())
     }
@@ -354,9 +359,14 @@ impl PlaybackBuilder {
         self
     }
     /// Terminate TLS in the VCR and serve `https://` using the PEM cert and
-    /// key at these paths (ECDSA P-256 key). Applied at `start()`.
+    /// key at these paths (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Applied at `start()`.
     pub fn tls(mut self, cert_path: impl Into<String>, key_path: impl Into<String>) -> Self {
         self.common.tls = Some((cert_path.into(), key_path.into()));
+        self
+    }
+    /// Like `tls`, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+    pub fn tls_from_pem(mut self, cert_pem: impl Into<String>, key_pem: impl Into<String>) -> Self {
+        self.common.tls_pem = Some((cert_pem.into(), key_pem.into()));
         self
     }
     /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers
@@ -490,9 +500,14 @@ impl RecordBuilder {
         self
     }
     /// Terminate TLS in the VCR and serve `https://` using the PEM cert and
-    /// key at these paths (ECDSA P-256 key). Applied at `start()`.
+    /// key at these paths (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Applied at `start()`.
     pub fn tls(mut self, cert_path: impl Into<String>, key_path: impl Into<String>) -> Self {
         self.common.tls = Some((cert_path.into(), key_path.into()));
+        self
+    }
+    /// Like `tls`, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+    pub fn tls_from_pem(mut self, cert_pem: impl Into<String>, key_pem: impl Into<String>) -> Self {
+        self.common.tls_pem = Some((cert_pem.into(), key_pem.into()));
         self
     }
     /// Mark an incidental request path (e.g. `/favicon.ico`) the VCR answers

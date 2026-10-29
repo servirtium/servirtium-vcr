@@ -247,6 +247,8 @@ export const clearFormatOptions = lazy('void aether_vcr_embed_clear_format_optio
 
 export const setTls = lazy('void* aether_vcr_embed_set_tls(void* server, const char* cert_path, const char* key_path)')
 
+export const setTlsPem = lazy('void* aether_vcr_embed_set_tls_pem(void* server, const char* cert_pem, const char* key_pem)')
+
 export const lastTlsProtocol = lazy('void* aether_vcr_embed_last_tls_protocol(void* server)')
 
 export const substitute = lazy(

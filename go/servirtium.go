@@ -96,6 +96,7 @@ void   aether_vcr_embed_clear_untaped(void* server);
 void   aether_vcr_embed_clear_format_options(void* server);
 
 char*  aether_vcr_embed_set_tls(void* server, const char* cert_path, const char* key_path);
+char*  aether_vcr_embed_set_tls_pem(void* server, const char* cert_pem, const char* key_pem);
 char*  aether_vcr_embed_last_tls_protocol(void* server);
 char*  aether_vcr_embed_substitute(void* server, int field, const char* pattern, const char* replacement);
 void   aether_vcr_embed_clear_substitutions(void* server);
@@ -197,14 +198,15 @@ type replacement struct {
 }
 
 type baseBuilder struct {
-	tapePath        string
-	host            string
-	port            int
-	label           string
-	headerRemovals  []headerRemoval
-	staticContent   []struct{ mount, dir string }
-	untaped         []string
-	tlsCert, tlsKey string
+	tapePath              string
+	host                  string
+	port                  int
+	label                 string
+	headerRemovals        []headerRemoval
+	staticContent         []struct{ mount, dir string }
+	untaped               []string
+	tlsCert, tlsKey       string
+	tlsCertPem, tlsKeyPem string
 }
 
 // applyBase registers the config shared by both builders: header removals,
@@ -245,6 +247,15 @@ func (b *baseBuilder) applyBase(handle unsafe.Pointer) error {
 		C.free(unsafe.Pointer(cCert))
 		C.free(unsafe.Pointer(cKey))
 		if err := checkErr(res, "Tls"); err != nil {
+			return err
+		}
+	}
+	if b.tlsCertPem != "" {
+		cCert, cKey := C.CString(b.tlsCertPem), C.CString(b.tlsKeyPem)
+		res := C.aether_vcr_embed_set_tls_pem(handle, cCert, cKey)
+		C.free(unsafe.Pointer(cCert))
+		C.free(unsafe.Pointer(cKey))
+		if err := checkErr(res, "TlsFromPem"); err != nil {
 			return err
 		}
 	}
@@ -383,9 +394,16 @@ func (b *PlaybackBuilder) Substitute(field Field, pattern, repl string) *Playbac
 }
 
 // Tls terminates TLS in the VCR and serves https:// using the PEM cert and key
-// (ECDSA P-256). Applied at Start.
+// (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Applied at Start.
 func (b *PlaybackBuilder) Tls(certPath, keyPath string) *PlaybackBuilder {
 	b.tlsCert, b.tlsKey = certPath, keyPath
+	return b
+}
+
+// TlsFromPem is like Tls, but the PEM certificate and key are passed in memory
+// (not file paths), so no private key is written to disk.
+func (b *PlaybackBuilder) TlsFromPem(certPem, keyPem string) *PlaybackBuilder {
+	b.tlsCertPem, b.tlsKeyPem = certPem, keyPem
 	return b
 }
 
@@ -594,9 +612,16 @@ func (b *RecordBuilder) StaticContent(mountPath, fsDir string) *RecordBuilder {
 }
 
 // Tls terminates TLS in the VCR and serves https:// using the PEM cert and key
-// (ECDSA P-256). Applied at Start.
+// (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Applied at Start.
 func (b *RecordBuilder) Tls(certPath, keyPath string) *RecordBuilder {
 	b.tlsCert, b.tlsKey = certPath, keyPath
+	return b
+}
+
+// TlsFromPem is like Tls, but the PEM certificate and key are passed in memory
+// (not file paths), so no private key is written to disk.
+func (b *RecordBuilder) TlsFromPem(certPem, keyPem string) *RecordBuilder {
+	b.tlsCertPem, b.tlsKeyPem = certPem, keyPem
 	return b
 }
 

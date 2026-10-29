@@ -45,7 +45,8 @@ import std.http
 // sysroot — fail at runtime with "built without OpenSSL". This makes HTTPS work
 // on every platform with zero native TLS dependency. Needs --with=fs (the cert
 // and key are read with std.fs); core/.build.ae already declares caps(fs,…).
-// NB the pure server requires an ECDSA P-256 key (no RSA path).
+// The pure server accepts ECDSA P-256/P-384/P-521, Ed25519 and RSA 2048-16384
+// keys (aether #3326); an unusable key is refused at set_tls time (#3328).
 import std.cryptography.tls13_server
 
 // Caller-owned-string helpers (core/_embed_strdup.c). malloc/strdup-style
@@ -180,6 +181,14 @@ vcr_embed_base_url(s: ptr, host: string) -> ptr {
 // OpenSSL). On error, start() also fails and last_error carries the reason.
 vcr_embed_set_tls(s: ptr, cert_path: string, key_path: string) -> ptr {
     return vcr_embed_dup(vcr.set_tls_h(s, cert_path, key_path))
+}
+
+// Like vcr_embed_set_tls, but the certificate and key are PEM TEXT passed in
+// memory instead of file paths, so a test never writes a private key to disk.
+// Same contract ("" = OK / error string), applied at start via
+// http.server_set_tls_pem (aether #3362). Configure before start.
+vcr_embed_set_tls_pem(s: ptr, cert_pem: string, key_pem: string) -> ptr {
+    return vcr_embed_dup(vcr.set_tls_pem_h(s, cert_pem, key_pem))
 }
 
 // Response-side substitution (playback): rewrite `pattern` -> `replacement` in

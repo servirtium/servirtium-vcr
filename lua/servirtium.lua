@@ -201,6 +201,9 @@ local function apply_base(b, handle)
     if b._tls then
         check(C.set_tls(handle, b._tls.cert, b._tls.key), "set_tls")
     end
+    if b._tls_pem then
+        check(C.set_tls_pem(handle, b._tls_pem.cert, b._tls_pem.key), "set_tls_pem")
+    end
 end
 
 local function base_builder(tape, host)
@@ -213,6 +216,7 @@ local function base_builder(tape, host)
         _static_content = {},
         _untaped = {},
         _tls = nil,
+        _tls_pem = nil,
     }
 end
 
@@ -263,9 +267,15 @@ function PlaybackBuilder:unredact(field, pattern, repl)
     return self
 end
 
--- Serve https:// using this PEM certificate and key (ECDSA P-256).
+-- Serve https:// using this PEM certificate and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384).
 function PlaybackBuilder:tls(cert_path, key_path)
     self._tls = { cert = cert_path, key = key_path }
+    return self
+end
+
+-- Like tls, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+function PlaybackBuilder:tls_from_pem(cert_pem, key_pem)
+    self._tls_pem = { cert = cert_pem, key = key_pem }
     return self
 end
 
@@ -376,6 +386,12 @@ end
 
 function RecordBuilder:tls(cert_path, key_path)
     self._tls = { cert = cert_path, key = key_path }
+    return self
+end
+
+-- Like tls, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+function RecordBuilder:tls_from_pem(cert_pem, key_pem)
+    self._tls_pem = { cert = cert_pem, key = key_pem }
     return self
 end
 

@@ -29,6 +29,8 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     private final List<String> untaped = new ArrayList<>();
     private String tlsCert;
     private String tlsKey;
+    private String tlsCertPem;
+    private String tlsKeyPem;
 
     VcrBuilderBase(String tapePath) {
         this.tapePath = tapePath;
@@ -94,10 +96,17 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
         return self();
     }
 
-    /** Serve over HTTPS using this PEM certificate and key (ECDSA P-256). Playback and record. */
+    /** Serve over HTTPS using this PEM certificate and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Playback and record. */
     public S tls(String certPath, String keyPath) {
         this.tlsCert = certPath;
         this.tlsKey = keyPath;
+        return self();
+    }
+
+    /** Like {@link #tls}, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk. */
+    public S tlsFromPem(String certPem, String keyPem) {
+        this.tlsCertPem = certPem;
+        this.tlsKeyPem = keyPem;
         return self();
     }
 
@@ -133,6 +142,15 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
                 check(r, "tls");
             } catch (Throwable t) {
                 throw rethrow("tls", t);
+            }
+        }
+        if (tlsCertPem != null) {
+            try {
+                MemorySegment r = (MemorySegment) NativeMethods.SET_TLS_PEM.invokeExact(
+                        handle, NativeMethods.cString(arena, tlsCertPem), NativeMethods.cString(arena, tlsKeyPem));
+                check(r, "tlsFromPem");
+            } catch (Throwable t) {
+                throw rethrow("tlsFromPem", t);
             }
         }
         for (String p : untaped) {

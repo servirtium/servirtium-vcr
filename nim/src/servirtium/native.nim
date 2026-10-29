@@ -133,6 +133,9 @@ proc clear_format_options*(h: Handle)
 # --- string ownership bridge ---
 proc set_tls*(h: Handle, cert_path, key_path: cstring): cstring
   {.importc: "aether_vcr_embed_set_tls", cdecl.}
+
+proc set_tls_pem*(h: Handle, cert_pem, key_pem: cstring): cstring
+  {.importc: "aether_vcr_embed_set_tls_pem", cdecl.}
 proc last_tls_protocol*(h: Handle): cstring
   {.importc: "aether_vcr_embed_last_tls_protocol", cdecl.}
 proc substitute*(h: Handle, field: cint, pattern, replacement: cstring): cstring

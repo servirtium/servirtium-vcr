@@ -213,6 +213,7 @@ final class NativeMethods {
             FunctionDescriptor.ofVoid(C_PTR));
 
     static final MethodHandle SET_TLS = down("aether_vcr_embed_set_tls", FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
+    static final MethodHandle SET_TLS_PEM = down("aether_vcr_embed_set_tls_pem", FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
     static final MethodHandle LAST_TLS_PROTOCOL = down("aether_vcr_embed_last_tls_protocol", FunctionDescriptor.of(C_STR, C_PTR));
     static final MethodHandle SUBSTITUTE = down("aether_vcr_embed_substitute", FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR, C_PTR));
     static final MethodHandle CLEAR_SUBSTITUTIONS = down("aether_vcr_embed_clear_substitutions", FunctionDescriptor.ofVoid(C_PTR));

@@ -20,7 +20,9 @@ Class {
 		'staticContents',
 		'untapedPaths',
 		'tlsCert',
-		'tlsKey'
+		'tlsKey',
+		'tlsCertPem',
+		'tlsKeyPem'
 	],
 	#category : 'Servirtium',
 	#package : 'Servirtium'
@@ -105,10 +107,19 @@ ServirtiumBuilder >> untaped: aPath [
 
 { #category : 'configuring' }
 ServirtiumBuilder >> tlsCert: aCertPath key: aKeyPath [
-	"Serve https:// using this PEM certificate and key (ECDSA P-256)."
+	"Serve https:// using this PEM certificate and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384)."
 
 	tlsCert := aCertPath.
 	tlsKey := aKeyPath.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> tlsFromPemCert: aCertPem key: aKeyPem [
+	"Like tls, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk."
+
+	tlsCertPem := aCertPem.
+	tlsKeyPem := aKeyPem.
 	^ self
 ]
 
@@ -130,7 +141,11 @@ ServirtiumBuilder >> applyConfig: handle [
 	tlsCert ifNotNil: [
 		self
 			check: (self library setTls: handle cert: tlsCert key: tlsKey)
-			op: 'setTls' ]
+			op: 'setTls' ].
+	tlsCertPem ifNotNil: [
+		self
+			check: (self library setTlsPem: handle cert: tlsCertPem key: tlsKeyPem)
+			op: 'setTlsPem' ]
 ]
 
 { #category : 'private' }

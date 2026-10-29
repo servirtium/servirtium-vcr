@@ -85,6 +85,7 @@ extern void  aether_vcr_embed_clear_static_content(void *server);
 extern void  aether_vcr_embed_clear_untaped(void *server);
 extern void  aether_vcr_embed_clear_format_options(void *server);
 extern char *aether_vcr_embed_set_tls(void *server, const char *cert_path, const char *key_path);
+extern char *aether_vcr_embed_set_tls_pem(void *server, const char *cert_pem, const char *key_pem);
 extern char *aether_vcr_embed_last_tls_protocol(void *server);
 extern char *aether_vcr_embed_substitute(void *server, int field, const char *pattern, const char *replacement);
 extern void  aether_vcr_embed_clear_substitutions(void *server);
@@ -437,6 +438,23 @@ static ERL_NIF_TERM nif_set_tls(ErlNifEnv *env, int argc, const ERL_NIF_TERM arg
     return take_cstr(env, res);
 }
 
+static ERL_NIF_TERM nif_set_tls_pem(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    char *cert = term_to_cstr(env, argv[1]);
+    char *key  = term_to_cstr(env, argv[2]);
+    if (!cert || !key) {
+        if (cert) enif_free(cert);
+        if (key)  enif_free(key);
+        return enif_make_badarg(env);
+    }
+    char *res = aether_vcr_embed_set_tls_pem(h, cert, key);
+    enif_free(cert); enif_free(key);
+    return take_cstr(env, res);
+}
+
 static ERL_NIF_TERM nif_last_tls_protocol(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -676,6 +694,7 @@ static ErlNifFunc nif_funcs[] = {
     {"unredact",       4, nif_unredact,       0},
     {"substitute",     4, nif_substitute,     0},
     {"set_tls",        3, nif_set_tls,        0},
+    {"set_tls_pem",    3, nif_set_tls_pem,    0},
     {"last_tls_protocol", 1, nif_last_tls_protocol, 0},
     {"assert_all_consumed", 1, nif_assert_all_consumed, 0},
     {"assert_all_redactions_used", 1, nif_assert_all_redactions_used, 0},

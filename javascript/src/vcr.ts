@@ -76,6 +76,7 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected readonly staticMounts: Array<{ mount: string; dir: string }> = []
   protected readonly untapedPaths: string[] = []
   protected tlsPair?: { cert: string; key: string }
+  protected tlsPemPair?: { cert: string; key: string }
 
   protected constructor(protected readonly tapePath: string) {}
 
@@ -136,9 +137,15 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
     return this.self()
   }
 
-  /** Serve `https://` using this PEM cert and key (ECDSA P-256 key). Applied at start. */
+  /** Serve `https://` using this PEM cert and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Applied at start. */
   tls(certPath: string, keyPath: string): TSelf {
     this.tlsPair = { cert: certPath, key: keyPath }
+    return this.self()
+  }
+
+  /** Like tls, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk. */
+  tlsFromPem(certPem: string, keyPem: string): TSelf {
+    this.tlsPemPair = { cert: certPem, key: keyPem }
     return this.self()
   }
 
@@ -157,6 +164,7 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
       check(N.untaped(handle, path), 'untaped')
     }
     if (this.tlsPair) check(N.setTls(handle, this.tlsPair.cert, this.tlsPair.key), 'setTls')
+    if (this.tlsPemPair) check(N.setTlsPem(handle, this.tlsPemPair.cert, this.tlsPemPair.key), 'setTlsPem')
   }
 }
 

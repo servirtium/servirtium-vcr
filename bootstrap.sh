@@ -17,7 +17,7 @@
 # Env overrides:
 #   PREFIX        install prefix                 (default: $HOME/.local; no sudo)
 #   AETHER_REF    ae tag/branch/SHA to install   (default: $AE_FETCH below)
-#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.338)
+#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.339)
 #   MIN_AE        minimum acceptable ae version  (default: $AE_PIN below)
 #   AEB_TIMEOUT   passed through to aeb (seconds)  (optional)
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
@@ -54,7 +54,18 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-10-28 (latest): ae 0.849.0 -> 0.855.0 / aeb v0.337 -> v0.338, for the
+# 2026-10-29 (latest): ae 0.855.0 -> 0.860.0 / aeb v0.338 -> v0.339, for the
+# in-memory TLS PEM feature (std.http's server_set_tls_pem, aether #3362) and the
+# RSA/P-384/P-521/Ed25519 key support + set-time cert validation (#3326/#3328).
+# UNLIKE the 0.855 bump, aeb did NOT need to move in lockstep: 0.860 std adds no
+# new extern-param attribute vs 0.855 (@heap/@fresh/@c_import were already there),
+# so aeb v0.339's cached 0.855 aetherc regenerates 0.860 std fine, and the program
+# is compiled by the 0.860 on PATH (AETHER_PIN is aeb's own-orchestrator FLOOR,
+# not a cap). v0.339 is just the current aeb release. VERIFIED here on 0.860 +
+# v0.339: core build (1.6MB .so, set_tls_pem resolved) + go/rust/core-tls 1/1 +
+# .NET 28/28 (incl the in-memory-PEM no-key-on-disk test) + python/zig/java/
+# elixir/lua. 0.860 is a published release.
+# 2026-10-28: ae 0.849.0 -> 0.855.0 / aeb v0.337 -> v0.338, for the
 # HTTPS-listener feature (std.http's server_set_tls). The bump was BLOCKED until
 # aeb v0.338: Aether 0.854/0.855 added the extern-param ownership attributes
 # @frees/@moves (the #1300 use-after-free work) and 0.855's std USES them, but
@@ -86,8 +97,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.855.0"
-AE_FETCH="v0.855.0"
+AE_PIN="0.860.0"
+AE_FETCH="v0.860.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
@@ -345,7 +356,7 @@ AE_FETCH="v0.855.0"
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.338 == the verified release for this cut.
+#   aeb floor == AEB_REF == v0.339 == the verified release for this cut.
 #
 # v0.327 (from v0.326) is REQUIRED, coupled with AE_PIN 0.824: v0.326's bldr
 # does not compile on ae 0.818+ (E0902), and v0.327 is the first release that
@@ -398,7 +409,7 @@ AE_FETCH="v0.855.0"
 #
 # Released aeb bundles now report their version. Enforce the release floor;
 # an unversioned development build cannot establish that it meets the pin.
-AEB_REF="${AEB_REF:-v0.338}"
+AEB_REF="${AEB_REF:-v0.339}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX

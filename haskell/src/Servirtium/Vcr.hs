@@ -162,8 +162,10 @@ data PlaybackOptions = PlaybackOptions
   , pbSubstitutions  :: [(Field, String, String)]
     -- ^ @(field, pattern, replacement)@: rewrite the replayed response body
     -- or headers at playback time (e.g. fill a custom placeholder).
+  , pbTlsPem         :: Maybe (String, String)
+    -- ^ @(certPem, keyPem)@: like the TLS path option, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
   , pbTls            :: Maybe (FilePath, FilePath)
-    -- ^ @(certPath, keyPath)@: serve @https:\/\/@ (PEM, ECDSA P-256 key).
+    -- ^ @(certPath, keyPath)@: serve @https:\/\/@ (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384).
   , pbRemoveHeaders  :: [(Field, String)]
     -- ^ @(field, name)@: drop a header by name (case-insensitive).
   , pbStaticContent  :: [(String, String)]
@@ -227,8 +229,10 @@ data RecordOptions = RecordOptions
     -- forwarding upstream. libservirtium_vcr honors static mounts in record mode too,
     -- so a browser suite can be recorded served same-origin from the VCR (no
     -- CORS\/preflight noise), matching how it's replayed.
+  , recTlsPem            :: Maybe (String, String)
+    -- ^ @(certPem, keyPem)@: like the TLS path option, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
   , recTls               :: Maybe (FilePath, FilePath)
-    -- ^ @(certPath, keyPath)@: serve @https:\/\/@ (PEM, ECDSA P-256 key).
+    -- ^ @(certPath, keyPath)@: serve @https:\/\/@ (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384).
   , recUntaped           :: [String]
     -- ^ Request paths (e.g. @\/favicon.ico@) the record-mode VCR answers 404
     -- without forwarding upstream and never puts on the tape.
@@ -248,6 +252,7 @@ playbackOptions tape = PlaybackOptions
   , pbMatchHeaders  = []
   , pbUnredactions  = []
   , pbSubstitutions = []
+  , pbTlsPem        = Nothing
   , pbTls           = Nothing
   , pbRemoveHeaders = []
   , pbStaticContent = []
@@ -280,6 +285,7 @@ recordOptions tape upstream = RecordOptions
   , recFailIfChanged      = False
   , recStaticContent      = []
   , recUntaped            = []
+  , recTlsPem             = Nothing
   , recTls                = Nothing
   }
 
@@ -337,6 +343,15 @@ applyTls h =
       withCString cert $ \cCert ->
         withCString key $ \cKey ->
           N.aether_vcr_embed_set_tls h cCert cKey)
+
+-- | Like 'applyTls', but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+applyTlsPem :: N.Handle -> Maybe (String, String) -> IO ()
+applyTlsPem h =
+  maybe (pure ()) (\(certPem, keyPem) ->
+    check "set_tls_pem" $
+      withCString certPem $ \cCert ->
+        withCString keyPem $ \cKey ->
+          N.aether_vcr_embed_set_tls_pem h cCert cKey)
 
 -- | Build a useful error string from a handle's last-error slot.
 drainStartError :: N.Handle -> IO String
@@ -418,6 +433,7 @@ startPlayback opts = do
             (pbSubstitutions opts)
       applyStaticAndUntaped handle (pbStaticContent opts) (pbUntaped opts)
       applyTls handle (pbTls opts)
+      applyTlsPem handle (pbTlsPem opts)
       maybe (pure ()) (\callback -> secretStage handle Nothing (Just callback)) (pbSecretResolver opts)
       rc <- N.aether_vcr_embed_start handle
       if rc < 0
@@ -491,6 +507,7 @@ startRecord opts = do
             (recRedactWholeTape opts)
       applyStaticAndUntaped handle (recStaticContent opts) (recUntaped opts)
       applyTls handle (recTls opts)
+      applyTlsPem handle (recTlsPem opts)
       let server = VcrServer
             { vcrHandle   = handle
             , vcrHost     = recHost opts

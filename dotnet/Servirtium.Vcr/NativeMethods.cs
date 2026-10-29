@@ -184,6 +184,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_tls", CharSet = CharSet.Ansi)]
     internal static extern IntPtr SetTls(IntPtr server, string certPath, string keyPath);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_tls_pem", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr SetTlsPem(IntPtr server, string certPem, string keyPem);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_substitute", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Substitute(IntPtr server, int field, string pattern, string replacement);
 

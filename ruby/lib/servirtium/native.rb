@@ -137,6 +137,7 @@ module Servirtium
       [:clear_format_options,  'aether_vcr_embed_clear_format_options',  VOID, [VOIDP]],
 
       [:set_tls,             'aether_vcr_embed_set_tls',             VOIDP, [VOIDP, VOIDP, VOIDP]],
+      [:set_tls_pem,         'aether_vcr_embed_set_tls_pem',         VOIDP, [VOIDP, VOIDP, VOIDP]],
       [:last_tls_protocol,   'aether_vcr_embed_last_tls_protocol',   VOIDP, [VOIDP]],
       [:substitute,          'aether_vcr_embed_substitute',          VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
       [:clear_substitutions, 'aether_vcr_embed_clear_substitutions', VOID,  [VOIDP]],

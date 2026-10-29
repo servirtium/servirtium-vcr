@@ -254,6 +254,12 @@ ServirtiumLibrary >> setTls: server cert: certPath key: keyPath [
 	^ self ffiCall: #( void* aether_vcr_embed_set_tls ( void* server, String certPath, String keyPath ) )
 ]
 
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> setTlsPem: server cert: certPem key: keyPem [
+
+	^ self ffiCall: #( void* aether_vcr_embed_set_tls_pem ( void* server, String certPem, String keyPem ) )
+]
+
 { #category : 'ffi - diagnostics' }
 ServirtiumLibrary >> lastTlsProtocol: server [
 

@@ -30,6 +30,7 @@ abstract class VcrBuilderBase
 
     /** @var array{0: string, 1: string}|null */
     private ?array $tls = null;
+    private ?array $tlsPem = null;
 
     protected function __construct(string $tapePath)
     {
@@ -107,10 +108,18 @@ abstract class VcrBuilderBase
         return $this;
     }
 
-    /** Serve https:// using this PEM cert and key (ECDSA P-256 key). Applied at start. */
+    /** Serve https:// using this PEM cert and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Applied at start. */
     public function tls(string $certPath, string $keyPath): static
     {
         $this->tls = [$certPath, $keyPath];
+
+        return $this;
+    }
+
+    /** Like tls, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk. */
+    public function tlsFromPem(string $certPem, string $keyPem): static
+    {
+        $this->tlsPem = [$certPem, $keyPem];
 
         return $this;
     }
@@ -133,6 +142,9 @@ abstract class VcrBuilderBase
         }
         if ($this->tls !== null) {
             self::check($lib->aether_vcr_embed_set_tls($handle, $this->tls[0], $this->tls[1]), 'tls');
+        }
+        if ($this->tlsPem !== null) {
+            self::check($lib->aether_vcr_embed_set_tls_pem($handle, $this->tlsPem[0], $this->tlsPem[1]), 'tlsFromPem');
         }
     }
 

@@ -312,6 +312,7 @@ class Native {
       'aether_vcr_embed_clear_format_options');
 
   static final setTls = _lib.lookupFunction<_StaticC, _StaticD>('aether_vcr_embed_set_tls');
+  static final setTlsPem = _lib.lookupFunction<_StaticC, _StaticD>('aether_vcr_embed_set_tls_pem');
   static final lastTlsProtocol =
       _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_last_tls_protocol');
   static final substitute = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_substitute');

@@ -212,6 +212,7 @@ def _ensure_loaded() -> None:
     g["clear_format_options"] = _decl("aether_vcr_embed_clear_format_options", None, [_HANDLE])
 
     g["set_tls"] = _decl("aether_vcr_embed_set_tls", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p])
+    g["set_tls_pem"] = _decl("aether_vcr_embed_set_tls_pem", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p])
     g["last_tls_protocol"] = _decl("aether_vcr_embed_last_tls_protocol", _CSTR, [_HANDLE])
     g["substitute"] = _decl("aether_vcr_embed_substitute", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
     g["clear_substitutions"] = _decl("aether_vcr_embed_clear_substitutions", None, [_HANDLE])

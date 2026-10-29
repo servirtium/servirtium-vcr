@@ -72,6 +72,7 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_clear_untaped
   , aether_vcr_embed_clear_format_options
   , aether_vcr_embed_set_tls
+  , aether_vcr_embed_set_tls_pem
   , aether_vcr_embed_last_tls_protocol
   , aether_vcr_embed_substitute
   , aether_vcr_embed_clear_substitutions
@@ -212,6 +213,9 @@ foreign import ccall unsafe "aether_vcr_embed_clear_format_options"
 
 foreign import ccall unsafe "aether_vcr_embed_set_tls"
   aether_vcr_embed_set_tls :: Handle -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_set_tls_pem"
+  aether_vcr_embed_set_tls_pem :: Handle -> CString -> CString -> IO CString
 
 foreign import ccall unsafe "aether_vcr_embed_last_tls_protocol"
   aether_vcr_embed_last_tls_protocol :: Handle -> IO CString

@@ -90,6 +90,7 @@ extern char *aether_vcr_embed_untaped(void *h, const char *path);
 extern void  aether_vcr_embed_set_strict_headers(void *h, int on);
 extern void  aether_vcr_embed_set_match_json_body(void *h, int on);
 extern char *aether_vcr_embed_set_tls(void *h, const char *cert, const char *key);
+extern char *aether_vcr_embed_set_tls_pem(void *h, const char *cert_pem, const char *key_pem);
 extern char *aether_vcr_embed_last_tls_protocol(void *h);
 extern char *aether_vcr_embed_substitute(void *h, int field, const char *pat,
                                          const char *repl);
@@ -444,6 +445,15 @@ static int l_set_tls(lua_State *L)
     return push_owned_string(L, aether_vcr_embed_set_tls(h, cert, key));
 }
 
+/* set_tls_pem(handle, cert_pem, key_pem) -> string (empty == ok) */
+static int l_set_tls_pem(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *cert = luaL_checkstring(L, 2);
+    const char *key  = luaL_checkstring(L, 3);
+    return push_owned_string(L, aether_vcr_embed_set_tls_pem(h, cert, key));
+}
+
 /* last_tls_protocol(handle) -> string ("TLSv1.3" or "") */
 static int l_last_tls_protocol(lua_State *L)
 {
@@ -560,6 +570,7 @@ static const luaL_Reg servirtium_funcs[] = {
     {"set_strict_headers",              l_set_strict_headers},
     {"set_match_json_body",             l_set_match_json_body},
     {"set_tls",                         l_set_tls},
+    {"set_tls_pem",                     l_set_tls_pem},
     {"last_tls_protocol",               l_last_tls_protocol},
     {"substitute",                      l_substitute},
     {"clear_substitutions",             l_clear_substitutions},

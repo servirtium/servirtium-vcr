@@ -92,6 +92,7 @@ pub(crate) struct Native {
     pub clear_format_options: unsafe extern "C" fn(Handle),
 
     pub set_tls: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> *mut c_char,
+    pub set_tls_pem: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> *mut c_char,
     pub last_tls_protocol: unsafe extern "C" fn(Handle) -> *mut c_char,
     pub substitute: unsafe extern "C" fn(Handle, c_int, *const c_char, *const c_char) -> *mut c_char,
     pub clear_substitutions: unsafe extern "C" fn(Handle),
@@ -266,6 +267,7 @@ fn load() -> Result<Native, String> {
         clear_untaped: sym!(b"aether_vcr_embed_clear_untaped\0"),
         clear_format_options: sym!(b"aether_vcr_embed_clear_format_options\0"),
         set_tls: sym!(b"aether_vcr_embed_set_tls\0"),
+        set_tls_pem: sym!(b"aether_vcr_embed_set_tls_pem\0"),
         last_tls_protocol: sym!(b"aether_vcr_embed_last_tls_protocol\0"),
         substitute: sym!(b"aether_vcr_embed_substitute\0"),
         clear_substitutions: sym!(b"aether_vcr_embed_clear_substitutions\0"),

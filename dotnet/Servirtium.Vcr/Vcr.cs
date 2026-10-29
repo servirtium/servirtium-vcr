@@ -50,6 +50,7 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     private readonly List<(string mount, string dir)> _staticContent = new();
     private readonly List<string> _untaped = new();
     private (string cert, string key)? _tls;
+    private (string certPem, string keyPem)? _tlsPem;
 
     private protected VcrBuilderBase(string tapePath) => TapePath = tapePath;
 
@@ -90,12 +91,27 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     /// and <paramref name="keyPath"/> are PEM files (a certificate and its
     /// matching private key). Honored in both playback and record mode; the
     /// <see cref="Vcr.BaseUrl"/> then carries the <c>https</c> scheme. A bad or
-    /// mismatched PEM (or a native library built without OpenSSL) throws from
-    /// <see cref="Build"/>. Configure before building/starting.
+    /// mismatched PEM throws from <see cref="Build"/>. Configure before
+    /// building/starting.
     /// </summary>
     public TSelf Tls(string certPath, string keyPath)
     {
         _tls = (certPath, keyPath);
+        return Self;
+    }
+
+    /// <summary>
+    /// Like <see cref="Tls"/>, but the certificate and key are PEM TEXT passed
+    /// in memory rather than file paths — so a test never writes a private key
+    /// to disk (what security reviews flag). <paramref name="certPem"/> is the
+    /// PEM certificate (chain) and <paramref name="keyPem"/> the matching PEM
+    /// private key. Honored in playback and record; a bad or mismatched PEM
+    /// throws from <see cref="Build"/>. Takes precedence over <see cref="Tls"/>
+    /// if both are set.
+    /// </summary>
+    public TSelf TlsFromPem(string certPem, string keyPem)
+    {
+        _tlsPem = (certPem, keyPem);
         return Self;
     }
 
@@ -129,7 +145,11 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
         {
             Check(NativeMethods.Untaped(handle, path), nameof(Untaped));
         }
-        if (_tls is (string cert, string key))
+        if (_tlsPem is (string certPem, string keyPem))
+        {
+            Check(NativeMethods.SetTlsPem(handle, certPem, keyPem), nameof(TlsFromPem));
+        }
+        else if (_tls is (string cert, string key))
         {
             Check(NativeMethods.SetTls(handle, cert, key), nameof(Tls));
         }

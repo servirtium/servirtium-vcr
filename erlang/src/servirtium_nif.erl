@@ -58,6 +58,7 @@
     unredact/4,
     substitute/4,
     set_tls/3,
+    set_tls_pem/3,
     last_tls_protocol/1,
     assert_all_consumed/1,
     assert_all_redactions_used/1,
@@ -134,6 +135,7 @@ redact_json_field(_Handle, _Field, _Name, _Replacement) -> erlang:nif_error(not_
 unredact(_Handle, _Field, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).
 substitute(_Handle, _Field, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).
 set_tls(_Handle, _CertPath, _KeyPath) -> erlang:nif_error(not_loaded).
+set_tls_pem(_Handle, _CertPem, _KeyPem) -> erlang:nif_error(not_loaded).
 last_tls_protocol(_Handle) -> erlang:nif_error(not_loaded).
 assert_all_consumed(_Handle) -> erlang:nif_error(not_loaded).
 assert_all_redactions_used(_Handle) -> erlang:nif_error(not_loaded).

@@ -75,7 +75,7 @@ public class ConsumedAndTlsVersionTests
             Assert.Equal("", http.LastTlsProtocol);
         }
 
-        // TLS on: TLSv1.3 (pure-Aether TLS 1.3 server). EC P-256 cert, in memory.
+        // TLS on: TLSv1.3 (pure-Aether TLS 1.3 server). EC P-256 cert via a temp file.
         string dir = Path.Combine(Path.GetTempPath(), "svcr-tlsver-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         string certPath = Path.Combine(dir, "cert.pem"), keyPath = Path.Combine(dir, "key.pem");

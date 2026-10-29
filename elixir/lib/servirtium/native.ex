@@ -71,6 +71,7 @@ defmodule Servirtium.Native do
   defdelegate unredact(handle, field, pattern, replacement), to: :servirtium_nif
   defdelegate substitute(handle, field, pattern, replacement), to: :servirtium_nif
   defdelegate set_tls(handle, cert_path, key_path), to: :servirtium_nif
+  defdelegate set_tls_pem(handle, cert_pem, key_pem), to: :servirtium_nif
   defdelegate last_tls_protocol(handle), to: :servirtium_nif
   defdelegate assert_all_consumed(handle), to: :servirtium_nif
   defdelegate assert_all_redactions_used(handle), to: :servirtium_nif

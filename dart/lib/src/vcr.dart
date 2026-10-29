@@ -157,6 +157,7 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
   final List<(String, String)> _staticContent = [];
   final List<String> _untaped = [];
   (String, String)? _tls;
+  (String, String)? _tlsPem;
 
   T get _self;
 
@@ -210,9 +211,15 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     return _self;
   }
 
-  /// Serve `https://` using this PEM cert and key (ECDSA P-256 key). Applied at start.
+  /// Serve `https://` using this PEM cert and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Applied at start.
   T tls(String certPath, String keyPath) {
     _tls = (certPath, keyPath);
+    return _self;
+  }
+
+  /// Like [tls], but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+  T tlsFromPem(String certPem, String keyPem) {
+    _tlsPem = (certPem, keyPem);
     return _self;
   }
 
@@ -232,6 +239,10 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     final tls = _tls;
     if (tls != null) {
       withUtf8(tls.$1, (c) => withUtf8(tls.$2, (k) => _check(Native.setTls(handle, c, k), 'tls')));
+    }
+    final tlsPem = _tlsPem;
+    if (tlsPem != null) {
+      withUtf8(tlsPem.$1, (c) => withUtf8(tlsPem.$2, (k) => _check(Native.setTlsPem(handle, c, k), 'tlsFromPem')));
     }
   }
 }

@@ -86,6 +86,7 @@ pub extern "c" fn aether_vcr_embed_clear_untaped(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_format_options(handle: Handle) void;
 
 pub extern "c" fn aether_vcr_embed_set_tls(handle: Handle, cert: [*c]const u8, key: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_set_tls_pem(handle: Handle, cert_pem: [*c]const u8, key_pem: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_last_tls_protocol(handle: Handle) [*c]u8;
 pub extern "c" fn aether_vcr_embed_substitute(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_clear_substitutions(handle: Handle) void;
@@ -346,6 +347,7 @@ fn applyBase(
     static_content: []const Mount,
     untaped_paths: []const [:0]const u8,
     tls: ?TlsPaths,
+    tls_pem: ?TlsPaths,
 ) !void {
     for (header_removals) |hr| {
         try checkErr(allocator, aether_vcr_embed_remove_header(handle, @intFromEnum(hr.field), hr.name.ptr));
@@ -357,6 +359,7 @@ fn applyBase(
         try checkErr(allocator, aether_vcr_embed_untaped(handle, p.ptr));
     }
     if (tls) |t| try checkErr(allocator, aether_vcr_embed_set_tls(handle, t.cert.ptr, t.key.ptr));
+    if (tls_pem) |t| try checkErr(allocator, aether_vcr_embed_set_tls_pem(handle, t.cert.ptr, t.key.ptr));
 }
 
 /// A builder that replays a Servirtium markdown tape from disk.
@@ -377,6 +380,7 @@ pub const Playback = struct {
     unredactions: std.ArrayList(Replacement) = .empty,
     substitutions: std.ArrayList(Replacement) = .empty,
     tls_paths: ?TlsPaths = null,
+    tls_pem: ?TlsPaths = null,
     match_headers: std.ArrayList([:0]const u8) = .empty,
 
     /// Begin a playback fixture for `tape_path`. Configure fluently, then
@@ -421,10 +425,16 @@ pub const Playback = struct {
         b.static_content.append(b.allocator, .{ .mount = mount, .dir = dir }) catch {};
         return b;
     }
-    /// Terminate TLS in the VCR (PEM cert + ECDSA P-256 key); applied at `start`.
+    /// Terminate TLS in the VCR (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384); applied at `start`.
     pub fn tls(self: Playback, cert: [:0]const u8, key: [:0]const u8) Playback {
         var b = self;
         b.tls_paths = .{ .cert = cert, .key = key };
+        return b;
+    }
+    /// Like `tls`, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+    pub fn tlsFromPem(self: Playback, cert_pem: [:0]const u8, key_pem: [:0]const u8) Playback {
+        var b = self;
+        b.tls_pem = .{ .cert = cert_pem, .key = key_pem };
         return b;
     }
     /// Rewrite the replayed response at playback time (regex `pattern` ->
@@ -507,7 +517,7 @@ pub const Playback = struct {
         if (handle == null) return Error.OpenFailed;
         errdefer aether_vcr_embed_stop(handle);
 
-        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items, self.tls_paths);
+        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
         if (self.strict_headers) aether_vcr_embed_set_strict_headers(handle, 1);
         if (self.match_json_body) aether_vcr_embed_set_match_json_body(handle, 1);
         if (self.match_multiple) aether_vcr_embed_set_match_multiple(handle, 1);
@@ -551,6 +561,7 @@ pub const Record = struct {
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
     redactions: std.ArrayList(Replacement) = .empty,
     tls_paths: ?TlsPaths = null,
+    tls_pem: ?TlsPaths = null,
     normalizations: std.ArrayList(PatName) = .empty,
     whole_tape_redactions: std.ArrayList(PatRepl) = .empty,
     note_text: ?NoteText = null,
@@ -599,10 +610,16 @@ pub const Record = struct {
         b.static_content.append(b.allocator, .{ .mount = mount, .dir = dir }) catch {};
         return b;
     }
-    /// Terminate TLS in the VCR (PEM cert + ECDSA P-256 key); applied at `start`.
+    /// Terminate TLS in the VCR (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384); applied at `start`.
     pub fn tls(self: Record, cert: [:0]const u8, key: [:0]const u8) Record {
         var b = self;
         b.tls_paths = .{ .cert = cert, .key = key };
+        return b;
+    }
+    /// Like `tls`, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
+    pub fn tlsFromPem(self: Record, cert_pem: [:0]const u8, key_pem: [:0]const u8) Record {
+        var b = self;
+        b.tls_pem = .{ .cert = cert_pem, .key = key_pem };
         return b;
     }
     /// Mark an incidental request path the VCR 404s without forwarding or
@@ -717,7 +734,7 @@ pub const Record = struct {
         if (handle == null) return Error.OpenFailed;
         errdefer aether_vcr_embed_stop(handle);
 
-        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items, self.tls_paths);
+        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
         if (self.indent_code_blocks) aether_vcr_embed_indent_code_blocks(handle);
         if (self.emphasize_http_verbs) aether_vcr_embed_emphasize_http_verbs(handle);
         for (self.redactions.items) |r| {

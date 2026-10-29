@@ -32,10 +32,10 @@ public class TlsTests : IDisposable
         _certPath = Path.Combine(_dir, "cert.pem");
         _keyPath = Path.Combine(_dir, "key.pem");
 
-        // ECDSA P-256, not RSA: libservirtium_vcr's HTTPS uses Aether's pure-Aether
+        // An ECDSA P-256 cert. libservirtium_vcr's HTTPS uses Aether's pure-Aether
         // TLS 1.3 server (no OpenSSL dependency, so it works on every cross-built
-        // platform), and that server signs CertificateVerify with ECDSA P-256 only
-        // — an RSA key would fail the handshake on an OpenSSL-free build.
+        // platform); it accepts P-256/P-384/P-521, Ed25519 and RSA 2048-16384 keys
+        // (aether #3326). P-256 is just a small, fast choice for the test.
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var req = new CertificateRequest("CN=localhost", ecdsa, HashAlgorithmName.SHA256);
         var san = new SubjectAlternativeNameBuilder();
@@ -75,6 +75,48 @@ public class TlsTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("ok-body", await response.Content.ReadAsStringAsync());
         Assert.Equal(VcrOutcome.Ok, vcr.LastKind);
+    }
+
+    [Fact]
+    public async Task Serves_https_from_an_in_memory_pem_without_touching_disk()
+    {
+        // Mint an EC P-256 cert and export BOTH as PEM strings — nothing is
+        // written to disk (the whole point of TlsFromPem: no private key file).
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var req = new CertificateRequest("CN=localhost", ecdsa, HashAlgorithmName.SHA256);
+        var san = new SubjectAlternativeNameBuilder();
+        san.AddDnsName("localhost");
+        san.AddIpAddress(IPAddress.Loopback);
+        req.CertificateExtensions.Add(san.Build());
+        using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(2));
+        string certPem = cert.ExportCertificatePem();
+        string keyPem = ecdsa.ExportPkcs8PrivateKeyPem();
+
+        using var vcr = Vcr.Playback(TapePath("single_get.md"))
+            .Port(0)
+            .TlsFromPem(certPem, keyPem)
+            .Start();
+
+        Assert.StartsWith("https://", vcr.BaseUrl);
+        Assert.Equal("TLSv1.3", vcr.LastTlsProtocol);
+
+        using var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true,
+        };
+        using var client = new HttpClient(handler) { BaseAddress = new Uri(vcr.BaseUrl) };
+        HttpResponseMessage response = await client.GetAsync("/ok");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("ok-body", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public void TlsFromPem_rejects_an_empty_cert()
+    {
+        VcrException ex = Assert.Throws<VcrException>(() =>
+            Vcr.Playback(TapePath("single_get.md")).Port(0).TlsFromPem("", "key").Start());
+        Assert.Contains("tls", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
