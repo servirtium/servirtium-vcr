@@ -38,6 +38,7 @@ M.FIELD_RESPONSE_BODY    = C.FIELD_RESPONSE_BODY
 M.FIELD_REQUEST_HEADERS  = C.FIELD_REQUEST_HEADERS
 M.FIELD_REQUEST_BODY     = C.FIELD_REQUEST_BODY
 M.FIELD_RESPONSE_HEADERS = C.FIELD_RESPONSE_HEADERS
+M.FIELD_RESPONSE         = C.FIELD_RESPONSE -- substitution-only: body AND headers
 
 M.OK                  = C.OK
 M.PATH_OR_METHOD_DIFF = C.PATH_OR_METHOD_DIFF
@@ -130,6 +131,12 @@ end
 -- Raises if any redaction rule never matched.
 function Server:assert_all_redactions_used()
     local err = C.assert_all_redactions_used(self._handle)
+    if err ~= "" then error(err, 2) end
+end
+
+-- Raises if any unfilled placeholder remains in a replayed response.
+function Server:assert_no_unfilled_placeholders()
+    local err = C.assert_no_unfilled_placeholders(self._handle)
     if err ~= "" then error(err, 2) end
 end
 
@@ -280,9 +287,16 @@ function PlaybackBuilder:tls_from_pem(cert_pem, key_pem)
 end
 
 -- Rewrite playback responses: replace pattern with repl in the given field.
-function PlaybackBuilder:substitute(field, pattern, repl)
-    table.insert(self._substitutions, { field = field, pattern = pattern, repl = repl })
+-- Pass required=false to exempt an unused rule from assert_all_redactions_used.
+function PlaybackBuilder:substitute(field, pattern, repl, required)
+    if required == nil then required = true end
+    table.insert(self._substitutions, { field = field, pattern = pattern, repl = repl, required = required })
     return self
+end
+
+-- Like substitute, but an unused rule is not reported.
+function PlaybackBuilder:substitute_optional(field, pattern, repl)
+    return self:substitute(field, pattern, repl, false)
 end
 
 function PlaybackBuilder:static_content(mount, dir)
@@ -323,7 +337,7 @@ function PlaybackBuilder:start()
             check(C.unredact(handle, u.field, u.pattern, u.repl), "unredact")
         end
         for _, s in ipairs(self._substitutions) do
-            check(C.substitute(handle, s.field, s.pattern, s.repl), "substitute")
+            check(C.substitute(handle, s.field, s.pattern, s.repl, s.required and 1 or 0), "substitute")
         end
     end)
     if not ok then
@@ -490,6 +504,7 @@ local SERVER_METHODS = {
     reset_cursor = true, note = true, close = true,
     last_tls_protocol = true, clear_substitutions = true,
     assert_all_consumed = true, assert_all_redactions_used = true,
+    assert_no_unfilled_placeholders = true,
 }
 
 local function attach_lazy_start(builder, builder_mt)

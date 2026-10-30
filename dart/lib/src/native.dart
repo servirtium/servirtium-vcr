@@ -179,6 +179,11 @@ typedef _RedactC = Pointer<Utf8> Function(
 typedef _RedactD = Pointer<Utf8> Function(
     Pointer<Void> server, int field, Pointer<Utf8> pattern, Pointer<Utf8> replacement);
 
+typedef _SubstituteC = Pointer<Utf8> Function(
+    Pointer<Void> server, Int32 field, Pointer<Utf8> pattern, Pointer<Utf8> replacement, Int32 required);
+typedef _SubstituteD = Pointer<Utf8> Function(
+    Pointer<Void> server, int field, Pointer<Utf8> pattern, Pointer<Utf8> replacement, int required);
+
 typedef _WholeTapeC = Pointer<Utf8> Function(
     Pointer<Void> server, Pointer<Utf8> pattern, Pointer<Utf8> nameOrReplacement);
 typedef _WholeTapeD = Pointer<Utf8> Function(
@@ -315,13 +320,15 @@ class Native {
   static final setTlsPem = _lib.lookupFunction<_StaticC, _StaticD>('aether_vcr_embed_set_tls_pem');
   static final lastTlsProtocol =
       _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_last_tls_protocol');
-  static final substitute = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_substitute');
+  static final substitute = _lib.lookupFunction<_SubstituteC, _SubstituteD>('aether_vcr_embed_substitute');
   static final clearSubstitutions = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
       'aether_vcr_embed_clear_substitutions');
   static final assertAllConsumed =
       _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_assert_all_consumed');
   static final assertAllRedactionsUsed = _lib
       .lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_assert_all_redactions_used');
+  static final assertNoUnfilledPlaceholders = _lib
+      .lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_assert_no_unfilled_placeholders');
 
   // ---- string ownership ---------------------------------------------------
   static final freeString =

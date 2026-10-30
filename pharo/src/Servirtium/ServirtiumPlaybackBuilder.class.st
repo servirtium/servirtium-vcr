@@ -100,7 +100,15 @@ ServirtiumPlaybackBuilder >> unredactField: aField pattern: aPattern replacement
 ServirtiumPlaybackBuilder >> substituteField: aField pattern: aPattern replacement: aReplacement [
 	"Rewrite playback responses: replace aPattern with aReplacement in aField."
 
-	substitutions add: { aField. aPattern. aReplacement }.
+	substitutions add: { aField. aPattern. aReplacement. true }.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> substituteOptionalField: aField pattern: aPattern replacement: aReplacement [
+	"Like substituteField:..., but an unused rule is not reported by assertAllRedactionsUsed."
+
+	substitutions add: { aField. aPattern. aReplacement. false }.
 	^ self
 ]
 
@@ -119,7 +127,7 @@ ServirtiumPlaybackBuilder >> applyConfig: handle [
 			op: 'unredact' ].
 	substitutions do: [ :tuple |
 		self
-			check: (self library substitute: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))
+			check: (self library substitute: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3) required: ((tuple at: 4) ifTrue: [ 1 ] ifFalse: [ 0 ]))
 			op: 'substitute' ]
 ]
 

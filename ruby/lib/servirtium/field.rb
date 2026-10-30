@@ -9,6 +9,7 @@ module Servirtium
     REQUEST_HEADERS  = 3
     REQUEST_BODY     = 4
     RESPONSE_HEADERS = 5
+    RESPONSE         = 6 # substitution-only: body AND headers in one rule
   end
 
   # Per-dispatch outcome. Values mirror the VCR_KIND_* constants in the

@@ -98,10 +98,11 @@ void   aether_vcr_embed_clear_format_options(void* server);
 char*  aether_vcr_embed_set_tls(void* server, const char* cert_path, const char* key_path);
 char*  aether_vcr_embed_set_tls_pem(void* server, const char* cert_pem, const char* key_pem);
 char*  aether_vcr_embed_last_tls_protocol(void* server);
-char*  aether_vcr_embed_substitute(void* server, int field, const char* pattern, const char* replacement);
+char*  aether_vcr_embed_substitute(void* server, int field, const char* pattern, const char* replacement, int required);
 void   aether_vcr_embed_clear_substitutions(void* server);
 char*  aether_vcr_embed_assert_all_consumed(void* server);
 char*  aether_vcr_embed_assert_all_redactions_used(void* server);
+char*  aether_vcr_embed_assert_no_unfilled_placeholders(void* server);
 
 void   aether_vcr_embed_free_string(char* s);
 */
@@ -123,6 +124,8 @@ const (
 	RequestHeaders  Field = 3
 	RequestBody     Field = 4
 	ResponseHeaders Field = 5
+	// Response is substitution-only: body AND headers in one rule.
+	Response Field = 6
 )
 
 // Outcome is the per-dispatch result drained after a request. Values mirror
@@ -195,6 +198,7 @@ type headerRemoval struct {
 type replacement struct {
 	field             Field
 	pattern, replacem string
+	optional          bool // substitutions only: true = not reported by AssertAllRedactionsUsed
 }
 
 type baseBuilder struct {
@@ -382,14 +386,21 @@ func (b *PlaybackBuilder) RemoveHeader(field Field, name string) *PlaybackBuilde
 // the real value the live SUT sends, so a committed (scrubbed) tape still
 // matches.
 func (b *PlaybackBuilder) Unredact(field Field, pattern, repl string) *PlaybackBuilder {
-	b.unredactions = append(b.unredactions, replacement{field, pattern, repl})
+	b.unredactions = append(b.unredactions, replacement{field, pattern, repl, false})
 	return b
 }
 
 // Substitute rewrites the replayed response at playback time: regex pattern ->
 // repl in the response body or headers (e.g. fill a custom placeholder).
 func (b *PlaybackBuilder) Substitute(field Field, pattern, repl string) *PlaybackBuilder {
-	b.substitutions = append(b.substitutions, replacement{field, pattern, repl})
+	b.substitutions = append(b.substitutions, replacement{field, pattern, repl, false})
+	return b
+}
+
+// SubstituteOptional is Substitute, but an unused rule is not reported by
+// AssertAllRedactionsUsed.
+func (b *PlaybackBuilder) SubstituteOptional(field Field, pattern, repl string) *PlaybackBuilder {
+	b.substitutions = append(b.substitutions, replacement{field, pattern, repl, true})
 	return b
 }
 
@@ -451,7 +462,11 @@ func (b *PlaybackBuilder) applyConfig(handle unsafe.Pointer) error {
 	}
 	for _, u := range b.substitutions {
 		cPat, cRep := C.CString(u.pattern), C.CString(u.replacem)
-		res := C.aether_vcr_embed_substitute(handle, C.int(u.field), cPat, cRep)
+		req := C.int(1)
+		if u.optional {
+			req = 0
+		}
+		res := C.aether_vcr_embed_substitute(handle, C.int(u.field), cPat, cRep, req)
 		C.free(unsafe.Pointer(cPat))
 		C.free(unsafe.Pointer(cRep))
 		if err := checkErr(res, "Substitute"); err != nil {
@@ -812,6 +827,11 @@ func (s *Server) AssertAllConsumed() error {
 // AssertAllRedactionsUsed errors unless every redaction/unredaction/substitution rule matched.
 func (s *Server) AssertAllRedactionsUsed() error {
 	return checkErr(C.aether_vcr_embed_assert_all_redactions_used(s.handle), "AssertAllRedactionsUsed")
+}
+
+// AssertNoUnfilledPlaceholders errors if any unfilled placeholder remains in a replayed response.
+func (s *Server) AssertNoUnfilledPlaceholders() error {
+	return checkErr(C.aether_vcr_embed_assert_no_unfilled_placeholders(s.handle), "AssertNoUnfilledPlaceholders")
 }
 
 // ClearSubstitutions drops all registered substitutions on the running server.

@@ -35,6 +35,7 @@ class Field(enum.IntEnum):
     REQUEST_HEADERS = 3
     REQUEST_BODY = 4
     RESPONSE_HEADERS = 5
+    RESPONSE = 6  # substitution-only: body AND headers in one rule
 
 
 class Outcome(enum.IntEnum):
@@ -197,7 +198,7 @@ class PlaybackBuilder(_BuilderBase):
     def __init__(self, tape_path: str) -> None:
         super().__init__(tape_path)
         self._unredactions: list[tuple[Field, str, str]] = []
-        self._substitutions: list[tuple[Field, str, str]] = []
+        self._substitutions: list[tuple[Field, str, str, bool]] = []
         self._secret_resolver = None
         self._strict_headers = False
         self._match_json_body = False
@@ -242,11 +243,16 @@ class PlaybackBuilder(_BuilderBase):
         self._unredactions.append((field, pattern, replacement))
         return self
 
-    def substitute(self, field: Field, pattern: str, replacement: str):
+    def substitute(self, field: Field, pattern: str, replacement: str, required: bool = True):
         """Rewrite the replayed response: regex ``pattern`` -> ``replacement`` in
-        the response body or headers (``{{baseUrl}}`` is already expanded by core)."""
-        self._substitutions.append((field, pattern, replacement))
+        the response body or headers (``{{baseUrl}}`` is already expanded by core).
+        ``required=False`` exempts an unused rule from assert_all_redactions_used."""
+        self._substitutions.append((field, pattern, replacement, required))
         return self
+
+    def substitute_optional(self, field: Field, pattern: str, replacement: str):
+        """Like :meth:`substitute`, but an unused rule is not reported."""
+        return self.substitute(field, pattern, replacement, required=False)
 
     def _apply_config(self, handle) -> None:
         super()._apply_config(handle)
@@ -263,9 +269,9 @@ class PlaybackBuilder(_BuilderBase):
                 N.unredact(handle, int(field), N.encode(pattern), N.encode(replacement)),
                 "unredact",
             )
-        for field, pattern, replacement in self._substitutions:
+        for field, pattern, replacement, required in self._substitutions:
             _check(
-                N.substitute(handle, int(field), N.encode(pattern), N.encode(replacement)),
+                N.substitute(handle, int(field), N.encode(pattern), N.encode(replacement), 1 if required else 0),
                 "substitute",
             )
 
@@ -505,6 +511,10 @@ class VcrServer:
     def assert_all_redactions_used(self) -> None:
         """Raise unless every redaction/unredaction/substitution rule matched at least once."""
         _check(N.assert_all_redactions_used(self._require_handle()), "assert_all_redactions_used")
+
+    def assert_no_unfilled_placeholders(self) -> None:
+        """Raise if any unfilled placeholder remains in a replayed response."""
+        _check(N.assert_no_unfilled_placeholders(self._require_handle()), "assert_no_unfilled_placeholders")
 
     def clear_substitutions(self) -> None:
         """Drop all registered substitutions on the running server."""

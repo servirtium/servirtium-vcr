@@ -172,7 +172,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     private Func<string, string?>? _secretResolver;
     public PlaybackBuilder SecretResolver(Func<string, string?> callback) { _secretResolver = callback; return this; }
     private readonly List<(VcrField field, string pattern, string replacement)> _unredactions = new();
-    private readonly List<(VcrField field, string pattern, string replacement)> _substitutions = new();
+    private readonly List<(VcrField field, string pattern, string replacement, bool required)> _substitutions = new();
     private readonly List<string> _matchHeaders = new();
     private bool _strictHeaders;
     private bool _matchJsonBody;
@@ -245,14 +245,34 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     /// <c>{{baseUrl}}</c> are filled from the live request automatically —
     /// use <c>Substitute</c> only for your own placeholders (e.g.
     /// <c>Substitute(VcrField.ResponseBody, "{{vault}}", "https://" + host)</c>).
-    /// Only the two response fields are accepted; anything else throws from
-    /// <see cref="Start"/>. Request-side matching is unaffected.
+    /// Pass <see cref="VcrField.Response"/> to fill the placeholder in the body
+    /// AND the headers with one rule (counted once by
+    /// <see cref="VcrServer.AssertAllRedactionsUsed"/>). Only those three fields
+    /// are accepted; anything else throws from <see cref="Start"/>. Request-side
+    /// matching is unaffected.
     /// </summary>
-    public PlaybackBuilder Substitute(VcrField field, string pattern, string replacement)
+    /// <param name="required">
+    /// When <c>true</c> (default), <see cref="VcrServer.AssertAllRedactionsUsed"/>
+    /// reports this rule if it never fires. Pass <c>false</c> (or use
+    /// <see cref="SubstituteOptional"/>) for a shared fixture's safeguard rule
+    /// that some tapes legitimately don't exercise — e.g. a <c>{{vault}}</c>
+    /// substitution a 403/503/empty-vault tape contains no placeholder for.
+    /// </param>
+    public PlaybackBuilder Substitute(VcrField field, string pattern, string replacement, bool required = true)
     {
-        _substitutions.Add((field, pattern, replacement));
+        _substitutions.Add((field, pattern, replacement, required));
         return this;
     }
+
+    /// <summary>
+    /// Like <see cref="Substitute(VcrField,string,string,bool)"/> but optional:
+    /// <see cref="VcrServer.AssertAllRedactionsUsed"/> never reports it as
+    /// unused. For a shared fixture that configures the same substitutions for a
+    /// whole family of tapes, where some tapes legitimately contain no
+    /// placeholder for a given rule (403/503/empty-vault cases).
+    /// </summary>
+    public PlaybackBuilder SubstituteOptional(VcrField field, string pattern, string replacement)
+        => Substitute(field, pattern, replacement, required: false);
 
     private protected override void ApplyConfig(IntPtr handle)
     {
@@ -268,9 +288,9 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         {
             Check(NativeMethods.Unredact(handle, (int)field, pattern, replacement), nameof(Unredact));
         }
-        foreach ((VcrField field, string pattern, string replacement) in _substitutions)
+        foreach ((VcrField field, string pattern, string replacement, bool required) in _substitutions)
         {
-            Check(NativeMethods.Substitute(handle, (int)field, pattern, replacement), nameof(Substitute));
+            Check(NativeMethods.Substitute(handle, (int)field, pattern, replacement, required ? 1 : 0), nameof(Substitute));
         }
     }
 
@@ -518,11 +538,33 @@ public sealed class VcrServer : IDisposable
     /// actually matched something — the <c>verifyNoMoreInteractions()</c>
     /// analogue for scrubbing config. Catches a stale test: a rule whose pattern
     /// no longer appears in the tape, so it silently does nothing. Call at the
-    /// end of the test; the exception lists the rules that never fired.
+    /// end of the test; the exception lists the rules that never fired, by
+    /// kind, field NAME and pattern — never the replacement value, so a real
+    /// value restored with <see cref="PlaybackBuilder.Unredact"/> cannot leak
+    /// into CI logs. A substitution registered with
+    /// <see cref="PlaybackBuilder.SubstituteOptional"/> (or
+    /// <c>required: false</c>) is never reported.
     /// </summary>
     public void AssertAllRedactionsUsed()
     {
         string error = NativeMethods.TakeString(NativeMethods.AssertAllRedactionsUsed(Handle));
+        if (!string.IsNullOrEmpty(error)) throw new VcrException(error);
+    }
+
+    /// <summary>
+    /// Throw if any served response still contained a <c>{{placeholder}}</c>
+    /// when it was sent to the SUT — a typo like <c>{{valut}}</c>, or a
+    /// placeholder no <see cref="PlaybackBuilder.Substitute"/> /
+    /// <c>{{request.*}}</c> rule covers. That marker reaches the client as
+    /// literal text and a test can otherwise still pass. Unlike
+    /// <see cref="AssertAllRedactionsUsed"/>, this works the same with a shared
+    /// fixture or per-test rules — it inspects the bytes actually served, not
+    /// the rule list. Call at the end of the test; the exception lists the
+    /// interactions (method + path) that still held a placeholder.
+    /// </summary>
+    public void AssertNoUnfilledPlaceholders()
+    {
+        string error = NativeMethods.TakeString(NativeMethods.AssertNoUnfilledPlaceholders(Handle));
         if (!string.IsNullOrEmpty(error)) throw new VcrException(error);
     }
 

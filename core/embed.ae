@@ -198,8 +198,11 @@ vcr_embed_set_tls_pem(s: ptr, cert_pem: string, key_pem: string) -> ptr {
 // The {{request.host}}/{{request.scheme}}/{{baseUrl}} tokens are filled from
 // the live request automatically, no registration needed. "" = OK, else error
 // (e.g. a non-response field). Configure before start.
-vcr_embed_substitute(s: ptr, field: int, pattern: string, replacement: string) -> ptr {
-    return vcr_embed_dup(vcr.substitute_h(s, field, pattern, replacement))
+// field: 2 ResponseBody, 5 ResponseHeaders, 6 Response (body AND headers, one
+// rule). required: 1 = assert_all_redactions_used reports it if never used; 0 =
+// optional (a shared fixture's safeguard a given tape may not exercise).
+vcr_embed_substitute(s: ptr, field: int, pattern: string, replacement: string, required: int) -> ptr {
+    return vcr_embed_dup(vcr.substitute_h(s, field, pattern, replacement, required))
 }
 
 // The TLS protocol this listener serves over: "TLSv1.3" when TLS is on (the
@@ -226,6 +229,14 @@ vcr_embed_assert_all_consumed(s: ptr) -> ptr {
 // verifyNoMoreInteractions()-style check for scrubbing config). Caller frees.
 vcr_embed_assert_all_redactions_used(s: ptr) -> ptr {
     return vcr_embed_dup(vcr.assert_all_redactions_used_h(s))
+}
+
+// "" if every served response had all its {{...}} placeholders filled, else a
+// message listing the interactions that still contained one when sent to the SUT
+// (a typo, or a placeholder no rule covers). Works with a shared fixture or
+// per-test rules. Caller frees.
+vcr_embed_assert_no_unfilled_placeholders(s: ptr) -> ptr {
+    return vcr_embed_dup(vcr.assert_no_unfilled_placeholders_h(s))
 }
 
 vcr_embed_tape_length(s: ptr) -> int {

@@ -28,6 +28,8 @@ export enum VcrField {
   RequestHeaders = 3,
   RequestBody = 4,
   ResponseHeaders = 5,
+  /** Substitution-only: response body AND headers in one rule. */
+  Response = 6,
 }
 
 /**
@@ -199,7 +201,7 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   private secretResolverValue?: SecretResolver
   secretResolver(callback: SecretResolver): this { this.secretResolverValue = callback; return this }
   private readonly unredactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
-  private readonly substitutions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
+  private readonly substitutions: Array<{ field: VcrField; pattern: string; replacement: string; required: boolean }> = []
   private strictHeadersOn = false
   private matchJsonBodyOn = false
   private matchMultipleOn = false
@@ -264,9 +266,14 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
    * Rewrite the replayed response: regex `pattern` -> `replacement` in the
    * response body or headers (`{{baseUrl}}` is already expanded by core).
    */
-  substitute(field: VcrField, pattern: string, replacement: string): PlaybackBuilder {
-    this.substitutions.push({ field, pattern, replacement })
+  substitute(field: VcrField, pattern: string, replacement: string, required = true): PlaybackBuilder {
+    this.substitutions.push({ field, pattern, replacement, required })
     return this
+  }
+
+  /** Like `substitute`, but an unused rule is not reported by `assertAllRedactionsUsed`. */
+  substituteOptional(field: VcrField, pattern: string, replacement: string): PlaybackBuilder {
+    return this.substitute(field, pattern, replacement, false)
   }
 
   protected applyConfig(handle: unknown): void {
@@ -280,8 +287,8 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     for (const { field, pattern, replacement } of this.unredactions) {
       check(N.unredact(handle, field, pattern, replacement), 'unredact')
     }
-    for (const { field, pattern, replacement } of this.substitutions) {
-      check(N.substitute(handle, field, pattern, replacement), 'substitute')
+    for (const { field, pattern, replacement, required } of this.substitutions) {
+      check(N.substitute(handle, field, pattern, replacement, required ? 1 : 0), 'substitute')
     }
   }
 
@@ -528,6 +535,11 @@ export class VcrServer {
   /** Throws unless every redaction / unredaction / substitution rule matched at least once. */
   assertAllRedactionsUsed(): void {
     check(N.assertAllRedactionsUsed(this.requireHandle()), 'assertAllRedactionsUsed')
+  }
+
+  /** Throws if any unfilled placeholder remains in a replayed response. */
+  assertNoUnfilledPlaceholders(): void {
+    check(N.assertNoUnfilledPlaceholders(this.requireHandle()), 'assertNoUnfilledPlaceholders')
   }
 
   /** Drop all registered substitutions on the running server. */

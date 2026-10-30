@@ -46,6 +46,18 @@ main() {
         exit(1)
     }
 
+    // A record run that pulls a real secret must not leak it if the upstream
+    // request fails BEFORE the tape (where redaction normally happens) is
+    // emitted. Register a redaction and prove the FAILURE body + last_error are
+    // scrubbed. We redact the literal "upstream" -> "[SCRUBBED]" because it is a
+    // deterministic substring of the synthesised 502 message; a real deployment
+    // redacts its vault token the same way.
+    _re = vcr.redact_h(raw, vcr.FIELD_RESPONSE_BODY, "upstream", "[SCRUBBED]")
+    if _re != "" {
+        println("FAIL: redact_h config: ${_re}")
+        exit(1)
+    }
+
     spawn(SchedHelper())
     record_actor = spawn(RecordActor())
     record_actor ! StartRecord { raw: raw }
@@ -112,8 +124,15 @@ main() {
         println("FAIL: expected recorder to return 502, got ${status}")
         exit(1)
     }
-    if string.contains(body, "upstream") != 1 {
-        println("FAIL: recorder response body did not mention upstream")
+    // The error body must be SCRUBBED: the redacted token is gone, replaced by
+    // the placeholder. (Before the record-mode scrub this showed "upstream".)
+    if string.contains(body, "[SCRUBBED]") != 1 {
+        println("FAIL: record-mode error body was not scrubbed by the redaction")
+        println("      actual: ${body}")
+        exit(1)
+    }
+    if string.contains(body, "upstream") == 1 {
+        println("FAIL: record-mode error body still contains the un-redacted token")
         println("      actual: ${body}")
         exit(1)
     }
@@ -123,8 +142,14 @@ main() {
         println("FAIL: vcr.last_error() empty after record-mode upstream failure")
         exit(1)
     }
-    if string.contains(err, "upstream") != 1 {
-        println("FAIL: vcr.last_error() did not mention upstream")
+    // last_error (the diagnostic) must be scrubbed the same way as the body.
+    if string.contains(err, "[SCRUBBED]") != 1 {
+        println("FAIL: vcr.last_error() was not scrubbed")
+        println("      actual: ${err}")
+        exit(1)
+    }
+    if string.contains(err, "upstream") == 1 {
+        println("FAIL: vcr.last_error() still contains the un-redacted token")
         println("      actual: ${err}")
         exit(1)
     }

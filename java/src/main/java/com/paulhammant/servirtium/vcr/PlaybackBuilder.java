@@ -14,7 +14,7 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     private final List<Unredaction> unredactions = new ArrayList<>();
     private final List<String> matchHeaders = new ArrayList<>();
     private java.util.function.Function<String, String> secretResolver;
-    private record Substitution(Field field, String pattern, String replacement) {
+    private record Substitution(Field field, String pattern, String replacement, boolean required) {
     }
 
     private final List<Substitution> substitutions = new ArrayList<>();
@@ -103,7 +103,13 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
      * expands itself.
      */
     public PlaybackBuilder substitute(Field field, String pattern, String replacement) {
-        substitutions.add(new Substitution(field, pattern, replacement));
+        substitutions.add(new Substitution(field, pattern, replacement, true));
+        return this;
+    }
+
+    /** Like {@link #substitute}, but an unused rule is not reported by assertAllRedactionsUsed. */
+    public PlaybackBuilder substituteOptional(Field field, String pattern, String replacement) {
+        substitutions.add(new Substitution(field, pattern, replacement, false));
         return this;
     }
 
@@ -128,7 +134,8 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
                         handle,
                         s.field().code(),
                         NativeMethods.cString(arena, s.pattern()),
-                        NativeMethods.cString(arena, s.replacement()));
+                        NativeMethods.cString(arena, s.replacement()),
+                        s.required() ? 1 : 0);
                 check(r, "substitute");
             }
             for (Unredaction u : unredactions) {

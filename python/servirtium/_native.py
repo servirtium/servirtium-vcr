@@ -214,10 +214,11 @@ def _ensure_loaded() -> None:
     g["set_tls"] = _decl("aether_vcr_embed_set_tls", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p])
     g["set_tls_pem"] = _decl("aether_vcr_embed_set_tls_pem", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p])
     g["last_tls_protocol"] = _decl("aether_vcr_embed_last_tls_protocol", _CSTR, [_HANDLE])
-    g["substitute"] = _decl("aether_vcr_embed_substitute", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
+    g["substitute"] = _decl("aether_vcr_embed_substitute", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int])
     g["clear_substitutions"] = _decl("aether_vcr_embed_clear_substitutions", None, [_HANDLE])
     g["assert_all_consumed"] = _decl("aether_vcr_embed_assert_all_consumed", _CSTR, [_HANDLE])
     g["assert_all_redactions_used"] = _decl("aether_vcr_embed_assert_all_redactions_used", _CSTR, [_HANDLE])
+    g["assert_no_unfilled_placeholders"] = _decl("aether_vcr_embed_assert_no_unfilled_placeholders", _CSTR, [_HANDLE])
 
     # ---- string ownership ----
     g["free_string"] = _decl("aether_vcr_embed_free_string", None, [ctypes.c_void_p])

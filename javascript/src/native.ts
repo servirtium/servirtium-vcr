@@ -252,7 +252,7 @@ export const setTlsPem = lazy('void* aether_vcr_embed_set_tls_pem(void* server, 
 export const lastTlsProtocol = lazy('void* aether_vcr_embed_last_tls_protocol(void* server)')
 
 export const substitute = lazy(
-  'void* aether_vcr_embed_substitute(void* server, int field, const char* pattern, const char* replacement)',
+  'void* aether_vcr_embed_substitute(void* server, int field, const char* pattern, const char* replacement, int required)',
 )
 
 export const clearSubstitutions = lazy('void aether_vcr_embed_clear_substitutions(void* server)')
@@ -260,6 +260,8 @@ export const clearSubstitutions = lazy('void aether_vcr_embed_clear_substitution
 export const assertAllConsumed = lazy('void* aether_vcr_embed_assert_all_consumed(void* server)')
 
 export const assertAllRedactionsUsed = lazy('void* aether_vcr_embed_assert_all_redactions_used(void* server)')
+
+export const assertNoUnfilledPlaceholders = lazy('void* aether_vcr_embed_assert_no_unfilled_placeholders(void* server)')
 
 // ---- string ownership -----------------------------------------------------
 

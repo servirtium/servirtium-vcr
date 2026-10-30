@@ -138,7 +138,7 @@ proc set_tls_pem*(h: Handle, cert_pem, key_pem: cstring): cstring
   {.importc: "aether_vcr_embed_set_tls_pem", cdecl.}
 proc last_tls_protocol*(h: Handle): cstring
   {.importc: "aether_vcr_embed_last_tls_protocol", cdecl.}
-proc substitute*(h: Handle, field: cint, pattern, replacement: cstring): cstring
+proc substitute*(h: Handle, field: cint, pattern, replacement: cstring, required: cint): cstring
   {.importc: "aether_vcr_embed_substitute", cdecl.}
 proc clear_substitutions*(h: Handle)
   {.importc: "aether_vcr_embed_clear_substitutions", cdecl.}
@@ -146,6 +146,8 @@ proc assert_all_consumed*(h: Handle): cstring
   {.importc: "aether_vcr_embed_assert_all_consumed", cdecl.}
 proc assert_all_redactions_used*(h: Handle): cstring
   {.importc: "aether_vcr_embed_assert_all_redactions_used", cdecl.}
+proc assert_no_unfilled_placeholders*(h: Handle): cstring
+  {.importc: "aether_vcr_embed_assert_no_unfilled_placeholders", cdecl.}
 
 proc free_string*(s: cstring)
   {.importc: "aether_vcr_embed_free_string", cdecl.}

@@ -267,9 +267,9 @@ ServirtiumLibrary >> lastTlsProtocol: server [
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> substitute: server field: field pattern: pattern replacement: replacement [
+ServirtiumLibrary >> substitute: server field: field pattern: pattern replacement: replacement required: required [
 
-	^ self ffiCall: #( void* aether_vcr_embed_substitute ( void* server, int field, String pattern, String replacement ) )
+	^ self ffiCall: #( void* aether_vcr_embed_substitute ( void* server, int field, String pattern, String replacement, int required ) )
 ]
 
 { #category : 'ffi - clearing' }
@@ -288,6 +288,12 @@ ServirtiumLibrary >> assertAllConsumed: server [
 ServirtiumLibrary >> assertAllRedactionsUsed: server [
 
 	^ self ffiCall: #( void* aether_vcr_embed_assert_all_redactions_used ( void* server ) )
+]
+
+{ #category : 'ffi - diagnostics' }
+ServirtiumLibrary >> assertNoUnfilledPlaceholders: server [
+
+	^ self ffiCall: #( void* aether_vcr_embed_assert_no_unfilled_placeholders ( void* server ) )
 ]
 
 { #category : 'ffi - mutations' }

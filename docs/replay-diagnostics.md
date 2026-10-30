@@ -105,6 +105,26 @@ case-insensitive; query and JSON names are case-sensitive. This is a projection
 of known credential fields, not a general detector of secrets in arbitrary
 text. Raw request/response matching and forwarding remain unchanged.
 
+`assert_all_redactions_used` names each unused rule by kind, **field name**
+(e.g. `ResponseHeaders`, not `field 5`) and pattern — never the replacement
+value.
+
+The 599 **playback** mismatch response body is **not** masked: it shows the
+recorded-vs-live diff verbatim so a failing test is debuggable. This is safe —
+a committed tape is `redact`-ed, so playback `unredact`s a *contrived test*
+value, never a production secret. (Do not `unredact` a real credential into
+playback; nothing in a correctly scrubbed tape requires one.)
+
+**Record mode is different, and it is masked.** A record run talks to the real
+upstream with real credentials (a weekly vendor-drift check pulling tokens from
+a vault, often on separate infrastructure). Redaction is applied at tape-emit
+time — so if a request *fails before the tape is written*, the raw secret has
+not yet been scrubbed. Every record-mode failure therefore runs the configured
+`redact` rules over both the error response body returned to the caller **and**
+`last_error`, so a failed record never leaks a vault secret into a log or CI
+output. No tape is written on failure (fail-closed), so a partial tape can't
+carry the secret either.
+
 ## Binding names
 
 | Binding | Latest error with boolean | Event JSON | Assert | Test boundary |

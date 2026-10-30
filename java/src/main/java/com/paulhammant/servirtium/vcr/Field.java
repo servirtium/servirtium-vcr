@@ -9,7 +9,9 @@ public enum Field {
     RESPONSE_BODY(2),
     REQUEST_HEADERS(3),
     REQUEST_BODY(4),
-    RESPONSE_HEADERS(5);
+    RESPONSE_HEADERS(5),
+    /** Substitution-only: response body AND headers in one rule. */
+    RESPONSE(6);
 
     private final int code;
 

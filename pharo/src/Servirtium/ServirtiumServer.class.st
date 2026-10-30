@@ -204,3 +204,11 @@ ServirtiumServer >> assertAllRedactionsUsed [
     err := self library takeString: (self library assertAllRedactionsUsed: self handle).
     err ifNotEmpty: [ ServirtiumError signal: err ]
 ]
+
+{ #category : 'diagnostics' }
+ServirtiumServer >> assertNoUnfilledPlaceholders [
+    "Raise if any unfilled placeholder remains in a replayed response."
+    | err |
+    err := self library takeString: (self library assertNoUnfilledPlaceholders: self handle).
+    err ifNotEmpty: [ ServirtiumError signal: err ]
+]

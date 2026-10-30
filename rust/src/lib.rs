@@ -83,6 +83,9 @@ pub enum Field {
     RequestHeaders = 3,
     RequestBody = 4,
     ResponseHeaders = 5,
+    /// Substitution only: the whole response — body AND headers. One rule,
+    /// counted once by `assert_all_redactions_used`.
+    Response = 6,
 }
 
 /// Per-dispatch outcome. Values mirror the `KIND_*` constants in the core.
@@ -260,7 +263,7 @@ pub struct PlaybackBuilder {
     secret_resolver: Option<SecretResolver>,
     common: Common,
     unredactions: Vec<(Field, String, String)>,
-    substitutions: Vec<(Field, String, String)>,
+    substitutions: Vec<(Field, String, String, bool)>,
     strict_headers: bool,
     match_json_body: bool,
     match_multiple: bool,
@@ -340,8 +343,12 @@ impl PlaybackBuilder {
         self
     }
     /// Rewrite the replayed response at playback time: regex `pattern` ->
-    /// `replacement` in the response body (`Field::ResponseBody`) or headers
-    /// (`Field::ResponseHeaders`), e.g. fill a custom placeholder (`{{baseUrl}}` is already expanded by core).
+    /// `replacement` in the response body (`Field::ResponseBody`), headers
+    /// (`Field::ResponseHeaders`), or both at once (`Field::Response`, one rule),
+    /// e.g. fill a custom placeholder (`{{baseUrl}}` is already expanded by core).
+    /// The rule is *required*: `assert_all_redactions_used` reports it if it
+    /// never fires — use [`substitute_optional`](Self::substitute_optional) for a
+    /// shared fixture's safeguard a given tape may not exercise.
     pub fn substitute(
         mut self,
         field: Field,
@@ -349,7 +356,20 @@ impl PlaybackBuilder {
         replacement: impl Into<String>,
     ) -> Self {
         self.substitutions
-            .push((field, pattern.into(), replacement.into()));
+            .push((field, pattern.into(), replacement.into(), true));
+        self
+    }
+    /// Like [`substitute`](Self::substitute) but optional:
+    /// `assert_all_redactions_used` never reports it as unused. For a shared
+    /// fixture whose rules some tapes (403/503/empty) legitimately don't exercise.
+    pub fn substitute_optional(
+        mut self,
+        field: Field,
+        pattern: impl Into<String>,
+        replacement: impl Into<String>,
+    ) -> Self {
+        self.substitutions
+            .push((field, pattern.into(), replacement.into(), false));
         self
     }
     /// Serve a path prefix from an on-disk directory instead of the tape.
@@ -424,11 +444,11 @@ impl PlaybackBuilder {
                 "unredact",
             )?;
         }
-        for (field, pattern, replacement) in &self.substitutions {
+        for (field, pattern, replacement, required) in &self.substitutions {
             check(
                 n,
                 unsafe {
-                    (n.substitute)(handle, *field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr())
+                    (n.substitute)(handle, *field as c_int, cstr(pattern)?.as_ptr(), cstr(replacement)?.as_ptr(), *required as c_int)
                 },
                 "substitute",
             )?;
@@ -784,9 +804,17 @@ impl VcrServer {
     pub fn assert_all_consumed(&self) -> Result<(), VcrError> {
         check(self.n, unsafe { (self.n.assert_all_consumed)(self.handle) }, "assert_all_consumed")
     }
-    /// Error unless every redaction / unredaction / substitution rule matched at least once.
+    /// Error unless every *required* redaction / unredaction / substitution rule
+    /// matched at least once. The error names each unused rule by kind, field and
+    /// pattern — never the replacement value.
     pub fn assert_all_redactions_used(&self) -> Result<(), VcrError> {
         check(self.n, unsafe { (self.n.assert_all_redactions_used)(self.handle) }, "assert_all_redactions_used")
+    }
+    /// Error if any served response still contained a `{{placeholder}}` when sent
+    /// to the client — a typo, or a placeholder no substitution covers. Works the
+    /// same with a shared fixture or per-test rules.
+    pub fn assert_no_unfilled_placeholders(&self) -> Result<(), VcrError> {
+        check(self.n, unsafe { (self.n.assert_no_unfilled_placeholders)(self.handle) }, "assert_no_unfilled_placeholders")
     }
     /// Drop all registered substitutions on the running server.
     pub fn clear_substitutions(&self) {

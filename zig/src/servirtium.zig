@@ -88,10 +88,11 @@ pub extern "c" fn aether_vcr_embed_clear_format_options(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_set_tls(handle: Handle, cert: [*c]const u8, key: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_set_tls_pem(handle: Handle, cert_pem: [*c]const u8, key_pem: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_last_tls_protocol(handle: Handle) [*c]u8;
-pub extern "c" fn aether_vcr_embed_substitute(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_substitute(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8, required: c_int) [*c]u8;
 pub extern "c" fn aether_vcr_embed_clear_substitutions(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_assert_all_consumed(handle: Handle) [*c]u8;
 pub extern "c" fn aether_vcr_embed_assert_all_redactions_used(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_assert_no_unfilled_placeholders(handle: Handle) [*c]u8;
 pub extern "c" fn aether_vcr_embed_free_string(s: [*c]u8) void;
 
 /// Mutation target field ids (used by redact / unredact / remove_header).
@@ -101,6 +102,8 @@ pub const Field = enum(c_int) {
     request_headers = 3,
     request_body = 4,
     response_headers = 5,
+    /// Substitution-only: response body AND headers in one rule.
+    response = 6,
 };
 
 /// Diagnostic outcome of the last interaction. Mirrors the VCR_KIND_*
@@ -333,7 +336,7 @@ pub const Vcr = struct {
 // ===========================================================================
 
 const HeaderRemoval = struct { field: Field, name: [:0]const u8 };
-const Replacement = struct { operation: enum { literal, header, query_param, json_field } = .literal, field: Field, pattern: [:0]const u8, repl: [:0]const u8 };
+const Replacement = struct { operation: enum { literal, header, query_param, json_field } = .literal, field: Field, pattern: [:0]const u8, repl: [:0]const u8, required: bool = true };
 const PatName = struct { pattern: [:0]const u8, name: [:0]const u8 };
 const PatRepl = struct { pattern: [:0]const u8, repl: [:0]const u8 };
 const Mount = struct { mount: [:0]const u8, dir: [:0]const u8 };
@@ -444,6 +447,12 @@ pub const Playback = struct {
         b.substitutions.append(b.allocator, .{ .field = field, .pattern = pattern, .repl = repl }) catch {};
         return b;
     }
+    /// Like `substitute`, but an unused rule is not reported by assertAllRedactionsUsed.
+    pub fn substituteOptional(self: Playback, field: Field, pattern: [:0]const u8, repl: [:0]const u8) Playback {
+        var b = self;
+        b.substitutions.append(b.allocator, .{ .field = field, .pattern = pattern, .repl = repl, .required = false }) catch {};
+        return b;
+    }
     /// Mark an incidental request path the VCR 404s without consuming the
     /// cursor (e.g. "/favicon.ico").
     pub fn untaped(self: Playback, path: [:0]const u8) Playback {
@@ -528,7 +537,7 @@ pub const Playback = struct {
             try checkErr(self.allocator, aether_vcr_embed_unredact(handle, @intFromEnum(u.field), u.pattern.ptr, u.repl.ptr));
         }
         for (self.substitutions.items) |u| {
-            try checkErr(self.allocator, aether_vcr_embed_substitute(handle, @intFromEnum(u.field), u.pattern.ptr, u.repl.ptr));
+            try checkErr(self.allocator, aether_vcr_embed_substitute(handle, @intFromEnum(u.field), u.pattern.ptr, u.repl.ptr, @intFromBool(u.required)));
         }
 
         if (self.secret_resolver) |resolver| try secretStage(self.allocator, handle, null, resolver);
@@ -817,6 +826,10 @@ pub const Server = struct {
     /// Error unless every redaction/unredaction/substitution rule matched.
     pub fn assertAllRedactionsUsed(self: *Server) !void {
         try checkErr(self.allocator, aether_vcr_embed_assert_all_redactions_used(self.handle));
+    }
+    /// Error if any unfilled placeholder remains in a replayed response.
+    pub fn assertNoUnfilledPlaceholders(self: *Server) !void {
+        try checkErr(self.allocator, aether_vcr_embed_assert_no_unfilled_placeholders(self.handle));
     }
     /// Drop all registered substitutions on the running server.
     pub fn clearSubstitutions(self: *Server) void {

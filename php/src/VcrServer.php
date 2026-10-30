@@ -106,6 +106,12 @@ final class VcrServer
         $error = Native::takeString(Native::lib()->aether_vcr_embed_assert_all_redactions_used($this->requireHandle()));
         if ($error !== '') { throw new VcrException($error); }
     }
+    /** Throws if any unfilled placeholder remains in a replayed response. */
+    public function assertNoUnfilledPlaceholders(): void
+    {
+        $error = Native::takeString(Native::lib()->aether_vcr_embed_assert_no_unfilled_placeholders($this->requireHandle()));
+        if ($error !== '') { throw new VcrException($error); }
+    }
     /** Drop all registered substitutions on the running server. */
     public function clearSubstitutions(): void
     {

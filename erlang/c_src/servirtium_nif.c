@@ -87,10 +87,11 @@ extern void  aether_vcr_embed_clear_format_options(void *server);
 extern char *aether_vcr_embed_set_tls(void *server, const char *cert_path, const char *key_path);
 extern char *aether_vcr_embed_set_tls_pem(void *server, const char *cert_pem, const char *key_pem);
 extern char *aether_vcr_embed_last_tls_protocol(void *server);
-extern char *aether_vcr_embed_substitute(void *server, int field, const char *pattern, const char *replacement);
+extern char *aether_vcr_embed_substitute(void *server, int field, const char *pattern, const char *replacement, int required);
 extern void  aether_vcr_embed_clear_substitutions(void *server);
 extern char *aether_vcr_embed_assert_all_consumed(void *server);
 extern char *aether_vcr_embed_assert_all_redactions_used(void *server);
+extern char *aether_vcr_embed_assert_no_unfilled_placeholders(void *server);
 extern void  aether_vcr_embed_free_string(char *s);
 
 /* ---- string marshalling helpers --------------------------------------- */
@@ -415,10 +416,25 @@ static ERL_NIF_TERM nif_unredact(ErlNifEnv *env, int argc, const ERL_NIF_TERM ar
     return mut3(env, argv, aether_vcr_embed_unredact);
 }
 
+/* substitute/4 (required = 1) and substitute/5 (explicit required 0|1). */
 static ERL_NIF_TERM nif_substitute(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
-    UNUSED(argc);
-    return mut3(env, argv, aether_vcr_embed_substitute);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    int field;
+    if (!enif_get_int(env, argv[1], &field)) return enif_make_badarg(env);
+    int required = 1;
+    if (argc >= 5 && !enif_get_int(env, argv[4], &required)) return enif_make_badarg(env);
+    char *a = term_to_cstr(env, argv[2]);
+    char *b = term_to_cstr(env, argv[3]);
+    if (!a || !b) {
+        if (a) enif_free(a);
+        if (b) enif_free(b);
+        return enif_make_badarg(env);
+    }
+    char *res = aether_vcr_embed_substitute(h, field, a, b, required);
+    enif_free(a); enif_free(b);
+    return take_cstr(env, res);
 }
 
 static ERL_NIF_TERM nif_set_tls(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
@@ -477,6 +493,14 @@ static ERL_NIF_TERM nif_assert_all_redactions_used(ErlNifEnv *env, int argc, con
     void *h;
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     return take_cstr(env, aether_vcr_embed_assert_all_redactions_used(h));
+}
+
+static ERL_NIF_TERM nif_assert_no_unfilled_placeholders(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_assert_no_unfilled_placeholders(h));
 }
 
 static ERL_NIF_TERM nif_remove_header(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
@@ -693,11 +717,13 @@ static ErlNifFunc nif_funcs[] = {
     {"redact_json_field", 4, nif_redact_json_field, 0},
     {"unredact",       4, nif_unredact,       0},
     {"substitute",     4, nif_substitute,     0},
+    {"substitute",     5, nif_substitute,     0},
     {"set_tls",        3, nif_set_tls,        0},
     {"set_tls_pem",    3, nif_set_tls_pem,    0},
     {"last_tls_protocol", 1, nif_last_tls_protocol, 0},
     {"assert_all_consumed", 1, nif_assert_all_consumed, 0},
     {"assert_all_redactions_used", 1, nif_assert_all_redactions_used, 0},
+    {"assert_no_unfilled_placeholders", 1, nif_assert_no_unfilled_placeholders, 0},
     {"clear_substitutions", 1, nif_clear_substitutions, 0},
     {"normalize_whole_tape", 3, nif_normalize_whole_tape, 0},
     {"redact_whole_tape",    3, nif_redact_whole_tape,    0},

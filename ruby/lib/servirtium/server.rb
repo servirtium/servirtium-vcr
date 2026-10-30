@@ -63,6 +63,12 @@ module Servirtium
       raise Servirtium::Error, error unless error.empty?
     end
 
+    # Raise if any unfilled placeholder remains in a replayed response.
+    def assert_no_unfilled_placeholders
+      error = Native.take_string(Native.call(:assert_no_unfilled_placeholders, handle))
+      raise Servirtium::Error, error unless error.empty?
+    end
+
     # Drop all registered substitutions on the running server.
     def clear_substitutions
       Native.call(:clear_substitutions, handle)

@@ -78,6 +78,7 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_clear_substitutions
   , aether_vcr_embed_assert_all_consumed
   , aether_vcr_embed_assert_all_redactions_used
+  , aether_vcr_embed_assert_no_unfilled_placeholders
   , aether_vcr_embed_free_string
   ) where
 
@@ -221,7 +222,7 @@ foreign import ccall unsafe "aether_vcr_embed_last_tls_protocol"
   aether_vcr_embed_last_tls_protocol :: Handle -> IO CString
 
 foreign import ccall unsafe "aether_vcr_embed_substitute"
-  aether_vcr_embed_substitute :: Handle -> CInt -> CString -> CString -> IO CString
+  aether_vcr_embed_substitute :: Handle -> CInt -> CString -> CString -> CInt -> IO CString
 
 foreign import ccall unsafe "aether_vcr_embed_clear_substitutions"
   aether_vcr_embed_clear_substitutions :: Handle -> IO ()
@@ -231,6 +232,9 @@ foreign import ccall unsafe "aether_vcr_embed_assert_all_consumed"
 
 foreign import ccall unsafe "aether_vcr_embed_assert_all_redactions_used"
   aether_vcr_embed_assert_all_redactions_used :: Handle -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_assert_no_unfilled_placeholders"
+  aether_vcr_embed_assert_no_unfilled_placeholders :: Handle -> IO CString
 
 foreign import ccall unsafe "aether_vcr_embed_free_string"
   aether_vcr_embed_free_string :: CString -> IO ()

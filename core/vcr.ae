@@ -145,7 +145,7 @@ exports (
     KIND_TAPE_EXHAUSTED, KIND_BODY_DIFF, KIND_RECORD_ERROR,
     last_kind, last_index, set_strict_headers, reset_cursor,
     FIELD_PATH, FIELD_RESPONSE_BODY, FIELD_REQUEST_HEADERS,
-    FIELD_REQUEST_BODY, FIELD_RESPONSE_HEADERS,
+    FIELD_REQUEST_BODY, FIELD_RESPONSE_HEADERS, FIELD_RESPONSE,
     load, load_url, load_append_h, eject, start_background_h, tape_length,
     set_quiet, load_error,
     load_record, eject_record,
@@ -186,6 +186,7 @@ exports (
     diagnostic_open_h, test_context_h, last_error_ex_h, diagnostics_json_h, assert_no_mismatches_h,
     last_error_h, last_kind_h, last_index_h, clear_last_error_h,
     tape_length_h, reset_cursor_h, load_error_h, assert_all_consumed_h, assert_all_redactions_used_h,
+    assert_no_unfilled_placeholders_h,
     stop_and_flush_h, stop_and_flush_fail_if_changed_h, stop_and_flush_or_check_h
 )
 
@@ -243,6 +244,10 @@ struct Redaction {
     used: int                // 1 once this rule's pattern actually matched text
                               // it was applied to (for assert_all_redactions_used;
                               // shared by redactions / unredactions / substitutions).
+    required: int            // 1 (default): assert_all_redactions_used reports it
+                              // if never used. 0 (optional): never reported — for a
+                              // shared fixture's safeguard rule a given tape may not
+                              // exercise. Substitutions only; redact/unredact = 1.
 }
 
 // A whole-tape rewrite rule applied across ALL fields and interactions. Two
@@ -798,6 +803,7 @@ redaction_add(l: ptr, field: int, pattern: string, replacement: string, api: str
     r.pattern = string.copy(pattern)
     r.replacement = string.copy(replacement)
     r.used = 0
+    r.required = 1
     list_add_raw(l, r)
     return 1
 }
@@ -1746,12 +1752,38 @@ json_bodies_equal(live: string, recorded: string) -> int {
 
 // ---- error helper for record dispatch ----
 
+// Apply every literal / header / query redaction rule's pattern->replacement to
+// a FREE-FORM string, ignoring field scope (an error string or body can mix a
+// path, a header value and a body fragment). The JSON-field kind is skipped: it
+// requires a whole valid-JSON document, which a diagnostic string is not. Used
+// to scrub record-mode failure output, where the in-memory request still holds
+// the real (not-yet-emitted) secret — a weekly record run that pulls vault
+// credentials must not leak them into an error body or log when a request fails.
+redact_all_fields_k(key: string, s: string) -> string {
+    out = s
+    l = redactions_k(key)
+    i = 0
+    while i < list_size(l) {
+        r = list_get_raw(l, i) as *Redaction
+        if r.kind == 0 { out = str_replace_all(out, r.pattern, r.replacement) }
+        if r.kind == 1 { out = redact_header_text(out, r.pattern, r.replacement) }
+        if r.kind == 2 { out = redact_query_text(out, r.pattern, r.replacement) }
+        i = i + 1
+    }
+    return out
+}
+
 record_dispatch_error_k(srvkey: string, res: ptr, status: int, msg: string) {
-    set_last_error_k(srvkey, msg)
+    // Scrub configured secrets from BOTH the diagnostic (last_error) and the
+    // error body returned to the caller. Redaction normally happens at
+    // tape-emit time; a failure can occur before any emit, so the raw secret
+    // would otherwise survive here.
+    safe = redact_all_fields_k(srvkey, msg)
+    set_last_error_k(srvkey, safe)
     set_last_kind_k(srvkey, KIND_RECORD_ERROR)
     set_last_index_k(srvkey, -1)
     http_response_set_status(res, status)
-    http_response_set_body(res, msg)
+    http_response_set_body(res, safe)
 }
 
 // ---- record-mode setup (per-server) ----
@@ -1954,6 +1986,13 @@ emit_playback_response(srvkey: string, e: *Interaction, req: ptr, res: ptr) {
     // the loops below read these instead of the raw e.* fields.
     resp_headers = apply_substitutions_k(srvkey, req, e.resp_headers, FIELD_RESPONSE_HEADERS)
     resp_body = apply_substitutions_k(srvkey, req, e.body, FIELD_RESPONSE_BODY)
+
+    // Record any {{...}} placeholder left UNFILLED in what we're about to send
+    // (a typo like {{valut}}, or a placeholder no rule covers — it would reach
+    // the client as literal text). assert_no_unfilled_placeholders reports these.
+    if string.index_of(resp_headers, "{{") >= 0 || string.index_of(resp_body, "{{") >= 0 {
+        note_unfilled_placeholder_k(srvkey, e.method, e.path)
+    }
 
     // Emit recorded response headers verbatim (post-substitution).
     emitted_ct = 0
@@ -2587,9 +2626,13 @@ unredact_h(server: ptr, field: int, pattern: string, replacement: string) -> str
 // (http/https — https when TLS is on) and {{baseUrl}} (scheme://host). This
 // is playback-only and request-side matching is unaffected. Keyed: a concrete
 // handle, never the ambient cur_key().
-substitute_h(server: ptr, field: int, pattern: string, replacement: string) -> string {
-    if field != FIELD_RESPONSE_BODY && field != FIELD_RESPONSE_HEADERS {
-        return "substitute: field must be ResponseBody or ResponseHeaders"
+// field: FIELD_RESPONSE_BODY (2), FIELD_RESPONSE_HEADERS (5), or FIELD_RESPONSE
+// (6) = "anywhere in the response" (body AND headers), one rule counted once.
+// required: 1 = report via assert_all_redactions_used if never used; 0 = optional
+// (a shared fixture's safeguard a given tape may not exercise).
+substitute_h(server: ptr, field: int, pattern: string, replacement: string, required: int) -> string {
+    if field != FIELD_RESPONSE_BODY && field != FIELD_RESPONSE_HEADERS && field != FIELD_RESPONSE {
+        return "substitute: field must be ResponseBody, ResponseHeaders or Response"
     }
     if string.length(pattern) == 0 {
         return "substitute: pattern is empty"
@@ -2600,6 +2643,7 @@ substitute_h(server: ptr, field: int, pattern: string, replacement: string) -> s
     r.pattern = string.copy(pattern)
     r.replacement = string.copy(replacement)
     r.used = 0
+    r.required = required
     list_add_raw(substitutions_k(key_for(server)), r)
     return ""
 }
@@ -2630,7 +2674,10 @@ apply_substitutions_k(key: string, req: ptr, text: string, field: int) -> string
     i = 0
     while i < n {
         r = list_get_raw(l, i) as *Redaction
-        if r.field == field {
+        // FIELD_RESPONSE matches BOTH response fields (apply_substitutions_k is
+        // only called with ResponseBody or ResponseHeaders), so the one rule
+        // fires wherever the placeholder appears and is counted used once.
+        if r.field == field || r.field == FIELD_RESPONSE {
             before = out
             out = str_replace_all(out, r.pattern, r.replacement)
             if out != before { r.used = 1 }
@@ -2776,6 +2823,28 @@ reset_cursor_h(server: ptr) { vcr_reset_cursor_k(key_for(server)) }
 // verifyNoMoreInteractions() analogue for scrubbing rules). Catches a stale
 // test config — an .Unredact/.Redact/.Substitute whose pattern no longer
 // appears in the tape, so it silently does nothing. Call at end of test.
+// Accumulate a "served response still had a {{placeholder}}" record for this
+// handle (deduped by method+path). Stored as a newline-joined string in config.
+note_unfilled_placeholder_k(key: string, method: string, path: string) {
+    entry = "${method} ${path}"
+    existing = cfg_get_str(slot(key, "unfilled_placeholders"))
+    // Dedupe: a tape entry hit repeatedly (MatchMultiple) records once.
+    if string.index_of(existing, "\n  ${entry}") >= 0 { return }
+    cfg_set_str(slot(key, "unfilled_placeholders"), "${existing}\n  ${entry}")
+}
+
+// "" if every served response had all its {{...}} placeholders filled, else a
+// message listing the interactions (method + path) that still contained a
+// placeholder when sent to the SUT — a typo like {{valut}}, or a placeholder no
+// Substitute/{{request.*}} rule covers. Catches the mistake that a passing test
+// can otherwise hide: the raw marker is served to the client as literal text.
+// Works the same with a shared fixture or per-test rules. Call at end of test.
+assert_no_unfilled_placeholders_h(server: ptr) -> string {
+    detail = cfg_get_str(slot(key_for(server), "unfilled_placeholders"))
+    if string.length(detail) == 0 { return "" }
+    return "vcr: a served response still contained an unfilled {{placeholder}} in:${detail}"
+}
+
 assert_all_redactions_used_h(server: ptr) -> string {
     key = key_for(server)
     unused = 0
@@ -2787,14 +2856,28 @@ assert_all_redactions_used_h(server: ptr) -> string {
     return "vcr: ${unused} configured scrubbing rule(s) never matched anything:${detail}"
 }
 
+// Human field name for a diagnostic message (so AssertAllRedactionsUsed reads
+// "substitute(ResponseHeaders, ...)" rather than "field 5").
+field_name(field: int) -> string {
+    if field == FIELD_PATH { return "Path" }
+    if field == FIELD_RESPONSE_BODY { return "ResponseBody" }
+    if field == FIELD_REQUEST_HEADERS { return "RequestHeaders" }
+    if field == FIELD_REQUEST_BODY { return "RequestBody" }
+    if field == FIELD_RESPONSE_HEADERS { return "ResponseHeaders" }
+    return "field ${field}"
+}
+
 _collect_unused_rules(l: ptr, label: string, detail: string, unused: int) -> (string, int) {
     n = list_size(l)
     i = 0
     while i < n {
         r = list_get_raw(l, i) as *Redaction
-        if r.used == 0 {
+        // Only count rules the caller asked to be required. Optional rules
+        // (required=0) — e.g. a shared fixture's safeguard substitution that a
+        // given tape doesn't exercise — are never reported as unused.
+        if r.used == 0 && r.required != 0 {
             unused = unused + 1
-            detail = string_concat(detail, "\n  ${label}(field ${r.field}, \"${r.pattern}\")")
+            detail = string_concat(detail, "\n  ${label}(${field_name(r.field)}, \"${r.pattern}\")")
         }
         i = i + 1
     }
@@ -3510,6 +3593,9 @@ const FIELD_RESPONSE_BODY    = 2
 const FIELD_REQUEST_HEADERS  = 3
 const FIELD_REQUEST_BODY     = 4
 const FIELD_RESPONSE_HEADERS = 5
+// A substitution-only pseudo-field: "anywhere in the response" (body AND
+// headers). One rule, counted once by assert_all_redactions_used.
+const FIELD_RESPONSE         = 6
 
 // Register a redaction. Every occurrence of `pattern` in the
 // designated field is replaced with `replacement` at flush time.
@@ -3549,6 +3635,7 @@ structured_redaction(kind: int, field: int, name: string, replacement: string) -
     r.pattern = string.copy(name)
     r.replacement = string.copy(replacement)
     r.used = 0
+    r.required = 1
     list_add_raw(redactions(), r)
     return ""
 }

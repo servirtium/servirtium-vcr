@@ -60,6 +60,7 @@ module Servirtium.Vcr
   , assertNoMismatches
   , assertAllConsumed
   , assertAllRedactionsUsed
+  , assertNoUnfilledPlaceholders
   , lastTlsProtocol
   , clearSubstitutions
   , testContext
@@ -86,6 +87,7 @@ data Field
   | RequestHeaders -- ^ The recorded request headers block.
   | RequestBody    -- ^ The request body block.
   | ResponseHeaders -- ^ The response headers block.
+  | Response       -- ^ Substitution-only: response body AND headers in one rule.
   deriving (Eq, Show)
 
 -- | The integer the C-ABI expects for a 'Field'.
@@ -95,6 +97,7 @@ fieldCode ResponseBody    = 2
 fieldCode RequestHeaders  = 3
 fieldCode RequestBody     = 4
 fieldCode ResponseHeaders = 5
+fieldCode Response        = 6
 
 -- | Per-dispatch outcome. The 'Enum' values mirror the @KIND_*@ constants in
 -- the core. Read after a request (via 'lastKind') to assert what the
@@ -161,7 +164,10 @@ data PlaybackOptions = PlaybackOptions
     -- the real value the live SUT sends, so a scrubbed tape still matches.
   , pbSubstitutions  :: [(Field, String, String)]
     -- ^ @(field, pattern, replacement)@: rewrite the replayed response body
-    -- or headers at playback time (e.g. fill a custom placeholder).
+    -- or headers at playback time (e.g. fill a custom placeholder). Required:
+    -- reported by 'assertAllRedactionsUsed' if unused.
+  , pbOptionalSubstitutions :: [(Field, String, String)]
+    -- ^ Like 'pbSubstitutions', but an unused rule is not reported.
   , pbTlsPem         :: Maybe (String, String)
     -- ^ @(certPem, keyPem)@: like the TLS path option, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk.
   , pbTls            :: Maybe (FilePath, FilePath)
@@ -252,6 +258,7 @@ playbackOptions tape = PlaybackOptions
   , pbMatchHeaders  = []
   , pbUnredactions  = []
   , pbSubstitutions = []
+  , pbOptionalSubstitutions = []
   , pbTlsPem        = Nothing
   , pbTls           = Nothing
   , pbRemoveHeaders = []
@@ -425,12 +432,13 @@ startPlayback opts = do
                     withCString repl $ \cRepl ->
                       N.aether_vcr_embed_unredact handle (fieldCode f) cPat cRepl)
             (pbUnredactions opts)
-      mapM_ (\(f, pat, repl) ->
-                check "substitute" $
-                  withCString pat $ \cPat ->
-                    withCString repl $ \cRepl ->
-                      N.aether_vcr_embed_substitute handle (fieldCode f) cPat cRepl)
-            (pbSubstitutions opts)
+      let applySubstitution required (f, pat, repl) =
+            check "substitute" $
+              withCString pat $ \cPat ->
+                withCString repl $ \cRepl ->
+                  N.aether_vcr_embed_substitute handle (fieldCode f) cPat cRepl required
+      mapM_ (applySubstitution 1) (pbSubstitutions opts)
+      mapM_ (applySubstitution 0) (pbOptionalSubstitutions opts)
       applyStaticAndUntaped handle (pbStaticContent opts) (pbUntaped opts)
       applyTls handle (pbTls opts)
       applyTlsPem handle (pbTlsPem opts)
@@ -620,6 +628,10 @@ lastTlsProtocol :: VcrServer -> IO String
 lastTlsProtocol server = N.takeString =<< N.aether_vcr_embed_last_tls_protocol (vcrHandle server)
 
 -- | Drop all registered substitutions on the running server.
+-- | Throw if any unfilled placeholder remains in a replayed response.
+assertNoUnfilledPlaceholders :: VcrServer -> IO ()
+assertNoUnfilledPlaceholders server = check "assertNoUnfilledPlaceholders" $ N.aether_vcr_embed_assert_no_unfilled_placeholders (vcrHandle server)
+
 clearSubstitutions :: VcrServer -> IO ()
 clearSubstitutions server = N.aether_vcr_embed_clear_substitutions (vcrHandle server)
 

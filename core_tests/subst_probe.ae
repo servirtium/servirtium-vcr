@@ -23,12 +23,18 @@ main() {
     srv = vcr.load(TAPE, PORT)
     if srv == null { fail("load: ${vcr.load_error()}") }
 
-    // Caller substitution for a non-request-derived placeholder.
-    serr = vcr.substitute_h(srv, vcr.FIELD_RESPONSE_BODY, "{{vault}}", "https://vault.example")
+    // Caller substitution for a non-request-derived placeholder. {{vault}} is in
+    // the BODY only on this tape, but FIELD_RESPONSE (body AND headers, one rule)
+    // is the right field-report shape; it still matches the body here.
+    serr = vcr.substitute_h(srv, vcr.FIELD_RESPONSE, "{{vault}}", "https://vault.example", 1)
     if serr != "" { fail("substitute body: ${serr}") }
     // A non-response field must be rejected.
-    e_bad = vcr.substitute_h(srv, vcr.FIELD_PATH, "{{x}}", "y")
+    e_bad = vcr.substitute_h(srv, vcr.FIELD_PATH, "{{x}}", "y", 1)
     if e_bad == "" { fail("substitute should reject a non-response field") }
+    // An OPTIONAL rule whose pattern never appears must not trip
+    // assert_all_redactions_used.
+    e_opt = vcr.substitute_h(srv, vcr.FIELD_RESPONSE, "{{absent}}", "x", 0)
+    if e_opt != "" { fail("optional substitute config: ${e_opt}") }
 
     rc = vcr.start_background_h(srv, 10000)
     if rc != 0 { fail("start: ${vcr.last_error_h(srv)}") }
@@ -68,7 +74,26 @@ main() {
         fail("Link header {{baseUrl}} not filled; got: ${headers}")
     }
 
+    // Field-report additions: the required {{vault}} rule fired and the optional
+    // {{absent}} rule didn't -> assert_all_redactions_used passes (optional
+    // unused rules are never reported); and nothing {{...}} was served, so
+    // assert_no_unfilled_placeholders passes.
+    rused = vcr.assert_all_redactions_used_h(srv)
+    if rused != "" { fail("assert_all_redactions_used should pass (optional rule unused): '${rused}'") }
+    unfilled = vcr.assert_no_unfilled_placeholders_h(srv)
+    if unfilled != "" { fail("assert_no_unfilled_placeholders should pass: '${unfilled}'") }
+    // A REQUIRED rule that never fires MUST be reported (by pattern, not value).
+    _rq = vcr.substitute_h(srv, vcr.FIELD_RESPONSE, "{{nope}}", "zzz", 1)
+    rep = vcr.assert_all_redactions_used_h(srv)
+    if string.index_of(rep, "{{nope}}") < 0 {
+        fail("a REQUIRED unused rule must be reported by pattern; got '${rep}'")
+    }
+    if string.index_of(rep, "zzz") >= 0 {
+        fail("assert_all_redactions_used must NOT leak the replacement value; got '${rep}'")
+    }
+
     vcr.eject(srv)
-    println("\nPASS: response body + headers filled ({{baseUrl}}, {{request.host}}, {{vault}})")
+    println("\nPASS: response substitution filled ({{baseUrl}}, {{request.host}}, {{vault}});")
+    println("      FIELD_RESPONSE + required/optional + assert_no_unfilled_placeholders verified")
     exit(0)
 }

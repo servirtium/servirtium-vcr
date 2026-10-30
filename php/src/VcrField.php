@@ -16,4 +16,6 @@ enum VcrField: int
     case RequestHeaders = 3;
     case RequestBody = 4;
     case ResponseHeaders = 5;
+    /** Substitution-only: response body AND headers in one rule. */
+    case Response = 6;
 }

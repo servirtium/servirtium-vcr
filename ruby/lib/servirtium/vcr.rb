@@ -185,9 +185,15 @@ module Servirtium
 
     # Rewrite the replayed response: regex +pattern+ -> +replacement+ in the
     # response body or headers (+{{baseUrl}}+ is already expanded by core).
-    def substitute(field, pattern, replacement)
-      @substitutions << [field, pattern, replacement]
+    # +required: false+ exempts an unused rule from +assert_all_redactions_used+.
+    def substitute(field, pattern, replacement, required: true)
+      @substitutions << [field, pattern, replacement, required]
       self
+    end
+
+    # Like {#substitute}, but an unused rule is not reported.
+    def substitute_optional(field, pattern, replacement)
+      substitute(field, pattern, replacement, required: false)
     end
 
     # Start the server. With a block, yields the {Server} and closes it after.
@@ -220,8 +226,8 @@ module Servirtium
       @unredactions.each do |field, pattern, replacement|
         check(Native.call(:unredact, handle, field, pattern, replacement), 'unredact')
       end
-      @substitutions.each do |field, pattern, replacement|
-        check(Native.call(:substitute, handle, field, pattern, replacement), 'substitute')
+      @substitutions.each do |field, pattern, replacement, required|
+        check(Native.call(:substitute, handle, field, pattern, replacement, required ? 1 : 0), 'substitute')
       end
     end
   end

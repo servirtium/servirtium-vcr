@@ -93,10 +93,11 @@ extern char *aether_vcr_embed_set_tls(void *h, const char *cert, const char *key
 extern char *aether_vcr_embed_set_tls_pem(void *h, const char *cert_pem, const char *key_pem);
 extern char *aether_vcr_embed_last_tls_protocol(void *h);
 extern char *aether_vcr_embed_substitute(void *h, int field, const char *pat,
-                                         const char *repl);
+                                         const char *repl, int required);
 extern void  aether_vcr_embed_clear_substitutions(void *h);
 extern char *aether_vcr_embed_assert_all_consumed(void *h);
 extern char *aether_vcr_embed_assert_all_redactions_used(void *h);
+extern char *aether_vcr_embed_assert_no_unfilled_placeholders(void *h);
 extern void  aether_vcr_embed_set_match_multiple(void *h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(void *h);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *h);
@@ -461,14 +462,15 @@ static int l_last_tls_protocol(lua_State *L)
     return push_owned_string(L, aether_vcr_embed_last_tls_protocol(h));
 }
 
-/* substitute(handle, field, pat, repl) -> string (empty == ok) */
+/* substitute(handle, field, pat, repl [, required=1]) -> string (empty == ok) */
 static int l_substitute(lua_State *L)
 {
     void *h = check_handle(L, 1);
     int field = (int)luaL_checkinteger(L, 2);
     const char *pat  = luaL_checkstring(L, 3);
     const char *repl = luaL_checkstring(L, 4);
-    return push_owned_string(L, aether_vcr_embed_substitute(h, field, pat, repl));
+    int required = lua_isnoneornil(L, 5) ? 1 : (int)luaL_checkinteger(L, 5);
+    return push_owned_string(L, aether_vcr_embed_substitute(h, field, pat, repl, required));
 }
 
 /* clear_substitutions(handle) */
@@ -491,6 +493,13 @@ static int l_assert_all_redactions_used(lua_State *L)
 {
     void *h = check_handle(L, 1);
     return push_owned_string(L, aether_vcr_embed_assert_all_redactions_used(h));
+}
+
+/* assert_no_unfilled_placeholders(handle) -> string (empty == ok) */
+static int l_assert_no_unfilled_placeholders(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    return push_owned_string(L, aether_vcr_embed_assert_no_unfilled_placeholders(h));
 }
 
 /* set_match_multiple(handle, on) */
@@ -576,6 +585,7 @@ static const luaL_Reg servirtium_funcs[] = {
     {"clear_substitutions",             l_clear_substitutions},
     {"assert_all_consumed",             l_assert_all_consumed},
     {"assert_all_redactions_used",      l_assert_all_redactions_used},
+    {"assert_no_unfilled_placeholders", l_assert_no_unfilled_placeholders},
     {"set_match_multiple",              l_set_match_multiple},
     {"indent_code_blocks",              l_indent_code_blocks},
     {"emphasize_http_verbs",            l_emphasize_http_verbs},
@@ -594,6 +604,7 @@ int luaopen_servirtium_native(lua_State *L)
     lua_pushinteger(L, 3); lua_setfield(L, -2, "FIELD_REQUEST_HEADERS");
     lua_pushinteger(L, 4); lua_setfield(L, -2, "FIELD_REQUEST_BODY");
     lua_pushinteger(L, 5); lua_setfield(L, -2, "FIELD_RESPONSE_HEADERS");
+    lua_pushinteger(L, 6); lua_setfield(L, -2, "FIELD_RESPONSE");  /* substitution-only: body AND headers */
 
     /* Outcome / last_kind values (mirror VCR_KIND_* in core/vcr.ae). */
     lua_pushinteger(L, 0); lua_setfield(L, -2, "OK");

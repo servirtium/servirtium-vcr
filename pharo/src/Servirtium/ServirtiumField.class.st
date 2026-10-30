@@ -27,3 +27,6 @@ ServirtiumField class >> requestBody [ ^ 4 ]
 
 { #category : 'constants' }
 ServirtiumField class >> responseHeaders [ ^ 5 ]
+
+{ #category : 'constants' }
+ServirtiumField class >> response [ "Substitution-only: body AND headers in one rule." ^ 6 ]

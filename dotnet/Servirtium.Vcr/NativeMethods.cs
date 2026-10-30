@@ -14,6 +14,14 @@ public enum VcrField
     RequestHeaders = 3,
     RequestBody = 4,
     ResponseHeaders = 5,
+
+    /// <summary>
+    /// Substitution only: the whole response — body AND headers. One rule,
+    /// counted once by <see cref="VcrServer.AssertAllRedactionsUsed"/>. Use when
+    /// a placeholder may appear in either (e.g. a vault host in a nextLink body
+    /// or a Location header) without registering it twice.
+    /// </summary>
+    Response = 6,
 }
 
 /// <summary>
@@ -124,6 +132,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_assert_all_redactions_used", CharSet = CharSet.Ansi)]
     internal static extern IntPtr AssertAllRedactionsUsed(IntPtr server);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_assert_no_unfilled_placeholders", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr AssertNoUnfilledPlaceholders(IntPtr server);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_last_tls_protocol", CharSet = CharSet.Ansi)]
     internal static extern IntPtr LastTlsProtocol(IntPtr server);
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_test_context", CharSet = CharSet.Ansi)]
@@ -188,7 +199,7 @@ internal static class NativeMethods
     internal static extern IntPtr SetTlsPem(IntPtr server, string certPem, string keyPem);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_substitute", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr Substitute(IntPtr server, int field, string pattern, string replacement);
+    internal static extern IntPtr Substitute(IntPtr server, int field, string pattern, string replacement, int required);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_untaped", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Untaped(IntPtr server, string path);

@@ -113,6 +113,14 @@ public final class VcrServer implements AutoCloseable {
         } catch (Throwable t) { throw VcrBuilderBase.rethrow("assertAllRedactionsUsed", t); }
     }
 
+    /** Throw if any unfilled placeholder remains in a replayed response. */
+    public void assertNoUnfilledPlaceholders() {
+        try {
+            String error = NativeMethods.takeString((MemorySegment) NativeMethods.ASSERT_NO_UNFILLED_PLACEHOLDERS.invokeExact(handle()));
+            if (!error.isEmpty()) throw new VcrException(error);
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("assertNoUnfilledPlaceholders", t); }
+    }
+
     /** Negotiated TLS protocol of the latest TLS request (e.g. "TLSv1.3"), or "". */
     public String lastTlsProtocol() {
         try {

@@ -35,7 +35,10 @@ enum VcrField {
   responseBody(2),
   requestHeaders(3),
   requestBody(4),
-  responseHeaders(5);
+  responseHeaders(5),
+
+  /// Substitution-only: response body AND headers in one rule.
+  response(6);
 
   const VcrField(this.value);
 
@@ -255,7 +258,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   PlaybackBuilder._(super.tapePath);
 
   final List<(VcrField, String, String)> _unredactions = [];
-  final List<(VcrField, String, String)> _substitutions = [];
+  final List<(VcrField, String, String, bool)> _substitutions = [];
   bool _strictHeaders = false;
   bool _matchJsonBody = false;
   bool _matchMultiple = false;
@@ -303,10 +306,17 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
 
   /// Rewrite the replayed response: regex [pattern] -> [replacement] in the
   /// response body or headers (`{{baseUrl}}` is already expanded by core).
-  PlaybackBuilder substitute(VcrField field, String pattern, String replacement) {
-    _substitutions.add((field, pattern, replacement));
+  ///
+  /// [required] false exempts an unused rule from `assertAllRedactionsUsed`.
+  PlaybackBuilder substitute(VcrField field, String pattern, String replacement,
+      {bool required = true}) {
+    _substitutions.add((field, pattern, replacement, required));
     return this;
   }
+
+  /// Like [substitute], but an unused rule is not reported.
+  PlaybackBuilder substituteOptional(VcrField field, String pattern, String replacement) =>
+      substitute(field, pattern, replacement, required: false);
 
   @override
   void _applyConfig(Pointer<Void> handle) {
@@ -321,9 +331,9 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
       withUtf8(pattern, (p) => withUtf8(replacement,
           (r) => _check(Native.unredact(handle, field.value, p, r), 'unredact')));
     }
-    for (final (field, pattern, replacement) in _substitutions) {
+    for (final (field, pattern, replacement, required) in _substitutions) {
       withUtf8(pattern, (p) => withUtf8(replacement,
-          (r) => _check(Native.substitute(handle, field.value, p, r), 'substitute')));
+          (r) => _check(Native.substitute(handle, field.value, p, r, required ? 1 : 0), 'substitute')));
     }
   }
 
@@ -545,6 +555,10 @@ class VcrServer {
   /// Throws unless every redaction / unredaction / substitution rule matched at least once.
   void assertAllRedactionsUsed() =>
       _check(Native.assertAllRedactionsUsed(_requireHandle), 'assertAllRedactionsUsed');
+
+  /// Throws if any unfilled placeholder remains in a replayed response.
+  void assertNoUnfilledPlaceholders() =>
+      _check(Native.assertNoUnfilledPlaceholders(_requireHandle), 'assertNoUnfilledPlaceholders');
 
   /// Drop all registered substitutions on the running server.
   void clearSubstitutions() => Native.clearSubstitutions(_requireHandle);

@@ -53,6 +53,7 @@ type
     RequestHeaders = 3
     RequestBody = 4
     ResponseHeaders = 5
+    Response = 6 ## substitution-only: body AND headers in one rule
 
   ## A running VCR server. `recording` selects the close semantics: a record
   ## server flushes its tape on close, a playback server just stops.
@@ -204,10 +205,15 @@ proc redactJsonField*(s: VcrServer; name: string; replacement = "[REDACTED]"; fi
 proc unredact*(s: VcrServer; field: Field; pattern, replacement: string): string {.discardable.} =
   takeString(native.unredact(s.handle, cint(field), cstring(pattern), cstring(replacement)))
 
-proc substitute*(s: VcrServer; field: Field; pattern, replacement: string): string {.discardable.} =
+proc substitute*(s: VcrServer; field: Field; pattern, replacement: string; required = true): string {.discardable.} =
   ## Playback only: rewrite the replayed response (regex `pattern` ->
   ## `replacement`) in the response body or headers. Returns "" or an error.
-  takeString(native.substitute(s.handle, cint(field), cstring(pattern), cstring(replacement)))
+  ## `required = false` makes an unused rule not count in `assertAllRedactionsUsed`.
+  takeString(native.substitute(s.handle, cint(field), cstring(pattern), cstring(replacement), cint(if required: 1 else: 0)))
+
+proc substituteOptional*(s: VcrServer; field: Field; pattern, replacement: string): string {.discardable.} =
+  ## Like `substitute`, but an unused rule is not reported by `assertAllRedactionsUsed`.
+  substitute(s, field, pattern, replacement, required = false)
 
 proc clearSubstitutions*(s: VcrServer) =
   native.clear_substitutions(s.handle)
@@ -233,6 +239,11 @@ proc assertAllConsumed*(s: VcrServer) =
 proc assertAllRedactionsUsed*(s: VcrServer) =
   ## Raise `VcrError` unless every redaction/unredaction/substitution matched.
   let diagnostic = takeString(native.assert_all_redactions_used(s.handle))
+  if diagnostic.len > 0: raise newException(VcrError, diagnostic)
+
+proc assertNoUnfilledPlaceholders*(s: VcrServer) =
+  ## Raise `VcrError` if any unfilled placeholder remains in a replayed response.
+  let diagnostic = takeString(native.assert_no_unfilled_placeholders(s.handle))
   if diagnostic.len > 0: raise newException(VcrError, diagnostic)
 
 proc removeHeader*(s: VcrServer; field: Field; name: string): string {.discardable.} =
