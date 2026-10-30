@@ -17,7 +17,7 @@
 # Env overrides:
 #   PREFIX        install prefix                 (default: $HOME/.local; no sudo)
 #   AETHER_REF    ae tag/branch/SHA to install   (default: $AE_FETCH below)
-#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.339)
+#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.340)
 #   MIN_AE        minimum acceptable ae version  (default: $AE_PIN below)
 #   AEB_TIMEOUT   passed through to aeb (seconds)  (optional)
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
@@ -54,7 +54,15 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-10-29 (latest): ae 0.855.0 -> 0.860.0 / aeb v0.338 -> v0.339, for the
+# 2026-10-30 (latest): aeb v0.339 -> v0.340. Pure aeb release bump — Aether
+# stays 0.860.0 (v0.340 pins its own AETHER_PIN/AETHER_FETCH to 0.860.0, the ae
+# we already run, so std-regen and the on-PATH program compile are unchanged) and
+# it also carries the bundle install.sh fix that copies the pin files on upgrade.
+# No lockstep, no binding sweep: no std/ABI change, so our substitute/TLS/etc.
+# surface is untouched. VERIFIED here on 0.860 + v0.340: core build (.so,
+# set_tls_pem resolved) + go/rust/core-tls + the core substitute/record-scrub
+# probes.
+# 2026-10-29: ae 0.855.0 -> 0.860.0 / aeb v0.338 -> v0.339, for the
 # in-memory TLS PEM feature (std.http's server_set_tls_pem, aether #3362) and the
 # RSA/P-384/P-521/Ed25519 key support + set-time cert validation (#3326/#3328).
 # UNLIKE the 0.855 bump, aeb did NOT need to move in lockstep: 0.860 std adds no
@@ -356,7 +364,7 @@ AE_FETCH="v0.860.0"
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.339 == the verified release for this cut.
+#   aeb floor == AEB_REF == v0.340 == the verified release for this cut.
 #
 # v0.327 (from v0.326) is REQUIRED, coupled with AE_PIN 0.824: v0.326's bldr
 # does not compile on ae 0.818+ (E0902), and v0.327 is the first release that
@@ -409,7 +417,7 @@ AE_FETCH="v0.860.0"
 #
 # Released aeb bundles now report their version. Enforce the release floor;
 # an unversioned development build cannot establish that it meets the pin.
-AEB_REF="${AEB_REF:-v0.339}"
+AEB_REF="${AEB_REF:-v0.340}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX

@@ -334,9 +334,9 @@ The floor advertised support for ~250 releases nothing ever tested, and a
 mixed `ae`/`aetherc` pair is a genuinely nasty failure — so "supported" now
 means "tested". The trade: a user with a good-but-different ae gets a fetch
 they didn't strictly need.) The **aeb** pin is one number on the same policy:
-`AEB_REF` == floor == `v0.339`, paired with Aether 0.860.0 (aeb v0.339 drives
-0.860 unchanged — 0.860's std adds no new extern attribute, so its own cached
-aetherc regenerates it fine). The
+`AEB_REF` == floor == `v0.340`, paired with Aether 0.860.0 (aeb v0.340 pins its
+own AETHER_PIN/AETHER_FETCH to 0.860.0, the ae we already run, so std-regen and
+the on-PATH program compile are unchanged). The
 pair preserves distinct GNU/musl binary-package identities (the libc-aware
 release floor is still Aether 0.838.0, which 0.860 satisfies). `bootstrap.sh` now checks the aeb release version as well as the
 Aether floor. The commands below pin that
@@ -352,14 +352,14 @@ clone), pipe `get.sh` into `sh` with the pins after the pipe. It installs a
 pinned `ae` (>= `AE_PIN`) THEN a pinned `aeb`, binary-first, into `~/.local`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/v0.339/get.sh \
-  | AE_PIN=0.860.0 AEB_REF=v0.339 sh
+curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/v0.340/get.sh \
+  | AE_PIN=0.860.0 AEB_REF=v0.340 sh
 ```
 
 (Prefer this to `sh -c "$(curl …)"` — the piped form is what `get.sh`'s
 executed-mode guard is built for. If you want a fetch error and install progress
 on your own terminal rather than through the pipe, download first and run the
-file: `curl … -o get.sh && AE_PIN=0.860.0 AEB_REF=v0.339 bash get.sh` — same
+file: `curl … -o get.sh && AE_PIN=0.860.0 AEB_REF=v0.340 bash get.sh` — same
 result.)
 
 ### Optionally: `aeo` (only for the containerized integration tests)
@@ -373,7 +373,7 @@ the same way, and ensures `ae` + `aeb` first (aeo shells them at runtime):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh \
-  | AE_PIN=0.860.0 AEB_REF=v0.339 AEO_REF=v0.2.3 sh
+  | AE_PIN=0.860.0 AEB_REF=v0.340 AEO_REF=v0.2.3 sh
 ```
 
 (Verified binary-first on a clean `debian:13-slim` — no compiler, no `make` —
