@@ -1,11 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
-using System.Net.Http;
-using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
+#if !NETFRAMEWORK
+// SocketsHttpHandler / HttpMessageHandler (used by CreateClientHandler) are
+// modern-.NET only; the whole helper is compiled out on .NET Framework 4.8,
+// which has no SocketsHttpHandler, so these are guarded too.
+using System.Net.Http;
+using System.Net.Sockets;
+#endif
 
 namespace Servirtium.Vcr;
 
@@ -84,7 +89,7 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     /// on every call — distributed-tracing context and correlation ids that
     /// change run to run (<c>traceparent</c>, <c>tracestate</c>, <c>Request-Id</c>,
     /// <c>X-Request-Id</c>, <c>X-Correlation-Id</c>, <c>baggage</c>). .NET's
-    /// <see cref="System.Net.Http.HttpClient"/> adds the tracing trio to every
+    /// <c>HttpClient</c> adds the tracing trio to every
     /// request, so strict matching otherwise fails on a confusing first run.
     /// Each is removed from BOTH the recorded expectation and the live request
     /// before matching. The companion to <c>StrictIgnoreCommonHeaders</c>
@@ -731,6 +736,7 @@ public sealed class VcrServer : IDisposable
         if (!string.IsNullOrEmpty(err)) throw new VcrException(err);
     }
 
+#if !NETFRAMEWORK
     /// <summary>
     /// Build an <see cref="HttpMessageHandler"/> that routes the system under
     /// test to THIS VCR safely, and nowhere else (field report #8). It is the
@@ -813,6 +819,7 @@ public sealed class VcrServer : IDisposable
 
         return handler;
     }
+#endif
 
     /// <summary>
     /// Record mode, explicit two-phase commit (field report #5): stop the
