@@ -1,0 +1,119 @@
+// Opt-in XML-semantic request-body matching (field report #10 — the SOAP case).
+// Twin of test_vcr_json_body_match.ae.
+//
+// The tape records a POST /soap interaction whose request body is a SOAP-ish
+// XML document. Cases, one process (cursor reset between them so each retries
+// interaction 0):
+//
+//   A. match_xml_body OFF (default): an attribute-reordered + re-indented but
+//      semantically equal body must still 599 — libservirtium_vcr stays byte-exact.
+//   B. match_xml_body ON: the same reordered/re-spaced body now matches (200).
+//   C. match_xml_body ON but ELEMENT order changed: must still 599 — element
+//      order IS significant in XML, so this is a real difference.
+//   D. match_xml_body ON but a NON-XML body: must still 599 — unparseable
+//      bodies fall back to the byte-exact verdict, never loosened.
+
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+
+extern exit(code: int)
+extern http_server_start_raw(server: ptr) -> int
+
+const PORT = 18117
+
+// Recorded form is in the tape. These are byte-different live bodies:
+//  - attributes reordered (when before id), insignificant whitespace added.
+const REORDERED = "<Envelope xmlns=\"urn:x\">\n  <Body>\n    <Submit when=\"noon\" id=\"7\"><Name>Complaint</Name></Submit>\n  </Body>\n</Envelope>"
+//  - element order swapped inside <Submit> is not applicable (one child); instead
+//    swap two sibling elements to prove order is significant.
+const REORDERED_ELEMS = "<Envelope xmlns=\"urn:x\"><Body><Submit id=\"7\" when=\"noon\"><Age>9</Age><Name>Complaint</Name></Submit></Body></Envelope>"
+const NOT_XML = "this is not xml at all"
+
+message StartVCR { raw: ptr }
+message Noop {}
+
+actor VCRActor {
+    state s = 0
+    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
+}
+
+actor SchedHelper {
+    state x = 0
+    receive { Noop() -> { x = 1 } }
+}
+
+post_xml(url: string, body: string) -> int {
+    creq = client.request("POST", url)
+    if creq == null { return -1 }
+    berr = client.set_body(creq, string.bytes(body), "application/xml")
+    if berr != "" { client.request_free(creq); return -2 }
+    cresp, cerr = client.send_request(creq)
+    client.request_free(creq)
+    if cerr != "" { return -3 }
+    s = client.response_status(cresp)
+    client.response_free(cresp)
+    return s
+}
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+main() {
+    println("=== VCR opt-in XML request-body matching ===\n")
+
+    raw = vcr.load("core_tests/tapes/xml_body_match.tape", PORT)
+    if raw == null { fail("vcr.load returned null") }
+
+    spawn(SchedHelper())
+    a = spawn(VCRActor())
+    a ! StartVCR { raw: raw }
+    sleep(500)
+
+    url = "http://127.0.0.1:${PORT}/soap"
+
+    // Case A — default (byte-exact): reordered/re-indented XML must be rejected.
+    vcr.clear_last_error_h(raw)
+    vcr.reset_cursor_h(raw)
+    statusA = post_xml(url, REORDERED)
+    if statusA != 599 {
+        fail("Case A (match off): expected 599 for reordered body, got ${statusA}")
+    }
+    println("PASS Case A: byte-exact default rejects attr-reordered / re-indented XML (599)")
+
+    // Case B — opt-in on: the same body now matches semantically.
+    vcr.set_match_xml_body_h(raw, 1)
+    vcr.clear_last_error_h(raw)
+    vcr.reset_cursor_h(raw)
+    statusB = post_xml(url, REORDERED)
+    if statusB != 200 {
+        fail("Case B (match on): expected 200 for XML-equal body, got ${statusB} (last_error='${vcr.last_error()}')")
+    }
+    println("PASS Case B: match_xml_body accepts attr-reordered / re-spaced XML (200)")
+
+    // Case C — opt-in on, but element content genuinely differs: still reject.
+    vcr.clear_last_error_h(raw)
+    vcr.reset_cursor_h(raw)
+    statusC = post_xml(url, REORDERED_ELEMS)
+    if statusC != 599 {
+        fail("Case C (match on, extra element): expected 599, got ${statusC}")
+    }
+    println("PASS Case C: genuinely different element content still rejected (599)")
+
+    // Case D — opt-in on, but a non-XML body: fall back to byte-exact → reject.
+    vcr.clear_last_error_h(raw)
+    vcr.reset_cursor_h(raw)
+    statusD = post_xml(url, NOT_XML)
+    if statusD != 599 {
+        fail("Case D (match on, non-XML): expected 599 fallback, got ${statusD}")
+    }
+    println("PASS Case D: non-XML body falls back to byte-exact (599)")
+
+    println("\n=== XML body-match subtests passed ===")
+    vcr.eject(raw)
+    exit(0)
+}

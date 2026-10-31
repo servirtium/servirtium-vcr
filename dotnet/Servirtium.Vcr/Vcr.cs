@@ -1,5 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Servirtium.Vcr;
 
@@ -49,6 +55,7 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     private readonly List<(VcrField field, string name)> _headerRemovals = new();
     private readonly List<(string mount, string dir)> _staticContent = new();
     private readonly List<string> _untaped = new();
+    private bool _ignoreVolatileHeaders;
     private (string cert, string key)? _tls;
     private (string certPem, string keyPem)? _tlsPem;
 
@@ -69,6 +76,24 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     public TSelf RemoveHeader(VcrField field, string name)
     {
         _headerRemovals.Add((field, name));
+        return Self;
+    }
+
+    /// <summary>
+    /// One call to drop the per-request VOLATILE headers modern clients inject
+    /// on every call — distributed-tracing context and correlation ids that
+    /// change run to run (<c>traceparent</c>, <c>tracestate</c>, <c>Request-Id</c>,
+    /// <c>X-Request-Id</c>, <c>X-Correlation-Id</c>, <c>baggage</c>). .NET's
+    /// <see cref="System.Net.Http.HttpClient"/> adds the tracing trio to every
+    /// request, so strict matching otherwise fails on a confusing first run.
+    /// Each is removed from BOTH the recorded expectation and the live request
+    /// before matching. The companion to <c>StrictIgnoreCommonHeaders</c>
+    /// (User-Agent/Accept/…); call both for the full default-ignore set.
+    /// Honored in playback and record.
+    /// </summary>
+    public TSelf IgnoreVolatileHeaders(bool on = true)
+    {
+        _ignoreVolatileHeaders = on;
         return Self;
     }
 
@@ -145,6 +170,10 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
         {
             Check(NativeMethods.Untaped(handle, path), nameof(Untaped));
         }
+        if (_ignoreVolatileHeaders)
+        {
+            Check(NativeMethods.IgnoreVolatileHeaders(handle), nameof(IgnoreVolatileHeaders));
+        }
         if (_tlsPem is (string certPem, string keyPem))
         {
             Check(NativeMethods.SetTlsPem(handle, certPem, keyPem), nameof(TlsFromPem));
@@ -153,6 +182,22 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
         {
             Check(NativeMethods.SetTls(handle, cert, key), nameof(Tls));
         }
+    }
+
+    /// <summary>
+    /// The configured server-certificate PEM text, or null when TLS is off.
+    /// Resolves the file form (<see cref="Tls"/>) by reading it. Used by
+    /// <see cref="VcrServer.CreateClientHandler"/> to pin the self-signed cert.
+    /// </summary>
+    private protected string? ResolveTlsCertPem()
+    {
+        if (_tlsPem is (string certPem, _)) return certPem;
+        if (_tls is (string certPath, _))
+        {
+            try { return System.IO.File.ReadAllText(certPath); }
+            catch { return null; }
+        }
+        return null;
     }
 
     /// <summary>Throw if a mutation call returned a non-empty error string ("" = success).</summary>
@@ -176,6 +221,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     private readonly List<string> _matchHeaders = new();
     private bool _strictHeaders;
     private bool _matchJsonBody;
+    private bool _matchXmlBody;
     private bool _matchMultiple;
 
     internal PlaybackBuilder(string tapePath) : base(tapePath) { }
@@ -200,6 +246,21 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     public PlaybackBuilder MatchJsonBody(bool on = true)
     {
         _matchJsonBody = on;
+        return this;
+    }
+
+    /// <summary>
+    /// Opt in to matching request bodies by semantic XML equality (attribute
+    /// order and insignificant whitespace ignored; element order significant)
+    /// instead of byte-for-byte — the SOAP/XML twin of <see cref="MatchJsonBody"/>.
+    /// Non-XML bodies fall back to byte-exact. It does NOT ignore a chosen
+    /// volatile element (e.g. a WS-Addressing MessageID); make those
+    /// deterministic with <see cref="RecordBuilder.RedactWholeTape"/> / a fixed
+    /// clock as before — this closes the key-order / indentation gap.
+    /// </summary>
+    public PlaybackBuilder MatchXmlBody(bool on = true)
+    {
+        _matchXmlBody = on;
         return this;
     }
 
@@ -274,11 +335,31 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     public PlaybackBuilder SubstituteOptional(VcrField field, string pattern, string replacement)
         => Substitute(field, pattern, replacement, required: false);
 
+    /// <summary>
+    /// Register a base-URL-style <paramref name="marker"/> (e.g. <c>{{workpro}}</c>)
+    /// once, applied in BOTH directions: the recorded expectation's marker is
+    /// filled with <paramref name="value"/> on the request side so a live request
+    /// carrying the real URL still matches (an <see cref="Unredact"/>), and the
+    /// served response's marker — body and headers — is filled with it too (a
+    /// <see cref="Substitute"/> over <see cref="VcrField.Response"/>). One call
+    /// instead of pairing an <c>Unredact</c> with a <c>Substitute</c> by hand.
+    /// The request-side rule is registered on the path and request body; use the
+    /// lower-level calls directly if you need a different field scope.
+    /// </summary>
+    public PlaybackBuilder Placeholder(string marker, string value)
+    {
+        _unredactions.Add((VcrField.Path, marker, value));
+        _unredactions.Add((VcrField.RequestBody, marker, value));
+        _substitutions.Add((VcrField.Response, marker, value, false));
+        return this;
+    }
+
     private protected override void ApplyConfig(IntPtr handle)
     {
         base.ApplyConfig(handle);
         if (_strictHeaders) NativeMethods.SetStrictHeaders(handle, 1);
         if (_matchJsonBody) NativeMethods.SetMatchJsonBody(handle, 1);
+        if (_matchXmlBody) NativeMethods.SetMatchXmlBody(handle, 1);
         if (_matchMultiple) NativeMethods.SetMatchMultiple(handle, 1);
         foreach (string name in _matchHeaders)
         {
@@ -309,7 +390,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
             NativeMethods.Stop(handle);
             throw new VcrException($"vcr playback failed to begin serving for tape '{TapePath}': {detail}");
         }
-        return new VcrServer(handle, HostValue, TapePath, recordMode: false, failIfChanged: false);
+        return new VcrServer(handle, HostValue, TapePath, recordMode: false, failIfChanged: false, tlsCertPem: ResolveTlsCertPem());
     }
 
     private static string DrainStartError(IntPtr handle)
@@ -332,6 +413,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     private bool _indentCodeBlocks;
     private bool _emphasizeHttpVerbs;
     private bool _failIfChanged;
+    private bool _requireLoopbackUpstream;
 
     internal RecordBuilder(string tapePath, string upstreamBase) : base(tapePath)
         => _upstreamBase = upstreamBase;
@@ -427,6 +509,46 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         return this;
     }
 
+    /// <summary>
+    /// Enforce Servirtium's "never record against a real site" rule in the
+    /// library itself (field report #9): <see cref="Start"/> throws unless the
+    /// upstream base resolves to a loopback host (<c>localhost</c>, <c>127.0.0.0/8</c>,
+    /// or <c>::1</c>). Opt-in, so a team can guarantee a stray record run — a
+    /// weekly drift check, a mis-set env var — can never reach production. Off
+    /// by default; recording against a non-loopback upstream stays allowed
+    /// unless you ask for this guard.
+    /// </summary>
+    public RecordBuilder RequireLoopbackUpstream(bool on = true)
+    {
+        _requireLoopbackUpstream = on;
+        return this;
+    }
+
+    private void CheckLoopbackUpstream()
+    {
+        if (!_requireLoopbackUpstream) return;
+        string host;
+        try
+        {
+            host = new Uri(_upstreamBase).Host;
+        }
+        catch (Exception ex)
+        {
+            throw new VcrException(
+                $"RequireLoopbackUpstream: upstream '{_upstreamBase}' is not a valid absolute URL: {ex.Message}");
+        }
+        bool loopback =
+            host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+            (System.Net.IPAddress.TryParse(host.Trim('[', ']'), out System.Net.IPAddress? ip) &&
+             System.Net.IPAddress.IsLoopback(ip));
+        if (!loopback)
+        {
+            throw new VcrException(
+                $"RequireLoopbackUpstream: refusing to record against non-loopback upstream '{_upstreamBase}' " +
+                "(host must be localhost, 127.0.0.0/8, or ::1).");
+        }
+    }
+
     private protected override void ApplyConfig(IntPtr handle)
     {
         base.ApplyConfig(handle);
@@ -448,6 +570,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
 
     public VcrServer Start()
     {
+        CheckLoopbackUpstream();
         IntPtr handle = NativeMethods.OpenRecord(LabelValue, TapePath, _upstreamBase, HostValue, PortValue);
         if (handle == IntPtr.Zero)
         {
@@ -467,7 +590,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
             NativeMethods.Stop(handle);
             throw new VcrException($"vcr record failed to begin serving for tape '{TapePath}': {detail}");
         }
-        return new VcrServer(handle, HostValue, TapePath, recordMode: true, failIfChanged: _failIfChanged) { SecretRedactorCallback = _secretRedactor };
+        return new VcrServer(handle, HostValue, TapePath, recordMode: true, failIfChanged: _failIfChanged, tlsCertPem: ResolveTlsCertPem()) { SecretRedactorCallback = _secretRedactor };
     }
 }
 
@@ -483,15 +606,19 @@ public sealed class VcrServer : IDisposable
     private readonly string _tapePath;
     private readonly bool _recordMode;
     private readonly bool _failIfChanged;
+    private readonly string? _tlsCertPem;
     private string? _baseUrl;
+    private bool _discarded;
+    private bool _committed;
 
-    internal VcrServer(IntPtr handle, string host, string tapePath, bool recordMode, bool failIfChanged)
+    internal VcrServer(IntPtr handle, string host, string tapePath, bool recordMode, bool failIfChanged, string? tlsCertPem = null)
     {
         _handle = handle;
         _host = host;
         _tapePath = tapePath;
         _recordMode = recordMode;
         _failIfChanged = failIfChanged;
+        _tlsCertPem = tlsCertPem;
     }
 
     private IntPtr Handle =>
@@ -604,8 +731,136 @@ public sealed class VcrServer : IDisposable
         if (!string.IsNullOrEmpty(err)) throw new VcrException(err);
     }
 
+    /// <summary>
+    /// Build an <see cref="HttpMessageHandler"/> that routes the system under
+    /// test to THIS VCR safely, and nowhere else (field report #8). It is the
+    /// safety-critical client wiring that's easy to get subtly wrong, shipped so
+    /// you don't hand-roll ~40 lines of <c>ConnectCallback</c> + cert pinning:
+    ///
+    ///  * every outbound connection is forced to the VCR's real loopback
+    ///    endpoint, regardless of the request's host/port — so a URL that leaks
+    ///    a real hostname can't escape to the internet;
+    ///  * a connection whose request host is not <paramref name="aliasHost"/>
+    ///    (nor the loopback host the VCR bound) is REFUSED outright;
+    ///  * when the VCR is serving TLS, the self-signed server certificate is
+    ///    PINNED by thumbprint — the handler trusts exactly that certificate and
+    ///    rejects any other, instead of blanket-disabling validation.
+    ///
+    /// Point the SUT at <c>https://{aliasHost}/</c> (or <c>http://</c>), give it
+    /// an <see cref="HttpClient"/> built on this handler, and it can only ever
+    /// reach the tape. This is a .NET-only helper (host HttpClient plumbing, not
+    /// portable Servirtium logic).
+    /// </summary>
+    public HttpMessageHandler CreateClientHandler(string aliasHost)
+    {
+        int realPort = Port;
+        string realHost = _host;
+        byte[]? pinnedThumbprint = null;
+        if (_tlsCertPem is string pem)
+        {
+            try
+            {
+                X509Certificate2 pinned = X509Certificate2.CreateFromPem(pem);
+                pinnedThumbprint = pinned.GetCertHash();
+            }
+            catch (Exception ex)
+            {
+                throw new VcrException($"CreateClientHandler: could not parse the TLS certificate PEM to pin it: {ex.Message}");
+            }
+        }
+
+        var handler = new SocketsHttpHandler
+        {
+            ConnectCallback = async (ctx, cancel) =>
+            {
+                string requestedHost = ctx.DnsEndPoint.Host;
+                bool allowed =
+                    requestedHost.Equals(aliasHost, StringComparison.OrdinalIgnoreCase) ||
+                    requestedHost.Equals(realHost, StringComparison.OrdinalIgnoreCase);
+                if (!allowed)
+                {
+                    throw new VcrException(
+                        $"CreateClientHandler: refusing a connection to '{requestedHost}' — this client may only reach the VCR alias '{aliasHost}'.");
+                }
+                var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                try
+                {
+                    await socket.ConnectAsync(IPAddress.Loopback, realPort, cancel).ConfigureAwait(false);
+                    return new NetworkStream(socket, ownsSocket: true);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            },
+        };
+
+        if (pinnedThumbprint != null)
+        {
+            handler.SslOptions.RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
+            {
+                if (cert == null) return false;
+                byte[] seen = cert.GetCertHash();
+                if (seen.Length != pinnedThumbprint.Length) return false;
+                int diff = 0;
+                for (int i = 0; i < seen.Length; i++) diff |= seen[i] ^ pinnedThumbprint[i];
+                return diff == 0;
+            };
+            // TargetHost must match the alias the SUT dials, not loopback.
+            handler.SslOptions.TargetHost = aliasHost;
+        }
+
+        return handler;
+    }
+
+    /// <summary>
+    /// Record mode, explicit two-phase commit (field report #5): stop the
+    /// server and write the captured tape to disk NOW. Call this on the success
+    /// path of a test, paired with <see cref="Discard"/> on the failure path, so
+    /// a half-finished recording from a failed test can never become a tape that
+    /// later replays as the truth. The write itself is crash-safe (temp file +
+    /// atomic rename) in the native library. Once committed (or discarded),
+    /// <see cref="Dispose"/> does nothing further. Throws if the tape fails to
+    /// write, or — when <see cref="RecordBuilder.FailIfChanged"/> is set — if it
+    /// differs from the on-disk one. No-op outside record mode.
+    /// </summary>
+    public void Commit()
+    {
+        if (_handle == IntPtr.Zero || !_recordMode) { _committed = true; return; }
+        IntPtr h = _handle;
+        _handle = IntPtr.Zero;
+        _committed = true;
+        if (SecretRedactorCallback != null) SecretCallbacks.Stage(h, SecretRedactorCallback, null);
+        IntPtr resultPtr = _failIfChanged
+            ? NativeMethods.StopAndFlushFailIfChanged(h, _tapePath)
+            : NativeMethods.StopAndFlush(h, _tapePath);
+        string err = NativeMethods.TakeString(resultPtr);
+        if (!string.IsNullOrEmpty(err))
+        {
+            throw new VcrException(err);
+        }
+    }
+
+    /// <summary>
+    /// Record mode: stop the server and DROP the captured recording WITHOUT
+    /// writing a tape (field report #5). Call this on a test's failure path so a
+    /// failed run never mints a tape. Safe to call then <see cref="Dispose"/>;
+    /// once discarded, dispose writes nothing. No-op outside record mode.
+    /// </summary>
+    public void Discard()
+    {
+        if (_handle == IntPtr.Zero || !_recordMode) { _discarded = true; return; }
+        IntPtr h = _handle;
+        _handle = IntPtr.Zero;
+        _discarded = true;
+        NativeMethods.TakeString(NativeMethods.Discard(h, _tapePath));
+    }
+
     public void Dispose()
     {
+        // Already committed or discarded: nothing left to do (handle is zeroed).
+        if (_committed || _discarded) return;
         if (_handle == IntPtr.Zero) return;
         IntPtr h = _handle;
         _handle = IntPtr.Zero;
@@ -616,6 +871,9 @@ public sealed class VcrServer : IDisposable
             return;
         }
 
+        // Back-compat: a record server disposed WITHOUT an explicit Commit()/
+        // Discard() still flushes, so existing tests keep recording on dispose.
+        // Tests that must not mint a tape on failure call Discard() in teardown.
         if (SecretRedactorCallback != null) SecretCallbacks.Stage(h, SecretRedactorCallback, null);
         IntPtr resultPtr = _failIfChanged
             ? NativeMethods.StopAndFlushFailIfChanged(h, _tapePath)

@@ -111,6 +111,7 @@ import std.zlib
 import std.regex
 import std.bytes
 import std.json
+import std.xml
 import std.encoding
 
 // Export the public wrappers once; their vcr_* implementations stay internal.
@@ -177,6 +178,7 @@ exports (
     redact_h, unredact_h, remove_header_h, note_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
+    set_match_xml_body_h,
     set_tls_h, set_tls_pem_h, tls_enabled_h, last_tls_protocol_h,
     substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h,
@@ -187,7 +189,8 @@ exports (
     last_error_h, last_kind_h, last_index_h, clear_last_error_h,
     tape_length_h, reset_cursor_h, load_error_h, assert_all_consumed_h, assert_all_redactions_used_h,
     assert_no_unfilled_placeholders_h,
-    stop_and_flush_h, stop_and_flush_fail_if_changed_h, stop_and_flush_or_check_h
+    stop_and_flush_h, stop_and_flush_fail_if_changed_h, stop_and_flush_or_check_h,
+    discard_h
 )
 
 // HTTP client functions for load_url (http_get_with_timeout_raw,
@@ -540,6 +543,19 @@ vcr_set_match_json_body_k(key: string, on: int) {
 vcr_set_match_json_body(on: int) { vcr_set_match_json_body_k(cur_key(), on) }
 vcr_get_match_json_body_k(key: string) -> int { return cfg_get_int(slot(key, "match_json_body"), 0) }
 vcr_get_match_json_body() -> int { return vcr_get_match_json_body_k(cur_key()) }
+
+// XML-semantic request-body matching (field report #10), the twin of the JSON
+// matcher above and off by default on the same terms: a byte-differing request
+// body gets a second chance at XML equality (attribute order and insignificant
+// whitespace ignored; element order significant) before it is called a
+// BodyDiff. A non-XML body always falls back to the byte-exact verdict, so
+// enabling it never loosens non-XML matching.
+vcr_set_match_xml_body_k(key: string, on: int) {
+    if on != 0 { cfg_set_int(slot(key, "match_xml_body"), 1) } else { cfg_set_int(slot(key, "match_xml_body"), 0) }
+}
+vcr_set_match_xml_body(on: int) { vcr_set_match_xml_body_k(cur_key(), on) }
+vcr_get_match_xml_body_k(key: string) -> int { return cfg_get_int(slot(key, "match_xml_body"), 0) }
+vcr_get_match_xml_body() -> int { return vcr_get_match_xml_body_k(cur_key()) }
 
 // Opt-in: when on, playback matches by SEARCHING all recorded interactions for
 // one that fits the request (method/path + any enabled header/body rules) rather
@@ -1750,6 +1766,78 @@ json_bodies_equal(live: string, recorded: string) -> int {
     return result
 }
 
+// Canonicalise an XML document into a normalised event-stream string, or ""
+// if it doesn't parse. The normalisation is what makes two SOAP envelopes
+// "semantically equal" (field report #10): element nesting and order are kept
+// (order IS significant in XML), attributes are sorted by name so their source
+// order doesn't matter, and whitespace-only text between elements is dropped
+// while text inside an element is trimmed. It does NOT ignore a chosen volatile
+// element (e.g. a WS-Addressing MessageID) — the caller makes those
+// deterministic with redact_whole_tape / a fixed clock, as before; this closes
+// the key-order / indentation / insignificant-whitespace gap that bytewise
+// matching trips on. On any parse error it returns "", so xml_bodies_equal
+// falls back to the byte-exact verdict and never loosens non-XML matching.
+xml_canonicalize(src: string) -> string {
+    p = xml.parser(src)
+    if p == null { return "" }
+    out = string.copy("")
+    ok = 1
+    done = 0
+    while done == 0 {
+        ev = xml.next(p)
+        if ev == xml.EVENT_EOF { break }
+        if ev == xml.EVENT_ERROR { ok = 0; break }
+        if ev == xml.EVENT_START {
+            out = string_concat(out, string_concat("<", xml.name(p)))
+            // Sort attribute (name=value) pairs so source order is irrelevant.
+            // Build a \n-joined blob and reuse sort_lines (same insertion sort
+            // the recorded-header normaliser uses); the sorted blob keeps its
+            // trailing \n, which we fold into the canonical form unchanged.
+            nattr = xml.attr_count(p)
+            if nattr > 0 {
+                blob = string.copy("")
+                i = 0
+                while i < nattr {
+                    an = xml.attr_name(p, i)
+                    av = xml.attr_value(p, i)
+                    blob = string_concat(blob, string_concat(an, string_concat("=", av)))
+                    blob = string_concat(blob, "\n")
+                    i = i + 1
+                }
+                out = string_concat(out, string_concat(" ", sort_lines(blob)))
+            }
+            out = string_concat(out, ">")
+        } else {
+            if ev == xml.EVENT_END {
+                out = string_concat(out, string_concat("</", string_concat(xml.name(p), ">")))
+            } else {
+                if ev == xml.EVENT_TEXT {
+                    t = rtrim(trim_leading_ws(xml.text(p)))
+                    if string.length(t) > 0 {
+                        out = string_concat(out, string_concat("#", string_concat(t, "#")))
+                    }
+                }
+            }
+        }
+    }
+    xml.free(p)
+    if ok == 0 { return "" }
+    return out
+}
+
+// Parse both bodies as XML and compare semantically. Returns 1 only if BOTH
+// canonicalise (parse) and their canonical forms are equal; 0 otherwise
+// (including when either side isn't valid XML), so the caller safely falls
+// back to the byte-exact verdict.
+xml_bodies_equal(live: string, recorded: string) -> int {
+    ca = xml_canonicalize(live)
+    if string.length(ca) == 0 { return 0 }
+    cb = xml_canonicalize(recorded)
+    if string.length(cb) == 0 { return 0 }
+    if string.equals(ca, cb) == 1 { return 1 }
+    return 0
+}
+
 // ---- error helper for record dispatch ----
 
 // Apply every literal / header / query redaction rule's pattern->replacement to
@@ -2085,6 +2173,9 @@ interaction_matches_pre(srvkey: string, index: int, e: *Interaction, req: ptr, g
         if bm == 0 && vcr_get_match_json_body_k(srvkey) == 1 {
             bm = json_bodies_equal(live_body, expected_req_body)
         }
+        if bm == 0 && vcr_get_match_xml_body_k(srvkey) == 1 {
+            bm = xml_bodies_equal(live_body, expected_req_body)
+        }
         if bm == 0 { return 0 }
     }
     return 1
@@ -2128,8 +2219,7 @@ do_playback_multiple(srvkey: string, req: ptr, res: ptr) {
         }
         if candidate_entry == null && n > 0 { candidate_index = 0; candidate_entry = tape_get_k(srvkey, 0) }
         retain_replay_mismatch_k(srvkey, KIND_PATH_OR_METHOD_DIFF, candidate_index, candidate_entry, req, live_body, 1)
-        http_response_set_status(res, 599)
-        http_response_set_body(res, msg)
+        emit_mismatch_response(res, msg, KIND_PATH_OR_METHOD_DIFF)
         return
     }
 
@@ -2140,6 +2230,18 @@ do_playback_multiple(srvkey: string, req: ptr, res: ptr) {
     set_last_kind_k(srvkey, KIND_OK)
     set_last_index_k(srvkey, found)
     // Deliberately no cursor advance — the interaction stays available.
+}
+
+// Answer a no-match the way a browser-driven test can SEE (field report #3):
+// a distinctive 599 status, the human reason as the body (verbatim, never
+// masked — a dev wanting the real diff must get it), plus a machine-readable
+// `X-Servirtium-Mismatch` header carrying the outcome kind so the reason shows
+// up in the page's own network/traffic log without anyone parsing the body.
+// Every playback no-match path funnels through here so the three stay in step.
+emit_mismatch_response(res: ptr, msg: string, kind: int) {
+    http_response_set_status(res, 599)
+    http_response_set_header(res, "X-Servirtium-Mismatch", "kind=${kind}")
+    http_response_set_body(res, msg)
 }
 
 do_playback(srvkey: string, req: ptr, res: ptr) {
@@ -2155,8 +2257,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         set_last_kind_k(srvkey, KIND_TAPE_EXHAUSTED)
         set_last_index_k(srvkey, cur)
         retain_replay_mismatch_k(srvkey, KIND_TAPE_EXHAUSTED, cur, null, req, read_full_request_body(req), 0)
-        http_response_set_status(res, 599)
-        http_response_set_body(res, msg)
+        emit_mismatch_response(res, msg, KIND_TAPE_EXHAUSTED)
         return
     }
     e = tape_get_k(srvkey, cur)
@@ -2182,8 +2283,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         set_last_kind_k(srvkey, KIND_PATH_OR_METHOD_DIFF)
         set_last_index_k(srvkey, cur)
         retain_replay_mismatch_k(srvkey, KIND_PATH_OR_METHOD_DIFF, cur, e, req, read_full_request_body(req), 0)
-        http_response_set_status(res, 599)
-        http_response_set_body(res, msg)
+        emit_mismatch_response(res, msg, KIND_PATH_OR_METHOD_DIFF)
         return
     }
 
@@ -2196,8 +2296,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         set_last_kind_k(srvkey, KIND_HEADER_VALUE_DIFF)
         set_last_index_k(srvkey, cur)
         retain_replay_mismatch_k(srvkey, KIND_HEADER_VALUE_DIFF, cur, e, req, read_full_request_body(req), 0)
-        http_response_set_status(res, 599)
-        http_response_set_body(res, msg)
+        emit_mismatch_response(res, msg, KIND_HEADER_VALUE_DIFF)
         return
     }
 
@@ -2278,8 +2377,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
             set_last_kind_k(srvkey, kind)
             set_last_index_k(srvkey, cur)
             retain_replay_mismatch_k(srvkey, kind, cur, e, req, read_full_request_body(req), 0)
-            http_response_set_status(res, 599)
-            http_response_set_body(res, msg)
+            emit_mismatch_response(res, msg, kind)
             return
         }
     }
@@ -2294,6 +2392,9 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         if bodies_match == 0 && vcr_get_match_json_body_k(srvkey) == 1 {
             bodies_match = json_bodies_equal(live_body, expected_req_body)
         }
+        if bodies_match == 0 && vcr_get_match_xml_body_k(srvkey) == 1 {
+            bodies_match = xml_bodies_equal(live_body, expected_req_body)
+        }
         if bodies_match == 0 {
             rlen = string.length(expected_req_body)
             llen = string.length(live_body)
@@ -2302,8 +2403,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
             set_last_kind_k(srvkey, KIND_BODY_DIFF)
             set_last_index_k(srvkey, cur)
             retain_replay_mismatch_k(srvkey, KIND_BODY_DIFF, cur, e, req, live_body, 0)
-            http_response_set_status(res, 599)
-            http_response_set_body(res, msg)
+            emit_mismatch_response(res, msg, KIND_BODY_DIFF)
             return
         }
     }
@@ -2798,6 +2898,7 @@ apply_tls_h(server: ptr) -> string {
 }
 set_strict_headers_h(server: ptr, on: int) { vcr_set_strict_headers_k(key_for(server), on) }
 set_match_json_body_h(server: ptr, on: int) { vcr_set_match_json_body_k(key_for(server), on) }
+set_match_xml_body_h(server: ptr, on: int) { vcr_set_match_xml_body_k(key_for(server), on) }
 set_match_multiple_h(server: ptr, on: int) { vcr_set_match_multiple_k(key_for(server), on) }
 add_match_header_h(server: ptr, name: string) { set_cur_key(key_for(server)); vcr_add_match_header(name) }
 clear_match_headers_h(server: ptr) { set_cur_key(key_for(server)); vcr_clear_match_headers() }
@@ -2975,6 +3076,19 @@ stop_and_flush_or_check_h(server: ptr, tape_path: string) -> string {
     dump_unretrieved_k(key)
     return flush_or_check_k(key, tape_path)
 }
+// Record-mode DISCARD (field report #5): stop the server and drop the in
+// memory recording WITHOUT writing a tape. A binding calls this instead of
+// stop_and_flush when the test failed, so a half-finished recording can never
+// become a tape that later replays as the truth. The two-phase contract is:
+// run the test, flush (commit) only on success, discard on failure. Returns ""
+// always — there is nothing to fail, and a double-stop is harmless.
+discard_h(server: ptr, tape_path: string) -> string {
+    key = key_for(server)
+    http.server_stop(server)
+    dump_unretrieved_k(key)
+    vcr_aether_clear_tape_k(key)
+    return ""
+}
 
 // ---- Record mode -----------------------------------------------------
 //
@@ -3029,8 +3143,21 @@ flush_k(key: string, tape_path: string) -> string {
     if emit_err != "" { return emit_err }
     derr = ensure_parent_dir(tape_path)
     if derr != "" { return derr }
-    werr = fs.write(tape_path, blob)
+    // Crash-safe write (field report #5): build the full blob, write it to a
+    // sibling temp file, then rename over the target. A process that dies mid
+    // write can no longer leave a half-written tape that later replays as the
+    // truth. The emit-error check above is the other half of the same promise —
+    // a recording whose emit failed never reaches disk at all. (A test that
+    // FAILED and should write nothing calls discard_h, not flush.)
+    tmp = string_concat(tape_path, ".tmp")
+    werr = fs.write(tmp, blob)
     if werr != "" { return werr }
+    rerr = fs.rename(tmp, tape_path)
+    if rerr != "" {
+        // Best-effort cleanup so a failed rename doesn't orphan the temp file.
+        fs.unlink(tmp)
+        return rerr
+    }
     return ""
 }
 flush(tape_path: string) -> string {
@@ -4890,7 +5017,33 @@ parse_tape_text(key: string, label: string, contents: string) -> string {
 // tape first, so several markdown files concatenate into one interaction
 // list (the multi-tape loader, load_append_h). Ordered playback then
 // treats the result as one long script; MatchMultiple as one union store.
-parse_tape_text_append(key: string, label: string, contents: string) -> string {
+// Tolerate two things a tape file picks up in the wild and that otherwise
+// break parsing silently (reported from the field): a leading UTF-8 BOM
+// (EF BB BF — Notepad/PowerShell `>` add it), and CRLF line endings (a git
+// checkout with autocrlf, or a hand-edit on Windows). Both are normalised to
+// the canonical LF/no-BOM form the rest of the parser and emitter assume. The
+// emitter still writes compact LF-only output; this only loosens what we READ,
+// in the same spirit as the parser already accepting the looser blank-line
+// style other Servirtium tools emit.
+normalize_tape_bytes(contents: string) -> string {
+    s = contents
+    // Strip a leading UTF-8 BOM if present.
+    if string.length(s) >= 3 &&
+       string.char_at(s, 0) == 239 &&
+       string.char_at(s, 1) == 187 &&
+       string.char_at(s, 2) == 191 {
+        s = string.substring(s, 3, string.length(s))
+    }
+    // CRLF -> LF. A bare CR (classic-Mac) is vanishingly rare in a tape and
+    // left alone; CRLF is the one that actually bites after a git checkout.
+    if string.index_of(s, "\r\n") >= 0 {
+        s = replace_all(s, "\r\n", "\n")
+    }
+    return s
+}
+
+parse_tape_text_append(key: string, label: string, contents0: string) -> string {
+    contents = normalize_tape_bytes(contents0)
     start_count = list_size(tape_list_k(key))
 
     delim = "\n## Interaction "

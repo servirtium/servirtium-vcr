@@ -1,0 +1,96 @@
+// Field report #4: a tape file with a UTF-8 BOM, or CRLF line endings (a git
+// checkout with autocrlf, a Notepad/PowerShell save), used to fail to parse
+// SILENTLY. The parser now normalises both on read. This probe writes a tape
+// with a leading BOM *and* CRLF throughout, loads it, replays, and asserts the
+// interaction plays back 200 — i.e. the BOM/CRLF were tolerated.
+
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+
+extern exit(code: int)
+extern http_server_start_raw(server: ptr) -> int
+
+const PORT = 18119
+
+message StartVCR { raw: ptr }
+message Noop {}
+
+actor VCRActor {
+    state s = 0
+    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
+}
+actor SchedHelper {
+    state x = 0
+    receive { Noop() -> { x = 1 } }
+}
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+// A canonical single-get tape, LF form. We CRLF-ify and BOM-prefix it below.
+tape_lf() -> string {
+    s = "## Interaction 0: GET /ok\n\n"
+    s = string_concat(s, "### Request headers recorded for playback:\n\n```\n```\n\n")
+    s = string_concat(s, "### Request body recorded for playback ():\n\n```\n```\n\n")
+    s = string_concat(s, "### Response headers recorded for playback:\n\n```\nContent-Type: text/plain\n```\n\n")
+    s = string_concat(s, "### Response body recorded for playback (200: text/plain):\n\n```\nok-body\n```\n")
+    return s
+}
+
+// LF -> CRLF.
+to_crlf(s: string) -> string {
+    out = string.copy("")
+    i = 0
+    n = string.length(s)
+    while i < n {
+        c = string.char_at(s, i)
+        if c == 10 { out = string_concat(out, "\r\n") } else {
+            out = string_concat(out, string.substring(s, i, i + 1))
+        }
+        i = i + 1
+    }
+    return out
+}
+
+main() {
+    println("=== VCR BOM + CRLF tape tolerance ===\n")
+
+    // Build a BOM-prefixed, CRLF tape and write it to disk.
+    bom = string_concat(string.from_char(239), string_concat(string.from_char(187), string.from_char(191)))
+    blob = string_concat(bom, to_crlf(tape_lf()))
+    path = "target/core_tests/bom_crlf.tape"
+    fs.mkdir_p("target/core_tests")
+    werr = fs.write(path, blob)
+    if werr != "" { fail("could not write tape: ${werr}") }
+
+    raw = vcr.load(path, PORT)
+    if raw == null { fail("vcr.load returned null — BOM/CRLF tape rejected") }
+    if vcr.load_error_h(raw) != "" { fail("load_error: ${vcr.load_error_h(raw)}") }
+    if vcr.tape_length_h(raw) != 1 { fail("expected 1 interaction, got ${vcr.tape_length_h(raw)}") }
+
+    spawn(SchedHelper())
+    a = spawn(VCRActor())
+    a ! StartVCR { raw: raw }
+    sleep(500)
+
+    creq = client.request("GET", "http://127.0.0.1:${PORT}/ok")
+    cresp, cerr = client.send_request(creq)
+    client.request_free(creq)
+    if cerr != "" { fail("request error: ${cerr}") }
+    status = client.response_status(cresp)
+    body = string.concat(client.response_body(cresp), "")
+    client.response_free(cresp)
+
+    if status != 200 { fail("expected 200, got ${status} (last_error='${vcr.last_error()}')") }
+    if string.contains(body, "ok-body") != 1 { fail("expected body 'ok-body', got '${body}'") }
+
+    println("PASS: BOM + CRLF tape parsed and replayed (200, body ok-body)")
+    println("\n=== BOM/CRLF tolerance passed ===")
+    vcr.eject(raw)
+    exit(0)
+}

@@ -156,6 +156,16 @@ vcr_embed_stop_and_flush_or_check(s: ptr, tape_path: string) -> ptr {
     return vcr_embed_dup(vcr.stop_and_flush_or_check_h(s, tape_path))
 }
 
+// Record-mode DISCARD: stop the server and drop the in-memory recording
+// WITHOUT writing a tape. A binding calls this instead of a stop_and_flush*
+// when the test failed, so a half-finished recording never becomes a tape
+// that later replays as the truth (two-phase: flush = commit on success,
+// discard on failure). `tape_path` is accepted for call-site symmetry with
+// the flush family and ignored. Returns "" (nothing to fail). Caller frees.
+vcr_embed_discard(s: ptr, tape_path: string) -> ptr {
+    return vcr_embed_dup(vcr.discard_h(s, tape_path))
+}
+
 // ---- introspection (handle-based) ----
 
 // Resolved listening port (the OS-assigned port when started with 0).
@@ -354,6 +364,25 @@ vcr_embed_strict_ignore_common_headers(s: ptr) -> ptr {
     return vcr_embed_dup(e)
 }
 
+// One-call opt-in for the per-request VOLATILE headers modern clients and
+// service meshes inject on EVERY call — distributed-tracing context and
+// correlation ids that change run to run and would otherwise make a confusing
+// first strict-match failure (field report #6: .NET's HttpClient adds
+// traceparent / tracestate / Request-Id). Each is dropped from BOTH the
+// recorded expectation and the live request before matching. Distinct from
+// strict_ignore_common_headers (User-Agent/Accept/…): that one covers stock
+// client identity headers; this covers tracing/correlation. Call both for the
+// full default-ignore set. Returns "" on success, else the first error.
+vcr_embed_ignore_volatile_headers(s: ptr) -> ptr {
+    e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "traceparent")
+    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "tracestate") }
+    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Request-Id") }
+    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "X-Request-Id") }
+    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "X-Correlation-Id") }
+    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "baggage") }
+    return vcr_embed_dup(e)
+}
+
 vcr_embed_note(s: ptr, title: string, body: string) -> ptr {
     return vcr_embed_dup(vcr.note_h(s, title, body))
 }
@@ -378,6 +407,14 @@ vcr_embed_set_strict_headers(s: ptr, on: int) {
 // bodies always fall back to the byte-exact comparison.
 vcr_embed_set_match_json_body(s: ptr, on: int) {
     vcr.set_match_json_body_h(s, on)
+}
+
+// Opt-in: match request bodies by semantic XML equality (attribute order and
+// insignificant whitespace ignored; element order significant) instead of
+// byte-for-byte. Off by default; non-XML bodies always fall back to the
+// byte-exact comparison. The twin of set_match_json_body for SOAP/XML APIs.
+vcr_embed_set_match_xml_body(s: ptr, on: int) {
+    vcr.set_match_xml_body_h(s, on)
 }
 
 // Opt-in: match playback by searching all interactions (reusable, order-

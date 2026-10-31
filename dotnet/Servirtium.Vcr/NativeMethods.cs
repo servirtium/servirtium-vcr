@@ -99,6 +99,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_stop_and_flush_or_check", CharSet = CharSet.Ansi)]
     internal static extern IntPtr StopAndFlushOrCheck(IntPtr server, string tapePath);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_discard", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr Discard(IntPtr server, string tapePath);
+
     // ---- introspection -------------------------------------------------
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_port")]
@@ -186,6 +189,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_strict_ignore_common_headers", CharSet = CharSet.Ansi)]
     internal static extern IntPtr StrictIgnoreCommonHeaders(IntPtr server);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_ignore_volatile_headers", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr IgnoreVolatileHeaders(IntPtr server);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_note", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Note(IntPtr server, string title, string body);
 
@@ -209,6 +215,9 @@ internal static class NativeMethods
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_match_json_body")]
     internal static extern void SetMatchJsonBody(IntPtr server, int on);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_match_xml_body")]
+    internal static extern void SetMatchXmlBody(IntPtr server, int on);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_match_multiple")]
     internal static extern void SetMatchMultiple(IntPtr server, int on);
