@@ -23,7 +23,7 @@ namespace Servirtium.Vcr;
 /// </summary>
 internal static class NativeLoader
 {
-    private const string EngineVersion = "v2.0.0-alpha.9";
+    private const string EngineVersion = "v2.0.0-alpha.10";
     private static int _registered;
     private static volatile string? _explicitPath;
 

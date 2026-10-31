@@ -2,7 +2,7 @@ name: servirtium
 description: >-
   Record/replay for HTTP service tests in the Servirtium markdown tape format —
   a thin dart:ffi wrapper over the Aether VCR core. Works for Dart and Flutter.
-version: 2.0.0-alpha.9
+version: 2.0.0-alpha.10
 repository: https://github.com/servirtium/servirtium-dart
 
 environment:
