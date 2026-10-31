@@ -22,6 +22,8 @@ abstract class VcrBuilderBase
     /** @var list<array{0: VcrField, 1: string}> */
     private array $headerRemovals = [];
 
+    private bool $ignoreVolatileHeadersOn = false;
+
     /** @var list<array{0: string, 1: string}> */
     private array $staticContent = [];
 
@@ -83,6 +85,21 @@ abstract class VcrBuilderBase
     }
 
     /**
+     * Drop the per-request volatile headers modern clients inject on every call
+     * — distributed-tracing / correlation ids (traceparent, tracestate,
+     * Request-Id, X-Request-Id, X-Correlation-Id, baggage) — from BOTH the
+     * recorded expectation and the live request before matching. The companion
+     * to removing the stock client identity headers. Works in playback and
+     * record mode.
+     */
+    public function ignoreVolatileHeaders(bool $on = true): static
+    {
+        $this->ignoreVolatileHeadersOn = $on;
+
+        return $this;
+    }
+
+    /**
      * Serve a path prefix from an on-disk directory instead of the tape
      * (Servirtium step 11).
      *
@@ -133,6 +150,9 @@ abstract class VcrBuilderBase
         $lib = Native::lib();
         foreach ($this->headerRemovals as [$field, $name]) {
             self::check($lib->aether_vcr_embed_remove_header($handle, $field->value, $name), 'removeHeader');
+        }
+        if ($this->ignoreVolatileHeadersOn) {
+            self::check($lib->aether_vcr_embed_ignore_volatile_headers($handle), 'ignoreVolatileHeaders');
         }
         foreach ($this->staticContent as [$mount, $dir]) {
             self::check($lib->aether_vcr_embed_static_content($handle, $mount, $dir), 'staticContent');

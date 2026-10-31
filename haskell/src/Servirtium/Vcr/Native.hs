@@ -32,6 +32,7 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_stop_and_flush
   , aether_vcr_embed_stop_and_flush_fail_if_changed
   , aether_vcr_embed_stop_and_flush_or_check
+  , aether_vcr_embed_discard
   , -- * Accessors / diagnostics
     aether_vcr_embed_port
   , aether_vcr_embed_base_url
@@ -57,11 +58,13 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_match_header
   , aether_vcr_embed_clear_match_headers
   , aether_vcr_embed_strict_ignore_common_headers
+  , aether_vcr_embed_ignore_volatile_headers
   , aether_vcr_embed_note
   , aether_vcr_embed_static_content
   , aether_vcr_embed_untaped
   , aether_vcr_embed_set_strict_headers
   , aether_vcr_embed_set_match_json_body
+  , aether_vcr_embed_set_match_xml_body
   , aether_vcr_embed_set_match_multiple
   , aether_vcr_embed_indent_code_blocks
   , aether_vcr_embed_emphasize_http_verbs
@@ -118,6 +121,9 @@ foreign import ccall unsafe "aether_vcr_embed_stop_and_flush_fail_if_changed"
 foreign import ccall unsafe "aether_vcr_embed_stop_and_flush_or_check"
   aether_vcr_embed_stop_and_flush_or_check :: Handle -> CString -> IO CString
 
+foreign import ccall unsafe "aether_vcr_embed_discard"
+  aether_vcr_embed_discard :: Handle -> CString -> IO CString
+
 -- Accessors / diagnostics ---------------------------------------------------
 
 foreign import ccall unsafe "aether_vcr_embed_port"
@@ -170,6 +176,9 @@ foreign import ccall unsafe "aether_vcr_embed_clear_match_headers"
 foreign import ccall unsafe "aether_vcr_embed_strict_ignore_common_headers"
   aether_vcr_embed_strict_ignore_common_headers :: Handle -> IO CString
 
+foreign import ccall unsafe "aether_vcr_embed_ignore_volatile_headers"
+  aether_vcr_embed_ignore_volatile_headers :: Handle -> IO CString
+
 foreign import ccall unsafe "aether_vcr_embed_note"
   aether_vcr_embed_note :: Handle -> CString -> CString -> IO CString
 
@@ -184,6 +193,9 @@ foreign import ccall unsafe "aether_vcr_embed_set_strict_headers"
 
 foreign import ccall unsafe "aether_vcr_embed_set_match_json_body"
   aether_vcr_embed_set_match_json_body :: Handle -> CInt -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_set_match_xml_body"
+  aether_vcr_embed_set_match_xml_body :: Handle -> CInt -> IO ()
 
 foreign import ccall unsafe "aether_vcr_embed_set_match_multiple"
   aether_vcr_embed_set_match_multiple :: Handle -> CInt -> IO ()

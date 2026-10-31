@@ -20,6 +20,7 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     private final List<Substitution> substitutions = new ArrayList<>();
     private boolean strictHeaders;
     private boolean matchJsonBody;
+    private boolean matchXmlBody;
     private boolean matchMultiple;
 
     PlaybackBuilder(String tapePath) {
@@ -62,6 +63,22 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 
     public PlaybackBuilder matchJsonBody(boolean on) {
         this.matchJsonBody = on;
+        return this;
+    }
+
+    /**
+     * Opt in to matching request bodies by <em>semantic</em> XML equality
+     * (attribute order and insignificant whitespace ignored, element order
+     * significant) instead of byte-for-byte — the SOAP/XML twin of
+     * {@link #matchJsonBody()}. Non-XML bodies fall back to the byte-exact
+     * comparison, so this never loosens matching for non-XML payloads.
+     */
+    public PlaybackBuilder matchXmlBody() {
+        return matchXmlBody(true);
+    }
+
+    public PlaybackBuilder matchXmlBody(boolean on) {
+        this.matchXmlBody = on;
         return this;
     }
 
@@ -122,6 +139,9 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
             }
             if (matchJsonBody) {
                 NativeMethods.SET_MATCH_JSON_BODY.invokeExact(handle, 1);
+            }
+            if (matchXmlBody) {
+                NativeMethods.SET_MATCH_XML_BODY.invokeExact(handle, 1);
             }
             if (matchMultiple) {
                 NativeMethods.SET_MATCH_MULTIPLE.invokeExact(handle, 1);

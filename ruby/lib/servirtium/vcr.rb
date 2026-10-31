@@ -19,6 +19,7 @@ module Servirtium
       @label = ''
       @native_lib = nil
       @header_removals = []
+      @ignore_volatile_headers = false
       @static_content = []
       @untaped = []
       @tls = nil
@@ -55,6 +56,17 @@ module Servirtium
     # Remove a header by name from the given block (case-insensitive).
     def remove_header(field, name)
       @header_removals << [field, name]
+      self
+    end
+
+    # Drop the per-request volatile headers modern clients inject on every call
+    # — distributed-tracing / correlation ids (+traceparent+, +tracestate+,
+    # +Request-Id+, +X-Request-Id+, +X-Correlation-Id+, +baggage+) — from BOTH
+    # the recorded expectation and the live request before matching. The
+    # companion to removing the stock client identity headers. Works in both
+    # playback and record mode.
+    def ignore_volatile_headers(on: true)
+      @ignore_volatile_headers = on
       self
     end
 
@@ -95,6 +107,7 @@ module Servirtium
       @header_removals.each do |field, name|
         check(Native.call(:remove_header, handle, field, name), 'remove_header')
       end
+      check(Native.call(:ignore_volatile_headers, handle), 'ignore_volatile_headers') if @ignore_volatile_headers
       @static_content.each do |mount, dir|
         check(Native.call(:static_content, handle, mount, dir), 'static_content')
       end
@@ -136,6 +149,7 @@ module Servirtium
       @substitutions = []
       @strict_headers = false
       @match_json_body = false
+      @match_xml_body = false
       @match_multiple = false
       @match_headers = []
     end
@@ -158,6 +172,15 @@ module Servirtium
     # to byte-exact.
     def match_json_body(on: true)
       @match_json_body = on
+      self
+    end
+
+    # Opt in to matching request bodies by semantic XML equality (attribute
+    # order / insignificant whitespace ignored; element order significant)
+    # instead of byte-for-byte — the SOAP/XML twin of {#match_json_body}.
+    # Non-XML bodies fall back to byte-exact.
+    def match_xml_body(on: true)
+      @match_xml_body = on
       self
     end
 
@@ -219,6 +242,7 @@ module Servirtium
       super
       Native.call(:set_strict_headers, handle, 1) if @strict_headers
       Native.call(:set_match_json_body, handle, 1) if @match_json_body
+      Native.call(:set_match_xml_body, handle, 1) if @match_xml_body
       Native.call(:set_match_multiple, handle, 1) if @match_multiple
       @match_headers.each do |name|
         Native.call(:match_header, handle, name)

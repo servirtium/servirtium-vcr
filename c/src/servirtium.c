@@ -31,6 +31,7 @@ extern void  aether_vcr_embed_stop(sv_handle h);
 extern char *aether_vcr_embed_stop_and_flush(sv_handle h, const char *tape);
 extern char *aether_vcr_embed_stop_and_flush_fail_if_changed(sv_handle h, const char *tape);
 extern char *aether_vcr_embed_stop_and_flush_or_check(sv_handle h, const char *tape);
+extern char *aether_vcr_embed_discard(sv_handle h, const char *tape);
 
 extern int   aether_vcr_embed_port(sv_handle h);
 extern char *aether_vcr_embed_base_url(sv_handle h, const char *host);
@@ -59,8 +60,10 @@ extern char *aether_vcr_embed_static_content(sv_handle h, const char *mount, con
 extern char *aether_vcr_embed_untaped(sv_handle h, const char *path);
 extern char *aether_vcr_embed_match_header(sv_handle h, const char *name);
 extern void  aether_vcr_embed_strict_ignore_common_headers(sv_handle h);
+extern void  aether_vcr_embed_ignore_volatile_headers(sv_handle h);
 extern void  aether_vcr_embed_set_strict_headers(sv_handle h, int on);
 extern void  aether_vcr_embed_set_match_json_body(sv_handle h, int on);
+extern void  aether_vcr_embed_set_match_xml_body(sv_handle h, int on);
 extern void  aether_vcr_embed_set_match_multiple(sv_handle h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(sv_handle h);
 extern void  aether_vcr_embed_emphasize_http_verbs(sv_handle h);
@@ -390,12 +393,20 @@ void sv_strict_ignore_common_headers(sv_vcr *vcr) {
     if (vcr != NULL) aether_vcr_embed_strict_ignore_common_headers(vcr->h);
 }
 
+void sv_ignore_volatile_headers(sv_vcr *vcr) {
+    if (vcr != NULL) aether_vcr_embed_ignore_volatile_headers(vcr->h);
+}
+
 void sv_set_strict_headers(sv_vcr *vcr, int on) {
     if (vcr != NULL) aether_vcr_embed_set_strict_headers(vcr->h, on);
 }
 
 void sv_set_match_json_body(sv_vcr *vcr, int on) {
     if (vcr != NULL) aether_vcr_embed_set_match_json_body(vcr->h, on);
+}
+
+void sv_set_match_xml_body(sv_vcr *vcr, int on) {
+    if (vcr != NULL) aether_vcr_embed_set_match_xml_body(vcr->h, on);
 }
 
 void sv_set_match_multiple(sv_vcr *vcr, int on) {
@@ -494,6 +505,15 @@ sv_str sv_close_and_flush_fail_if_changed(sv_vcr *vcr, const char *tape_path) {
 
 sv_str sv_close_and_flush_or_check(sv_vcr *vcr, const char *tape_path) {
     return close_flushing(vcr, tape_path, 2);
+}
+
+void sv_discard(sv_vcr *vcr, const char *tape_path) {
+    const char *tape;
+    if (vcr == NULL) return;
+    tape = (tape_path != NULL) ? tape_path : vcr->tape;
+    if (tape == NULL) tape = "";
+    aether_vcr_embed_free_string(aether_vcr_embed_discard(vcr->h, tape));
+    free_wrapper(vcr);
 }
 
 /* ---- converters -------------------------------------------------------- */

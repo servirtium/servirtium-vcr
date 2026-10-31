@@ -40,6 +40,7 @@ lib LibVcr
   fun stop_and_flush = aether_vcr_embed_stop_and_flush(h : Void*, tape : LibC::Char*) : LibC::Char*
   fun stop_and_flush_fail_if_changed = aether_vcr_embed_stop_and_flush_fail_if_changed(h : Void*, tape : LibC::Char*) : LibC::Char*
   fun stop_and_flush_or_check = aether_vcr_embed_stop_and_flush_or_check(h : Void*, tape : LibC::Char*) : LibC::Char*
+  fun discard = aether_vcr_embed_discard(h : Void*, tape : LibC::Char*) : LibC::Char*
 
   # Introspection.
   fun port = aether_vcr_embed_port(h : Void*) : LibC::Int
@@ -71,8 +72,10 @@ lib LibVcr
   fun static_content = aether_vcr_embed_static_content(h : Void*, mount : LibC::Char*, dir : LibC::Char*) : LibC::Char*
   fun untaped = aether_vcr_embed_untaped(h : Void*, path : LibC::Char*) : LibC::Char*
   fun strict_ignore_common_headers = aether_vcr_embed_strict_ignore_common_headers(h : Void*) : Void
+  fun ignore_volatile_headers = aether_vcr_embed_ignore_volatile_headers(h : Void*) : Void
   fun set_strict_headers = aether_vcr_embed_set_strict_headers(h : Void*, on : LibC::Int) : Void
   fun set_match_json_body = aether_vcr_embed_set_match_json_body(h : Void*, on : LibC::Int) : Void
+  fun set_match_xml_body = aether_vcr_embed_set_match_xml_body(h : Void*, on : LibC::Int) : Void
   fun set_match_multiple = aether_vcr_embed_set_match_multiple(h : Void*, on : LibC::Int) : Void
   fun indent_code_blocks = aether_vcr_embed_indent_code_blocks(h : Void*) : Void
   fun emphasize_http_verbs = aether_vcr_embed_emphasize_http_verbs(h : Void*) : Void
@@ -369,6 +372,14 @@ module Servirtium
       LibVcr.strict_ignore_common_headers(@handle)
     end
 
+    # Drop the per-request volatile headers modern clients inject on every call
+    # (traceparent, tracestate, Request-Id, X-Request-Id, X-Correlation-Id,
+    # baggage) from both sides before matching — the companion to
+    # strict_ignore_common_headers for tracing / correlation noise.
+    def ignore_volatile_headers : Nil
+      LibVcr.ignore_volatile_headers(@handle)
+    end
+
     def strict_headers=(on : Bool)
       LibVcr.set_strict_headers(@handle, on ? 1 : 0)
     end
@@ -378,6 +389,14 @@ module Servirtium
     # significant). A non-JSON body always falls back to the byte-exact verdict.
     def match_json_body=(on : Bool)
       LibVcr.set_match_json_body(@handle, on ? 1 : 0)
+    end
+
+    # Opt-in: the SOAP/XML twin of match_json_body — a byte-differing request
+    # body gets a second chance at semantic XML equality (attribute order +
+    # insignificant whitespace ignored; element order significant). A non-XML
+    # body always falls back to the byte-exact verdict.
+    def match_xml_body=(on : Bool)
+      LibVcr.set_match_xml_body(@handle, on ? 1 : 0)
     end
 
     # Opt-in: search ALL interactions for one that fits and replay it WITHOUT
@@ -451,6 +470,16 @@ module Servirtium
     # overwriting it when one is already present.
     def flush_or_check(tape_path : String? = nil) : Nil
       flush_via(tape_path) { |h, t| LibVcr.stop_and_flush_or_check(h, t) }
+    end
+
+    # Stop the server and DROP the captured recording WITHOUT writing a tape.
+    # Call on a test's failure path so a half-finished recording never becomes
+    # a tape that later replays as the truth. Idempotent.
+    def discard(tape_path : String? = nil) : Nil
+      return if @closed
+      @closed = true
+      path = tape_path || @tape || ""
+      Servirtium.take(LibVcr.discard(@handle, path))
     end
 
     # The three flush variants differ only in the ABI call, so they share this.

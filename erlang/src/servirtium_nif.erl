@@ -28,6 +28,7 @@
     stop/1,
     stop_and_flush/2,
     stop_and_flush_fail_if_changed/2,
+    discard/2,
     %% introspection
     port/1,
     base_url/2,
@@ -74,7 +75,9 @@
     untaped/2,
     set_strict_headers/2,
     set_match_json_body/2,
+    set_match_xml_body/2,
     set_match_multiple/2,
+    ignore_volatile_headers/1,
     indent_code_blocks/1,
     emphasize_http_verbs/1,
     clear_redactions/1,
@@ -113,6 +116,7 @@ start(_Handle) -> erlang:nif_error(not_loaded).
 stop(_Handle) -> erlang:nif_error(not_loaded).
 stop_and_flush(_Handle, _TapePath) -> erlang:nif_error(not_loaded).
 stop_and_flush_fail_if_changed(_Handle, _TapePath) -> erlang:nif_error(not_loaded).
+discard(_Handle, _TapePath) -> erlang:nif_error(not_loaded).
 
 %% ---- introspection -------------------------------------------------------
 
@@ -154,7 +158,9 @@ static_content(_Handle, _MountPath, _FsDir) -> erlang:nif_error(not_loaded).
 untaped(_Handle, _Path) -> erlang:nif_error(not_loaded).
 set_strict_headers(_Handle, _On) -> erlang:nif_error(not_loaded).
 set_match_json_body(_Handle, _On) -> erlang:nif_error(not_loaded).
+set_match_xml_body(_Handle, _On) -> erlang:nif_error(not_loaded).
 set_match_multiple(_Handle, _On) -> erlang:nif_error(not_loaded).
+ignore_volatile_headers(_Handle) -> erlang:nif_error(not_loaded).
 indent_code_blocks(_Handle) -> erlang:nif_error(not_loaded).
 emphasize_http_verbs(_Handle) -> erlang:nif_error(not_loaded).
 clear_redactions(_Handle) -> erlang:nif_error(not_loaded).

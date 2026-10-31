@@ -74,6 +74,7 @@ class _BuilderBase:
         self._label = ""
         self._native_lib: str | None = None
         self._header_removals: list[tuple[Field, str]] = []
+        self._ignore_volatile_headers = False
         self._static_content: list[tuple[str, str]] = []
         self._untaped: list[str] = []
         self._tls: tuple[str, str] | None = None
@@ -110,6 +111,16 @@ class _BuilderBase:
         self._header_removals.append((field, name))
         return self
 
+    def ignore_volatile_headers(self, on: bool = True):
+        """Drop the per-request *volatile* headers modern clients inject on every
+        call — distributed-tracing and correlation ids (``traceparent``,
+        ``tracestate``, ``Request-Id``, ``X-Request-Id``, ``X-Correlation-Id``,
+        ``baggage``) — from BOTH the recorded expectation and the live request
+        before matching. The companion to removing the stock client identity
+        headers. Works in both playback and record mode."""
+        self._ignore_volatile_headers = on
+        return self
+
     def static_content(self, mount_path: str, fs_dir: str):
         """Serve a path prefix from an on-disk directory instead of the tape.
 
@@ -142,6 +153,8 @@ class _BuilderBase:
         """
         for field, name in self._header_removals:
             _check(N.remove_header(handle, int(field), N.encode(name)), "remove_header")
+        if self._ignore_volatile_headers:
+            _check(N.ignore_volatile_headers(handle), "ignore_volatile_headers")
         for mount, fs_dir in self._static_content:
             _check(N.static_content(handle, N.encode(mount), N.encode(fs_dir)), "static_content")
         for path in self._untaped:
@@ -202,6 +215,7 @@ class PlaybackBuilder(_BuilderBase):
         self._secret_resolver = None
         self._strict_headers = False
         self._match_json_body = False
+        self._match_xml_body = False
         self._match_multiple = False
         self._match_headers: list[str] = []
 
@@ -222,6 +236,15 @@ class PlaybackBuilder(_BuilderBase):
         Non-JSON bodies fall back to the byte-exact comparison, so enabling this
         never loosens matching for non-JSON payloads."""
         self._match_json_body = on
+        return self
+
+    def match_xml_body(self, on: bool = True):
+        """Opt in to matching request bodies by *semantic* XML equality
+        (attribute order and insignificant whitespace ignored; element order
+        significant) instead of byte-for-byte — the SOAP/XML twin of
+        :meth:`match_json_body`. Non-XML bodies fall back to the byte-exact
+        comparison, so enabling this never loosens matching for non-XML payloads."""
+        self._match_xml_body = on
         return self
 
     def match_multiple(self, on: bool = True):
@@ -260,6 +283,8 @@ class PlaybackBuilder(_BuilderBase):
             N.set_strict_headers(handle, 1)
         if self._match_json_body:
             N.set_match_json_body(handle, 1)
+        if self._match_xml_body:
+            N.set_match_xml_body(handle, 1)
         if self._match_multiple:
             N.set_match_multiple(handle, 1)
         for name in self._match_headers:
@@ -548,6 +573,21 @@ class VcrServer:
         N.clear_last_error(self._require_handle())
 
     # ---- lifecycle --------------------------------------------------------
+    def discard(self) -> None:
+        """Record mode: stop the server and DROP the captured recording WITHOUT
+        writing a tape. Call this on a test's failure path so a failed run never
+        mints a tape that later replays as the truth. Safe to call before
+        :meth:`close`/context exit — once discarded, close writes nothing.
+        No-op outside record mode."""
+        if not self._handle:
+            return
+        handle = self._handle
+        self._handle = None
+        if not self._record_mode:
+            N.stop(handle)
+            return
+        N.take_string(N.discard(handle, N.encode(self._tape_path)))
+
     def close(self) -> None:
         """Stop the server; flush the tape if recording."""
         if not self._handle:

@@ -61,6 +61,7 @@ private extern (C) nothrow @nogc {
     char* aether_vcr_embed_stop_and_flush(void* h, const(char)* tape);
     char* aether_vcr_embed_stop_and_flush_fail_if_changed(void* h, const(char)* tape);
     char* aether_vcr_embed_stop_and_flush_or_check(void* h, const(char)* tape);
+    char* aether_vcr_embed_discard(void* h, const(char)* tape);
 
     // introspection
     int   aether_vcr_embed_port(void* h);
@@ -92,8 +93,10 @@ private extern (C) nothrow @nogc {
     char* aether_vcr_embed_static_content(void* h, const(char)* mount, const(char)* dir);
     char* aether_vcr_embed_untaped(void* h, const(char)* path);
     void  aether_vcr_embed_strict_ignore_common_headers(void* h);
+    void  aether_vcr_embed_ignore_volatile_headers(void* h);
     void  aether_vcr_embed_set_strict_headers(void* h, int on);
     void  aether_vcr_embed_set_match_json_body(void* h, int on);
+    void  aether_vcr_embed_set_match_xml_body(void* h, int on);
     void  aether_vcr_embed_set_match_multiple(void* h, int on);
     void  aether_vcr_embed_indent_code_blocks(void* h);
     void  aether_vcr_embed_emphasize_http_verbs(void* h);
@@ -360,6 +363,14 @@ struct Vcr {
         aether_vcr_embed_strict_ignore_common_headers(handle);
     }
 
+    /// Drop the per-request volatile headers modern clients inject on every call
+    /// (traceparent, tracestate, Request-Id, X-Request-Id, X-Correlation-Id,
+    /// baggage) from both sides before matching — the companion to
+    /// strictIgnoreCommonHeaders for tracing / correlation noise.
+    void ignoreVolatileHeaders() {
+        aether_vcr_embed_ignore_volatile_headers(handle);
+    }
+
     void setStrictHeaders(bool on = true) {
         aether_vcr_embed_set_strict_headers(handle, on ? 1 : 0);
     }
@@ -369,6 +380,14 @@ struct Vcr {
     /// significant). A non-JSON body always falls back to the byte-exact verdict.
     void setMatchJsonBody(bool on = true) {
         aether_vcr_embed_set_match_json_body(handle, on ? 1 : 0);
+    }
+
+    /// Opt-in: the SOAP/XML twin of setMatchJsonBody — a byte-differing request
+    /// body gets a second chance at semantic XML equality (attribute order +
+    /// insignificant whitespace ignored; element order significant). A non-XML
+    /// body always falls back to the byte-exact verdict.
+    void setMatchXmlBody(bool on = true) {
+        aether_vcr_embed_set_match_xml_body(handle, on ? 1 : 0);
     }
 
     /// Opt-in: search ALL interactions for one that fits and replay it WITHOUT
@@ -413,6 +432,16 @@ struct Vcr {
     /// overwriting it when one is already present.
     void flushOrCheck(string tapePath = null) {
         flushVia(tapePath, &aether_vcr_embed_stop_and_flush_or_check);
+    }
+
+    /// Stop the server and DROP the captured recording WITHOUT writing a tape.
+    /// Call on a test's failure path so a half-finished recording never becomes
+    /// a tape that later replays as the truth. Idempotent.
+    void discard(string tapePath = null) {
+        if (closed) return;
+        closed = true;
+        const target = tapePath !is null ? tapePath : (tape !is null ? tape : "");
+        check(aether_vcr_embed_discard(handle, target.toStringz), "discard");
     }
 
     /// The three flush variants differ only in the ABI call, so they share this.

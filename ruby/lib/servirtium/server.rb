@@ -123,6 +123,21 @@ module Servirtium
       flush(handle)
     end
 
+    # Record mode: stop the server and DROP the captured recording WITHOUT
+    # writing a tape. Call this on a test's failure path so a failed run never
+    # mints a tape that later replays as the truth. Safe to call before
+    # {#close} — once discarded, close writes nothing. No-op outside record
+    # mode. Idempotent.
+    def discard
+      return if @handle.nil?
+
+      handle = @handle
+      @handle = nil
+      return Native.call(:stop, handle) unless @record_mode
+
+      Native.take_string(Native.call(:discard, handle, @tape_path))
+    end
+
     private
 
     def flush(handle)

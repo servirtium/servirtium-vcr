@@ -182,11 +182,21 @@ sv_str sv_untaped(sv_vcr *vcr, const char *path);
  * explicitly on — surgical, not all-or-nothing. */
 sv_str sv_match_header(sv_vcr *vcr, const char *name);
 void sv_strict_ignore_common_headers(sv_vcr *vcr);
+/* Drop the per-request volatile headers modern clients inject on every call
+ * (traceparent, tracestate, Request-Id, X-Request-Id, X-Correlation-Id,
+ * baggage) from both sides before matching — the companion to
+ * sv_strict_ignore_common_headers for tracing / correlation noise. */
+void sv_ignore_volatile_headers(sv_vcr *vcr);
 void sv_set_strict_headers(sv_vcr *vcr, int on);
 /* Opt-in: a request body that differs byte-for-byte gets a second chance at
  * semantic JSON equality (key order + whitespace ignored, array order
  * significant). A non-JSON body always falls back to the byte-exact verdict. */
 void sv_set_match_json_body(sv_vcr *vcr, int on);
+/* Opt-in: the SOAP/XML twin of sv_set_match_json_body — a byte-differing
+ * request body gets a second chance at semantic XML equality (attribute order +
+ * insignificant whitespace ignored; element order significant). A non-XML body
+ * always falls back to the byte-exact verdict. */
+void sv_set_match_xml_body(sv_vcr *vcr, int on);
 /* Opt-in: search ALL interactions for one that fits and replay it WITHOUT
  * consuming it, so repeated and out-of-order requests both match. */
 void sv_set_match_multiple(sv_vcr *vcr, int on);
@@ -219,6 +229,14 @@ sv_str sv_close_and_flush_fail_if_changed(sv_vcr *vcr, const char *tape_path);
 /* As sv_close_and_flush, but only CHECKS against an existing tape instead of
  * overwriting it when one is already present. */
 sv_str sv_close_and_flush_or_check(sv_vcr *vcr, const char *tape_path);
+
+/* Stop the server and DROP the captured recording WITHOUT writing a tape, then
+ * release the handle. Call on a test's failure path so a half-finished
+ * recording never becomes a tape that later replays as the truth. (sv_close is
+ * equivalent for the common case; this routes through the discard ABI so the
+ * core clears its recording state explicitly.) tape_path NULL = the path the
+ * recorder was opened with. */
+void sv_discard(sv_vcr *vcr, const char *tape_path);
 
 /* ---- converters (no server handle) ------------------------------------- */
 

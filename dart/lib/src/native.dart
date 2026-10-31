@@ -240,6 +240,8 @@ class Native {
       'aether_vcr_embed_stop_and_flush_fail_if_changed');
   static final stopAndFlushOrCheck = _lib.lookupFunction<_FlushC, _FlushD>(
       'aether_vcr_embed_stop_and_flush_or_check');
+  static final discard =
+      _lib.lookupFunction<_FlushC, _FlushD>('aether_vcr_embed_discard');
 
   // ---- introspection ------------------------------------------------------
   static final port = _lib.lookupFunction<_PortC, _PortD>('aether_vcr_embed_port');
@@ -286,6 +288,8 @@ class Native {
       .lookupFunction<_RemoveHeaderC, _RemoveHeaderD>('aether_vcr_embed_remove_header');
   static final strictIgnoreCommonHeaders = _lib.lookupFunction<_StrHandleC, _StrHandleD>(
       'aether_vcr_embed_strict_ignore_common_headers');
+  static final ignoreVolatileHeaders = _lib.lookupFunction<_StrHandleC, _StrHandleD>(
+      'aether_vcr_embed_ignore_volatile_headers');
   static final note = _lib.lookupFunction<_NoteC, _NoteD>('aether_vcr_embed_note');
   static final staticContent =
       _lib.lookupFunction<_StaticC, _StaticD>('aether_vcr_embed_static_content');
@@ -295,6 +299,8 @@ class Native {
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_strict_headers');
   static final setMatchJsonBody =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_match_json_body');
+  static final setMatchXmlBody =
+      _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_match_xml_body');
   static final setMatchMultiple =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_match_multiple');
   static final matchHeader = _lib

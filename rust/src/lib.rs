@@ -168,6 +168,7 @@ impl Vcr {
             substitutions: Vec::new(),
             strict_headers: false,
             match_json_body: false,
+            match_xml_body: false,
             match_multiple: false,
             match_headers: Vec::new(),
         }
@@ -203,6 +204,7 @@ struct Common {
     label: String,
     native_lib: Option<String>,
     header_removals: Vec<(Field, String)>,
+    ignore_volatile_headers: bool,
     static_content: Vec<(String, String)>,
     untaped: Vec<String>,
     tls: Option<(String, String)>,
@@ -218,6 +220,7 @@ impl Common {
             label: String::new(),
             native_lib: None,
             header_removals: Vec::new(),
+            ignore_volatile_headers: false,
             static_content: Vec::new(),
             untaped: Vec::new(),
             tls: None,
@@ -231,6 +234,9 @@ impl Common {
     fn apply_shared(&self, n: &Native, h: Handle) -> Result<(), VcrError> {
         for (field, name) in &self.header_removals {
             check(n, unsafe { (n.remove_header)(h, *field as c_int, cstr(name)?.as_ptr()) }, "remove_header")?;
+        }
+        if self.ignore_volatile_headers {
+            check(n, unsafe { (n.ignore_volatile_headers)(h) }, "ignore_volatile_headers")?;
         }
         for (mount, dir) in &self.static_content {
             check(n, unsafe { (n.static_content)(h, cstr(mount)?.as_ptr(), cstr(dir)?.as_ptr()) }, "static_content")?;
@@ -266,6 +272,7 @@ pub struct PlaybackBuilder {
     substitutions: Vec<(Field, String, String, bool)>,
     strict_headers: bool,
     match_json_body: bool,
+    match_xml_body: bool,
     match_multiple: bool,
     match_headers: Vec<String>,
 }
@@ -303,6 +310,15 @@ impl PlaybackBuilder {
         self.common.header_removals.push((field, name.into()));
         self
     }
+    /// Drop the per-request volatile headers modern clients inject on every
+    /// call (`traceparent`, `tracestate`, `Request-Id`, `X-Request-Id`,
+    /// `X-Correlation-Id`, `baggage`) from both the recorded expectation and
+    /// the live request before matching — the companion to common-header
+    /// ignoring for distributed-tracing / correlation noise.
+    pub fn ignore_volatile_headers(mut self) -> Self {
+        self.common.ignore_volatile_headers = true;
+        self
+    }
     /// Compare the SUT's request headers against the recorded block on every
     /// interaction, surfacing mismatches via [`VcrServer::last_error`].
     pub fn strict_headers(mut self) -> Self {
@@ -315,6 +331,16 @@ impl PlaybackBuilder {
     /// matching for non-JSON payloads.
     pub fn match_json_body(mut self) -> Self {
         self.match_json_body = true;
+        self
+    }
+    /// Opt in to matching request bodies by *semantic* XML equality (attribute
+    /// order and insignificant whitespace ignored; element order significant)
+    /// instead of byte-for-byte — the SOAP/XML twin of [`match_json_body`]. A
+    /// non-XML body falls back to the byte-exact comparison.
+    ///
+    /// [`match_json_body`]: Self::match_json_body
+    pub fn match_xml_body(mut self) -> Self {
+        self.match_xml_body = true;
         self
     }
     /// Opt in to reusable, order-independent playback: matches any recorded
@@ -429,6 +455,9 @@ impl PlaybackBuilder {
         if self.match_json_body {
             unsafe { (n.set_match_json_body)(handle, 1) };
         }
+        if self.match_xml_body {
+            unsafe { (n.set_match_xml_body)(handle, 1) };
+        }
         if self.match_multiple {
             unsafe { (n.set_match_multiple)(handle, 1) };
         }
@@ -510,6 +539,14 @@ impl RecordBuilder {
     /// Remove a header by name from the given block (case-insensitive).
     pub fn remove_header(mut self, field: Field, name: impl Into<String>) -> Self {
         self.common.header_removals.push((field, name.into()));
+        self
+    }
+    /// Drop the per-request volatile headers modern clients inject on every
+    /// call (`traceparent`, `tracestate`, `Request-Id`, `X-Request-Id`,
+    /// `X-Correlation-Id`, `baggage`) before matching/recording — the companion
+    /// to common-header ignoring for distributed-tracing / correlation noise.
+    pub fn ignore_volatile_headers(mut self) -> Self {
+        self.common.ignore_volatile_headers = true;
         self
     }
     /// Serve a path prefix from an on-disk directory instead of the tape.
@@ -857,6 +894,29 @@ impl VcrServer {
     /// `Drop` is a best-effort fallback that panics on a flush error.
     pub fn finish(mut self) -> Result<(), VcrError> {
         self.stop_inner()
+    }
+
+    /// Record mode: stop the server and DROP the captured recording WITHOUT
+    /// writing a tape. Call this on a test's failure path so a half-finished
+    /// recording never becomes a tape that later replays as the truth. After
+    /// `discard`, drop is a no-op. A no-op in playback mode.
+    pub fn discard(mut self) {
+        if self.finished {
+            return;
+        }
+        self.finished = true;
+        let h = self.handle;
+        match self.mode {
+            Mode::Playback => unsafe { (self.n.stop)(h) },
+            Mode::Record { .. } => {
+                if let Ok(path) = cstr(&self.tape_path) {
+                    let ptr = unsafe { (self.n.discard)(h, path.as_ptr()) };
+                    let _ = take_string(self.n, ptr);
+                } else {
+                    unsafe { (self.n.stop)(h) };
+                }
+            }
+        }
     }
 
     /// Stop + flush. Idempotent via `finished`.

@@ -69,6 +69,10 @@ final class NativeMethods {
             "aether_vcr_embed_stop_and_flush_or_check",
             FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
 
+    static final MethodHandle DISCARD = down(
+            "aether_vcr_embed_discard",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+
     // ---- introspection -----------------------------------------------------
 
     static final MethodHandle PORT = down(
@@ -156,6 +160,10 @@ final class NativeMethods {
             "aether_vcr_embed_strict_ignore_common_headers",
             FunctionDescriptor.of(C_STR, C_PTR));
 
+    static final MethodHandle IGNORE_VOLATILE_HEADERS = down(
+            "aether_vcr_embed_ignore_volatile_headers",
+            FunctionDescriptor.of(C_STR, C_PTR));
+
     static final MethodHandle NOTE = down(
             "aether_vcr_embed_note",
             FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
@@ -174,6 +182,10 @@ final class NativeMethods {
 
     static final MethodHandle SET_MATCH_JSON_BODY = down(
             "aether_vcr_embed_set_match_json_body",
+            FunctionDescriptor.ofVoid(C_PTR, C_INT));
+
+    static final MethodHandle SET_MATCH_XML_BODY = down(
+            "aether_vcr_embed_set_match_xml_body",
             FunctionDescriptor.ofVoid(C_PTR, C_INT));
 
     static final MethodHandle SET_MATCH_MULTIPLE = down(

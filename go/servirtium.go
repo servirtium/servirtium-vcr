@@ -48,6 +48,7 @@ void   aether_vcr_embed_stop(void* server);
 char*  aether_vcr_embed_stop_and_flush(void* server, const char* tape_path);
 char*  aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path);
 char*  aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path);
+char*  aether_vcr_embed_discard(void* server, const char* tape_path);
 
 int    aether_vcr_embed_port(void* server);
 char*  aether_vcr_embed_base_url(void* server, const char* host);
@@ -79,11 +80,13 @@ char*  aether_vcr_embed_remove_header(void* server, int field, const char* name)
 char*  aether_vcr_embed_normalize_whole_tape(void* server, const char* pattern, const char* name);
 char*  aether_vcr_embed_redact_whole_tape(void* server, const char* pattern, const char* replacement);
 char*  aether_vcr_embed_strict_ignore_common_headers(void* server);
+char*  aether_vcr_embed_ignore_volatile_headers(void* server);
 char*  aether_vcr_embed_note(void* server, const char* title, const char* body);
 char*  aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir);
 char*  aether_vcr_embed_untaped(void* server, const char* path);
 void   aether_vcr_embed_set_strict_headers(void* server, int on);
 void   aether_vcr_embed_set_match_json_body(void* server, int on);
+void   aether_vcr_embed_set_match_xml_body(void* server, int on);
 void   aether_vcr_embed_set_match_multiple(void* server, int on);
 void   aether_vcr_embed_match_header(void* server, const char* name);
 void   aether_vcr_embed_indent_code_blocks(void* server);
@@ -207,6 +210,7 @@ type baseBuilder struct {
 	port                  int
 	label                 string
 	headerRemovals        []headerRemoval
+	ignoreVolatileHeaders bool
 	staticContent         []struct{ mount, dir string }
 	untaped               []string
 	tlsCert, tlsKey       string
@@ -225,6 +229,11 @@ func (b *baseBuilder) applyBase(handle unsafe.Pointer) error {
 		res := C.aether_vcr_embed_remove_header(handle, C.int(hr.field), cName)
 		C.free(unsafe.Pointer(cName))
 		if err := checkErr(res, "RemoveHeader"); err != nil {
+			return err
+		}
+	}
+	if b.ignoreVolatileHeaders {
+		if err := checkErr(C.aether_vcr_embed_ignore_volatile_headers(handle), "IgnoreVolatileHeaders"); err != nil {
 			return err
 		}
 	}
@@ -334,6 +343,7 @@ type PlaybackBuilder struct {
 	baseBuilder
 	strictHeaders bool
 	matchJSONBody bool
+	matchXMLBody  bool
 	matchMultiple bool
 	matchHeaders  []string
 	unredactions  []replacement
@@ -363,6 +373,22 @@ func (b *PlaybackBuilder) StrictHeaders() *PlaybackBuilder { b.strictHeaders = t
 // (key order / whitespace ignored) instead of byte-for-byte. Non-JSON bodies
 // fall back to byte-exact.
 func (b *PlaybackBuilder) MatchJSONBody() *PlaybackBuilder { b.matchJSONBody = true; return b }
+
+// MatchXMLBody opts in to matching request bodies by semantic XML equality
+// (attribute order / insignificant whitespace ignored; element order
+// significant) instead of byte-for-byte — the SOAP/XML twin of MatchJSONBody.
+// Non-XML bodies fall back to byte-exact.
+func (b *PlaybackBuilder) MatchXMLBody() *PlaybackBuilder { b.matchXMLBody = true; return b }
+
+// IgnoreVolatileHeaders drops the per-request volatile headers modern clients
+// inject on every call (traceparent, tracestate, Request-Id, X-Request-Id,
+// X-Correlation-Id, baggage) from both the recorded expectation and the live
+// request before matching — the companion to common-header ignoring for
+// distributed-tracing / correlation noise.
+func (b *PlaybackBuilder) IgnoreVolatileHeaders() *PlaybackBuilder {
+	b.ignoreVolatileHeaders = true
+	return b
+}
 
 // MatchMultiple opts in to reusable, order-independent playback: matches any
 // recorded interaction (not just the next in sequence) and doesn't consume it —
@@ -442,6 +468,9 @@ func (b *PlaybackBuilder) applyConfig(handle unsafe.Pointer) error {
 	}
 	if b.matchJSONBody {
 		C.aether_vcr_embed_set_match_json_body(handle, 1)
+	}
+	if b.matchXMLBody {
+		C.aether_vcr_embed_set_match_xml_body(handle, 1)
 	}
 	if b.matchMultiple {
 		C.aether_vcr_embed_set_match_multiple(handle, 1)
@@ -551,6 +580,15 @@ func (b *RecordBuilder) Label(label string) *RecordBuilder { b.label = label; re
 // RemoveHeader removes a header by name from the given block (case-insensitive).
 func (b *RecordBuilder) RemoveHeader(field Field, name string) *RecordBuilder {
 	b.headerRemovals = append(b.headerRemovals, headerRemoval{field, name})
+	return b
+}
+
+// IgnoreVolatileHeaders drops the per-request volatile headers modern clients
+// inject on every call (traceparent, tracestate, Request-Id, X-Request-Id,
+// X-Correlation-Id, baggage) before matching/recording — the companion to
+// common-header ignoring for distributed-tracing / correlation noise.
+func (b *RecordBuilder) IgnoreVolatileHeaders() *RecordBuilder {
+	b.ignoreVolatileHeaders = true
 	return b
 }
 
@@ -897,4 +935,23 @@ func (s *Server) Close() error {
 		return fmt.Errorf("%s", msg)
 	}
 	return nil
+}
+
+// Discard stops the server and, in record mode, DROPS the captured recording
+// WITHOUT writing a tape. Call it on a test's failure path so a half-finished
+// recording never becomes a tape that later replays as the truth. After
+// Discard, Close is a no-op. In playback mode it just stops the server.
+func (s *Server) Discard() {
+	if s.handle == nil {
+		return
+	}
+	h := s.handle
+	s.handle = nil
+	if !s.recordMode {
+		C.aether_vcr_embed_stop(h)
+		return
+	}
+	cTape := C.CString(s.tapePath)
+	defer C.free(unsafe.Pointer(cTape))
+	takeString(C.aether_vcr_embed_discard(h, cTape))
 }

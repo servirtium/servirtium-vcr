@@ -17,6 +17,7 @@ Class {
 		'port',
 		'label',
 		'headerRemovals',
+		'ignoreVolatileHeaders',
 		'staticContents',
 		'untapedPaths',
 		'tlsCert',
@@ -42,6 +43,7 @@ ServirtiumBuilder >> initializeTape: aTapePath [
 	port := 0.            "0 => OS-assigned (dynamic)"
 	label := ''.
 	headerRemovals := OrderedCollection new.
+	ignoreVolatileHeaders := false.
 	staticContents := OrderedCollection new.
 	untapedPaths := OrderedCollection new
 ]
@@ -81,6 +83,18 @@ ServirtiumBuilder >> removeHeaderField: aField name: aName [
 	"Remove a header by name from the given block (case-insensitive)."
 
 	headerRemovals add: aField -> aName.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> ignoreVolatileHeaders [
+	"Drop the per-request volatile headers modern clients inject on every call —
+	 distributed-tracing / correlation ids (traceparent, tracestate, Request-Id,
+	 X-Request-Id, X-Correlation-Id, baggage) — from BOTH the recorded
+	 expectation and the live request before matching. The companion to removing
+	 the stock client identity headers. Works in playback and record mode."
+
+	ignoreVolatileHeaders := true.
 	^ self
 ]
 
@@ -130,6 +144,8 @@ ServirtiumBuilder >> applyConfig: handle [
 
 	headerRemovals do: [ :assoc |
 		self check: (self library removeHeader: handle field: assoc key name: assoc value) op: 'removeHeader' ].
+	ignoreVolatileHeaders ifTrue: [
+		self check: (self library ignoreVolatileHeaders: handle) op: 'ignoreVolatileHeaders' ].
 	staticContents do: [ :assoc |
 		self
 			check: (self library staticContent: handle mount: assoc key dir: assoc value)

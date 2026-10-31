@@ -57,6 +57,14 @@ defmodule Servirtium do
     * `:match_json_body` — `true` to match request bodies by semantic JSON
       equality (key order / whitespace ignored) instead of byte-for-byte;
       non-JSON bodies fall back to byte-exact
+    * `:match_xml_body` — `true` to match request bodies by semantic XML
+      equality (attribute order / insignificant whitespace ignored, element
+      order significant) instead of byte-for-byte; non-XML bodies fall back to
+      byte-exact
+    * `:ignore_volatile_headers` — `true` to drop the per-request tracing /
+      correlation headers clients inject on every call (traceparent, tracestate,
+      Request-Id, X-Request-Id, X-Correlation-Id, baggage) from both sides
+      before matching
     * `:match_multiple` — `true` to opt in to reusable, order-independent
       playback: matches any recorded interaction (not just the next in sequence)
       and doesn't consume it — for polling/retries or non-deterministic request
@@ -371,6 +379,8 @@ defmodule Servirtium do
   defp apply_playback_config(handle, opts) do
     if Keyword.get(opts, :strict_headers, false), do: Native.set_strict_headers(handle, 1)
     if Keyword.get(opts, :match_json_body, false), do: Native.set_match_json_body(handle, 1)
+    if Keyword.get(opts, :match_xml_body, false), do: Native.set_match_xml_body(handle, 1)
+    if Keyword.get(opts, :ignore_volatile_headers, false), do: Native.ignore_volatile_headers(handle)
     if Keyword.get(opts, :match_multiple, false), do: Native.set_match_multiple(handle, 1)
 
     for name <- Keyword.get(opts, :match_header, []) do

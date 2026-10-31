@@ -33,10 +33,10 @@ export Vcr, VcrError, Field, Outcome,
     redact_header, redact_query_param, redact_json_field,
     redact, unredact, normalize_whole_tape, redact_whole_tape, remove_header,
     match_header, note, static_content, untaped,
-    strict_ignore_common_headers, set_strict_headers,
-    set_match_json_body, set_match_multiple,
+    strict_ignore_common_headers, ignore_volatile_headers, set_strict_headers,
+    set_match_json_body, set_match_xml_body, set_match_multiple,
     indent_code_blocks, emphasize_http_verbs,
-    close!, flush!, flush_fail_if_changed!, flush_or_check!,
+    close!, flush!, flush_fail_if_changed!, flush_or_check!, discard!,
     har_import, har_export
 
 """
@@ -352,6 +352,15 @@ strict_ignore_common_headers(vcr::Vcr) =
     ccall((:aether_vcr_embed_strict_ignore_common_headers, LIB), Cvoid,
           (Ptr{Cvoid},), vcr.handle)
 
+"""Drop the per-request volatile headers modern clients inject on every call —
+distributed-tracing / correlation ids (traceparent, tracestate, Request-Id,
+X-Request-Id, X-Correlation-Id, baggage) — from BOTH the recorded expectation
+and the live request before matching. The companion to
+`strict_ignore_common_headers`; works in playback and record mode."""
+ignore_volatile_headers(vcr::Vcr) =
+    check(ccall((:aether_vcr_embed_ignore_volatile_headers, LIB), Ptr{Cchar},
+                (Ptr{Cvoid},), vcr.handle), "ignore_volatile_headers")
+
 set_strict_headers(vcr::Vcr, on::Bool) =
     ccall((:aether_vcr_embed_set_strict_headers, LIB), Cvoid,
           (Ptr{Cvoid}, Cint), vcr.handle, on ? 1 : 0)
@@ -361,6 +370,14 @@ semantic JSON equality (key order + whitespace ignored, array order
 significant). A non-JSON body always falls back to the byte-exact verdict."""
 set_match_json_body(vcr::Vcr, on::Bool) =
     ccall((:aether_vcr_embed_set_match_json_body, LIB), Cvoid,
+          (Ptr{Cvoid}, Cint), vcr.handle, on ? 1 : 0)
+
+"""Opt-in: a request body that differs byte-for-byte gets a second chance at
+semantic XML equality (attribute order + insignificant whitespace ignored;
+element order significant) — the SOAP/XML twin of `set_match_json_body`. A
+non-XML body always falls back to the byte-exact verdict."""
+set_match_xml_body(vcr::Vcr, on::Bool) =
+    ccall((:aether_vcr_embed_set_match_xml_body, LIB), Cvoid,
           (Ptr{Cvoid}, Cint), vcr.handle, on ? 1 : 0)
 
 """Opt-in: search ALL interactions for one that fits and replay it WITHOUT
@@ -430,6 +447,18 @@ function flush_or_check!(vcr::Vcr, tape_path::Union{AbstractString,Nothing}=noth
     tape = tape_path === nothing ? something(vcr.tape, "") : tape_path
     check(ccall((:aether_vcr_embed_stop_and_flush_or_check, LIB), Ptr{Cchar},
                 (Ptr{Cvoid}, Cstring), vcr.handle, tape), "flush_or_check")
+end
+
+"""Record mode: stop the server and DROP the captured recording WITHOUT writing
+a tape. Call this on a test's failure path so a failed run never mints a tape
+that later replays as the truth. Idempotent; the complement of `flush!`
+(commit on success, `discard!` on failure)."""
+function discard!(vcr::Vcr, tape_path::Union{AbstractString,Nothing}=nothing)
+    vcr.closed && return nothing
+    vcr.closed = true
+    tape = tape_path === nothing ? something(vcr.tape, "") : tape_path
+    check(ccall((:aether_vcr_embed_discard, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring), vcr.handle, tape), "discard")
 end
 
 # ---- converters (no server handle) ---------------------------------------

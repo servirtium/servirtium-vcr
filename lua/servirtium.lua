@@ -172,6 +172,20 @@ function Server:close()
     return ""
 end
 
+-- Record mode: stop the server and DROP the captured recording WITHOUT writing
+-- a tape. Call this on a test's failure path so a failed run never mints a tape
+-- that later replays as the truth. Safe to call instead of close(); once
+-- discarded, close() is a no-op. No-op outside record mode. Idempotent.
+function Server:discard()
+    if self._closed then return "" end
+    self._closed = true
+    if self._mode == "record" then
+        return C.discard(self._handle, self._tape)
+    end
+    C.stop(self._handle)
+    return ""
+end
+
 local function new_server(handle, mode, tape, host, fail_if_changed)
     return setmetatable({
         _handle = handle,
@@ -199,6 +213,9 @@ local function apply_base(b, handle)
     for _, hr in ipairs(b._header_removals) do
         check(C.remove_header(handle, hr.field, hr.name), "remove_header")
     end
+    if b._ignore_volatile_headers then
+        check(C.ignore_volatile_headers(handle), "ignore_volatile_headers")
+    end
     for _, sc in ipairs(b._static_content) do
         check(C.static_content(handle, sc.mount, sc.dir), "static_content")
     end
@@ -220,6 +237,7 @@ local function base_builder(tape, host)
         _port = 0,
         _label = "servirtium",
         _header_removals = {},
+        _ignore_volatile_headers = false,
         _static_content = {},
         _untaped = {},
         _tls = nil,
@@ -249,6 +267,15 @@ function PlaybackBuilder:match_json_body()
     return self
 end
 
+-- Opt in to matching request bodies by semantic XML equality (attribute order /
+-- insignificant whitespace ignored; element order significant) instead of
+-- byte-for-byte — the SOAP/XML twin of match_json_body. Non-XML bodies fall
+-- back to byte-exact.
+function PlaybackBuilder:match_xml_body()
+    self._match_xml_body = true
+    return self
+end
+
 -- Opt in to reusable, order-independent playback: matches any recorded
 -- interaction (not just the next in sequence) and doesn't consume it — for
 -- polling/retries or non-deterministic request order.
@@ -259,6 +286,15 @@ end
 
 function PlaybackBuilder:remove_header(field, name)
     table.insert(self._header_removals, { field = field, name = name })
+    return self
+end
+
+-- Drop the per-request volatile headers modern clients inject on every call —
+-- distributed-tracing / correlation ids (traceparent, tracestate, Request-Id,
+-- X-Request-Id, X-Correlation-Id, baggage) — from BOTH the recorded expectation
+-- and the live request before matching. Works in playback and record mode.
+function PlaybackBuilder:ignore_volatile_headers()
+    self._ignore_volatile_headers = true
     return self
 end
 
@@ -327,6 +363,9 @@ function PlaybackBuilder:start()
         if self._match_json_body then
             C.set_match_json_body(handle, true)
         end
+        if self._match_xml_body then
+            C.set_match_xml_body(handle, true)
+        end
         if self._match_multiple then
             C.set_match_multiple(handle, true)
         end
@@ -365,6 +404,14 @@ function RecordBuilder:label(l) self._label = l; return self end
 
 function RecordBuilder:remove_header(field, name)
     table.insert(self._header_removals, { field = field, name = name })
+    return self
+end
+
+-- Drop the per-request volatile headers modern clients inject on every call
+-- (tracing / correlation ids) from the recorded expectation and the live
+-- request before matching. The record-mode twin of the playback setter.
+function RecordBuilder:ignore_volatile_headers()
+    self._ignore_volatile_headers = true
     return self
 end
 
@@ -533,6 +580,7 @@ function M.playback(tapePath, opts)
     b._substitutions = {}
     b._strict_headers = false
     b._match_json_body = false
+    b._match_xml_body = false
     b._match_multiple = false
     b._match_headers = {}
     if opts then
@@ -566,5 +614,6 @@ function M.port(srv)           return srv:port() end
 function M.last_kind(srv)      return srv:last_kind() end
 function M.last_error(srv)     return srv:last_error() end
 function M.close(srv)          return srv:close() end
+function M.discard(srv)        return srv:discard() end
 
 return M

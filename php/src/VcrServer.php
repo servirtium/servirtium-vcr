@@ -187,4 +187,28 @@ final class VcrServer
             throw new VcrException($err);
         }
     }
+
+    /**
+     * Record mode: stop the server and DROP the captured recording WITHOUT
+     * writing a tape. Call this on a test's failure path so a failed run never
+     * mints a tape that later replays as the truth. Safe to call before
+     * `stop()` — once discarded, stop writes nothing. No-op outside record mode.
+     */
+    public function discard(): void
+    {
+        if ($this->handle === null) {
+            return;
+        }
+        $handle = $this->handle;
+        $this->handle = null;
+        $lib = Native::lib();
+
+        if (!$this->recordMode) {
+            $lib->aether_vcr_embed_stop($handle);
+
+            return;
+        }
+
+        Native::takeString($lib->aether_vcr_embed_discard($handle, $this->tapePath));
+    }
 }

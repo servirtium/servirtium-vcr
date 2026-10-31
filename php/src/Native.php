@@ -37,6 +37,7 @@ final class Native
         char*  aether_vcr_embed_stop_and_flush(void* server, const char* tape_path);
         char*  aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path);
         char*  aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path);
+        char*  aether_vcr_embed_discard(void* server, const char* tape_path);
         int    aether_vcr_embed_port(void* server);
         char*  aether_vcr_embed_base_url(void* server, const char* host);
         int    aether_vcr_embed_tape_length(void* server);
@@ -66,11 +67,13 @@ final class Native
         char*  aether_vcr_embed_remove_header(void* server, int field, const char* name);
         void   aether_vcr_embed_match_header(void* server, const char* name);
         char*  aether_vcr_embed_strict_ignore_common_headers(void* server);
+        char*  aether_vcr_embed_ignore_volatile_headers(void* server);
         char*  aether_vcr_embed_note(void* server, const char* title, const char* body);
         char*  aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir);
         char*  aether_vcr_embed_untaped(void* server, const char* path);
         void   aether_vcr_embed_set_strict_headers(void* server, int on);
         void   aether_vcr_embed_set_match_json_body(void* server, int on);
+        void   aether_vcr_embed_set_match_xml_body(void* server, int on);
         void   aether_vcr_embed_set_match_multiple(void* server, int on);
         void   aether_vcr_embed_indent_code_blocks(void* server);
         void   aether_vcr_embed_emphasize_http_verbs(void* server);

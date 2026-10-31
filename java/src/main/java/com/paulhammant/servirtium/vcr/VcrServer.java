@@ -17,6 +17,8 @@ public final class VcrServer implements AutoCloseable {
     private final boolean recordMode;
     private final boolean failIfChanged;
     private String baseUrl;
+    private boolean committed;
+    private boolean discarded;
 
     VcrServer(MemorySegment handle, String host, String tapePath, boolean recordMode, boolean failIfChanged) {
         this.handle = handle;
@@ -196,19 +198,24 @@ public final class VcrServer implements AutoCloseable {
         }
     }
 
-    @Override
-    public void close() {
-        if (handle == null) {
+    /**
+     * Record mode, explicit two-phase commit: stop the server and write the
+     * captured tape to disk now. Call on a test's success path, paired with
+     * {@link #discard()} on the failure path, so a half-finished recording from
+     * a failed test never becomes a tape that later replays as the truth. The
+     * write is crash-safe (temp file + atomic rename) in the native library.
+     * Once committed (or discarded), {@link #close()} does nothing further.
+     * No-op outside record mode.
+     */
+    public void commit() {
+        if (handle == null || !recordMode) {
+            committed = true;
             return;
         }
         MemorySegment h = handle;
         handle = null;
-
+        committed = true;
         try {
-            if (!recordMode) {
-                NativeMethods.STOP.invokeExact(h);
-                return;
-            }
             if (secretRedactor != null) SecretCallbacks.stage(h, secretRedactor, null);
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment tape = NativeMethods.cString(arena, tapePath);
@@ -221,7 +228,53 @@ public final class VcrServer implements AutoCloseable {
                 }
             }
         } catch (Throwable t) {
-            throw VcrBuilderBase.rethrow("close", t);
+            throw VcrBuilderBase.rethrow("commit", t);
         }
+    }
+
+    /**
+     * Record mode: stop the server and DROP the captured recording without
+     * writing a tape. Call on a test's failure path so a failed run never mints
+     * a tape. Safe to call then {@link #close()}. No-op outside record mode.
+     */
+    public void discard() {
+        if (handle == null || !recordMode) {
+            discarded = true;
+            return;
+        }
+        MemorySegment h = handle;
+        handle = null;
+        discarded = true;
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment tape = NativeMethods.cString(arena, tapePath);
+            MemorySegment res = (MemorySegment) NativeMethods.DISCARD.invokeExact(h, tape);
+            NativeMethods.takeString(res);
+        } catch (Throwable t) {
+            throw VcrBuilderBase.rethrow("discard", t);
+        }
+    }
+
+    @Override
+    public void close() {
+        // Already committed or discarded: nothing left to do.
+        if (committed || discarded) {
+            return;
+        }
+        if (handle == null) {
+            return;
+        }
+        if (!recordMode) {
+            MemorySegment h = handle;
+            handle = null;
+            try {
+                NativeMethods.STOP.invokeExact(h);
+            } catch (Throwable t) {
+                throw VcrBuilderBase.rethrow("close", t);
+            }
+            return;
+        }
+        // Back-compat: a record server closed WITHOUT an explicit commit()/
+        // discard() still flushes, so existing tests keep recording on close.
+        commit();
     }
 }

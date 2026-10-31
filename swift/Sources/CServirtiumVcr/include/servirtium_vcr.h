@@ -26,6 +26,7 @@ void  aether_vcr_embed_stop(void *h);
 char *aether_vcr_embed_stop_and_flush(void *h, const char *tape);
 char *aether_vcr_embed_stop_and_flush_fail_if_changed(void *h, const char *tape);
 char *aether_vcr_embed_stop_and_flush_or_check(void *h, const char *tape);
+char *aether_vcr_embed_discard(void *h, const char *tape);
 
 /* introspection */
 int   aether_vcr_embed_port(void *h);
@@ -57,8 +58,10 @@ char *aether_vcr_embed_note(void *h, const char *k, const char *v);
 char *aether_vcr_embed_static_content(void *h, const char *mount, const char *dir);
 char *aether_vcr_embed_untaped(void *h, const char *path);
 void  aether_vcr_embed_strict_ignore_common_headers(void *h);
+void  aether_vcr_embed_ignore_volatile_headers(void *h);
 void  aether_vcr_embed_set_strict_headers(void *h, int on);
 void  aether_vcr_embed_set_match_json_body(void *h, int on);
+void  aether_vcr_embed_set_match_xml_body(void *h, int on);
 void  aether_vcr_embed_set_match_multiple(void *h, int on);
 void  aether_vcr_embed_indent_code_blocks(void *h);
 void  aether_vcr_embed_emphasize_http_verbs(void *h);

@@ -75,6 +75,7 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected labelValue = ''
   protected nativeLibValue: string | null = null
   protected readonly headerRemovals: HeaderRemoval[] = []
+  protected ignoreVolatileHeadersOn = false
   protected readonly staticMounts: Array<{ mount: string; dir: string }> = []
   protected readonly untapedPaths: string[] = []
   protected tlsPair?: { cert: string; key: string }
@@ -120,6 +121,18 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   }
 
   /**
+   * Drop the per-request volatile headers modern clients inject on every call —
+   * distributed-tracing / correlation ids (`traceparent`, `tracestate`,
+   * `Request-Id`, `X-Request-Id`, `X-Correlation-Id`, `baggage`) — from BOTH the
+   * recorded expectation and the live request before matching. The companion to
+   * removing the stock client identity headers. Works in playback and record.
+   */
+  ignoreVolatileHeaders(on = true): TSelf {
+    this.ignoreVolatileHeadersOn = on
+    return this.self()
+  }
+
+  /**
    * Serve a path prefix from an on-disk directory instead of the tape
    * (Servirtium step 11). Available in both playback and record mode so a
    * browser suite can be served same-origin from the VCR while recording.
@@ -158,6 +171,9 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected applyConfig(handle: unknown): void {
     for (const { field, name } of this.headerRemovals) {
       check(N.removeHeader(handle, field, name), 'removeHeader')
+    }
+    if (this.ignoreVolatileHeadersOn) {
+      check(N.ignoreVolatileHeaders(handle), 'ignoreVolatileHeaders')
     }
     for (const { mount, dir } of this.staticMounts) {
       check(N.staticContent(handle, mount, dir), 'staticContent')
@@ -204,6 +220,7 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   private readonly substitutions: Array<{ field: VcrField; pattern: string; replacement: string; required: boolean }> = []
   private strictHeadersOn = false
   private matchJsonBodyOn = false
+  private matchXmlBodyOn = false
   private matchMultipleOn = false
   private readonly matchHeaders: string[] = []
 
@@ -231,6 +248,17 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
    */
   matchJsonBody(on = true): PlaybackBuilder {
     this.matchJsonBodyOn = on
+    return this
+  }
+
+  /**
+   * Opt in to matching request bodies by semantic XML equality (attribute
+   * order / insignificant whitespace ignored; element order significant)
+   * instead of byte-for-byte — the SOAP/XML twin of `matchJsonBody`. Non-XML
+   * bodies fall back to byte-exact.
+   */
+  matchXmlBody(on = true): PlaybackBuilder {
+    this.matchXmlBodyOn = on
     return this
   }
 
@@ -280,6 +308,7 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     super.applyConfig(handle)
     if (this.strictHeadersOn) N.setStrictHeaders(handle, 1)
     if (this.matchJsonBodyOn) N.setMatchJsonBody(handle, 1)
+    if (this.matchXmlBodyOn) N.setMatchXmlBody(handle, 1)
     if (this.matchMultipleOn) N.setMatchMultiple(handle, 1)
     for (const name of this.matchHeaders) {
       N.matchHeader(handle, name)
@@ -578,6 +607,23 @@ export class VcrServer {
   /** Clear the last-error slot between sub-cases. */
   clearLastError(): void {
     N.clearLastError(this.requireHandle())
+  }
+
+  /**
+   * Record mode: stop the server and DROP the captured recording WITHOUT
+   * writing a tape. Call this on a test's failure path so a failed run never
+   * mints a tape that later replays as the truth. Safe to call before `close()`
+   * — once discarded, close writes nothing. No-op outside record mode.
+   */
+  discard(): void {
+    if (N.isNull(this.handle)) return
+    const h = this.handle
+    this.handle = null
+    if (!this.recordMode) {
+      N.stop(h)
+      return
+    }
+    N.takeString(N.discard(h, this.tapePath))
   }
 
   /** Stop the server; in record mode, flush the tape (and check drift if failIfChanged). */

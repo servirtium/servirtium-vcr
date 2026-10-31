@@ -27,6 +27,8 @@ final class PlaybackBuilder extends VcrBuilderBase
 
     private bool $matchJsonBodyOn = false;
 
+    private bool $matchXmlBodyOn = false;
+
     private bool $matchMultipleOn = false;
 
     /** @var list<string> */
@@ -57,6 +59,19 @@ final class PlaybackBuilder extends VcrBuilderBase
     public function matchJsonBody(bool $on = true): static
     {
         $this->matchJsonBodyOn = $on;
+
+        return $this;
+    }
+
+    /**
+     * Opt in to matching request bodies by semantic XML equality (attribute
+     * order / insignificant whitespace ignored; element order significant)
+     * instead of byte-for-byte — the SOAP/XML twin of matchJsonBody(). Non-XML
+     * bodies fall back to byte-exact.
+     */
+    public function matchXmlBody(bool $on = true): static
+    {
+        $this->matchXmlBodyOn = $on;
 
         return $this;
     }
@@ -122,6 +137,9 @@ final class PlaybackBuilder extends VcrBuilderBase
         }
         if ($this->matchJsonBodyOn) {
             $lib->aether_vcr_embed_set_match_json_body($handle, 1);
+        }
+        if ($this->matchXmlBodyOn) {
+            $lib->aether_vcr_embed_set_match_xml_body($handle, 1);
         }
         if ($this->matchMultipleOn) {
             $lib->aether_vcr_embed_set_match_multiple($handle, 1);

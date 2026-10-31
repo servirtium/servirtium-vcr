@@ -140,6 +140,12 @@ ServirtiumLibrary >> stopAndFlushFailIfChanged: server tape: tapePath [
 	^ self ffiCall: #( void* aether_vcr_embed_stop_and_flush_fail_if_changed ( void* server, String tapePath ) )
 ]
 
+{ #category : 'ffi - lifecycle' }
+ServirtiumLibrary >> discard: server tape: tapePath [
+
+	^ self ffiCall: #( void* aether_vcr_embed_discard ( void* server, String tapePath ) )
+]
+
 { #category : 'ffi - introspection' }
 ServirtiumLibrary >> port: server [
 
@@ -246,6 +252,18 @@ ServirtiumLibrary >> setStrictHeaders: server on: on [
 ServirtiumLibrary >> setMatchJsonBody: server on: on [
 
 	^ self ffiCall: #( void aether_vcr_embed_set_match_json_body ( void* server, int on ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> setMatchXmlBody: server on: on [
+
+	^ self ffiCall: #( void aether_vcr_embed_set_match_xml_body ( void* server, int on ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> ignoreVolatileHeaders: server [
+
+	^ self ffiCall: #( void* aether_vcr_embed_ignore_volatile_headers ( void* server ) )
 ]
 
 { #category : 'ffi - mutations' }

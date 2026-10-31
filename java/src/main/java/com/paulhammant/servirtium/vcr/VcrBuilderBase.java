@@ -27,6 +27,7 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     private final List<HeaderRemoval> headerRemovals = new ArrayList<>();
     private final List<StaticMount> staticContent = new ArrayList<>();
     private final List<String> untaped = new ArrayList<>();
+    private boolean ignoreVolatileHeaders;
     private String tlsCert;
     private String tlsKey;
     private String tlsCertPem;
@@ -71,6 +72,24 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     /** Remove a header by name from the given block (case-insensitive). */
     public S removeHeader(Field field, String name) {
         headerRemovals.add(new HeaderRemoval(field, name));
+        return self();
+    }
+
+    /**
+     * Drop the per-request <em>volatile</em> headers clients inject on every
+     * call — distributed-tracing and correlation ids that change run to run
+     * ({@code traceparent}, {@code tracestate}, {@code Request-Id},
+     * {@code X-Request-Id}, {@code X-Correlation-Id}, {@code baggage}) — from
+     * both the recorded expectation and the live request before matching, so
+     * strict matching doesn't fail on a confusing first run. Honored in
+     * playback and record.
+     */
+    public S ignoreVolatileHeaders() {
+        return ignoreVolatileHeaders(true);
+    }
+
+    public S ignoreVolatileHeaders(boolean on) {
+        this.ignoreVolatileHeaders = on;
         return self();
     }
 
@@ -160,6 +179,14 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
                 check(r, "untaped");
             } catch (Throwable t) {
                 throw rethrow("untaped", t);
+            }
+        }
+        if (ignoreVolatileHeaders) {
+            try {
+                MemorySegment r = (MemorySegment) NativeMethods.IGNORE_VOLATILE_HEADERS.invokeExact(handle);
+                check(r, "ignoreVolatileHeaders");
+            } catch (Throwable t) {
+                throw rethrow("ignoreVolatileHeaders", t);
             }
         }
     }

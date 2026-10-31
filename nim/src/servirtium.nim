@@ -267,6 +267,13 @@ proc untaped*(s: VcrServer; path: string): string {.discardable.} =
 proc strictIgnoreCommonHeaders*(s: VcrServer): string {.discardable.} =
   takeString(native.strict_ignore_common_headers(s.handle))
 
+proc ignoreVolatileHeaders*(s: VcrServer): string {.discardable.} =
+  ## Drop the per-request volatile headers modern clients inject on every call
+  ## (traceparent, tracestate, Request-Id, X-Request-Id, X-Correlation-Id,
+  ## baggage) from both sides before matching — the companion to
+  ## strictIgnoreCommonHeaders for distributed-tracing / correlation noise.
+  takeString(native.ignore_volatile_headers(s.handle))
+
 proc setStrictHeaders*(s: VcrServer; on: bool) =
   native.set_strict_headers(s.handle, cint(if on: 1 else: 0))
 
@@ -275,6 +282,13 @@ proc setMatchJsonBody*(s: VcrServer; on: bool) =
   ## whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back to
   ## byte-exact.
   native.set_match_json_body(s.handle, cint(if on: 1 else: 0))
+
+proc setMatchXmlBody*(s: VcrServer; on: bool) =
+  ## Opt in to matching request bodies by semantic XML equality (attribute
+  ## order / insignificant whitespace ignored; element order significant)
+  ## instead of byte-for-byte — the SOAP/XML twin of setMatchJsonBody. Non-XML
+  ## bodies fall back to byte-exact.
+  native.set_match_xml_body(s.handle, cint(if on: 1 else: 0))
 
 proc setMatchMultiple*(s: VcrServer; on: bool) =
   ## Opt in to reusable, order-independent playback: matches any recorded
@@ -307,6 +321,21 @@ proc close*(s: VcrServer) =
     s.handle = nil
     if err.len > 0:
       raise newException(VcrError, err)
+  else:
+    native.stop(s.handle)
+    s.handle = nil
+
+proc discardRecording*(s: VcrServer) =
+  ## Stop the server and, in record mode, DROP the captured recording WITHOUT
+  ## writing a tape. Call on a test's failure path so a half-finished recording
+  ## never becomes a tape that later replays as the truth. After this, `close`
+  ## is a no-op. In playback mode it just stops the server.
+  if s.handle == nil:
+    return
+  if s.recording:
+    # discard_h always returns "" (nothing to fail); free the owned string.
+    discard takeString(native.discard_recording(s.handle, cstring(s.tapePath)))
+    s.handle = nil
   else:
     native.stop(s.handle)
     s.handle = nil

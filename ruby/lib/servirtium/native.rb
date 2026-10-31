@@ -82,6 +82,7 @@ module Servirtium
        'aether_vcr_embed_stop_and_flush_fail_if_changed', VOIDP, [VOIDP, VOIDP]],
       [:stop_and_flush_or_check,
        'aether_vcr_embed_stop_and_flush_or_check', VOIDP, [VOIDP, VOIDP]],
+      [:discard,        'aether_vcr_embed_discard',        VOIDP, [VOIDP, VOIDP]],
 
       # ---- introspection (handle-based) ----
       [:port,         'aether_vcr_embed_port',         INT,   [VOIDP]],
@@ -118,12 +119,14 @@ module Servirtium
       [:remove_header,  'aether_vcr_embed_remove_header',  VOIDP, [VOIDP, INT, VOIDP]],
       [:match_header,   'aether_vcr_embed_match_header',   VOID,  [VOIDP, VOIDP]],
       [:strict_ignore_common_headers, 'aether_vcr_embed_strict_ignore_common_headers', VOIDP, [VOIDP]],
+      [:ignore_volatile_headers, 'aether_vcr_embed_ignore_volatile_headers', VOIDP, [VOIDP]],
       [:note,           'aether_vcr_embed_note',           VOIDP, [VOIDP, VOIDP, VOIDP]],
       [:static_content, 'aether_vcr_embed_static_content', VOIDP, [VOIDP, VOIDP, VOIDP]],
       [:untaped,        'aether_vcr_embed_untaped',        VOIDP, [VOIDP, VOIDP]],
 
       [:set_strict_headers,  'aether_vcr_embed_set_strict_headers',  VOID, [VOIDP, INT]],
       [:set_match_json_body, 'aether_vcr_embed_set_match_json_body', VOID, [VOIDP, INT]],
+      [:set_match_xml_body,  'aether_vcr_embed_set_match_xml_body',  VOID, [VOIDP, INT]],
       [:set_match_multiple,  'aether_vcr_embed_set_match_multiple',  VOID, [VOIDP, INT]],
       [:indent_code_blocks,  'aether_vcr_embed_indent_code_blocks',  VOID, [VOIDP]],
       [:emphasize_http_verbs, 'aether_vcr_embed_emphasize_http_verbs', VOID, [VOIDP]],

@@ -11,6 +11,7 @@ Class {
 		'unredactions',
 		'strictHeaders',
 		'matchJsonBody',
+		'matchXmlBody',
 		'matchMultiple',
 		'matchHeaders',
 		'substitutions'
@@ -26,6 +27,7 @@ ServirtiumPlaybackBuilder >> initializeTape: aTapePath [
 	unredactions := OrderedCollection new.
 	strictHeaders := false.
 	matchJsonBody := false.
+	matchXmlBody := false.
 	matchMultiple := false.
 	matchHeaders := OrderedCollection new.
 	substitutions := OrderedCollection new
@@ -59,6 +61,23 @@ ServirtiumPlaybackBuilder >> matchJsonBody [
 ServirtiumPlaybackBuilder >> matchJsonBody: aBoolean [
 
 	matchJsonBody := aBoolean.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> matchXmlBody [
+	"Opt in to matching request bodies by semantic XML equality (attribute order
+	 / insignificant whitespace ignored; element order significant) instead of
+	 byte-for-byte — the SOAP/XML twin of matchJsonBody. Non-XML bodies fall back
+	 to byte-exact."
+
+	^ self matchXmlBody: true
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> matchXmlBody: aBoolean [
+
+	matchXmlBody := aBoolean.
 	^ self
 ]
 
@@ -118,6 +137,7 @@ ServirtiumPlaybackBuilder >> applyConfig: handle [
 	super applyConfig: handle.
 	strictHeaders ifTrue: [ self library setStrictHeaders: handle on: 1 ].
 	matchJsonBody ifTrue: [ self library setMatchJsonBody: handle on: 1 ].
+	matchXmlBody ifTrue: [ self library setMatchXmlBody: handle on: 1 ].
 	matchMultiple ifTrue: [ self library setMatchMultiple: handle on: 1 ].
 	matchHeaders do: [ :name |
 		self library matchHeader: handle name: name ].

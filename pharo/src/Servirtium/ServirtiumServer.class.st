@@ -153,6 +153,25 @@ ServirtiumServer >> stop [
 	err isEmpty ifFalse: [ ServirtiumError signal: err ]
 ]
 
+{ #category : 'lifecycle' }
+ServirtiumServer >> discard [
+	"Record mode: stop the server and DROP the captured recording WITHOUT
+	 writing a tape. Call this on a test's failure path so a failed run never
+	 mints a tape that later replays as the truth. Safe to call instead of stop;
+	 once discarded, stop is a no-op. No-op outside record mode. Idempotent."
+
+	| h |
+	(handle isNil or: [ handle isNull ]) ifTrue: [ ^ self ].
+	h := handle.
+	handle := nil.
+
+	recordMode ifFalse: [
+		self library stop: h.
+		^ self ].
+
+	self library takeString: (self library discard: h tape: tapePath)
+]
+
 { #category : 'diagnostics' }
 ServirtiumServer >> lastErrorConsume: consume [
     ^ self library takeString: (self library lastError: self handle consume: (consume ifTrue: [ 1 ] ifFalse: [ 0 ]))

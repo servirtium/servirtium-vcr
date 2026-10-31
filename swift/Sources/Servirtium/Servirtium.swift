@@ -291,6 +291,14 @@ public final class Vcr {
         aether_vcr_embed_strict_ignore_common_headers(handle)
     }
 
+    /// Drop the per-request volatile headers modern clients inject on every call
+    /// (traceparent, tracestate, Request-Id, X-Request-Id, X-Correlation-Id,
+    /// baggage) from both sides before matching — the companion to
+    /// strictIgnoreCommonHeaders for tracing / correlation noise.
+    public func ignoreVolatileHeaders() {
+        aether_vcr_embed_ignore_volatile_headers(handle)
+    }
+
     public func setStrictHeaders(_ on: Bool = true) {
         aether_vcr_embed_set_strict_headers(handle, on ? 1 : 0)
     }
@@ -300,6 +308,14 @@ public final class Vcr {
     /// significant). A non-JSON body always falls back to the byte-exact verdict.
     public func setMatchJsonBody(_ on: Bool = true) {
         aether_vcr_embed_set_match_json_body(handle, on ? 1 : 0)
+    }
+
+    /// Opt-in: the SOAP/XML twin of setMatchJsonBody — a byte-differing request
+    /// body gets a second chance at semantic XML equality (attribute order +
+    /// insignificant whitespace ignored; element order significant). A non-XML
+    /// body always falls back to the byte-exact verdict.
+    public func setMatchXmlBody(_ on: Bool = true) {
+        aether_vcr_embed_set_match_xml_body(handle, on ? 1 : 0)
     }
 
     /// Opt-in: search ALL interactions for one that fits and replay it WITHOUT
@@ -344,6 +360,15 @@ public final class Vcr {
     /// overwriting it when one is already present.
     public func flushOrCheck(_ tapePath: String? = nil) throws {
         try flush(tapePath) { aether_vcr_embed_stop_and_flush_or_check($0, $1) }
+    }
+
+    /// Stop the server and DROP the captured recording WITHOUT writing a tape.
+    /// Call on a test's failure path so a half-finished recording never becomes
+    /// a tape that later replays as the truth. Idempotent.
+    public func discard(_ tapePath: String? = nil) {
+        if closed { return }
+        closed = true
+        _ = take(aether_vcr_embed_discard(handle, tapePath ?? tape ?? ""))
     }
 
     /// The three flush variants differ only in the ABI call, so they share this.

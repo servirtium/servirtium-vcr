@@ -40,6 +40,7 @@ extern char *aether_vcr_embed_stop_and_flush_fail_if_changed(void *handle,
                                                              const char *tape_path);
 extern char *aether_vcr_embed_stop_and_flush_or_check(void *handle,
                                                       const char *tape_path);
+extern char *aether_vcr_embed_discard(void *handle, const char *tape_path);
 
 /* introspection */
 extern int   aether_vcr_embed_port(void *handle);
@@ -83,12 +84,14 @@ extern char *aether_vcr_embed_normalize_whole_tape(void *h, const char *pat,
 extern char *aether_vcr_embed_redact_whole_tape(void *h, const char *pat,
                                                 const char *repl);
 extern char *aether_vcr_embed_strict_ignore_common_headers(void *h);
+extern char *aether_vcr_embed_ignore_volatile_headers(void *h);
 extern char *aether_vcr_embed_note(void *h, const char *title, const char *body);
 extern char *aether_vcr_embed_static_content(void *h, const char *mount,
                                              const char *dir);
 extern char *aether_vcr_embed_untaped(void *h, const char *path);
 extern void  aether_vcr_embed_set_strict_headers(void *h, int on);
 extern void  aether_vcr_embed_set_match_json_body(void *h, int on);
+extern void  aether_vcr_embed_set_match_xml_body(void *h, int on);
 extern char *aether_vcr_embed_set_tls(void *h, const char *cert, const char *key);
 extern char *aether_vcr_embed_set_tls_pem(void *h, const char *cert_pem, const char *key_pem);
 extern char *aether_vcr_embed_last_tls_protocol(void *h);
@@ -312,6 +315,15 @@ static int l_stop_and_flush_or_check(lua_State *L)
         aether_vcr_embed_stop_and_flush_or_check(h, tape));
 }
 
+/* discard(handle [, tapePath]) -> string
+ * Record mode: stop + drop the recording, write no tape. */
+static int l_discard(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *tape = luaL_optstring(L, 2, NULL);
+    return push_owned_string(L, aether_vcr_embed_discard(h, tape));
+}
+
 /* redact(handle, field, pat, repl) -> string (empty == ok) */
 static int l_redact(lua_State *L)
 {
@@ -435,6 +447,22 @@ static int l_set_match_json_body(lua_State *L)
     int on = lua_toboolean(L, 2);
     aether_vcr_embed_set_match_json_body(h, on);
     return 0;
+}
+
+/* set_match_xml_body(handle, on) */
+static int l_set_match_xml_body(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int on = lua_toboolean(L, 2);
+    aether_vcr_embed_set_match_xml_body(h, on);
+    return 0;
+}
+
+/* ignore_volatile_headers(handle) -> string (empty == ok) */
+static int l_ignore_volatile_headers(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    return push_owned_string(L, aether_vcr_embed_ignore_volatile_headers(h));
 }
 
 /* set_tls(handle, cert_path, key_path) -> string (empty == ok) */
@@ -564,6 +592,7 @@ static const luaL_Reg servirtium_funcs[] = {
     {"stop_and_flush",                  l_stop_and_flush},
     {"stop_and_flush_fail_if_changed",  l_stop_and_flush_fail_if_changed},
     {"stop_and_flush_or_check",         l_stop_and_flush_or_check},
+    {"discard",                         l_discard},
     {"redact",                          l_redact},
     {"redact_header", l_redact_header},
     {"redact_query_param", l_redact_query_param},
@@ -578,6 +607,8 @@ static const luaL_Reg servirtium_funcs[] = {
     {"untaped",                         l_untaped},
     {"set_strict_headers",              l_set_strict_headers},
     {"set_match_json_body",             l_set_match_json_body},
+    {"set_match_xml_body",              l_set_match_xml_body},
+    {"ignore_volatile_headers",         l_ignore_volatile_headers},
     {"set_tls",                         l_set_tls},
     {"set_tls_pem",                     l_set_tls_pem},
     {"last_tls_protocol",               l_last_tls_protocol},

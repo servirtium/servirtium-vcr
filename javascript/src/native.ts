@@ -122,6 +122,10 @@ export const stopAndFlushOrCheck = lazy(
   'void* aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path)',
 )
 
+export const discard = lazy(
+  'void* aether_vcr_embed_discard(void* server, const char* tape_path)',
+)
+
 // ---- introspection --------------------------------------------------------
 
 export const port = lazy('int aether_vcr_embed_port(void* server)')
@@ -193,6 +197,10 @@ export const strictIgnoreCommonHeaders = lazy(
   'void* aether_vcr_embed_strict_ignore_common_headers(void* server)',
 )
 
+export const ignoreVolatileHeaders = lazy(
+  'void* aether_vcr_embed_ignore_volatile_headers(void* server)',
+)
+
 export const note = lazy(
   'void* aether_vcr_embed_note(void* server, const char* title, const char* body)',
 )
@@ -211,6 +219,10 @@ export const setStrictHeaders = lazy(
 
 export const setMatchJsonBody = lazy(
   'void aether_vcr_embed_set_match_json_body(void* server, int on)',
+)
+
+export const setMatchXmlBody = lazy(
+  'void aether_vcr_embed_set_match_xml_body(void* server, int on)',
 )
 
 export const setMatchMultiple = lazy(

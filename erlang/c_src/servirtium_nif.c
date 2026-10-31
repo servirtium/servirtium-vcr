@@ -75,7 +75,10 @@ extern char *aether_vcr_embed_static_content(void *server, const char *mount_pat
 extern char *aether_vcr_embed_untaped(void *server, const char *path);
 extern void  aether_vcr_embed_set_strict_headers(void *server, int on);
 extern void  aether_vcr_embed_set_match_json_body(void *server, int on);
+extern void  aether_vcr_embed_set_match_xml_body(void *server, int on);
 extern void  aether_vcr_embed_set_match_multiple(void *server, int on);
+extern char *aether_vcr_embed_ignore_volatile_headers(void *server);
+extern char *aether_vcr_embed_discard(void *server, const char *tape_path);
 extern void  aether_vcr_embed_indent_code_blocks(void *server);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *server);
 extern void  aether_vcr_embed_clear_redactions(void *server);
@@ -221,6 +224,18 @@ static ERL_NIF_TERM nif_stop_and_flush_fail_if_changed(ErlNifEnv *env, int argc,
     char *tape = term_to_cstr(env, argv[1]);
     if (!tape) return enif_make_badarg(env);
     char *res = aether_vcr_embed_stop_and_flush_fail_if_changed(h, tape);
+    enif_free(tape);
+    return take_cstr(env, res);
+}
+
+static ERL_NIF_TERM nif_discard(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    char *tape = term_to_cstr(env, argv[1]);
+    if (!tape) return enif_make_badarg(env);
+    char *res = aether_vcr_embed_discard(h, tape);
     enif_free(tape);
     return take_cstr(env, res);
 }
@@ -487,6 +502,14 @@ static ERL_NIF_TERM nif_assert_all_consumed(ErlNifEnv *env, int argc, const ERL_
     return take_cstr(env, aether_vcr_embed_assert_all_consumed(h));
 }
 
+static ERL_NIF_TERM nif_ignore_volatile_headers(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_ignore_volatile_headers(h));
+}
+
 static ERL_NIF_TERM nif_assert_all_redactions_used(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -631,6 +654,17 @@ static ERL_NIF_TERM nif_set_match_json_body(ErlNifEnv *env, int argc, const ERL_
     return enif_make_atom(env, "ok");
 }
 
+static ERL_NIF_TERM nif_set_match_xml_body(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    int on;
+    if (!enif_get_int(env, argv[1], &on)) return enif_make_badarg(env);
+    aether_vcr_embed_set_match_xml_body(h, on);
+    return enif_make_atom(env, "ok");
+}
+
 static ERL_NIF_TERM nif_set_match_multiple(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -689,6 +723,7 @@ static ErlNifFunc nif_funcs[] = {
     {"stop",          1, nif_stop,          0},
     {"stop_and_flush", 2, nif_stop_and_flush, 0},
     {"stop_and_flush_fail_if_changed", 2, nif_stop_and_flush_fail_if_changed, 0},
+    {"discard", 2, nif_discard, 0},
 
     {"port",          1, nif_port,         0},
     {"base_url",      2, nif_base_url,     0},
@@ -734,7 +769,9 @@ static ErlNifFunc nif_funcs[] = {
     {"untaped",        2, nif_untaped,        0},
     {"set_strict_headers",   2, nif_set_strict_headers,   0},
     {"set_match_json_body",  2, nif_set_match_json_body,  0},
+    {"set_match_xml_body",   2, nif_set_match_xml_body,   0},
     {"set_match_multiple",   2, nif_set_match_multiple,   0},
+    {"ignore_volatile_headers", 1, nif_ignore_volatile_headers, 0},
     {"indent_code_blocks",   1, nif_indent_code_blocks,   0},
     {"emphasize_http_verbs", 1, nif_emphasize_http_verbs, 0},
 

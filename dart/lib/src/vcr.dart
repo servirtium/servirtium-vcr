@@ -157,6 +157,7 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
   String _label = '';
   String? _nativeLib;
   final List<(VcrField, String)> _headerRemovals = [];
+  bool _ignoreVolatileHeaders = false;
   final List<(String, String)> _staticContent = [];
   final List<String> _untaped = [];
   (String, String)? _tls;
@@ -197,6 +198,17 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     return _self;
   }
 
+  /// Drop the per-request volatile headers modern clients inject on every call
+  /// — distributed-tracing / correlation ids (`traceparent`, `tracestate`,
+  /// `Request-Id`, `X-Request-Id`, `X-Correlation-Id`, `baggage`) — from BOTH
+  /// the recorded expectation and the live request before matching. The
+  /// companion to removing the stock client identity headers. Works in both
+  /// playback and record mode.
+  T ignoreVolatileHeaders([bool on = true]) {
+    _ignoreVolatileHeaders = on;
+    return _self;
+  }
+
   /// Serve a path prefix from an on-disk directory instead of the tape.
   ///
   /// Works in both playback and record mode (recording a browser suite is
@@ -232,6 +244,9 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     for (final (field, name) in _headerRemovals) {
       withUtf8(name, (n) => _check(Native.removeHeader(handle, field.value, n), 'removeHeader'));
     }
+    if (_ignoreVolatileHeaders) {
+      _check(Native.ignoreVolatileHeaders(handle), 'ignoreVolatileHeaders');
+    }
     for (final (mount, dir) in _staticContent) {
       withUtf8(mount,
           (m) => withUtf8(dir, (d) => _check(Native.staticContent(handle, m, d), 'staticContent')));
@@ -261,6 +276,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   final List<(VcrField, String, String, bool)> _substitutions = [];
   bool _strictHeaders = false;
   bool _matchJsonBody = false;
+  bool _matchXmlBody = false;
   bool _matchMultiple = false;
   final List<String> _matchHeaders = [];
 
@@ -279,6 +295,15 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   /// byte-exact.
   PlaybackBuilder matchJsonBody([bool on = true]) {
     _matchJsonBody = on;
+    return this;
+  }
+
+  /// Opt in to matching request bodies by semantic XML equality (attribute
+  /// order / insignificant whitespace ignored; element order significant)
+  /// instead of byte-for-byte — the SOAP/XML twin of [matchJsonBody]. Non-XML
+  /// bodies fall back to byte-exact.
+  PlaybackBuilder matchXmlBody([bool on = true]) {
+    _matchXmlBody = on;
     return this;
   }
 
@@ -323,6 +348,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     super._applyConfig(handle);
     if (_strictHeaders) Native.setStrictHeaders(handle, 1);
     if (_matchJsonBody) Native.setMatchJsonBody(handle, 1);
+    if (_matchXmlBody) Native.setMatchXmlBody(handle, 1);
     if (_matchMultiple) Native.setMatchMultiple(handle, 1);
     for (final name in _matchHeaders) {
       withUtf8(name, (n) => Native.matchHeader(handle, n));
@@ -584,6 +610,21 @@ class VcrServer {
 
   /// Clear the last-error slot between sub-cases.
   void clearLastError() => Native.clearLastError(_requireHandle);
+
+  /// Record mode: stop the server and DROP the captured recording WITHOUT
+  /// writing a tape. Call this on a test's failure path so a failed run never
+  /// mints a tape that later replays as the truth. Safe to call before [close]
+  /// — once discarded, close writes nothing. No-op outside record mode.
+  void discard() {
+    if (_handle == nullptr) return;
+    final h = _handle;
+    _handle = nullptr;
+    if (!_recordMode) {
+      Native.stop(h);
+      return;
+    }
+    withUtf8(_tapePath, (t) => takeString(Native.discard(h, t)));
+  }
 
   /// Stop the server; flush the tape if recording. Throws [VcrException] on a
   /// record-mode flush error or drift (when `failIfChanged` was set).

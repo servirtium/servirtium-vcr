@@ -50,6 +50,7 @@ module Servirtium.Vcr
   , startPlayback
   , startRecord
   , stop
+  , discard
   , -- * Accessors / diagnostics (in 'IO')
     baseUrl
   , port
@@ -152,6 +153,16 @@ data PlaybackOptions = PlaybackOptions
     -- ^ Opt in to matching request bodies by semantic JSON equality (key order
     -- \/ whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall
     -- back to byte-exact (default 'False').
+  , pbMatchXmlBody   :: Bool
+    -- ^ Opt in to matching request bodies by semantic XML equality (attribute
+    -- order \/ insignificant whitespace ignored; element order significant)
+    -- instead of byte-for-byte — the SOAP/XML twin of 'pbMatchJsonBody'.
+    -- Non-XML bodies fall back to byte-exact (default 'False').
+  , pbIgnoreVolatileHeaders :: Bool
+    -- ^ Drop the per-request volatile headers modern clients inject on every
+    -- call (traceparent, tracestate, Request-Id, X-Request-Id,
+    -- X-Correlation-Id, baggage) from both sides before matching (default
+    -- 'False').
   , pbMatchMultiple  :: Bool
     -- ^ Opt in to reusable, order-independent playback: matches any recorded
     -- interaction (not just the next in sequence) and doesn't consume it — for
@@ -220,6 +231,10 @@ data RecordOptions = RecordOptions
     -- just need to be pinned to one value.
   , recRemoveHeaders     :: [(Field, String)]
     -- ^ @(field, name)@: drop a header by name (case-insensitive).
+  , recIgnoreVolatileHeaders :: Bool
+    -- ^ Drop the per-request volatile headers modern clients inject on every
+    -- call (traceparent, tracestate, Request-Id, X-Request-Id,
+    -- X-Correlation-Id, baggage) before matching\/recording (default 'False').
   , recNote              :: Maybe (String, String)
     -- ^ @(title, body)@ attached to the __first__ recorded interaction. For
     -- notes on later interactions, call 'note' on the running server.
@@ -254,6 +269,8 @@ playbackOptions tape = PlaybackOptions
   , pbLabel         = ""
   , pbStrictHeaders = False
   , pbMatchJsonBody = False
+  , pbMatchXmlBody  = False
+  , pbIgnoreVolatileHeaders = False
   , pbMatchMultiple = False
   , pbMatchHeaders  = []
   , pbUnredactions  = []
@@ -286,6 +303,7 @@ recordOptions tape upstream = RecordOptions
   , recNormalizeWholeTape = []
   , recRedactWholeTape    = []
   , recRemoveHeaders      = []
+  , recIgnoreVolatileHeaders = False
   , recNote               = Nothing
   , recIndentCodeBlocks   = False
   , recEmphasizeHttpVerbs = False
@@ -419,8 +437,11 @@ startPlayback opts = do
       ("vcr playback failed to start for tape '" ++ pbTapePath opts ++ "'")
     else do
       applyRemoveHeaders handle (pbRemoveHeaders opts)
+      when (pbIgnoreVolatileHeaders opts) $
+        check "ignore_volatile_headers" $ N.aether_vcr_embed_ignore_volatile_headers handle
       when (pbStrictHeaders opts) $ N.aether_vcr_embed_set_strict_headers handle 1
       when (pbMatchJsonBody opts) $ N.aether_vcr_embed_set_match_json_body handle 1
+      when (pbMatchXmlBody opts) $ N.aether_vcr_embed_set_match_xml_body handle 1
       when (pbMatchMultiple opts) $ N.aether_vcr_embed_set_match_multiple handle 1
       mapM_ (\name ->
                 withCString name $ \cName ->
@@ -475,6 +496,8 @@ startRecord opts = do
         ++ "' (upstream '" ++ recUpstreamBase opts ++ "')")
     else do
       applyRemoveHeaders handle (recRemoveHeaders opts)
+      when (recIgnoreVolatileHeaders opts) $
+        check "ignore_volatile_headers" $ N.aether_vcr_embed_ignore_volatile_headers handle
       mapM_ (\name -> check "redact_header" $
         withCString name $ \cName -> withCString "[REDACTED]" $ \cReplacement ->
           N.aether_vcr_embed_redact_header handle 3 cName cReplacement) (recRedactHeader opts)
@@ -563,6 +586,17 @@ stop server = case vcrMode server of
              then N.aether_vcr_embed_stop_and_flush_fail_if_changed (vcrHandle server) cTape
              else N.aether_vcr_embed_stop_and_flush (vcrHandle server) cTape)
     unless (null err) $ throwIO (VcrException err)
+
+-- | Stop the server and, in record mode, DROP the captured recording WITHOUT
+-- writing a tape. Call on a test's failure path so a half-finished recording
+-- never becomes a tape that later replays as the truth. In playback mode it
+-- just stops the server.
+discard :: VcrServer -> IO ()
+discard server = case vcrMode server of
+  Playback -> N.aether_vcr_embed_stop (vcrHandle server)
+  Record _ ->
+    withCString (vcrTapePath server) $ \cTape ->
+      () <$ (N.takeString =<< N.aether_vcr_embed_discard (vcrHandle server) cTape)
 
 -- Accessors / diagnostics ---------------------------------------------------
 

@@ -44,6 +44,7 @@ pub extern "c" fn aether_vcr_embed_stop(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_stop_and_flush(handle: Handle, tape_path: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_stop_and_flush_fail_if_changed(handle: Handle, tape_path: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_stop_and_flush_or_check(handle: Handle, tape_path: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_discard(handle: Handle, tape_path: [*c]const u8) [*c]u8;
 
 pub extern "c" fn aether_vcr_embed_port(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_base_url(handle: Handle, host: [*c]const u8) [*c]u8;
@@ -68,11 +69,13 @@ pub extern "c" fn aether_vcr_embed_redact_whole_tape(handle: Handle, pat: [*c]co
 pub extern "c" fn aether_vcr_embed_unredact(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_remove_header(handle: Handle, field: c_int, name: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_strict_ignore_common_headers(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_ignore_volatile_headers(handle: Handle) [*c]u8;
 pub extern "c" fn aether_vcr_embed_note(handle: Handle, a: [*c]const u8, b: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_static_content(handle: Handle, mount: [*c]const u8, dir: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_untaped(handle: Handle, path: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_set_strict_headers(handle: Handle, on: c_int) void;
 pub extern "c" fn aether_vcr_embed_set_match_json_body(handle: Handle, on: c_int) void;
+pub extern "c" fn aether_vcr_embed_set_match_xml_body(handle: Handle, on: c_int) void;
 pub extern "c" fn aether_vcr_embed_set_match_multiple(handle: Handle, on: c_int) void;
 pub extern "c" fn aether_vcr_embed_match_header(handle: Handle, name: [*c]const u8) void;
 pub extern "c" fn aether_vcr_embed_indent_code_blocks(handle: Handle) void;
@@ -347,6 +350,7 @@ fn applyBase(
     allocator: std.mem.Allocator,
     handle: Handle,
     header_removals: []const HeaderRemoval,
+    ignore_volatile_headers: bool,
     static_content: []const Mount,
     untaped_paths: []const [:0]const u8,
     tls: ?TlsPaths,
@@ -355,6 +359,7 @@ fn applyBase(
     for (header_removals) |hr| {
         try checkErr(allocator, aether_vcr_embed_remove_header(handle, @intFromEnum(hr.field), hr.name.ptr));
     }
+    if (ignore_volatile_headers) try checkErr(allocator, aether_vcr_embed_ignore_volatile_headers(handle));
     for (static_content) |sc| {
         try checkErr(allocator, aether_vcr_embed_static_content(handle, sc.mount.ptr, sc.dir.ptr));
     }
@@ -376,7 +381,9 @@ pub const Playback = struct {
     label_str: [:0]const u8 = "",
     strict_headers: bool = false,
     match_json_body: bool = false,
+    match_xml_body: bool = false,
     match_multiple: bool = false,
+    ignore_volatile_headers: bool = false,
     header_removals: std.ArrayList(HeaderRemoval) = .empty,
     static_content: std.ArrayList(Mount) = .empty,
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
@@ -487,6 +494,26 @@ pub const Playback = struct {
         return b;
     }
 
+    /// Opt in to matching request bodies by semantic XML equality (attribute
+    /// order / insignificant whitespace ignored; element order significant)
+    /// instead of byte-for-byte — the SOAP/XML twin of matchJsonBody. Non-XML
+    /// bodies fall back to byte-exact.
+    pub fn matchXmlBody(self: Playback) Playback {
+        var b = self;
+        b.match_xml_body = true;
+        return b;
+    }
+
+    /// Drop the per-request volatile headers modern clients inject on every
+    /// call (traceparent, tracestate, Request-Id, X-Request-Id,
+    /// X-Correlation-Id, baggage) from both sides before matching — the
+    /// companion to common-header ignoring for tracing / correlation noise.
+    pub fn ignoreVolatileHeaders(self: Playback) Playback {
+        var b = self;
+        b.ignore_volatile_headers = true;
+        return b;
+    }
+
     /// Opt in to reusable, order-independent playback: matches any recorded
     /// interaction (not just the next in sequence) and doesn't consume it — for
     /// polling/retries or non-deterministic request order.
@@ -526,9 +553,10 @@ pub const Playback = struct {
         if (handle == null) return Error.OpenFailed;
         errdefer aether_vcr_embed_stop(handle);
 
-        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
+        try applyBase(self.allocator, handle, self.header_removals.items, self.ignore_volatile_headers, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
         if (self.strict_headers) aether_vcr_embed_set_strict_headers(handle, 1);
         if (self.match_json_body) aether_vcr_embed_set_match_json_body(handle, 1);
+        if (self.match_xml_body) aether_vcr_embed_set_match_xml_body(handle, 1);
         if (self.match_multiple) aether_vcr_embed_set_match_multiple(handle, 1);
         for (self.match_headers.items) |name| {
             aether_vcr_embed_match_header(handle, name.ptr);
@@ -566,6 +594,7 @@ pub const Record = struct {
     listen_port: c_int = 0,
     label_str: [:0]const u8 = "",
     header_removals: std.ArrayList(HeaderRemoval) = .empty,
+    ignore_volatile_headers: bool = false,
     static_content: std.ArrayList(Mount) = .empty,
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
     redactions: std.ArrayList(Replacement) = .empty,
@@ -611,6 +640,15 @@ pub const Record = struct {
     pub fn removeHeader(self: Record, field: Field, name: [:0]const u8) Record {
         var b = self;
         b.header_removals.append(b.allocator, .{ .field = field, .name = name }) catch {};
+        return b;
+    }
+    /// Drop the per-request volatile headers modern clients inject on every
+    /// call (traceparent, tracestate, Request-Id, X-Request-Id,
+    /// X-Correlation-Id, baggage) before matching/recording — the companion to
+    /// common-header ignoring for tracing / correlation noise.
+    pub fn ignoreVolatileHeaders(self: Record) Record {
+        var b = self;
+        b.ignore_volatile_headers = true;
         return b;
     }
     /// Serve `dir` at the URL prefix `mount` instead of forwarding upstream.
@@ -743,7 +781,7 @@ pub const Record = struct {
         if (handle == null) return Error.OpenFailed;
         errdefer aether_vcr_embed_stop(handle);
 
-        try applyBase(self.allocator, handle, self.header_removals.items, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
+        try applyBase(self.allocator, handle, self.header_removals.items, self.ignore_volatile_headers, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
         if (self.indent_code_blocks) aether_vcr_embed_indent_code_blocks(handle);
         if (self.emphasize_http_verbs) aether_vcr_embed_emphasize_http_verbs(handle);
         for (self.redactions.items) |r| {
@@ -893,6 +931,21 @@ pub const Server = struct {
         else
             aether_vcr_embed_stop_and_flush(h, self.tape_path.ptr);
         try checkErr(self.allocator, res);
+    }
+
+    /// Stop the server and, in record mode, DROP the captured recording WITHOUT
+    /// writing a tape. Call on a test's failure path so a half-finished
+    /// recording never becomes a tape that later replays as the truth. After
+    /// `discard`, `close` is a no-op. In playback mode it just stops the server.
+    pub fn discard(self: *Server) void {
+        if (self.handle == null) return;
+        const h = self.handle;
+        self.handle = null;
+        if (!self.record_mode) {
+            aether_vcr_embed_stop(h);
+            return;
+        }
+        aether_vcr_embed_free_string(aether_vcr_embed_discard(h, self.tape_path.ptr));
     }
 
     /// Stop without flushing (escape hatch for teardown after a failure).

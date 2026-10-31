@@ -55,6 +55,8 @@ proc stop_and_flush_fail_if_changed*(h: Handle, tape_path: cstring): cstring
   {.importc: "aether_vcr_embed_stop_and_flush_fail_if_changed", cdecl.}
 proc stop_and_flush_or_check*(h: Handle, tape_path: cstring): cstring
   {.importc: "aether_vcr_embed_stop_and_flush_or_check", cdecl.}
+proc discard_recording*(h: Handle, tape_path: cstring): cstring
+  {.importc: "aether_vcr_embed_discard", cdecl.}
 
 # --- introspection ---
 proc port*(h: Handle): cint
@@ -99,6 +101,8 @@ proc redact_whole_tape*(h: Handle, pattern, replacement: cstring): cstring
   {.importc: "aether_vcr_embed_redact_whole_tape", cdecl.}
 proc strict_ignore_common_headers*(h: Handle): cstring
   {.importc: "aether_vcr_embed_strict_ignore_common_headers", cdecl.}
+proc ignore_volatile_headers*(h: Handle): cstring
+  {.importc: "aether_vcr_embed_ignore_volatile_headers", cdecl.}
 proc note*(h: Handle, title, body: cstring): cstring
   {.importc: "aether_vcr_embed_note", cdecl.}
 proc static_content*(h: Handle, mount_path, fs_dir: cstring): cstring
@@ -109,6 +113,8 @@ proc set_strict_headers*(h: Handle, on: cint)
   {.importc: "aether_vcr_embed_set_strict_headers", cdecl.}
 proc set_match_json_body*(h: Handle, on: cint)
   {.importc: "aether_vcr_embed_set_match_json_body", cdecl.}
+proc set_match_xml_body*(h: Handle, on: cint)
+  {.importc: "aether_vcr_embed_set_match_xml_body", cdecl.}
 proc set_match_multiple*(h: Handle, on: cint)
   {.importc: "aether_vcr_embed_set_match_multiple", cdecl.}
 proc match_header*(h: Handle, name: cstring)
