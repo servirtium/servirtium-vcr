@@ -153,7 +153,7 @@ test "structured redaction helpers preserve upstream credentials" {
     const directory = std.fs.path.dirname(tape).?;
     const upstream_output = try fixtureRun(allocator, &.{"start", directory});
     defer allocator.free(upstream_output);
-    const upstream = try allocator.dupeZ(u8, std.mem.trim(u8, upstream_output, "\r\n "));
+    const upstream = try allocator.dupeSentinel(u8, std.mem.trim(u8, upstream_output, "\r\n "), 0);
     defer allocator.free(upstream);
     var rec = try servirtium.Record.init(allocator, tape, upstream)
         .redactHeader("Authorization").redactQueryParam("password").redactJsonField("secretKey").start();
@@ -245,7 +245,7 @@ test "named secrets round trip across four services" {
     const tape = try tapePathZ(allocator, &tmp, "tape.md"); defer allocator.free(tape);
     const directory = std.fs.path.dirname(tape).?;
     const upstream_output = try secretFixtureRun(allocator, &.{"start", directory}); defer allocator.free(upstream_output);
-    const upstream = try allocator.dupeZ(u8, std.mem.trim(u8, upstream_output, "\r\n ")); defer allocator.free(upstream);
+    const upstream = try allocator.dupeSentinel(u8, std.mem.trim(u8, upstream_output, "\r\n "), 0); defer allocator.free(upstream);
     var count: usize = 0;
     var rec = try servirtium.Record.init(allocator, tape, upstream).secretRedactor(.{.context=&count, .call=secretRedact}).start();
     defer rec.close() catch {};

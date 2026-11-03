@@ -37,5 +37,5 @@ fn nativeDir(b: *std.Build) []const u8 {
             if (std.fs.path.dirname(lib)) |dir| return dir;
         }
     }
-    return b.pathFromRoot("../core/native");
+    return (b.root.joinString(b.allocator, "../core/native") catch @panic("OOM"));
 }

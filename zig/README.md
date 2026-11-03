@@ -127,7 +127,7 @@ SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so zig build test --summary 
 # Build Summary: 3/3 steps succeeded; 14/14 tests passed
 ```
 
-Toolchain: **Zig 0.16.0**. If `build.zig` ever fights a different Zig, the
+Toolchain: **Zig 0.17.0**. If `build.zig` ever fights a different Zig, the
 suite compiles standalone:
 
 ```sh

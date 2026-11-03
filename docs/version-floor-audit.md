@@ -33,7 +33,7 @@ them in minutes.
 | **haskell** | `base >= 4.11 && < 10` | Permissive. | Fine. |
 | **gleam** | `gleam_stdlib >= 0.34.0` | Permissive. | Fine. |
 | **elixir** | `~> 1.15` | Plausible. | Fine. |
-| **zig** | `minimum_zig_version 0.16.0` | Zig moves fast and breaks FFI syntax between minors; a recent floor is justified. | Fine. |
+| **zig** | `minimum_zig_version 0.17.0` | Zig moves fast and breaks FFI syntax between minors; a recent floor is justified. | Fine. |
 | **php** | `>= 8.2` | Already lowered from 8.4. | Fixed. |
 | **dart** | `^3.8.0` | Already lowered from 3.12. | Fixed. |
 
