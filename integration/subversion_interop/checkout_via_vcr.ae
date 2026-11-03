@@ -378,8 +378,8 @@ main() {
     base_url = "http://127.0.0.1:${PORT}"
     i = 0
     while i < n_interactions {
-        method = list_get_raw(expected_methods, i)
-        path = list_get_raw(expected_paths, i)
+        method, _ = string.from_ptr(list_get_raw(expected_methods, i))
+        path, _ = string.from_ptr(list_get_raw(expected_paths, i))
         exp_status = vcr.vcr_get_status(i)   // int — safe to re-read
         exp_body_raw = list_get_raw(expected_bodies, i)
         exp_headers = list_get_raw(expected_headers, i)
