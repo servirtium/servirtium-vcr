@@ -24,7 +24,7 @@ diagnostics), mapped through the stack. "Test" = exercised by
 | Match on a specific request header (opt-in) | ✅ | ✅ | `matchHeader:` | — |
 | Static-content bypass | ✅ | ✅ | `staticContentMount:dir:` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `failIfChanged` | ✅ |
-| Format options (indent / emphasize) | ✅ | ✅ | `indentCodeBlocks` / `emphasizeHttpVerbs` | — |
+| Format options (indent / emphasize) | ✅ | ✅ | `indentCodeBlocks` / `emphasizeHttpVerbs` / `prettyXml: n` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError`/`lastKind`/`lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ (≥0.183.0) | ✅ | (automatic) | — |

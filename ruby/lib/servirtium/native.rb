@@ -130,6 +130,7 @@ module Servirtium
       [:set_match_multiple,  'aether_vcr_embed_set_match_multiple',  VOID, [VOIDP, INT]],
       [:indent_code_blocks,  'aether_vcr_embed_indent_code_blocks',  VOID, [VOIDP]],
       [:emphasize_http_verbs, 'aether_vcr_embed_emphasize_http_verbs', VOID, [VOIDP]],
+      [:set_pretty_xml, 'aether_vcr_embed_set_pretty_xml', VOID, [VOIDP, INT]],
 
       [:clear_redactions,      'aether_vcr_embed_clear_redactions',      VOID, [VOIDP]],
       [:clear_unredactions,    'aether_vcr_embed_clear_unredactions',    VOID, [VOIDP]],

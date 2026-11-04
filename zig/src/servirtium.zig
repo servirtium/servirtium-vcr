@@ -80,6 +80,7 @@ pub extern "c" fn aether_vcr_embed_set_match_multiple(handle: Handle, on: c_int)
 pub extern "c" fn aether_vcr_embed_match_header(handle: Handle, name: [*c]const u8) void;
 pub extern "c" fn aether_vcr_embed_indent_code_blocks(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_emphasize_http_verbs(handle: Handle) void;
+pub extern "c" fn aether_vcr_embed_set_pretty_xml(handle: Handle, indent: c_int) void;
 pub extern "c" fn aether_vcr_embed_clear_redactions(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_normalizations(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_unredactions(handle: Handle) void;
@@ -605,6 +606,7 @@ pub const Record = struct {
     note_text: ?NoteText = null,
     indent_code_blocks: bool = false,
     emphasize_http_verbs: bool = false,
+    pretty_xml: c_int = 0,
     fail_if_changed: bool = false,
 
     /// Begin a record fixture that forwards to `upstream_base` and writes
@@ -757,6 +759,13 @@ pub const Record = struct {
         return b;
     }
 
+    /// Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    pub fn prettyXml(self: Record, indent: c_int) Record {
+        var b = self;
+        b.pretty_xml = indent;
+        return b;
+    }
+
     /// Make `close` still write the freshly recorded tape but return an error
     /// if it differs from the on-disk one (Servirtium drift contract).
     pub fn failIfChanged(self: Record) Record {
@@ -784,6 +793,7 @@ pub const Record = struct {
         try applyBase(self.allocator, handle, self.header_removals.items, self.ignore_volatile_headers, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
         if (self.indent_code_blocks) aether_vcr_embed_indent_code_blocks(handle);
         if (self.emphasize_http_verbs) aether_vcr_embed_emphasize_http_verbs(handle);
+        if (self.pretty_xml > 0) aether_vcr_embed_set_pretty_xml(handle, self.pretty_xml);
         for (self.redactions.items) |r| {
             try checkErr(self.allocator, switch (r.operation) {
                 .literal => aether_vcr_embed_redact(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr),

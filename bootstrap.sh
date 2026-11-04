@@ -54,7 +54,12 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-10-30 (latest): aeb v0.339 -> v0.340. Pure aeb release bump — Aether
+# 2026-11-04 (latest): ae 0.860.0 -> 0.878.0, for std.xml's `pretty` (first
+# released in 0.878.0), which the opt-in `pretty_xml` recording option calls at
+# tape-write time. Evidence-based floor: core/vcr.ae does not compile on older
+# ae. aeb stays v0.340 (no aeb change needed for this feature; see the
+# VERIFIED line in the commit message for what ran on 0.878).
+# 2026-10-30: aeb v0.339 -> v0.340. Pure aeb release bump — Aether
 # stays 0.860.0 (v0.340 pins its own AETHER_PIN/AETHER_FETCH to 0.860.0, the ae
 # we already run, so std-regen and the on-PATH program compile are unchanged) and
 # it also carries the bundle install.sh fix that copies the pin files on upgrade.
@@ -105,8 +110,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.860.0"
-AE_FETCH="v0.860.0"
+AE_PIN="0.878.0"
+AE_FETCH="v0.878.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

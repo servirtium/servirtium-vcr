@@ -91,6 +91,7 @@ void   aether_vcr_embed_set_match_multiple(void* server, int on);
 void   aether_vcr_embed_match_header(void* server, const char* name);
 void   aether_vcr_embed_indent_code_blocks(void* server);
 void   aether_vcr_embed_emphasize_http_verbs(void* server);
+void   aether_vcr_embed_set_pretty_xml(void* server, int indent);
 void   aether_vcr_embed_clear_redactions(void* server);
 void   aether_vcr_embed_clear_unredactions(void* server);
 void   aether_vcr_embed_clear_header_removals(void* server);
@@ -560,6 +561,7 @@ type RecordBuilder struct {
 	note                *struct{ title, body string }
 	indentCodeBlocks    bool
 	emphasizeHTTPVerb   bool
+	prettyXML           int
 	failIfChanged       bool
 }
 
@@ -699,6 +701,9 @@ func (b *RecordBuilder) IndentCodeBlocks() *RecordBuilder { b.indentCodeBlocks =
 // EmphasizeHTTPVerbs emits the HTTP method emphasized (e.g. *GET*) in headings.
 func (b *RecordBuilder) EmphasizeHTTPVerbs() *RecordBuilder { b.emphasizeHTTPVerb = true; return b }
 
+// PrettyXML: Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+func (b *RecordBuilder) PrettyXML(indent int) *RecordBuilder { b.prettyXML = indent; return b }
+
 // FailIfChanged makes Close still write the freshly recorded tape but return
 // an error if it differs from the on-disk one — the Servirtium step-4 drift
 // contract, so a normal git diff shows the change and CI fails loudly.
@@ -713,6 +718,9 @@ func (b *RecordBuilder) applyConfig(handle unsafe.Pointer) error {
 	}
 	if b.emphasizeHTTPVerb {
 		C.aether_vcr_embed_emphasize_http_verbs(handle)
+	}
+	if b.prettyXML > 0 {
+		C.aether_vcr_embed_set_pretty_xml(handle, C.int(b.prettyXML))
 	}
 	for _, r := range b.redactions {
 		cPat, cRep := C.CString(r.pattern), C.CString(r.replacem)

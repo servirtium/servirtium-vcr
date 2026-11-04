@@ -20,7 +20,7 @@ exercised by `dart test` against the real native library.
 | Match on a specific request header (opt-in) | ✅ | `.matchHeader(name)` | — |
 | Static-content bypass | ✅ | `.staticContent(mount, dir)` | — |
 | Drift (overwrite + fail-if-changed) | ✅ | `.failIfChanged()` | — |
-| Format options (indent / emphasize) | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` | — |
+| Format options (indent / emphasize) | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` / `.prettyXml(n)` | — |
 | Diagnostics (last error/kind/index) | ✅ | `lastError`/`lastKind`/`lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ | (automatic) | — |

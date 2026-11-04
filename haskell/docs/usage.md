@@ -176,6 +176,7 @@ withPlayback (playbackOptions tape) { pbStaticContent = [("/assets", "build/stat
 withRecord (recordOptions tape upstream)
   { recIndentCodeBlocks   = True   -- 4-space-indented blocks instead of ``` fences
   , recEmphasizeHttpVerbs = True   -- *GET* instead of bare GET in headings
+  , recPrettyXml          = 2      -- pretty-print recorded XML bodies (indent 1..16)
   } $ \vcr -> ...
 ```
 

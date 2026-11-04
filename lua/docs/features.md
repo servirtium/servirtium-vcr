@@ -25,7 +25,7 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Static-content bypass | ✅ | ✅ | `:static_content(mount, dir)` | ✅ |
 | Untaped (incidental paths, no cursor consume) | ✅ | ✅ | `:untaped(path)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `:fail_if_changed()` | ✅ |
-| Format options (indent / emphasize) | ✅ | ✅ | `:indent_code_blocks()` / `:emphasize_http_verbs()` | — |
+| Format options (indent / emphasize) | ✅ | ✅ | `:indent_code_blocks()` / `:emphasize_http_verbs()` / `:pretty_xml(n)` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `:last_error()` / `:last_kind()` / `:last_index()` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ | ✅ | (automatic) | ✅ (Aether upstream chunks) |

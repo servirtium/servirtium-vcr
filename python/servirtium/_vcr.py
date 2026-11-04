@@ -337,6 +337,7 @@ class RecordBuilder(_BuilderBase):
         self._note: tuple[str, str] | None = None
         self._indent_code_blocks = False
         self._emphasize_http_verbs = False
+        self._pretty_xml = 0
         self._fail_if_changed = False
 
     def secret_redactor(self, callback):
@@ -394,6 +395,11 @@ class RecordBuilder(_BuilderBase):
         self._emphasize_http_verbs = on
         return self
 
+    def pretty_xml(self, indent: int = 2):
+        """Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML."""
+        self._pretty_xml = indent
+        return self
+
     def fail_if_changed(self, on: bool = True):
         """On close, still write the freshly recorded tape but raise if it
         differs from the on-disk one (the drift contract)."""
@@ -406,6 +412,8 @@ class RecordBuilder(_BuilderBase):
             N.indent_code_blocks(handle)
         if self._emphasize_http_verbs:
             N.emphasize_http_verbs(handle)
+        if self._pretty_xml > 0:
+            N.set_pretty_xml(handle, self._pretty_xml)
         for operation, field, pattern, replacement in self._redactions:
             _check(
                 getattr(N, operation)(handle, int(field), N.encode(pattern), N.encode(replacement)),

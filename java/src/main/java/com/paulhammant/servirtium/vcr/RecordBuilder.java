@@ -28,6 +28,7 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     private Note note;
     private boolean indentCodeBlocks;
     private boolean emphasizeHttpVerbs;
+    private int prettyXml;
     private boolean failIfChanged;
 
     RecordBuilder(String tapePath, String upstreamBase) {
@@ -152,6 +153,16 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
         return this;
     }
 
+    /** Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. */
+    public RecordBuilder prettyXml() {
+        return prettyXml(2);
+    }
+
+    public RecordBuilder prettyXml(int indent) {
+        this.prettyXml = indent;
+        return this;
+    }
+
     /**
      * On close, still write the freshly recorded tape but throw if it differs
      * from the on-disk one — the Servirtium step-4 drift contract, so a normal
@@ -175,6 +186,9 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
             }
             if (emphasizeHttpVerbs) {
                 NativeMethods.EMPHASIZE_HTTP_VERBS.invokeExact(handle);
+            }
+            if (prettyXml > 0) {
+                NativeMethods.SET_PRETTY_XML.invokeExact(handle, prettyXml);
             }
             for (Redaction r : redactions) {
                 MemorySegment res = (MemorySegment) r.operation().invokeExact(

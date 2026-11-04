@@ -66,6 +66,50 @@ def test_records_and_replays_a_post_with_a_body(upstream):
             os.remove(path)
 
 
+def test_pretty_xml_records_indented_and_replays(upstream):
+    compact = "<Env><Body><R id=\"1\"><N>Ann</N></R></Body></Env>"
+    upstream.response_body = compact
+    upstream.response_content_type = "text/xml; charset=utf-8"
+    path = _tape_path()
+    try:
+        with (servirtium.record(path, upstream.base_url).port(0)
+              .pretty_xml(2).start()) as rec:
+            status, body = http_request(
+                rec.base_url, "POST", "/soap", body="<Q><A>1</A></Q>",
+                headers={"Content-Type": "application/xml"})
+            assert body == compact  # the SUT gets the upstream bytes
+
+        tape = open(path).read()
+        assert "\n      <N>Ann</N>\n" in tape
+        assert "<Q><A>1</A></Q>" in tape  # request body is left byte-exact
+        assert compact not in tape
+
+        with servirtium.playback(path).port(0).start() as play:
+            status, body = http_request(
+                play.base_url, "POST", "/soap", body="<Q><A>1</A></Q>",
+                headers={"Content-Type": "application/xml"})
+            assert status == 200
+            assert "<N>Ann</N>" in body and "\n" in body
+            assert play.last_kind is servirtium.Outcome.OK
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_pretty_xml_off_by_default(upstream):
+    compact = "<Env><Body/></Env>"
+    upstream.response_body = compact
+    upstream.response_content_type = "application/xml"
+    path = _tape_path()
+    try:
+        with servirtium.record(path, upstream.base_url).port(0).start() as rec:
+            http_request(rec.base_url, "GET", "/x")
+        assert compact in open(path).read()
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
 def test_structured_redaction_helpers(tmp_path):
     import pathlib
     import subprocess

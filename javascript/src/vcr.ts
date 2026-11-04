@@ -350,6 +350,7 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   private pendingNote: { title: string; body: string } | null = null
   private indentCodeBlocksOn = false
   private emphasizeHttpVerbsOn = false
+  private prettyXmlIndent = 0
   private failIfChangedOn = false
 
   constructor(tapePath: string, private readonly upstreamBase: string) {
@@ -428,6 +429,12 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     return this
   }
 
+  /** Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. */
+  prettyXml(indent = 2): RecordBuilder {
+    this.prettyXmlIndent = indent
+    return this
+  }
+
   /**
    * On close, still write the freshly recorded tape but throw if it differs
    * from the on-disk one — the Servirtium step-4 drift contract, so a normal
@@ -442,6 +449,7 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     super.applyConfig(handle)
     if (this.indentCodeBlocksOn) N.indentCodeBlocks(handle)
     if (this.emphasizeHttpVerbsOn) N.emphasizeHttpVerbs(handle)
+    if (this.prettyXmlIndent > 0) N.setPrettyXml(handle, this.prettyXmlIndent)
     for (const { operation, field, pattern, replacement } of this.redactions) {
       check(operation(handle, field, pattern, replacement), 'redact')
     }

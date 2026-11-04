@@ -417,6 +417,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     private (string title, string body)? _note;
     private bool _indentCodeBlocks;
     private bool _emphasizeHttpVerbs;
+    private int _prettyXml;
     private bool _failIfChanged;
     private bool _requireLoopbackUpstream;
 
@@ -503,6 +504,13 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         return this;
     }
 
+    /// <summary>Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.</summary>
+    public RecordBuilder PrettyXml(int indent = 2)
+    {
+        _prettyXml = indent;
+        return this;
+    }
+
     /// <summary>
     /// On dispose, still write the freshly recorded tape but throw if it
     /// differs from the on-disk one — the Servirtium step-4 drift contract,
@@ -559,6 +567,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         base.ApplyConfig(handle);
         if (_indentCodeBlocks) NativeMethods.IndentCodeBlocks(handle);
         if (_emphasizeHttpVerbs) NativeMethods.EmphasizeHttpVerbs(handle);
+        if (_prettyXml > 0) NativeMethods.SetPrettyXml(handle, _prettyXml);
         foreach (var (operation, field, pattern, replacement) in _redactions)
         {
             Check(operation(handle, (int)field, pattern, replacement), nameof(Redact));

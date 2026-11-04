@@ -242,6 +242,8 @@ data RecordOptions = RecordOptions
     -- ^ Emit code blocks as 4-space-indented text instead of @```@ fences.
   , recEmphasizeHttpVerbs :: Bool
     -- ^ Emit the HTTP method emphasized (e.g. @*GET*@) in headings.
+  , recPrettyXml          :: Int
+    -- ^ Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. Default 0.
   , recFailIfChanged     :: Bool
     -- ^ On stop, write the freshly recorded tape but throw 'VcrException' if
     -- it differs from the on-disk one — the drift contract.
@@ -307,6 +309,7 @@ recordOptions tape upstream = RecordOptions
   , recNote               = Nothing
   , recIndentCodeBlocks   = False
   , recEmphasizeHttpVerbs = False
+  , recPrettyXml          = 0
   , recFailIfChanged      = False
   , recStaticContent      = []
   , recUntaped            = []
@@ -518,6 +521,7 @@ startRecord opts = do
           N.aether_vcr_embed_redact_json_field handle (fieldCode f) cName cReplacement) (recRedactJsonFieldWith opts)
       when (recIndentCodeBlocks opts) (N.aether_vcr_embed_indent_code_blocks handle)
       when (recEmphasizeHttpVerbs opts) (N.aether_vcr_embed_emphasize_http_verbs handle)
+      when (recPrettyXml opts > 0) (N.aether_vcr_embed_set_pretty_xml handle (fromIntegral (recPrettyXml opts)))
       mapM_ (\(f, pat, repl) ->
                 check "redact" $
                   withCString pat $ \cPat ->

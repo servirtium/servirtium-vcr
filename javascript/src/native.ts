@@ -235,6 +235,8 @@ export const emphasizeHttpVerbs = lazy(
   'void aether_vcr_embed_emphasize_http_verbs(void* server)',
 )
 
+export const setPrettyXml = lazy('void aether_vcr_embed_set_pretty_xml(void* server, int indent)')
+
 export const clearRedactions = lazy('void aether_vcr_embed_clear_redactions(void* server)')
 
 export const clearUnredactions = lazy('void aether_vcr_embed_clear_unredactions(void* server)')

@@ -85,6 +85,9 @@ defmodule Servirtium do
     * `:note` — `{title, body}` attached to the first recorded interaction
     * `:indent_code_blocks` — `true` to emit 4-space-indented blocks
     * `:emphasize_http_verbs` — `true` to emit `*GET*` instead of `GET`
+    * `:pretty_xml` — indent width (integer) to pretty-print recorded XML bodies
+      (1..16; 0 = off). Request bodies are never changed.
+      Falls back to byte-exact if the body isn't well-formed XML.
     * `:fail_if_changed` — `true` to raise on drift when flushing (still writes)
 
   A `field` is one of `:path`, `:response_body`, `:request_headers`,
@@ -399,6 +402,11 @@ defmodule Servirtium do
   defp apply_record_config(handle, opts) do
     if Keyword.get(opts, :indent_code_blocks, false), do: Native.indent_code_blocks(handle)
     if Keyword.get(opts, :emphasize_http_verbs, false), do: Native.emphasize_http_verbs(handle)
+
+    case Keyword.get(opts, :pretty_xml, 0) do
+      n when is_integer(n) and n > 0 -> Native.set_pretty_xml(handle, n)
+      _ -> :ok
+    end
 
     for {field, pat, repl} <- Keyword.get(opts, :redact, []) do
       check!(Native.redact(handle, field!(field), pat, repl), "redact")

@@ -79,6 +79,7 @@ lib LibVcr
   fun set_match_multiple = aether_vcr_embed_set_match_multiple(h : Void*, on : LibC::Int) : Void
   fun indent_code_blocks = aether_vcr_embed_indent_code_blocks(h : Void*) : Void
   fun emphasize_http_verbs = aether_vcr_embed_emphasize_http_verbs(h : Void*) : Void
+  fun set_pretty_xml = aether_vcr_embed_set_pretty_xml(h : Void*, indent : LibC::Int) : Void
   fun clear_redactions = aether_vcr_embed_clear_redactions(h : Void*) : Void
   fun clear_unredactions = aether_vcr_embed_clear_unredactions(h : Void*) : Void
   fun clear_normalizations = aether_vcr_embed_clear_normalizations(h : Void*) : Void
@@ -411,6 +412,11 @@ module Servirtium
 
     def emphasize_http_verbs : Nil
       LibVcr.emphasize_http_verbs(@handle)
+    end
+
+    # Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    def pretty_xml(indent : Int32 = 2) : Nil
+      LibVcr.set_pretty_xml(@handle, indent)
     end
 
     def clear_redactions : Nil

@@ -233,6 +233,7 @@ servirtium.Playback(tape).
 servirtium.Record(tape, upstream).
     IndentCodeBlocks().      // 4-space-indented blocks instead of ``` fences
     EmphasizeHTTPVerbs().    // *GET* instead of bare GET in headings
+    PrettyXML(2).            // pretty-print recorded XML bodies (indent 1..16)
     Start()
 ```
 

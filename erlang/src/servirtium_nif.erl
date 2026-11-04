@@ -80,6 +80,7 @@
     ignore_volatile_headers/1,
     indent_code_blocks/1,
     emphasize_http_verbs/1,
+    set_pretty_xml/2,
     clear_redactions/1,
     clear_unredactions/1,
     clear_header_removals/1,
@@ -163,6 +164,7 @@ set_match_multiple(_Handle, _On) -> erlang:nif_error(not_loaded).
 ignore_volatile_headers(_Handle) -> erlang:nif_error(not_loaded).
 indent_code_blocks(_Handle) -> erlang:nif_error(not_loaded).
 emphasize_http_verbs(_Handle) -> erlang:nif_error(not_loaded).
+set_pretty_xml(_Handle, _Indent) -> erlang:nif_error(not_loaded).
 clear_redactions(_Handle) -> erlang:nif_error(not_loaded).
 clear_unredactions(_Handle) -> erlang:nif_error(not_loaded).
 clear_header_removals(_Handle) -> erlang:nif_error(not_loaded).

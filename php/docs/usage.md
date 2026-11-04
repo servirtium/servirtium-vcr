@@ -102,7 +102,7 @@ Vcr::playback($tape)->staticContent('/assets', 'build/static')->start();   // se
 $vcr = Vcr::record($tape, $upstream)->note('Login', 'establishes the session')->start();
 $vcr->note('Overdraft', 'should be refused');   // stage a note for the next interaction
 
-Vcr::record($tape, $upstream)->indentCodeBlocks()->emphasizeHttpVerbs()->start();
+Vcr::record($tape, $upstream)->indentCodeBlocks()->emphasizeHttpVerbs()->prettyXml(2)->start();
 ```
 
 > Note: PHP HTTP clients send default request headers. Under `strictHeaders()`

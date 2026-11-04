@@ -123,6 +123,8 @@ proc indent_code_blocks*(h: Handle)
   {.importc: "aether_vcr_embed_indent_code_blocks", cdecl.}
 proc emphasize_http_verbs*(h: Handle)
   {.importc: "aether_vcr_embed_emphasize_http_verbs", cdecl.}
+proc set_pretty_xml*(h: Handle, indent: cint)
+  {.importc: "aether_vcr_embed_set_pretty_xml", cdecl.}
 proc clear_redactions*(h: Handle)
   {.importc: "aether_vcr_embed_clear_redactions", cdecl.}
 proc clear_unredactions*(h: Handle)

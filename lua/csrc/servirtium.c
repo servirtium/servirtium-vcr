@@ -104,6 +104,7 @@ extern char *aether_vcr_embed_assert_no_unfilled_placeholders(void *h);
 extern void  aether_vcr_embed_set_match_multiple(void *h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(void *h);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *h);
+extern void  aether_vcr_embed_set_pretty_xml(void *h, int indent);
 extern void  aether_vcr_embed_clear_redactions(void *h);
 extern void  aether_vcr_embed_clear_unredactions(void *h);
 extern void  aether_vcr_embed_clear_header_removals(void *h);
@@ -555,6 +556,15 @@ static int l_emphasize_http_verbs(lua_State *L)
     return 0;
 }
 
+/* set_pretty_xml(handle, indent) */
+static int l_set_pretty_xml(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int indent = (int)luaL_checkinteger(L, 2);
+    aether_vcr_embed_set_pretty_xml(h, indent);
+    return 0;
+}
+
 /* ---- module registration ------------------------------------------------ */
 
 static int l_secret_begin(lua_State *L) { return push_owned_string(L, aether_vcr_embed_secret_begin(check_handle(L, 1), (int)luaL_checkinteger(L, 2))); }
@@ -620,6 +630,7 @@ static const luaL_Reg servirtium_funcs[] = {
     {"set_match_multiple",              l_set_match_multiple},
     {"indent_code_blocks",              l_indent_code_blocks},
     {"emphasize_http_verbs",            l_emphasize_http_verbs},
+    {"set_pretty_xml",                  l_set_pretty_xml},
     {NULL, NULL},
 };
 

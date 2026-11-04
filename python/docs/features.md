@@ -23,7 +23,7 @@ the real native library.
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.match_header(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.static_content(mount, dir)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.fail_if_changed()` | ✅ |
-| Format options (indent / emphasize) | ✅ | ✅ | `.indent_code_blocks()` / `.emphasize_http_verbs()` | — |
+| Format options (indent / emphasize) | ✅ | ✅ | `.indent_code_blocks()` / `.emphasize_http_verbs()` / `.pretty_xml()` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `last_error`/`last_kind`/`last_index` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ (≥0.183.0) | ✅ | (automatic) | — (host uses Content-Length) |

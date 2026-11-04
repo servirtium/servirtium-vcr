@@ -95,6 +95,7 @@ final v = Vcr.record(tape, upstream).note('Login', 'establishes the session').st
 v.note('Overdraft', 'should be refused');   // stage a note for the next interaction
 
 Vcr.record(tape, upstream).indentCodeBlocks().emphasizeHttpVerbs().start();
+Vcr.record(tape, upstream).prettyXml(2).start(); // pretty-print recorded XML bodies
 ```
 
 > Note: `HttpClient` sends default request headers. Under `strictHeaders()`

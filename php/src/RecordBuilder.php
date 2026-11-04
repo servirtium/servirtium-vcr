@@ -34,6 +34,7 @@ final class RecordBuilder extends VcrBuilderBase
 
     private bool $indentCodeBlocksOn = false;
     private bool $emphasizeHttpVerbsOn = false;
+    private int $prettyXmlIndent = 0;
     private bool $failIfChangedOn = false;
 
     public function __construct(string $tapePath, string $upstreamBase)
@@ -122,6 +123,14 @@ final class RecordBuilder extends VcrBuilderBase
         return $this;
     }
 
+    /** Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. */
+    public function prettyXml(int $indent = 2): static
+    {
+        $this->prettyXmlIndent = $indent;
+
+        return $this;
+    }
+
     /**
      * On stop, still write the freshly recorded tape but throw if it differs
      * from the on-disk one — the Servirtium step-4 drift contract, so a
@@ -143,6 +152,9 @@ final class RecordBuilder extends VcrBuilderBase
         }
         if ($this->emphasizeHttpVerbsOn) {
             $lib->aether_vcr_embed_emphasize_http_verbs($handle);
+        }
+        if ($this->prettyXmlIndent > 0) {
+            $lib->aether_vcr_embed_set_pretty_xml($handle, $this->prettyXmlIndent);
         }
         foreach ($this->redactions as [$operation, $field, $pattern, $replacement]) {
             self::check($lib->$operation($handle, $field->value, $pattern, $replacement), 'redact');

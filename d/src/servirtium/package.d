@@ -100,6 +100,7 @@ private extern (C) nothrow @nogc {
     void  aether_vcr_embed_set_match_multiple(void* h, int on);
     void  aether_vcr_embed_indent_code_blocks(void* h);
     void  aether_vcr_embed_emphasize_http_verbs(void* h);
+    void  aether_vcr_embed_set_pretty_xml(void* h, int indent);
     void  aether_vcr_embed_clear_redactions(void* h);
     void  aether_vcr_embed_clear_unredactions(void* h);
     void  aether_vcr_embed_clear_normalizations(void* h);
@@ -398,6 +399,8 @@ struct Vcr {
 
     void indentCodeBlocks() { aether_vcr_embed_indent_code_blocks(handle); }
     void emphasizeHttpVerbs() { aether_vcr_embed_emphasize_http_verbs(handle); }
+    /// Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    void prettyXml(int indent = 2) { aether_vcr_embed_set_pretty_xml(handle, indent); }
     void clearRedactions() { aether_vcr_embed_clear_redactions(handle); }
     void clearUnredactions() { aether_vcr_embed_clear_unredactions(handle); }
     void clearNormalizations() { aether_vcr_embed_clear_normalizations(handle); }

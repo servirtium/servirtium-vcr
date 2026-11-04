@@ -417,6 +417,16 @@ vcr_embed_set_match_xml_body(s: ptr, on: int) {
     vcr.set_match_xml_body_h(s, on)
 }
 
+// Opt-in (record side): pretty-print recorded XML RESPONSE bodies when the
+// tape is written. indent 0 = off (default), 1..16 = spaces per level (>16
+// clamps to 16). Request bodies are never changed.
+vcr_embed_set_pretty_xml(s: ptr, indent: int) {
+    vcr.set_pretty_xml_h(s, indent)
+}
+vcr_embed_get_pretty_xml(s: ptr) -> int {
+    return vcr.get_pretty_xml_h(s)
+}
+
 // Opt-in: match playback by searching all interactions (reusable, order-
 // independent) instead of consuming them in strict recorded order. Off by
 // default (strict ordered playback).

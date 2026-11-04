@@ -25,7 +25,7 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Static-content bypass | ✅ | ✅ | `.StaticContent(mount, dir)` | ✅ |
 | Untaped (incidental paths, no cursor consume) | ✅ | ✅ | `.Untaped(path)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.FailIfChanged()` | ✅ |
-| Format options (indent / emphasize) | ✅ | ✅ | `.IndentCodeBlocks()` / `.EmphasizeHTTPVerbs()` | — |
+| Format options (indent / emphasize) | ✅ | ✅ | `.IndentCodeBlocks()` / `.EmphasizeHTTPVerbs()` / `.PrettyXML(n)` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `.LastError()` / `.LastKind()` / `.LastIndex()` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ | ✅ | (automatic) | — (host uses Content-Length) |

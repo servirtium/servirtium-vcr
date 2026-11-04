@@ -481,6 +481,12 @@ function RecordBuilder:emphasize_http_verbs()
     return self
 end
 
+-- Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+function RecordBuilder:pretty_xml(indent)
+    self._pretty_xml = indent or 2
+    return self
+end
+
 function RecordBuilder:fail_if_changed()
     self._fail_if_changed = true
     return self
@@ -505,6 +511,9 @@ function RecordBuilder:start()
         end
         if self._emphasize_http_verbs then
             C.emphasize_http_verbs(handle)
+        end
+        if self._pretty_xml > 0 then
+            C.set_pretty_xml(handle, self._pretty_xml)
         end
         for _, r in ipairs(self._redactions) do
             check(C[r.operation or "redact"](handle, r.field, r.pattern, r.repl), "redact")
@@ -599,6 +608,7 @@ function M.record(tapePath, upstream, opts)
     b._note = nil
     b._indent_code_blocks = false
     b._emphasize_http_verbs = false
+    b._pretty_xml = 0
     b._fail_if_changed = false
     if opts then
         if opts.port  ~= nil then b._port  = opts.port  end

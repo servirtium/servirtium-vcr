@@ -180,6 +180,7 @@ servirtium.playback(tape):static_content("/assets", "build/static"):start()
 servirtium.record(tape, upstream)
     :indent_code_blocks()      -- 4-space-indented blocks instead of ``` fences
     :emphasize_http_verbs()    -- *GET* instead of bare GET in headings
+    :pretty_xml(2)             -- pretty-print recorded XML bodies
     :start()
 ```
 

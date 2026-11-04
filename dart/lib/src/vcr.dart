@@ -402,6 +402,7 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   (String, String)? _note;
   bool _indentCodeBlocks = false;
   bool _emphasizeHttpVerbs = false;
+  int _prettyXml = 0;
   bool _failIfChanged = false;
 
   @override
@@ -464,6 +465,12 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     return this;
   }
 
+  /// Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+  RecordBuilder prettyXml([int indent = 2]) {
+    _prettyXml = indent;
+    return this;
+  }
+
   /// On close, still write the freshly recorded tape but throw if it differs
   /// from the on-disk one (the drift contract).
   RecordBuilder failIfChanged([bool on = true]) {
@@ -476,6 +483,7 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     super._applyConfig(handle);
     if (_indentCodeBlocks) Native.indentCodeBlocks(handle);
     if (_emphasizeHttpVerbs) Native.emphasizeHttpVerbs(handle);
+    if (_prettyXml > 0) Native.setPrettyXml(handle, _prettyXml);
     for (final (operation, field, pattern, replacement) in _redactions) {
       final call = switch (operation) {
         'header' => Native.redactHeader,

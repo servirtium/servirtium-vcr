@@ -169,6 +169,7 @@ API calls while CSS/JS/images come from your build output:
 (Servirtium record: tape upstream: upstream)
     indentCodeBlocks;       "4-space-indented blocks instead of ``` fences"
     emphasizeHttpVerbs;     "*GET* instead of bare GET in headings"
+    prettyXml: 2;           "pretty-print recorded XML bodies"
     start.
 ```
 

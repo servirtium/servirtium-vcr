@@ -226,6 +226,7 @@ Vcr.Playback(tape)
 Vcr.Record(tape, upstream)
     .IndentCodeBlocks()      // 4-space-indented blocks instead of ``` fences
     .EmphasizeHttpVerbs()    // *GET* instead of bare GET in headings
+    .PrettyXml(2)            // pretty-print recorded XML bodies
     .Start();
 ```
 

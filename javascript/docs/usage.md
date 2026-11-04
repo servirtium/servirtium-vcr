@@ -183,6 +183,7 @@ Vcr.playback(tape).staticContent('/assets', 'build/static').start()
 Vcr.record(tape, upstream)
   .indentCodeBlocks() // 4-space-indented blocks instead of ``` fences
   .emphasizeHttpVerbs() // *GET* instead of bare GET in headings
+  .prettyXml(2) // pretty-print recorded XML bodies
   .start()
 ```
 

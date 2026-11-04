@@ -35,7 +35,7 @@ export Vcr, VcrError, Field, Outcome,
     match_header, note, static_content, untaped,
     strict_ignore_common_headers, ignore_volatile_headers, set_strict_headers,
     set_match_json_body, set_match_xml_body, set_match_multiple,
-    indent_code_blocks, emphasize_http_verbs,
+    indent_code_blocks, emphasize_http_verbs, set_pretty_xml,
     close!, flush!, flush_fail_if_changed!, flush_or_check!, discard!,
     har_import, har_export
 
@@ -391,6 +391,14 @@ indent_code_blocks(vcr::Vcr) =
 
 emphasize_http_verbs(vcr::Vcr) =
     ccall((:aether_vcr_embed_emphasize_http_verbs, LIB), Cvoid, (Ptr{Cvoid},), vcr.handle)
+
+"""
+    set_pretty_xml(vcr::Vcr, indent::Integer=2)
+
+Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+"""
+set_pretty_xml(vcr::Vcr, indent::Integer=2) =
+    ccall((:aether_vcr_embed_set_pretty_xml, LIB), Cvoid, (Ptr{Cvoid}, Cint), vcr.handle, indent)
 
 for (fn, sym) in ((:clear_redactions, :aether_vcr_embed_clear_redactions),
                   (:clear_unredactions, :aether_vcr_embed_clear_unredactions),

@@ -81,6 +81,7 @@ extern char *aether_vcr_embed_ignore_volatile_headers(void *server);
 extern char *aether_vcr_embed_discard(void *server, const char *tape_path);
 extern void  aether_vcr_embed_indent_code_blocks(void *server);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *server);
+extern void  aether_vcr_embed_set_pretty_xml(void *server, int indent);
 extern void  aether_vcr_embed_clear_redactions(void *server);
 extern void  aether_vcr_embed_clear_unredactions(void *server);
 extern void  aether_vcr_embed_clear_header_removals(void *server);
@@ -694,6 +695,17 @@ static ERL_NIF_TERM nif_emphasize_http_verbs(ErlNifEnv *env, int argc, const ERL
     return enif_make_atom(env, "ok");
 }
 
+static ERL_NIF_TERM nif_set_pretty_xml(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    int indent;
+    if (!enif_get_int(env, argv[1], &indent)) return enif_make_badarg(env);
+    aether_vcr_embed_set_pretty_xml(h, indent);
+    return enif_make_atom(env, "ok");
+}
+
 /* A handle-taking void clear function. */
 #define CLEAR_NIF(NAME, FN)                                                  \
     static ERL_NIF_TERM NAME(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) \
@@ -774,6 +786,7 @@ static ErlNifFunc nif_funcs[] = {
     {"ignore_volatile_headers", 1, nif_ignore_volatile_headers, 0},
     {"indent_code_blocks",   1, nif_indent_code_blocks,   0},
     {"emphasize_http_verbs", 1, nif_emphasize_http_verbs, 0},
+    {"set_pretty_xml",       2, nif_set_pretty_xml,       0},
 
     {"clear_redactions",      1, nif_clear_redactions,      0},
     {"clear_unredactions",    1, nif_clear_unredactions,    0},

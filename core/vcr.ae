@@ -124,6 +124,7 @@ exports (
     vcr_add_note,
     vcr_record_interaction_full, vcr_add_static_content, vcr_add_untaped,
     vcr_set_indent_code_blocks, vcr_set_emphasize_http_verbs,
+    vcr_set_pretty_xml, vcr_get_pretty_xml,
     vcr_get_tape_count, vcr_get_method, vcr_get_path, vcr_get_status,
     vcr_get_content_type, vcr_get_body, vcr_get_req_headers, vcr_get_req_body,
     vcr_get_resp_headers, vcr_decode_base64_body_raw,
@@ -178,7 +179,7 @@ exports (
     redact_h, unredact_h, remove_header_h, note_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
-    set_match_xml_body_h,
+    set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
     set_tls_h, set_tls_pem_h, tls_enabled_h, last_tls_protocol_h,
     substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h,
@@ -580,6 +581,19 @@ vcr_set_emphasize_http_verbs(on: int) {
 vcr_get_indent_code_blocks() -> int { return cfg_get_int(slot(cur_key(), "indent"), 0) }
 vcr_get_emphasize_http_verbs_k(key: string) -> int { return cfg_get_int(slot(key, "emph"), 0) }
 vcr_get_emphasize_http_verbs() -> int { return vcr_get_emphasize_http_verbs_k(cur_key()) }
+
+// Opt-in pretty-printing of recorded XML bodies (record side only). The value
+// is the indent width: 0 = off (default), 1..16 = spaces per level; anything
+// above 16 is clamped to 16, anything below 0 is off. See pretty_xml_body_k.
+vcr_set_pretty_xml_k(key: string, indent: int) {
+    n = indent
+    if n < 0 { n = 0 }
+    if n > 16 { n = 16 }
+    cfg_set_int(slot(key, "pretty_xml"), n)
+}
+vcr_set_pretty_xml(indent: int) { vcr_set_pretty_xml_k(cur_key(), indent) }
+vcr_get_pretty_xml_k(key: string) -> int { return cfg_get_int(slot(key, "pretty_xml"), 0) }
+vcr_get_pretty_xml() -> int { return vcr_get_pretty_xml_k(cur_key()) }
 
 cursor_k(key: string) -> int { return cfg_get_int(slot(key, "cursor"), 0) }
 set_cursor_k(key: string, i: int) { cfg_set_int(slot(key, "cursor"), i) }
@@ -2899,6 +2913,8 @@ apply_tls_h(server: ptr) -> string {
 set_strict_headers_h(server: ptr, on: int) { vcr_set_strict_headers_k(key_for(server), on) }
 set_match_json_body_h(server: ptr, on: int) { vcr_set_match_json_body_k(key_for(server), on) }
 set_match_xml_body_h(server: ptr, on: int) { vcr_set_match_xml_body_k(key_for(server), on) }
+set_pretty_xml_h(server: ptr, indent: int) { vcr_set_pretty_xml_k(key_for(server), indent) }
+get_pretty_xml_h(server: ptr) -> int { return vcr_get_pretty_xml_k(key_for(server)) }
 set_match_multiple_h(server: ptr, on: int) { vcr_set_match_multiple_k(key_for(server), on) }
 add_match_header_h(server: ptr, name: string) { set_cur_key(key_for(server)); vcr_add_match_header(name) }
 clear_match_headers_h(server: ptr) { set_cur_key(key_for(server)); vcr_clear_match_headers() }
@@ -4054,6 +4070,7 @@ emphasize_http_verbs() {
 clear_format_options() {
     vcr_set_indent_code_blocks(0)
     vcr_set_emphasize_http_verbs(0)
+    vcr_set_pretty_xml(0)
 }
 
 // ---- Aether-side tape emitter ---------------------------------------
@@ -4435,6 +4452,49 @@ emit_header_block(headers: string) -> string {
 // rather than "${out}..." interpolation. Interpolation recycles a
 // backing buffer in v0.90 and rebuild-in-loop overwrites earlier
 // content. string_concat returns a fresh AetherString each call.
+// ---- Opt-in XML pretty-printing at record time (pretty_xml) ----------
+//
+// True when `ctype` (a Content-Type value, parameters allowed) names XML:
+// application/xml, text/xml, or any <type>/<subtype>+xml (soap+xml, atom+xml,
+// xhtml+xml, ...). A base64-marked content type is binary, never XML.
+content_type_is_xml(ctype: string) -> int {
+    if ascii_ci_contains(ctype, "base64 below") == 1 { return 0 }
+    mime = ctype
+    semi = string.index_of(mime, ";")
+    if semi >= 0 { mime = string.substring(mime, 0, semi) }
+    mime = rtrim(trim_leading_ws(mime))
+    if icmp_rt(mime, "application/xml") == 0 { return 1 }
+    if icmp_rt(mime, "text/xml") == 0 { return 1 }
+    n = string.length(mime)
+    if n > 4 && icmp_rt(string.substring(mime, n - 4, n), "+xml") == 0 { return 1 }
+    return 0
+}
+
+// Reformat a RESPONSE `body` with xml.pretty when pretty_xml is on and `ctype`
+// is XML. Called LAST in emit_one_interaction_k, after redactions, secret
+// patches and normalizations, so those all act on the raw bytes the SUT
+// exchanged and a secret cannot slip through by being split across the added
+// line breaks. Any xml.pretty error (malformed XML, ...) keeps the body
+// byte-exact: the recording is never failed and a body is never partially
+// rewritten. REQUEST bodies are deliberately never touched: default
+// request-body matching is byte-exact, so a re-indented recorded request
+// would no longer match the SUT's live (usually compact) request.
+pretty_xml_body_k(key: string, ctype: string, body: string) -> string {
+    indent = vcr_get_pretty_xml_k(key)
+    if indent <= 0 { return body }
+    if string.length(body) == 0 { return body }
+    if content_type_is_xml(ctype) == 0 { return body }
+    formatted, err = xml.pretty(body, indent)
+    if err != "" || string.length(formatted) == 0 { return body }
+    // xml.pretty ends its output with a newline; don't add one the original
+    // body didn't have (the tape block would gain a stray blank line).
+    flen = string.length(formatted)
+    if string.char_at(formatted, flen - 1) == 10 && string.char_at(body, string.length(body) - 1) != 10 {
+        return string.substring(formatted, 0, flen - 1)
+    }
+    return formatted
+}
+
 emit_one_interaction_k(key: string, i: int) -> string {
     // Read fields from THIS handle's tape via the keyed struct accessor — no
     // ambient cur_key(), so a concurrent flush on another handle cannot change
@@ -4475,6 +4535,11 @@ emit_one_interaction_k(key: string, i: int) -> string {
     req_h_out  = apply_normalizations_k(key, req_h_out)
     req_b_out  = apply_normalizations_k(key, req_b_out)
     resp_h_out = apply_normalizations_k(key, resp_h_out)
+
+    // Pretty-print the response body last (opt-in; see pretty_xml_body_k).
+    resp_ct = ctype
+    if string.length(resp_ct) == 0 { resp_ct = header_value_in_block(resp_h, "Content-Type") }
+    body_out = pretty_xml_body_k(key, resp_ct, body_out)
 
     heading = "## Interaction ${i}: ${method} ${path_out}\n\n"
     if vcr_get_emphasize_http_verbs_k(key) == 1 {

@@ -300,6 +300,8 @@ public:
 
     void indent_code_blocks() { sv_indent_code_blocks(vcr_); }
     void emphasize_http_verbs() { sv_emphasize_http_verbs(vcr_); }
+    // Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    void pretty_xml(int indent = 2) { sv_set_pretty_xml(vcr_, indent); }
     void clear_redactions() { sv_clear_redactions(vcr_); }
     void clear_unredactions() { sv_clear_unredactions(vcr_); }
     void clear_normalizations() { sv_clear_normalizations(vcr_); }

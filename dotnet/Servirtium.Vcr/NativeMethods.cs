@@ -234,6 +234,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_emphasize_http_verbs")]
     internal static extern void EmphasizeHttpVerbs(IntPtr server);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_pretty_xml")]
+    internal static extern void SetPrettyXml(IntPtr server, int indent);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_redactions")]
     internal static extern void ClearRedactions(IntPtr server);
 

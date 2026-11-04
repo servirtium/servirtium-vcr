@@ -338,6 +338,12 @@ ServirtiumLibrary >> emphasizeHttpVerbs: server [
 	^ self ffiCall: #( void aether_vcr_embed_emphasize_http_verbs ( void* server ) )
 ]
 
+{ #category : 'ffi - format' }
+ServirtiumLibrary >> setPrettyXml: server indent: indent [
+
+	^ self ffiCall: #( void aether_vcr_embed_set_pretty_xml ( void* server, int indent ) )
+]
+
 { #category : 'ffi - clearing' }
 ServirtiumLibrary >> clearRedactions: server [
 

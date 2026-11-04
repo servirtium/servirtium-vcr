@@ -326,6 +326,8 @@ public final class Vcr {
 
     public func indentCodeBlocks() { aether_vcr_embed_indent_code_blocks(handle) }
     public func emphasizeHttpVerbs() { aether_vcr_embed_emphasize_http_verbs(handle) }
+    /// Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    public func prettyXml(_ indent: Int32 = 2) { aether_vcr_embed_set_pretty_xml(handle, indent) }
     public func clearRedactions() { aether_vcr_embed_clear_redactions(handle) }
     public func clearUnredactions() { aether_vcr_embed_clear_unredactions(handle) }
     public func clearNormalizations() { aether_vcr_embed_clear_normalizations(handle) }

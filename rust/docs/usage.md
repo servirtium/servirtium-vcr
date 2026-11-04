@@ -186,6 +186,7 @@ Vcr::playback(tape)
 Vcr::record(tape, upstream)
     .indent_code_blocks()    // 4-space-indented blocks instead of ``` fences
     .emphasize_http_verbs()  // *GET* instead of bare GET in headings
+    .pretty_xml(2)           // pretty-print recorded XML bodies (indent 1..16)
     .start()?;
 ```
 

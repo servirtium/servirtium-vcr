@@ -16,6 +16,7 @@ Class {
 		'note',
 		'indentCodeBlocks',
 		'emphasizeHttpVerbs',
+		'prettyXml',
 		'failIfChanged'
 	],
 	#category : 'Servirtium',
@@ -38,6 +39,7 @@ ServirtiumRecordBuilder >> initializeTape: aTapePath [
 	note := nil.
 	indentCodeBlocks := false.
 	emphasizeHttpVerbs := false.
+	prettyXml := 0.
 	failIfChanged := false
 ]
 
@@ -100,6 +102,22 @@ ServirtiumRecordBuilder >> emphasizeHttpVerbs [
 ]
 
 { #category : 'configuring' }
+ServirtiumRecordBuilder >> prettyXml [
+	"Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML."
+
+	prettyXml := 2.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> prettyXml: anIndent [
+	"Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML."
+
+	prettyXml := anIndent.
+	^ self
+]
+
+{ #category : 'configuring' }
 ServirtiumRecordBuilder >> failIfChanged [
 	"On stop, still write the freshly recorded tape but raise if it differs
 	 from the on-disk one — the Servirtium step-4 drift contract, so a normal
@@ -115,6 +133,7 @@ ServirtiumRecordBuilder >> applyConfig: handle [
 	super applyConfig: handle.
 	indentCodeBlocks ifTrue: [ self library indentCodeBlocks: handle ].
 	emphasizeHttpVerbs ifTrue: [ self library emphasizeHttpVerbs: handle ].
+	prettyXml > 0 ifTrue: [ self library setPrettyXml: handle indent: prettyXml ].
 	redactions do: [ :tuple |
 		self
 			check: (self library perform: (tuple at: 1) withArguments: { handle. (tuple at: 2). (tuple at: 3). (tuple at: 4) })

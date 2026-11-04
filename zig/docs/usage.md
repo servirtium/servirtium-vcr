@@ -171,7 +171,8 @@ _ = servirtium.Playback.init(allocator, tape).staticContent("/assets", "build/st
 ```zig
 _ = servirtium.Record.init(allocator, tape, upstream)
     .indentCodeBlocks()     // 4-space-indented blocks instead of ``` fences
-    .emphasizeHttpVerbs();  // *GET* instead of bare GET in headings
+    .emphasizeHttpVerbs()   // *GET* instead of bare GET in headings
+    .prettyXml(2);          // pretty-print recorded XML bodies (indent 1..16)
 ```
 
 Playback tolerates either form regardless, so cross-implementation tapes load

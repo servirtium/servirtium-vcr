@@ -23,7 +23,7 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Match on a specific request header (opt-in) | ✅ | ✅ | `pbMatchHeaders = ["Name"]` | — |
 | Static-content bypass | ✅ | ✅ | `pbStaticContent` | — |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `recFailIfChanged` | — |
-| Format options (indent / emphasize) | ✅ | ✅ | `recIndentCodeBlocks` / `recEmphasizeHttpVerbs` | — |
+| Format options (indent / emphasize) | ✅ | ✅ | `recIndentCodeBlocks` / `recEmphasizeHttpVerbs` / `recPrettyXml` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError` / `lastKind` / `lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ | ✅ | (automatic) | — |

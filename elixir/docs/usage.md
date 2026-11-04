@@ -185,7 +185,8 @@ Servirtium.playback(tape, static_content: [{"/assets", "build/static"}])
 ```elixir
 Servirtium.record(tape, upstream,
   indent_code_blocks: true,    # 4-space-indented blocks instead of ``` fences
-  emphasize_http_verbs: true)  # *GET* instead of bare GET in headings
+  emphasize_http_verbs: true,  # *GET* instead of bare GET in headings
+  pretty_xml: 2)               # pretty-print recorded XML bodies (indent 1..16)
 ```
 
 Playback tolerates either form regardless, so cross-implementation tapes load

@@ -23,7 +23,7 @@ in `test/` against the real native library.
 | Match on a specific request header (opt-in) | ✅ | ✅ | `match_header:` opt | — |
 | Static-content bypass | ✅ | ✅ | `static_content:` opt | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `fail_if_changed:` opt | — |
-| Format options (indent / emphasize) | ✅ | ✅ | `indent_code_blocks:` / `emphasize_http_verbs:` | — |
+| Format options (indent / emphasize) | ✅ | ✅ | `indent_code_blocks:` / `emphasize_http_verbs:` / `pretty_xml:` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `last_error/0`/`last_kind/0`/`last_index/0` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ | ✅ | (automatic) | — |

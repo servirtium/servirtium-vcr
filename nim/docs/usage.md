@@ -186,6 +186,7 @@ doAssert srv.start()
 let srv = record(tape, upstream)
 srv.indentCodeBlocks()     # 4-space-indented blocks instead of ``` fences
 srv.emphasizeHttpVerbs()   # *GET* instead of bare GET in headings
+srv.prettyXml(2)           # pretty-print recorded XML bodies (indent 1..16)
 doAssert srv.start()
 ```
 

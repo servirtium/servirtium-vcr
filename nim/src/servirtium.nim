@@ -307,6 +307,10 @@ proc indentCodeBlocks*(s: VcrServer) =
 proc emphasizeHttpVerbs*(s: VcrServer) =
   native.emphasize_http_verbs(s.handle)
 
+proc prettyXml*(s: VcrServer, indent: int = 2) =
+  ## Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+  native.set_pretty_xml(s.handle, cint(indent))
+
 proc close*(s: VcrServer) =
   if s.handle != nil and s.recording and s.secretRedactorCallback != nil: s.secretStage(false)
   ## Stop the server. For a record server, flush the tape to disk first.

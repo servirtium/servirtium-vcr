@@ -202,6 +202,8 @@ void sv_set_match_xml_body(sv_vcr *vcr, int on);
 void sv_set_match_multiple(sv_vcr *vcr, int on);
 void sv_indent_code_blocks(sv_vcr *vcr);
 void sv_emphasize_http_verbs(sv_vcr *vcr);
+/* Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. */
+void sv_set_pretty_xml(sv_vcr *vcr, int indent);
 void sv_clear_redactions(sv_vcr *vcr);
 void sv_clear_unredactions(sv_vcr *vcr);
 void sv_clear_normalizations(sv_vcr *vcr);

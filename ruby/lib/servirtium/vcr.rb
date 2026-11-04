@@ -267,6 +267,7 @@ module Servirtium
       @note = nil
       @indent_code_blocks = false
       @emphasize_http_verbs = false
+      @pretty_xml = 0
       @fail_if_changed = false
     end
 
@@ -367,10 +368,17 @@ module Servirtium
             "(upstream '#{@upstream_base}')"
     end
 
+    # Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    def pretty_xml(indent = 2)
+      @pretty_xml = indent
+      self
+    end
+
     def apply_config(handle)
       super
       Native.call(:indent_code_blocks, handle) if @indent_code_blocks
       Native.call(:emphasize_http_verbs, handle) if @emphasize_http_verbs
+      Native.call(:set_pretty_xml, handle, @pretty_xml) if @pretty_xml > 0
       @redactions.each do |operation, field, pattern, replacement|
         check(Native.call(operation, handle, field, pattern, replacement), 'redact')
       end

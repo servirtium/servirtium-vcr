@@ -191,6 +191,7 @@ impl Vcr {
             note: None,
             indent_code_blocks: false,
             emphasize_http_verbs: false,
+            pretty_xml: 0,
             fail_if_changed: false,
         }
     }
@@ -507,6 +508,7 @@ pub struct RecordBuilder {
     note: Option<(String, String)>,
     indent_code_blocks: bool,
     emphasize_http_verbs: bool,
+    pretty_xml: i32,
     fail_if_changed: bool,
 }
 
@@ -647,6 +649,11 @@ impl RecordBuilder {
         self.emphasize_http_verbs = true;
         self
     }
+    /// Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    pub fn pretty_xml(mut self, indent: i32) -> Self {
+        self.pretty_xml = indent;
+        self
+    }
     /// On flush, still write the freshly recorded tape but fail if it differs
     /// from the on-disk one — the drift contract, so a normal `git diff`
     /// shows the change and CI fails loudly. The failure surfaces from
@@ -687,6 +694,9 @@ impl RecordBuilder {
         }
         if self.emphasize_http_verbs {
             unsafe { (n.emphasize_http_verbs)(handle) };
+        }
+        if self.pretty_xml > 0 {
+            unsafe { (n.set_pretty_xml)(handle, self.pretty_xml) };
         }
         for (operation, field, pattern, replacement) in &self.redactions {
             let redact = match *operation {
