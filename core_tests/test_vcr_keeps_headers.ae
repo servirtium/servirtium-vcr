@@ -6,7 +6,9 @@
 // maker never agreed to, like a CDN's. Playback from another address still
 // matches, because matching skips the transport headers (Host, Connection,
 // Content-Length, ...) on both sides, and it does not replay the recorded
-// Content-Length: the playback response frames itself.
+// Content-Length: the playback response frames itself. Where a whole-tape
+// collapse changed a body (a timestamp here), the recorded Content-Length
+// follows the body the tape holds.
 
 import core.vcr
 import std.http.client
@@ -22,6 +24,8 @@ const UPSTREAM_PORT = 18284
 const RECORD_PORT   = 18285
 const PLAYBACK_PORT = 18286
 const BODY          = "{\"answer\":42}"
+const STAMP_BODY    = "stamp 2026-11-06T12:00:00.123456Z"
+const STAMP_TAPED   = "stamp TIME"
 
 tape_path() -> {
     tmp = io.getenv("TEMP")
@@ -36,6 +40,24 @@ handle_answer(req: ptr, res: ptr, ud: ptr) {
     http.response_set_header(res, "X-Upstream", "kept")
     http.response_set_header(res, "X-Amz-Cf-Id", "cdn-added-and-unwanted")
     http.response_set_body(res, BODY)
+}
+
+handle_stamp(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "text/plain")
+    http.response_set_body(res, STAMP_BODY)
+}
+
+get_stamp(port: int) -> (int, string) {
+    req = client.request("GET", "http://127.0.0.1:${port}/stamp")
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err }
+    st = client.response_status(resp)
+    body = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return st, body
 }
 
 wait_ready(url: string) {
@@ -94,6 +116,7 @@ main() {
     upstream = http.server_create(UPSTREAM_PORT)
     if upstream == 0 { println("FAIL: upstream server_create"); exit(1) }
     http.server_get(upstream, "/answer", handle_answer, 0)
+    http.server_get(upstream, "/stamp", handle_stamp, 0)
     serr1 = http.server_start_background(upstream)
     if serr1 != "" { println("FAIL: upstream start ${serr1}"); exit(1) }
     wait_ready("http://127.0.0.1:${UPSTREAM_PORT}/answer")
@@ -102,6 +125,8 @@ main() {
     if recorder == null { println("FAIL: load_record"); exit(1) }
     rerr = vcr.remove_header_h(recorder, vcr.FIELD_RESPONSE_HEADERS, "X-Amz-Cf-Id")
     if rerr != "" { println("FAIL: remove_header_h ${rerr}"); exit(1) }
+    cerr = vcr.redact_whole_tape_h(recorder, "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z", "TIME")
+    if cerr != "" { println("FAIL: redact_whole_tape_h ${cerr}"); exit(1) }
     serr2 = http.server_start_background(recorder)
     if serr2 != "" { println("FAIL: recorder start ${serr2}"); exit(1) }
     sleep(250)
@@ -109,6 +134,11 @@ main() {
     st1, body1, _cl1 = get_answer(RECORD_PORT)
     if st1 != 200 || body1 != BODY {
         println("FAIL: record ${st1} '${body1}'; vcr.last_error: ${vcr.last_error()}")
+        exit(1)
+    }
+    sst1, sbody1 = get_stamp(RECORD_PORT)
+    if sst1 != 200 || sbody1 != STAMP_BODY {
+        println("FAIL: record /stamp ${sst1} '${sbody1}'")
         exit(1)
     }
     ferr = vcr.eject_record(recorder, TAPE_PATH)
@@ -130,6 +160,14 @@ main() {
         exit(1)
     }
     println("  PASS the tape keeps the headers as sent, less the removed one")
+    // The collapsed body's Content-Length is the taped body's, not the wire's.
+    need(tape, STAMP_TAPED, "the collapsed timestamp")
+    need(tape, "Content-Length: ${string.length(STAMP_TAPED)}", "the collapsed body's own Content-Length")
+    if string.contains(tape, "Content-Length: ${string.length(STAMP_BODY)}") == 1 {
+        println("FAIL: the tape kept the wire Content-Length of a body it changed")
+        exit(1)
+    }
+    println("  PASS a body the tape changed carries its own Content-Length")
 
     // Playback on another port: the Host differs from the recorded one.
     playback = vcr.load(TAPE_PATH, PLAYBACK_PORT)
@@ -145,6 +183,11 @@ main() {
     }
     if cl2 != "" && cl2 != "${string.length(BODY)}" {
         println("FAIL: playback Content-Length '${cl2}'")
+        exit(1)
+    }
+    sst2, sbody2 = get_stamp(PLAYBACK_PORT)
+    if sst2 != 200 || sbody2 != STAMP_TAPED {
+        println("FAIL: playback /stamp ${sst2} '${sbody2}'; vcr.last_error: ${vcr.last_error()}")
         exit(1)
     }
     println("  PASS playback from another address matches and frames its own body")

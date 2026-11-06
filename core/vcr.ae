@@ -1356,6 +1356,30 @@ rt_apply_unredactions_for(src: string, field: int) -> string {
 }
 
 // Remove headers matching a removal-field from a "Name: Value\n..." block.
+// The header block with its Content-Length line's value set to `n`; a block
+// without one comes back unchanged.
+set_content_length_in_block(headers: string, n: int) -> string {
+    if string.length(headers) == 0 { return headers }
+    out = string.copy("")
+    cursor = 0
+    h_len = string.length(headers)
+    while cursor < h_len {
+        nl_idx = string.index_of_from(headers, "\n", cursor)
+        line_end = h_len
+        if nl_idx >= 0 { line_end = nl_idx }
+        line = string.substring(headers, cursor, line_end)
+        colon_idx = string.index_of(line, ":")
+        if colon_idx > 0 && icmp_rt(string.substring(line, 0, colon_idx), "Content-Length") == 0 {
+            line = string_concat(string.substring(line, 0, colon_idx), ": ${n}")
+        }
+        out = string_concat(out, line)
+        if nl_idx >= 0 { out = string_concat(out, "\n") }
+        if nl_idx < 0 { break }
+        cursor = nl_idx + 1
+    }
+    return out
+}
+
 // A recorded request-header block without the headers matching skips (see
 // skip_in_matching), so a tape that records Host, Connection or
 // Content-Length still matches a playback request sent to another address.
@@ -4597,6 +4621,18 @@ emit_one_interaction_k(key: string, i: int) -> string {
     resp_ct = ctype
     if string.length(resp_ct) == 0 { resp_ct = header_value_in_block(resp_h, "Content-Type") }
     body_out = pretty_xml_body_k(key, resp_ct, body_out)
+
+    // A Content-Length on the tape describes the body the tape holds: when a
+    // redaction, normalization or pretty-print changed a body, its recorded
+    // Content-Length follows (or a collapsed timestamp of varying width would
+    // make the tape differ run to run). An untouched body keeps the value as
+    // sent; a base64 body is left alone.
+    if string.equals(body_out, body) == 0 && ascii_ci_contains(ctype, "base64 below") == 0 {
+        resp_h_out = set_content_length_in_block(resp_h_out, string.length(body_out))
+    }
+    if string.equals(req_b_out, req_b) == 0 {
+        req_h_out = set_content_length_in_block(req_h_out, string.length(req_b_out))
+    }
 
     heading = "## Interaction ${i}: ${method} ${path_out}\n\n"
     if vcr_get_emphasize_http_verbs_k(key) == 1 {
