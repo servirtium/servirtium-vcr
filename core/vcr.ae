@@ -178,6 +178,7 @@ exports (
     redact_header_h, redact_query_param_h, redact_json_field_h,
     redact_h, unredact_h, remove_header_h, note_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
+    normalize_whole_tape_described_h, redact_whole_tape_described_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
     set_rules_footer_h, get_rules_footer_h, RULES_FOOTER_HEADING,
     set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
@@ -279,6 +280,10 @@ struct Normalization {
     pattern: string
     name: string
     replacement: string
+    description: string      // shown in the recording-rules footer in place of
+                              // the pattern, when set (a pattern holding a
+                              // per-run value, a port, would make the footer
+                              // differ run to run)
 }
 
 // One resolved value->token mapping, built fresh per emit by
@@ -898,8 +903,18 @@ vcr_add_normalization(pattern: string, name: string, replacement: string) -> int
     r.pattern = string.copy(pattern)
     r.name = string.copy(name)
     r.replacement = string.copy(replacement)
+    r.description = string.copy("")
     list_add_raw(normalizations(), r)
     return 1
+}
+
+// Describe the whole-tape rule added last, for the recording-rules footer.
+describe_last_normalization_k(key: string, description: string) {
+    l = normalizations_k(key)
+    n = list_size(l)
+    if n == 0 { return }
+    r = list_get_raw(l, n - 1) as *Normalization
+    r.description = string.copy(description)
 }
 vcr_clear_normalizations() { list_reset(slot(cur_key(), "normalizations")) }
 vcr_get_normalization_count() -> int { return list_size(normalizations()) }
@@ -2899,6 +2914,20 @@ redact_whole_tape_h(server: ptr, pattern: string, replacement: string) -> string
     set_cur_key(key_for(server))
     return redact_whole_tape(pattern, replacement)
 }
+// The same two, with a description the recording-rules footer shows in place
+// of the pattern: for a pattern that holds a per-run value (a mapped port),
+// which would otherwise make the footer differ run to run, or one a reader
+// is better told in words.
+normalize_whole_tape_described_h(server: ptr, pattern: string, name: string, description: string) -> string {
+    err = normalize_whole_tape_h(server, pattern, name)
+    if err == "" { describe_last_normalization_k(key_for(server), description) }
+    return err
+}
+redact_whole_tape_described_h(server: ptr, pattern: string, replacement: string, description: string) -> string {
+    err = redact_whole_tape_h(server, pattern, replacement)
+    if err == "" { describe_last_normalization_k(key_for(server), description) }
+    return err
+}
 clear_normalizations_h(server: ptr) {
     set_cur_key(key_for(server))
     clear_normalizations()
@@ -4897,7 +4926,9 @@ emit_rules_footer_k(key: string) -> string {
             label = "normalized"
             written = md_cell_code("{{${nrm.name}-N}}")
         }
-        rows = string_concat(rows, "| ${label} | whole recording | ${md_cell_code(nrm.pattern)} | ${written} | ${interaction_ranges(hits)} |\n")
+        matching = md_cell_code(nrm.pattern)
+        if string.length(nrm.description) > 0 { matching = "*${replace_all(nrm.description, "|", "\\|")}*" }
+        rows = string_concat(rows, "| ${label} | whole recording | ${matching} | ${written} | ${interaction_ranges(hits)} |\n")
         ni = ni + 1
     }
 

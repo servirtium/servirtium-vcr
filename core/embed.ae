@@ -352,6 +352,16 @@ vcr_embed_redact_whole_tape(s: ptr, pattern: string, replacement: string) -> ptr
     return vcr_embed_dup(vcr.redact_whole_tape_h(s, pattern, replacement))
 }
 
+// normalize / redact_whole_tape with a description the recording-rules
+// footer shows in place of the pattern (a pattern holding a per-run value,
+// such as a mapped port, would make the footer differ run to run).
+vcr_embed_normalize_whole_tape_described(s: ptr, pattern: string, name: string, description: string) -> ptr {
+    return vcr_embed_dup(vcr.normalize_whole_tape_described_h(s, pattern, name, description))
+}
+vcr_embed_redact_whole_tape_described(s: ptr, pattern: string, replacement: string, description: string) -> ptr {
+    return vcr_embed_dup(vcr.redact_whole_tape_described_h(s, pattern, replacement, description))
+}
+
 // One-call opt-in for the headers stock HTTP clients attach but a tape
 // never recorded — User-Agent, Accept, Accept-Encoding, Connection. Each
 // is dropped from BOTH the recorded expectation and the live request
