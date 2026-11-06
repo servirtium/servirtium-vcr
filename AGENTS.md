@@ -243,6 +243,23 @@ from the tape:
 Guarded by `core_tests/test_vcr_keeps_headers.ae`. Tapes recorded before this
 (no `Host` etc.) play back unchanged.
 
+## The recording-rules footer (opt-in)
+
+`set_rules_footer_h(h, 1)` (C ABI `aether_vcr_embed_set_rules_footer`) ends a
+recording with a `## [Recording rules]` section: a GitHub-rendered table of
+what the test asked Servirtium to leave out or rewrite (removed headers,
+redactions, normalizations, collapses) and the interactions each touched;
+`none` flags a rule that matched nothing. A literal redaction's pattern is
+never printed (it is often the secret); a header / query / JSON-key
+redaction's name is. Off by default, so existing suites' committed tapes do
+not change under them.
+
+The parser stops at the heading **by design**: `strip_rules_footer` cuts the
+text there before interactions are looked for, so nothing in a footer can
+become an interaction. `core_tests/test_vcr_rules_footer.ae` stuffs a footer
+with a fake `## Interaction` and checks playback still sees two; without the
+cut it sees three.
+
 ## HAR import (`har_import`)
 
 `aether_vcr_embed_har_import(har_path, tape_path)` (Aether: `vcr.har_import`)

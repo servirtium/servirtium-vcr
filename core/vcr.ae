@@ -179,6 +179,7 @@ exports (
     redact_h, unredact_h, remove_header_h, note_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
+    set_rules_footer_h, get_rules_footer_h, RULES_FOOTER_HEADING,
     set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
     set_tls_h, set_tls_pem_h, tls_enabled_h, last_tls_protocol_h,
     substitute_h, clear_substitutions_h,
@@ -529,6 +530,12 @@ vcr_set_strict_headers_k(key: string, on: int) {
     if on != 0 { cfg_set_int(slot(key, "strict"), 1) } else { cfg_set_int(slot(key, "strict"), 0) }
 }
 vcr_set_strict_headers(on: int) { vcr_set_strict_headers_k(cur_key(), on) }
+
+// The recording-rules footer (opt-in, see emit_rules_footer_k).
+vcr_set_rules_footer_k(key: string, on: int) {
+    if on != 0 { cfg_set_int(slot(key, "rules_footer"), 1) } else { cfg_set_int(slot(key, "rules_footer"), 0) }
+}
+vcr_get_rules_footer_k(key: string) -> int { return cfg_get_int(slot(key, "rules_footer"), 0) }
 vcr_get_strict_headers_k(key: string) -> int { return cfg_get_int(slot(key, "strict"), 0) }
 vcr_get_strict_headers() -> int { return vcr_get_strict_headers_k(cur_key()) }
 
@@ -1563,7 +1570,10 @@ live_headers_blob_k(srvkey: string, req: ptr, drop_transport: int) -> string {
         }
         skip = 0
         if drop_transport == 1 && skip_in_matching(key) == 1 { skip = 1 }
-        if skip == 0 && header_removed_for_field_k(srvkey, FIELD_REQUEST_HEADERS, key) == 1 { skip = 1 }
+        // The in-memory recording keeps a removed header (emit leaves it out,
+        // and the rules footer can say which interactions had it); matching
+        // leaves it out here.
+        if skip == 0 && drop_transport == 1 && header_removed_for_field_k(srvkey, FIELD_REQUEST_HEADERS, key) == 1 { skip = 1 }
         if skip == 0 {
             line = string_concat(key, ": ")
             line = string_concat(line, val)
@@ -2992,6 +3002,8 @@ apply_tls_h(server: ptr) -> string {
     return http.server_set_tls(server, cert, tkey)
 }
 set_strict_headers_h(server: ptr, on: int) { vcr_set_strict_headers_k(key_for(server), on) }
+set_rules_footer_h(server: ptr, on: int) { vcr_set_rules_footer_k(key_for(server), on) }
+get_rules_footer_h(server: ptr) -> int { return vcr_get_rules_footer_k(key_for(server)) }
 set_match_json_body_h(server: ptr, on: int) { vcr_set_match_json_body_k(key_for(server), on) }
 set_match_xml_body_h(server: ptr, on: int) { vcr_set_match_xml_body_k(key_for(server), on) }
 set_pretty_xml_h(server: ptr, indent: int) { vcr_set_pretty_xml_k(key_for(server), indent) }
@@ -4717,11 +4729,207 @@ emit_tape_k(key: string) -> string {
         out = string_concat(out, chunk)
         i = i + 1
     }
+    if vcr_get_rules_footer_k(key) == 1 {
+        out = string_concat(out, emit_rules_footer_k(key))
+    }
     return out
 }
 emit_tape() -> string {
     return emit_tape_k(cur_key())
 }
+
+// ---- the recording-rules footer --------------------------------------
+//
+// Opt-in (set_rules_footer_h). After the last interaction, a section that
+// says what the test asked Servirtium to leave out or rewrite when it wrote
+// the recording: removed headers, redactions, normalizations and collapses,
+// each with the interactions it touched ("none" flags a rule that matched
+// nothing). Everything not listed is as sent. Markdown that GitHub renders
+// as a table.
+//
+// The parser stops at RULES_FOOTER_HEADING by design (parse_tape_text_append
+// cuts the text there before it looks for interactions), so playback never
+// reads the footer, whatever it contains.
+//
+// A literal redaction's pattern is never printed: it is often the secret
+// itself. The other redaction kinds name a header, query parameter or JSON
+// key, which is printed.
+const RULES_FOOTER_HEADING = "## [Recording rules]"
+
+// "0–3, 5" for the interaction indices whose flag is set in `hits`
+// (a string of '0'/'1' per interaction); "none" if none.
+interaction_ranges(hits: string) -> string {
+    out = ""
+    n = string.length(hits)
+    i = 0
+    while i < n {
+        if string.char_at(hits, i) == 49 {
+            j = i
+            while j + 1 < n && string.char_at(hits, j + 1) == 49 { j = j + 1 }
+            part = string.from_int(i)
+            if j > i + 1 { part = "${i}–${j}" }
+            if j == i + 1 { part = "${i}, ${j}" }
+            if string.length(out) > 0 { out = string_concat(out, ", ") }
+            out = string_concat(out, part)
+            i = j + 1
+        } else {
+            i = i + 1
+        }
+    }
+    if string.length(out) == 0 { return "none" }
+    return out
+}
+
+// `s` as a code span safe inside a GitHub table cell: pipes escaped, and a
+// double-backtick span when the text itself holds a backtick.
+md_cell_code(s: string) -> string {
+    t = replace_all(s, "|", "\\|")
+    if string.index_of(t, "`") >= 0 { return "`` ${t} ``" }
+    return "`${t}`"
+}
+
+raw_field_k(e: *Interaction, field: int) -> string {
+    if field == FIELD_PATH { return e.path }
+    if field == FIELD_REQUEST_HEADERS { return e.req_headers }
+    if field == FIELD_REQUEST_BODY { return e.req_body }
+    if field == FIELD_RESPONSE_HEADERS { return e.resp_headers }
+    if field == FIELD_RESPONSE_BODY { return e.body }
+    return ""
+}
+
+// Whether one redaction rule would rewrite `s` (without marking it used).
+redaction_touches(r: *Redaction, s: string) -> int {
+    if string.length(s) == 0 { return 0 }
+    out = s
+    if r.kind == 0 { out = str_replace_all(s, r.pattern, r.replacement) }
+    if r.kind == 1 { out = redact_header_text(s, r.pattern, r.replacement) }
+    if r.kind == 2 { out = redact_query_text(s, r.pattern, r.replacement) }
+    if r.kind == 3 {
+        tree, err = json.parse(s)
+        if err != "" || tree == null { return 0 }
+        json.json_free(tree)
+        out = redact_json_text(s, r.pattern, r.replacement)
+    }
+    if out != s { return 1 }
+    return 0
+}
+
+redaction_kind_label(kind: int) -> string {
+    if kind == 1 { return "redacted header" }
+    if kind == 2 { return "redacted query parameter" }
+    if kind == 3 { return "redacted JSON key" }
+    return "redacted"
+}
+
+field_label(field: int) -> string {
+    if field == FIELD_PATH { return "path" }
+    if field == FIELD_REQUEST_HEADERS { return "request headers" }
+    if field == FIELD_REQUEST_BODY { return "request body" }
+    if field == FIELD_RESPONSE_HEADERS { return "response headers" }
+    if field == FIELD_RESPONSE_BODY { return "response body" }
+    return "field ${field}"
+}
+
+emit_rules_footer_k(key: string) -> string {
+    n = list_size(tape_list_k(key))
+    rows = ""
+
+    rl = header_removals_k(key)
+    ri = 0
+    while ri < list_size(rl) {
+        h = list_get_raw(rl, ri) as *HeaderRemoval
+        hits = ""
+        ii = 0
+        while ii < n {
+            e = tape_get_k(key, ii)
+            v = response_header_value_from_block(raw_field_k(e, h.field), h.name)
+            present = 0
+            if string.length(v) > 0 || header_line_present(raw_field_k(e, h.field), h.name) == 1 { present = 1 }
+            if present == 1 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
+            ii = ii + 1
+        }
+        rows = string_concat(rows, "| removed | ${field_label(h.field)} | ${md_cell_code(h.name)} | (left out) | ${interaction_ranges(hits)} |\n")
+        ri = ri + 1
+    }
+
+    dl = redactions_k(key)
+    di = 0
+    while di < list_size(dl) {
+        r = list_get_raw(dl, di) as *Redaction
+        hits = ""
+        ii = 0
+        while ii < n {
+            e = tape_get_k(key, ii)
+            if redaction_touches(r, raw_field_k(e, r.field)) == 1 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
+            ii = ii + 1
+        }
+        what = "(not shown: it may be the secret)"
+        if r.kind != 0 { what = md_cell_code(r.pattern) }
+        rows = string_concat(rows, "| ${redaction_kind_label(r.kind)} | ${field_label(r.field)} | ${what} | ${md_cell_code(r.replacement)} | ${interaction_ranges(hits)} |\n")
+        di = di + 1
+    }
+
+    nl = normalizations_k(key)
+    ni = 0
+    while ni < list_size(nl) {
+        nrm = list_get_raw(nl, ni) as *Normalization
+        hits = ""
+        re, cerr = regex.compile(nrm.pattern)
+        ii = 0
+        while ii < n {
+            hit = 0
+            if cerr == "" {
+                e = tape_get_k(key, ii)
+                fi = 0
+                fields = [e.path, e.req_headers, e.req_body, e.resp_headers, e.body]
+                while fi < 5 && hit == 0 {
+                    if string.length(fields[fi]) > 0 && regex.matches(re, fields[fi]) == 1 { hit = 1 }
+                    fi = fi + 1
+                }
+            }
+            if hit == 1 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
+            ii = ii + 1
+        }
+        if cerr == "" { regex.free(re) }
+        label = "collapsed"
+        written = md_cell_code(nrm.replacement)
+        if string.length(nrm.replacement) == 0 {
+            label = "normalized"
+            written = md_cell_code("{{${nrm.name}-N}}")
+        }
+        rows = string_concat(rows, "| ${label} | whole recording | ${md_cell_code(nrm.pattern)} | ${written} | ${interaction_ranges(hits)} |\n")
+        ni = ni + 1
+    }
+
+    out = "\n${RULES_FOOTER_HEADING}\n\n"
+    if string.length(rows) == 0 {
+        out = string_concat(out, "The test registered no rules: this recording is as sent. Playback does not read this section.\n")
+        return out
+    }
+    out = string_concat(out, "What the test asked Servirtium to leave out or rewrite when it wrote this recording; everything else is as sent. Playback does not read this section.\n\n")
+    out = string_concat(out, "| Rule | Applies to | Matching | Written as | Interactions |\n")
+    out = string_concat(out, "|---|---|---|---|---|\n")
+    return string_concat(out, rows)
+}
+
+// Whether a "Name:" line for `name` is in the header block (an empty value
+// counts).
+header_line_present(headers: string, name: string) -> int {
+    cursor = 0
+    h_len = string.length(headers)
+    while cursor < h_len {
+        nl_idx = string.index_of_from(headers, "\n", cursor)
+        line_end = h_len
+        if nl_idx >= 0 { line_end = nl_idx }
+        line = string.substring(headers, cursor, line_end)
+        colon_idx = string.index_of(line, ":")
+        if colon_idx > 0 && icmp_rt(string.substring(line, 0, colon_idx), name) == 0 { return 1 }
+        if nl_idx < 0 { break }
+        cursor = nl_idx + 1
+    }
+    return 0
+}
+
 
 // ---- Aether-side tape parser ---------------------------------------
 //
@@ -5200,8 +5408,20 @@ normalize_tape_bytes(contents: string) -> string {
     return s
 }
 
+// The tape text before its recording-rules footer (RULES_FOOTER_HEADING at
+// a line start), or all of it when there is none. The footer documents the
+// recording for people; playback must never read it, so it is cut off here,
+// before interactions are looked for, rather than left for the last
+// interaction's parser to skip over.
+strip_rules_footer(contents: string) -> string {
+    if string.starts_with(contents, RULES_FOOTER_HEADING) == 1 { return string.copy("") }
+    at = string.index_of(contents, string_concat("\n", RULES_FOOTER_HEADING))
+    if at < 0 { return contents }
+    return string.substring(contents, 0, at + 1)
+}
+
 parse_tape_text_append(key: string, label: string, contents0: string) -> string {
-    contents = normalize_tape_bytes(contents0)
+    contents = strip_rules_footer(normalize_tape_bytes(contents0))
     start_count = list_size(tape_list_k(key))
 
     delim = "\n## Interaction "

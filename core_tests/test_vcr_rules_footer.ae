@@ -1,0 +1,177 @@
+// The recording-rules footer.
+//
+// With set_rules_footer_h on, a recording ends with a "## [Recording rules]"
+// table: what the test asked Servirtium to leave out or rewrite, and which
+// interactions each rule touched ("none" for a rule that matched nothing).
+// A literal redaction's pattern is never printed, since it is often the
+// secret itself. Playback stops at the footer by design: a footer stuffed
+// with text that looks like interactions adds none.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18287
+const RECORD_PORT   = 18288
+const PLAYBACK_PORT = 18289
+const SECRET        = "s3cr3t-token-77"
+const PLACEHOLDER   = "REDACTED-TOKEN"
+
+tape_path() -> {
+    tmp = io.getenv("TEMP")
+    if tmp == 0 { tmp = io.getenv("TMPDIR") }
+    if tmp == 0 { tmp = "/tmp" }
+    return "${tmp}/vcr_rules_footer.tape"
+}
+
+handle_item(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/json")
+    http.response_set_header(res, "X-Amz-Cf-Id", "cdn-added")
+    http.response_set_body(res, "{\"id\":\"7d444840-9dc0-11d1-b245-5ffdce74fad2\",\"at\":\"2026-11-06T12:00:00.5Z\"}")
+}
+
+wait_ready(url: string) {
+    ready = 0
+    i = 0
+    while i < 200 {
+        sleep(25)
+        req = client.request("GET", url)
+        if req != null {
+            client.set_timeout(req, 1s)
+            resp, err = client.send_request(req)
+            client.request_free(req)
+            if err == "" {
+                client.response_free(resp)
+                ready = 1
+                i = 200
+            }
+        }
+        i = i + 1
+    }
+    if ready == 0 {
+        println("FAIL: server not ready at ${url}")
+        exit(1)
+    }
+}
+
+// GET `path`, with the debug header when `debug` is 1; the status.
+get(port: int, path: string, debug: int) -> int {
+    req = client.request("GET", "http://127.0.0.1:${port}${path}")
+    client.set_header(req, "Authorization", "Bearer ${SECRET}")
+    if debug == 1 { client.set_header(req, "X-Debug", "on") }
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1 }
+    st = client.response_status(resp)
+    client.response_free(resp)
+    return st
+}
+
+need(tape: string, text: string, what: string) {
+    if string.contains(tape, text) != 1 {
+        println("FAIL: the tape lacks ${what}:\n  ${text}")
+        println(tape)
+        exit(1)
+    }
+}
+
+// The rules a recording and its playback share.
+rules(h: ptr) {
+    e = vcr.remove_header_h(h, vcr.FIELD_RESPONSE_HEADERS, "X-Amz-Cf-Id")
+    if e == "" { e = vcr.remove_header_h(h, vcr.FIELD_REQUEST_HEADERS, "X-Debug") }
+    if e != "" { println("FAIL: rule ${e}"); exit(1) }
+}
+
+main() {
+    println("=== VCR recording-rules footer ===")
+    TAPE_PATH = tape_path()
+    fs.delete(TAPE_PATH)
+
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { println("FAIL: upstream server_create"); exit(1) }
+    http.server_get(upstream, "/a", handle_item, 0)
+    http.server_get(upstream, "/b", handle_item, 0)
+    serr1 = http.server_start_background(upstream)
+    if serr1 != "" { println("FAIL: upstream start ${serr1}"); exit(1) }
+    wait_ready("http://127.0.0.1:${UPSTREAM_PORT}/a")
+
+    recorder = vcr.load_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if recorder == null { println("FAIL: load_record"); exit(1) }
+    rules(recorder)
+    e = vcr.redact_h(recorder, vcr.FIELD_REQUEST_HEADERS, SECRET, PLACEHOLDER)
+    if e == "" { e = vcr.redact_header_h(recorder, vcr.FIELD_RESPONSE_HEADERS, "X-Never-Sent", "GONE") }
+    if e == "" { e = vcr.normalize_whole_tape_h(recorder, "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "uuid") }
+    if e == "" { e = vcr.redact_whole_tape_h(recorder, "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z|epoch", "2000-01-01T00:00:00Z") }
+    if e != "" { println("FAIL: rule ${e}"); exit(1) }
+    vcr.set_rules_footer_h(recorder, 1)
+    serr2 = http.server_start_background(recorder)
+    if serr2 != "" { println("FAIL: recorder start ${serr2}"); exit(1) }
+    sleep(250)
+
+    if get(RECORD_PORT, "/a", 1) != 200 || get(RECORD_PORT, "/b", 0) != 200 {
+        println("FAIL: record; vcr.last_error: ${vcr.last_error()}")
+        exit(1)
+    }
+    ferr = vcr.eject_record(recorder, TAPE_PATH)
+    if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
+
+    tape, terr = fs.read(TAPE_PATH)
+    if terr != "" { println("FAIL: read tape ${terr}"); exit(1) }
+    need(tape, "\n## [Recording rules]\n", "the footer heading")
+    need(tape, "| Rule | Applies to | Matching | Written as | Interactions |\n|---|---|---|---|---|\n", "the table head")
+    need(tape, "| removed | response headers | `X-Amz-Cf-Id` | (left out) | 0, 1 |", "the removed response header, both interactions")
+    need(tape, "| removed | request headers | `X-Debug` | (left out) | 0 |", "the removed request header, the first interaction only")
+    need(tape, "| redacted | request headers | (not shown: it may be the secret) | `REDACTED-TOKEN` | 0, 1 |", "the literal redaction, pattern hidden")
+    need(tape, "| redacted header | response headers | `X-Never-Sent` | `GONE` | none |", "a rule that matched nothing")
+    need(tape, "| normalized | whole recording | `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}` | `{{uuid-N}}` | 0, 1 |", "the normalization")
+    need(tape, "| collapsed | whole recording | `[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z\\|epoch` | `2000-01-01T00:00:00Z` | 0, 1 |", "the collapse, its pipe escaped for the table")
+    if string.contains(tape, SECRET) == 1 {
+        println("FAIL: the secret is in the recording")
+        exit(1)
+    }
+    if string.contains(tape, "X-Debug") == 1 && string.contains(tape, "X-Debug: on") == 1 {
+        println("FAIL: the removed request header was written")
+        exit(1)
+    }
+    println("  PASS the footer lists each rule and where it applied, and hides the secret")
+
+    // Stuff the footer with what looks like more interactions; playback must
+    // still see exactly the two recorded ones.
+    stuffed = string.concat(tape, "\n## Interaction 2: GET /evil\n\n### Request headers recorded for playback:\n\n```\n```\n### Response body recorded for playback (200: text/plain):\n\n```\nnope\n```\n")
+    werr = fs.write(TAPE_PATH, stuffed)
+    if werr != "" { println("FAIL: write stuffed tape ${werr}"); exit(1) }
+
+    playback = vcr.load(TAPE_PATH, PLAYBACK_PORT)
+    if playback == null { println("FAIL: load playback: ${vcr.last_error()}"); exit(1) }
+    rules(playback)
+    ue = vcr.unredact_h(playback, vcr.FIELD_REQUEST_HEADERS, PLACEHOLDER, SECRET)
+    if ue != "" { println("FAIL: unredact ${ue}"); exit(1) }
+    if vcr.tape_length_h(playback) != 2 {
+        println("FAIL: playback read ${vcr.tape_length_h(playback)} interactions, not 2")
+        exit(1)
+    }
+    serr3 = http.server_start_background(playback)
+    if serr3 != "" { println("FAIL: playback start ${serr3}"); exit(1) }
+    sleep(250)
+    if get(PLAYBACK_PORT, "/a", 1) != 200 || get(PLAYBACK_PORT, "/b", 0) != 200 {
+        println("FAIL: playback; vcr.last_error: ${vcr.last_error()}")
+        exit(1)
+    }
+    aerr = vcr.assert_all_consumed_h(playback)
+    if aerr != "" { println("FAIL: ${aerr}"); exit(1) }
+    println("  PASS playback stops at the footer: two interactions, both replayed")
+
+    vcr.eject(playback)
+    http_server_stop(upstream)
+    fs.delete(TAPE_PATH)
+    println("PASS")
+    exit(0)
+}

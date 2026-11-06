@@ -159,6 +159,10 @@ main() {
         println("FAIL: the tape kept the removed X-Amz-Cf-Id")
         exit(1)
     }
+    if string.contains(tape, "## [Recording rules]") == 1 {
+        println("FAIL: a recording-rules footer was written without set_rules_footer_h")
+        exit(1)
+    }
     println("  PASS the tape keeps the headers as sent, less the removed one")
     // The collapsed body's Content-Length is the taped body's, not the wire's.
     need(tape, STAMP_TAPED, "the collapsed timestamp")

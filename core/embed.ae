@@ -402,6 +402,13 @@ vcr_embed_set_strict_headers(s: ptr, on: int) {
     vcr.set_strict_headers_h(s, on)
 }
 
+// Opt-in: write a "## [Recording rules]" footer after the last interaction,
+// listing what the test left out or rewrote (removed headers, redactions,
+// normalizations) and where. Playback does not read it.
+vcr_embed_set_rules_footer(s: ptr, on: int) {
+    vcr.set_rules_footer_h(s, on)
+}
+
 // Opt-in: match request bodies by semantic JSON equality (key order /
 // whitespace ignored) instead of byte-for-byte. Off by default; non-JSON
 // bodies always fall back to the byte-exact comparison.
