@@ -1,0 +1,157 @@
+// The tape keeps the headers as they were sent.
+//
+// Record mode writes every request header the client sent (Host included)
+// and every response header the service sent (Content-Length included),
+// leaving out only what a test removes with remove_header: headers the app
+// maker never agreed to, like a CDN's. Playback from another address still
+// matches, because matching skips the transport headers (Host, Connection,
+// Content-Length, ...) on both sides, and it does not replay the recorded
+// Content-Length: the playback response frames itself.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18284
+const RECORD_PORT   = 18285
+const PLAYBACK_PORT = 18286
+const BODY          = "{\"answer\":42}"
+
+tape_path() -> {
+    tmp = io.getenv("TEMP")
+    if tmp == 0 { tmp = io.getenv("TMPDIR") }
+    if tmp == 0 { tmp = "/tmp" }
+    return "${tmp}/vcr_keeps_headers.tape"
+}
+
+handle_answer(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/json")
+    http.response_set_header(res, "X-Upstream", "kept")
+    http.response_set_header(res, "X-Amz-Cf-Id", "cdn-added-and-unwanted")
+    http.response_set_body(res, BODY)
+}
+
+wait_ready(url: string) {
+    ready = 0
+    i = 0
+    while i < 200 {
+        sleep(25)
+        req = client.request("GET", url)
+        if req != null {
+            client.set_timeout(req, 1s)
+            resp, err = client.send_request(req)
+            client.request_free(req)
+            if err == "" {
+                client.response_free(resp)
+                ready = 1
+                i = 200
+            }
+        }
+        i = i + 1
+    }
+    if ready == 0 {
+        println("FAIL: server not ready at ${url}")
+        exit(1)
+    }
+}
+
+need(tape: string, text: string, what: string) {
+    if string.contains(tape, text) != 1 {
+        println("FAIL: the tape lacks ${what} (${text})")
+        println(tape)
+        exit(1)
+    }
+}
+
+get_answer(port: int) -> (int, string, string) {
+    req = client.request("GET", "http://127.0.0.1:${port}/answer")
+    client.set_header(req, "User-Agent", "keeps-headers-test/1.0")
+    client.set_header(req, "Accept", "application/json")
+    client.set_header(req, "X-App-Tenant", "acme")
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err, "" }
+    st = client.response_status(resp)
+    body = string.copy(client.response_body(resp))
+    cl = string.copy(client.response_header(resp, "Content-Length"))
+    client.response_free(resp)
+    return st, body, cl
+}
+
+main() {
+    println("=== VCR keeps the headers as sent ===")
+    TAPE_PATH = tape_path()
+    fs.delete(TAPE_PATH)
+
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { println("FAIL: upstream server_create"); exit(1) }
+    http.server_get(upstream, "/answer", handle_answer, 0)
+    serr1 = http.server_start_background(upstream)
+    if serr1 != "" { println("FAIL: upstream start ${serr1}"); exit(1) }
+    wait_ready("http://127.0.0.1:${UPSTREAM_PORT}/answer")
+
+    recorder = vcr.load_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if recorder == null { println("FAIL: load_record"); exit(1) }
+    rerr = vcr.remove_header_h(recorder, vcr.FIELD_RESPONSE_HEADERS, "X-Amz-Cf-Id")
+    if rerr != "" { println("FAIL: remove_header_h ${rerr}"); exit(1) }
+    serr2 = http.server_start_background(recorder)
+    if serr2 != "" { println("FAIL: recorder start ${serr2}"); exit(1) }
+    sleep(250)
+
+    st1, body1, _cl1 = get_answer(RECORD_PORT)
+    if st1 != 200 || body1 != BODY {
+        println("FAIL: record ${st1} '${body1}'; vcr.last_error: ${vcr.last_error()}")
+        exit(1)
+    }
+    ferr = vcr.eject_record(recorder, TAPE_PATH)
+    if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
+
+    tape, terr = fs.read(TAPE_PATH)
+    if terr != "" { println("FAIL: read tape ${terr}"); exit(1) }
+    // What the client sent, ordinary headers and transport ones alike.
+    need(tape, "User-Agent: keeps-headers-test/1.0", "the client's User-Agent")
+    need(tape, "Accept: application/json", "the client's Accept")
+    need(tape, "X-App-Tenant: acme", "the app's own header")
+    need(tape, "Host: 127.0.0.1:${RECORD_PORT}", "the Host the client sent")
+    // What the service sent.
+    need(tape, "X-Upstream: kept", "the service's own header")
+    need(tape, "Content-Length: ${string.length(BODY)}", "the service's Content-Length")
+    // What the test removed, and only that.
+    if string.contains(tape, "X-Amz-Cf-Id") == 1 {
+        println("FAIL: the tape kept the removed X-Amz-Cf-Id")
+        exit(1)
+    }
+    println("  PASS the tape keeps the headers as sent, less the removed one")
+
+    // Playback on another port: the Host differs from the recorded one.
+    playback = vcr.load(TAPE_PATH, PLAYBACK_PORT)
+    if playback == null { println("FAIL: load playback"); exit(1) }
+    serr3 = http.server_start_background(playback)
+    if serr3 != "" { println("FAIL: playback start ${serr3}"); exit(1) }
+    sleep(250)
+
+    st2, body2, cl2 = get_answer(PLAYBACK_PORT)
+    if st2 != 200 || body2 != BODY {
+        println("FAIL: playback ${st2} '${body2}'; vcr.last_error: ${vcr.last_error()}")
+        exit(1)
+    }
+    if cl2 != "" && cl2 != "${string.length(BODY)}" {
+        println("FAIL: playback Content-Length '${cl2}'")
+        exit(1)
+    }
+    println("  PASS playback from another address matches and frames its own body")
+
+    vcr.eject(playback)
+    http_server_stop(upstream)
+    fs.delete(TAPE_PATH)
+    println("PASS")
+    exit(0)
+}

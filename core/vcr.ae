@@ -1356,6 +1356,32 @@ rt_apply_unredactions_for(src: string, field: int) -> string {
 }
 
 // Remove headers matching a removal-field from a "Name: Value\n..." block.
+// A recorded request-header block without the headers matching skips (see
+// skip_in_matching), so a tape that records Host, Connection or
+// Content-Length still matches a playback request sent to another address.
+strip_transport_headers(headers: string) -> string {
+    if string.length(headers) == 0 { return string.copy("") }
+    out = string.copy("")
+    cursor = 0
+    h_len = string.length(headers)
+    while cursor < h_len {
+        nl_idx = string.index_of_from(headers, "\n", cursor)
+        line_end = h_len
+        if nl_idx >= 0 { line_end = nl_idx }
+        line = string.substring(headers, cursor, line_end)
+        keep = 1
+        colon_idx = string.index_of(line, ":")
+        if colon_idx > 0 && skip_in_matching(string.substring(line, 0, colon_idx)) == 1 { keep = 0 }
+        if keep == 1 && string.length(line) > 0 {
+            out = string_concat(out, line)
+            if nl_idx >= 0 { out = string_concat(out, "\n") }
+        }
+        if nl_idx < 0 { break }
+        cursor = nl_idx + 1
+    }
+    return out
+}
+
 remove_headers_from_block_k(srvkey: string, headers: string, field: int) -> string {
     if string.length(headers) == 0 { return string.copy("") }
     out = string.copy("")
@@ -1433,6 +1459,17 @@ is_hop_by_hop_header(name: string) -> int {
     return 0
 }
 
+// A request header playback matching does not compare: the hop-by-hop
+// ones, which differ between a record run and a playback run by nature
+// (Host above all), and Accept-Encoding, a client library's own
+// negotiation that the VCR answers itself (the tape holds bodies decoded,
+// playback gzips on request). The tape still records them.
+skip_in_matching(name: string) -> int {
+    if is_hop_by_hop_header(name) == 1 { return 1 }
+    if icmp_rt(name, "Accept-Encoding") == 0 { return 1 }
+    return 0
+}
+
 // ---- request normalization ----
 
 // Sort a list of "Name: Value" lines case-insensitively, join with \n,
@@ -1472,10 +1509,23 @@ sort_join_lines(blob: string) -> string {
     return out
 }
 
-// Build the canonical "Name: Value\n..." blob from the live request,
-// dropping Host / Connection / Content-Length / Accept-Encoding and
-// any header-removal'd names. Sorted ascending by name (ci).
+// Build the canonical "Name: Value\n..." blob from the live request for
+// MATCHING: every header but those skip_in_matching names (Host,
+// Connection, Content-Length, the other hop-by-hop ones, Accept-Encoding)
+// and any header-removal'd names. Sorted ascending by name (ci). The tape keeps the transport
+// headers (tape_live_headers_k); matching skips them on both sides
+// (strip_transport_headers).
 normalize_live_headers_k(srvkey: string, req: ptr) -> string {
+    return live_headers_blob_k(srvkey, req, 1)
+}
+
+// The live request's headers as the tape records them: all of them, as the
+// client sent them, but for the names a test removed (remove_header).
+tape_live_headers_k(srvkey: string, req: ptr) -> string {
+    return live_headers_blob_k(srvkey, req, 0)
+}
+
+live_headers_blob_k(srvkey: string, req: ptr, drop_transport: int) -> string {
     count = http.request_header_count(req)
     if count <= 0 { return string.copy("") }
     collected = string.copy("")
@@ -1488,10 +1538,7 @@ normalize_live_headers_k(srvkey: string, req: ptr) -> string {
             continue
         }
         skip = 0
-        if icmp_rt(key, "Host") == 0 { skip = 1 }
-        if icmp_rt(key, "Connection") == 0 { skip = 1 }
-        if icmp_rt(key, "Content-Length") == 0 { skip = 1 }
-        if icmp_rt(key, "Accept-Encoding") == 0 { skip = 1 }
+        if drop_transport == 1 && skip_in_matching(key) == 1 { skip = 1 }
         if skip == 0 && header_removed_for_field_k(srvkey, FIELD_REQUEST_HEADERS, key) == 1 { skip = 1 }
         if skip == 0 {
             line = string_concat(key, ": ")
@@ -1613,10 +1660,13 @@ header_block_has_token_value(headers: string, name: string, token: string) -> in
     return ascii_ci_contains(v, token)
 }
 
-// Build the tape-side response-headers blob: drop the status line
-// (first line), drop hop-by-hop, optionally drop Content-Encoding.
-// Mirrors response_headers_for_tape.
-response_headers_for_tape(raw_headers: string, strip_content_encoding: int) -> string {
+// Build a response-headers blob from the upstream's raw headers, without
+// the status line. For the tape (drop_hop 0) every header the service sent
+// is kept, but for Content-Encoding and Content-Length when the tape stores
+// the body decoded (strip_content_encoding 1): they describe bytes the tape
+// does not hold. For the record-mode echo to the caller (drop_hop 1) the
+// hop-by-hop headers go, since the live response frames itself.
+response_headers_for_tape(raw_headers: string, strip_content_encoding: int, drop_hop: int) -> string {
     if string.length(raw_headers) == 0 { return string.copy("") }
     // skip the first line (status line)
     first_nl = string.index_of(raw_headers, "\n")
@@ -1638,8 +1688,9 @@ response_headers_for_tape(raw_headers: string, strip_content_encoding: int) -> s
         if colon > 0 {
             name = string.substring(line, 0, colon)
             drop = 0
-            if is_hop_by_hop_header(name) == 1 { drop = 1 }
+            if drop_hop == 1 && is_hop_by_hop_header(name) == 1 { drop = 1 }
             if drop == 0 && strip_content_encoding == 1 && icmp_rt(name, "Content-Encoding") == 0 { drop = 1 }
+            if drop == 0 && strip_content_encoding == 1 && icmp_rt(name, "Content-Length") == 0 { drop = 1 }
             if drop == 0 {
                 out = string_concat(out, line)
                 out = string_concat(out, "\n")
@@ -2020,11 +2071,11 @@ do_record(srvkey: string, req: ptr, res: ptr) {
     body = http_response_body(cresp)
     resp_body_len = http_response_body_length(cresp)
     raw_headers = http_response_headers(cresp)
-    caller_headers = response_headers_for_tape(raw_headers, 0)
+    caller_headers = response_headers_for_tape(raw_headers, 0, 1)
     upstream_gzip = header_block_has_token_value(caller_headers, "Content-Encoding", "gzip")
-    resp_headers = response_headers_for_tape(raw_headers, upstream_gzip)
+    resp_headers = response_headers_for_tape(raw_headers, upstream_gzip, 0)
     content_type = response_header_value_from_block(resp_headers, "Content-Type")
-    req_headers = normalize_live_headers_k(srvkey, req)
+    req_headers = tape_live_headers_k(srvkey, req)
 
     body_for_tape = body
     if upstream_gzip == 1 {
@@ -2116,7 +2167,11 @@ emit_playback_response(srvkey: string, e: *Interaction, req: ptr, res: ptr) {
                 val = string.substring(line, colon + 1, string.length(line))
                 val = trim_leading_ws(val)
                 if icmp_rt(name, "Content-Type") == 0 { emitted_ct = 1 }
-                if icmp_rt(name, "Content-Length") != 0 && icmp_rt(name, "Content-Encoding") != 0 {
+                // Content-Length, Transfer-Encoding, Connection and the other
+                // hop-by-hop headers are on the tape as the service sent them,
+                // but this response frames itself; Content-Encoding is set
+                // below when the body is gzipped here.
+                if is_hop_by_hop_header(name) == 0 && icmp_rt(name, "Content-Encoding") != 0 {
                     http_response_add_header(res, name, val)
                 }
             }
@@ -2171,6 +2226,7 @@ interaction_matches_pre(srvkey: string, index: int, e: *Interaction, req: ptr, g
 
     expected_req_headers = rt_apply_unredactions_for_k(srvkey, e.req_headers, FIELD_REQUEST_HEADERS)
     expected_req_headers = remove_headers_from_block_k(srvkey, expected_req_headers, FIELD_REQUEST_HEADERS)
+    expected_req_headers = strip_transport_headers(expected_req_headers)
     // Full-block header match applies when strict is on, or when the tape
     // carries request headers AND the fixture didn't opt into surgical ByHeader
     // matching (which matches only the named headers, ignoring the rest).
@@ -2279,6 +2335,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
     expected_req_headers = rt_apply_unredactions_for_k(srvkey, e.req_headers, FIELD_REQUEST_HEADERS)
     expected_req_body = rt_apply_unredactions_for_k(srvkey, e.req_body, FIELD_REQUEST_BODY)
     expected_req_headers = remove_headers_from_block_k(srvkey, expected_req_headers, FIELD_REQUEST_HEADERS)
+    expected_req_headers = strip_transport_headers(expected_req_headers)
 
     got_method = http_request_method(req)
     got_path = http_request_path(req)

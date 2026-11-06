@@ -219,6 +219,30 @@ fence" style other Servirtium tools emit — so cross-impl *playback* still work
 only our *emitted* bytes are compact. See the format spec comment atop
 `core/vcr.ae`.
 
+## What a recording keeps (headers)
+
+Record mode writes the headers **as they were sent**: every request header
+the client sent (`Host`, `User-Agent`, `Accept`, `Accept-Encoding`,
+`Connection`, `Content-Length` ...) and every response header the service
+sent. There is no built-in drop list. The only hard-coded exception is
+Servirtium 1's: when the upstream gzips, the tape stores the body decoded and
+leaves out that response's `Content-Encoding` and `Content-Length`, which
+describe bytes the tape does not hold. Anything else stays out only because a
+test removed it (`remove_header`: a CDN's or a cloud load balancer's headers
+the app maker never agreed to) or redacted it.
+
+Two places still treat transport headers specially, without dropping them
+from the tape:
+- **Matching** skips `skip_in_matching` names (the hop-by-hop set, `Host`
+  first, plus `Accept-Encoding`) on both sides: they differ between a record
+  run and a playback run, or are negotiation the VCR answers itself.
+- **Playback** does not replay hop-by-hop response headers or
+  `Content-Encoding`: the replay server frames its own response
+  (`Content-Length`, chunking) and gzips on request.
+
+Guarded by `core_tests/test_vcr_keeps_headers.ae`. Tapes recorded before this
+(no `Host` etc.) play back unchanged.
+
 ## HAR import (`har_import`)
 
 `aether_vcr_embed_har_import(har_path, tape_path)` (Aether: `vcr.har_import`)
