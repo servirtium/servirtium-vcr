@@ -202,8 +202,25 @@ Vcr.record(tape, upstream)
     .indentCodeBlocks()      // 4-space-indented blocks instead of ``` fences
     .emphasizeHttpVerbs()    // *GET* instead of bare GET in headings
     .prettyXml(2)            // pretty-print recorded XML bodies
+    .prettyJson(2)           // pretty-print recorded JSON bodies
+    .addLicenseNotice("...") // text under "## LICENSE NOTICE" atop each tape
     .start();
 ```
+
+## Header presets (opt-in; record and playback)
+
+```java
+Vcr.record(tape, upstream)
+    .removeTransportHeaders()         // Host, Connection, Content-Length, ... Accept-Encoding
+    .removeCloudHeaders("cloudflare") // aws | azure | cloudflare | fastly | gcp
+    .redactCredentials()              // Authorization, cookies, X-Api-Key, X-Auth-Token
+    .redactCredentialHeader("X-Vault-Token")
+    .upstreamCafile("ca.pem")         // record only: verify an https upstream
+    .start();
+```
+
+Register the same presets on the playback builder where they apply. An unknown
+vendor or unreadable CA file fails at `start()` with a `VcrException`.
 
 Playback tolerates either form regardless, so cross-implementation tapes load
 cleanly.

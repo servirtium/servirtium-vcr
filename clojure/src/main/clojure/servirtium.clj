@@ -22,6 +22,11 @@
   RecordBuilder, returning the builder for further chaining/start."
   [builder {:keys [port] :as _opts}]
   (when port (.port builder (int port)))
+  ;; Header presets (opt-in, record and playback).
+  (when (:remove-transport-headers _opts) (.removeTransportHeaders builder))
+  (doseq [vendor (:remove-cloud-headers _opts)] (.removeCloudHeaders builder vendor))
+  (when (:redact-credentials _opts) (.redactCredentials builder))
+  (doseq [name (:redact-credential-header _opts)] (.redactCredentialHeader builder name))
   (when-let [callback (:secret-redactor _opts)]
     (.secretRedactor builder (reify java.util.function.BiFunction
       (apply [_ key request] (callback key request)))))
@@ -44,13 +49,23 @@
 (defn record
   "Start a record VCR forwarding to `upstream`, returning the running VcrServer.
   Closing it (e.g. via with-open) writes the tape to `tape`. `opts` is an
-  optional map; :port 0 (the default) asks the OS for a free port."
+  optional map; :port 0 (the default) asks the OS for a free port. Record-only
+  opts: :pretty-json (indent, or true for 2), :license-notice (text under
+  \"## LICENSE NOTICE\" atop the tape), :upstream-cafile (PEM CA path). Both
+  modes also take the header presets :remove-transport-headers (true),
+  :remove-cloud-headers (seq of vendors), :redact-credentials (true) and
+  :redact-credential-header (seq of names)."
   (^VcrServer [tape upstream] (record tape upstream {}))
   (^VcrServer [tape upstream opts]
    (-> (let [builder (Vcr/record tape upstream)]
          (doseq [name (:redact-header opts)] (.redactHeader builder name))
          (doseq [name (:redact-query-param opts)] (.redactQueryParam builder name))
          (doseq [name (:redact-json-field opts)] (.redactJsonField builder name))
+         ;; :pretty-json is an indent (1..16); true means 2.
+         (when-let [indent (:pretty-json opts)]
+           (.prettyJson builder (int (if (true? indent) 2 indent))))
+         (when-let [text (:license-notice opts)] (.addLicenseNotice builder text))
+         (when-let [path (:upstream-cafile opts)] (.upstreamCafile builder path))
          builder)
        (apply-opts opts)
        (.start))))

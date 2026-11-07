@@ -84,4 +84,15 @@ class RecordTest {
             assertEquals(Outcome.OK, play.lastKind());
         }
     }
+
+    @Test
+    void addLicenseNoticeWritesNoticeAtTopOfTape() throws Exception {
+        try (VcrServer rec = Vcr.record(tapePath.toString(), upstreamBase)
+                .port(0).addLicenseNotice("Recorded under the MIT licence").start()) {
+            getString(rec.baseUrl() + "/greeting");
+        }
+        String tape = Files.readString(tapePath);
+        assertTrue(tape.contains("## LICENSE NOTICE"), tape);
+        assertTrue(tape.contains("Recorded under the MIT licence"), tape);
+    }
 }

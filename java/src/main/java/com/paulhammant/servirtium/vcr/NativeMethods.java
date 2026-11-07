@@ -164,6 +164,30 @@ final class NativeMethods {
             "aether_vcr_embed_ignore_volatile_headers",
             FunctionDescriptor.of(C_STR, C_PTR));
 
+    static final MethodHandle REMOVE_TRANSPORT_HEADERS = down(
+            "aether_vcr_embed_remove_transport_headers",
+            FunctionDescriptor.of(C_STR, C_PTR));
+
+    static final MethodHandle REMOVE_CLOUD_HEADERS = down(
+            "aether_vcr_embed_remove_cloud_headers",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+
+    static final MethodHandle REDACT_CREDENTIALS = down(
+            "aether_vcr_embed_redact_credentials",
+            FunctionDescriptor.of(C_STR, C_PTR));
+
+    static final MethodHandle REDACT_CREDENTIAL_HEADER = down(
+            "aether_vcr_embed_redact_credential_header",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+
+    static final MethodHandle ADD_LICENSE_NOTICE = down(
+            "aether_vcr_embed_add_license_notice",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+
+    static final MethodHandle SET_UPSTREAM_CAFILE = down(
+            "aether_vcr_embed_set_upstream_cafile",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+
     static final MethodHandle NOTE = down(
             "aether_vcr_embed_note",
             FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
@@ -210,6 +234,10 @@ final class NativeMethods {
 
     static final MethodHandle SET_PRETTY_XML = down(
             "aether_vcr_embed_set_pretty_xml",
+            FunctionDescriptor.ofVoid(C_PTR, C_INT));
+
+    static final MethodHandle SET_PRETTY_JSON = down(
+            "aether_vcr_embed_set_pretty_json",
             FunctionDescriptor.ofVoid(C_PTR, C_INT));
 
     static final MethodHandle CLEAR_REDACTIONS = down(

@@ -28,6 +28,10 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     private final List<StaticMount> staticContent = new ArrayList<>();
     private final List<String> untaped = new ArrayList<>();
     private boolean ignoreVolatileHeaders;
+    private boolean removeTransportHeaders;
+    private boolean redactCredentials;
+    private final List<String> cloudVendors = new ArrayList<>();
+    private final List<String> credentialHeaders = new ArrayList<>();
     private String tlsCert;
     private String tlsKey;
     private String tlsCertPem;
@@ -90,6 +94,52 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
 
     public S ignoreVolatileHeaders(boolean on) {
         this.ignoreVolatileHeaders = on;
+        return self();
+    }
+
+    /**
+     * Drop the transport headers: {@code Host}, {@code Connection},
+     * {@code Content-Length}, the other hop-by-hop headers and the request's
+     * {@code Accept-Encoding} (Servirtium 1's behaviour), from both the
+     * recorded tape and the live request. Opt-in; listed in the recording-rules
+     * footer under the preset's name.
+     */
+    public S removeTransportHeaders() {
+        this.removeTransportHeaders = true;
+        return self();
+    }
+
+    /**
+     * Drop a cloud vendor's CDN / load-balancer tracing and cache-status
+     * headers. {@code vendor} is one of {@code "aws"}, {@code "azure"},
+     * {@code "cloudflare"}, {@code "fastly"}, {@code "gcp"}; an unknown name
+     * fails at {@code start()}. May be called once per vendor.
+     */
+    public S removeCloudHeaders(String vendor) {
+        cloudVendors.add(vendor);
+        return self();
+    }
+
+    /**
+     * Redact credentials: {@code Authorization} / {@code Proxy-Authorization}
+     * keep their scheme ({@code Bearer AUTHORIZATION_1}), each cookie value in
+     * {@code Cookie} / {@code Set-Cookie} becomes {@code COOKIE_N},
+     * {@code X-Api-Key} and {@code X-Auth-Token} become tokens. Playback
+     * matches these headers on presence, not value, so register this on the
+     * playback builder too.
+     */
+    public S redactCredentials() {
+        this.redactCredentials = true;
+        return self();
+    }
+
+    /**
+     * Redact one more credential header the same way as
+     * {@link #redactCredentials()}: its whole value becomes a token named
+     * after the header ({@code X-Vault-Token: X_VAULT_TOKEN_1}).
+     */
+    public S redactCredentialHeader(String name) {
+        credentialHeaders.add(name);
         return self();
     }
 
@@ -187,6 +237,40 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
                 check(r, "ignoreVolatileHeaders");
             } catch (Throwable t) {
                 throw rethrow("ignoreVolatileHeaders", t);
+            }
+        }
+        if (removeTransportHeaders) {
+            try {
+                MemorySegment r = (MemorySegment) NativeMethods.REMOVE_TRANSPORT_HEADERS.invokeExact(handle);
+                check(r, "removeTransportHeaders");
+            } catch (Throwable t) {
+                throw rethrow("removeTransportHeaders", t);
+            }
+        }
+        for (String vendor : cloudVendors) {
+            try {
+                MemorySegment r = (MemorySegment) NativeMethods.REMOVE_CLOUD_HEADERS.invokeExact(
+                        handle, NativeMethods.cString(arena, vendor));
+                check(r, "removeCloudHeaders");
+            } catch (Throwable t) {
+                throw rethrow("removeCloudHeaders", t);
+            }
+        }
+        if (redactCredentials) {
+            try {
+                MemorySegment r = (MemorySegment) NativeMethods.REDACT_CREDENTIALS.invokeExact(handle);
+                check(r, "redactCredentials");
+            } catch (Throwable t) {
+                throw rethrow("redactCredentials", t);
+            }
+        }
+        for (String name : credentialHeaders) {
+            try {
+                MemorySegment r = (MemorySegment) NativeMethods.REDACT_CREDENTIAL_HEADER.invokeExact(
+                        handle, NativeMethods.cString(arena, name));
+                check(r, "redactCredentialHeader");
+            } catch (Throwable t) {
+                throw rethrow("redactCredentialHeader", t);
             }
         }
     }

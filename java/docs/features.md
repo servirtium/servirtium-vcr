@@ -23,7 +23,8 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.matchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.staticContent(mount, dir)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.failIfChanged()` | ✅ |
-| Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` / `.prettyXml(n)` | — |
+| Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` / `.prettyXml(n)` / `.prettyJson(n)` | — |
+| Header presets / license notice / upstream CA | ✅ | ✅ | `.removeTransportHeaders()` / `.removeCloudHeaders(v)` / `.redactCredentials()` / `.redactCredentialHeader(n)` / `.addLicenseNotice(t)` / `.upstreamCafile(p)` | ✅ license notice |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError()`/`lastKind()`/`lastIndex()` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ | ✅ | (automatic) | ✅ |

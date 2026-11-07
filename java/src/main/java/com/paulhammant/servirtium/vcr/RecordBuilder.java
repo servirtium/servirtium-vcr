@@ -29,6 +29,9 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     private boolean indentCodeBlocks;
     private boolean emphasizeHttpVerbs;
     private int prettyXml;
+    private int prettyJson;
+    private String licenseNotice;
+    private String upstreamCafile;
     private boolean failIfChanged;
 
     RecordBuilder(String tapePath, String upstreamBase) {
@@ -163,6 +166,34 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
         return this;
     }
 
+    /** Pretty-print recorded JSON response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't valid JSON. */
+    public RecordBuilder prettyJson() {
+        return prettyJson(2);
+    }
+
+    public RecordBuilder prettyJson(int indent) {
+        this.prettyJson = indent;
+        return this;
+    }
+
+    /**
+     * Write {@code text} under a {@code ## LICENSE NOTICE} heading at the top
+     * of every tape this recording produces. Playback ignores it.
+     */
+    public RecordBuilder addLicenseNotice(String text) {
+        this.licenseNotice = text;
+        return this;
+    }
+
+    /**
+     * Verify an https upstream against this PEM CA file instead of the system
+     * trust store. Record mode only.
+     */
+    public RecordBuilder upstreamCafile(String path) {
+        this.upstreamCafile = path;
+        return this;
+    }
+
     /**
      * On close, still write the freshly recorded tape but throw if it differs
      * from the on-disk one — the Servirtium step-4 drift contract, so a normal
@@ -189,6 +220,19 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
             }
             if (prettyXml > 0) {
                 NativeMethods.SET_PRETTY_XML.invokeExact(handle, prettyXml);
+            }
+            if (prettyJson > 0) {
+                NativeMethods.SET_PRETTY_JSON.invokeExact(handle, prettyJson);
+            }
+            if (licenseNotice != null) {
+                MemorySegment res = (MemorySegment) NativeMethods.ADD_LICENSE_NOTICE.invokeExact(
+                        handle, NativeMethods.cString(arena, licenseNotice));
+                check(res, "addLicenseNotice");
+            }
+            if (upstreamCafile != null) {
+                MemorySegment res = (MemorySegment) NativeMethods.SET_UPSTREAM_CAFILE.invokeExact(
+                        handle, NativeMethods.cString(arena, upstreamCafile));
+                check(res, "upstreamCafile");
             }
             for (Redaction r : redactions) {
                 MemorySegment res = (MemorySegment) r.operation().invokeExact(
