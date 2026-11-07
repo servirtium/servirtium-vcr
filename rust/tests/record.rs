@@ -9,6 +9,29 @@ use common::{FakeUpstream, TempTape};
 use servirtium::{Field, Outcome, Vcr};
 
 #[test]
+fn record_accepts_license_notice_pretty_json_and_presets() {
+    let upstream = FakeUpstream::new();
+    let tape = TempTape::new();
+    let rec = Vcr::record(&tape.0, &upstream.base_url)
+        .add_license_notice("test notice")
+        .pretty_json(2)
+        .remove_transport_headers()
+        .remove_cloud_headers("aws")
+        .redact_credentials()
+        .redact_credential_header("X-Vault-Token")
+        .port(0)
+        .start()
+        .unwrap();
+    rec.finish().unwrap();
+    assert!(std::fs::read_to_string(&tape.0).unwrap().contains("## LICENSE NOTICE"));
+    assert!(Vcr::record(&tape.0, &upstream.base_url)
+        .remove_cloud_headers("nosuchvendor")
+        .port(0)
+        .start()
+        .is_err());
+}
+
+#[test]
 fn records_then_replays_the_same_interaction() {
     let upstream = FakeUpstream::new();
     upstream.set_body("hello-from-upstream");

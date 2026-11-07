@@ -192,6 +192,9 @@ impl Vcr {
             indent_code_blocks: false,
             emphasize_http_verbs: false,
             pretty_xml: 0,
+            pretty_json: 0,
+            upstream_cafile: None,
+            license_notice: None,
             fail_if_changed: false,
         }
     }
@@ -206,6 +209,10 @@ struct Common {
     native_lib: Option<String>,
     header_removals: Vec<(Field, String)>,
     ignore_volatile_headers: bool,
+    remove_transport_headers: bool,
+    cloud_vendors: Vec<String>,
+    redact_credentials: bool,
+    credential_headers: Vec<String>,
     static_content: Vec<(String, String)>,
     untaped: Vec<String>,
     tls: Option<(String, String)>,
@@ -222,6 +229,10 @@ impl Common {
             native_lib: None,
             header_removals: Vec::new(),
             ignore_volatile_headers: false,
+            remove_transport_headers: false,
+            cloud_vendors: Vec::new(),
+            redact_credentials: false,
+            credential_headers: Vec::new(),
             static_content: Vec::new(),
             untaped: Vec::new(),
             tls: None,
@@ -238,6 +249,18 @@ impl Common {
         }
         if self.ignore_volatile_headers {
             check(n, unsafe { (n.ignore_volatile_headers)(h) }, "ignore_volatile_headers")?;
+        }
+        if self.remove_transport_headers {
+            check(n, unsafe { (n.remove_transport_headers)(h) }, "remove_transport_headers")?;
+        }
+        for vendor in &self.cloud_vendors {
+            check(n, unsafe { (n.remove_cloud_headers)(h, cstr(vendor)?.as_ptr()) }, "remove_cloud_headers")?;
+        }
+        if self.redact_credentials {
+            check(n, unsafe { (n.redact_credentials)(h) }, "redact_credentials")?;
+        }
+        for name in &self.credential_headers {
+            check(n, unsafe { (n.redact_credential_header)(h, cstr(name)?.as_ptr()) }, "redact_credential_header")?;
         }
         for (mount, dir) in &self.static_content {
             check(n, unsafe { (n.static_content)(h, cstr(mount)?.as_ptr(), cstr(dir)?.as_ptr()) }, "static_content")?;
@@ -318,6 +341,33 @@ impl PlaybackBuilder {
     /// ignoring for distributed-tracing / correlation noise.
     pub fn ignore_volatile_headers(mut self) -> Self {
         self.common.ignore_volatile_headers = true;
+        self
+    }
+    /// Leave the connection-describing headers (`Host`, `Connection`,
+    /// `Content-Length` and the other hop-by-hop headers, `Accept-Encoding`)
+    /// out of the recording. Works in playback and record mode.
+    pub fn remove_transport_headers(mut self) -> Self {
+        self.common.remove_transport_headers = true;
+        self
+    }
+    /// Drop a cloud vendor's per-request headers; `vendor` is one of `"aws"`,
+    /// `"azure"`, `"cloudflare"`, `"fastly"`, `"gcp"`. Call again for more
+    /// vendors. Works in playback and record mode.
+    pub fn remove_cloud_headers(mut self, vendor: impl Into<String>) -> Self {
+        self.common.cloud_vendors.push(vendor.into());
+        self
+    }
+    /// Redact the common credential headers (`Authorization`, `Cookie`,
+    /// `Set-Cookie`, `X-Api-Key`, `X-Auth-Token`, ...) as numbered tokens.
+    /// Register on the playback builder too, as with every rule.
+    pub fn redact_credentials(mut self) -> Self {
+        self.common.redact_credentials = true;
+        self
+    }
+    /// One more credential header with the same treatment as
+    /// [`redact_credentials`](Self::redact_credentials).
+    pub fn redact_credential_header(mut self, name: impl Into<String>) -> Self {
+        self.common.credential_headers.push(name.into());
         self
     }
     /// Compare the SUT's request headers against the recorded block on every
@@ -509,6 +559,9 @@ pub struct RecordBuilder {
     indent_code_blocks: bool,
     emphasize_http_verbs: bool,
     pretty_xml: i32,
+    pretty_json: i32,
+    upstream_cafile: Option<String>,
+    license_notice: Option<String>,
     fail_if_changed: bool,
 }
 
@@ -549,6 +602,33 @@ impl RecordBuilder {
     /// to common-header ignoring for distributed-tracing / correlation noise.
     pub fn ignore_volatile_headers(mut self) -> Self {
         self.common.ignore_volatile_headers = true;
+        self
+    }
+    /// Leave the connection-describing headers (`Host`, `Connection`,
+    /// `Content-Length` and the other hop-by-hop headers, `Accept-Encoding`)
+    /// out of the recording. Works in playback and record mode.
+    pub fn remove_transport_headers(mut self) -> Self {
+        self.common.remove_transport_headers = true;
+        self
+    }
+    /// Drop a cloud vendor's per-request headers; `vendor` is one of `"aws"`,
+    /// `"azure"`, `"cloudflare"`, `"fastly"`, `"gcp"`. Call again for more
+    /// vendors. Works in playback and record mode.
+    pub fn remove_cloud_headers(mut self, vendor: impl Into<String>) -> Self {
+        self.common.cloud_vendors.push(vendor.into());
+        self
+    }
+    /// Redact the common credential headers (`Authorization`, `Cookie`,
+    /// `Set-Cookie`, `X-Api-Key`, `X-Auth-Token`, ...) as numbered tokens.
+    /// Register on the playback builder too, as with every rule.
+    pub fn redact_credentials(mut self) -> Self {
+        self.common.redact_credentials = true;
+        self
+    }
+    /// One more credential header with the same treatment as
+    /// [`redact_credentials`](Self::redact_credentials).
+    pub fn redact_credential_header(mut self, name: impl Into<String>) -> Self {
+        self.common.credential_headers.push(name.into());
         self
     }
     /// Serve a path prefix from an on-disk directory instead of the tape.
@@ -654,6 +734,22 @@ impl RecordBuilder {
         self.pretty_xml = indent;
         self
     }
+    /// Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    pub fn pretty_json(mut self, indent: i32) -> Self {
+        self.pretty_json = indent;
+        self
+    }
+    /// Verify an `https://` upstream against this PEM CA file.
+    pub fn upstream_cafile(mut self, path: impl Into<String>) -> Self {
+        self.upstream_cafile = Some(path.into());
+        self
+    }
+    /// Put `text` under `## LICENSE NOTICE` at the top of each tape; playback
+    /// ignores it.
+    pub fn add_license_notice(mut self, text: impl Into<String>) -> Self {
+        self.license_notice = Some(text.into());
+        self
+    }
     /// On flush, still write the freshly recorded tape but fail if it differs
     /// from the on-disk one — the drift contract, so a normal `git diff`
     /// shows the change and CI fails loudly. The failure surfaces from
@@ -697,6 +793,15 @@ impl RecordBuilder {
         }
         if self.pretty_xml > 0 {
             unsafe { (n.set_pretty_xml)(handle, self.pretty_xml) };
+        }
+        if self.pretty_json > 0 {
+            unsafe { (n.set_pretty_json)(handle, self.pretty_json) };
+        }
+        if let Some(path) = &self.upstream_cafile {
+            check(n, unsafe { (n.set_upstream_cafile)(handle, cstr(path)?.as_ptr()) }, "set_upstream_cafile")?;
+        }
+        if let Some(text) = &self.license_notice {
+            check(n, unsafe { (n.add_license_notice)(handle, cstr(text)?.as_ptr()) }, "add_license_notice")?;
         }
         for (operation, field, pattern, replacement) in &self.redactions {
             let redact = match *operation {
