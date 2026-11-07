@@ -1,10 +1,10 @@
 // Third-party-consumer PACKAGE stage for the Kotlin binding.
 //
-// `mvn install`s the Kotlin DSL layer (com.paulhammant.servirtium:
-// servirtium-vcr-kotlin) to ~/.m2. It depends on the Java jar
-// (servirtium-vcr, which bundles the libservirtium_vcr.so as a resource), so we dep
+// `mvn install`s the Kotlin DSL layer (dev.servirtium:
+// vcr-kotlin) to ~/.m2. It depends on the Java jar
+// (dev.servirtium:vcr, which bundles the libservirtium_vcr.so as a resource), so we dep
 // java/.package.ae to get that into ~/.m2 first. A Kotlin consumer then
-// resolves servirtium-vcr-kotlin and the .so rides along transitively.
+// resolves vcr-kotlin and the .so rides along transitively.
 import bldr
 import maven
 
@@ -16,8 +16,8 @@ aeb(cap) {
         // module_dir (kotlin/) — no ${root}/kotlin hardcode.
         maven.install()
 
-        publish_artifact("maven_gav", "com.paulhammant.servirtium:servirtium-vcr-kotlin:2.0.0-SNAPSHOT")
-        println("kotlin package: installed servirtium-vcr-kotlin jar to ~/.m2")
+        publish_artifact("maven_gav", "dev.servirtium:vcr-kotlin:2.0.0-SNAPSHOT")
+        println("kotlin package: installed vcr-kotlin jar to ~/.m2")
         return 0
     }
 }

@@ -1,7 +1,7 @@
 // Third-party-consumer EXAMPLE test for the Java binding.
 //
 // Runs a standalone Maven consumer project (java/example) whose only servirtium
-// dependency is com.paulhammant.servirtium:servirtium-vcr:2.0.0-SNAPSHOT,
+// dependency is dev.servirtium:vcr:2.0.0-SNAPSHOT,
 // resolved from ~/.m2 (populated by java/.package.ae) — NOT the source classes.
 // Its JUnit test replays the canonical single_get tape, with the libservirtium_vcr.so
 // discovered from the jar's own /native/linux-x64/ resource and no

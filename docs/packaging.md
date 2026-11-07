@@ -63,7 +63,7 @@ needs `SERVIRTIUM_VCR_LIB`.
 | C | `c/servirtium-c-2.0.0.tar.gz` | `tar xzf` + `pkg-config servirtium` |
 | C++ | `cpp/servirtium-cpp-2.0.0.tar.gz` | `tar xzf` + `pkg-config servirtium-cpp` |
 | Lua | `lua/dist/` | put on `package.cpath` |
-| Java + Kotlin/Scala/Clojure/Groovy | jar in `~/.m2` | `com.paulhammant.servirtium:servirtium-vcr[-<lang>]:2.0.0-SNAPSHOT` |
+| Java + Kotlin/Scala/Clojure/Groovy | jar in `~/.m2` | `dev.servirtium:vcr[-<lang>]:2.0.0-SNAPSHOT` |
 
 F# ships **managed-only** and takes `Servirtium.Vcr` as a NuGet *dependency* —
 the CLR family rides one native assembly, so a second copy of the `.so` would

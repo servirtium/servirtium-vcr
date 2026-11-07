@@ -1,7 +1,7 @@
 package com.example
 
-import com.paulhammant.servirtium.vcr.Outcome
-import com.paulhammant.servirtium.vcr.kotlin.playback
+import dev.servirtium.vcr.Outcome
+import dev.servirtium.vcr.kotlin.playback
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * Third-party consumer test: drives the INSTALLED Kotlin DSL jar
- * (servirtium-vcr-kotlin, resolved from ~/.m2) through its `playback { }` DSL,
+ * (vcr-kotlin, resolved from ~/.m2) through its `playback { }` DSL,
  * replaying the canonical tape. The libservirtium_vcr.so is discovered zero-config from
  * the transitive servirtium-vcr jar's /native/<rid>/ resource — no
  * SERVIRTIUM_VCR_LIB, no source tree.
@@ -22,7 +22,7 @@ class PlaybackConsumerTest {
 
     @Test
     fun `replays canonical tape via the installed kotlin dsl`() {
-        val location = Class.forName("com.paulhammant.servirtium.vcr.kotlin.Servirtium")
+        val location = Class.forName("dev.servirtium.vcr.kotlin.Servirtium")
             .protectionDomain.codeSource.location.toString()
         assertTrue(location.endsWith(".jar"), "expected the installed kotlin jar, got $location")
 

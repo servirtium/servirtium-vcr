@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Third-party consumer example for the Scala binding. Depends on the INSTALLED
-  servirtium-vcr-scala jar (from ~/.m2) and replays the canonical tape through
+  vcr-scala jar (from ~/.m2) and replays the canonical tape through
   the `Servirtium.playback(tape)(_.port(0))` helpers. The libservirtium_vcr.so rides in
   transitively via the servirtium-vcr jar resource — no SERVIRTIUM_VCR_LIB.
 -->
@@ -24,8 +24,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.paulhammant.servirtium</groupId>
-            <artifactId>servirtium-vcr-scala</artifactId>
+            <groupId>dev.servirtium</groupId>
+            <artifactId>vcr-scala</artifactId>
             <version>2.0.0-alpha12</version>
         </dependency>
         <dependency>

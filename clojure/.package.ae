@@ -1,5 +1,5 @@
 // Third-party-consumer PACKAGE stage for the Clojure binding.
-// mvn-installs the Clojure layer (servirtium-vcr-clojure — a jar carrying
+// mvn-installs the Clojure layer (vcr-clojure — a jar carrying
 // servirtium.clj on the classpath) to ~/.m2; deps java/.package.ae so the Java
 // jar (with the bundled libservirtium_vcr.so) is present and rides along transitively for
 // a deps.edn consumer.
@@ -14,8 +14,8 @@ aeb(cap) {
         // module_dir (clojure/) — no ${root}/clojure hardcode.
         maven.install()
 
-        publish_artifact("maven_gav", "com.paulhammant.servirtium:servirtium-vcr-clojure:2.0.0-SNAPSHOT")
-        println("clojure package: installed servirtium-vcr-clojure jar to ~/.m2")
+        publish_artifact("maven_gav", "dev.servirtium:vcr-clojure:2.0.0-SNAPSHOT")
+        println("clojure package: installed vcr-clojure jar to ~/.m2")
         return 0
     }
 }

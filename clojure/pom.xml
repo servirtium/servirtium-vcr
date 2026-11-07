@@ -4,14 +4,14 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.paulhammant.servirtium</groupId>
-    <artifactId>servirtium-vcr-clojure</artifactId>
+    <groupId>dev.servirtium</groupId>
+    <artifactId>vcr-clojure</artifactId>
     <version>2.0.0-alpha12</version>
     <packaging>jar</packaging>
 
     <!--
       Servirtium VCR for Clojure: a thin idiomatic wrapper over the Java FFM
-      binding (com.paulhammant.servirtium:servirtium-vcr), which is the actual
+      binding (dev.servirtium:vcr), which is the actual
       binding to libservirtium_vcr. Clojure reaches libservirtium_vcr entirely through
       that jar via JVM interop, so there is no second FFI here. Clojure is
       dynamic, so there is no static compile against the Java jar; the .clj
@@ -34,8 +34,8 @@
             <version>${clojure.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.paulhammant.servirtium</groupId>
-            <artifactId>servirtium-vcr</artifactId>
+            <groupId>dev.servirtium</groupId>
+            <artifactId>vcr</artifactId>
             <version>2.0.0-alpha12</version>
         </dependency>
     </dependencies>

@@ -211,12 +211,16 @@ if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
     # version (2.0.0-alpha2), not the git tag. Stage the main jar (not
     # -sources/-javadoc) with a .sha256.
     jar=""
-    for cand in "$ROOT"/java/target/servirtium-vcr-*.jar; do
+    for cand in "$ROOT"/java/target/vcr-*.jar; do
       case "$cand" in *-sources.jar|*-javadoc.jar) continue ;; esac
       [ -f "$cand" ] && { jar="$cand"; break; }
     done
     [ -n "$jar" ] || die "fat jar not found under java/target/"
-    cp "$jar" "$DIST/" || die "could not stage $(basename "$jar")"
+    # Maven names it vcr-<ver>.jar (dev.servirtium:vcr); the release page asset
+    # is servirtium-vcr-<ver>.jar so it reads clearly beside servirtium-vcr-*.tgz.
+    staged="servirtium-$(basename "$jar")"
+    cp "$jar" "$DIST/$staged" || die "could not stage $staged"
+    jar="$DIST/$staged"
     ( cd "$DIST" && sha256sum "$(basename "$jar")" > "$(basename "$jar").sha256" ) \
       || die "could not checksum $(basename "$jar")"
     say "  jar: $(basename "$jar") ($(du -h "$jar" | cut -f1)) staged + .sha256"

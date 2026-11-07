@@ -11,7 +11,7 @@ service, returns the live response, and writes the tape. Same tape, both
 directions.
 
 ```java
-import com.paulhammant.servirtium.vcr.*;
+import dev.servirtium.vcr.*;
 import java.net.URI;
 import java.net.http.*;
 
@@ -43,69 +43,68 @@ JNI). It does **not** reimplement Servirtium in Java.
 > with no shim. The new API is below / in [docs/usage.md](docs/usage.md). The
 > tape *format* is unchanged, so existing tapes replay as-is.
 
-## Requirements
+## Getting it
 
-- **JDK 22+.** FFM (`java.lang.foreign`) has been stable since JDK 22, so the
-  binding compiles to JDK-22 bytecode — which also lets the JVM-family bindings
-  (Kotlin/Scala/Clojure/Groovy) consume this jar. It's built and tested on
-  JDK 25 (its `.tests.ae` pins `JAVA25_HOME`).
-- The native library `libservirtium_vcr.{so,dylib}` for your OS/arch. The
-  Maven coordinate `com.paulhammant.servirtium:servirtium-vcr` is **not on
-  Maven Central yet**, so you can't add it as a dependency to pull the native
-  library down — and the "ships on the classpath under `native/<rid>/`,
-  extracted/loaded automatically" path only picks up a lib **you** supply
-  there, not a published artifact. Instead, fetch the prebuilt library from
-  releases and point the binding at it (below).
+**Not on Maven Central yet** (Central publication is pending; the coordinates
+below will not change when it lands). Until then install into `~/.m2`:
 
-  **Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-  [GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-  prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-  verify it:
-
-  ```sh
-  curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-  curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-  sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
-  ```
-
-  Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-  (x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-  library. (For macOS use the `.dylib`, for Windows the `.dll`.) Then point the
-  binding at it — the JVM FFM layer loads it from that path:
-
-  ```sh
-  export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-  ```
-
-  **Build the package locally.** Nothing is on Maven Central yet, so to consume
-  this as a normal Maven/Gradle dependency you install it to your **local
-  `~/.m2`** and resolve from there. You'll need a **JDK 22+ and Maven**. Stage
-  the downloaded `.so` as the jar's bundled resource, then `mvn install` the
-  Java module:
-
-  ```sh
-  mkdir -p java/src/main/resources/native/linux-x64
-  cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so java/src/main/resources/native/linux-x64/libservirtium_vcr.so
-  (cd java && mvn -q -DskipTests install)
-  ```
-
-  This installs the `servirtium-vcr` jar — with the `.so` bundled inside it — to
-  `~/.m2`, resolvable as `com.paulhammant.servirtium:servirtium-vcr`. A consumer
-  then just depends on that coordinate; `NativeLoader` extracts the bundled
-  library from the classpath at runtime, so a consumer resolving this jar needs
-  **no `SERVIRTIUM_VCR_LIB`**.
-
-### A flag your build needs
-
-JDK 25 prints a native-access warning unless the calling module is granted
-access. Pass it to the JVM that runs your tests:
-
-```
---enable-native-access=ALL-UNNAMED
+```sh
+TAG=v2.0.0-alpha.12; VER=2.0.0-alpha12   # the only things to change
+# 1. the fat jar (six natives bundled) from the release page -> ~/.m2 as dev.servirtium:vcr
+curl -fsSLO https://github.com/servirtium/servirtium-vcr/releases/download/$TAG/servirtium-vcr-$VER.jar
+mvn -q install:install-file -Dfile=servirtium-vcr-$VER.jar -DgroupId=dev.servirtium -DartifactId=vcr -Dversion=$VER -Dpackaging=jar
+# check it resolves from ~/.m2
+mvn -q dependency:get -Dartifact=dev.servirtium:vcr:$VER && echo OK
 ```
 
-This project's Surefire config already sets it; consumers should add it to
-their own test JVM args.
+Alternative, from a checkout of this repo (needs `aeb` and `ae`): `aeb java/.package.ae`
+builds the native library and installs the same coordinate into `~/.m2`.
+
+Then depend on `dev.servirtium:vcr:2.0.0-alpha12` (use `mavenLocal()` /
+`Resolver.mavenLocal` where your build tool needs telling):
+
+```xml
+<dependency>
+  <groupId>dev.servirtium</groupId>
+  <artifactId>vcr</artifactId>
+  <version>2.0.0-alpha12</version>
+  <scope>test</scope>
+</dependency>
+```
+
+```kotlin
+// build.gradle.kts
+repositories { mavenLocal(); mavenCentral() }
+dependencies { testImplementation("dev.servirtium:vcr:2.0.0-alpha12") }
+```
+
+```scala
+// build.sbt
+resolvers += Resolver.mavenLocal
+libraryDependencies += "dev.servirtium" % "vcr" % "2.0.0-alpha12" % Test
+```
+
+```clojure
+;; deps.edn
+{:deps {dev.servirtium/vcr {:mvn/version "2.0.0-alpha12"}}}
+```
+
+### Notes for coding agents
+
+- **JDK 22 or newer** is required (the binding uses `java.lang.foreign`, final
+  since 22). Older JDKs fail with `UnsupportedClassVersionError`. Tested on JDK 25.
+- Pass `--enable-native-access=ALL-UNNAMED` to the JVM that runs the tests
+  (Surefire `argLine`, Gradle `jvmArgs`, sbt `javaOptions`, Clojure `:jvm-opts`);
+  without it JDK 24+ prints a restricted-method warning.
+- The native library is bundled in the jar (`/native/<os>-<arch>/`) and extracted
+  at runtime: no `SERVIRTIUM_VCR_LIB` needed. If you see
+  `VcrException: native VCR library not found. Looked at $SERVIRTIUM_VCR_LIB, beside the jar, ...`,
+  the jar on your classpath has no native for this OS/arch (a lean dev build, or
+  an unsupported platform). Use the release fat jar, or set `SERVIRTIUM_VCR_LIB`
+  to a `libservirtium_vcr` from the
+  [release page](https://github.com/servirtium/servirtium-vcr/releases).
+- Platforms bundled: linux, macOS, Windows (x86_64, arm64).
+- Central publication is pending; the `dev.servirtium` coordinates are final.
 
 ## Docs
 

@@ -1,10 +1,10 @@
 package com.example
 
-import static com.paulhammant.servirtium.vcr.groovy.Servirtium.playback
+import static dev.servirtium.vcr.groovy.Servirtium.playback
 import static org.junit.jupiter.api.Assertions.assertEquals
 import static org.junit.jupiter.api.Assertions.assertTrue
 
-import com.paulhammant.servirtium.vcr.Outcome
+import dev.servirtium.vcr.Outcome
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * Third-party consumer test: drives the INSTALLED Groovy DSL jar
- * (servirtium-vcr-groovy, resolved from ~/.m2) via the `playback(tape) { }`
+ * (vcr-groovy, resolved from ~/.m2) via the `playback(tape) { }`
  * DSL, replaying the canonical tape. The libservirtium_vcr.so is discovered zero-config
  * from the transitive servirtium-vcr jar resource — no SERVIRTIUM_VCR_LIB.
  */
@@ -22,7 +22,7 @@ class PlaybackConsumerTest {
 
     @Test
     void replaysCanonicalTapeFromInstalledGroovyJar() {
-        def location = com.paulhammant.servirtium.vcr.groovy.Servirtium.class
+        def location = dev.servirtium.vcr.groovy.Servirtium.class
                 .protectionDomain.codeSource.location.toString()
         assertTrue(location.endsWith('.jar'), "expected the installed groovy jar, got $location")
 

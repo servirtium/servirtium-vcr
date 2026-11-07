@@ -1,7 +1,7 @@
 package com.example
 
-import com.paulhammant.servirtium.vcr.Outcome
-import com.paulhammant.servirtium.vcr.scala.Servirtium
+import dev.servirtium.vcr.Outcome
+import dev.servirtium.vcr.scala.Servirtium
 import java.net.URI
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.nio.file.Paths
@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * Third-party consumer test: drives the INSTALLED Scala helper jar
- * (servirtium-vcr-scala, resolved from ~/.m2) via `Servirtium.playback`,
+ * (vcr-scala, resolved from ~/.m2) via `Servirtium.playback`,
  * replaying the canonical tape. The libservirtium_vcr.so is discovered zero-config from
  * the transitive servirtium-vcr jar resource — no SERVIRTIUM_VCR_LIB.
  */

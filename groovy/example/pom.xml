@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Third-party consumer example for the Groovy binding. Depends on the INSTALLED
-  servirtium-vcr-groovy jar (from ~/.m2) and replays the canonical tape through
+  vcr-groovy jar (from ~/.m2) and replays the canonical tape through
   the Groovy `playback(tape) { }` DSL. The libservirtium_vcr.so rides in transitively via
   the servirtium-vcr jar resource — no SERVIRTIUM_VCR_LIB.
 -->
@@ -23,8 +23,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.paulhammant.servirtium</groupId>
-            <artifactId>servirtium-vcr-groovy</artifactId>
+            <groupId>dev.servirtium</groupId>
+            <artifactId>vcr-groovy</artifactId>
             <version>2.0.0-alpha12</version>
         </dependency>
         <dependency>

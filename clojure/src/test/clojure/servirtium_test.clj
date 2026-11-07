@@ -5,7 +5,7 @@
   binding."
   (:require [clojure.test :refer [deftest is]]
             [servirtium :as vcr])
-  (:import [com.paulhammant.servirtium.vcr Outcome]
+  (:import [dev.servirtium.vcr Outcome]
            [com.sun.net.httpserver HttpServer HttpHandler]
            [java.net InetSocketAddress URI]
            [java.net.http HttpClient HttpRequest HttpResponse$BodyHandlers]
@@ -82,7 +82,7 @@
     (is (not (.contains (vcr/diagnostics-json server) "\"retrieved\":1")))
     (is (.contains (vcr/last-error server) "owner"))
     (is (.contains (vcr/diagnostics-json server) "\"retrieved\":0"))
-    (is (thrown? com.paulhammant.servirtium.vcr.VcrException (vcr/assert-no-mismatches server)))
+    (is (thrown? dev.servirtium.vcr.VcrException (vcr/assert-no-mismatches server)))
     (vcr/test-context server "next test" "" 0)
     (vcr/assert-no-mismatches server)
     (is (= "[]" (vcr/diagnostics-json server)))))

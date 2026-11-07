@@ -66,7 +66,7 @@ const PINS[] = [
     "crystal/README.md", "(?:^    version: |Naming `)@S@(?:      # REQUIRED|` resolves)",
     "ruby/lib/servirtium/version.rb", "VERSION = '@G@'",
     "python/setup.py", "version='@P@'",
-    "java/src/main/java/com/paulhammant/servirtium/vcr/NativeLoader.java", "ENGINE_VERSION = \"@V@\"",
+    "java/src/main/java/dev/servirtium/vcr/NativeLoader.java", "ENGINE_VERSION = \"@V@\"",
     "dotnet/Servirtium.Vcr/NativeLoader.cs", "EngineVersion = \"@V@\"",
     // Maven poms: the project version and/or the dependency on the java binding
     // jar. @M@ matches pre-release-shaped versions only, so unrelated plain

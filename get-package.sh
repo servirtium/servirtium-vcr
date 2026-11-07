@@ -110,7 +110,7 @@ consume_hint() {
         d:*)          note "dub add-local $_dest 2.0.0" ;;
         *:beam)       note "ERL_LIBS=$_dest   (mix: SERVIRTIUM_NIF_EBIN=$_dest/servirtium_nif/ebin)" ;;
         *:m2)         note "installed to ~/.m2 — add the dependency:"
-                      note "com.paulhammant.servirtium:servirtium-vcr$( [ "$_lang" = java ] || echo "-$_lang" ):2.0.0-SNAPSHOT" ;;
+                      note "dev.servirtium:vcr$( [ "$_lang" = java ] || echo "-$_lang" ):2.0.0-SNAPSHOT" ;;
     esac
     echo
     note "The libservirtium_vcr.so travels inside the package; no SERVIRTIUM_VCR_LIB needed."

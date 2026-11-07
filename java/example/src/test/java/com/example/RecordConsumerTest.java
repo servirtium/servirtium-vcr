@@ -3,10 +3,10 @@ package com.example;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.paulhammant.servirtium.vcr.Field;
-import com.paulhammant.servirtium.vcr.Outcome;
-import com.paulhammant.servirtium.vcr.Vcr;
-import com.paulhammant.servirtium.vcr.VcrServer;
+import dev.servirtium.vcr.Field;
+import dev.servirtium.vcr.Outcome;
+import dev.servirtium.vcr.Vcr;
+import dev.servirtium.vcr.VcrServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;

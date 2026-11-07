@@ -1,5 +1,5 @@
 // Third-party-consumer PACKAGE stage for the Groovy binding.
-// mvn-installs the Groovy DSL layer (servirtium-vcr-groovy) to ~/.m2; deps
+// mvn-installs the Groovy DSL layer (vcr-groovy) to ~/.m2; deps
 // java/.package.ae so the Java jar (with the bundled libservirtium_vcr.so) is present and
 // rides along transitively for a Groovy consumer.
 import bldr
@@ -13,8 +13,8 @@ aeb(cap) {
         // module_dir (groovy/) — no ${root}/groovy hardcode.
         maven.install()
 
-        publish_artifact("maven_gav", "com.paulhammant.servirtium:servirtium-vcr-groovy:2.0.0-SNAPSHOT")
-        println("groovy package: installed servirtium-vcr-groovy jar to ~/.m2")
+        publish_artifact("maven_gav", "dev.servirtium:vcr-groovy:2.0.0-SNAPSHOT")
+        println("groovy package: installed vcr-groovy jar to ~/.m2")
         return 0
     }
 }

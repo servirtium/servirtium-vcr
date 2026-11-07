@@ -1,5 +1,5 @@
 (ns consumer-example
-  "Third-party consumer example: drives the INSTALLED servirtium-vcr-clojure jar
+  "Third-party consumer example: drives the INSTALLED vcr-clojure jar
   (resolved from ~/.m2) via the `servirtium/playback` fn, replaying the
   canonical tape. The libservirtium_vcr.so is discovered zero-config from the transitive
   servirtium-vcr jar resource — no SERVIRTIUM_VCR_LIB, no source tree.
@@ -7,7 +7,7 @@
   Run: clojure -J--enable-native-access=ALL-UNNAMED -M -m consumer-example"
   (:require [servirtium :as s]
             [clojure.java.io :as io])
-  (:import [com.paulhammant.servirtium.vcr Outcome]
+  (:import [dev.servirtium.vcr Outcome]
            [java.net URI]
            [java.net.http HttpClient HttpRequest HttpResponse$BodyHandlers]
            [java.nio.file Paths]))

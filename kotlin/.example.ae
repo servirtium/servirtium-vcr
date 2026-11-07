@@ -1,7 +1,7 @@
 // Third-party-consumer EXAMPLE test for the Kotlin binding.
 //
 // A standalone Maven project that depends only on the installed Kotlin DSL jar
-// (servirtium-vcr-kotlin, from ~/.m2) and replays the canonical tape through
+// (vcr-kotlin, from ~/.m2) and replays the canonical tape through
 // the `playback { }` DSL — the libservirtium_vcr.so arrives transitively via the
 // servirtium-vcr jar resource, with no SERVIRTIUM_VCR_LIB.
 import bldr

@@ -58,7 +58,7 @@ server-first model the Aether VCR is designed around.
 
 ## What's new
 
-- `src/main/java/com/paulhammant/servirtium/vcr/`:
+- `src/main/java/dev/servirtium/vcr/`:
   - `Vcr` — entry: `playback(tape)` / `record(tape, upstream)`.
   - `PlaybackBuilder` / `RecordBuilder` — fluent config (`host`, `port`,
     `label`, `redact`/`unredact`, `removeHeader`, `note`, `staticContent`,

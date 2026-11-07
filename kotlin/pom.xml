@@ -4,14 +4,14 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.paulhammant.servirtium</groupId>
-    <artifactId>servirtium-vcr-kotlin</artifactId>
+    <groupId>dev.servirtium</groupId>
+    <artifactId>vcr-kotlin</artifactId>
     <version>2.0.0-alpha12</version>
     <packaging>jar</packaging>
 
     <!--
       Servirtium VCR for Kotlin: a thin idiomatic layer (a trailing-lambda DSL)
-      over the Java FFM binding (com.paulhammant.servirtium:servirtium-vcr),
+      over the Java FFM binding (dev.servirtium:vcr),
       which is the actual binding to libservirtium_vcr. Kotlin reaches the
       libservirtium_vcr entirely through that jar via seamless Java interop, so there is
       no second FFI here. Run on JDK 22+ with native access enabled (see the
@@ -30,8 +30,8 @@
             <version>${kotlin.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.paulhammant.servirtium</groupId>
-            <artifactId>servirtium-vcr</artifactId>
+            <groupId>dev.servirtium</groupId>
+            <artifactId>vcr</artifactId>
             <version>2.0.0-alpha12</version>
         </dependency>
         <dependency>

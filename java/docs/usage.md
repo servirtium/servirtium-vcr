@@ -9,7 +9,7 @@ stop it (and, in record mode, flush the tape).
 The system-under-test only ever needs `vcr.baseUrl()`. Everything else —
 tape path, mode, mutations, assertions — lives in your test setup/teardown.
 
-All examples assume `import com.paulhammant.servirtium.vcr.*;`.
+All examples assume `import dev.servirtium.vcr.*;`.
 
 ## Playback
 

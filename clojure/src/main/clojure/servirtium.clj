@@ -2,7 +2,7 @@
   "Servirtium VCR for Clojure.
 
   Clojure reaches libservirtium_vcr through the Java FFM binding
-  (com.paulhammant.servirtium.vcr) via JVM interop -- there is no second FFI
+  (dev.servirtium.vcr) via JVM interop -- there is no second FFI
   here. The Java surface is already friendly: no checked exceptions,
   AutoCloseable (so clojure.core/with-open works), fluent builders, and the
   Outcome enum. These helpers just add a thin idiomatic Clojure layer.
@@ -15,7 +15,7 @@
 
       (with-open [vcr (playback \"tapes/x.md\" {:port 0})]
         (= Outcome/OK (.lastKind vcr)))"
-  (:import [com.paulhammant.servirtium.vcr Vcr VcrServer]))
+  (:import [dev.servirtium.vcr Vcr VcrServer]))
 
 (defn- apply-opts
   "Apply common builder opts (currently :port) to a PlaybackBuilder or

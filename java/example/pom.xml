@@ -3,7 +3,7 @@
   Third-party consumer example for the Java binding.
 
   A standalone Maven project that depends on the INSTALLED servirtium-vcr jar
-  (com.paulhammant.servirtium:servirtium-vcr, resolved from the local ~/.m2 repo
+  (dev.servirtium:vcr, resolved from the local ~/.m2 repo
   that `mvn install` populated) and replays the canonical tape from that jar —
   the libservirtium_vcr.so is discovered from the jar's own /native/<rid>/ resource, with
   no SERVIRTIUM_VCR_LIB. The honest "add the dependency and it just works" test.
@@ -25,8 +25,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.paulhammant.servirtium</groupId>
-            <artifactId>servirtium-vcr</artifactId>
+            <groupId>dev.servirtium</groupId>
+            <artifactId>vcr</artifactId>
             <version>2.0.0-alpha12</version>
         </dependency>
         <dependency>
