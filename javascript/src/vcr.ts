@@ -76,6 +76,10 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected nativeLibValue: string | null = null
   protected readonly headerRemovals: HeaderRemoval[] = []
   protected ignoreVolatileHeadersOn = false
+  protected removeTransportHeadersOn = false
+  protected readonly cloudVendors: string[] = []
+  protected redactCredentialsOn = false
+  protected readonly credentialHeaders: string[] = []
   protected readonly staticMounts: Array<{ mount: string; dir: string }> = []
   protected readonly untapedPaths: string[] = []
   protected tlsPair?: { cert: string; key: string }
@@ -133,6 +137,42 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   }
 
   /**
+   * Leave the connection-describing headers (Host, Connection, Content-Length
+   * and the other hop-by-hop headers, Accept-Encoding) out of the recording.
+   * Works in playback and record.
+   */
+  removeTransportHeaders(on = true): TSelf {
+    this.removeTransportHeadersOn = on
+    return this.self()
+  }
+
+  /**
+   * Drop a cloud vendor's per-request headers. `vendor` is one of `aws`,
+   * `azure`, `cloudflare`, `fastly`, `gcp`; call again for more vendors. Works
+   * in playback and record.
+   */
+  removeCloudHeaders(vendor: string): TSelf {
+    this.cloudVendors.push(vendor)
+    return this.self()
+  }
+
+  /**
+   * Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+   * X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the playback
+   * builder too, as with every rule.
+   */
+  redactCredentials(on = true): TSelf {
+    this.redactCredentialsOn = on
+    return this.self()
+  }
+
+  /** One more credential header with the same treatment as `redactCredentials`. */
+  redactCredentialHeader(name: string): TSelf {
+    this.credentialHeaders.push(name)
+    return this.self()
+  }
+
+  /**
    * Serve a path prefix from an on-disk directory instead of the tape
    * (Servirtium step 11). Available in both playback and record mode so a
    * browser suite can be served same-origin from the VCR while recording.
@@ -174,6 +214,18 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
     }
     if (this.ignoreVolatileHeadersOn) {
       check(N.ignoreVolatileHeaders(handle), 'ignoreVolatileHeaders')
+    }
+    if (this.removeTransportHeadersOn) {
+      check(N.removeTransportHeaders(handle), 'removeTransportHeaders')
+    }
+    for (const vendor of this.cloudVendors) {
+      check(N.removeCloudHeaders(handle, vendor), 'removeCloudHeaders')
+    }
+    if (this.redactCredentialsOn) {
+      check(N.redactCredentials(handle), 'redactCredentials')
+    }
+    for (const name of this.credentialHeaders) {
+      check(N.redactCredentialHeader(handle, name), 'redactCredentialHeader')
     }
     for (const { mount, dir } of this.staticMounts) {
       check(N.staticContent(handle, mount, dir), 'staticContent')
@@ -351,6 +403,9 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   private indentCodeBlocksOn = false
   private emphasizeHttpVerbsOn = false
   private prettyXmlIndent = 0
+  private prettyJsonIndent = 0
+  private upstreamCafilePath: string | null = null
+  private licenseNoticeText: string | null = null
   private failIfChangedOn = false
 
   constructor(tapePath: string, private readonly upstreamBase: string) {
@@ -435,6 +490,24 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     return this
   }
 
+  /** Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed. */
+  prettyJson(indent = 2): RecordBuilder {
+    this.prettyJsonIndent = indent
+    return this
+  }
+
+  /** Verify an `https://` upstream against this PEM CA file. */
+  upstreamCafile(path: string): RecordBuilder {
+    this.upstreamCafilePath = path
+    return this
+  }
+
+  /** Put `text` under `## LICENSE NOTICE` at the top of each tape; playback ignores it. */
+  addLicenseNotice(text: string): RecordBuilder {
+    this.licenseNoticeText = text
+    return this
+  }
+
   /**
    * On close, still write the freshly recorded tape but throw if it differs
    * from the on-disk one — the Servirtium step-4 drift contract, so a normal
@@ -450,6 +523,9 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     if (this.indentCodeBlocksOn) N.indentCodeBlocks(handle)
     if (this.emphasizeHttpVerbsOn) N.emphasizeHttpVerbs(handle)
     if (this.prettyXmlIndent > 0) N.setPrettyXml(handle, this.prettyXmlIndent)
+    if (this.prettyJsonIndent > 0) N.setPrettyJson(handle, this.prettyJsonIndent)
+    if (this.upstreamCafilePath !== null) check(N.setUpstreamCafile(handle, this.upstreamCafilePath), 'upstreamCafile')
+    if (this.licenseNoticeText !== null) check(N.addLicenseNotice(handle, this.licenseNoticeText), 'addLicenseNotice')
     for (const { operation, field, pattern, replacement } of this.redactions) {
       check(operation(handle, field, pattern, replacement), 'redact')
     }

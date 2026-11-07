@@ -17,6 +17,15 @@ describe('record', () => {
     if (tapePath && fs.existsSync(tapePath)) fs.rmSync(tapePath, { force: true })
   })
 
+  it('records with a license notice, pretty JSON and the header presets', () => {
+    tapePath = tmpTape()
+    const rec = Vcr.record(tapePath, 'http://127.0.0.1:1')
+      .addLicenseNotice('test notice').prettyJson(2).removeTransportHeaders()
+      .removeCloudHeaders('aws').redactCredentials().redactCredentialHeader('X-Vault-Token').port(0).start()
+    rec.close()
+    expect(() => Vcr.record(tapePath, 'http://127.0.0.1:1').removeCloudHeaders('nosuchvendor').port(0).start()).toThrow()
+  })
+
   it('records then replays the same interaction (chunked upstream de-chunked)', async () => {
     upstream = await startChunkedUpstream('hello-from-upstream')
     tapePath = tmpTape()

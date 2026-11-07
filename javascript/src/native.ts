@@ -256,6 +256,30 @@ export const emphasizeHttpVerbs = lazy(
 
 export const setPrettyXml = lazy('void aether_vcr_embed_set_pretty_xml(void* server, int indent)')
 
+export const setPrettyJson = lazy('void aether_vcr_embed_set_pretty_json(void* server, int indent)')
+
+export const removeTransportHeaders = lazy(
+  'void* aether_vcr_embed_remove_transport_headers(void* server)',
+)
+
+export const removeCloudHeaders = lazy(
+  'void* aether_vcr_embed_remove_cloud_headers(void* server, const char* vendor)',
+)
+
+export const redactCredentials = lazy('void* aether_vcr_embed_redact_credentials(void* server)')
+
+export const redactCredentialHeader = lazy(
+  'void* aether_vcr_embed_redact_credential_header(void* server, const char* name)',
+)
+
+export const setUpstreamCafile = lazy(
+  'void* aether_vcr_embed_set_upstream_cafile(void* server, const char* path)',
+)
+
+export const addLicenseNotice = lazy(
+  'void* aether_vcr_embed_add_license_notice(void* server, const char* text)',
+)
+
 export const clearRedactions = lazy('void aether_vcr_embed_clear_redactions(void* server)')
 
 export const clearUnredactions = lazy('void aether_vcr_embed_clear_unredactions(void* server)')

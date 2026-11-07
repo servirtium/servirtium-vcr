@@ -21,6 +21,9 @@ against the real native library.
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.matchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.staticContent(mount, dir)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.failIfChanged()` | — |
+| Header presets (transport / cloud vendor) | ✅ | ✅ | `.removeTransportHeaders()` / `.removeCloudHeaders(vendor)` | ✅ |
+| Credential redaction preset | ✅ | ✅ | `.redactCredentials()` / `.redactCredentialHeader(name)` | ✅ |
+| License notice / upstream CA file / pretty JSON | ✅ | ✅ | `.addLicenseNotice(text)` / `.upstreamCafile(path)` / `.prettyJson(n)` | ✅ notice + pretty JSON |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` / `.prettyXml(n)` | — |
 | Whole-tape normalization (correlated) | ✅ | ✅ | `.normalizeWholeTape(pattern, name)` | — |
 | Whole-tape redaction (uncorrelated) | ✅ | ✅ | `.redactWholeTape(pattern, replacement)` | — |
