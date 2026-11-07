@@ -56,6 +56,69 @@ dmd, so the test binary finds libservirtium_vcr at build time and at run time.
 - `tapes/single_get.md` — the canonical sample tape (`GET /ok` → `200
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
 
+## Getting it
+
+Add the package (dub needs `dub.sdl` at the repo root; it points at `d/src`;
+`d/dub.json` is the separate in-tree package):
+
+```sdl
+// dub.sdl of your project
+dependency "servirtium" version="~>2.0.0-alpha.12"
+```
+
+or `dub add servirtium` once the package is registered. Until then, from a clone:
+
+```sh
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag from the releases page; nothing else to edit
+case "$(uname -s)" in
+  Linux)  OS=linux;  EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin) OS=macos;  EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;  LIBC= ;;
+  *) echo "unsupported OS (Windows: use the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; esac
+export SERVIRTIUM_VCR_LIB_DIR="$HOME/.servirtium-vcr/$TAG"   # keep it OUT of your git tree
+mkdir -p "$SERVIRTIUM_VCR_LIB_DIR"
+curl -fsSL -o "$SERVIRTIUM_VCR_LIB_DIR/libservirtium_vcr.$EXT" \
+  "https://github.com/servirtium/servirtium-vcr/releases/download/$TAG/libservirtium_vcr-$TAG-$OS-$ARCH${LIBC}.$EXT"
+git clone --depth 1 https://github.com/servirtium/servirtium-vcr "$HOME/.servirtium-vcr/src-$TAG"
+dub add-local "$HOME/.servirtium-vcr/src-$TAG" 2.0.0-alpha.12   # a clone at the repo root, not d/
+dub build           # SERVIRTIUM_VCR_LIB_DIR must be exported for build, run and test
+
+# check: links, loads, and reports the missing tape (prints "servirtium linked and loaded: ...")
+cat > source/check.d <<'EOF'
+import servirtium; import std.stdio;
+void main() { try { auto v = Vcr.playback("/nonexistent.md"); v.close(); } catch (Exception e) { writeln("servirtium linked and loaded: ", typeid(e)); } }
+EOF
+```
+
+### Notes for coding agents
+
+- `SERVIRTIUM_VCR_LIB_DIR` must be the directory holding a file named exactly
+  `libservirtium_vcr.<so|dylib>`. Release assets carry the tag/os/arch in the
+  name, so the download is saved under the plain name (the linker looks for
+  `-lservirtium_vcr`).
+- Pick the asset for the machine that RUNS the tests: `-musl` on Alpine/musl,
+  plain `linux-*` on glibc. A wrong-libc or wrong-arch file fails at load with
+  `invalid ELF header` / `wrong ELF class` / `no such file`.
+- The library must be at least as new as the binding source you depend on. The
+  binding calls symbols a newer core added; an older library fails to link with
+  `undefined reference to 'aether_vcr_embed_...'`. Match the tag to the binding.
+- Do not vendor the `.so`/`.dylib` into git (it is git-ignored in this repo for
+  that reason) and do not copy it into the dependency's checkout directory.
+- Windows: use the `.dll` asset (plus its `.dll.lib`) by hand; this recipe is
+  for Linux, macOS and FreeBSD.
+- The variable is REQUIRED for the root package: dub expands `$SERVIRTIUM_VCR_LIB_DIR`
+  in `lflags` and cannot default an unset variable (expect dub to reject the
+  build, e.g. `Invalid variable: SERVIRTIUM_VCR_LIB_DIR`). For in-tree work use
+  `d/dub.json`, which uses `d/native/`. Export it for `dub build`, `dub run` and
+  `dub test` alike; the rpath is baked in, so a built binary needs no
+  `LD_LIBRARY_PATH`.
+- Not verified with dub itself: dub was not installed on the lab host. The
+  linking recipe (`-L$DIR -lservirtium_vcr -rpath $DIR` with dmd) was run by hand
+  and works; the `dub.sdl` parse and the unset-variable behaviour are untested.
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

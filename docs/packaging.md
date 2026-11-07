@@ -82,13 +82,39 @@ links or loads it from there.
 | Nim | `nim c --path:…/nim/src` |
 | Zig | `build.zig`, libservirtium_vcr in `zig/native/` |
 | Haskell | a path `source-repository-package` |
-| Crystal | `servirtium: {path: "…/crystal"}` in `shard.yml` |
+| Crystal | `servirtium: {path: "…/crystal"}` in `shard.yml`; from git: `github: servirtium/servirtium-vcr` (root `shard.yml` + `servirtium.cr`, see below) |
 | Julia | `Pkg.develop(path="…/julia")` |
-| Swift | `.package(path: "…/swift")` |
-| D | `dub add-local …/d 2.0.0` |
+| Swift | `.package(path: "…/swift")`; from git: `.package(url: "https://github.com/servirtium/servirtium-vcr", branch: "main")` (root `Package.swift`, see below) |
+| D | `dub add-local …/d 2.0.0`; from a clone or the registry: `dub add-local <clone-root> 2.0.0-alpha.12` / `dub add servirtium` (root `dub.sdl`, see below) |
 | PHP | `composer config repositories.servirtium path …/php` |
 | Dart | `dependency_overrides: servirtium: {path: …/dart}` |
 | Pharo | `ServirtiumLibrary libPath:` the staged `.so` |
+
+#### Root manifests for Swift, Crystal and D
+
+SwiftPM, Crystal shards and the dub registry only consume a package whose
+manifest is at the **repository root**. This monorepo therefore carries three
+root files that point into the binding directories: `Package.swift` (targets
+use `path:` into `swift/`), `shard.yml` + `servirtium.cr` (the latter requires
+`./crystal/src/servirtium`) and `dub.sdl` (`d/src`). Each explains itself in a
+comment. The in-tree manifests (`swift/Package.swift`, `crystal/shard.yml`,
+`d/dub.json`) stay, because the aeb leaves and path dependencies use them; the
+root and in-tree copies must be kept in step. (Swift: `swift/.example.ae` stages
+`swift/` standalone, so it cannot share the root manifest.)
+
+In a git-sourced install `native/` is empty (natives are git-ignored and staged
+by aeb), so all three take the library directory from **`SERVIRTIUM_VCR_LIB_DIR`**
+(the directory holding `libservirtium_vcr.<so|dylib>`, renamed from the
+release asset `libservirtium_vcr-<tag>-<os>-<arch>.<ext>`), falling back to the
+binding's own `native/` where the manifest can default: Swift and Crystal can;
+dub cannot default an unset variable, so for the root `dub.sdl` it is required.
+Each binding's README has a "Getting it" section with the runnable recipe.
+
+Open points: SwiftPM refuses `unsafeFlags` (the `-L`/`-rpath`) in a dependency
+resolved by version, so the Swift root package must be consumed by `branch:` /
+`revision:` / path, not `from:`; a `binaryTarget` or artifactbundle would remove
+that and the env-var step. The dub root package and the registry listing are
+untested with dub itself so far.
 
 ### A relocatable OTP app (the BEAM four)
 

@@ -73,6 +73,81 @@ marshalling rules to drift from `core/embed.ae`.
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
 - `native/` — where the leaf stages `libservirtium_vcr.so` (git-ignored).
 
+## Getting it
+
+Add the package (SwiftPM needs the manifest at the repo root, so the root
+`Package.swift` forwards into `swift/`):
+
+```swift
+// Package.swift of your project
+dependencies: [
+    .package(url: "https://github.com/servirtium/servirtium-vcr", branch: "main"),
+],
+targets: [
+    .target(name: "YourTarget", dependencies: [
+        .product(name: "Servirtium", package: "servirtium-vcr"),
+    ]),
+],
+```
+
+Fetch the native library and build:
+
+```sh
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag from the releases page; nothing else to edit
+case "$(uname -s)" in
+  Linux)  OS=linux;  EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin) OS=macos;  EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;  LIBC= ;;
+  *) echo "unsupported OS (Windows: use the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; esac
+export SERVIRTIUM_VCR_LIB_DIR="$HOME/.servirtium-vcr/$TAG"   # keep it OUT of your git tree
+mkdir -p "$SERVIRTIUM_VCR_LIB_DIR"
+curl -fsSL -o "$SERVIRTIUM_VCR_LIB_DIR/libservirtium_vcr.$EXT" \
+  "https://github.com/servirtium/servirtium-vcr/releases/download/$TAG/libservirtium_vcr-$TAG-$OS-$ARCH${LIBC}.$EXT"
+swift build            # SERVIRTIUM_VCR_LIB_DIR must be exported for this and for run/test
+
+# check: links, loads, and reports the missing tape (prints "servirtium linked and loaded: ...")
+mkdir -p Sources/check && cat > Sources/check/main.swift <<'EOF'
+import Servirtium
+do { try Vcr.withPlayback("/nonexistent.md") { _ in } } catch { print("servirtium linked and loaded: \(error)") }
+EOF
+# (needs a `check` executableTarget depending on the Servirtium product)
+swift run check
+```
+
+### Notes for coding agents
+
+- `SERVIRTIUM_VCR_LIB_DIR` must be the directory holding a file named exactly
+  `libservirtium_vcr.<so|dylib>`. Release assets carry the tag/os/arch in the
+  name, so the download is saved under the plain name (the linker looks for
+  `-lservirtium_vcr`).
+- Pick the asset for the machine that RUNS the tests: `-musl` on Alpine/musl,
+  plain `linux-*` on glibc. A wrong-libc or wrong-arch file fails at load with
+  `invalid ELF header` / `wrong ELF class` / `no such file`.
+- The library must be at least as new as the binding source you depend on. The
+  binding calls symbols a newer core added; an older library fails to link with
+  `undefined reference to 'aether_vcr_embed_...'`. Match the tag to the binding.
+- Do not vendor the `.so`/`.dylib` into git (it is git-ignored in this repo for
+  that reason) and do not copy it into the dependency's checkout directory.
+- Windows: use the `.dll` asset (plus its `.dll.lib`) by hand; this recipe is
+  for Linux, macOS and FreeBSD.
+- Use `branch:` or `revision:`, NOT `from:`/`exact:`. The manifest links with
+  `unsafeFlags` (`-L`, `-rpath`), which SwiftPM refuses for a dependency
+  resolved by version: `error: the target 'Servirtium' in product 'Servirtium'
+  contains unsafe build flags`. Local `.package(path:)` and branch/revision
+  dependencies are accepted.
+- The env var is read when SwiftPM evaluates the manifest, so it must be set
+  at build time, and again if SwiftPM re-resolves (`swift package resolve`,
+  `swift test`, `swift run`). The directory is baked in as an rpath, so the
+  built binary does not need it at run time (verified).
+- Failure `ld: cannot find -lservirtium_vcr` means the variable was unset or
+  the directory has no `libservirtium_vcr.<ext>`. Changing the variable
+  afterwards needs `rm -rf .build`.
+- Open point: a `binaryTarget` / artifactbundle would remove both the env var
+  and the `unsafeFlags` restriction (and allow `from:`); not done yet.
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

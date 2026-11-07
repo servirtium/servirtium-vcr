@@ -47,6 +47,76 @@ marshalling rules to drift from `core/embed.ae`.
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
 - `native/` — where the leaf stages `libservirtium_vcr.so` (git-ignored).
 
+## Getting it
+
+Add the shard (shards needs `shard.yml` at the repo root; the root
+`servirtium.cr` forwards `require "servirtium"` into `crystal/src/`):
+
+```yaml
+# shard.yml of your project
+dependencies:
+  servirtium:
+    github: servirtium/servirtium-vcr
+    version: ~> 2.0.0-alpha.12
+```
+
+Fetch the native library and build:
+
+```sh
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag from the releases page; nothing else to edit
+case "$(uname -s)" in
+  Linux)  OS=linux;  EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin) OS=macos;  EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;  LIBC= ;;
+  *) echo "unsupported OS (Windows: use the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; esac
+export SERVIRTIUM_VCR_LIB_DIR="$HOME/.servirtium-vcr/$TAG"   # keep it OUT of your git tree
+mkdir -p "$SERVIRTIUM_VCR_LIB_DIR"
+curl -fsSL -o "$SERVIRTIUM_VCR_LIB_DIR/libservirtium_vcr.$EXT" \
+  "https://github.com/servirtium/servirtium-vcr/releases/download/$TAG/libservirtium_vcr-$TAG-$OS-$ARCH${LIBC}.$EXT"
+shards install      # SERVIRTIUM_VCR_LIB_DIR must be exported for every compile
+
+# check: links, loads, and reports the missing tape (prints "servirtium linked and loaded: ...")
+cat > check.cr <<'EOF'
+require "servirtium"
+begin
+  Servirtium.playback("/nonexistent.md") { }
+rescue ex
+  puts "servirtium linked and loaded: #{ex.class}"
+end
+EOF
+crystal run check.cr
+```
+
+### Notes for coding agents
+
+- `SERVIRTIUM_VCR_LIB_DIR` must be the directory holding a file named exactly
+  `libservirtium_vcr.<so|dylib>`. Release assets carry the tag/os/arch in the
+  name, so the download is saved under the plain name (the linker looks for
+  `-lservirtium_vcr`).
+- Pick the asset for the machine that RUNS the tests: `-musl` on Alpine/musl,
+  plain `linux-*` on glibc. A wrong-libc or wrong-arch file fails at load with
+  `invalid ELF header` / `wrong ELF class` / `no such file`.
+- The library must be at least as new as the binding source you depend on. The
+  binding calls symbols a newer core added; an older library fails to link with
+  `undefined reference to 'aether_vcr_embed_...'`. Match the tag to the binding.
+- Do not vendor the `.so`/`.dylib` into git (it is git-ignored in this repo for
+  that reason) and do not copy it into the dependency's checkout directory.
+- Windows: use the `.dll` asset (plus its `.dll.lib`) by hand; this recipe is
+  for Linux, macOS and FreeBSD.
+- The variable is read at COMPILE time (a macro in `crystal/src/servirtium.cr`)
+  and baked into the `-L` and rpath, so the compiled binary does not need it
+  at run time. Crystal's compile cache does not track it: after changing it,
+  `rm -rf ~/.cache/crystal` (or touch the source).
+- Failure `ld.lld: error: unable to find library -lservirtium_vcr` means the
+  variable was unset at compile time (it then falls back to the shard's own
+  `crystal/native/`, empty in a `shards install`) or points at the wrong
+  directory.
+- If `version:` does not resolve, the repo has no matching tag with the root
+  `shard.yml`; use `branch: main` instead of `version:`.
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the
