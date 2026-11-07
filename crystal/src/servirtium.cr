@@ -26,6 +26,7 @@
 # dev, where aeb stages the .so). Absolute either way, so the link works
 # regardless of the linker's cwd; the macro reads the env var and expands
 # __DIR__ at compile time.
+{% begin %}
 {% libdir = env("SERVIRTIUM_VCR_LIB_DIR")
    libdir = __DIR__ + "/../native" if !libdir || libdir.empty? %}
 @[Link(ldflags: "-L{{libdir.id}} -Wl,-rpath,{{libdir.id}} -lservirtium_vcr")]
@@ -110,6 +111,7 @@ lib LibVcr
   # Every char* the ABI returns is caller-owned; release it with this.
   fun free_string = aether_vcr_embed_free_string(s : LibC::Char*) : Void
 end
+{% end %}
 
 module Servirtium
   VERSION = "2.0.0"

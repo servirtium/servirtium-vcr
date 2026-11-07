@@ -56,7 +56,11 @@ let package = Package(
     ],
     targets: [
         // The C ABI as a Swift-importable module (header + module map only).
-        .target(name: "CServirtiumVcr", path: "swift/Sources/CServirtiumVcr"),
+        // A systemLibrary, not a .target: it has nothing to compile, and
+        // Swift 6.4's default build backend (swift-build) still expects an
+        // object file from a source-less C .target ("Build input file cannot be
+        // found: .../CServirtiumVcr.o"). The core is linked below.
+        .systemLibrary(name: "CServirtiumVcr", path: "swift/Sources/CServirtiumVcr/include"),
         // The idiomatic Swift surface. Links libservirtium_vcr from nativeDir.
         .target(
             name: "Servirtium",
