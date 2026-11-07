@@ -43,7 +43,7 @@
 //     }
 //
 // The rules a suite registers (normalize, collapse, redact, remove_header,
-// license_notice)
+// license_notice, the sort_* stable-order rules)
 // apply to every recording after them in the process; together with the
 // defaults below they make two record runs write the same bytes. Defaults:
 // the response headers Date, X-Request-Id and X-Correlation-Id are dropped,
@@ -69,6 +69,7 @@ exports(
     remove_header, clear_rules, license_notice,
     redact_credentials, redact_credential_header, remove_cloud_headers,
     remove_transport_headers, pretty_json, trust_upstream_ca,
+    sort_json_keys, sort_json_array, sort_response_headers, sort_header_value,
     UUID, RFC3339, EPOCH_TIMESTAMP,
     MODE_OFF, MODE_RECORD, MODE_PLAYBACK, MODE_CHECK,
     FIELD_PATH, FIELD_REQUEST_HEADERS, FIELD_REQUEST_BODY,
@@ -104,6 +105,10 @@ const RULE_CLOUD = 7
 const RULE_TRANSPORT = 8
 const RULE_PRETTY_JSON = 9
 const RULE_LICENSE_NOTICE = 10
+const RULE_SORT_JSON_KEYS = 11
+const RULE_SORT_JSON_ARRAY = 12
+const RULE_SORT_HEADERS = 13
+const RULE_SORT_HEADER_VALUE = 14
 
 struct Recording {
     server: ptr
@@ -257,6 +262,35 @@ pretty_json(indent: int) {
     add_rule(RULE_PRETTY_JSON, indent, "", "")
 }
 
+// Stable order, for a service that answers in a different order every run
+// (servirtium-vcr AGENTS.md, "Stable order"). Each is off until called, and
+// applies when recording; playback serves the tape as it is.
+//
+// JSON response bodies' object keys sorted, at every depth.
+sort_json_keys() {
+    add_rule(RULE_SORT_JSON_KEYS, 0, "", "")
+}
+
+// The JSON response arrays `path` selects sorted by member `by`: path is a
+// JSON pointer from the root ("" the root array, "/value", "/items/*/tags")
+// or a bare member name (every array that member holds, at any depth); by is
+// a member name, a pointer inside each element ("/db_name/L"), or "" for the
+// element's canonical JSON. Array order can be meaning: the tape keeps the
+// sorted order, and so does playback.
+sort_json_array(path: string, by: string) {
+    add_rule(RULE_SORT_JSON_ARRAY, 0, path, by)
+}
+
+// Response header lines by name; a repeated header's lines keep their order.
+sort_response_headers() {
+    add_rule(RULE_SORT_HEADERS, 0, "", "")
+}
+
+// One response header's comma-separated items sorted (Allow from a set).
+sort_header_value(name: string) {
+    add_rule(RULE_SORT_HEADER_VALUE, 0, name, "")
+}
+
 // The PEM CA a recording verifies an https container against (Elasticsearch
 // 8 generates its own), for the recordings after this call; "" for the
 // system store. The test talks plain HTTP to the recorder, and the recorder
@@ -352,6 +386,10 @@ fn apply_rules(h: ptr, m: int, upstream_url: string, own_host: string) -> string
             if k == RULE_COLLAPSE { errs = "${errs}${vcr.redact_whole_tape_h(h, rule_a[i], rule_b[i])}" }
             if k == RULE_REDACT { errs = "${errs}${vcr.redact_h(h, rule_field[i], rule_a[i], rule_b[i])}" }
             if k == RULE_LICENSE_NOTICE { errs = "${errs}${vcr.add_license_notice_h(h, rule_a[i])}" }
+            if k == RULE_SORT_JSON_KEYS { vcr.sort_json_keys_h(h, 1) }
+            if k == RULE_SORT_JSON_ARRAY { errs = "${errs}${vcr.sort_json_array_h(h, rule_a[i], rule_b[i])}" }
+            if k == RULE_SORT_HEADERS { vcr.sort_response_headers_h(h, 1) }
+            if k == RULE_SORT_HEADER_VALUE { errs = "${errs}${vcr.sort_header_value_h(h, rule_a[i])}" }
         } else {
             if k == RULE_REDACT { errs = "${errs}${vcr.unredact_h(h, rule_field[i], rule_b[i], rule_a[i])}" }
         }

@@ -1,0 +1,321 @@
+// Opt-in stable order at record time: JSON object keys, chosen JSON arrays,
+// response header lines and one header's comma-separated items written in
+// one order, so a service that answers in a different order every run
+// (a Go map, a Java set, a list ordered by a random id) re-records byte for
+// byte without leaving anything out.
+//
+// Part A drives the emitter directly (record_full_response + flush):
+//    1. Off by default: the tape is byte-exact.
+//    2. sort_json_keys: keys sorted at every depth; whitespace kept where it
+//       was; array order kept; duplicate keys keep their order.
+//    3. sort_json_array: by a member, by a JSON pointer, by canonical JSON;
+//       "*" and bare-name paths; integers by value; an element without the
+//       member leaves its array as sent; unselected arrays untouched.
+//    4. sort_response_headers (stable for a repeated header) and
+//       sort_header_value (Allow).
+//    5. normalize's tokens are numbered in the sorted order: two recordings
+//       of the same content in different orders write the same bytes.
+//    6. pretty_json lays out the sorted body.
+//    7. Bad rules refused; non-JSON and malformed bodies byte-exact;
+//       request bodies never reordered.
+// Part B records through a real upstream that flips its order on every
+// request: two recordings are byte-identical, the footer lists the ordering
+// rules, and playback serves the sorted response with a matching
+// Content-Length.
+
+import core.vcr
+import std.http
+import std.http.client
+import std.fs
+import std.string
+import std.io
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18293
+const RECORD_PORT   = 18294
+const PLAYBACK_PORT = 18295
+
+const REQ_HDRS = "Content-Type: application/json"
+
+var flip: int = 0
+
+tmp_path(name: string) -> string {
+    tmp = io.getenv("TEMP")
+    if tmp == 0 { tmp = io.getenv("TMPDIR") }
+    if tmp == 0 { tmp = "/tmp" }
+    return "${tmp}/${name}"
+}
+
+fail(msg: string) {
+    println("  FAIL: ${msg}")
+    exit(1)
+}
+
+need(h: string, n: string, label: string) {
+    if string.contains(h, n) != 1 { fail("${label}: expected\n${n}\nin:\n${h}") }
+}
+
+lacks(h: string, n: string, label: string) {
+    if string.contains(h, n) == 1 { fail("${label}: did not expect\n${n}\nin:\n${h}") }
+}
+
+// Record one interaction with the bare (current-key) API and read the tape.
+rec(path: string, ctype: string, body: string, resp_h: string, req_b: string) -> string {
+    vcr.clear_recording()
+    e = vcr.record_full_response("POST", "/x", 200, ctype, body, REQ_HDRS, req_b, resp_h)
+    if e != "" { fail("record_full_response: ${e}") }
+    f = vcr.flush(path)
+    if f != "" { fail("flush: ${f}") }
+    t, de = fs.read(path)
+    if de != "" { fail("read back: ${de}") }
+    return t
+}
+
+reset_all() {
+    vcr.clear_format_options()
+    vcr.clear_normalizations()
+}
+
+// The upstream: the same content in one order, then the other, by request.
+handle_list(req: ptr, res: ptr, ud: ptr) {
+    flip = flip + 1
+    http.response_set_status(res, 200)
+    if flip % 2 == 1 {
+        http.response_set_header(res, "Content-Type", "application/json")
+        http.response_set_header(res, "Allow", "PUT, DELETE, GET")
+        http.response_set_header(res, "X-Zeta", "z")
+        http.response_set_header(res, "X-Alpha", "a")
+        http.response_set_body(res, "{\"value\":[{\"name\":\"b\",\"id\":\"7d444840-9dc0-11d1-b245-5ffdce74fad2\"},{\"name\":\"a\",\"id\":\"0e4b3a1c-1111-4222-8333-944455556666\"}],\"count\":2}")
+    } else {
+        http.response_set_header(res, "X-Alpha", "a")
+        http.response_set_header(res, "Allow", "GET, PUT, DELETE")
+        http.response_set_header(res, "Content-Type", "application/json")
+        http.response_set_header(res, "X-Zeta", "z")
+        http.response_set_body(res, "{\"count\":2,\"value\":[{\"id\":\"0e4b3a1c-1111-4222-8333-944455556666\",\"name\":\"a\"},{\"id\":\"7d444840-9dc0-11d1-b245-5ffdce74fad2\",\"name\":\"b\"}]}")
+    }
+}
+
+wait_ready(url: string) {
+    i = 0
+    while i < 200 {
+        sleep(25)
+        req = client.request("GET", url)
+        if req != null {
+            client.set_timeout(req, 1s)
+            resp, err = client.send_request(req)
+            client.request_free(req)
+            if err == "" {
+                client.response_free(resp)
+                return
+            }
+        }
+        i = i + 1
+    }
+    fail("server not ready at ${url}")
+}
+
+// GET /list through `port`: (status, body, Content-Length header).
+get_list(port: int) -> (int, string, string) {
+    req = client.request("GET", "http://127.0.0.1:${port}/list")
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err, "" }
+    st = client.response_status(resp)
+    b = string.copy(client.response_body(resp))
+    cl = string.copy(client.response_header(resp, "Content-Length"))
+    client.response_free(resp)
+    return st, b, cl
+}
+
+stable_rules(h: ptr) {
+    vcr.sort_json_keys_h(h, 1)
+    vcr.sort_response_headers_h(h, 1)
+    e = vcr.sort_header_value_h(h, "Allow")
+    if e == "" { e = vcr.sort_json_array_h(h, "/value", "name") }
+    if e == "" { e = vcr.normalize_whole_tape_h(h, "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "uuid") }
+    if e != "" { fail("rule: ${e}") }
+    if e == "" { e = vcr.remove_header_h(h, vcr.FIELD_RESPONSE_HEADERS, "Date") }
+    if e != "" { fail("rule: ${e}") }
+    vcr.set_rules_footer_h(h, 1)
+}
+
+record_once(path: string, rport: int) -> string {
+    recorder = vcr.load_record(path, "http://127.0.0.1:${UPSTREAM_PORT}", rport)
+    if recorder == null { fail("load_record") }
+    stable_rules(recorder)
+    serr = http.server_start_background(recorder)
+    if serr != "" { fail("recorder start ${serr}") }
+    sleep(250)
+    st, b, _ = get_list(rport)
+    if st != 200 { fail("record GET /list: ${st} ${b}") }
+    ferr = vcr.eject_record(recorder, path)
+    if ferr != "" { fail("eject_record ${ferr}") }
+    t, terr = fs.read(path)
+    if terr != "" { fail("read tape ${terr}") }
+    return t
+}
+
+main() {
+    println("=== VCR stable order ===\n")
+    OUT = tmp_path("vcr_stable_order.tape")
+    UNSORTED = "{\"z\":1,\"a\":{\"y\":[{\"q\":1,\"b\":2},3],\"c\":null},\"m\":\"x\",\"m\":\"y\"}"
+    RESP_H = "Content-Type: application/json\nX-Zeta: 1\nSet-Cookie: s=2\nallow: PUT, DELETE, GET\nSet-Cookie: s=1\nX-Alpha: 2"
+
+    println("Test 1: off by default, byte-exact")
+    reset_all()
+    t1 = rec(OUT, "application/json", UNSORTED, RESP_H, UNSORTED)
+    need(t1, "```\n${UNSORTED}\n```", "response body as sent")
+    need(t1, RESP_H, "response headers as sent")
+    println("  PASS")
+
+    println("Test 2: sort_json_keys, recursive, whitespace by position, arrays and duplicates kept in order")
+    vcr.sort_json_keys(1)
+    t2 = rec(OUT, "application/json", UNSORTED, RESP_H, UNSORTED)
+    need(t2, "```\n{\"a\":{\"c\":null,\"y\":[{\"b\":2,\"q\":1},3]},\"m\":\"x\",\"m\":\"y\",\"z\":1}\n```", "keys sorted at every depth")
+    need(t2, "```\n${UNSORTED}\n```", "the request body is never reordered")
+    need(t2, "Content-Type: application/json\nX-Zeta: 1", "headers untouched by the JSON option")
+    pretty_in = "{\n  \"b\": 1,\n  \"a\": {\n    \"d\": true,\n    \"c\": \"x\"\n  }\n}"
+    t2b = rec(OUT, "application/json", pretty_in, "", "")
+    need(t2b, "{\n  \"a\": {\n    \"c\": \"x\",\n    \"d\": true\n  },\n  \"b\": 1\n}", "a pretty body keeps its layout")
+    println("  PASS")
+
+    println("Test 3: sort_json_array by member, pointer, canonical form; paths; integers; missing member")
+    reset_all()
+    e = vcr.sort_json_array("", "name")
+    if e != "" { fail(e) }
+    t3 = rec(OUT, "application/json", "[{\"name\":\"b\",\"n\":1},{\"name\":\"a\",\"n\":2}]", "", "")
+    need(t3, "[{\"name\":\"a\",\"n\":2},{\"name\":\"b\",\"n\":1}]", "root array by member")
+    reset_all()
+    e = vcr.sort_json_array("/dbs", "/db_name/L")
+    if e != "" { fail(e) }
+    t3b = rec(OUT, "application/json", "{\"dbs\":[{\"id\":110,\"db_name\":{\"L\":\"shop\"}},{\"id\":1,\"db_name\":{\"L\":\"mysql\"}}],\"other\":[3,1,2]}", "", "")
+    need(t3b, "{\"dbs\":[{\"id\":1,\"db_name\":{\"L\":\"mysql\"}},{\"id\":110,\"db_name\":{\"L\":\"shop\"}}],\"other\":[3,1,2]}", "by pointer; an unselected array untouched; keys left unsorted")
+    reset_all()
+    e = vcr.sort_json_array("/items/*/tags", "")
+    if e != "" { fail(e) }
+    t3c = rec(OUT, "application/json", "{\"items\":[{\"tags\":[\"z\",{\"b\":1,\"a\":2},\"a\"]},{\"tags\":[3,1]}],\"tags\":[\"y\",\"x\"]}", "", "")
+    need(t3c, "{\"items\":[{\"tags\":[\"a\",\"z\",{\"b\":1,\"a\":2}]},{\"tags\":[1,3]}],\"tags\":[\"y\",\"x\"]}", "wildcard path, canonical form")
+    reset_all()
+    e = vcr.sort_json_array("tags", "")
+    if e != "" { fail(e) }
+    t3d = rec(OUT, "application/json", "{\"items\":[{\"tags\":[\"z\",\"a\"]}],\"tags\":[\"y\",\"x\"],\"other\":[\"b\",\"a\"]}", "", "")
+    need(t3d, "{\"items\":[{\"tags\":[\"a\",\"z\"]}],\"tags\":[\"x\",\"y\"],\"other\":[\"b\",\"a\"]}", "a bare name selects that member's arrays at any depth")
+    reset_all()
+    e = vcr.sort_json_array("", "id")
+    if e != "" { fail(e) }
+    t3e = rec(OUT, "application/json", "[{\"id\":4611686018427387905},{\"id\":10},{\"id\":-3},{\"id\":2}]", "", "")
+    need(t3e, "[{\"id\":-3},{\"id\":2},{\"id\":10},{\"id\":4611686018427387905}]", "integers by value, any size")
+    t3f = rec(OUT, "application/json", "[{\"id\":2},{\"x\":1},{\"id\":1}]", "", "")
+    need(t3f, "[{\"id\":2},{\"x\":1},{\"id\":1}]", "an element without the member leaves its array as sent")
+    t3g = rec(OUT, "application/json", "[{\"id\":1,\"k\":\"second\"},{\"id\":0},{\"id\":1,\"k\":\"first\"}]", "", "")
+    need(t3g, "[{\"id\":0},{\"id\":1,\"k\":\"second\"},{\"id\":1,\"k\":\"first\"}]", "the sort is stable")
+    // Sort keys too: the canonical-form sort sees sorted keys.
+    reset_all()
+    vcr.sort_json_keys(1)
+    e = vcr.sort_json_array("", "")
+    if e != "" { fail(e) }
+    t3h = rec(OUT, "application/json", "[ {\"b\": 2, \"a\": 2}, {\"a\": 1} ]", "", "")
+    need(t3h, "[ {\"a\": 1}, {\"a\": 2, \"b\": 2} ]", "keys and array together, gaps by position")
+    println("  PASS")
+
+    println("Test 4: sort_response_headers (stable for a repeated header) and sort_header_value")
+    reset_all()
+    vcr.sort_response_headers(1)
+    e = vcr.sort_header_value("Allow")
+    if e != "" { fail(e) }
+    t4 = rec(OUT, "application/json", "{}", RESP_H, "")
+    need(t4, "```\nallow: DELETE, GET, PUT\nContent-Type: application/json\nSet-Cookie: s=2\nSet-Cookie: s=1\nX-Alpha: 2\nX-Zeta: 1\n```", "lines by name, repeated header in order, Allow's items sorted (name matched case-insensitively)")
+    reset_all()
+    e = vcr.sort_header_value("Allow")
+    t4b = rec(OUT, "application/json", "{}", RESP_H, "")
+    need(t4b, "Content-Type: application/json\nX-Zeta: 1\nSet-Cookie: s=2\nallow: DELETE, GET, PUT\nSet-Cookie: s=1\nX-Alpha: 2", "value sort alone keeps line order")
+    println("  PASS")
+
+    println("Test 5: normalize tokens are numbered in the sorted order")
+    UUID_RE = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    A = "{\"id\":\"7d444840-9dc0-11d1-b245-5ffdce74fad2\",\"at\":3}"
+    B = "{\"id\":\"0e4b3a1c-1111-4222-8333-944455556666\",\"at\":1}"
+    reset_all()
+    e = vcr.normalize_whole_tape(UUID_RE, "uuid")
+    if e == "" { e = vcr.sort_json_array("", "at") }
+    if e != "" { fail(e) }
+    t5a = rec(OUT, "application/json", "[${A},${B}]", "", "")
+    t5b = rec(OUT, "application/json", "[${B},${A}]", "", "")
+    if string.equals(t5a, t5b) != 1 { fail("two orders, two tapes:\n${t5a}\n---\n${t5b}") }
+    need(t5a, "[{\"id\":\"{{uuid-1}}\",\"at\":1},{\"id\":\"{{uuid-2}}\",\"at\":3}]", "token 1 is the first in sorted order")
+    println("  PASS")
+
+    println("Test 6: pretty_json lays out the sorted body")
+    reset_all()
+    vcr.sort_json_keys(1)
+    vcr.vcr_set_pretty_json(2)
+    t6 = rec(OUT, "application/json", "{\"b\":[2,1],\"a\":1.0}", "", "")
+    need(t6, "{\n  \"a\": 1.0,\n  \"b\": [\n    2,\n    1\n  ]\n}", "sorted, then indented")
+    println("  PASS")
+
+    println("Test 7: bad rules refused; non-JSON and malformed bodies byte-exact")
+    reset_all()
+    if vcr.sort_json_array("a/b", "") == "" { fail("a relative path with '/' accepted") }
+    if vcr.sort_json_array("/a", "x/y") == "" { fail("a relative 'by' with '/' accepted") }
+    if vcr.sort_header_value("") == "" { fail("an empty header name accepted") }
+    if vcr.sort_header_value("A: b") == "" { fail("a header line accepted as a name") }
+    vcr.sort_json_keys(1)
+    t7 = rec(OUT, "text/plain", "{\"b\":1,\"a\":2}", "", "")
+    need(t7, "{\"b\":1,\"a\":2}", "text/plain untouched")
+    t7b = rec(OUT, "application/json", "{\"b\":1,\"a\":}", "", "")
+    need(t7b, "{\"b\":1,\"a\":}", "malformed JSON untouched")
+    t7c = rec(OUT, "application/vnd.api+json; charset=utf-8", "{\"b\":1,\"a\":2}", "", "")
+    need(t7c, "{\"a\":2,\"b\":1}", "+json sorted")
+    println("  PASS")
+    reset_all()
+
+    println("Test 8: a real upstream flipping its order: two recordings, one tape; footer; playback")
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { fail("upstream server_create") }
+    http.server_get(upstream, "/list", handle_list, 0)
+    userr = http.server_start_background(upstream)
+    if userr != "" { fail("upstream start ${userr}") }
+    wait_ready("http://127.0.0.1:${UPSTREAM_PORT}/list")
+    // wait_ready made one request; make the next recording start on order 1.
+    if flip % 2 == 1 { flip = flip + 1 }
+    P1 = tmp_path("vcr_stable_order_1.tape")
+    P2 = tmp_path("vcr_stable_order_2.tape")
+    r1 = record_once(P1, RECORD_PORT)
+    r2 = record_once(P2, RECORD_PORT)
+    if string.equals(r1, r2) != 1 { fail("two recordings differ:\n${r1}\n---\n${r2}") }
+    need(r1, "{\"count\":2,\"value\":[{\"id\":\"{{uuid-1}}\",\"name\":\"a\"},{\"id\":\"{{uuid-2}}\",\"name\":\"b\"}]}", "sorted body, tokens in sorted order")
+    need(r1, "Allow: DELETE, GET, PUT\n", "Allow's items sorted")
+    need(r1, "| ordered | response headers | every header | sorted by name; a repeated header's lines keep their order | 0 |", "footer: header order")
+    need(r1, "| ordered | response headers | `Allow` | its comma-separated items sorted | 0 |", "footer: Allow")
+    need(r1, "| ordered | response body | JSON object keys | sorted, at every depth | 0 |", "footer: keys")
+    need(r1, "| ordered | response body | JSON arrays at `/value` | sorted by `name` | 0 |", "footer: array")
+    hstart = string.index_of(r1, "### Response headers recorded for playback:")
+    hblock = string.substring(r1, hstart, string.length(r1))
+    ai = string.index_of(hblock, "Allow:")
+    ci = string.index_of(hblock, "Content-Type:")
+    xa = string.index_of(hblock, "X-Alpha:")
+    xz = string.index_of(hblock, "X-Zeta:")
+    if !(ai < ci && ci < xa && xa < xz) { fail("response headers not by name:\n${hblock}") }
+
+    playback = vcr.load(P1, PLAYBACK_PORT)
+    if playback == null { fail("load playback: ${vcr.load_error()}") }
+    perr = http.server_start_background(playback)
+    if perr != "" { fail("playback start ${perr}") }
+    sleep(250)
+    st, b, cl = get_list(PLAYBACK_PORT)
+    if st != 200 { fail("playback: ${st} ${vcr.last_error_h(playback)}") }
+    need(b, "\"value\":[{\"id\":\"{{uuid-1}}\",\"name\":\"a\"}", "playback serves the sorted order")
+    if string.length(cl) > 0 && string.equals(cl, "${string.length(b)}") != 1 { fail("Content-Length ${cl} != ${string.length(b)} bytes served") }
+    vcr.eject(playback)
+    http_server_stop(upstream)
+    fs.delete(P1)
+    fs.delete(P2)
+    fs.delete(OUT)
+    println("  PASS")
+
+    println("\n=== All stable order tests passed ===")
+    exit(0)
+}

@@ -187,6 +187,10 @@ exports (
     set_rules_footer_h, get_rules_footer_h, RULES_FOOTER_HEADING,
     set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
     set_pretty_json_h, get_pretty_json_h,
+    sort_json_keys_h, get_sort_json_keys_h, sort_json_array_h,
+    sort_response_headers_h, get_sort_response_headers_h, sort_header_value_h, clear_stable_order_h,
+    sort_json_keys, sort_json_array, sort_response_headers, sort_header_value, clear_stable_order,
+    json_canonical,
     set_tls_h, set_tls_pem_h, tls_enabled_h, last_tls_protocol_h, set_upstream_cafile_h,
     substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h,
@@ -1050,8 +1054,10 @@ build_normalization_map_k(key: string) {
                 counter = scan_field_for_norm_k(key, re, name, string.copy(e.path), counter)
                 counter = scan_field_for_norm_k(key, re, name, string.copy(e.req_headers), counter)
                 counter = scan_field_for_norm_k(key, re, name, string.copy(e.req_body), counter)
-                counter = scan_field_for_norm_k(key, re, name, string.copy(e.resp_headers), counter)
-                counter = scan_field_for_norm_k(key, re, name, string.copy(e.body), counter)
+                // The ordered fields, so tokens are numbered in the order the
+                // tape writes them (stable order, when registered).
+                counter = scan_field_for_norm_k(key, re, name, string.copy(ordered_field_k(key, e, FIELD_RESPONSE_HEADERS)), counter)
+                counter = scan_field_for_norm_k(key, re, name, string.copy(ordered_field_k(key, e, FIELD_RESPONSE_BODY)), counter)
                 ii = ii + 1
             }
             regex.free(re)
@@ -3517,6 +3523,19 @@ set_pretty_xml_h(server: ptr, indent: int) { vcr_set_pretty_xml_k(key_for(server
 get_pretty_xml_h(server: ptr) -> int { return vcr_get_pretty_xml_k(key_for(server)) }
 set_pretty_json_h(server: ptr, indent: int) { vcr_set_pretty_json_k(key_for(server), indent) }
 get_pretty_json_h(server: ptr) -> int { return vcr_get_pretty_json_k(key_for(server)) }
+sort_json_keys_h(server: ptr, on: int) { vcr_set_sort_json_keys_k(key_for(server), on) }
+get_sort_json_keys_h(server: ptr) -> int { return vcr_get_sort_json_keys_k(key_for(server)) }
+sort_json_array_h(server: ptr, path: string, by: string) -> string { return vcr_sort_json_array_k(key_for(server), path, by) }
+sort_response_headers_h(server: ptr, on: int) { vcr_set_sort_response_headers_k(key_for(server), on) }
+get_sort_response_headers_h(server: ptr) -> int { return vcr_get_sort_response_headers_k(key_for(server)) }
+sort_header_value_h(server: ptr, name: string) -> string { return vcr_sort_header_value_k(key_for(server), name) }
+clear_stable_order_h(server: ptr) { vcr_clear_stable_order_k(key_for(server)) }
+// Bare (current-key) forms, for record()/flush() without a handle.
+sort_json_keys(on: int) { vcr_set_sort_json_keys_k(cur_key(), on) }
+sort_json_array(path: string, by: string) -> string { return vcr_sort_json_array_k(cur_key(), path, by) }
+sort_response_headers(on: int) { vcr_set_sort_response_headers_k(cur_key(), on) }
+sort_header_value(name: string) -> string { return vcr_sort_header_value_k(cur_key(), name) }
+clear_stable_order() { vcr_clear_stable_order_k(cur_key()) }
 set_match_multiple_h(server: ptr, on: int) { vcr_set_match_multiple_k(key_for(server), on) }
 add_match_header_h(server: ptr, name: string) { set_cur_key(key_for(server)); vcr_add_match_header(name) }
 clear_match_headers_h(server: ptr) { set_cur_key(key_for(server)); vcr_clear_match_headers() }
@@ -4675,6 +4694,7 @@ clear_format_options() {
     vcr_set_emphasize_http_verbs(0)
     vcr_set_pretty_xml(0)
     vcr_set_pretty_json(0)
+    vcr_clear_stable_order_k(cur_key())
 }
 
 // ---- Aether-side tape emitter ---------------------------------------
@@ -5135,6 +5155,682 @@ pretty_json_body_k(key: string, ctype: string, body: string) -> string {
     return formatted
 }
 
+// ---- Opt-in stable order at record time (stable order) ----------------
+//
+// Some services send the same response in a different order on every run:
+// a Go map or a Java set behind a JSON object or array, a Rust server's
+// response headers, a list ordered by a random id. A re-record then differs
+// byte for byte and `check` fails, and the only cure without these options
+// is to throw content away (leave a header out, collapse a whole list). The
+// stable-order options write such a response in one order instead. Every one
+// is OFF by default and registered explicitly, like every other rule: a tape
+// recorded without them is byte-exact as before.
+//
+//   sort_json_keys_h(h, 1)          JSON object keys, at every depth, sorted
+//                                   by their bytes as written. Safe: key order
+//                                   carries no meaning in JSON (RFC 8259), so
+//                                   a client sees the same value on replay.
+//   sort_json_array_h(h, path, by)  the arrays `path` selects, their elements
+//                                   sorted by the member `by` names (or, when
+//                                   `by` is "", by each element's canonical
+//                                   JSON). Array order often IS meaning (a
+//                                   ranked search result, a history), so
+//                                   this is per array, never global, and it
+//                                   deliberately changes the recorded
+//                                   response: replay serves the sorted order.
+//   sort_response_headers_h(h, 1)   response header lines sorted by name
+//                                   (case-insensitive); the lines of a
+//                                   repeated header (Set-Cookie, Vary) keep
+//                                   their relative order. Header order carries
+//                                   no meaning but for a repeated header's
+//                                   lines (RFC 9110 5.3), which stay.
+//   sort_header_value_h(h, name)    one response header's comma-separated
+//                                   items sorted (`Allow` from a Java set):
+//                                   written "a, b, c". Only for a header whose
+//                                   items are a set; never for one where order
+//                                   is preference (Accept) or a quoted value
+//                                   may hold a comma.
+//
+// `path` selects arrays by JSON pointer (RFC 6901) from the body's root,
+// with `*` matching any one member name or index: "" is the root array,
+// "/value" the root object's "value", "/items/*/tags" every item's tags. A
+// path without a leading "/" names a member: "versions" is every array that
+// is the value of a member called versions, at any depth. `by` is a member
+// name ("name") or a JSON pointer inside each element ("/db_name/L"); two
+// integers compare as numbers, anything else by its canonical JSON's bytes.
+// If any element lacks `by` (or is not an object), that array is left as
+// sent. The sort is stable, so equal keys keep the order they came in; pick
+// a `by` that is unique. The first registered rule that selects an array
+// sorts it.
+//
+// Where it runs: first, on the values as sent, before redactions,
+// credentials, normalizations, collapses and pretty_json. So
+//   - a value that is later collapsed (a creation time) can still order an
+//     array (sort the versions of a secret by "/attributes/created");
+//   - normalize's {{name-N}} tokens are numbered in the sorted order, so the
+//     numbering is as stable as the order (build_normalization_map_k reads
+//     the ordered fields);
+//   - sort by a value that is the same each run: sorting by a random id
+//     gives a random order, normalized or not;
+//   - pretty_json then lays out the sorted body; json.pretty keeps key order.
+// Sorting keeps every byte of the body but its order (the whitespace between
+// members stays where it was, by position), so a body's length does not
+// change and neither does its Content-Length; were it ever to, the rewrite
+// below would follow it as for any other rewritten body.
+//
+// Record side only: the tape is what is written, and playback serves the
+// tape as it is. Request bodies are never reordered: the app under test sent
+// them, playback compares the live request with the recorded one, and a
+// client's serializer is deterministic; a test whose client really does send
+// keys in a varying order turns on set_match_json_body_h instead (JSON-
+// semantic matching). Request headers are already written sorted by name.
+// A body that is not JSON by its Content-Type, or does not parse, is left
+// byte-exact. The recording-rules footer lists each ordering rule ("ordered")
+// with the interactions it applies to (not those whose order it happened to
+// change: that would make the footer itself differ run to run).
+
+struct ArraySort {
+    path: string
+    by: string
+}
+
+struct HeaderValueSort {
+    name: string
+}
+
+array_sorts_k(key: string) -> ptr        { return list_handle(slot(key, "array_sorts")) }
+header_value_sorts_k(key: string) -> ptr { return list_handle(slot(key, "header_value_sorts")) }
+
+vcr_set_sort_json_keys_k(key: string, on: int) {
+    if on != 0 { cfg_set_int(slot(key, "sort_json_keys"), 1) } else { cfg_set_int(slot(key, "sort_json_keys"), 0) }
+}
+vcr_get_sort_json_keys_k(key: string) -> int { return cfg_get_int(slot(key, "sort_json_keys"), 0) }
+vcr_set_sort_response_headers_k(key: string, on: int) {
+    if on != 0 { cfg_set_int(slot(key, "sort_response_headers"), 1) } else { cfg_set_int(slot(key, "sort_response_headers"), 0) }
+}
+vcr_get_sort_response_headers_k(key: string) -> int { return cfg_get_int(slot(key, "sort_response_headers"), 0) }
+
+// "" or why the rule was refused.
+vcr_sort_json_array_k(key: string, path: string, by: string) -> string {
+    if string.length(path) > 0 && string.char_at(path, 0) != 47 && string.index_of(path, "/") >= 0 {
+        return "sort_json_array: a path is a JSON pointer starting with '/', or one member name without '/' (got '${path}')"
+    }
+    if string.length(by) > 0 && string.char_at(by, 0) != 47 && string.index_of(by, "/") >= 0 {
+        return "sort_json_array: 'by' is a JSON pointer starting with '/', one member name, or \"\" (got '${by}')"
+    }
+    r = malloc(sizeof(ArraySort)) as *ArraySort
+    r.path = string.copy(path)
+    r.by = string.copy(by)
+    list_add_raw(array_sorts_k(key), r)
+    return ""
+}
+
+vcr_sort_header_value_k(key: string, name: string) -> string {
+    if string.length(name) == 0 || string.index_of(name, ":") >= 0 || string.index_of(name, "\n") >= 0 {
+        return "sort_header_value: '${name}' is not a header name"
+    }
+    r = malloc(sizeof(HeaderValueSort)) as *HeaderValueSort
+    r.name = string.copy(name)
+    list_add_raw(header_value_sorts_k(key), r)
+    return ""
+}
+
+vcr_clear_stable_order_k(key: string) {
+    vcr_set_sort_json_keys_k(key, 0)
+    vcr_set_sort_response_headers_k(key, 0)
+    list_reset(slot(key, "array_sorts"))
+    list_reset(slot(key, "header_value_sorts"))
+}
+
+// A member name as a JSON pointer segment: "~" -> "~0", "/" -> "~1".
+json_pointer_escape(s: string) -> string {
+    return replace_all(replace_all(s, "~", "~0"), "/", "~1")
+}
+
+// Whether rule path `rp` selects the array at JSON pointer `p`.
+array_path_matches(rp: string, p: string) -> int {
+    rl = string.length(rp)
+    pl = string.length(p)
+    if rl == 0 {
+        if pl == 0 { return 1 }
+        return 0
+    }
+    if pl == 0 { return 0 }
+    if string.char_at(rp, 0) != 47 {
+        // A bare member name: the array's own (last) segment.
+        k = pl - 1
+        while k > 0 && string.char_at(p, k) != 47 { k = k - 1 }
+        if string.equals(string.substring(p, k + 1, pl), json_pointer_escape(rp)) == 1 { return 1 }
+        return 0
+    }
+    i = 1
+    j = 1
+    while 1 == 1 {
+        ei = string.index_of_from(rp, "/", i)
+        if ei < 0 { ei = rl }
+        ej = string.index_of_from(p, "/", j)
+        if ej < 0 { ej = pl }
+        a = string.substring(rp, i, ei)
+        b = string.substring(p, j, ej)
+        if string.equals(a, "*") == 0 && string.equals(a, b) == 0 { return 0 }
+        if ei >= rl && ej >= pl { return 1 }
+        if ei >= rl || ej >= pl { return 0 }
+        i = ei + 1
+        j = ej + 1
+    }
+    return 0
+}
+
+// The first array rule that selects pointer `p`, or -1.
+array_rule_for_k(key: string, p: string) -> int {
+    l = array_sorts_k(key)
+    n = list_size(l)
+    i = 0
+    while i < n {
+        r = list_get_raw(l, i) as *ArraySort
+        if array_path_matches(r.path, p) == 1 { return i }
+        i = i + 1
+    }
+    return -1
+}
+
+// An optional '-' then digits only.
+json_is_integer(s: string) -> int {
+    n = string.length(s)
+    if n == 0 { return 0 }
+    i = 0
+    if string.char_at(s, 0) == 45 { i = 1 }
+    if i >= n { return 0 }
+    while i < n {
+        c = string.char_at(s, i)
+        if c < 48 || c > 57 { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+// Order of two sort keys (canonical JSON texts): integers by value (any
+// size, by sign, length and digits), anything else by bytes. -1 / 0 / 1.
+sort_key_compare(a: string, b: string) -> int {
+    if json_is_integer(a) == 1 && json_is_integer(b) == 1 {
+        na = 0
+        nb = 0
+        if string.char_at(a, 0) == 45 { na = 1 }
+        if string.char_at(b, 0) == 45 { nb = 1 }
+        if na != nb {
+            if na == 1 { return -1 }
+            return 1
+        }
+        da = string.substring(a, na, string.length(a))
+        db = string.substring(b, nb, string.length(b))
+        // Leading zeros are not JSON, so length orders magnitudes.
+        c = 0
+        if string.length(da) < string.length(db) { c = -1 }
+        else if string.length(da) > string.length(db) { c = 1 }
+        else { c = string.compare(da, db) }
+        if na == 1 { return 0 - c }
+        return c
+    }
+    return string.compare(a, b)
+}
+
+// Rewrite the JSON value at s[i] (no whitespace before it): object keys
+// sorted when sort_keys is 1, the arrays an array rule selects sorted when
+// rules is 1, and whitespace kept by position (compact 0) or dropped
+// (compact 1, the canonical form). Returns the text and the index just past
+// the value in `s`. `p` is the value's JSON pointer. `s` has been checked to
+// parse as JSON.
+so_value(key: string, s: string, i: int, p: string, sort_keys: int, compact: int, rules: int) -> (string, int) {
+    n = string.length(s)
+    if i >= n { return "", i }
+    c = string.char_at(s, i)
+    if c == 123 { return so_object(key, s, i, p, sort_keys, compact, rules) }
+    if c == 91 { return so_array(key, s, i, p, sort_keys, compact, rules) }
+    end = json_value_end(s, i)
+    return string.substring(s, i, end), end
+}
+
+so_object(key: string, s: string, i: int, p: string, sort_keys: int, compact: int, rules: int) -> (string, int) {
+    q = json_skip_space(s, i + 1)
+    if string.char_at(s, q) == 125 {
+        if compact == 1 { return "{}", q + 1 }
+        return string.substring(s, i, q + 1), q + 1
+    }
+    string[] gaps = []
+    string[] keys = []
+    string[] bodies = []
+    gap_from = i + 1
+    tail = ""
+    end = q + 1
+    while 1 == 1 {
+        gaps.push(string.substring(s, gap_from, q))
+        kend = json_string_end(s, q)
+        rawkey = string.substring(s, q + 1, kend - 1)
+        colon = json_skip_space(s, kend)
+        vstart = json_skip_space(s, colon + 1)
+        v, vend = so_value(key, s, vstart, "${p}/${json_pointer_escape(rawkey)}", sort_keys, compact, rules)
+        keys.push(rawkey)
+        if compact == 1 {
+            bodies.push("${string.substring(s, q, kend)}:${v}")
+        } else {
+            bodies.push(string_concat(string.substring(s, q, vstart), v))
+        }
+        after = json_skip_space(s, vend)
+        if after < string.length(s) && string.char_at(s, after) == 44 {
+            gap_from = vend
+            q = json_skip_space(s, after + 1)
+        } else {
+            tail = string.substring(s, vend, after)
+            end = after + 1
+            break
+        }
+    }
+    m = keys.len
+    int[] order = []
+    k = 0
+    while k < m { order.push(k); k = k + 1 }
+    if sort_keys == 1 {
+        // Stable insertion sort by the key's bytes as written.
+        a = 1
+        while a < m {
+            cur = order[a]
+            b = a - 1
+            while b >= 0 && string.compare(keys[order[b]], keys[cur]) > 0 {
+                order[b + 1] = order[b]
+                b = b - 1
+            }
+            order[b + 1] = cur
+            a = a + 1
+        }
+    }
+    out = "{"
+    k = 0
+    while k < m {
+        if compact == 1 {
+            if k > 0 { out = string_concat(out, ",") }
+        } else {
+            out = string_concat(out, gaps[k])
+        }
+        out = string_concat(out, bodies[order[k]])
+        k = k + 1
+    }
+    if compact == 0 { out = string_concat(out, tail) }
+    out = string_concat(out, "}")
+    return out, end
+}
+
+so_array(key: string, s: string, i: int, p: string, sort_keys: int, compact: int, rules: int) -> (string, int) {
+    q = json_skip_space(s, i + 1)
+    if string.char_at(s, q) == 93 {
+        if rules == 1 { so_mark_hit_k(key, p) }
+        if compact == 1 { return "[]", q + 1 }
+        return string.substring(s, i, q + 1), q + 1
+    }
+    string[] gaps = []
+    string[] items = []
+    gap_from = i + 1
+    tail = ""
+    end = q + 1
+    idx = 0
+    while 1 == 1 {
+        gaps.push(string.substring(s, gap_from, q))
+        v, vend = so_value(key, s, q, "${p}/${idx}", sort_keys, compact, rules)
+        items.push(v)
+        idx = idx + 1
+        after = json_skip_space(s, vend)
+        if after < string.length(s) && string.char_at(s, after) == 44 {
+            gap_from = vend
+            q = json_skip_space(s, after + 1)
+        } else {
+            tail = string.substring(s, vend, after)
+            end = after + 1
+            break
+        }
+    }
+    m = items.len
+    int[] order = []
+    k = 0
+    while k < m { order.push(k); k = k + 1 }
+    if rules == 1 {
+        ri = array_rule_for_k(key, p)
+        if ri >= 0 {
+            so_mark_hit_k(key, p)
+            r = list_get_raw(array_sorts_k(key), ri) as *ArraySort
+            by = r.by
+            string[] sk = []
+            all = 1
+            k = 0
+            while k < m && all == 1 {
+                kv, found = so_sort_key(items[k], by)
+                if found == 0 { all = 0 }
+                sk.push(kv)
+                k = k + 1
+            }
+            if all == 1 {
+                a = 1
+                while a < m {
+                    cur = order[a]
+                    b = a - 1
+                    while b >= 0 && sort_key_compare(sk[order[b]], sk[cur]) > 0 {
+                        order[b + 1] = order[b]
+                        b = b - 1
+                    }
+                    order[b + 1] = cur
+                    a = a + 1
+                }
+            }
+        }
+    }
+    out = "["
+    k = 0
+    while k < m {
+        if compact == 1 {
+            if k > 0 { out = string_concat(out, ",") }
+        } else {
+            out = string_concat(out, gaps[k])
+        }
+        out = string_concat(out, items[order[k]])
+        k = k + 1
+    }
+    if compact == 0 { out = string_concat(out, tail) }
+    out = string_concat(out, "]")
+    return out, end
+}
+
+// Record that some array rule selected an array (for the rules footer).
+so_mark_hit_k(key: string, p: string) {
+    ri = array_rule_for_k(key, p)
+    if ri >= 0 { cfg_set_int(slot(key, "so_hit.${ri}"), 1) }
+}
+
+// The canonical JSON of a value's text: no insignificant whitespace, object
+// keys sorted. Number and string spellings are kept as written.
+json_canonical(s: string) -> string {
+    v, _ = so_value("", s, json_skip_space(s, 0), "", 1, 1, 0)
+    return v
+}
+
+// The sort key of one array element (already rewritten, valid JSON): the
+// canonical JSON of the member `by` names, or of the whole element when
+// `by` is "". (key, 1), or ("", 0) when the element has no such member.
+so_sort_key(el: string, by: string) -> (string, int) {
+    if string.length(by) == 0 { return json_canonical(el), 1 }
+    ptr_s = by
+    if string.char_at(by, 0) != 47 { ptr_s = "/${json_pointer_escape(by)}" }
+    cur = el
+    i = 1
+    pl = string.length(ptr_s)
+    while i <= pl {
+        e = string.index_of_from(ptr_s, "/", i)
+        if e < 0 { e = pl }
+        seg = string.substring(ptr_s, i, e)
+        sub, found = json_child(cur, seg)
+        if found == 0 { return "", 0 }
+        cur = sub
+        i = e + 1
+    }
+    return json_canonical(cur), 1
+}
+
+// The text of an object's member (segment = escaped name) or an array's
+// element (segment = index) inside JSON text `s`.
+json_child(s: string, seg: string) -> (string, int) {
+    q = json_skip_space(s, 0)
+    if q >= string.length(s) { return "", 0 }
+    c = string.char_at(s, q)
+    if c != 123 && c != 91 { return "", 0 }
+    close = 125
+    if c == 91 { close = 93 }
+    q = json_skip_space(s, q + 1)
+    if string.char_at(s, q) == close { return "", 0 }
+    idx = 0
+    while 1 == 1 {
+        vstart = q
+        match_ = 0
+        if c == 123 {
+            kend = json_string_end(s, q)
+            if string.equals(json_pointer_escape(string.substring(s, q + 1, kend - 1)), seg) == 1 { match_ = 1 }
+            vstart = json_skip_space(s, json_skip_space(s, kend) + 1)
+        } else if string.equals(string.from_int(idx), seg) == 1 {
+            match_ = 1
+        }
+        vend = json_value_end(s, vstart)
+        if match_ == 1 { return string.substring(s, vstart, vend), 1 }
+        after = json_skip_space(s, vend)
+        if after >= string.length(s) || string.char_at(s, after) != 44 { return "", 0 }
+        q = json_skip_space(s, after + 1)
+        idx = idx + 1
+    }
+    return "", 0
+}
+
+// Whether any ordering rule is registered for this handle.
+stable_order_on_k(key: string) -> int {
+    if vcr_get_sort_json_keys_k(key) == 1 { return 1 }
+    if vcr_get_sort_response_headers_k(key) == 1 { return 1 }
+    if list_size(array_sorts_k(key)) > 0 { return 1 }
+    if list_size(header_value_sorts_k(key)) > 0 { return 1 }
+    return 0
+}
+
+// A response body in stable order, or byte-exact when no JSON rule is on,
+// the content type is not JSON, or the body does not parse.
+stable_order_body_k(key: string, ctype: string, body: string) -> string {
+    sk = vcr_get_sort_json_keys_k(key)
+    if sk == 0 && list_size(array_sorts_k(key)) == 0 { return body }
+    if string.length(body) == 0 { return body }
+    if content_type_is_json(ctype) == 0 { return body }
+    tree, err = json.parse(body)
+    if err != "" || tree == null { return body }
+    json.json_free(tree)
+    st = json_skip_space(body, 0)
+    v, end = so_value(key, body, st, "", sk, 0, 1)
+    out = string_concat(string.substring(body, 0, st), v)
+    return string_concat(out, string.substring(body, end, string.length(body)))
+}
+
+// "a, b, c" from a comma-separated header value, its items trimmed and
+// sorted by bytes (stable). An empty item is dropped.
+sort_comma_items(v: string) -> string {
+    string[] items = []
+    cursor = 0
+    n = string.length(v)
+    while cursor <= n {
+        c = string.index_of_from(v, ",", cursor)
+        e = n
+        if c >= 0 { e = c }
+        it = rtrim(trim_leading_ws(string.substring(v, cursor, e)))
+        if string.length(it) > 0 { items.push(it) }
+        if c < 0 { break }
+        cursor = c + 1
+    }
+    m = items.len
+    a = 1
+    while a < m {
+        cur = items[a]
+        b = a - 1
+        while b >= 0 && string.compare(items[b], cur) > 0 {
+            items[b + 1] = items[b]
+            b = b - 1
+        }
+        items[b + 1] = cur
+        a = a + 1
+    }
+    out = ""
+    k = 0
+    while k < m {
+        if k > 0 { out = string_concat(out, ", ") }
+        out = string_concat(out, items[k])
+        k = k + 1
+    }
+    return out
+}
+
+header_value_sorted_k(key: string, name: string) -> int {
+    l = header_value_sorts_k(key)
+    i = 0
+    while i < list_size(l) {
+        r = list_get_raw(l, i) as *HeaderValueSort
+        if icmp_rt(r.name, name) == 0 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+// A response header block in stable order: the registered headers' values'
+// items sorted, then (sort_response_headers) the lines sorted by name,
+// case-insensitively and stably, so a repeated header's lines keep their
+// order. A trailing newline stays as it was.
+stable_order_headers_k(key: string, block: string) -> string {
+    sort_lines_on = vcr_get_sort_response_headers_k(key)
+    if sort_lines_on == 0 && list_size(header_value_sorts_k(key)) == 0 { return block }
+    n = string.length(block)
+    if n == 0 { return block }
+    string[] lines = []
+    string[] names = []
+    cursor = 0
+    while cursor < n {
+        nl = string.index_of_from(block, "\n", cursor)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(block, cursor, e)
+        colon = string.index_of(line, ":")
+        name = ""
+        if colon > 0 { name = string.substring(line, 0, colon) }
+        if colon > 0 && header_value_sorted_k(key, name) == 1 {
+            line = "${name}: ${sort_comma_items(string.substring(line, colon + 1, string.length(line)))}"
+        }
+        lines.push(line)
+        names.push(name)
+        if nl < 0 { break }
+        cursor = nl + 1
+    }
+    m = lines.len
+    int[] order = []
+    k = 0
+    while k < m { order.push(k); k = k + 1 }
+    if sort_lines_on == 1 {
+        a = 1
+        while a < m {
+            cur = order[a]
+            b = a - 1
+            while b >= 0 && icmp_rt(names[order[b]], names[cur]) > 0 {
+                order[b + 1] = order[b]
+                b = b - 1
+            }
+            order[b + 1] = cur
+            a = a + 1
+        }
+    }
+    out = ""
+    k = 0
+    while k < m {
+        if k > 0 { out = string_concat(out, "\n") }
+        out = string_concat(out, lines[order[k]])
+        k = k + 1
+    }
+    if string.char_at(block, n - 1) == 10 { out = string_concat(out, "\n") }
+    return out
+}
+
+// One recorded field as the tape writes it before any rewriting: in stable
+// order when an ordering rule applies (response headers and body only),
+// otherwise exactly as recorded.
+ordered_field_k(key: string, e: *Interaction, field: int) -> string {
+    if field == FIELD_PATH { return e.path }
+    if field == FIELD_REQUEST_HEADERS { return e.req_headers }
+    if field == FIELD_REQUEST_BODY { return e.req_body }
+    if field == FIELD_RESPONSE_HEADERS { return stable_order_headers_k(key, e.resp_headers) }
+    if field == FIELD_RESPONSE_BODY {
+        ct = e.content_type
+        if string.length(ct) == 0 { ct = header_value_in_block(e.resp_headers, "Content-Type") }
+        return stable_order_body_k(key, ct, e.body)
+    }
+    return ""
+}
+
+// Rules-footer rows for the ordering rules: each with the interactions it
+// applies to (response headers present; the named header present; a JSON
+// body that parses; a JSON body with an array the rule selects).
+stable_order_footer_rows_k(key: string) -> string {
+    n = list_size(tape_list_k(key))
+    rows = ""
+    if vcr_get_sort_response_headers_k(key) == 1 {
+        hits = ""
+        ii = 0
+        while ii < n {
+            e = tape_get_k(key, ii)
+            if string.length(e.resp_headers) > 0 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
+            ii = ii + 1
+        }
+        rows = string_concat(rows, "| ordered | response headers | every header | sorted by name; a repeated header's lines keep their order | ${interaction_ranges(hits)} |\n")
+    }
+    hl = header_value_sorts_k(key)
+    hi = 0
+    while hi < list_size(hl) {
+        r = list_get_raw(hl, hi) as *HeaderValueSort
+        hits = ""
+        ii = 0
+        while ii < n {
+            e = tape_get_k(key, ii)
+            if header_line_present(e.resp_headers, r.name) == 1 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
+            ii = ii + 1
+        }
+        rows = string_concat(rows, "| ordered | response headers | ${md_cell_code(r.name)} | its comma-separated items sorted | ${interaction_ranges(hits)} |\n")
+        hi = hi + 1
+    }
+    al = array_sorts_k(key)
+    na = list_size(al)
+    // One pass per interaction marks which array rules selected an array.
+    string[] ahits = []
+    ai = 0
+    while ai < na { ahits.push(""); ai = ai + 1 }
+    khits = ""
+    ii = 0
+    while ii < n {
+        e = tape_get_k(key, ii)
+        ai = 0
+        while ai < na { cfg_set_int(slot(key, "so_hit.${ai}"), 0); ai = ai + 1 }
+        ct = e.content_type
+        if string.length(ct) == 0 { ct = header_value_in_block(e.resp_headers, "Content-Type") }
+        is_json = 0
+        if string.length(e.body) > 0 && content_type_is_json(ct) == 1 {
+            tree, err = json.parse(e.body)
+            if err == "" && tree != null {
+                is_json = 1
+                json.json_free(tree)
+            }
+        }
+        if is_json == 1 && na > 0 { stable_order_body_k(key, ct, e.body) }
+        if is_json == 1 { khits = string_concat(khits, "1") } else { khits = string_concat(khits, "0") }
+        ai = 0
+        while ai < na {
+            if is_json == 1 && cfg_get_int(slot(key, "so_hit.${ai}"), 0) == 1 {
+                ahits[ai] = string_concat(ahits[ai], "1")
+            } else {
+                ahits[ai] = string_concat(ahits[ai], "0")
+            }
+            ai = ai + 1
+        }
+        ii = ii + 1
+    }
+    if vcr_get_sort_json_keys_k(key) == 1 {
+        rows = string_concat(rows, "| ordered | response body | JSON object keys | sorted, at every depth | ${interaction_ranges(khits)} |\n")
+    }
+    ai = 0
+    while ai < na {
+        ar = list_get_raw(al, ai) as *ArraySort
+        where = "the root array"
+        if string.length(ar.path) > 0 && string.char_at(ar.path, 0) == 47 { where = "JSON arrays at ${md_cell_code(ar.path)}" }
+        if string.length(ar.path) > 0 && string.char_at(ar.path, 0) != 47 { where = "JSON arrays named ${md_cell_code(ar.path)}" }
+        how = "sorted by their elements' canonical JSON"
+        if string.length(ar.by) > 0 { how = "sorted by ${md_cell_code(ar.by)}" }
+        rows = string_concat(rows, "| ordered | response body | ${where} | ${how} | ${interaction_ranges(ahits[ai])} |\n")
+        ai = ai + 1
+    }
+    return rows
+}
+
 emit_one_interaction_k(key: string, i: int) -> string {
     // Read fields from THIS handle's tape via the keyed struct accessor — no
     // ambient cur_key(), so a concurrent flush on another handle cannot change
@@ -5145,10 +5841,12 @@ emit_one_interaction_k(key: string, i: int) -> string {
     path     = string.copy(e.path)
     status   = e.status
     ctype    = string.copy(e.content_type)
-    body     = string.copy(e.body)
+    // Response headers and body in stable order (opt-in; a no-op copy when
+    // no ordering rule is registered), before any other rewriting.
+    body     = string.copy(ordered_field_k(key, e, FIELD_RESPONSE_BODY))
     req_h    = string.copy(e.req_headers)
     req_b    = string.copy(e.req_body)
-    resp_h   = string.copy(e.resp_headers)
+    resp_h   = string.copy(ordered_field_k(key, e, FIELD_RESPONSE_HEADERS))
     note_present = e.has_note
     note_title_v = string.copy(e.note_title)
     note_body_v  = string.copy(e.note_body)
@@ -5513,6 +6211,8 @@ emit_rules_footer_k(key: string) -> string {
         rows = string_concat(rows, "| ${label} | whole recording | ${matching} | ${written} | ${interaction_ranges(hits)} |\n")
         ni = ni + 1
     }
+
+    rows = string_concat(rows, stable_order_footer_rows_k(key))
 
     out = "\n${RULES_FOOTER_HEADING}\n\n"
     if string.length(rows) == 0 {
@@ -6558,7 +7258,9 @@ secret_raw_field(e: *Interaction, field: int) -> string {
 secret_source_k(key: string, index: int, field: int) -> string {
     src = secret_raw_field(tape_get_k(key, index), field)
     if cfg_get_int(slot(key, "secret_resolving"), 0) == 0 {
-        // Called only on the test thread after stopping recording.
+        // Called only on the test thread after stopping recording. The
+        // emitter's own first steps: stable order, redactions, removals.
+        src = ordered_field_k(key, tape_get_k(key, index), field)
         src = apply_redactions_for(src, field)
         if field == FIELD_REQUEST_HEADERS || field == FIELD_RESPONSE_HEADERS { src = remove_headers_for(src, field) }
     }

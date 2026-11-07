@@ -124,6 +124,11 @@ One libservirtium_vcr; every binding exposes the same surface.
 - **Canonical Servirtium markdown** — interoperable with other Servirtium
   implementations; fenced or 4-space-indented code blocks; optional emphasized
   HTTP verbs; optional `pretty_xml` indentation of recorded XML bodies ([docs/pretty-xml.md](docs/pretty-xml.md)); gzip + chunked transfer decoded to the stored payload.
+  Opt-in *stable order* for a service that answers in a different order
+  each run: JSON object keys sorted, chosen JSON arrays sorted by a member,
+  response headers sorted by name, a set-valued header's items (`Allow`)
+  sorted (AGENTS.md, "Stable order"), so a re-record is byte-identical
+  without leaving content out.
   Bodies are byte-exact, CRs included (CouchDB's CRLF-separated rows, a
   multipart request); a tape converted wholesale to CRLF line endings (an
   autocrlf checkout) still parses. Keep tapes out of git's line-ending

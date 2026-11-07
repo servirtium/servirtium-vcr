@@ -124,7 +124,10 @@ recorded service's licence terms; the developer supplies any line breaks;
 playback ignores it, so no line may start `## Interaction ` or
 `## [Recording rules]`; `core_tests/test_vcr_license_notice.ae`);
 `note(h, k, v)`; `static_content(h, mount, dir)`; `untaped(h, path)`;
-`indent_code_blocks(h)` / `emphasize_http_verbs(h)`; plus `clear_*` resets.
+`indent_code_blocks(h)` / `emphasize_http_verbs(h)`;
+`set_sort_json_keys(h, int)`, `sort_json_array(h, path, by)`,
+`set_sort_response_headers(h, int)`, `sort_header_value(h, name)`,
+`clear_stable_order(h)` (opt-in stable order, below); plus `clear_*` resets.
 
 `Field` (int): `Path=1, ResponseBody=2, RequestHeaders=3, RequestBody=4,
 ResponseHeaders=5`.
@@ -291,6 +294,70 @@ depends on connection-level behaviour is outside what Servirtium can test;
 don't stretch it there.
 
 Guarded by `core_tests/test_vcr_header_presets.ae`.
+
+## Stable order (opt-in)
+
+For a service that sends the same response in a different order every run
+(a Go map or Java set behind a JSON object or array, a Rust server's
+header order, a list ordered by a random id). Without these a re-record
+differs and `check` fails, and the only cure is throwing content away. Each
+is off by default and registered explicitly (Paul's rule: nothing implicit);
+a tape recorded without them is byte-exact. All record side: the tape is
+what is written, and playback serves it as it is.
+
+| Core (`_h`; bare form without it) | C ABI (`aether_vcr_embed_…`) | What it writes |
+|---|---|---|
+| `sort_json_keys_h(h, on)` | `set_sort_json_keys` / `get_sort_json_keys` | JSON response bodies' object keys sorted by their bytes, at every depth; duplicates keep their order |
+| `sort_json_array_h(h, path, by)` → error | `sort_json_array` (caller frees) | the arrays `path` selects, elements sorted (stably) by member `by` |
+| `sort_response_headers_h(h, on)` | `set_sort_response_headers` / `get_…` | response header lines by name, case-insensitive; a repeated header's lines (Set-Cookie, Vary) keep their order |
+| `sort_header_value_h(h, name)` → error | `sort_header_value` (caller frees) | that response header's comma-separated items sorted, written `a, b, c` (Allow) |
+| `clear_stable_order_h(h)` | `clear_stable_order` | all off (`clear_format_options` does it too) |
+
+Decisions, and why:
+- **Keys: global and safe.** JSON object key order carries no meaning
+  (RFC 8259), so a client sees the same value on replay. Sorted by the key's
+  bytes as written; whitespace between members stays where it was, by
+  position, so a pretty-printed body keeps its layout and its length.
+- **Arrays: only when asked, per array.** Array order is often the meaning
+  (a ranked result, a history), so there is no global switch. `path` is a
+  JSON pointer from the root (`""` the root array, `/value`,
+  `/items/*/tags`, `*` any one segment) or a bare member name (`versions`:
+  every array that member holds, at any depth). `by` is a member name, a
+  pointer inside each element (`/db_name/L`), or `""` for each element's
+  canonical JSON (keys sorted, no whitespace). Two integers compare by value
+  (any size), anything else by canonical bytes. If any element lacks `by`,
+  that array is written as sent. The first rule that selects an array sorts
+  it. **This deliberately changes the recorded response**: replay serves the
+  sorted order, so a test must not assert the order it sorted away.
+- **Headers.** Sorting header lines loses nothing (RFC 9110: only a repeated
+  header's lines are ordered, and those keep theirs). Value items are sorted
+  only for a header named, because only some values are sets: never Accept
+  (preference order) or a value whose quoted strings hold commas.
+- **First in the pipeline, on values as sent.** Ordering runs before
+  redactions, credentials, normalizations, collapses and pretty_json, so a
+  value later collapsed (a creation time) can still order an array; normalize
+  numbers its `{{name-N}}` tokens in the sorted order, so numbering is as
+  stable as the order; pretty_json lays out the sorted body. Sort by a
+  value that is the same each run: by a random id is a random order.
+- **Content-Length.** Sorting keeps a body's bytes, so its length stays; the
+  usual rewrite (a changed body's recorded Content-Length follows it) covers
+  any combination with other rules.
+- **Request side left alone.** The app under test sent the request, playback
+  compares it with the tape, and a client's serializer is deterministic; a
+  client that really varies its key order wants `set_match_json_body`
+  (JSON-semantic matching), not a rewritten tape. Request headers are already
+  written sorted by name.
+- **Footer.** Each rule is a row, `ordered`, with the interactions it
+  *applies to* (response headers present, the header present, a JSON body,
+  a JSON body with a selected array), never the ones whose order it happened
+  to change, which would make the footer itself differ run to run.
+- **Check mode** compares the emitted tape, so it sees the sorted form.
+
+Guarded by `core_tests/test_vcr_stable_order.ae` (including a real upstream
+that flips its order per request: two recordings, one tape). The
+pre-recorded recorder exposes them as `servirtium.sort_json_keys()`,
+`sort_json_array(path, by)`, `sort_response_headers()`,
+`sort_header_value(name)`.
 
 ## The recording-rules footer (opt-in)
 

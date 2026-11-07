@@ -470,6 +470,46 @@ vcr_embed_get_pretty_json(s: ptr) -> int {
     return vcr.get_pretty_json_h(s)
 }
 
+// Opt-in stable order (record side; see "Stable order" in core/vcr.ae and
+// AGENTS.md). All off by default; the tape is byte-exact without them.
+// JSON object keys sorted at every depth in recorded JSON response bodies.
+vcr_embed_set_sort_json_keys(s: ptr, on: int) {
+    vcr.sort_json_keys_h(s, on)
+}
+vcr_embed_get_sort_json_keys(s: ptr) -> int {
+    return vcr.get_sort_json_keys_h(s)
+}
+
+// The JSON response arrays `path` selects (JSON pointer from the root, "*"
+// for any one segment, "" the root array; or a bare member name: every array
+// that member holds) sorted by member `by` (a name or a JSON pointer inside
+// each element; "" sorts by each element's canonical JSON). Replay serves
+// the sorted order. Returns "" on success or the reason the
+// rule was refused (caller frees).
+vcr_embed_sort_json_array(s: ptr, path: string, by: string) -> ptr {
+    return vcr_embed_dup(vcr.sort_json_array_h(s, path, by))
+}
+
+// Response header lines sorted by name (case-insensitive); a repeated
+// header's lines keep their order.
+vcr_embed_set_sort_response_headers(s: ptr, on: int) {
+    vcr.sort_response_headers_h(s, on)
+}
+vcr_embed_get_sort_response_headers(s: ptr) -> int {
+    return vcr.get_sort_response_headers_h(s)
+}
+
+// One response header's comma-separated items sorted ("Allow"). Returns ""
+// or the reason the name was refused (caller frees).
+vcr_embed_sort_header_value(s: ptr, name: string) -> ptr {
+    return vcr_embed_dup(vcr.sort_header_value_h(s, name))
+}
+
+// Every stable-order rule off.
+vcr_embed_clear_stable_order(s: ptr) {
+    vcr.clear_stable_order_h(s)
+}
+
 // Opt-in: match playback by searching all interactions (reusable, order-
 // independent) instead of consuming them in strict recorded order. Off by
 // default (strict ordered playback).
