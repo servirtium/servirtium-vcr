@@ -127,4 +127,25 @@ defmodule Servirtium.RecordTest do
       TestUpstream.stop(up)
     end
   end
+
+  test "a license notice is written at the top of the tape", %{tape: tape} do
+    up = TestUpstream.start("body")
+
+    try do
+      Servirtium.with_record(
+        tape,
+        TestUpstream.base_url(up),
+        [port: 0, license_notice: "Recorded under the MIT licence"],
+        fn srv ->
+          assert {200, "body"} = get(Servirtium.base_url(srv), "/login")
+        end
+      )
+
+      contents = File.read!(tape)
+      assert contents =~ "## LICENSE NOTICE"
+      assert contents =~ "Recorded under the MIT licence"
+    after
+      TestUpstream.stop(up)
+    end
+  end
 end

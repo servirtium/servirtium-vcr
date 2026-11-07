@@ -26,6 +26,13 @@
     redact_header/2, redact_header/4,
     redact_query_param/2, redact_query_param/4,
     redact_json_field/2, redact_json_field/4,
+    add_license_notice/2,
+    set_pretty_json/2,
+    remove_transport_headers/1,
+    remove_cloud_headers/2,
+    redact_credentials/1,
+    redact_credential_header/2,
+    set_upstream_cafile/2,
     base_url/1,
     port/1,
     tape_length/1,
@@ -204,6 +211,38 @@ redact_json_field(#{handle := H}, Name, Replacement, Field) ->
         <<>> -> ok;
         Error -> error({servirtium, Error})
     end.
+
+%% Record mode: write Text under "## LICENSE NOTICE" at the top of each tape;
+%% playback ignores it. Returns ok, or raises {servirtium, Error}.
+add_license_notice(#{handle := H}, Text) ->
+    str_result(servirtium_nif:add_license_notice(H, unicode:characters_to_binary(Text))).
+
+%% Record mode: pretty-print recorded JSON response bodies (indent 1..16;
+%% 0 = off); request bodies are never changed.
+set_pretty_json(#{handle := H}, Indent) when is_integer(Indent) ->
+    servirtium_nif:set_pretty_json(H, Indent).
+
+%% Header presets (opt-in; each returns ok or raises {servirtium, Error}).
+%% Host, Connection, Content-Length, the other hop-by-hop headers and the
+%% request's Accept-Encoding.
+remove_transport_headers(#{handle := H}) ->
+    str_result(servirtium_nif:remove_transport_headers(H)).
+%% Vendor: "aws", "azure", "cloudflare", "fastly" or "gcp".
+remove_cloud_headers(#{handle := H}, Vendor) ->
+    str_result(servirtium_nif:remove_cloud_headers(H, unicode:characters_to_binary(Vendor))).
+%% Authorization, cookies, X-Api-Key and X-Auth-Token become numbered tokens.
+redact_credentials(#{handle := H}) ->
+    str_result(servirtium_nif:redact_credentials(H)).
+%% One more credential header, its whole value a token named after it.
+redact_credential_header(#{handle := H}, Name) ->
+    str_result(servirtium_nif:redact_credential_header(H, unicode:characters_to_binary(Name))).
+
+%% Record mode: verify an https upstream against this PEM CA file.
+set_upstream_cafile(#{handle := H}, Path) ->
+    str_result(servirtium_nif:set_upstream_cafile(H, unicode:characters_to_binary(Path))).
+
+str_result(<<>>) -> ok;
+str_result(Error) -> error({servirtium, Error}).
 
 last_error(#{handle := H}, Consume) when is_boolean(Consume) ->
     binary_to_list(servirtium_nif:last_error_ex(H, case Consume of true -> 1; false -> 0 end)).

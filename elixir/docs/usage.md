@@ -186,7 +186,20 @@ Servirtium.playback(tape, static_content: [{"/assets", "build/static"}])
 Servirtium.record(tape, upstream,
   indent_code_blocks: true,    # 4-space-indented blocks instead of ``` fences
   emphasize_http_verbs: true,  # *GET* instead of bare GET in headings
-  pretty_xml: 2)               # pretty-print recorded XML bodies (indent 1..16)
+  pretty_xml: 2,               # pretty-print recorded XML bodies (indent 1..16)
+  pretty_json: 2,              # pretty-print recorded JSON bodies (indent 1..16)
+  license_notice: "...")       # text under "## LICENSE NOTICE" atop each tape
+```
+
+## Header presets (opt-in; record and playback)
+
+```elixir
+Servirtium.record(tape, upstream,
+  remove_transport_headers: true,           # Host, Connection, Content-Length, ... Accept-Encoding
+  remove_cloud_headers: ["cloudflare"],     # aws | azure | cloudflare | fastly | gcp
+  redact_credentials: true,                 # Authorization, cookies, X-Api-Key, X-Auth-Token
+  redact_credential_header: ["X-Vault-Token"],
+  upstream_cafile: "ca.pem")                # record only: verify an https upstream
 ```
 
 Playback tolerates either form regardless, so cross-implementation tapes load

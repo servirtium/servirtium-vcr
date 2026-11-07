@@ -50,6 +50,17 @@ defmodule Servirtium do
     * `:tls_pem` — `{cert_pem, key_pem}`; like `:tls`, but the PEM certificate and key are passed in memory (not file paths), so no private key is written to disk
     * `:untaped` — list of paths the VCR answers 404 without consuming the
       tape cursor / forwarding upstream (e.g. `"/favicon.ico"`)
+    * `:remove_transport_headers` — `true` to drop `Host`, `Connection`,
+      `Content-Length`, the other hop-by-hop headers and the request's
+      `Accept-Encoding` (Servirtium 1's behaviour)
+    * `:remove_cloud_headers` — list of vendors (`"aws"`, `"azure"`,
+      `"cloudflare"`, `"fastly"`, `"gcp"`) whose CDN / load-balancer tracing and
+      cache-status headers are dropped
+    * `:redact_credentials` — `true` to redact `Authorization`, cookies,
+      `X-Api-Key` and `X-Auth-Token` into numbered tokens (playback matches them
+      on presence, not value, so set it on the playback side too)
+    * `:redact_credential_header` — list of further header names redacted the
+      same way (`X-Vault-Token: X_VAULT_TOKEN_1`)
 
   Playback only:
 
@@ -88,6 +99,12 @@ defmodule Servirtium do
     * `:pretty_xml` — indent width (integer) to pretty-print recorded XML bodies
       (1..16; 0 = off). Request bodies are never changed.
       Falls back to byte-exact if the body isn't well-formed XML.
+    * `:pretty_json` — indent width (integer) to pretty-print recorded JSON
+      bodies (1..16; 0 = off). Request bodies are never changed.
+      Falls back to byte-exact if the body isn't valid JSON.
+    * `:license_notice` — text written under `## LICENSE NOTICE` at the top of
+      each tape (playback ignores it)
+    * `:upstream_cafile` — PEM CA file to verify an https upstream against
     * `:fail_if_changed` — `true` to raise on drift when flushing (still writes)
 
   A `field` is one of `:path`, `:response_body`, `:request_headers`,
@@ -377,6 +394,22 @@ defmodule Servirtium do
     for path <- Keyword.get(opts, :untaped, []) do
       check!(Native.untaped(handle, path), "untaped")
     end
+
+    if Keyword.get(opts, :remove_transport_headers, false) do
+      check!(Native.remove_transport_headers(handle), "remove_transport_headers")
+    end
+
+    for vendor <- Keyword.get(opts, :remove_cloud_headers, []) do
+      check!(Native.remove_cloud_headers(handle, vendor), "remove_cloud_headers")
+    end
+
+    if Keyword.get(opts, :redact_credentials, false) do
+      check!(Native.redact_credentials(handle), "redact_credentials")
+    end
+
+    for name <- Keyword.get(opts, :redact_credential_header, []) do
+      check!(Native.redact_credential_header(handle, name), "redact_credential_header")
+    end
   end
 
   defp apply_playback_config(handle, opts) do
@@ -406,6 +439,21 @@ defmodule Servirtium do
     case Keyword.get(opts, :pretty_xml, 0) do
       n when is_integer(n) and n > 0 -> Native.set_pretty_xml(handle, n)
       _ -> :ok
+    end
+
+    case Keyword.get(opts, :pretty_json, 0) do
+      n when is_integer(n) and n > 0 -> Native.set_pretty_json(handle, n)
+      _ -> :ok
+    end
+
+    case Keyword.get(opts, :license_notice) do
+      nil -> :ok
+      text -> check!(Native.add_license_notice(handle, text), "add_license_notice")
+    end
+
+    case Keyword.get(opts, :upstream_cafile) do
+      nil -> :ok
+      path -> check!(Native.set_upstream_cafile(handle, path), "set_upstream_cafile")
     end
 
     for {field, pat, repl} <- Keyword.get(opts, :redact, []) do

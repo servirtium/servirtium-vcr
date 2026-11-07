@@ -81,6 +81,13 @@
     indent_code_blocks/1,
     emphasize_http_verbs/1,
     set_pretty_xml/2,
+    set_pretty_json/2,
+    remove_transport_headers/1,
+    remove_cloud_headers/2,
+    redact_credentials/1,
+    redact_credential_header/2,
+    add_license_notice/2,
+    set_upstream_cafile/2,
     clear_redactions/1,
     clear_unredactions/1,
     clear_header_removals/1,
@@ -165,6 +172,13 @@ ignore_volatile_headers(_Handle) -> erlang:nif_error(not_loaded).
 indent_code_blocks(_Handle) -> erlang:nif_error(not_loaded).
 emphasize_http_verbs(_Handle) -> erlang:nif_error(not_loaded).
 set_pretty_xml(_Handle, _Indent) -> erlang:nif_error(not_loaded).
+set_pretty_json(_Handle, _Indent) -> erlang:nif_error(not_loaded).
+remove_transport_headers(_Handle) -> erlang:nif_error(not_loaded).
+remove_cloud_headers(_Handle, _Vendor) -> erlang:nif_error(not_loaded).
+redact_credentials(_Handle) -> erlang:nif_error(not_loaded).
+redact_credential_header(_Handle, _Name) -> erlang:nif_error(not_loaded).
+add_license_notice(_Handle, _Text) -> erlang:nif_error(not_loaded).
+set_upstream_cafile(_Handle, _Path) -> erlang:nif_error(not_loaded).
 clear_redactions(_Handle) -> erlang:nif_error(not_loaded).
 clear_unredactions(_Handle) -> erlang:nif_error(not_loaded).
 clear_header_removals(_Handle) -> erlang:nif_error(not_loaded).

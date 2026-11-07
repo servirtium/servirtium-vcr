@@ -35,6 +35,13 @@
    (redact_header 2) (redact_header 4)
    (redact_query_param 2) (redact_query_param 4)
    (redact_json_field 2) (redact_json_field 4)
+   (add_license_notice 2)
+   (set_pretty_json 2)
+   (remove_transport_headers 1)
+   (remove_cloud_headers 2)
+   (redact_credentials 1)
+   (redact_credential_header 2)
+   (set_upstream_cafile 2)
    (close 1)
    ;; introspection
    (base_url 1)
@@ -180,6 +187,44 @@
   (redact_json_field vcr name #"[REDACTED]" 4))
 (defun redact_json_field (vcr name replacement field)
   (case (servirtium_nif:redact_json_field (maps:get 'handle vcr) field (to-bin name) (to-bin replacement))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
+
+;; Record mode: write TEXT under "## LICENSE NOTICE" at the top of each tape;
+;; playback ignores it. Returns ok, or raises #(servirtium Error).
+(defun add_license_notice (vcr text)
+  (case (servirtium_nif:add_license_notice (maps:get 'handle vcr) (to-bin text))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
+;; Record mode: pretty-print recorded JSON response bodies (indent 1..16;
+;; 0 = off); request bodies are never changed.
+(defun set_pretty_json (vcr indent)
+  (servirtium_nif:set_pretty_json (maps:get 'handle vcr) indent))
+;; Header presets (opt-in; each returns ok or raises #(servirtium Error)).
+;; Host, Connection, Content-Length, the other hop-by-hop headers and the
+;; request's Accept-Encoding.
+(defun remove_transport_headers (vcr)
+  (case (servirtium_nif:remove_transport_headers (maps:get 'handle vcr))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
+;; VENDOR: "aws", "azure", "cloudflare", "fastly" or "gcp".
+(defun remove_cloud_headers (vcr vendor)
+  (case (servirtium_nif:remove_cloud_headers (maps:get 'handle vcr) (to-bin vendor))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
+;; Authorization, cookies, X-Api-Key and X-Auth-Token become numbered tokens.
+(defun redact_credentials (vcr)
+  (case (servirtium_nif:redact_credentials (maps:get 'handle vcr))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
+;; One more credential header, its whole value a token named after it.
+(defun redact_credential_header (vcr name)
+  (case (servirtium_nif:redact_credential_header (maps:get 'handle vcr) (to-bin name))
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
+;; Record mode: verify an https upstream against this PEM CA file.
+(defun set_upstream_cafile (vcr path)
+  (case (servirtium_nif:set_upstream_cafile (maps:get 'handle vcr) (to-bin path))
     (#"" 'ok)
     (err (erlang:error (tuple 'servirtium err)))))
 

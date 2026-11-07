@@ -278,6 +278,68 @@ pub fn redact_json_field_with(vcr: Vcr, name: String, replacement: String, field
   servirtium_result.from_error(nif_redact_json_field(vcr.handle, field, name, replacement))
 }
 
+@external(erlang, "servirtium_nif", "add_license_notice")
+fn nif_add_license_notice(handle: Int, text: String) -> String
+
+/// Record mode: write `text` under "## LICENSE NOTICE" at the top of each
+/// tape; playback ignores it.
+pub fn add_license_notice(vcr: Vcr, text: String) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_add_license_notice(vcr.handle, text))
+}
+
+@external(erlang, "servirtium_nif", "set_pretty_json")
+fn nif_set_pretty_json(handle: Int, indent: Int) -> Nil
+
+/// Record mode: pretty-print recorded JSON response bodies (indent 1..16;
+/// 0 = off); request bodies are never changed.
+pub fn set_pretty_json(vcr: Vcr, indent: Int) -> Nil {
+  let _ = nif_set_pretty_json(vcr.handle, indent)
+  Nil
+}
+
+@external(erlang, "servirtium_nif", "remove_transport_headers")
+fn nif_remove_transport_headers(handle: Int) -> String
+
+/// Header preset (opt-in): drop Host, Connection, Content-Length, the other
+/// hop-by-hop headers and the request's Accept-Encoding.
+pub fn remove_transport_headers(vcr: Vcr) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_remove_transport_headers(vcr.handle))
+}
+
+@external(erlang, "servirtium_nif", "remove_cloud_headers")
+fn nif_remove_cloud_headers(handle: Int, vendor: String) -> String
+
+/// Header preset (opt-in): drop a vendor's CDN / load-balancer headers.
+/// `vendor` is "aws", "azure", "cloudflare", "fastly" or "gcp".
+pub fn remove_cloud_headers(vcr: Vcr, vendor: String) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_remove_cloud_headers(vcr.handle, vendor))
+}
+
+@external(erlang, "servirtium_nif", "redact_credentials")
+fn nif_redact_credentials(handle: Int) -> String
+
+/// Header preset (opt-in): Authorization, cookies, X-Api-Key and X-Auth-Token
+/// become numbered tokens.
+pub fn redact_credentials(vcr: Vcr) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_redact_credentials(vcr.handle))
+}
+
+@external(erlang, "servirtium_nif", "redact_credential_header")
+fn nif_redact_credential_header(handle: Int, name: String) -> String
+
+/// One more credential header, its whole value a token named after it.
+pub fn redact_credential_header(vcr: Vcr, name: String) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_redact_credential_header(vcr.handle, name))
+}
+
+@external(erlang, "servirtium_nif", "set_upstream_cafile")
+fn nif_set_upstream_cafile(handle: Int, path: String) -> String
+
+/// Record mode: verify an https upstream against this PEM CA file.
+pub fn set_upstream_cafile(vcr: Vcr, path: String) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_set_upstream_cafile(vcr.handle, path))
+}
+
 @external(erlang, "servirtium_nif", "last_error_ex")
 fn nif_last_error_ex(handle: Int, consume: Int) -> String
 @external(erlang, "servirtium_nif", "diagnostics_json")

@@ -92,6 +92,13 @@ defmodule Servirtium.Native do
   defdelegate indent_code_blocks(handle), to: :servirtium_nif
   defdelegate emphasize_http_verbs(handle), to: :servirtium_nif
   defdelegate set_pretty_xml(handle, indent), to: :servirtium_nif
+  defdelegate set_pretty_json(handle, indent), to: :servirtium_nif
+  defdelegate remove_transport_headers(handle), to: :servirtium_nif
+  defdelegate remove_cloud_headers(handle, vendor), to: :servirtium_nif
+  defdelegate redact_credentials(handle), to: :servirtium_nif
+  defdelegate redact_credential_header(handle, name), to: :servirtium_nif
+  defdelegate add_license_notice(handle, text), to: :servirtium_nif
+  defdelegate set_upstream_cafile(handle, path), to: :servirtium_nif
   defdelegate clear_redactions(handle), to: :servirtium_nif
   defdelegate clear_unredactions(handle), to: :servirtium_nif
   defdelegate clear_header_removals(handle), to: :servirtium_nif

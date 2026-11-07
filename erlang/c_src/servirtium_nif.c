@@ -71,6 +71,12 @@ extern char *aether_vcr_embed_strict_ignore_common_headers(void *server);
 extern char *aether_vcr_embed_normalize_whole_tape(void *server, const char *pattern, const char *name);
 extern char *aether_vcr_embed_redact_whole_tape(void *server, const char *pattern, const char *replacement);
 extern char *aether_vcr_embed_note(void *server, const char *title, const char *body);
+extern char *aether_vcr_embed_remove_transport_headers(void *server);
+extern char *aether_vcr_embed_remove_cloud_headers(void *server, const char *vendor);
+extern char *aether_vcr_embed_redact_credentials(void *server);
+extern char *aether_vcr_embed_redact_credential_header(void *server, const char *name);
+extern char *aether_vcr_embed_add_license_notice(void *server, const char *text);
+extern char *aether_vcr_embed_set_upstream_cafile(void *server, const char *path);
 extern char *aether_vcr_embed_static_content(void *server, const char *mount_path, const char *fs_dir);
 extern char *aether_vcr_embed_untaped(void *server, const char *path);
 extern void  aether_vcr_embed_set_strict_headers(void *server, int on);
@@ -82,6 +88,7 @@ extern char *aether_vcr_embed_discard(void *server, const char *tape_path);
 extern void  aether_vcr_embed_indent_code_blocks(void *server);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *server);
 extern void  aether_vcr_embed_set_pretty_xml(void *server, int indent);
+extern void  aether_vcr_embed_set_pretty_json(void *server, int indent);
 extern void  aether_vcr_embed_clear_redactions(void *server);
 extern void  aether_vcr_embed_clear_unredactions(void *server);
 extern void  aether_vcr_embed_clear_header_removals(void *server);
@@ -511,6 +518,41 @@ static ERL_NIF_TERM nif_ignore_volatile_headers(ErlNifEnv *env, int argc, const 
     return take_cstr(env, aether_vcr_embed_ignore_volatile_headers(h));
 }
 
+static ERL_NIF_TERM nif_remove_transport_headers(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_remove_transport_headers(h));
+}
+
+static ERL_NIF_TERM nif_redact_credentials(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_redact_credentials(h));
+}
+
+/* A handle + one string argument, returning the library's error string. */
+#define STR_ARG_NIF(NAME, FN)                                                \
+    static ERL_NIF_TERM NAME(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) \
+    {                                                                        \
+        UNUSED(argc);                                                        \
+        void *h;                                                             \
+        if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);     \
+        char *arg = term_to_cstr(env, argv[1]);                              \
+        if (!arg) return enif_make_badarg(env);                              \
+        char *res = FN(h, arg);                                              \
+        enif_free(arg);                                                      \
+        return take_cstr(env, res);                                          \
+    }
+
+STR_ARG_NIF(nif_remove_cloud_headers,       aether_vcr_embed_remove_cloud_headers)
+STR_ARG_NIF(nif_redact_credential_header,   aether_vcr_embed_redact_credential_header)
+STR_ARG_NIF(nif_add_license_notice,         aether_vcr_embed_add_license_notice)
+STR_ARG_NIF(nif_set_upstream_cafile,        aether_vcr_embed_set_upstream_cafile)
+
 static ERL_NIF_TERM nif_assert_all_redactions_used(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -706,6 +748,17 @@ static ERL_NIF_TERM nif_set_pretty_xml(ErlNifEnv *env, int argc, const ERL_NIF_T
     return enif_make_atom(env, "ok");
 }
 
+static ERL_NIF_TERM nif_set_pretty_json(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    int indent;
+    if (!enif_get_int(env, argv[1], &indent)) return enif_make_badarg(env);
+    aether_vcr_embed_set_pretty_json(h, indent);
+    return enif_make_atom(env, "ok");
+}
+
 /* A handle-taking void clear function. */
 #define CLEAR_NIF(NAME, FN)                                                  \
     static ERL_NIF_TERM NAME(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) \
@@ -787,6 +840,13 @@ static ErlNifFunc nif_funcs[] = {
     {"indent_code_blocks",   1, nif_indent_code_blocks,   0},
     {"emphasize_http_verbs", 1, nif_emphasize_http_verbs, 0},
     {"set_pretty_xml",       2, nif_set_pretty_xml,       0},
+    {"set_pretty_json",      2, nif_set_pretty_json,      0},
+    {"remove_transport_headers",   1, nif_remove_transport_headers,   0},
+    {"remove_cloud_headers",       2, nif_remove_cloud_headers,       0},
+    {"redact_credentials",         1, nif_redact_credentials,         0},
+    {"redact_credential_header",   2, nif_redact_credential_header,   0},
+    {"add_license_notice",         2, nif_add_license_notice,         0},
+    {"set_upstream_cafile",        2, nif_set_upstream_cafile,        0},
 
     {"clear_redactions",      1, nif_clear_redactions,      0},
     {"clear_unredactions",    1, nif_clear_unredactions,    0},
