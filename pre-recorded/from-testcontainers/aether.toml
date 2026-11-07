@@ -6,4 +6,4 @@ version = "0.1.0"
 "github.com/servirtium/testcontainers-ae" = "latest"
 
 [dependency-hashes]
-"github.com/servirtium/testcontainers-ae" = "sha256-8b45d58a401830ef2df679f44a6d958bf9e650a32699241fdc1962cb2fe77559"
+"github.com/servirtium/testcontainers-ae" = "sha256-cd118c31ace3dcaa876bb19b292c045c86a80d32920aeb203a7b1ddbb0ab4504"
