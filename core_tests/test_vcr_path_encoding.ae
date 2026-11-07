@@ -1,0 +1,83 @@
+// A recorded path matches the same path spelled with different escapes.
+//
+// A normalized token such as {{uuid-2}} comes back verbatim from playback,
+// and a client sending it back in a path may encode the braces (Java's URI
+// and many others put %7B%7Buuid-2%7D%7D on the wire). Matching compares
+// paths and queries after RFC 3986 normalization (uppercase hex; decode
+// escapes of unreserved and never-delimiter characters such as braces; %20
+// and + alike in the query only), and still tells apart anything a server
+// could treat differently: an escaped slash, an escaped '&', a different id.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.string
+
+extern exit(code: int)
+
+const PORT = 18303
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+section(method: string, path: string, body: string) -> string {
+    s = "## Interaction 0: ${method} ${path}\n\n"
+    s = string_concat(s, "### Request headers recorded for playback:\n\n```\n```\n\n")
+    s = string_concat(s, "### Request body recorded for playback ():\n\n```\n```\n\n")
+    s = string_concat(s, "### Response headers recorded for playback:\n\n```\nContent-Type: text/plain\n```\n\n")
+    s = string_concat(s, "### Response body recorded for playback (200: text/plain):\n\n```\n${body}\n```\n")
+    return s
+}
+
+// Load a one-interaction tape for `recorded`, send `sent`, expect `want`.
+check(n: int, recorded: string, sent: string, want_match: int) {
+    fs.mkdir_p("target/core_tests")
+    path = "target/core_tests/path_encoding_${n}.tape"
+    if fs.write(path, section("GET", recorded, "ok")) != "" { fail("write tape") }
+    raw = vcr.load(path, PORT + n)
+    if raw == null || vcr.load_error_h(raw) != "" { fail("load ${recorded}") }
+    if http.server_start_background(raw) != "" { fail("start ${n}") }
+    sleep(150)
+    req = client.request("GET", "http://127.0.0.1:${PORT + n}${sent}")
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail("request ${sent}: ${err}") }
+    st = client.response_status(resp)
+    client.response_free(resp)
+    le = vcr.last_error()
+    if want_match == 1 && st != 200 { fail("tape '${recorded}' did not match sent '${sent}' (${st}): ${le}") }
+    if want_match == 0 && st == 200 { fail("tape '${recorded}' matched a different '${sent}'") }
+    verb = "matches"
+    if want_match == 0 { verb = "does not match" }
+    println("  PASS ${recorded} ${verb} ${sent}")
+    vcr.eject(raw)
+    fs.delete(path)
+}
+
+main() {
+    println("=== VCR path matching across percent-encodings ===")
+    // The normalized token, braces encoded by the client.
+    check(1, "/db/{{uuid-2}}", "/db/%7B%7Buuid-2%7D%7D", 1)
+    check(2, "/db/{{uuid-2}}?rev={{rev-1}}", "/db/%7b%7buuid-2%7d%7d?rev=%7B%7Brev-1%7D%7D", 1)
+    // ...and the other way round: the tape has the escapes, the client not.
+    check(3, "/db/%7B%7Buuid-2%7D%7D", "/db/{{uuid-2}}", 1)
+    // Unreserved characters escaped, and lowercase hex.
+    check(4, "/a-b_c.d~e", "/%61%2D%62%5f%63%2E%64%7E%65", 1)
+    check(5, "/x%2fy", "/x%2Fy", 1)
+    // Space in the query: %20 and + are the same.
+    check(6, "/s?q=a+b", "/s?q=a%20b", 1)
+    // Different ids, escaped or not, still differ.
+    check(7, "/db/{{uuid-2}}", "/db/%7B%7Buuid-3%7D%7D", 0)
+    // An escaped slash is not a path separator.
+    check(8, "/x/y", "/x%2Fy", 0)
+    // An escaped '&' in a query value is not a parameter separator.
+    check(9, "/s?q=a&b=c", "/s?q=a%26b=c", 0)
+    // In the path, + is a plus, not a space.
+    check(10, "/a+b", "/a%20b", 0)
+    println("PASS")
+    exit(0)
+}

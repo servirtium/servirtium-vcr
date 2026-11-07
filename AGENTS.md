@@ -469,6 +469,19 @@ process launchers; the shared fixture itself stays language-neutral.
   source installation uses the backend in `python/pyproject.toml`; `setup.py`
   still owns metadata and native package data. A green in-tree suite alone
   doesn't verify these instructions or compatibility with the published binary.
+- **Body CRs are payload; path escapes are spelling (2026-11-07).** Found by
+  the CouchDB pilot. (1) `normalize_tape_bytes` folds CRLF to LF only when
+  the tape's first `## Interaction ` heading line ends in CRLF (the file was
+  converted wholesale); an LF-structured tape keeps every CR, because the
+  recorder writes structure with LF and copies body bytes as sent. Bodies
+  stay readable text (no base64): a CR-bearing body is rare and the bytes on
+  the tape are exactly the wire's. `core_tests/test_vcr_crlf_body.ae` and
+  `test_vcr_bom_crlf.ae` pin both sides. (2) Playback compares request
+  targets through `request_paths_equal` / `uri_canonical`: uppercase hex,
+  decode escapes of unreserved and never-delimiter bytes (`"<>\^`{|}`,
+  non-ASCII), `%20` == `+` in the query only; reserved delimiters, `%25`,
+  space and controls stay escaped. `core_tests/test_vcr_path_encoding.ae`
+  covers matches and non-matches.
 - **JSON request-body matching is opt-in and lives in libservirtium_vcr.**
   `set_match_json_body(h, 1)` makes a request body that differs byte-for-byte
   get a second chance at *semantic* JSON equality (object key order + whitespace

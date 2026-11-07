@@ -1694,6 +1694,71 @@ expected_path_includes_query(path: string) -> int {
     return 0
 }
 
+// ---- request-target equivalence (playback matching) ----
+//
+// Playback matches a live request's path (and query, when the tape has one)
+// against the recorded one. Byte equality is too strict across HTTP clients:
+// a normalized token such as {{uuid-2}} is replayed verbatim, and a client
+// that sends it back through Java's URI (and many others) puts %7B%7B...%7D%7D
+// on the wire. So both sides are compared in a canonical form that keeps
+// every distinction a server could act on and drops only spelling:
+//   - percent-escapes get uppercase hex (RFC 3986 6.2.2.1);
+//   - an escape of a byte that is never a delimiter is decoded: the
+//     unreserved set ALPHA DIGIT - . _ ~ (RFC 3986 6.2.2.2), the characters
+//     that may not appear raw in a URI at all and so mean the same encoded
+//     or not (" < > \ ^ ` { | }), and non-ASCII bytes;
+//   - in the query only, %20 and + are both a space (form encoding).
+// Reserved characters (: / ? # [ ] @ ! $ & ' ( ) * + , ; =), %25, controls
+// and space stay escaped: /a%2Fb is not /a/b, and q=a%26b is not q=a&b.
+uri_never_delimiter(c: int) -> int {
+    if (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) { return 1 }
+    if c == 45 || c == 46 || c == 95 || c == 126 { return 1 }
+    if c == 34 || c == 60 || c == 62 || c == 92 || c == 94 || c == 96 { return 1 }
+    if c == 123 || c == 124 || c == 125 { return 1 }
+    if c >= 128 { return 1 }
+    return 0
+}
+
+uri_canonical(s: string) -> string {
+    digits = "0123456789ABCDEF"
+    out = string.copy("")
+    n = string.length(s)
+    in_query = 0
+    i = 0
+    while i < n {
+        c = string.char_at(s, i)
+        if c == 63 { in_query = 1 }
+        if c == 37 && i + 2 < n {
+            a = hex_digit(string.char_at(s, i + 1))
+            b = hex_digit(string.char_at(s, i + 2))
+            if a >= 0 && b >= 0 {
+                v = a * 16 + b
+                if in_query == 1 && v == 32 { out = string_concat(out, "+") }
+                else if uri_never_delimiter(v) == 1 { out = string_concat(out, string.from_char(v)) }
+                else {
+                    out = string_concat(out, "%")
+                    out = string_concat(out, string.substring(digits, a, a + 1))
+                    out = string_concat(out, string.substring(digits, b, b + 1))
+                }
+                i = i + 3
+                continue
+            }
+        }
+        out = string_concat(out, string.substring(s, i, i + 1))
+        i = i + 1
+    }
+    return out
+}
+
+// 1 when the live request target `got` matches the recorded `expected`
+// under uri_canonical (byte equality first; escapes are the only spelling
+// the canonical form changes, so without a '%' anywhere it can't differ).
+request_paths_equal(got: string, expected: string) -> int {
+    if string.equals(got, expected) == 1 { return 1 }
+    if string.index_of(got, "%") < 0 && string.index_of(expected, "%") < 0 { return 0 }
+    return string.equals(uri_canonical(got), uri_canonical(expected))
+}
+
 // ---- response-header block helpers (record mode) ----
 
 response_header_value_from_block(headers: string, name: string) -> string {
@@ -2308,7 +2373,7 @@ interaction_matches_pre(srvkey: string, index: int, e: *Interaction, req: ptr, g
     if expected_path_includes_query(expected_path) == 1 { got_path = got_path_q }
     got_path = secret_canonical_live_k(srvkey, index, FIELD_PATH, got_path)
     if string.equals(got_method, e.method) == 0 { return 0 }
-    if string.length(got_path) == 0 || string.equals(got_path, expected_path) == 0 { return 0 }
+    if string.length(got_path) == 0 || request_paths_equal(got_path, expected_path) == 0 { return 0 }
 
     expected_req_headers = rt_apply_unredactions_for_k(srvkey, e.req_headers, FIELD_REQUEST_HEADERS)
     expected_req_headers = remove_headers_from_block_k(srvkey, expected_req_headers, FIELD_REQUEST_HEADERS)
@@ -2432,7 +2497,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
     }
     got_path = secret_canonical_live_k(srvkey, cur, FIELD_PATH, got_path)
     if string.length(got_method) == 0 || string.equals(got_method, e.method) == 0 ||
-       string.length(got_path) == 0 || string.equals(got_path, expected_path) == 0 {
+       string.length(got_path) == 0 || request_paths_equal(got_path, expected_path) == 0 {
         gm = got_method
         if string.length(gm) == 0 { gm = "(null)" }
         gp = got_path
@@ -5966,12 +6031,41 @@ normalize_tape_bytes(contents: string) -> string {
        string.char_at(s, 2) == 191 {
         s = string.substring(s, 3, string.length(s))
     }
-    // CRLF -> LF. A bare CR (classic-Mac) is vanishingly rare in a tape and
-    // left alone; CRLF is the one that actually bites after a git checkout.
-    if string.index_of(s, "\r\n") >= 0 {
+    // CRLF -> LF, decided once per tape from its STRUCTURE, not per line.
+    // The recorder writes every structural line (interaction headings,
+    // section headings, fences) with a bare LF, but copies body bytes as
+    // they came: a service that separates rows with CRLF (CouchDB views,
+    // _find, _changes; nginx error pages; multipart request bodies) leaves
+    // CRs inside the fenced blocks, and those are payload. So the first
+    // "## Interaction " heading line is the witness: when it ends in CRLF
+    // the whole file was converted (autocrlf checkout, Windows editor) and
+    // every CRLF folds back to LF, exactly as before; when it ends in LF the
+    // tape is as recorded and any CR in it belongs to a body, so nothing is
+    // touched and playback serves (and matches) the recorded bytes. A
+    // converted tape can't tell its body CRs from converted ones, so those
+    // still come back as LF; keep tapes byte-exact in git with
+    // `-text` in .gitattributes. A bare CR (classic-Mac) is left alone.
+    if string.index_of(s, "\r\n") >= 0 && tape_structure_is_crlf(s) == 1 {
         s = replace_all(s, "\r\n", "\n")
     }
     return s
+}
+
+// 1 when the tape's first "## Interaction " heading line ends in CRLF (see
+// normalize_tape_bytes). With no heading at all the tape is unparseable
+// anyway; fold as the old reader did so its error is unchanged.
+tape_structure_is_crlf(s: string) -> int {
+    h = -1
+    if string.starts_with(s, "## Interaction ") == 1 { h = 0 }
+    else {
+        at = string.index_of(s, "\n## Interaction ")
+        if at >= 0 { h = at + 1 }
+    }
+    if h < 0 { return 1 }
+    nl = string.index_of_from(s, "\n", h)
+    if nl <= h { return 0 }
+    if string.char_at(s, nl - 1) == 13 { return 1 }
+    return 0
 }
 
 // The tape text before its recording-rules footer (RULES_FOOTER_HEADING at

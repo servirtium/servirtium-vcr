@@ -124,8 +124,14 @@ One libservirtium_vcr; every binding exposes the same surface.
 - **Canonical Servirtium markdown** — interoperable with other Servirtium
   implementations; fenced or 4-space-indented code blocks; optional emphasized
   HTTP verbs; optional `pretty_xml` indentation of recorded XML bodies ([docs/pretty-xml.md](docs/pretty-xml.md)); gzip + chunked transfer decoded to the stored payload.
-- **Matching & diagnostics** — strict method+path matching, opt-in
-  header/body matching, an optional strict-header mode, and a per-request
+  Bodies are byte-exact, CRs included (CouchDB's CRLF-separated rows, a
+  multipart request); a tape converted wholesale to CRLF line endings (an
+  autocrlf checkout) still parses. Keep tapes out of git's line-ending
+  conversion (`*.md -text` in `.gitattributes` for the tape directory).
+- **Matching & diagnostics** — strict method+path matching (paths and
+  queries compared after RFC 3986 normalization, so `{{uuid-2}}` on the tape
+  matches a client's `%7B%7Buuid-2%7D%7D`; an escaped `/`, `&` or other
+  delimiter still differs), opt-in header/body matching, an optional strict-header mode, and a per-request
   outcome + mismatch diagnostic (last kind / error / index). Several opt-in
   matchers refine it: a *semantic JSON body* matcher (key order & whitespace
   ignored, non-JSON falls back to byte-exact); *ByHeader* — match on a specific

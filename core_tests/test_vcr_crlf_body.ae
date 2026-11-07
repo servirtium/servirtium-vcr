@@ -1,0 +1,123 @@
+// CRs inside a body survive a record/playback round trip.
+//
+// CouchDB separates view, _find and _changes rows with CRLF (and ends the
+// body with a bare LF); a multipart request body is CRLF throughout. The
+// recorder copies those bytes into the tape as they came, and the reader
+// used to fold every CRLF in a tape to LF (so tapes converted by an
+// autocrlf checkout still parse), which served the rows LF-separated and
+// left a CRLF request body unmatchable. The reader now decides by the
+// tape's structure: an LF-structured tape keeps its CRs as payload. This
+// records a CRLF response to a CRLF request, then replays it: the request
+// matches only with its CRs, and the response is byte-identical.
+// test_vcr_bom_crlf covers the converted-tape side.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18300
+const RECORD_PORT   = 18301
+const PLAYBACK_PORT = 18302
+
+tape_path() -> {
+    tmp = io.getenv("TEMP")
+    if tmp == 0 { tmp = io.getenv("TMPDIR") }
+    if tmp == 0 { tmp = "/tmp" }
+    return "${tmp}/vcr_crlf_body.tape"
+}
+
+// CouchDB's shape: CRLF between rows, bare LF at the very end.
+rows_body() -> string {
+    return "{\"rows\":[\r\n{\"key\":\"fruit\",\"value\":10},\r\n{\"key\":\"veg\",\"value\":5}\r\n]}\n"
+}
+
+// A multipart-ish request body: CRLF throughout, ending in CRLF.
+form_body() -> string {
+    return "--b\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\n1\r\n--b--\r\n"
+}
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+handle_rows(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/json")
+    http.response_set_body(res, rows_body())
+}
+
+post_rows(port: int, body: string) -> (int, string) {
+    req = client.request("POST", "http://127.0.0.1:${port}/db/_design/d/_view/v")
+    client.set_timeout(req, 5s)
+    if client.set_body(req, string.bytes(body), "text/plain") != "" { fail("set_body") }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err }
+    st = client.response_status(resp)
+    out = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return st, out
+}
+
+main() {
+    println("=== VCR keeps CRLF bodies byte-identical ===")
+    TAPE_PATH = tape_path()
+    fs.delete(TAPE_PATH)
+
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { fail("upstream server_create") }
+    http.server_post(upstream, "/*", handle_rows, null)
+    if http.server_start_background(upstream) != "" { fail("upstream start") }
+    sleep(250)
+
+    recorder = vcr.load_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if recorder == null { fail("load_record") }
+    if http.server_start_background(recorder) != "" { fail("recorder start") }
+    sleep(250)
+    st1, b1 = post_rows(RECORD_PORT, form_body())
+    if st1 != 200 || string.equals(b1, rows_body()) != 1 { fail("record ${st1} '${b1}'; ${vcr.last_error()}") }
+    ferr = vcr.eject_record(recorder, TAPE_PATH)
+    if ferr != "" { fail("eject_record ${ferr}") }
+
+    tape, terr = fs.read(TAPE_PATH)
+    if terr != "" { fail("read tape ${terr}") }
+    if string.contains(tape, "{\"key\":\"veg\",\"value\":5}\r\n]}") != 1 { fail("the tape lost the response's CRs:\n${tape}") }
+    if string.contains(tape, "name=\"a\"\r\n\r\n1\r\n") != 1 { fail("the tape lost the request's CRs:\n${tape}") }
+    if string.contains(tape, "## Interaction 0: POST /db/_design/d/_view/v\n") != 1 { fail("tape structure is not LF:\n${tape}") }
+    println("  PASS the tape holds the CRs the service and client sent, in LF structure")
+
+    playback = vcr.load(TAPE_PATH, PLAYBACK_PORT)
+    if playback == null { fail("load playback") }
+    if vcr.load_error_h(playback) != "" { fail("load_error ${vcr.load_error_h(playback)}") }
+    if http.server_start_background(playback) != "" { fail("playback start") }
+    sleep(250)
+
+    // The request body without its CRs is not the recorded one.
+    stx, _bx = post_rows(PLAYBACK_PORT, string.replace_all(form_body(), "\r", ""))
+    if stx == 200 { fail("an LF-only request body matched a CRLF recording") }
+    if string.contains(vcr.last_error(), "request body") != 1 { fail("mismatch was not about the body: ${vcr.last_error()}") }
+    println("  PASS an LF-only request body does not match the CRLF one recorded")
+
+    vcr.eject(playback)
+    playback2 = vcr.load(TAPE_PATH, PLAYBACK_PORT + 1)
+    if playback2 == null { fail("load playback 2") }
+    if http.server_start_background(playback2) != "" { fail("playback 2 start") }
+    sleep(250)
+    st2, b2 = post_rows(PLAYBACK_PORT + 1, form_body())
+    if st2 != 200 { fail("playback ${st2} '${b2}'; ${vcr.last_error()}") }
+    if string.equals(b2, rows_body()) != 1 { fail("replayed body differs from the recorded one: '${b2}'") }
+    println("  PASS the CRLF request matches and the response replays byte-identically")
+
+    vcr.eject(playback2)
+    http_server_stop(upstream)
+    fs.delete(TAPE_PATH)
+    println("PASS")
+    exit(0)
+}

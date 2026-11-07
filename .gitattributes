@@ -1,0 +1,4 @@
+# Tapes are byte-exact: a CR inside a recorded body is payload, so keep git
+# from converting line endings in them (see core/vcr.ae normalize_tape_bytes).
+pre-recorded/**/*.md -text
+core_tests/tapes/** -text
