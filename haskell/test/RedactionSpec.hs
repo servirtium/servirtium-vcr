@@ -14,7 +14,7 @@ spec :: Spec
 spec = describe "redaction" $
   it "scrubs a value from the tape while the live SUT sees the real bytes" $ do
     tmp <- getTemporaryDirectory
-    let tape = tmp </> "servirtium-haskell-redaction.md"
+    let tape = tmp </> "servirtium-redaction.md"
     bracket_ (pure ()) (removeIfExists tape) $ do
       withUpstream "secret-token-12345" $ \upstream ->
         withRecord (recordOptions tape upstream)

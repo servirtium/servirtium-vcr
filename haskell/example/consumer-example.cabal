@@ -1,7 +1,7 @@
 cabal-version:      2.4
 name:               servirtium-consumer-example
 version:            0.0.1
-synopsis:           Third-party consumer of the servirtium-haskell package.
+synopsis:           Third-party consumer of the servirtium package.
 build-type:         Simple
 
 executable consumer-example
@@ -10,5 +10,5 @@ executable consumer-example
   -- needs no Hackage downloads — just the libservirtium_vcr.so linked via extra-lib-dirs.
   build-depends:    base
                   , process
-                  , servirtium-haskell
+                  , servirtium
   default-language: Haskell2010

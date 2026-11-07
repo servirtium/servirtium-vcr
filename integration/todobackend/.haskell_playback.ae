@@ -18,7 +18,7 @@ aeb(cap) {
         dep("core/.build.ae")
         root = _get("root")
         nat = "${root}/core/native"
-        cfg = "package servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
+        cfg = "package servirtium\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
         _w = io.write_file("${root}/haskell/cabal.project.local", cfg)
         rc = os.system("cd \"${root}/haskell\" && PATH=\"$(dirname $(find $HOME/.cache/selenium -name chromedriver -type f | head -1)):$PATH\" LD_LIBRARY_PATH=\"${nat}\" cabal run -v0 servirtium-todobackend -- playback")
         if rc != 0 { println("todobackend/haskell playback: failed"); return 1 }

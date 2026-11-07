@@ -15,7 +15,7 @@ aeb(cap) {
         root = _get("root")
         lib = dep_artifact("core/.build.ae", "shared_lib")
         nat = path.dirname(lib)
-        cfg = "package servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
+        cfg = "package servirtium\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
         _w = io.write_file("${root}/haskell/cabal.project.local", cfg)
         haskell.test() { env("LD_LIBRARY_PATH", nat) }
     }

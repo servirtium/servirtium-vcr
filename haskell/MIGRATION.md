@@ -1,11 +1,11 @@
-# servirtium-haskell → Aether VCR migration
+# servirtium → Aether VCR migration
 
 **Status (2026-05-25):** DONE. This repo is now a thin Haskell **FFI** wrapper
 over the Aether VCR core. The previous pure-Haskell Servirtium
 reimplementation is deleted, replaced by `Servirtium.Vcr` — a
 `foreign import ccall` binding to the native VCR library built from
 `std/http/server/vcr/embed.ae`. Playback, mismatch diagnostics, record→replay,
-and redaction are proven end-to-end by `servirtium-haskell-test` against the
+and redaction are proven end-to-end by `servirtium-test` against the
 real native lib.
 
 ## Why
@@ -27,7 +27,7 @@ compatibility with the old API.
 hspec / tasty test
    │  withPlayback (playbackOptions tape) ...  /  withRecord (recordOptions tape upstream) ...
    ▼
-servirtium-haskell (this repo)        ── thin Haskell ──
+servirtium (this repo)        ── thin Haskell ──
    │  foreign import ccall  aether_vcr_embed_*()
    ▼
 libservirtium_vcr.{so,dylib,dll}      ── ae build --emit=lib --with=fs,net,extern

@@ -1,6 +1,6 @@
 -- | Third-party consumer example for the Haskell binding.
 --
--- A standalone cabal executable that depends on the servirtium-haskell package
+-- A standalone cabal executable that depends on the servirtium package
 -- and replays the canonical tape. The libservirtium_vcr.so is linked from the package's
 -- bundled native/ dir (via extra-lib-dirs + an rpath in cabal.project.local) —
 -- no SERVIRTIUM_VCR_LIB. HTTP is done by shelling out to curl (System.Process),
@@ -23,4 +23,4 @@ main = withPlayback (playbackOptions "single_get.md") $ \vcr -> do
   unless (body == "ok-body") $ failWith ("expected body 'ok-body', got " ++ show body)
   k <- lastKind vcr
   unless (k == Ok) $ failWith ("expected Ok, got " ++ show k)
-  putStrLn "PASS[discovery]: consumer replayed the canonical tape from the servirtium-haskell package"
+  putStrLn "PASS[discovery]: consumer replayed the canonical tape from the servirtium package"

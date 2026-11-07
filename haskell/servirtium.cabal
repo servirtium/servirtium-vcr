@@ -1,12 +1,12 @@
 cabal-version: 1.12
 
-name:           servirtium-haskell
+name:           servirtium
 version:        2.0.0
 synopsis:       Thin Haskell FFI wrapper over the Aether VCR record/replay core
-description:    Please see the README on GitHub at <https://github.com/servirtium/servirtium-haskell#readme>
+description:    Please see the README on GitHub at <https://github.com/servirtium/servirtium-vcr#readme>
 category:       Testing, Web
-homepage:       https://github.com/servirtium/servirtium-haskell#readme
-bug-reports:    https://github.com/servirtium/servirtium-haskell/issues
+homepage:       https://github.com/servirtium/servirtium-vcr#readme
+bug-reports:    https://github.com/servirtium/servirtium-vcr/issues
 author:         Servirtium contributors
 maintainer:     paul@hammant.org
 copyright:      MIT
@@ -19,7 +19,8 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/servirtium/servirtium-haskell
+  location: https://github.com/servirtium/servirtium-vcr
+  subdir:   haskell
 
 library
   exposed-modules:
@@ -56,7 +57,7 @@ executable servirtium-todobackend
   -- so this binary links + loads libservirtium_vcr (transitively, via the library).
   build-depends:
       base >=4.11 && <10
-    , servirtium-haskell
+    , servirtium
     , text
     , directory
     , webdriver
@@ -64,7 +65,7 @@ executable servirtium-todobackend
     , unliftio
   default-language: Haskell2010
 
-test-suite servirtium-haskell-test
+test-suite servirtium-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
@@ -91,5 +92,5 @@ test-suite servirtium-haskell-test
     , http-types
     , network
     , process
-    , servirtium-haskell
+    , servirtium
   default-language: Haskell2010

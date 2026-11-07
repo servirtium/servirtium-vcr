@@ -1,6 +1,6 @@
 // Third-party-consumer EXAMPLE test for the Haskell binding.
 //
-// Publishes a standalone copy of the servirtium-haskell package under
+// Publishes a standalone copy of the servirtium package under
 // target/haskell-pkg (with the bundled native/ .so, no core/ sibling, no stale
 // project files). A separate consumer cabal project depends on it and points
 // extra-lib-dirs + an rpath at the bundled .so (both absolute — ghc-pkg rejects
@@ -33,8 +33,8 @@ aeb(cap) {
         // Arch ships a dynamic-only GHC (no static libs), so cabal's default static
         // build fails ("files missing in base"). `shared: True` +
         // `executable-dynamic: True` build every unit dynamically. The
-        // servirtium-haskell stanza points the linker at the bundled libservirtium_vcr.so.
-        projlocal = "library-vanilla: False\nshared: True\nexecutable-dynamic: True\n\npackage servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
+        // servirtium stanza points the linker at the bundled libservirtium_vcr.so.
+        projlocal = "library-vanilla: False\nshared: True\nexecutable-dynamic: True\n\npackage servirtium\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
         _w2 = io.write_file("${consumer}/cabal.project.local", projlocal)
     
         rc2 = os.system("cd \"${consumer}\" && (cabal update || true) && env -u SERVIRTIUM_VCR_LIB cabal run consumer-example")

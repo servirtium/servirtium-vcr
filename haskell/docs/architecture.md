@@ -6,7 +6,7 @@
 your test (hspec / tasty)
    │   withPlayback (playbackOptions tape) ...  /  withRecord (recordOptions tape upstream) ...
    ▼
-servirtium-haskell        ── thin Haskell, this repo ──
+servirtium        ── thin Haskell, this repo ──
    │   • Servirtium.Vcr          — options records, withPlayback/withRecord,
    │                               VcrServer, accessors, Field/Outcome/VcrException
    │   • Servirtium.Vcr.Native   — `foreign import ccall` block to aether_vcr_embed_*
@@ -60,7 +60,7 @@ path). So the `native/` dir is supplied as an **absolute path** — plus an
 `cabal.project.local`, which `build-native.sh` generates:
 
 ```
-package servirtium-haskell
+package servirtium
   extra-lib-dirs: <abs>/native
   ghc-options: -optl-Wl,-rpath,<abs>/native
 ```

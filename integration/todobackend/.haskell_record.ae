@@ -52,7 +52,7 @@ aeb(cap) {
     
         // --- RECORD: drive the Mocha suite through a record-mode VCR ---
         nat = "${root}/core/native"
-        cfg = "package servirtium-haskell\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
+        cfg = "package servirtium\n  extra-lib-dirs: ${nat}\n  ghc-options: -optl-Wl,-rpath,${nat}\n"
         _w = io.write_file("${root}/haskell/cabal.project.local", cfg)
         result = 1
         if ready == 1 {

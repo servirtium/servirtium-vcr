@@ -1,6 +1,6 @@
-name:                servirtium-haskell
+name:                servirtium
 version:             2.0.0
-github:              servirtium/servirtium-haskell
+github:              servirtium/servirtium-vcr/haskell
 license:             MIT
 author:              Servirtium contributors
 maintainer:          paul@hammant.org
@@ -13,7 +13,7 @@ extra-source-files:
 - README.md
 - CHANGELOG.md
 
-description:         Please see the README on GitHub at <https://github.com/servirtium/servirtium-haskell#readme>
+description:         Please see the README on GitHub at <https://github.com/servirtium/servirtium-vcr#readme>
 
 dependencies:
 - base >= 4.11 && < 10
@@ -36,14 +36,14 @@ library:
   extra-lib-dirs: native
 
 tests:
-  servirtium-haskell-test:
+  servirtium-test:
     main:                Spec.hs
     source-dirs:         test
     # The test-suite also links libservirtium_vcr directly.
     extra-libraries: servirtium_vcr
     extra-lib-dirs: native
     dependencies:
-    - servirtium-haskell
+    - servirtium
     - hspec
     - http-client
     - bytestring

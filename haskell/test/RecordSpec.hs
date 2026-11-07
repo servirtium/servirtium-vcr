@@ -58,7 +58,7 @@ spec = describe "record then replay" $ do
       diagnosticsJson False server `shouldReturn` "[]"
   it "records a GET from a live upstream and replays it from the tape" $ do
     tmp <- getTemporaryDirectory
-    let tape = tmp </> "servirtium-haskell-record.md"
+    let tape = tmp </> "servirtium-record.md"
     bracket_ (pure ()) (removeIfExists tape) $ do
       -- Record against the upstream. HTTP clients send default request
       -- headers (Host, Accept-Encoding, ...) — strip them so the recorded

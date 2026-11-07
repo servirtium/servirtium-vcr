@@ -72,7 +72,7 @@ so the lib **directory** is supplied as an **absolute path** via
 so test binaries load libservirtium_vcr at run time without `LD_LIBRARY_PATH`:
 
 ```
-package servirtium-haskell
+package servirtium
   extra-lib-dirs: <abs>/native
   ghc-options: -optl-Wl,-rpath,<abs>/native
 ```
@@ -80,8 +80,8 @@ package servirtium-haskell
 Verify both linker and loader resolve it:
 
 ```sh
-readelf -d "$(cabal list-bin servirtium-haskell-test)" | grep -i runpath   # RUNPATH -> native/
-ldd      "$(cabal list-bin servirtium-haskell-test)" | grep servirtium     # resolves the .so
+readelf -d "$(cabal list-bin servirtium-test)" | grep -i runpath   # RUNPATH -> native/
+ldd      "$(cabal list-bin servirtium-test)" | grep servirtium     # resolves the .so
 ```
 
 ## Build & test

@@ -3,7 +3,7 @@
 Servirtium capability checklist (record, playback, redaction/mutation, header
 removal, notes, drift, static bypass, strict matching, markdown interop,
 diagnostics), mapped through the stack. "Test" = exercised by the
-`servirtium-haskell-test` suite against the real native library.
+`servirtium-test` suite against the real native library.
 
 | Capability | Aether core | embed C-ABI | Haskell API | Test |
 |---|:---:|:---:|---|:---:|
