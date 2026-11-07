@@ -1,0 +1,29 @@
+// Janet binding tests. aeb has no Janet SDK, so this is the generic shell-step
+// node (the same shape as bruno_import_demo/.tests.ae): it deps libservirtium_vcr
+// and the shared test tools, then runs the suite with `janet`.
+//
+// Janet's built-in FFI (`ffi/native`, since 1.23) calls libservirtium_vcr's flat
+// C ABI (aether_vcr_embed_*) directly: no C extension, no compiler, nothing to
+// stage. The library is located via SERVIRTIUM_VCR_LIB, injected here from
+// libservirtium_vcr's shared_lib artifact. test/run_all.janet runs playback +
+// record (record, redaction, secrets, drift, HAR) in fresh processes; the HTTP
+// client is Janet's own net/*, the record upstream a compiled Aether server.
+//
+// Needs `janet` >= 1.23 on PATH (bootstrap.sh skips this leaf when it is absent).
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("core_tests/.fixtures.ae")
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+        root = _get("root")
+        rc = os.system("cd \"${root}/janet\" && SERVIRTIUM_VCR_LIB=\"${lib}\" janet test/run_all.janet")
+        if rc != 0 {
+            bldr.fail("janet binding tests failed")
+            return 1
+        }
+        println("test: janet")
+        return 0
+    }
+}

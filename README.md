@@ -40,6 +40,7 @@ servirtium-vcr/
   c/             # the C ABI directly          cpp/       # header-only RAII over c/
   crystal/       # @[Link] + lib (linked)      d/         # extern(C) (linked)
   julia/         # ccall                       swift/     # C interop via a module map
+  janet/         # built-in FFI (ffi/native)
   kotlin/ scala/ clojure/ groovy/  # JVM family — thin layers over the Java jar (no 2nd FFI)
   fsharp/        # CLR family — thin layer over the .NET assembly (no 2nd FFI)
   core_tests/    # Aether-level libservirtium_vcr tests (pure-Aether, no binding)
@@ -47,12 +48,12 @@ servirtium-vcr/
   <lang>/docs/   # per-binding usage docs
 ```
 
-All **24** native-FFI bindings — plus the JVM family (Kotlin/Scala/Clojure/
+All **25** native-FFI bindings — plus the JVM family (Kotlin/Scala/Clojure/
 Groovy, over the Java jar) and F# (over the .NET assembly) — are wired and pass
 through one `aeb` run: the `core/` node builds `libservirtium_vcr.so` once, then
 each binding's `.tests.ae` links (go/elixir/haskell/c/cpp/crystal/d/nim/zig/
 swift) or loads (the rest, via `SERVIRTIUM_VCR_LIB`) that single artifact.
-**Twenty-nine languages** in all, because a runtime family only has to be
+**Thirty languages** in all, because a runtime family only has to be
 bridged once: one Erlang NIF carries Erlang/Elixir/Gleam/LFE, one Java jar
 carries Java/Kotlin/Scala/Clojure/Groovy, and one .NET assembly carries C#/F#.
 
@@ -86,6 +87,7 @@ folder (`usage`, `features`, `architecture`, `building`).
 | Crystal | `@[Link]` + `lib` (linked) | [crystal/README.md](crystal/README.md) |
 | D | `extern(C)` (linked) | [d/README.md](d/README.md) |
 | Julia | `ccall` | [julia/README.md](julia/README.md) |
+| Janet | built-in FFI (`ffi/native`; pure Janet, no C extension) | [janet/README.md](janet/README.md) |
 | Swift | C interop via a module map | [swift/README.md](swift/README.md) |
 
 **JVM family.** Kotlin, Scala, Clojure and Groovy reach libservirtium_vcr through the
@@ -277,7 +279,7 @@ From a checkout, or if you already have `aeb`:
 
 ```sh
 ./get-package.sh ruby       # build it, copy it to ./out, print how to install it
-./get-package.sh            # list the 29 languages
+./get-package.sh            # list the 30 languages
 aeb ruby/.package.ae        # the underlying target — one per language
 aeb .packages.ae            # every language's package, one command (~50s)
 ```
@@ -291,7 +293,7 @@ separate `<lang>/.example.ae` set.
 You get a real archive (wheel, gem, npm tgz, nupkg feed, jar in `~/.m2`, or a
 relocatable `tar.gz` prefix with a pkg-config file for C/C++), a source package
 with the `.so` staged inside (Rust, Go, Nim, Zig, Haskell, Crystal, Julia,
-Swift, D, PHP, Dart, Pharo), or one relocatable `servirtium_nif` OTP app for
+Janet, Swift, D, PHP, Dart, Pharo), or one relocatable `servirtium_nif` OTP app for
 all four BEAM languages. Full table, consumption commands and the rules for
 adding a new one: **[docs/packaging.md](docs/packaging.md)**.
 

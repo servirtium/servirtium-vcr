@@ -8,11 +8,14 @@
 
 # the libservirtium_vcr.so staged next to a binding for its linker/loader to find
 # (crystal's CRYSTAL_LIBRARY_PATH, swift's -L/-rpath, julia's bundled-path
-# discovery, dub's $PACKAGE_DIR/native lflags) — a build artifact, as
+# discovery, janet's servirtium/native/, dub's $PACKAGE_DIR/native lflags) — a build artifact, as
 # core/native/ above
 /crystal/native/*.so
 /swift/native/*.so
 /julia/native/*.so
+/janet/servirtium/native/*.so
+/janet/servirtium/native/*.dylib
+/janet/servirtium/native/*.dll
 /d/native/*.so
 
 # package-step outputs (aeb <lang>/.package.ae — rebuildable, never committed)

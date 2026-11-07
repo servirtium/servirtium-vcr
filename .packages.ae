@@ -2,7 +2,7 @@
 // A named set is just dep() edges — bldr.build() with no builders, only
 // prerequisites (the same idiom as the sibling selenium repo's .presubmit.ae).
 //
-//     aeb .packages.ae          # all 29 languages' packages, one command
+//     aeb .packages.ae          # all 30 languages' packages, one command
 //     aeb <lang>/.package.ae    # just the one you want
 //     ./get-package.sh <lang>   # or let the script install aeb and do it
 //
@@ -23,7 +23,7 @@
 //                      (jar installed to ~/.m2) · php (Composer copy) ·
 //                      dart (pub) · c + cpp (relocatable tar.gz prefix)
 //   a source package   rust (crate) · go (module) · nim · crystal (shard) ·
-//                      julia (Pkg) · swift (SwiftPM) · d (dub) — each with the
+//                      julia (Pkg) · janet (jpm) · swift (SwiftPM) · d (dub) — each with the
 //                      libservirtium_vcr.so staged inside, found by a baked rpath
 //   a relocatable app  erlang/elixir/gleam/lfe (one servirtium_nif OTP app,
 //                      $ORIGIN rpath) · lua (Lua module + C ext + libservirtium_vcr) ·
@@ -39,6 +39,7 @@ aeb(cap) {
         dep("dart/.package.ae")
         dep("pharo/.package.ae")
         dep("julia/.package.ae")
+        dep("janet/.package.ae")
 
         // Link-time bindings (the .so ships in the package; rpath finds it).
         dep("rust/.package.ae")
@@ -74,7 +75,7 @@ aeb(cap) {
         dep("dotnet/.package.ae")
         dep("fsharp/.package.ae")
 
-        println("all packages: 29 languages built — see docs/packaging.md for where each artifact lands and how to consume it")
+        println("all packages: 30 languages built — see docs/packaging.md for where each artifact lands and how to consume it")
         return 0
     }
 }

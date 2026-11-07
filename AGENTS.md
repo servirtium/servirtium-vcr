@@ -39,7 +39,8 @@ the spec. To add, say, Perl:
    The README's Bindings table is the registry; the taxonomy:
    - **Load the `.so` at runtime** (most languages): `python/` ctypes,
      `ruby/` Fiddle, `javascript/` koffi, `rust/` libloading, `dotnet/` P/Invoke,
-     `php/` ext-ffi, `dart/` dart:ffi, `pharo/` UnifiedFFI, `julia/` ccall
+     `php/` ext-ffi, `dart/` dart:ffi, `pharo/` UnifiedFFI, `julia/` ccall,
+     `janet/` built-in `ffi/native`
      (by absolute path from `SERVIRTIUM_VCR_LIB` — nothing to stage). ← Perl
      (FFI::Platypus) lives here.
    - **Link at build time**: `nim/` importc, `zig/` extern "C", `go/` cgo,
@@ -77,7 +78,7 @@ That's it. I added Nim/Zig/Lua/Erlang/Gleam this way with no guide — just the
 existing bindings + the ABI table; then LFE/F#/C/C++/Crystal/Julia/Swift/D the
 same way, by reading the sibling `../selenium` repo's equivalents for the
 FFI mechanism and this repo's `erlang`/`dotnet`/`core` leaves for the wiring.
-**29 languages** now: 24 rows in the README's Bindings table, plus the JVM four
+**30 languages** now: 25 rows in the README's Bindings table, plus the JVM four
 and F#. Only the family riders are free; each genuinely new FFI mechanism is
 a day's care, mostly in the leaf.
 
@@ -760,6 +761,15 @@ process launchers; the shared fixture itself stays language-neutral.
   `extern (C)` is not accepted inline in a parameter's type. Hence
   `private alias FlushFn = extern (C) char* function(void*, const(char)*) nothrow @nogc;`
   which the three `stop_and_flush*` variants share via one `flushVia`.
+- **Janet's FFI: `:ptr`, not `:string`, for owned returns.** A `:string` return
+  copies the bytes and drops the pointer, so every `char*` the ABI hands back
+  would leak; `janet/servirtium/init.janet` takes `:ptr`, measures with libc
+  `strlen`, copies through `ffi/pointer-buffer` and frees with
+  `aether_vcr_embed_free_string`. Other Janet traps: `buffer/push` of an integer
+  pushes a *byte* (stringify a Content-Length first), and `case`, `label`,
+  `flush` are core names (don't define them). aeb has no Janet SDK, so
+  `janet/.tests.ae` is a plain `bldr.build` + `os.system` node (the
+  `bruno_import_demo` shape); `bootstrap.sh` gates it on `janet` being on PATH.
 - **Julia backticks brace-expand.** A literal `%{http_code}` inside a `` `…` ``
   command is a parse error (`shell_parse`), so the curl format string lives in a
   `String` variable and is interpolated. Bit me in `julia/test/playback_test.jl`.
@@ -837,21 +847,21 @@ dependency in its own `aether.toml`; `lib/servirtium_vcr` links back to
 has the Bindings table (the registry) and the layout block.
 
 **Packaging is complete; the consumer-example layer is not.** Every one of the
-29 languages now has a `<lang>/.package.ae` (dotnet's wraps its own
+30 languages now has a `<lang>/.package.ae` (dotnet's wraps its own
 `.dist.ae`), elixir and gleam included — they had none before. The root
-**`.packages.ae`** aggregate builds all 29 in one command (~50s; dep edges
+**`.packages.ae`** aggregate builds all 30 in one command (~50s; dep edges
 only, the selenium `.presubmit.ae` idiom), and **`get-package.sh`** is the
 curl-to-bash front door: `./get-package.sh ruby` builds the gem, copies it to
 `./out`, and prints the `gem install …` line. Full table + the rules for adding
 one: `docs/packaging.md`. **Packaging runs no tests** — that is the point: the
 wheel builds where there is no pytest.
 
-**All three layers now cover all 29 languages.** The eight newest bindings got
+**All three layers now cover all 30 languages.** The eight newest bindings got
 their `.example.ae` consumer-install leaves too, so every language has
-`.tests.ae` + `.package.ae` + `.example.ae`, and all 29 examples pass. Each
+`.tests.ae` + `.package.ae` + `.example.ae`, and all 30 examples pass. Each
 installs the way that ecosystem really does — unpacked tarball + pkg-config
 (c, cpp), relocated OTP apps with only ERL_LIBS (lfe), `Pkg.develop` into a
-throwaway depot (julia), a shards-style `lib/<name>/` tree (crystal), a dub
+throwaway depot (julia), a jpm `--tree` install (janet), a shards-style `lib/<name>/` tree (crystal), a dub
 path dependency (d), a SwiftPM path dependency (swift), a local NuGet feed
 (fsharp) — always with `SERVIRTIUM_VCR_LIB` unset, so only the bundled libservirtium_vcr
 can satisfy the load.

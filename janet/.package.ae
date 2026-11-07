@@ -1,0 +1,31 @@
+// Third-party-consumer PACKAGE stage for the Janet binding.
+//
+// Janet consumes `servirtium` as a jpm source package: project.janet + the
+// servirtium/ module directory (jpm copies a source directory whole, so a
+// native/ inside it travels with the install). The binding is pure Janet over
+// Janet's built-in FFI, so nothing is compiled here; this stage just puts the
+// freshly-built libservirtium_vcr at the loader's bundled path,
+// servirtium/native/libservirtium_vcr.so, so an installed copy works with
+// SERVIRTIUM_VCR_LIB unset. (aeb names it .so on every OS; the loader tries
+// that name beside the platform's own.)
+//
+// No tests run here; packaging is a build step (janet/.tests.ae is the test
+// node). Deps core/.build.ae; publishes the package dir on "package_dir".
+import bldr
+import copy
+import copy (from, to)
+aeb(cap) {
+    bldr.build() {
+        dep("core/.build.ae")
+        lib = dep_artifact("core/.build.ae", "shared_lib")
+
+        copy.file() {
+            from(lib)
+            to("servirtium/native/libservirtium_vcr.so")
+        }
+
+        publish_artifact("package_dir", "${_get("root")}/janet")
+        println("janet package: staged libservirtium_vcr.so into janet/servirtium/native/ (jpm package ready)")
+        return 0
+    }
+}

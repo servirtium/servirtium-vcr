@@ -1,0 +1,55 @@
+// Third-party-consumer EXAMPLE test for the Janet binding.
+//
+// Copies the packaged jpm project (janet/, carrying the bundled
+// servirtium/native/ library) to target/janet-pkg WITHOUT this repo's core/ as a
+// sibling, `jpm install`s it into a throwaway tree (--tree, so the developer's
+// real modpath is untouched), then runs example/consumer_example.janet against
+// that tree with JANET_PATH pointed at it and SERVIRTIUM_VCR_LIB UNSET.
+//
+// With the env var gone, the only thing left is the module's bundled-path
+// discovery: native/libservirtium_vcr.so inside the installed servirtium/
+// directory. A second run pins the library with servirtium/set-library!
+// (explicit), a third also records and replays its own tape.
+import bldr
+import std.os
+aeb(cap) {
+    bldr.build() {
+        dep("janet/.package.ae")
+        _pkg = dep_artifact("janet/.package.ae", "package_dir")
+        root = _get("root")
+        exdir = "${root}/janet/example"
+        pkg = "${root}/target/janet-pkg"
+        tree = "${root}/target/janet-tree"
+        consumer = "${root}/target/janet-consumer"
+
+        rc = os.system("rm -rf \"${pkg}\" \"${tree}\" \"${consumer}\" && cp -r \"${root}/janet\" \"${pkg}\" && rm -rf \"${pkg}/example\" \"${pkg}/test\" && mkdir -p \"${consumer}/tapes\" && cp \"${exdir}/consumer_example.janet\" \"${consumer}/\" && cp \"${exdir}/tapes/single_get.md\" \"${consumer}/tapes/\"")
+        if rc != 0 {
+            println("janet example: staging the published package + consumer failed")
+            return 1
+        }
+
+        rc2 = os.system("cd \"${pkg}\" && env -u SERVIRTIUM_VCR_LIB jpm --tree=\"${tree}\" install")
+        if rc2 != 0 {
+            println("janet example: jpm install of the published package failed")
+            return 1
+        }
+
+        rc3 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB JANET_PATH=\"${tree}/lib\" janet consumer_example.janet discovery")
+        if rc3 != 0 {
+            println("janet example: consumer run against the installed package failed (discovery)")
+            return 1
+        }
+        rc4 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB JANET_PATH=\"${tree}/lib\" EXAMPLE_NATIVE_LIB=\"${tree}/lib/servirtium/native/libservirtium_vcr.so\" janet consumer_example.janet explicit")
+        if rc4 != 0 {
+            println("janet example: consumer run failed (explicit set-library!)")
+            return 1
+        }
+        rc5 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB JANET_PATH=\"${tree}/lib\" janet consumer_example.janet record")
+        if rc5 != 0 {
+            println("janet example: consumer record round trip failed")
+            return 1
+        }
+        println("janet example: PASS - consumer replayed and recorded (discovery; explicit; bundled native/ library)")
+        return 0
+    }
+}

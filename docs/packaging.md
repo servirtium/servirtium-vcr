@@ -39,7 +39,7 @@ The three layers, kept separate on purpose:
 | `<lang>/.tests.ae` | does the binding work? | its compiler **+ test runner** |
 | `<lang>/.example.ae` | can a stranger install and use it? | a clean env + the package |
 
-All three exist for **all 29 languages**, and each `.example.ae` installs the
+All three exist for **all 30 languages**, and each `.example.ae` installs the
 way that ecosystem really does — unpacked tarball + pkg-config, a dub or
 SwiftPM path dependency, `Pkg.develop`, a shards-style `lib/` tree, a local
 NuGet feed, relocated OTP apps on `ERL_LIBS` — always with
@@ -84,13 +84,14 @@ links or loads it from there.
 | Haskell | cabal package `servirtium`: a `source-repository-package` with `subdir: haskell` (or a path package) + `cabal.project.local` naming the library dir |
 | Crystal | `servirtium: {path: "…/crystal"}` in `shard.yml`; from git: `github: servirtium/servirtium-vcr` (root `shard.yml` + `servirtium.cr`, see below) |
 | Julia | `Pkg.develop(path="…/julia")` |
+| Janet | `jpm --tree=… install` from `janet/` (or `jpm install` of the repo URL, root `project.janet`, see below); the library sits in `servirtium/native/` |
 | Swift | `.package(path: "…/swift")`; from git: `.package(url: "https://github.com/servirtium/servirtium-vcr", branch: "main")` (root `Package.swift`, see below) |
 | D | `dub add-local …/d 2.0.0`; from a clone or the registry: `dub add-local <clone-root> 2.0.0-alpha.13` / `dub add servirtium` (root `dub.sdl`, see below) |
 | PHP | `composer.json` is in `php/` (not the repo root), so no `vcs`/Packagist route yet: `composer config repositories.servirtium path …/php && composer require servirtium/vcr:@dev` |
 | Dart | `dependency_overrides: servirtium: {path: …/dart}` |
 | Pharo | `ServirtiumLibrary libPath:` the staged `.so` |
 
-#### Root manifests for Swift, Crystal and D
+#### Root manifests for Swift, Crystal, D and Janet
 
 SwiftPM, Crystal shards and the dub registry only consume a package whose
 manifest is at the **repository root**. This monorepo therefore carries three
@@ -101,6 +102,14 @@ comment. The in-tree manifests (`swift/Package.swift`, `crystal/shard.yml`,
 `d/dub.json`) stay, because the aeb leaves and path dependencies use them; the
 root and in-tree copies must be kept in step. (Swift: `swift/.example.ae` stages
 `swift/` standalone, so it cannot share the root manifest.)
+
+Janet's `jpm` has the same constraint, so the repository root carries a fourth
+manifest, `project.janet`, whose `:source` points at `janet/servirtium`
+(`janet/project.janet` is the in-tree copy the aeb leaves use; keep the two in
+step, `release/.version.ae` pins both). `jpm install` of the repo URL, or a
+`:dependencies` entry `{:url "…/servirtium-vcr.git" :tag "<tag>"}`, then works,
+and the library comes from `SERVIRTIUM_VCR_LIB` (a git install has no bundled
+`native/`).
 
 In a git-sourced install `native/` is empty (natives are git-ignored and staged
 by aeb), so all three take the library directory from **`SERVIRTIUM_VCR_LIB_DIR`**
@@ -184,7 +193,7 @@ unresolvable coordinate. Audited 2026-09-20:
 |---|---|---|
 | python | `2.0.0a13` | PEP 440 (`alpha.N` -> `aN`) |
 | ruby | `2.0.0.alpha.13` | RubyGems |
-| javascript, rust, crystal, zig, d, gleam, elixir, erlang, lfe, dotnet, fsharp, dart, julia, java (+ the 4 JVM wrappers) | `2.0.0-alpha.13` | SemVer; Maven takes the dotted form too |
+| javascript, rust, crystal, zig, d, gleam, elixir, erlang, lfe, dotnet, fsharp, dart, julia, janet, java (+ the 4 JVM wrappers) | `2.0.0-alpha.13` | SemVer; Maven takes the dotted form too |
 | **haskell** | **`2.0.0`** | **cannot express a prerelease — see below** |
 | nim, php, lua, pharo, swift, go | unversioned | consumed from source / VCS tag |
 

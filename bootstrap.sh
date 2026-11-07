@@ -494,7 +494,7 @@ cd "$HERE"
 case ":$PATH:" in *":$PREFIX/bin:"*) : ;; *) say "tip: add '$PREFIX/bin' to your shell PATH permanently";; esac
 
 # With explicit args, honor them verbatim. Otherwise, DON'T `aeb --scan` the
-# whole tree — that builds all 29 bindings and is guaranteed to fail on any box
+# whole tree — that builds all 30 bindings and is guaranteed to fail on any box
 # lacking a toolchain (every box). Instead, sniff which language toolchains are
 # present and build only those leaves. `core` (libservirtium_vcr) always
 # builds: it needs only `ae` + a C compiler, which we just ensured.
@@ -542,6 +542,7 @@ cc       c/.tests.ae
 c++      cpp/.tests.ae
 crystal  crystal/.tests.ae
 julia    julia/.tests.ae
+janet    janet/.tests.ae
 swift    swift/.tests.ae
 dmd      d/.tests.ae
 TOOLCHAINS

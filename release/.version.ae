@@ -85,6 +85,10 @@ const PINS[] = [
     "dart/pubspec.yaml", "^version: @S@$",
     "crystal/shard.yml", "^version: @S@$",
     "julia/Project.toml", "^version = \"@S@\"",
+    // jpm manifests (repo root, for `jpm install <git url>`, and janet/) and the module's own version
+    "project.janet", "^  :version \"@S@\"\\)",
+    "janet/project.janet", "^  :version \"@S@\"\\)",
+    "janet/servirtium/init.janet", "^\\(def version \"@S@\"\\)",
     "gleam/gleam.toml", "^version = \"@S@\"",
     "zig/build.zig.zon", "\\.version = \"@S@\"",
     "d/dub.json", "^    \"version\": \"@S@\"",

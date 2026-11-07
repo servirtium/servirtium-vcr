@@ -52,6 +52,7 @@ php        source    php
 dart       source    dart
 pharo      source    pharo
 julia      source    julia
+janet      source    janet
 rust       source    rust
 go         source    go
 nim        source    nim
@@ -73,7 +74,7 @@ TABLE
 }
 
 list_langs() {
-    say "servirtium-vcr — 29 language bindings over one libservirtium_vcr"
+    say "servirtium-vcr — 30 language bindings over one libservirtium_vcr"
     echo
     langs_table | awk '{printf "%s ", $1}' | fold -s -w 70 | sed 's/^/  /'
     echo
@@ -100,6 +101,8 @@ consume_hint() {
         dart:*)       note "dependency_overrides:  servirtium: {path: $_dest}" ;;
         pharo:*)      note "load pharo/src into your image; ServirtiumLibrary libPath: '$_dest/native/libservirtium_vcr.so'" ;;
         julia:*)      note "julia -e 'using Pkg; Pkg.develop(path=\"$_dest\")'" ;;
+        janet:*)      note "(cd $_dest && jpm --tree=\"\$OLDPWD/jpm_tree\" install)   # into ./jpm_tree, native library included"
+                      note "JANET_PATH=\$PWD/jpm_tree/lib janet your_test.janet          # (import servirtium)" ;;
         rust:*)       note "servirtium = { path = \"$_dest\" }        # in Cargo.toml" ;;
         go:*)         note "go mod edit -replace github.com/servirtium/servirtium-vcr/go/v2=$_dest" ;;
         nim:*)        note "nim c --path:$_dest/src your_test.nim" ;;
