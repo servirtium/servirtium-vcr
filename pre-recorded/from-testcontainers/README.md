@@ -54,7 +54,7 @@ them. Each suite's `LICENCE-NOTE.md` gives the clause and the commands.
 | `openfga` | 1 | `openfga/openfga:v1.18.0` |
 | `typesense` | 3 | `typesense/typesense:26.0` |
 | `mockserver` | 2 | `mockserver/mockserver:5.15.0` |
-| `minio` | 2 | `cgr.dev/chainguard/minio:latest` |
+| `minio` | 18 (comprehensive: 16 API, 2 module; S3 has no login, every request is signed) | `cgr.dev/chainguard/minio:latest` |
 | `opensearch` | 1 | `opensearchproject/opensearch:2.11.1` |
 | `elasticsearch` | 1 | `docker.elastic.co/elasticsearch/elasticsearch:8.9.0` |
 | `localstack` | 1 | `localstack/localstack:3.4` |
@@ -187,7 +187,7 @@ Per suite (registered at the top of its `main`):
 | openfga | the store's ULID (it comes back in a later request path, and the token round-trips) | RFC 3339 times | | |
 | typesense | | `created_at` | each `X-TYPESENSE-API-KEY`, as `REDACTED[<key>]` | |
 | mockserver | the expectation's UUID | | | |
-| minio | | `<RequestId>` / `<HostId>` in error bodies, `CreationDate`, `X-Ratelimit-*` | `Authorization` (SigV4), as `AWS4-HMAC-SHA256 AUTHORIZATION_N` (credential preset) | `x-amz-date` (request), `x-amz-request-id`, `x-amz-id-2` |
+| minio | API cases: version ids (`{{uuid-N}}`), multipart upload ids (`{{uploadid-N}}`), listing continuation tokens (`{{token-N}}`) | `<RequestId>` / `<HostId>` in error bodies, every ISO time in a body, `Last-Modified`, `X-Ratelimit-*`, a presigned URL's date, credential date and signature | `Authorization` (SigV4), as `AWS4-HMAC-SHA256 AUTHORIZATION_N` (credential preset) | `x-amz-date` (request), `x-amz-request-id`, `x-amz-id-2` |
 | opensearch | | the node's `name`, `cluster_uuid` | | |
 | elasticsearch | | the node's `name`, `cluster_uuid` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | localstack | | | | `x-amz-request-id`, `x-amz-id-2`, `Last-Modified` |
@@ -277,7 +277,11 @@ and `x-amz-date` is left out. The 200-versus-403 difference between the
 right and a wrong secret is in the recorded responses, not enforced on
 replay. SigV4 also signs the `Host` header, and the recorder forwards with
 the container's, so when recording the test signs for the container while
-sending to the recorder (`test_minio.ae` says how a port does the same).
+sending to the recorder (`test_minio.ae` says how a port does the same). The comprehensive block (16 tapes: buckets, objects, listing, versioning,
+tags, policy, multipart, presigned URL, errors) has one tape about credentials
+(unsigned, unknown key, wrong secret, right credentials) where CouchDB has its
+login tape; every other tape is "already logged in" by sending any
+`Authorization: AWS4-HMAC-SHA256 ...` header.
 
 **Elasticsearch 8** serves HTTPS with a CA it generates. When recording, the
 test talks plain HTTP to the recorder, which talks HTTPS to the container

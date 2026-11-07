@@ -24,8 +24,167 @@
 // recorder and its signing host at the container. On playback any host
 // will do.
 
+// ===========================================================================
+// MinIO, comprehensively: a second suite beside the ported module cases (the
+// README's "Pattern for comprehensive suites"; CouchDB is the pilot).
+//
+// Two describe blocks, two sets of tapes:
+//   1. "modules/minio": the ported testcontainers-go cases above (module
+//      credentials, one container per case): two tapes, and one case that
+//      runs live only.
+//   2. "MinIO S3 API": written for servirtium-vcr. Re-usable recordings of
+//      MinIO's S3 API, one tape per scenario, for any language's tests to
+//      replay with no MinIO. The 16 tapes of this block are the comprehensive
+//      part; everything below up to "Running it" describes them.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes are
+// the re-usable part. A port is a test in your language that makes the same
+// requests, in the same order, against a Servirtium replay server loaded
+// with the tape, and checks the same things. Any Servirtium implementation
+// replays them. Every request is path-style S3 over plain HTTP/1.1 with these
+// headers and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+//   Authorization: AWS4-HMAC-SHA256 AUTHORIZATION_N   (signed requests, see below)
+//   x-amz-content-sha256: <sha256 of the body>         (signed requests)
+//   Content-Type: <the body's>                          (requests with a body)
+//   x-amz-meta-*, x-amz-copy-source, x-amz-metadata-directive, x-amz-tagging
+//                                                       (the cases that use them)
+//   Range, If-Match, If-None-Match, Content-MD5         (the cases that use them)
+// (x-amz-date is signed and sent, but left out of the tapes, see below.)
+// Playback is strict about method, path (query string included, exactly as
+// written in this file: each parameter's value percent-encoded as AWS SDKs
+// do, the parameters in sorted order, a valueless one as `?versioning`), the
+// recorded request headers and the body (byte for byte: send the XML and
+// JSON bodies exactly as written here). Host, Connection and Content-Length
+// are transport headers, not compared. Bucket and key names are fixed
+// (tcae-<scenario>), and each case creates its own bucket, works in it and
+// deletes it on the tape, so any tape replays alone and in any order.
+//
+// There is no login, and what stands in for one
+// ----------------------------------------------
+// S3 has no session: every request is signed with AWS Signature V4 over its
+// own method, path, query, signed headers, payload hash and the second it was
+// sent in. So "logging in" is not a step, it is a property of every request,
+// and the tapes treat it so:
+//   - ONE tape is about credentials, refuses_unsigned_and_wrongly_signed_
+//     requests: GET / unsigned (403 AccessDenied), with an unknown access key
+//     (403 InvalidAccessKeyId), with the right key and a wrong secret (403
+//     SignatureDoesNotMatch), and with the right credentials (200). It plays
+//     the part the login tape plays in CouchDB.
+//   - Every other signed request carries `Authorization: AWS4-HMAC-SHA256
+//     AUTHORIZATION_N` on the tape. That is Servirtium's credential preset
+//     (redact_credentials()): each distinct Authorization value is written as
+//     a numbered token (so the access key id, the date and the signature are
+//     never on a tape) and playback matches the header on PRESENCE, not
+//     value. A port's "already logged in" is therefore: send ANY
+//     `Authorization: AWS4-HMAC-SHA256 <anything>` header on every request.
+//     No signing, no key, no clock needed. (The Authorization is a request
+//     header in `Credential=<access key>/<day>/us-east-1/s3/aws4_request,
+//     SignedHeaders=..., Signature=<hex>` form; a port that uses a real S3
+//     client sends that, and replay accepts it.)
+//   - A consequence of presence matching: a replay cannot tell a good
+//     signature from a forged one. The 200-versus-403 difference between
+//     credentials is in the recorded responses, which a port gets by making
+//     the requests in the tape's order. The requests of the cases that show
+//     "no credentials" (the anonymous ones: AccessDenied before a bucket
+//     policy, 200 after it) carry NO Authorization header at all; presence
+//     matching can tell a missing header from a present one.
+//   - x-amz-date, the signing time, is left out of the request headers (it is
+//     different every second). x-amz-content-sha256 stays: it is the hash of
+//     a body that is the same every run (the hash of the empty body, for a
+//     GET). Presigned URLs carry their credentials in the query string
+//     instead: see serves_an_object_through_a_presigned_url.
+//
+// When recording
+// --------------
+// SigV4 signs the Host header, and Servirtium's recorder forwards with the
+// container's Host, so the test signs for the container's host:port while it
+// sends to the recorder (sign_host in s3call). An S3 client with a
+// configurable endpoint does the same: its endpoint is the recorder, its
+// signing host the container. On playback any host will do.
+// SigV4 signs the second a request was sent in, so two identical requests in
+// one second would carry the same signature and one AUTHORIZATION_N token
+// where two seconds give two; s3call therefore waits for the next second when
+// it would repeat a signature (live only), so every recording numbers its
+// tokens the same way.
+// The API cases share one container (started on the first, removed at the
+// end) with credentials tcae-access / tcae-secret-key; the module cases each
+// start their own.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules(), with its reason; the "## [Recording
+// rules]" table at the end of each tape lists the rules and the interactions
+// each touched. In short:
+//   - normalized (each distinct value a stable {{name-N}} token, the same
+//     token wherever it recurs, because a client sends it back): version ids
+//     ({{uuid-N}}: x-amz-version-id, <VersionId>, ?versionId=), multipart
+//     upload ids ({{uploadid-N}}: <UploadId>, ?uploadId=) and listing
+//     continuation tokens ({{token-N}}: <NextContinuationToken>,
+//     continuation-token=).
+//   - collapsed (one constant; nobody sends them back): <RequestId> and
+//     <HostId> in error bodies, every ISO time in a body (CreationDate,
+//     LastModified, Initiated) as 2000-01-01T00:00:00.000Z, the Last-Modified
+//     header, X-Ratelimit-* (worked out from the machine's memory), and a
+//     presigned URL's date, credential date and signature.
+//   - redacted: Authorization, by the credential preset (above).
+//   - left out: x-amz-date (request), x-amz-request-id and x-amz-id-2
+//     (response), and Date, as everywhere.
+// Left alone, deliberately: ETags. An object's ETag is the MD5 of its bytes
+// (the same every run, and a feature for a reader: "5d41402a..." is "hello"),
+// a multipart object's is the MD5 of the parts' MD5s plus -N; the owner id
+// MinIO reports is a fixed hash of its root user, and a bucket's listing
+// order is by name.
+//
+// PORTING: in playback a normalized value comes back as its token verbatim: a
+// version id is "{{uuid-1}}", an upload id "{{uploadid-1}}". Treat every id
+// and token as an opaque string (never assert its length or shape) and send
+// it back exactly as received, braces unencoded, in the request the tape
+// expects: `?versionId={{uuid-1}}`, `?uploadId={{uploadid-1}}`,
+// `continuation-token={{token-1}}%3D` (the continuation token's trailing
+// base64 padding is part of the value MinIO sent, "=" in the XML, and the
+// client percent-encodes it in the URL as SDKs do; only the alphanumeric
+// part is the token).
+//
+// In and out of scope
+// -------------------
+// In: authentication failures; buckets (create / head / list / location /
+// delete, tags, versioning, policy, naming errors); objects (put / get / head /
+// overwrite / delete, content type, user metadata, keys needing percent-
+// encoding, an empty object, tags, byte ranges, conditional requests, copy
+// with metadata kept or replaced, single and bulk delete); ListObjectsV2 with
+// prefix, delimiter, max-keys with continuation tokens, start-after,
+// fetch-owner, url encoding, and the old v1 listing; versioned buckets (version
+// ids, delete markers); multipart upload (initiate, upload part, list parts,
+// list uploads, complete, abort, and the part rules); presigned GET (valid,
+// expired, wrongly signed); and the errors NoSuchBucket, NoSuchKey,
+// NoSuchUpload, BucketNotEmpty, BucketAlreadyOwnedByYou, InvalidBucketName,
+// AccessDenied, InvalidAccessKeyId, SignatureDoesNotMatch, PreconditionFailed,
+// InvalidRange, EntityTooSmall, InvalidPart, InvalidPartOrder, MalformedPolicy,
+// NoSuchTagSet, NoSuchBucketPolicy and InvalidArgument.
+// Out: parts over 5 MiB (a multipart upload of real size would put megabytes
+// on a markdown tape, so the successful upload has one small last part, and
+// the two-part case shows the EntityTooSmall refusal instead); presigned PUT
+// (same technique as the GET: a port can add it); chunked and streaming
+// signed uploads (aws-chunked) and the unsigned-payload mode; server-side
+// encryption, object lock and retention, lifecycle, replication,
+// notifications, and CORS (configuration the S3 clients here do not need);
+// MinIO's admin API (/minio/admin) and its Prometheus metrics (node-specific,
+// varying numbers); STS and IAM users other than the one root user; and
+// virtual-hosted-style addressing (path-style only: the tapes talk to an IP
+// and a port, and virtual-host needs DNS for <bucket>.<host>). The module
+// cases above cover the health endpoint.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test minio/test_minio.ae                    container, no Servirtium
+//   TCAE_VCR=record   ae test minio/test_minio.ae  write the tapes
+//   TCAE_VCR=check    ae test minio/test_minio.ae  fail if a tape changed
+//   TCAE_VCR=playback ae test minio/test_minio.ae  no container: the tapes
+// ===========================================================================
+
 import std.spec
 import std.string
+import std.encoding
 import std.http.client
 import std.cryptography
 import std.time
@@ -147,6 +306,403 @@ fn signing_host(container_hp: string, base: string) -> string {
     return string.substring(base, 7, string.length(base))
 }
 
+// ===========================================================================
+// The "MinIO S3 API" block: helpers
+// ===========================================================================
+
+// The credentials of the shared container the API cases use. S3 has no
+// login: every request is signed with these (see the header).
+const ACCESS = "tcae-access"
+const SECRET = "tcae-secret-key"
+const UNKNOWN_ACCESS = "tcae-unknown"
+const WRONG_SECRET = "tcae-not-the-secret"
+const REGION = "us-east-1"
+// What a presigned URL's date, credential date and signature are on the
+// tapes (see api_rules): the real ones differ every second.
+const PRESIGN_DATE = "20000101T000000Z"
+const PRESIGN_SIG = "0000000000000000000000000000000000000000000000000000000000000000"
+
+// The current recording: base URL (the recorder, or the replay server), the
+// Host to sign for, and what the last response carried.
+var api: string = ""
+var sign_host: string = ""
+var last_headers: string = ""
+var seen_sigs: string = ""
+
+// Percent-encode as AWS SigV4 does (RFC 3986 unreserved bytes stay, the rest
+// %XX), except that `{` and `}` stay: no real value has them, and a
+// normalized token ({{uuid-2}}) sent back in a URL must go out unencoded for
+// playback to match its path byte for byte.
+fn q(s: string) -> string {
+    hex = "0123456789ABCDEF"
+    out = ""
+    b = string.bytes(s)
+    i = 0
+    while i < b.len {
+        ch = b[i]
+        keep = (ch >= 48 && ch <= 57) || (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch == 45 || ch == 46 || ch == 95 || ch == 126 || ch == 123 || ch == 125
+        if keep {
+            out = string.concat(out, string.substring(s, i, i + 1))
+        } else {
+            hi = string.substring(hex, (ch >> 4) & 15, ((ch >> 4) & 15) + 1)
+            lo = string.substring(hex, ch & 15, (ch & 15) + 1)
+            out = "${out}%${hi}${lo}"
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// An object key as it goes in the URL path: each segment percent-encoded,
+// the slashes kept (SigV4 for S3 signs the path as sent).
+fn kp(key: string) -> string {
+    out = ""
+    rest = key
+    while true {
+        sl = string.index_of(rest, "/")
+        if sl < 0 { return "${out}${q(rest)}" }
+        out = "${out}${q(string.substring(rest, 0, sl))}/"
+        rest = string.substring(rest, sl + 1, string.length(rest))
+    }
+    return out
+}
+
+fn sha256_of(s: string) -> string {
+    h, _ = cryptography.sha256_hex(string.bytes(s))
+    return h
+}
+
+// The SigV4 signing key for a day.
+fn signing_key(secret: string, day: string) -> string {
+    k1 = hmac_raw("AWS4${secret}", day)
+    k2 = hmac_raw(k1, REGION)
+    k3 = hmac_raw(k2, "s3")
+    return hmac_raw(k3, "aws4_request")
+}
+
+// Content-MD5: the base64 of the body's raw MD5 (DeleteObjects needs it).
+fn md5_b64(body: string) -> string {
+    hx, _ = cryptography.md5_hex(string.bytes(body))
+    raw, _ = encoding.hex_decode(hx)
+    return encoding.base64_encode_padded(string.bytes(raw))
+}
+
+// "Name: value" header lines already in the order SigV4 wants them
+// (lower-case names, sorted) merged with the three every request carries.
+// Returns (canonical headers block, signed header names).
+fn canonical_headers(date: string, payload: string, extras: string[]) -> (string, string) {
+    fixed = ["host:${sign_host}", "x-amz-content-sha256:${payload}", "x-amz-date:${date}"]
+    block = ""
+    names = ""
+    i = 0
+    j = 0
+    while i < fixed.len || j < extras.len {
+        take_fixed = 0
+        if i < fixed.len {
+            if j >= extras.len { take_fixed = 1 }
+            if j < extras.len {
+                if string.compare(fixed[i], extras[j]) < 0 { take_fixed = 1 }
+            }
+        }
+        line = ""
+        if take_fixed == 1 {
+            line = fixed[i]
+            i = i + 1
+        } else {
+            line = extras[j]
+            j = j + 1
+        }
+        colon = string.index_of(line, ":")
+        block = "${block}${line}\n"
+        if string.length(names) > 0 { names = "${names};" }
+        names = "${names}${string.substring(line, 0, colon)}"
+    }
+    return block, names
+}
+
+// A header of the last response ("" when absent), case-insensitive.
+fn rh(name: string) -> string {
+    block = "\n${string.to_lower(last_headers)}"
+    key = "\n${string.to_lower(name)}:"
+    at = string.index_of(block, key)
+    if at < 0 { return "" }
+    from = at + string.length(key)
+    rest = string.substring(block, from, string.length(block))
+    end = string.index_of(rest, "\n")
+    if end < 0 { end = string.length(rest) }
+    // the value in its original case
+    orig = string.substring(last_headers, from - 1, from - 1 + end)
+    return string.trim(string.replace_all(orig, "\r", ""))
+}
+
+// The text between <tag> and </tag> (first occurrence), "" when absent.
+fn xml_val(body: string, tag: string) -> string {
+    a = string.index_of(body, "<${tag}>")
+    if a < 0 { return "" }
+    from = a + string.length(tag) + 2
+    rest = string.substring(body, from, string.length(body))
+    z = string.index_of(rest, "</${tag}>")
+    if z < 0 { return "" }
+    return string.substring(rest, 0, z)
+}
+
+// One S3 request. `who`: 0 anonymous (no signature at all), 1 signed with
+// the shared credentials, 2 signed with a wrong secret, 3 signed with an
+// access key the server does not know.
+//   qpairs  query parameters, "name=value" (value percent-encoded here) or a
+//           bare "name" (as AWS SDKs send ?versioning), already in sorted order
+//   xh      the x-amz-* headers to send AND sign, "lower-case-name:value",
+//           sorted
+//   uh      other headers, sent but not signed, "Name: value"
+// Returns (status, body); the response headers are in last_headers.
+fn s3call(who: int, method: string, path: string, qpairs: string[], xh: string[], uh: string[], body: string, ctype: string) -> (int, string) {
+    sent = ""
+    canon = ""
+    i = 0
+    while i < qpairs.len {
+        p = qpairs[i]
+        eq = string.index_of(p, "=")
+        name = p
+        val = ""
+        sent_part = p
+        if eq >= 0 {
+            name = string.substring(p, 0, eq)
+            val = string.substring(p, eq + 1, string.length(p))
+            sent_part = "${name}=${q(val)}"
+        }
+        if i > 0 {
+            sent = "${sent}&"
+            canon = "${canon}&"
+        }
+        sent = "${sent}${sent_part}"
+        canon = "${canon}${name}=${q(val)}"
+        i = i + 1
+    }
+    url = "${api}${path}"
+    if string.length(sent) > 0 { url = "${url}?${sent}" }
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    j = 0
+    while j < uh.len {
+        colon = string.index_of(uh[j], ":")
+        client.set_header(req, string.substring(uh[j], 0, colon), string.trim(string.substring(uh[j], colon + 1, string.length(uh[j]))))
+        j = j + 1
+    }
+    if who != 0 {
+        access = ACCESS
+        secret = SECRET
+        if who == 2 { secret = WRONG_SECRET }
+        if who == 3 {
+            access = UNKNOWN_ACCESS
+            secret = WRONG_SECRET
+        }
+        payload = sha256_of(body)
+        auth = ""
+        amz_date = ""
+        // Two identical signed requests inside one second would carry the
+        // same Authorization and the recording's AUTHORIZATION_N numbering
+        // would depend on timing; wait for the next second instead (live only).
+        done = 0
+        while done == 0 {
+            now = time.now()
+            amz_date = time.strftime(now, "%Y%m%dT%H%M%SZ")
+            day = time.strftime(now, "%Y%m%d")
+            scope = "${day}/${REGION}/s3/aws4_request"
+            hblock, hnames = canonical_headers(amz_date, payload, xh)
+            creq = "${method}\n${path}\n${canon}\n${hblock}\n${hnames}\n${payload}"
+            to_sign = "AWS4-HMAC-SHA256\n${amz_date}\n${scope}\n${sha256_of(creq)}"
+            sig = hmac_hex(signing_key(secret, day), to_sign)
+            auth = "AWS4-HMAC-SHA256 Credential=${access}/${scope}, SignedHeaders=${hnames}, Signature=${sig}"
+            if servirtium.live() == 0 || string.contains(seen_sigs, sig) == 0 {
+                done = 1
+                seen_sigs = "${seen_sigs}|${sig}"
+            } else {
+                sleep(250)
+            }
+        }
+        client.set_header(req, "x-amz-date", amz_date)
+        client.set_header(req, "x-amz-content-sha256", payload)
+        client.set_header(req, "Authorization", auth)
+        k = 0
+        while k < xh.len {
+            colon = string.index_of(xh[k], ":")
+            client.set_header(req, string.substring(xh[k], 0, colon), string.substring(xh[k], colon + 1, string.length(xh[k])))
+            k = k + 1
+        }
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    spec.assert_ok(err, "${method} ${path}")
+    if err != "" { return 0, "" }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    last_headers = client.response_headers(r)
+    client.response_free(r)
+    return st, b
+}
+
+fn nothing() -> string[] {
+    string[] n = []
+    return n
+}
+
+// A signed request with no query, no extra headers and no body.
+fn sx(method: string, path: string) -> (int, string) {
+    return s3call(1, method, path, nothing(), nothing(), nothing(), "", "")
+}
+
+// A signed request with a query.
+fn sxq(method: string, path: string, qpairs: string[]) -> (int, string) {
+    return s3call(1, method, path, qpairs, nothing(), nothing(), "", "")
+}
+
+// A signed request with a body (and x-amz-* headers).
+fn sxput(path: string, qpairs: string[], xh: string[], body: string, ctype: string) -> (int, string) {
+    return s3call(1, "PUT", path, qpairs, xh, nothing(), body, ctype)
+}
+
+// PUT an object and assert 200.
+fn put_object(bucket: string, key: string, body: string) {
+    st, b = sxput("/${bucket}/${kp(key)}", nothing(), nothing(), body, "text/plain")
+    spec.assert_eq(st, 200, "PUT /${bucket}/${key}: ${b}")
+}
+
+fn make_bucket(bucket: string) {
+    st, b = sx("PUT", "/${bucket}")
+    spec.assert_eq(st, 200, "PUT /${bucket} creates it: ${b}")
+}
+
+fn drop_bucket(bucket: string) {
+    st, b = sx("DELETE", "/${bucket}")
+    spec.assert_eq(st, 204, "DELETE /${bucket}: ${b}")
+}
+
+fn assert_error(st: int, b: string, want_status: int, want_code: string, what: string) {
+    spec.assert_eq(st, want_status, "${what}: status (${b})")
+    spec.assert_contains(b, "<Code>${want_code}</Code>", "${what}: ${want_code}")
+}
+
+// ---------------------------------------------------------------------------
+// The live container the API cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_base: string = ""
+var shared_hp: string = ""
+var shared_container: ptr = null
+
+fn shared() -> string {
+    if string.length(shared_base) > 0 { return shared_base }
+    m, err = minio.run(IMAGE) {
+        username(ACCESS)
+        password(SECRET)
+    }
+    if m == null {
+        spec.fail("minio starts: ${err}")
+        return ""
+    }
+    shared_container = m.container as ptr
+    spec.assert_ok(err, "minio starts")
+    if err != "" { return "" }
+    h, _ = minio.connection_string(m)
+    shared_hp = h
+    shared_base = "http://${h}"
+    return shared_base
+}
+
+// Start an API case: in a live mode the shared container (not recorded),
+// then the recording. Sets `api` and `sign_host`; ok = 0 when the case
+// cannot run.
+fn begin(case_: string) -> (ptr, int) {
+    addr = ""
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+    }
+    base, rec = servirtium.recording("minio", case_, addr)
+    api = base
+    sign_host = string.substring(base, 7, string.length(base))
+    if string.length(shared_hp) > 0 { sign_host = shared_hp }
+    last_headers = ""
+    return rec, 1
+}
+
+// A presigned query (query-string authentication): the signature goes in
+// the URL, not an Authorization header. Returns the sorted, unencoded pairs
+// ready for s3call. On playback, where nothing is checked, the date and the
+// signature are the constants the tape carries.
+fn presign_pairs(method: string, path: string, access: string, secret: string, expires: int) -> string[] {
+    now = time.now()
+    date = time.strftime(now, "%Y%m%dT%H%M%SZ")
+    day = time.strftime(now, "%Y%m%d")
+    if servirtium.live() == 0 {
+        date = PRESIGN_DATE
+        day = "20000101"
+    }
+    cred = "${access}/${day}/${REGION}/s3/aws4_request"
+    base_q = "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${q(cred)}&X-Amz-Date=${date}&X-Amz-Expires=${expires}&X-Amz-SignedHeaders=host"
+    creq = "${method}\n${path}\n${base_q}\nhost:${sign_host}\n\nhost\nUNSIGNED-PAYLOAD"
+    to_sign = "AWS4-HMAC-SHA256\n${date}\n${day}/${REGION}/s3/aws4_request\n${sha256_of(creq)}"
+    sig = hmac_hex(signing_key(secret, day), to_sign)
+    if servirtium.live() == 0 { sig = PRESIGN_SIG }
+    string[] out = []
+    out.push("X-Amz-Algorithm=AWS4-HMAC-SHA256")
+    out.push("X-Amz-Credential=${cred}")
+    out.push("X-Amz-Date=${date}")
+    out.push("X-Amz-Expires=${expires}")
+    out.push("X-Amz-SignedHeaders=host")
+    out.push("X-Amz-Signature=${sig}")
+    return out
+}
+
+// The API cases' rules (see the header for the reasoning behind each).
+fn api_rules() {
+    servirtium.clear_rules()
+    // Every request is signed. Authorization (AWS4-HMAC-SHA256
+    // Credential=<access key>/<date>/..., Signature=<hmac over the time>) is
+    // written by the credential preset as `AWS4-HMAC-SHA256 AUTHORIZATION_N`
+    // (one number per distinct value), and playback matches it on presence.
+    servirtium.redact_credentials()
+    // x-amz-date is the signing time itself: never the same twice.
+    servirtium.remove_header(servirtium.FIELD_REQUEST_HEADERS, "x-amz-date")
+    // A presigned URL carries the same things in its query string. Collapsed
+    // to constants, so a port replays a hand-built URL with these constants
+    // (the signature is not checked on replay anyway).
+    servirtium.collapse("X-Amz-Date=[0-9]{8}T[0-9]{6}Z", "X-Amz-Date=${PRESIGN_DATE}")
+    servirtium.collapse("X-Amz-Credential=${ACCESS}%2F[0-9]{8}%2F", "X-Amz-Credential=${ACCESS}%2F20000101%2F")
+    servirtium.collapse("X-Amz-Signature=[0-9a-f]{64}", "X-Amz-Signature=${PRESIGN_SIG}")
+    // Per-request ids MinIO mints, in headers and in error bodies.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amz-request-id")
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amz-id-2")
+    servirtium.collapse("<RequestId>[^<]*</RequestId>", "<RequestId>REQUEST-ID</RequestId>")
+    servirtium.collapse("<HostId>[^<]*</HostId>", "<HostId>HOST-ID</HostId>")
+    // When things were created or modified: ISO times in the XML bodies, an
+    // HTTP date in Last-Modified. A client does not send them back.
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00.000Z")
+    servirtium.collapse("Last-Modified: [A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9:]{8} GMT", "Last-Modified: Sat, 01 Jan 2000 00:00:00 GMT")
+    // MinIO works its rate limits out from the machine's memory.
+    servirtium.collapse("X-Ratelimit-Limit: [0-9]+", "X-Ratelimit-Limit: 1000")
+    servirtium.collapse("X-Ratelimit-Remaining: [0-9]+", "X-Ratelimit-Remaining: 1000")
+    // Version ids are UUIDs and a client sends them back (?versionId=,
+    // x-amz-copy-source-version-id), so normalized: the same value is the
+    // same {{uuid-N}} wherever it recurs. ETags are MD5s of the bytes the
+    // test sends, the same every run: left alone, a feature for a reader.
+    servirtium.normalize(servirtium.UUID, "uuid")
+    // An upload id is base64 of two UUIDs and a nanosecond clock reading:
+    // different every run, and the client sends it back in ?uploadId=. In the
+    // XML and in the URL alike, 40+ base64 characters after <UploadId> or
+    // uploadId= (the length keeps out the made-up "uploadId=bogus" the abort
+    // case sends, which is stable).
+    servirtium.normalize("(?<=<UploadId>|uploadId=)[A-Za-z0-9]{40,}", "uploadid")
+    // A continuation token is base64 of the last key plus MinIO's listing
+    // cache id (a UUID, new every run); the client sends it back as
+    // continuation-token=. Only the alphanumeric run is normalized: the
+    // base64 padding "=" stays, which is "%3D" once the client has put the
+    // token in a URL, so the token matches in both places.
+    servirtium.normalize("(?<=<NextContinuationToken>|<ContinuationToken>|continuation-token=)[A-Za-z0-9]+", "token")
+}
+
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
@@ -221,6 +777,740 @@ main() {
             spec.assert_true(m == null, "no container")
             spec.assert_contains(err, "username or password has not been set", "Go's validateCreds message")
         }
+    }
+
+    api_rules()
+    spec.describe(fw, "MinIO S3 API") {
+
+        // ---- the access tape (S3's stand-in for a login) ------------------
+
+        // PORTING: the one tape that is about credentials. All four requests
+        // are GET /, so only the signature differs:
+        //   no signature at all            -> 403 AccessDenied
+        //   signed, access key not known   -> 403 InvalidAccessKeyId
+        //   signed, right key, wrong secret -> 403 SignatureDoesNotMatch
+        //   signed with the right credentials -> 200 ListAllMyBucketsResult
+        //     (the owner is the access key's user, and no buckets yet)
+        // Replay cannot enforce this (see "Logged in" in the header): the
+        // 200 and the 403s are in the recorded responses, in this order, and
+        // a port gets each by making the requests in this order. The three
+        // signed ones all carry `Authorization: AWS4-HMAC-SHA256
+        // AUTHORIZATION_N`; the anonymous one carries none.
+        spec.it("refuses unsigned and wrongly signed requests, accepts the right credentials") callback {
+            rec, ok = begin("refuses_unsigned_and_wrongly_signed_requests")
+            if ok == 0 { return }
+            st, b = s3call(0, "GET", "/", nothing(), nothing(), nothing(), "", "")
+            assert_error(st, b, 403, "AccessDenied", "anonymous")
+            st, b = s3call(3, "GET", "/", nothing(), nothing(), nothing(), "", "")
+            assert_error(st, b, 403, "InvalidAccessKeyId", "an unknown access key")
+            st, b = s3call(2, "GET", "/", nothing(), nothing(), nothing(), "", "")
+            assert_error(st, b, 403, "SignatureDoesNotMatch", "a wrong secret")
+            st, b = s3call(1, "GET", "/", nothing(), nothing(), nothing(), "", "")
+            spec.assert_eq(st, 200, "the right credentials: ${b}")
+            spec.assert_contains(b, "<ListAllMyBucketsResult", "a bucket listing")
+            spec.assert_contains(b, "<Buckets></Buckets>", "no buckets yet")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- buckets ------------------------------------------------------
+
+        // PORTING (bucket tcae-buckets, then tcae-buckets-b):
+        //   PUT    /tcae-buckets                -> 200, Location: /tcae-buckets
+        //   PUT    /tcae-buckets (again)        -> 409 BucketAlreadyOwnedByYou
+        //   HEAD   /tcae-buckets                -> 200 (no body)
+        //   GET    /tcae-buckets?location       -> 200 LocationConstraint (us-east-1)
+        //   PUT    /tcae-buckets-b              -> 200
+        //   GET    /                            -> 200, both listed, in name order
+        //   DELETE both                         -> 204
+        //   HEAD   /tcae-buckets                -> 404 (no body: a HEAD has none)
+        spec.it("creates, inspects, lists and deletes buckets") callback {
+            rec, ok = begin("creates_inspects_lists_and_deletes_buckets")
+            if ok == 0 { return }
+            st, b = sx("PUT", "/tcae-buckets")
+            spec.assert_eq(st, 200, "create: ${b}")
+            spec.assert_str_eq(rh("Location"), "/tcae-buckets", "Location names the bucket")
+            st, b = sx("PUT", "/tcae-buckets")
+            assert_error(st, b, 409, "BucketAlreadyOwnedByYou", "create again")
+            st, b = sx("HEAD", "/tcae-buckets")
+            spec.assert_eq(st, 200, "HEAD a bucket")
+            st, b = sxq("GET", "/tcae-buckets", ["location"])
+            spec.assert_eq(st, 200, "location: ${b}")
+            spec.assert_contains(b, "LocationConstraint", "a location document")
+            make_bucket("tcae-buckets-b")
+            st, b = sx("GET", "/")
+            spec.assert_eq(st, 200, "list: ${b}")
+            a = string.index_of(b, "<Name>tcae-buckets</Name>")
+            c = string.index_of(b, "<Name>tcae-buckets-b</Name>")
+            spec.assert_true(a >= 0 && c > a, "both buckets are listed, by name: ${b}")
+            drop_bucket("tcae-buckets-b")
+            drop_bucket("tcae-buckets")
+            st, b = sx("HEAD", "/tcae-buckets")
+            spec.assert_eq(st, 404, "HEAD after delete")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: names and missing buckets.
+        //   PUT    /AB                  -> 400 InvalidBucketName (too short, upper case)
+        //   GET    /tcae-nosuch?list-type=2 -> 404 NoSuchBucket
+        //   PUT    /tcae-nosuch/k.txt   -> 404 NoSuchBucket
+        //   DELETE /tcae-nosuch         -> 404 NoSuchBucket
+        //   GET    /tcae-nosuch?versioning -> 404 NoSuchBucket
+        spec.it("rejects bad bucket names and answers NoSuchBucket") callback {
+            rec, ok = begin("rejects_bad_bucket_names_and_answers_nosuchbucket")
+            if ok == 0 { return }
+            st, b = sx("PUT", "/AB")
+            assert_error(st, b, 400, "InvalidBucketName", "a bad name")
+            st, b = sxq("GET", "/tcae-nosuch", ["list-type=2"])
+            assert_error(st, b, 404, "NoSuchBucket", "list a missing bucket")
+            spec.assert_contains(b, "<BucketName>tcae-nosuch</BucketName>", "names the bucket")
+            st, b = sxput("/tcae-nosuch/k.txt", nothing(), nothing(), "x", "text/plain")
+            assert_error(st, b, 404, "NoSuchBucket", "put into a missing bucket")
+            st, b = sx("DELETE", "/tcae-nosuch")
+            assert_error(st, b, 404, "NoSuchBucket", "delete a missing bucket")
+            st, b = sxq("GET", "/tcae-nosuch", ["versioning"])
+            assert_error(st, b, 404, "NoSuchBucket", "versioning of a missing bucket")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (bucket tcae-versions): the version ids ({{uuid-N}}) are
+        // opaque: send each back exactly as received, in ?versionId=.
+        //   GET    ?versioning            -> 200, empty VersioningConfiguration
+        //   PUT    ?versioning <Status>Enabled</Status> -> 200
+        //   GET    ?versioning            -> 200, Status Enabled
+        //   PUT    /v.txt "one", PUT /v.txt "two"  -> 200 each, x-amz-version-id differs
+        //   GET    ?versions              -> 200 ListVersionsResult, 2 Versions (latest first)
+        //   GET    /v.txt?versionId=<first> -> 200 "one"
+        //   DELETE /v.txt                 -> 204, x-amz-delete-marker: true, x-amz-version-id
+        //   GET    /v.txt                 -> 404 NoSuchKey, x-amz-delete-marker: true
+        //   GET    /v.txt?versionId=<second> -> 200 "two" (still there)
+        //   DELETE /v.txt?versionId=<each version and the marker> -> 204
+        //   DELETE the bucket              -> 204
+        spec.it("versions a bucket's objects") callback {
+            rec, ok = begin("versions_a_buckets_objects")
+            if ok == 0 { return }
+            make_bucket("tcae-versions")
+            st, b = sxq("GET", "/tcae-versions", ["versioning"])
+            spec.assert_eq(st, 200, "versioning is unset: ${b}")
+            spec.assert_false(string.contains(b, "<Status>") == 1, "no Status yet")
+            cfg = "<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Status>Enabled</Status></VersioningConfiguration>"
+            st, b = sxput("/tcae-versions", ["versioning"], nothing(), cfg, "application/xml")
+            spec.assert_eq(st, 200, "enable versioning: ${b}")
+            st, b = sxq("GET", "/tcae-versions", ["versioning"])
+            spec.assert_contains(b, "<Status>Enabled</Status>", "versioning is on: ${b}")
+
+            put_object("tcae-versions", "v.txt", "one")
+            v1 = rh("x-amz-version-id")
+            spec.assert_true(string.length(v1) > 0, "a version id for the first write")
+            put_object("tcae-versions", "v.txt", "two")
+            v2 = rh("x-amz-version-id")
+            spec.assert_true(string.length(v2) > 0 && v2 != v1, "a different version id for the second write")
+
+            st, b = sxq("GET", "/tcae-versions", ["versions"])
+            spec.assert_eq(st, 200, "list versions: ${b}")
+            spec.assert_contains(b, "<ListVersionsResult", "a versions listing")
+            spec.assert_contains(b, "<VersionId>${v2}</VersionId>", "the latest version")
+            spec.assert_contains(b, "<VersionId>${v1}</VersionId>", "the older version")
+            st, b = sxq("GET", "/tcae-versions/v.txt", ["versionId=${v1}"])
+            spec.assert_eq(st, 200, "the first version: ${b}")
+            spec.assert_str_eq(b, "one", "its content")
+
+            st, b = sx("DELETE", "/tcae-versions/v.txt")
+            spec.assert_eq(st, 204, "delete leaves a marker: ${b}")
+            spec.assert_str_eq(rh("x-amz-delete-marker"), "true", "a delete marker")
+            marker = rh("x-amz-version-id")
+            st, b = sx("GET", "/tcae-versions/v.txt")
+            assert_error(st, b, 404, "NoSuchKey", "the marked key")
+            spec.assert_str_eq(rh("x-amz-delete-marker"), "true", "the 404 says why")
+            st, b = sxq("GET", "/tcae-versions/v.txt", ["versionId=${v2}"])
+            spec.assert_eq(st, 200, "the second version is still there: ${b}")
+            spec.assert_str_eq(b, "two", "its content")
+
+            st, b = sxq("DELETE", "/tcae-versions/v.txt", ["versionId=${marker}"])
+            spec.assert_eq(st, 204, "remove the marker")
+            st, b = sxq("DELETE", "/tcae-versions/v.txt", ["versionId=${v1}"])
+            spec.assert_eq(st, 204, "remove the first version")
+            st, b = sxq("DELETE", "/tcae-versions/v.txt", ["versionId=${v2}"])
+            spec.assert_eq(st, 204, "remove the second version")
+            drop_bucket("tcae-versions")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (bucket tcae-tags, key doc.txt):
+        //   PUT    /tcae-tags/doc.txt "hello"                -> 200
+        //   GET    /tcae-tags/doc.txt?tagging                -> 200, empty TagSet
+        //   PUT    /tcae-tags/doc.txt?tagging <Tagging>env=test, team=qa</Tagging> -> 200
+        //   GET    ?tagging                                  -> 200, both tags
+        //   HEAD   /tcae-tags/doc.txt                        -> 200, x-amz-tagging-count: 2
+        //   DELETE ?tagging                                  -> 204
+        //   PUT    /tcae-tags/tagged.txt with x-amz-tagging: color=blue -> 200
+        //   GET    /tcae-tags/tagged.txt?tagging             -> 200, color=blue
+        //   GET    /tcae-tags?tagging                        -> 404 NoSuchTagSet (bucket)
+        //   PUT    /tcae-tags?tagging <Tagging>owner=qa</Tagging> -> 200
+        //   GET    /tcae-tags?tagging                        -> 200, owner=qa
+        //   DELETE /tcae-tags?tagging                        -> 204
+        //   DELETE both objects, then the bucket
+        spec.it("tags buckets and objects") callback {
+            rec, ok = begin("tags_buckets_and_objects")
+            if ok == 0 { return }
+            make_bucket("tcae-tags")
+            put_object("tcae-tags", "doc.txt", "hello")
+            st, b = sxq("GET", "/tcae-tags/doc.txt", ["tagging"])
+            spec.assert_eq(st, 200, "no tags yet: ${b}")
+            spec.assert_contains(b, "<TagSet></TagSet>", "an empty tag set")
+            tags = "<Tagging><TagSet><Tag><Key>env</Key><Value>test</Value></Tag><Tag><Key>team</Key><Value>qa</Value></Tag></TagSet></Tagging>"
+            st, b = sxput("/tcae-tags/doc.txt", ["tagging"], nothing(), tags, "application/xml")
+            spec.assert_eq(st, 200, "tag the object: ${b}")
+            st, b = sxq("GET", "/tcae-tags/doc.txt", ["tagging"])
+            spec.assert_eq(st, 200, "read the tags: ${b}")
+            spec.assert_contains(b, "<Key>env</Key><Value>test</Value>", "env=test")
+            spec.assert_contains(b, "<Key>team</Key><Value>qa</Value>", "team=qa")
+            st, b = sx("HEAD", "/tcae-tags/doc.txt")
+            spec.assert_eq(st, 200, "HEAD")
+            spec.assert_str_eq(rh("x-amz-tagging-count"), "2", "two tags counted")
+            st, b = sxq("DELETE", "/tcae-tags/doc.txt", ["tagging"])
+            spec.assert_eq(st, 204, "remove the tags")
+            st, b = s3call(1, "PUT", "/tcae-tags/tagged.txt", nothing(), ["x-amz-tagging:color=blue"], nothing(), "x", "text/plain")
+            spec.assert_eq(st, 200, "put with tags in a header: ${b}")
+            st, b = sxq("GET", "/tcae-tags/tagged.txt", ["tagging"])
+            spec.assert_contains(b, "<Key>color</Key><Value>blue</Value>", "color=blue: ${b}")
+
+            st, b = sxq("GET", "/tcae-tags", ["tagging"])
+            assert_error(st, b, 404, "NoSuchTagSet", "a bucket with no tags")
+            btags = "<Tagging><TagSet><Tag><Key>owner</Key><Value>qa</Value></Tag></TagSet></Tagging>"
+            st, b = sxput("/tcae-tags", ["tagging"], nothing(), btags, "application/xml")
+            spec.assert_eq(st, 200, "tag the bucket: ${b}")
+            st, b = sxq("GET", "/tcae-tags", ["tagging"])
+            spec.assert_eq(st, 200, "read the bucket's tags: ${b}")
+            spec.assert_contains(b, "<Key>owner</Key><Value>qa</Value>", "owner=qa")
+            st, b = sxq("DELETE", "/tcae-tags", ["tagging"])
+            spec.assert_eq(st, 204, "remove the bucket's tags")
+
+            st, b = sx("DELETE", "/tcae-tags/doc.txt")
+            spec.assert_eq(st, 204, "delete doc.txt")
+            st, b = sx("DELETE", "/tcae-tags/tagged.txt")
+            spec.assert_eq(st, 204, "delete tagged.txt")
+            drop_bucket("tcae-tags")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (bucket tcae-policy, key public.txt): a policy letting
+        // everyone read objects, and the anonymous GET it allows.
+        //   PUT    /tcae-policy/public.txt "open"        -> 200
+        //   GET    ... (anonymous: no signature)         -> 403 AccessDenied
+        //   GET    /tcae-policy?policy                   -> 404 NoSuchBucketPolicy
+        //   PUT    /tcae-policy?policy <JSON>            -> 204
+        //   GET    /tcae-policy?policy                   -> 200 the JSON back
+        //   GET    /tcae-policy/public.txt (anonymous)   -> 200 "open"
+        //   PUT    /tcae-policy?policy {not json}        -> 400 MalformedPolicy
+        //   DELETE /tcae-policy?policy                   -> 204
+        //   GET    /tcae-policy/public.txt (anonymous)   -> 403 again
+        //   DELETE the object, the bucket
+        spec.it("sets, reads and removes a bucket policy") callback {
+            rec, ok = begin("sets_reads_and_removes_a_bucket_policy")
+            if ok == 0 { return }
+            make_bucket("tcae-policy")
+            put_object("tcae-policy", "public.txt", "open")
+            st, b = s3call(0, "GET", "/tcae-policy/public.txt", nothing(), nothing(), nothing(), "", "")
+            assert_error(st, b, 403, "AccessDenied", "anonymous before the policy")
+            st, b = sxq("GET", "/tcae-policy", ["policy"])
+            assert_error(st, b, 404, "NoSuchBucketPolicy", "no policy yet")
+            pol = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::tcae-policy/*\"]}]}"
+            st, b = sxput("/tcae-policy", ["policy"], nothing(), pol, "application/json")
+            spec.assert_eq(st, 204, "set the policy: ${b}")
+            st, b = sxq("GET", "/tcae-policy", ["policy"])
+            spec.assert_eq(st, 200, "read the policy: ${b}")
+            spec.assert_contains(b, "s3:GetObject", "the policy's action")
+            st, b = s3call(0, "GET", "/tcae-policy/public.txt", nothing(), nothing(), nothing(), "", "")
+            spec.assert_eq(st, 200, "anonymous after the policy: ${b}")
+            spec.assert_str_eq(b, "open", "the object")
+            st, b = sxput("/tcae-policy", ["policy"], nothing(), "{not json", "application/json")
+            assert_error(st, b, 400, "MalformedPolicy", "a policy that is not JSON")
+            st, b = sxq("DELETE", "/tcae-policy", ["policy"])
+            spec.assert_eq(st, 204, "remove the policy")
+            st, b = s3call(0, "GET", "/tcae-policy/public.txt", nothing(), nothing(), nothing(), "", "")
+            assert_error(st, b, 403, "AccessDenied", "anonymous after the policy is gone")
+            st, b = sx("DELETE", "/tcae-policy/public.txt")
+            spec.assert_eq(st, 204, "delete the object")
+            drop_bucket("tcae-policy")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- objects ------------------------------------------------------
+
+        // PORTING (bucket tcae-objects): bodies are text; the ETag of a plain
+        // PUT is the MD5 of the body, the same every run, so it is on the tape
+        // as the server sent it ("5d41402abc4b2a76b9719d911017c592" is md5
+        // of "hello").
+        //   PUT  /tcae-objects/dir/hello.txt "hello"  Content-Type: text/plain,
+        //        x-amz-meta-color: blue                -> 200, ETag
+        //   GET  same                                  -> 200 "hello", Content-Type,
+        //        x-amz-meta-color: blue, Content-Length, ETag, Last-Modified
+        //   HEAD same                                  -> 200 same headers, no body
+        //   PUT  same "hello, world" (overwrite)       -> 200, new ETag
+        //   GET  same                                  -> 200 "hello, world"
+        //   PUT  /tcae-objects/space%20%2B%20plus.txt  -> 200 (key "space + plus.txt")
+        //   GET  that                                  -> 200
+        //   PUT  /tcae-objects/empty.txt  (no body)    -> 200
+        //   GET  that                                  -> 200, Content-Length: 0
+        //   DELETE each                                -> 204
+        //   GET  dir/hello.txt                         -> 404 NoSuchKey
+        spec.it("puts, gets, heads, overwrites and deletes objects") callback {
+            rec, ok = begin("puts_gets_heads_overwrites_and_deletes_objects")
+            if ok == 0 { return }
+            make_bucket("tcae-objects")
+            st, b = s3call(1, "PUT", "/tcae-objects/dir/hello.txt", nothing(), ["x-amz-meta-color:blue"], nothing(), "hello", "text/plain")
+            spec.assert_eq(st, 200, "put: ${b}")
+            spec.assert_str_eq(rh("ETag"), "\"5d41402abc4b2a76b9719d911017c592\"", "the ETag is the body's MD5")
+            st, b = sx("GET", "/tcae-objects/dir/hello.txt")
+            spec.assert_eq(st, 200, "get")
+            spec.assert_str_eq(b, "hello", "the body")
+            spec.assert_str_eq(rh("Content-Type"), "text/plain", "the content type")
+            spec.assert_str_eq(rh("x-amz-meta-color"), "blue", "the user metadata")
+            spec.assert_str_eq(rh("Content-Length"), "5", "the length")
+            spec.assert_true(string.length(rh("Last-Modified")) > 0, "a Last-Modified")
+            st, b = sx("HEAD", "/tcae-objects/dir/hello.txt")
+            spec.assert_eq(st, 200, "head")
+            spec.assert_str_eq(rh("x-amz-meta-color"), "blue", "head: the user metadata")
+            put_object("tcae-objects", "dir/hello.txt", "hello, world")
+            st, b = sx("GET", "/tcae-objects/dir/hello.txt")
+            spec.assert_str_eq(b, "hello, world", "overwritten")
+            put_object("tcae-objects", "space + plus.txt", "odd name")
+            st, b = sx("GET", "/tcae-objects/${kp("space + plus.txt")}")
+            spec.assert_eq(st, 200, "a key with a space and a plus: ${b}")
+            spec.assert_str_eq(b, "odd name", "its body")
+            put_object("tcae-objects", "empty.txt", "")
+            st, b = sx("GET", "/tcae-objects/empty.txt")
+            spec.assert_eq(st, 200, "an empty object: ${b}")
+            spec.assert_str_eq(rh("Content-Length"), "0", "no bytes")
+            st, b = sx("DELETE", "/tcae-objects/dir/hello.txt")
+            spec.assert_eq(st, 204, "delete")
+            st, b = sx("DELETE", "/tcae-objects/${kp("space + plus.txt")}")
+            spec.assert_eq(st, 204, "delete the odd name")
+            st, b = sx("DELETE", "/tcae-objects/empty.txt")
+            spec.assert_eq(st, 204, "delete the empty one")
+            st, b = sx("GET", "/tcae-objects/dir/hello.txt")
+            assert_error(st, b, 404, "NoSuchKey", "after delete")
+            drop_bucket("tcae-objects")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (bucket tcae-ranges, key digits.txt = "0123456789"):
+        //   GET  Range: bytes=2-5          -> 206 "2345", Content-Range: bytes 2-5/10
+        //   GET  Range: bytes=7-           -> 206 "789"
+        //   GET  Range: bytes=-3           -> 206 "789" (the last three)
+        //   GET  Range: bytes=20-30        -> 416 InvalidRange
+        //   GET  If-None-Match: <ETag>     -> 304 (no body)
+        //   GET  If-Match: "nope"          -> 412 PreconditionFailed
+        //   GET  If-Match: <ETag>          -> 200
+        //   HEAD If-None-Match: <ETag>     -> 304
+        // The ETag is the MD5 of the body, so the tape holds it as is.
+        spec.it("serves byte ranges and honours conditional requests") callback {
+            rec, ok = begin("serves_byte_ranges_and_honours_conditional_requests")
+            if ok == 0 { return }
+            make_bucket("tcae-ranges")
+            put_object("tcae-ranges", "digits.txt", "0123456789")
+            etag = rh("ETag")
+            p = "/tcae-ranges/digits.txt"
+            st, b = s3call(1, "GET", p, nothing(), nothing(), ["Range: bytes=2-5"], "", "")
+            spec.assert_eq(st, 206, "a range: ${b}")
+            spec.assert_str_eq(b, "2345", "its bytes")
+            spec.assert_str_eq(rh("Content-Range"), "bytes 2-5/10", "Content-Range")
+            st, b = s3call(1, "GET", p, nothing(), nothing(), ["Range: bytes=7-"], "", "")
+            spec.assert_eq(st, 206, "an open-ended range")
+            spec.assert_str_eq(b, "789", "its bytes")
+            st, b = s3call(1, "GET", p, nothing(), nothing(), ["Range: bytes=-3"], "", "")
+            spec.assert_eq(st, 206, "a suffix range")
+            spec.assert_str_eq(b, "789", "its bytes")
+            st, b = s3call(1, "GET", p, nothing(), nothing(), ["Range: bytes=20-30"], "", "")
+            assert_error(st, b, 416, "InvalidRange", "a range past the end")
+            st, b = s3call(1, "GET", p, nothing(), nothing(), ["If-None-Match: ${etag}"], "", "")
+            spec.assert_eq(st, 304, "unchanged since the ETag")
+            st, b = s3call(1, "GET", p, nothing(), nothing(), ["If-Match: \"nope\""], "", "")
+            assert_error(st, b, 412, "PreconditionFailed", "If-Match of another ETag")
+            st, b = s3call(1, "GET", p, nothing(), nothing(), ["If-Match: ${etag}"], "", "")
+            spec.assert_eq(st, 200, "If-Match of the right ETag")
+            st, b = s3call(1, "HEAD", p, nothing(), nothing(), ["If-None-Match: ${etag}"], "", "")
+            spec.assert_eq(st, 304, "HEAD, unchanged")
+            st, b = sx("DELETE", p)
+            spec.assert_eq(st, 204, "delete")
+            drop_bucket("tcae-ranges")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (bucket tcae-copy):
+        //   PUT  /tcae-copy/src.txt "source"  x-amz-meta-kind: original   -> 200
+        //   PUT  /tcae-copy/copy.txt  x-amz-copy-source: /tcae-copy/src.txt -> 200
+        //        CopyObjectResult (ETag, LastModified); the metadata is copied
+        //   HEAD /tcae-copy/copy.txt  -> x-amz-meta-kind: original
+        //   PUT  /tcae-copy/replaced.txt  x-amz-copy-source: /tcae-copy/src.txt,
+        //        x-amz-metadata-directive: REPLACE, x-amz-meta-kind: replaced -> 200
+        //   HEAD /tcae-copy/replaced.txt -> x-amz-meta-kind: replaced
+        //   GET  /tcae-copy/copy.txt -> "source"
+        //   PUT  copy-source of a missing key -> 404 NoSuchKey
+        //   DELETE the three, the bucket
+        // (x-amz-copy-source is one of the headers a port signs.)
+        spec.it("copies an object, keeping or replacing its metadata") callback {
+            rec, ok = begin("copies_an_object_keeping_or_replacing_its_metadata")
+            if ok == 0 { return }
+            make_bucket("tcae-copy")
+            st, b = s3call(1, "PUT", "/tcae-copy/src.txt", nothing(), ["x-amz-meta-kind:original"], nothing(), "source", "text/plain")
+            spec.assert_eq(st, 200, "put the source: ${b}")
+            st, b = s3call(1, "PUT", "/tcae-copy/copy.txt", nothing(), ["x-amz-copy-source:/tcae-copy/src.txt"], nothing(), "", "")
+            spec.assert_eq(st, 200, "copy: ${b}")
+            spec.assert_contains(b, "<CopyObjectResult", "a CopyObjectResult")
+            st, b = sx("HEAD", "/tcae-copy/copy.txt")
+            spec.assert_str_eq(rh("x-amz-meta-kind"), "original", "metadata carried over")
+            st, b = s3call(1, "PUT", "/tcae-copy/replaced.txt", nothing(), ["x-amz-copy-source:/tcae-copy/src.txt", "x-amz-meta-kind:replaced", "x-amz-metadata-directive:REPLACE"], nothing(), "", "")
+            spec.assert_eq(st, 200, "copy with new metadata: ${b}")
+            st, b = sx("HEAD", "/tcae-copy/replaced.txt")
+            spec.assert_str_eq(rh("x-amz-meta-kind"), "replaced", "metadata replaced")
+            st, b = sx("GET", "/tcae-copy/copy.txt")
+            spec.assert_str_eq(b, "source", "the copy's body")
+            st, b = s3call(1, "PUT", "/tcae-copy/nothing.txt", nothing(), ["x-amz-copy-source:/tcae-copy/missing.txt"], nothing(), "", "")
+            assert_error(st, b, 404, "NoSuchKey", "copying a missing key")
+            st, b = sx("DELETE", "/tcae-copy/src.txt")
+            st, b = sx("DELETE", "/tcae-copy/copy.txt")
+            st, b = sx("DELETE", "/tcae-copy/replaced.txt")
+            drop_bucket("tcae-copy")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (bucket tcae-delete): a multi-object delete needs a
+        // Content-MD5 (base64 of the raw MD5 of the XML body: an unsigned
+        // header, deterministic here because the body is fixed).
+        //   PUT  a.txt, b.txt, c.txt                  -> 200
+        //   DELETE /tcae-delete/a.txt                 -> 204
+        //   DELETE /tcae-delete/a.txt (again)         -> 204 (S3 deletes are idempotent)
+        //   POST /tcae-delete?delete  <Delete> b.txt, c.txt, missing.txt -> 200
+        //        DeleteResult: each key under <Deleted> (a missing key too)
+        //   POST ?delete with <Quiet>true</Quiet>     -> 200, an empty DeleteResult
+        //   POST ?delete without Content-MD5          -> 400 (InvalidRequest or MissingContentMD5)
+        //   GET  /tcae-delete?list-type=2             -> 200, KeyCount 0
+        spec.it("deletes objects one at a time and in bulk") callback {
+            rec, ok = begin("deletes_objects_one_at_a_time_and_in_bulk")
+            if ok == 0 { return }
+            make_bucket("tcae-delete")
+            put_object("tcae-delete", "a.txt", "a")
+            put_object("tcae-delete", "b.txt", "b")
+            put_object("tcae-delete", "c.txt", "c")
+            st, b = sx("DELETE", "/tcae-delete/a.txt")
+            spec.assert_eq(st, 204, "delete one")
+            st, b = sx("DELETE", "/tcae-delete/a.txt")
+            spec.assert_eq(st, 204, "delete it again")
+            body = "<Delete><Object><Key>b.txt</Key></Object><Object><Key>c.txt</Key></Object><Object><Key>missing.txt</Key></Object></Delete>"
+            st, b = s3call(1, "POST", "/tcae-delete", ["delete"], nothing(), ["Content-MD5: ${md5_b64(body)}"], body, "application/xml")
+            spec.assert_eq(st, 200, "bulk delete: ${b}")
+            spec.assert_contains(b, "<Deleted><Key>b.txt</Key></Deleted>", "b.txt deleted")
+            spec.assert_contains(b, "<Deleted><Key>c.txt</Key></Deleted>", "c.txt deleted")
+            spec.assert_contains(b, "<Deleted><Key>missing.txt</Key></Deleted>", "a missing key counts as deleted")
+            put_object("tcae-delete", "d.txt", "d")
+            quiet = "<Delete><Quiet>true</Quiet><Object><Key>d.txt</Key></Object></Delete>"
+            st, b = s3call(1, "POST", "/tcae-delete", ["delete"], nothing(), ["Content-MD5: ${md5_b64(quiet)}"], quiet, "application/xml")
+            spec.assert_eq(st, 200, "quiet bulk delete: ${b}")
+            spec.assert_false(string.contains(b, "<Deleted>") == 1, "quiet: nothing is listed")
+            st, b = s3call(1, "POST", "/tcae-delete", ["delete"], nothing(), nothing(), body, "application/xml")
+            spec.assert_eq(st, 400, "no Content-MD5: ${b}")
+            st, b = sxq("GET", "/tcae-delete", ["list-type=2"])
+            spec.assert_contains(b, "<KeyCount>0</KeyCount>", "empty: ${b}")
+            drop_bucket("tcae-delete")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- listing ------------------------------------------------------
+
+        // PORTING (bucket tcae-list; keys a.txt, b.txt, logs/2026/jan.txt,
+        // logs/2026/feb.txt, logs/2025/dec.txt, readme.md, each holding its
+        // own name):
+        //   GET ?list-type=2                          -> all six keys, in key order
+        //   GET ?list-type=2&prefix=logs/             -> the three logs
+        //   GET ?delimiter=%2F&list-type=2            -> a.txt b.txt readme.md as Contents,
+        //                                                logs/ as a CommonPrefix
+        //   GET ?delimiter=%2F&list-type=2&prefix=logs%2F -> CommonPrefixes logs/2025/, logs/2026/
+        //   GET ?list-type=2&max-keys=2               -> 2 keys, IsTruncated true,
+        //                                                NextContinuationToken
+        //   GET ?continuation-token=<it>&list-type=2&max-keys=2 -> the next 2 keys
+        //   GET ?continuation-token=<it>&list-type=2  -> the rest, IsTruncated false
+        //   GET ?list-type=2&start-after=b.txt        -> keys after b.txt
+        //   GET ?fetch-owner=true&list-type=2&max-keys=1 -> an Owner on the key
+        //   GET ?encoding-type=url&list-type=2&prefix=logs%2F2026 -> url-encoded keys
+        //   GET ?max-keys=3  (the old v1 listing)     -> IsTruncated, NextMarker absent
+        //   GET ?list-type=2&max-keys=-1              -> 400 InvalidArgument
+        // The continuation token is opaque: it is on the tape as {{token-N}}
+        // and goes back as given (percent-encoded, braces left alone).
+        spec.it("lists objects with prefix, delimiter and pages") callback {
+            rec, ok = begin("lists_objects_with_prefix_delimiter_and_pages")
+            if ok == 0 { return }
+            make_bucket("tcae-list")
+            keys = ["a.txt", "b.txt", "logs/2026/jan.txt", "logs/2026/feb.txt", "logs/2025/dec.txt", "readme.md"]
+            i = 0
+            while i < keys.len {
+                put_object("tcae-list", keys[i], keys[i])
+                i = i + 1
+            }
+            st, b = sxq("GET", "/tcae-list", ["list-type=2"])
+            spec.assert_eq(st, 200, "list all: ${b}")
+            spec.assert_contains(b, "<KeyCount>6</KeyCount>", "six keys")
+            ia = string.index_of(b, "<Key>a.txt</Key>")
+            il = string.index_of(b, "<Key>logs/2025/dec.txt</Key>")
+            ir = string.index_of(b, "<Key>readme.md</Key>")
+            spec.assert_true(ia >= 0 && il > ia && ir > il, "in key order")
+            st, b = sxq("GET", "/tcae-list", ["list-type=2", "prefix=logs/"])
+            spec.assert_contains(b, "<KeyCount>3</KeyCount>", "three logs: ${b}")
+            st, b = sxq("GET", "/tcae-list", ["delimiter=/", "list-type=2"])
+            spec.assert_contains(b, "<Prefix>logs/</Prefix></CommonPrefixes>", "logs/ rolled up: ${b}")
+            spec.assert_contains(b, "<Key>readme.md</Key>", "a top-level key")
+            spec.assert_false(string.contains(b, "<Key>logs/") == 1, "nothing under logs/ listed")
+            st, b = sxq("GET", "/tcae-list", ["delimiter=/", "list-type=2", "prefix=logs/"])
+            spec.assert_contains(b, "<Prefix>logs/2025/</Prefix>", "logs/2025/ rolled up: ${b}")
+            spec.assert_contains(b, "<Prefix>logs/2026/</Prefix>", "logs/2026/ rolled up")
+            st, b = sxq("GET", "/tcae-list", ["list-type=2", "max-keys=2"])
+            spec.assert_contains(b, "<IsTruncated>true</IsTruncated>", "truncated: ${b}")
+            spec.assert_contains(b, "<KeyCount>2</KeyCount>", "two keys")
+            token = xml_val(b, "NextContinuationToken")
+            spec.assert_true(string.length(token) > 0, "a continuation token")
+            st, b = sxq("GET", "/tcae-list", ["continuation-token=${token}", "list-type=2", "max-keys=2"])
+            spec.assert_eq(st, 200, "the next page: ${b}")
+            spec.assert_contains(b, "<KeyCount>2</KeyCount>", "two more")
+            token2 = xml_val(b, "NextContinuationToken")
+            st, b = sxq("GET", "/tcae-list", ["continuation-token=${token2}", "list-type=2"])
+            spec.assert_contains(b, "<IsTruncated>false</IsTruncated>", "the last page: ${b}")
+            spec.assert_contains(b, "<KeyCount>2</KeyCount>", "the remaining two")
+            st, b = sxq("GET", "/tcae-list", ["list-type=2", "start-after=b.txt"])
+            spec.assert_false(string.contains(b, "<Key>a.txt</Key>") == 1, "a.txt is before the start")
+            spec.assert_contains(b, "<KeyCount>4</KeyCount>", "four after b.txt: ${b}")
+            st, b = sxq("GET", "/tcae-list", ["fetch-owner=true", "list-type=2", "max-keys=1"])
+            spec.assert_contains(b, "<Owner>", "an owner: ${b}")
+            st, b = sxq("GET", "/tcae-list", ["encoding-type=url", "list-type=2", "prefix=logs/2026"])
+            spec.assert_contains(b, "<EncodingType>url</EncodingType>", "url encoding: ${b}")
+            st, b = sxq("GET", "/tcae-list", ["max-keys=3"])
+            spec.assert_eq(st, 200, "the v1 listing: ${b}")
+            spec.assert_contains(b, "<IsTruncated>true</IsTruncated>", "v1 truncated")
+            st, b = sxq("GET", "/tcae-list", ["list-type=2", "max-keys=-1"])
+            assert_error(st, b, 400, "InvalidArgument", "a negative max-keys")
+            i = 0
+            while i < keys.len {
+                st, b = sx("DELETE", "/tcae-list/${kp(keys[i])}")
+                i = i + 1
+            }
+            drop_bucket("tcae-list")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- multipart upload ---------------------------------------------
+
+        // PORTING (bucket tcae-multi, key big.bin): the upload id is opaque,
+        // {{uploadid-N}} on the tape, sent back as given. Only the LAST part
+        // may be under 5 MiB, so this upload has a single small part: a
+        // bigger one would put megabytes on a markdown tape.
+        //   POST /tcae-multi/big.bin?uploads          -> 200 InitiateMultipartUploadResult, UploadId
+        //   PUT  ?partNumber=1&uploadId=<id> "part one" -> 200, ETag (md5 of the part)
+        //   GET  ?uploadId=<id>                       -> 200 ListPartsResult, Part 1
+        //   GET  /tcae-multi?uploads                  -> 200 ListMultipartUploadsResult, the upload
+        //   POST ?uploadId=<id> <CompleteMultipartUpload><Part>1 + its ETag</Part> -> 200
+        //        CompleteMultipartUploadResult, ETag "<md5 of md5s>-1"
+        //   GET  /tcae-multi/big.bin                  -> 200 "part one"
+        //   GET  /tcae-multi?uploads                  -> 200, no uploads left
+        //   DELETE the object, the bucket
+        spec.it("uploads an object in parts") callback {
+            rec, ok = begin("uploads_an_object_in_parts")
+            if ok == 0 { return }
+            make_bucket("tcae-multi")
+            st, b = sxq("POST", "/tcae-multi/big.bin", ["uploads"])
+            spec.assert_eq(st, 200, "initiate: ${b}")
+            id = xml_val(b, "UploadId")
+            spec.assert_true(string.length(id) > 0, "an upload id: ${b}")
+            st, b = s3call(1, "PUT", "/tcae-multi/big.bin", ["partNumber=1", "uploadId=${id}"], nothing(), nothing(), "part one", "application/octet-stream")
+            spec.assert_eq(st, 200, "upload part 1: ${b}")
+            etag = rh("ETag")
+            spec.assert_true(string.length(etag) > 0, "the part's ETag")
+            st, b = sxq("GET", "/tcae-multi/big.bin", ["uploadId=${id}"])
+            spec.assert_eq(st, 200, "list parts: ${b}")
+            spec.assert_contains(b, "<PartNumber>1</PartNumber>", "part 1 is listed")
+            st, b = sxq("GET", "/tcae-multi", ["uploads"])
+            spec.assert_eq(st, 200, "list uploads: ${b}")
+            spec.assert_contains(b, "<Key>big.bin</Key>", "the upload is listed")
+            done = "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>${etag}</ETag></Part></CompleteMultipartUpload>"
+            st, b = s3call(1, "POST", "/tcae-multi/big.bin", ["uploadId=${id}"], nothing(), nothing(), done, "application/xml")
+            spec.assert_eq(st, 200, "complete: ${b}")
+            spec.assert_contains(b, "<CompleteMultipartUploadResult", "a result document")
+            st, b = sx("GET", "/tcae-multi/big.bin")
+            spec.assert_eq(st, 200, "get the object")
+            spec.assert_str_eq(b, "part one", "assembled from its one part")
+            st, b = sxq("GET", "/tcae-multi", ["uploads"])
+            spec.assert_false(string.contains(b, "<Upload>") == 1, "no upload left: ${b}")
+            st, b = sx("DELETE", "/tcae-multi/big.bin")
+            spec.assert_eq(st, 204, "delete the object")
+            drop_bucket("tcae-multi")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (bucket tcae-abort, key never.bin):
+        //   POST ?uploads                         -> 200, UploadId
+        //   PUT  ?partNumber=1&uploadId=<id>      -> 200
+        //   DELETE ?uploadId=<id>                 -> 204 (abort)
+        //   GET  ?uploadId=<id>                   -> 404 NoSuchUpload
+        //   PUT  ?partNumber=1&uploadId=<id>      -> 404 NoSuchUpload
+        //   POST ?uploadId=<id> <Complete..>      -> 404 NoSuchUpload
+        //   GET  /tcae-abort/never.bin            -> 404 NoSuchKey
+        //   POST ?uploadId=bogus                  -> 404 NoSuchUpload
+        spec.it("aborts a multipart upload") callback {
+            rec, ok = begin("aborts_a_multipart_upload")
+            if ok == 0 { return }
+            make_bucket("tcae-abort")
+            st, b = sxq("POST", "/tcae-abort/never.bin", ["uploads"])
+            spec.assert_eq(st, 200, "initiate: ${b}")
+            id = xml_val(b, "UploadId")
+            st, b = s3call(1, "PUT", "/tcae-abort/never.bin", ["partNumber=1", "uploadId=${id}"], nothing(), nothing(), "x", "application/octet-stream")
+            spec.assert_eq(st, 200, "upload a part: ${b}")
+            etag = rh("ETag")
+            st, b = sxq("DELETE", "/tcae-abort/never.bin", ["uploadId=${id}"])
+            spec.assert_eq(st, 204, "abort")
+            st, b = sxq("GET", "/tcae-abort/never.bin", ["uploadId=${id}"])
+            assert_error(st, b, 404, "NoSuchUpload", "list the parts of an aborted upload")
+            st, b = s3call(1, "PUT", "/tcae-abort/never.bin", ["partNumber=1", "uploadId=${id}"], nothing(), nothing(), "x", "application/octet-stream")
+            assert_error(st, b, 404, "NoSuchUpload", "upload to an aborted upload")
+            done = "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>${etag}</ETag></Part></CompleteMultipartUpload>"
+            st, b = s3call(1, "POST", "/tcae-abort/never.bin", ["uploadId=${id}"], nothing(), nothing(), done, "application/xml")
+            assert_error(st, b, 404, "NoSuchUpload", "complete an aborted upload")
+            st, b = sx("GET", "/tcae-abort/never.bin")
+            assert_error(st, b, 404, "NoSuchKey", "nothing was assembled")
+            st, b = s3call(1, "POST", "/tcae-abort/never.bin", ["uploadId=bogus"], nothing(), nothing(), done, "application/xml")
+            assert_error(st, b, 404, "NoSuchUpload", "an upload id never issued")
+            drop_bucket("tcae-abort")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (bucket tcae-parts, key two.bin): the rules about parts.
+        //   POST ?uploads                         -> 200, UploadId
+        //   PUT  ?partNumber=1 "small", ?partNumber=2 "tiny" -> 200 each
+        //   POST ?uploadId <Complete: 1 and 2>    -> 400 EntityTooSmall
+        //   POST ?uploadId <Complete: 2 then 1>   -> 400 InvalidPartOrder
+        //   POST ?uploadId <Complete: 1 with a wrong ETag> -> 400 InvalidPart
+        //   POST ?uploadId <Complete: 2 only, last part> -> 200 (a lone last part may be small)
+        //   GET  /tcae-parts/two.bin              -> "tiny"
+        //   DELETE object, bucket
+        spec.it("refuses small parts, misordered parts and wrong part ETags") callback {
+            rec, ok = begin("refuses_small_parts_misordered_parts_and_wrong_part_etags")
+            if ok == 0 { return }
+            make_bucket("tcae-parts")
+            st, b = sxq("POST", "/tcae-parts/two.bin", ["uploads"])
+            spec.assert_eq(st, 200, "initiate: ${b}")
+            id = xml_val(b, "UploadId")
+            st, b = s3call(1, "PUT", "/tcae-parts/two.bin", ["partNumber=1", "uploadId=${id}"], nothing(), nothing(), "small", "application/octet-stream")
+            spec.assert_eq(st, 200, "part 1: ${b}")
+            e1 = rh("ETag")
+            st, b = s3call(1, "PUT", "/tcae-parts/two.bin", ["partNumber=2", "uploadId=${id}"], nothing(), nothing(), "tiny", "application/octet-stream")
+            spec.assert_eq(st, 200, "part 2: ${b}")
+            e2 = rh("ETag")
+            p1 = "<Part><PartNumber>1</PartNumber><ETag>${e1}</ETag></Part>"
+            p2 = "<Part><PartNumber>2</PartNumber><ETag>${e2}</ETag></Part>"
+            both = "<CompleteMultipartUpload>${p1}${p2}</CompleteMultipartUpload>"
+            st, b = s3call(1, "POST", "/tcae-parts/two.bin", ["uploadId=${id}"], nothing(), nothing(), both, "application/xml")
+            assert_error(st, b, 400, "EntityTooSmall", "a first part under 5 MiB")
+            swapped = "<CompleteMultipartUpload>${p2}${p1}</CompleteMultipartUpload>"
+            st, b = s3call(1, "POST", "/tcae-parts/two.bin", ["uploadId=${id}"], nothing(), nothing(), swapped, "application/xml")
+            assert_error(st, b, 400, "InvalidPartOrder", "parts out of order")
+            wrong = "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>\"00000000000000000000000000000000\"</ETag></Part></CompleteMultipartUpload>"
+            st, b = s3call(1, "POST", "/tcae-parts/two.bin", ["uploadId=${id}"], nothing(), nothing(), wrong, "application/xml")
+            assert_error(st, b, 400, "InvalidPart", "a part with another ETag")
+            lone = "<CompleteMultipartUpload>${p2}</CompleteMultipartUpload>"
+            st, b = s3call(1, "POST", "/tcae-parts/two.bin", ["uploadId=${id}"], nothing(), nothing(), lone, "application/xml")
+            spec.assert_eq(st, 200, "the last part alone: ${b}")
+            st, b = sx("GET", "/tcae-parts/two.bin")
+            spec.assert_str_eq(b, "tiny", "only part 2 was kept")
+            st, b = sx("DELETE", "/tcae-parts/two.bin")
+            spec.assert_eq(st, 204, "delete the object")
+            drop_bucket("tcae-parts")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- presigned URLs -----------------------------------------------
+
+        // PORTING (bucket tcae-presign, key shared.txt = "via a link"): the
+        // requests carry NO Authorization header: the credentials, date,
+        // expiry and signature are in the query string. Those values differ
+        // every second, so the tape holds constants for the date
+        // (X-Amz-Date=20000101T000000Z), the credential's date
+        // (%2F20000101%2F) and the signature (64 zeros); a replaying port
+        // sends exactly those, built by hand (its SDK's presigner would make
+        // other values, which replay would refuse). Nothing is verified on
+        // replay: the 200 and the 403s are in the recorded responses.
+        //   PUT  /tcae-presign/shared.txt (signed normally)       -> 200
+        //   GET  /tcae-presign/shared.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256
+        //        &X-Amz-Credential=tcae-access%2F20000101%2Fus-east-1%2Fs3%2Faws4_request
+        //        &X-Amz-Date=20000101T000000Z&X-Amz-Expires=300
+        //        &X-Amz-Signature=<64 zeros>&X-Amz-SignedHeaders=host
+        //        (no Authorization)                              -> 200 "via a link"
+        //   GET  the same with X-Amz-Expires=1, sent after it ran out
+        //        (the test waits 2 s live)                        -> 403 AccessDenied "Request has expired"
+        //   GET  the same, signed with a wrong secret            -> 403 SignatureDoesNotMatch
+        //   DELETE the object, the bucket (signed normally)
+        spec.it("serves an object through a presigned URL") callback {
+            rec, ok = begin("serves_an_object_through_a_presigned_url")
+            if ok == 0 { return }
+            make_bucket("tcae-presign")
+            put_object("tcae-presign", "shared.txt", "via a link")
+            p = "/tcae-presign/shared.txt"
+            st, b = s3call(0, "GET", p, presign_pairs("GET", p, ACCESS, SECRET, 300), nothing(), nothing(), "", "")
+            spec.assert_eq(st, 200, "the presigned GET: ${b}")
+            spec.assert_str_eq(b, "via a link", "the object")
+            expired = presign_pairs("GET", p, ACCESS, SECRET, 1)
+            if servirtium.live() == 1 { sleep(2100) }
+            st, b = s3call(0, "GET", p, expired, nothing(), nothing(), "", "")
+            assert_error(st, b, 403, "AccessDenied", "an expired link")
+            spec.assert_contains(b, "expired", "it says so")
+            st, b = s3call(0, "GET", p, presign_pairs("GET", p, ACCESS, WRONG_SECRET, 300), nothing(), nothing(), "", "")
+            assert_error(st, b, 403, "SignatureDoesNotMatch", "a link signed with a wrong secret")
+            st, b = sx("DELETE", p)
+            spec.assert_eq(st, 204, "delete the object")
+            drop_bucket("tcae-presign")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- the representative errors ------------------------------------
+
+        // PORTING (bucket tcae-errors): errors a client has to handle that
+        // the cases above did not show.
+        //   GET    /tcae-errors/nothing.txt        -> 404 NoSuchKey (names the key)
+        //   HEAD   /tcae-errors/nothing.txt        -> 404, no body
+        //   DELETE /tcae-errors  (holding k.txt)   -> 409 BucketNotEmpty
+        //   PUT    ?versioning <Status>Bogus</Status> -> 400 IllegalVersioningConfigurationException
+        //   POST   /tcae-errors/k.txt (no query)   -> 405 MethodNotAllowed
+        //   GET    /tcae-errors/k.txt?versionId=nope -> 400 InvalidArgument (not a version id)
+        //   PUT    /tcae-errors/k.txt x-amz-copy-source: /nope-bucket/k.txt -> 404 NoSuchBucket
+        //   then DELETE k.txt and the bucket       -> 204, 204
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses")
+            if ok == 0 { return }
+            make_bucket("tcae-errors")
+            put_object("tcae-errors", "k.txt", "kept")
+            st, b = sx("GET", "/tcae-errors/nothing.txt")
+            assert_error(st, b, 404, "NoSuchKey", "a missing key")
+            spec.assert_contains(b, "<Key>nothing.txt</Key>", "names the key")
+            st, b = sx("HEAD", "/tcae-errors/nothing.txt")
+            spec.assert_eq(st, 404, "HEAD of a missing key")
+            st, b = sx("DELETE", "/tcae-errors")
+            assert_error(st, b, 409, "BucketNotEmpty", "deleting a bucket that holds an object")
+            st, b = sxput("/tcae-errors", ["versioning"], nothing(), "<VersioningConfiguration><Status>Bogus</Status></VersioningConfiguration>", "application/xml")
+            assert_error(st, b, 400, "IllegalVersioningConfigurationException", "a versioning status that is not one")
+            st, b = sxput("/tcae-errors/k.txt", nothing(), nothing(), "", "")
+            spec.assert_eq(st, 200, "an empty PUT replaces the object")
+            st, b = s3call(1, "POST", "/tcae-errors/k.txt", nothing(), nothing(), nothing(), "x", "text/plain")
+            spec.assert_true(st >= 400 && st < 500, "POST to an object: ${st} ${b}")
+            st, b = sxq("GET", "/tcae-errors/k.txt", ["versionId=nope"])
+            spec.assert_true(st >= 400 && st < 500, "a version id that is not one: ${st} ${b}")
+            st, b = s3call(1, "PUT", "/tcae-errors/k2.txt", nothing(), ["x-amz-copy-source:/nope-bucket/k.txt"], nothing(), "", "")
+            assert_error(st, b, 404, "NoSuchBucket", "copying from a missing bucket")
+            st, b = sx("DELETE", "/tcae-errors/k.txt")
+            spec.assert_eq(st, 204, "delete the object")
+            drop_bucket("tcae-errors")
+            servirtium.end_recording(rec)
+        }
+    }
+
+    if shared_container != null {
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("minio: removing the shared container: ${e}") }
     }
     return spec.run_summary(fw)
 }
