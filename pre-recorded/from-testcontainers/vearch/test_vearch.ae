@@ -42,10 +42,11 @@ fn http_get(url: string) -> (int, string, string) {
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
-    // What differs run to run: Vearch (Go) writes the keys of the root
-    // banner's "data" object in a different order every time, and the test
-    // checks only the status, so the object is collapsed whole.
-    servirtium.collapse("\"data\":\\{.*\\}\\}", "\"data\":{\"name\":\"vearch\"}}")
+    // Vearch (Go) writes the keys of the root banner's "data" object in a
+    // different order every time: the tape has them sorted (Servirtium's
+    // stable order; JSON key order means nothing, so a client sees the same
+    // value).
+    servirtium.sort_json_keys()
 
     spec.describe(fw, "modules/vearch") {
         spec.after_each() callback { testing.cleanup_all() }

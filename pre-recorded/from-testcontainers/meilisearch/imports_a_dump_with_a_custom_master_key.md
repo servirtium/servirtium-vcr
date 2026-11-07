@@ -16,6 +16,7 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ```
 content-length: 651
 content-type: text/html
+vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers
 ```
 ### Response body recorded for playback (200: text/html):
 
@@ -42,6 +43,7 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ```
 content-length: 321
 content-type: application/json
+vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers
 ```
 ### Response body recorded for playback (200: application/json):
 
@@ -59,8 +61,8 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | removed | response headers | `Date` | (left out) | 0, 1 |
 | removed | response headers | `X-Request-Id` | (left out) | none |
 | removed | response headers | `X-Correlation-Id` | (left out) | none |
-| removed | response headers | `vary` | (left out) | 0, 1 |
 | redacted | request headers | (not shown: it may be the secret) | `Bearer REDACTED[default-master-key]` | none |
 | redacted | request headers | (not shown: it may be the secret) | `Bearer REDACTED[my-master-key]` | 1 |
 | collapsed | whole recording | *the container's mapped host:port* | `{{request.host}}` | none |
 | collapsed | whole recording | *the recorder's own host:port* | `{{request.host}}` | 0, 1 |
+| ordered | response headers | every header | sorted by name; a repeated header's lines keep their order | 0, 1 |

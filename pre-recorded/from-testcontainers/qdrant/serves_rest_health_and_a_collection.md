@@ -16,6 +16,7 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ```
 content-length: 20
 content-type: text/plain; charset=utf-8
+vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers
 ```
 ### Response body recorded for playback (200: text/plain; charset=utf-8):
 
@@ -44,6 +45,7 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ```
 content-length: 40
 content-type: application/json
+vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers
 ```
 ### Response body recorded for playback (200: application/json):
 
@@ -69,6 +71,7 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ```
 content-length: 758
 content-type: application/json
+vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers
 ```
 ### Response body recorded for playback (200: application/json):
 
@@ -86,7 +89,7 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | removed | response headers | `Date` | (left out) | 0–2 |
 | removed | response headers | `X-Request-Id` | (left out) | none |
 | removed | response headers | `X-Correlation-Id` | (left out) | none |
-| removed | response headers | `vary` | (left out) | 0–2 |
 | collapsed | whole recording | *the container's mapped host:port* | `{{request.host}}` | none |
 | collapsed | whole recording | *the recorder's own host:port* | `{{request.host}}` | 0–2 |
 | collapsed | whole recording | `"time":[0-9.e-]+` | `"time":0.0` | 1, 2 |
+| ordered | response headers | every header | sorted by name; a repeated header's lines keep their order | 0–2 |

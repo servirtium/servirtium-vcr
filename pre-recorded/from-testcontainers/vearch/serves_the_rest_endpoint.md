@@ -15,12 +15,12 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 
 ```
 Content-Type: application/json
-Content-Length: 35
+Content-Length: 217
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"code":0,"data":{"name":"vearch"}}
+{"code":0,"data":{"cluster_name":"vearch","cluster_uuid":"","name":"vearch","tagline":"","version":{"build_time":"2024-05-28 03:18.52","build_version":"v3.5.1","commit_id":"7cf28c0872c7efafeedcaa7b2fa9cfcf27bddb66"}}}
 ```
 
 
@@ -35,4 +35,4 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | removed | response headers | `X-Correlation-Id` | (left out) | none |
 | collapsed | whole recording | *the container's mapped host:port* | `{{request.host}}` | none |
 | collapsed | whole recording | *the recorder's own host:port* | `{{request.host}}` | 0 |
-| collapsed | whole recording | `"data":\{.*\}\}` | `"data":{"name":"vearch"}}` | 0 |
+| ordered | response body | JSON object keys | sorted, at every depth | 0 |

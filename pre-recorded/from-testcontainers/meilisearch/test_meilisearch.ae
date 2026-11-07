@@ -64,8 +64,8 @@ main() {
     servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Bearer ${meilisearch.DEFAULT_MASTER_KEY}", "Bearer REDACTED[default-master-key]")
     servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Bearer my-master-key", "Bearer REDACTED[my-master-key]")
     // Meilisearch sends its response headers in a different order from run to
-    // run (Vary moves relative to Content-Type); only Vary is dropped.
-    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "vary")
+    // run (Vary moves relative to Content-Type): written sorted by name.
+    servirtium.sort_response_headers()
 
     spec.describe(fw, "modules/meilisearch") {
         spec.after_each() callback { testing.cleanup_all() }

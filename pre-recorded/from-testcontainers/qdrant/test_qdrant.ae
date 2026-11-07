@@ -4,12 +4,13 @@
 // A real Qdrant: GET /healthz, then an HTTP PUT that creates a collection
 // and a GET that reads it back, over the mapped REST port.
 //
-// PORTING: only the first case is on a tape. The second case checks the
-// endpoints' shapes, opens a TCP connection to the gRPC port and GETs the web
-// UI's /dashboard (a static page whose response headers come in a different
-// order every run, so it cannot be recorded byte-stably); the third (a core
-// env option reaching the container, read with tc.exec) has no HTTP at all.
-// Both run only live.
+// PORTING: the first two cases are on tapes: the REST calls, and the web
+// UI's /dashboard page. Qdrant sends its response headers in a different
+// order every run (Vary moves about); the tapes have them sorted by name
+// (Servirtium's stable order), which a client cannot tell from any other
+// order. The third case checks the endpoints' shapes and opens a TCP
+// connection to the gRPC port; the fourth (a core env option reaching the
+// container, read with tc.exec) has no HTTP at all. Both run only live.
 
 import std.spec
 import std.string
@@ -51,8 +52,8 @@ main() {
     // What differs run to run: the seconds Qdrant says a request took.
     servirtium.collapse("\"time\":[0-9.e-]+", "\"time\":0.0")
     // Qdrant sends its response headers in a different order from run to
-    // run (Vary moves about); only Vary is dropped.
-    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "vary")
+    // run (Vary moves about): written sorted by name.
+    servirtium.sort_response_headers()
 
     spec.describe(fw, "modules/qdrant") {
         spec.after_each() callback { testing.cleanup_all() }
@@ -83,6 +84,26 @@ main() {
             servirtium.end_recording(rec)
         }
 
+        // PORTING: GET /dashboard -> the web UI's page (status and body as
+        // Qdrant serves them, see the tape).
+        spec.it("serves the web UI dashboard") callback {
+            rest = ""
+            if servirtium.live() == 1 {
+                c, err = qdrant.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "qdrant starts")
+                if err != "" { return }
+                r, rerr = qdrant.rest_endpoint(c)
+                spec.assert_ok(rerr, "rest endpoint")
+                rest = r
+            }
+            base, rec = servirtium.recording("qdrant", "serves_the_web_ui_dashboard", rest)
+            st, _b, herr = http_do("GET", "${base}/dashboard", "")
+            spec.assert_ok(herr, "GET /dashboard")
+            spec.assert_true(st == 200 || st == 404, "dashboard answers (${st})")
+            servirtium.end_recording(rec)
+        }
+
         spec.it_when(servirtium.live(), "reports REST, gRPC and web UI endpoints (TestQdrant)", "no container in playback") callback {
             c, err = qdrant.run(IMAGE)
             testing.cleanup_container(c)
@@ -100,9 +121,6 @@ main() {
             sock, cerr = tcp.connect("localhost", gp)
             spec.assert_ok(cerr, "gRPC port accepts a connection")
             if cerr == "" { tcp.tcp_close(sock) }
-            st, _b, herr = http_do("GET", ui, "")
-            spec.assert_ok(herr, "GET /dashboard")
-            spec.assert_true(st == 200 || st == 404, "dashboard answers (${st})")
         }
 
         spec.it_when(servirtium.live(), "mixes core options into the block", "no container in playback") callback {

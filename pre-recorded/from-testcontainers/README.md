@@ -70,7 +70,7 @@ them. Each suite's `LICENCE-NOTE.md` gives the clause and the commands.
 | `gcloud_bigquery` | 1 | `ghcr.io/goccy/bigquery-emulator:0.6.1` (linux/amd64 only) |
 | `meilisearch` | 2 | `getmeili/meilisearch:v1.10.3` |
 | `solr` | 1 | `solr:9` |
-| `qdrant` | 1 | `qdrant/qdrant:v1.7.4` |
+| `qdrant` | 2 | `qdrant/qdrant:v1.7.4` |
 | `chroma` | 1 | `chromadb/chroma:1.4.0` |
 | `weaviate` | 1 | `semitechnologies/weaviate:1.29.0` |
 | `milvus` | 1 | `milvusdb/milvus:v2.3.9` |
@@ -201,14 +201,14 @@ Per suite (registered at the top of its `main`):
 | gcloud_pubsub | | `publishTime` | | |
 | gcloud_spanner | the read-write transaction id (base64; it round-trips into the DML and commit) | RFC 3339 times | | |
 | gcloud_bigquery | | the query job's `jobId` | | |
-| meilisearch | | | each `Authorization: Bearer` master key, as `REDACTED[<label>]` | `vary` |
+| meilisearch | | | each `Authorization: Bearer` master key, as `REDACTED[<label>]` | |
 | solr | | `QTime`, `_version_` | | |
-| qdrant | | `"time"` seconds | | `vary` |
+| qdrant | | `"time"` seconds | | |
 | chroma | | the nanosecond heartbeat | | |
 | weaviate | | | | |
 | milvus | | | | |
 | pinecone | | | | |
-| vearch | | the root banner's whole `"data"` object | | |
+| vearch | | | | |
 | mailpit | | message `ID`, `MessageID`, `Created`, `Size`, the CSP `nonce-` | | |
 | inbucket | | message `id`, `date`, `posix-millis` | | |
 | papercutsmtp | | | | |
@@ -245,6 +245,17 @@ Per suite (registered at the top of its `main`):
 | redpanda | | | | |
 | scylladb | the node's UUIDs (host id, schema version, `{{uuid-N}}`) and IPv4 address (`{{ip-N}}`) | the 256 random tokens (whole array), the generation number, `load_map` bytes, ownership shares, snapshot sizes, `uptime_ms` | | |
 | yugabytedb | random v4 UUIDs, hyphenated or bare (`{{uuid-N}}`), IPv4 addresses (`{{ip-N}}`) | `instance_seqno`, `start_time_us`, uptimes, heartbeat ages, RAM and disk figures, rates and tablet counts, a table's `on_disk_size`, the `system` list of `/api/v1/tables`, three machine-sized varz flags, the node's metric name, the heap profile path, a Prometheus sample's `exported_instance` and timestamp | | |
+
+Written in a stable order (Servirtium's opt-in stable order, servirtium-vcr
+AGENTS.md: the service sends these in a different order each run, and the
+tape has them sorted, losing nothing; header and key order mean nothing to
+a client, a sorted array is a deliberate change of the recorded response):
+
+| Suite | Response headers by name | JSON object keys | JSON arrays sorted | A header's items |
+|---|---|---|---|---|
+| meilisearch | yes | | | |
+| qdrant | yes | | | |
+| vearch | | yes | | |
 
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
@@ -299,10 +310,8 @@ it is on the tape, and playback is plain HTTP.
 **Search, mail, identity and the rest:**
 - **Output order that changes run to run.** Meilisearch and Qdrant send
   their response headers in a different order each run, and Vearch its
-  JSON keys, so a re-record would differ. For now `vary` is left out
-  (Meilisearch, Qdrant), Qdrant's dashboard page is checked live only, and
-  Vearch's banner `data` object is collapsed whole. Servirtium could instead
-  write headers and JSON keys in a stable order (servirtium-vcr TODO.md).
+  JSON keys; the tapes have them sorted (the stable-order table above), so
+  `vary`, Qdrant's dashboard page and Vearch's whole banner are on them.
 - **Solr:** the module creates its collection inside `run`, so that call is
   not on the tape. The health check is `/admin/info/health`, not
   `/admin/info/system` (memory, load and clock readings).
