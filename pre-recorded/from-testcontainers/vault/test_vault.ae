@@ -1,9 +1,128 @@
-// Ported from testcontainers-go modules/vault/vault_test.go
+// Vault, comprehensively: servirtium-vcr's pre-recorded/from-testcontainers
+// "Pattern for comprehensive suites" (README) applied to HashiCorp Vault
+// 1.13.0 (MPL-2.0, the last release before the BSL), after the CouchDB pilot.
 //
-// A real Vault dev server: /v1/sys/health answers 200, the root token chosen
-// by token() reads the secrets the init commands wrote (through the vault CLI
-// in the container and through the KV-v2 HTTP API), writes a new one, and a
-// request without the token is refused.
+// Two describe blocks, two sets of tapes:
+//
+// 1. "modules/vault": ported from testcontainers-go modules/vault/vault_test.go
+//    (by way of testcontainers-ae). It tests the MODULE: the root token the
+//    token() option chooses, the init commands, the defaults. Its two tapes
+//    (reads_and_writes_secrets_with_the_chosen_token, runs_with_no_options)
+//    are the original representative ones.
+//
+// 2. "Vault HTTP API": written for servirtium-vcr. Re-usable recordings of
+//    Vault's HTTP API, one tape per scenario, for any language's tests to
+//    replay with no Vault. This is the comprehensive part. Component-level
+//    tests of Vault's API, never "end-to-end": the tapes stand in for Vault.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes are
+// the re-usable part. A port is a test in your language and test framework
+// that makes the same requests in the same order against a Servirtium replay
+// server loaded with the tape, and checks the same things. Every request is
+// plain HTTP/1.1 with these headers and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+//   Content-Type: application/json   (only when there is a body; the one
+//                                     PATCH uses application/merge-patch+json)
+//   X-Vault-Token: ...               (every case but the ones that show
+//                                     "no token", see below)
+//   X-Vault-Wrap-TTL: 60             (one request, wraps_a_response_...)
+// Playback is strict about method, path (query string included, as written
+// here), the recorded request headers and the body (byte for byte: send the
+// JSON bodies exactly as written in this file, no spaces), and fails a case
+// whose recorded requests are not all made. Host, Connection and
+// Content-Length are on the tapes but are transport headers, not compared.
+// Vault's "list" operation is the LIST verb or GET with ?list=true; these
+// tapes use GET ?list=true, which any HTTP client can send.
+//
+// Login, and "already logged in"
+// ------------------------------
+// Vault's session credential is a token (X-Vault-Token). Logging in gets its
+// own tapes: logs_in_with_userpass_and_ends_the_session (a wrong and the
+// right password, who-am-I, renew, revoke) and logs_in_with_an_approle
+// (enable the method, make a role and a secret id, log in with a wrong and
+// the right secret id). Every other case is ALREADY LOGGED IN: its requests
+// carry the client token that the userpass login of user "alice" mints, and
+// the login is not on that case's tape. When recording, the test sets Vault
+// up once through the dev-mode root token (userpass enabled, policies
+// tcae-admin and tcae-reader, users alice and bob), then logs alice in
+// directly against the container, outside the recorder (login_live below),
+// so the token is real. None of that is recorded, and the root token never
+// appears on a tape. The case enforces_a_read_only_policy also logs bob (a
+// reader) in; the cases that show "no token" send none.
+//
+// PORTING, getting into the logged-in state without the login tapes: send
+// any `X-Vault-Token: <anything>` header on every request. The tapes hold the
+// token as X_VAULT_TOKEN_N (Servirtium's redact_credential_header preset) and
+// playback matches a credential header on PRESENCE, not value. A consequence:
+// a replay cannot tell a good token from a forged one, so the cases that show
+// a refusal for a missing token send no header at all, and the case that
+// shows a wrong token (refuses_a_client_without_a_valid_token) records Vault's
+// 403 for it but replays against any header. Passwords in a login body are
+// labelled literal redactions (REDACTED[alice], REDACTED[alice-wrong-password]),
+// put back on replay, so the right and the wrong password stay distinct: a
+// port sends the real test passwords "alice-pass" and "not-the-password".
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them and the
+// interactions each touched. In short:
+//   - normalized ({{name-N}}, the same token wherever the value recurs,
+//     because a client sends it back): client tokens (a token used as a
+//     header is X_VAULT_TOKEN_N wherever it appears; one that is only sent in
+//     a body, or never sent, is {{token-N}}), token accessors ({{accessor-N}}),
+//     mount accessors ({{mount-accessor-N}}), uuids ({{uuid-N}}: entity ids,
+//     mount uuids, approle role ids and secret ids), and transit
+//     ciphertexts, signatures and HMACs ({{blob-N}}: "vault:v1:..." differs on
+//     every run).
+//   - collapsed (one constant; nobody sends them back): request_id, times
+//     (RFC 3339 and Unix), the cluster's name, a token's remaining ttl.
+//   - redacted: the token header and the login passwords.
+//   - left out: Date.
+// PORTING: in playback a normalized or redacted value comes back as its
+// token, verbatim ("{{token-1}}"); treat every token, accessor, uuid and blob
+// as an opaque string (never assert its length or shape) and send it back
+// exactly as received. Send the braces as they are: playback compares paths
+// and bodies byte for byte, so a client that percent-encodes `{` will not
+// match. Deterministic values are left alone: versions, key names, policy text.
+//
+// Awkward points (random order, and the workaround)
+// -------------------------------------------------
+// Vault 1.13 copies the data of GET sys/mounts, sys/auth, sys/mounts/<path>,
+// sys/auth/<path> and .../tune to the TOP LEVEL of the response as well (a
+// legacy form), and that copy's keys come in a different order on every
+// request, so a tape of it would never be stable. These cases use
+// sys/internal/ui/mounts[/<path>] instead, which gives the same mount facts
+// (type, accessor, options, config) with no legacy copy, so with sorted keys.
+// An opt-in "stable key order" option in Servirtium's core would let a case
+// read sys/mounts directly. Every other response here is already stable.
+//
+// In and out of scope
+// -------------------
+// In: health, seal status, leader and init (public, no token); mounts and
+// auth methods (enable, read, tune, disable); ACL policies (write, read, list,
+// delete, capabilities) and their enforcement; the KV v2 engine (write, read,
+// CAS, versions, metadata, soft delete, undelete, destroy, list, patch,
+// max_versions pruning) and KV v1; the transit engine (key create, read,
+// config, rotate, list, delete; encrypt, decrypt, rewrap; sign and verify,
+// hash, HMAC); tokens (create, lookup, lookup by accessor, renew, revoke,
+// revoke by accessor, use limits, parents and children); response wrapping
+// and the cubbyhole; the representative errors 400, 403, 404, 405.
+// Out: seal, unseal and init (a dev server is unsealed and initialized, and
+// sealing it would end the suite); HA, standbys, replication and raft (health
+// is always 200, never 429/473/503); other secrets engines (database, PKI,
+// SSH, AWS, TOTP: they need an external system, or generate random key
+// material no client could replay), identity/OIDC, namespaces and other
+// enterprise features, audit devices and telemetry (node specific), leases of
+// dynamic secrets, and anything streaming. Each could be a later case.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test vault/test_vault.ae                         container, no Servirtium
+//   TCAE_VCR=record   ae test vault/test_vault.ae       write the tapes
+//   TCAE_VCR=check    ae test vault/test_vault.ae       fail if a tape changed
+//   TCAE_VCR=playback ae test vault/test_vault.ae       no container: the tapes
+// The API cases share one container (started on the first one and removed at
+// the end); the module cases each start their own.
 
 import std.spec
 import std.string
@@ -18,7 +137,6 @@ import modules.vault
 const IMAGE = "hashicorp/vault:1.13.0"
 const TOKEN = "root-token"
 
-// (status, body, error); token "" sends no X-Vault-Token.
 // The User-Agent this test's HTTP client sends, as an app's client library
 // would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
 // std.http.client adds none. Set here, in the test's own client, so the
@@ -26,19 +144,45 @@ const TOKEN = "root-token"
 // client sends and adds nothing of its own.
 const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
 
-fn call_api(method: string, url: string, tok: string, body: string) -> (int, string, string) {
+// The token the logged-in cases send in playback, where there is no Vault to
+// log in to. Any value does: the tapes match X-Vault-Token on presence.
+const PLAYBACK_TOKEN = "any-value-replay-matches-on-presence"
+
+// The passwords of the two users the live setup makes (test values for a
+// throwaway container).
+const ALICE_PASSWORD = "alice-pass"
+const BOB_PASSWORD = "bob-pass"
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines;
+// ctype is the body's Content-Type (none when the body is empty); tok "" sends
+// no X-Vault-Token.
+fn http_send(method: string, url: string, tok: string, hdrs: string[], ctype: string, body: string) -> (int, string, string) {
     req = client.request(method, url)
     client.set_header(req, "User-Agent", USER_AGENT)
     client.set_timeout(req, 30s)
     if string.length(tok) > 0 { client.set_header(req, "X-Vault-Token", tok) }
-    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
     r, err = client.send_request(req)
     client.request_free(req)
     if err != "" { return 0, "", err }
-    status = client.response_status(r)
-    out = client.response_body(r)
+    st = client.response_status(r)
+    b = client.response_body(r)
     client.response_free(r)
-    return status, out, ""
+    return st, b, ""
+}
+
+// (status, body, error); token "" sends no X-Vault-Token. Used by the module
+// cases.
+fn call_api(method: string, url: string, tok: string, body: string) -> (int, string, string) {
+    return http_send(method, url, tok, [], "application/json", body)
 }
 
 // data.data.<key> of a KV-v2 read response.
@@ -53,9 +197,169 @@ fn kv_field(body: string, key: string) -> string {
     return s
 }
 
-main() {
-    fw = spec.init()
-    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+// A string in a JSON body by a dotted path ("auth.client_token",
+// "data.keys.0"); "" when absent or not a string.
+fn jstr(body: string, path: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    let v: ptr = doc
+    rest = path
+    while string.length(rest) > 0 && v != null {
+        p = rest
+        dot = string.index_of(rest, ".")
+        if dot >= 0 {
+            p = string.substring(rest, 0, dot)
+            rest = string.substring(rest, dot + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        if json.json_type(v) == json.JSON_ARRAY {
+            idx, _ = string.to_int(p)
+            a, _ = json.array_get(v, idx)
+            v = a
+        } else {
+            o, _ = json.object_get(v, p)
+            v = o
+        }
+    }
+    out = ""
+    if v != null {
+        s, serr = json.get_string(v)
+        if serr == "" { out = string.copy(s) }
+    }
+    json.free(doc)
+    return out
+}
+
+// HCL for a policy, as the JSON string Vault takes: write ' for the double
+// quotes HCL needs and this puts \" there, so the test source stays readable.
+fn hcl(s: string) -> string {
+    return string.replace_all(string.replace_all(s, "\n", "\\n"), "'", "\\\"")
+}
+
+// ---------------------------------------------------------------------------
+// The API cases: the base URL, the logged-in token, and requests
+// ---------------------------------------------------------------------------
+
+var api: string = ""
+var tok: string = ""
+
+// A logged-in request with a JSON body (or none): (status, body). A transport
+// error fails the case.
+fn vault_(method: string, path: string, body: string) -> (int, string) {
+    return vault_as(tok, method, path, body)
+}
+
+// The same with the given token ("" sends none).
+fn vault_as(t: string, method: string, path: string, body: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}/v1/${path}", t, [], "application/json", body)
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// With a Content-Type of its own and extra "Name: value" headers.
+fn vault_with(t: string, method: string, path: string, ctype: string, hdrs: string[], body: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}/v1/${path}", t, hdrs, ctype, body)
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// A request with no token at all.
+fn anonymous(method: string, path: string, body: string) -> (int, string) {
+    return vault_as("", method, path, body)
+}
+
+// ---------------------------------------------------------------------------
+// The live container the API cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_addr: string = ""
+var shared_container: ptr = null
+
+// Set Vault up through the root token, once per container (not recorded):
+// userpass, two policies and two users. tcae-admin may do anything, so every
+// logged-in case can; tcae-reader may only read and list under tcae/.
+fn setup_live(addr: string) -> int {
+    admin = "path '*' { capabilities = ['create','read','update','delete','list','sudo','patch'] }"
+    reader = "path 'secret/data/tcae/*' { capabilities = ['read'] }\npath 'secret/metadata/tcae/*' { capabilities = ['read','list'] }"
+    steps = [
+        "POST|sys/auth/userpass|{\"type\":\"userpass\"}",
+        "PUT|sys/policies/acl/tcae-admin|{\"policy\":\"${hcl(admin)}\"}",
+        "PUT|sys/policies/acl/tcae-reader|{\"policy\":\"${hcl(reader)}\"}",
+        "POST|auth/userpass/users/alice|{\"password\":\"${ALICE_PASSWORD}\",\"policies\":\"tcae-admin\"}",
+        "POST|auth/userpass/users/bob|{\"password\":\"${BOB_PASSWORD}\",\"policies\":\"tcae-reader\"}"
+    ]
+    for step in steps {
+        p1 = string.index_of(step, "|")
+        m = string.substring(step, 0, p1)
+        rest = string.substring(step, p1 + 1, string.length(step))
+        p2 = string.index_of(rest, "|")
+        path = string.substring(rest, 0, p2)
+        body = string.substring(rest, p2 + 1, string.length(rest))
+        st, b, err = http_send(m, "${addr}/v1/${path}", TOKEN, [], "application/json", body)
+        spec.assert_ok(err, "setup ${path}")
+        spec.assert_eq(st, 204, "setup ${path}: ${b}")
+        if st != 204 { return 0 }
+    }
+    return 1
+}
+
+// The shared container's base URL, starting it (and setting it up) on first
+// use ("" on failure).
+fn shared() -> string {
+    if string.length(shared_addr) > 0 { return shared_addr }
+    c, err = vault.run(IMAGE) { token(TOKEN) }
+    spec.assert_ok(err, "vault starts")
+    if err != "" { return "" }
+    shared_container = c as ptr
+    a, aerr = vault.http_host_address(c)
+    spec.assert_ok(aerr, "http host address")
+    if aerr != "" { return "" }
+    if setup_live(a) == 0 { return "" }
+    shared_addr = a
+    return shared_addr
+}
+
+// Log a user in directly against the container, outside any recording: the
+// client token a logged-in case carries.
+fn login_live(addr: string, user: string, password: string) -> string {
+    st, b, err = http_send("POST", "${addr}/v1/auth/userpass/login/${user}", "", [], "application/json", "{\"password\":\"${password}\"}")
+    spec.assert_ok(err, "log ${user} in (not recorded)")
+    spec.assert_eq(st, 200, "log ${user} in (not recorded): ${b}")
+    return jstr(b, "auth.client_token")
+}
+
+var bob_tok: string = ""
+
+// Start a logged-in API case: in a live mode, the shared container, a fresh
+// token for alice (and for bob when asked) and, should an earlier failed run
+// have left them, the case's mounts, auth methods, policies and secrets
+// removed (cleanup lists "path" strings to DELETE; none of it is recorded);
+// then the recording. Sets `api`, `tok` and `bob_tok`; returns the recording
+// handle, and ok = 0 when the case cannot run.
+fn begin(case_: string, cleanup: string[], with_bob: int) -> (ptr, int) {
+    addr = ""
+    tok = PLAYBACK_TOKEN
+    bob_tok = PLAYBACK_TOKEN
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+        tok = login_live(addr, "alice", ALICE_PASSWORD)
+        if with_bob == 1 { bob_tok = login_live(addr, "bob", BOB_PASSWORD) }
+        for p in cleanup { http_send("DELETE", "${addr}/v1/${p}", tok, [], "application/json", "") }
+    }
+    base, rec = servirtium.recording("vault", case_, addr)
+    api = base
+    return rec, 1
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules
+// ---------------------------------------------------------------------------
+
+// The module cases' rules.
+fn module_rules() {
+    servirtium.clear_rules()
     // Servirtium's credential preset: the token is written as
     // X_VAULT_TOKEN_1, and playback matches X-Vault-Token on presence, so it
     // needs no secret.
@@ -67,7 +371,69 @@ main() {
     servirtium.collapse("vault-cluster-[0-9a-f]+", "vault-cluster-0")
     servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
     servirtium.collapse(servirtium.EPOCH_TIMESTAMP, "946684800")
+}
 
+// The API cases' rules. Rules apply to every recording after them, so the two
+// blocks each clear and register their own.
+fn api_rules() {
+    servirtium.clear_rules()
+    // The session credential. Registered FIRST: the preset writes each
+    // distinct token as X_VAULT_TOKEN_N in the header and, because a token
+    // is 8+ characters, wherever else the same value appears (a login's
+    // client_token, a lookup's id, a body that names it). Later rules only
+    // see the rest.
+    servirtium.redact_credential_header("X-Vault-Token")
+    // The passwords in the login bodies: labelled literal redactions, not a
+    // collapse, so playback puts the real text back before comparing and
+    // still tells the right password from the wrong one.
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "\"password\":\"${ALICE_PASSWORD}\"", "\"password\":\"REDACTED[alice]\"")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "\"password\":\"not-the-password\"", "\"password\":\"REDACTED[alice-wrong-password]\"")
+    // A token that is never used as a header (a child token only looked up
+    // by body, a wrapping token the client puts in a header is already
+    // covered above): "hvs." and a long base64url string, normalized since a
+    // client sends it back in a body.
+    servirtium.normalize("hvs\\.[A-Za-z0-9_-]{20,}", "token")
+    // A request id on every body: nobody sends it back.
+    servirtium.collapse("(?<=\"request_id\":\")[0-9a-f-]{36}(?=\")", "00000000-0000-0000-0000-000000000000")
+    // Every other uuid: entity ids, mount uuids, the cluster id, approle role
+    // and secret ids (a client sends the last two back in the login body).
+    servirtium.normalize(servirtium.UUID, "uuid")
+    // A token's accessor (24 characters; a client may send it back to look a
+    // token up or revoke it), and a mount's ("kv_" or "auth_userpass_" and
+    // 8 hex digits; read back by whoever lists mounts, never sent).
+    servirtium.normalize("(?<=\"accessor\":\"|\"wrapped_accessor\":\")[A-Za-z0-9]{24}(?=\")", "accessor")
+    servirtium.normalize("(?<=\"accessor\":\")[a-z_]+_[0-9a-f]{8}(?=\")", "mount-accessor")
+    // Transit's ciphertext, signature and HMAC: "vault:v<N>:<base64>". The
+    // ciphertext carries a random nonce, the keys are random, so every run
+    // differs; a client sends a ciphertext back (decrypt, rewrap) and a
+    // signature back (verify), hence normalized. (The key version is lost
+    // with the value; the response's "key_version" says it.)
+    servirtium.normalize("vault:v[0-9]+:[A-Za-z0-9+/=]+", "blob")
+    // The cluster's name, a random suffix.
+    servirtium.collapse("vault-cluster-[0-9a-f]+", "vault-cluster-0")
+    // Times: RFC 3339 with nanoseconds (created_time, deletion_time,
+    // issue_time, expire_time, a wrapping token's creation_time). Not the Go
+    // zero time "0001-01-01T00:00:00Z" (/sys/leader's active_time, meaning
+    // never), which is stable and means something.
+    servirtium.collapse(string.concat("(?!0001-)", servirtium.RFC3339), "2000-01-01T00:00:00Z")
+    // Unix times, by field: the server clock, a token's creation, a transit
+    // key version's creation ("keys":{"1":1794074791}).
+    servirtium.collapse("(?<=\"server_time_utc\":|\"creation_time\":)1[0-9]{9}", "946684800")
+    servirtium.collapse("(?<=\"[0-9]\":)1[0-9]{9}", "946684800")
+    // A token's remaining ttl, counting down in seconds from the 1 hour the
+    // cases ask for (or from the 32 days a login gets): 3599 one moment and
+    // 3598 the next. Collapsed to the full hour; a wrapping token's
+    // ttl 60 and a root-like 0 are not matched.
+    servirtium.collapse("(?<=\"ttl\":)(?:35[0-9]{2}|3600|276[0-9]{4})(?=[,}])", "3600")
+}
+
+// ---------------------------------------------------------------------------
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    module_rules()
     spec.describe(fw, "modules/vault") {
         spec.after_each() callback { testing.cleanup_all() }
 
@@ -157,6 +523,866 @@ main() {
             spec.assert_true(err != "", "the failing init command is an error")
             spec.assert_contains(err, "run vault:", "wrapped like Go's")
         }
+    }
+
+    api_rules()
+    spec.describe(fw, "Vault HTTP API") {
+        spec.after_each() callback { api = "" }
+
+        // ---- the login tapes -----------------------------------------------
+
+        // PORTING: the tape with the userpass login on it. No token on the
+        // first requests.
+        //   GET  /v1/auth/token/lookup-self                      -> 403 {"errors":["permission denied"]}
+        //   POST /v1/auth/userpass/login/alice {"password":<wrong>} -> 500 (sic: Vault 1.13's status
+        //        for bad credentials, not 400 or 401) {"errors":["invalid username or password"]}
+        //   POST /v1/auth/userpass/login/alice {"password":<right>} -> 200,
+        //        auth.client_token (X_VAULT_TOKEN_1), auth.policies ["default","tcae-admin"],
+        //        auth.lease_duration 2764800, auth.renewable true
+        //   GET  /v1/auth/token/lookup-self  X-Vault-Token: <client_token> -> 200,
+        //        data.display_name "userpass-alice", data.policies, data.meta.username
+        //   POST /v1/auth/token/renew-self {} X-Vault-Token: ... -> 200 auth.lease_duration
+        //   POST /v1/auth/token/revoke-self X-Vault-Token: ... -> 204 (the logout)
+        //   GET  /v1/auth/token/lookup-self  X-Vault-Token: ... -> 403 (a revoked token is gone)
+        // The passwords are REDACTED[alice] and REDACTED[alice-wrong-password]
+        // on the tape; a port sends "alice-pass" and "not-the-password". Take
+        // the client token from the replayed login response, as a client would.
+        spec.it("logs in with userpass and ends the session") callback {
+            rec, ok = begin("logs_in_with_userpass_and_ends_the_session", [], 0)
+            if ok == 0 { return }
+            st, b = anonymous("GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 403, "no token: ${b}")
+            spec.assert_contains(b, "permission denied", "permission denied")
+
+            st, b = anonymous("POST", "auth/userpass/login/alice", "{\"password\":\"not-the-password\"}")
+            spec.assert_eq(st, 500, "a wrong password is refused (Vault 1.13 answers 500, not 400/401): ${b}")
+            spec.assert_contains(b, "invalid username or password", "invalid username or password")
+
+            st, b = anonymous("POST", "auth/userpass/login/alice", "{\"password\":\"${ALICE_PASSWORD}\"}")
+            spec.assert_eq(st, 200, "the right password logs in: ${b}")
+            client_token = jstr(b, "auth.client_token")
+            spec.assert_true(string.length(client_token) > 0, "a client token")
+            spec.assert_contains(b, "\"policies\":[\"default\",\"tcae-admin\"]", "alice's policies")
+            spec.assert_contains(b, "\"lease_duration\":2764800", "the default 32 days")
+
+            st, b = vault_as(client_token, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 200, "lookup-self with the client token: ${b}")
+            spec.assert_str_eq(jstr(b, "data.display_name"), "userpass-alice", "who it is")
+            spec.assert_str_eq(jstr(b, "data.meta.username"), "alice", "the user name")
+            spec.assert_str_eq(jstr(b, "data.path"), "auth/userpass/login/alice", "how it was made")
+
+            st, b = vault_as(client_token, "POST", "auth/token/renew-self", "{}")
+            spec.assert_eq(st, 200, "renew-self: ${b}")
+            spec.assert_contains(b, "\"renewable\":true", "renewable")
+
+            st, b = vault_as(client_token, "POST", "auth/token/revoke-self", "")
+            spec.assert_eq(st, 204, "revoke-self logs out: ${b}")
+            st, b = vault_as(client_token, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 403, "a revoked token is refused: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the approle login. Starts logged in (alice's token), then:
+        //   POST   /v1/sys/auth/tcae-approle {"type":"approle"} -> 204
+        //   POST   /v1/auth/tcae-approle/role/r1 {"token_policies":["default"],"token_ttl":"1h"} -> 204
+        //   GET    /v1/auth/tcae-approle/role/r1/role-id -> 200 data.role_id ({{uuid-N}})
+        //   POST   /v1/auth/tcae-approle/role/r1/secret-id (no body) -> 200 data.secret_id ({{uuid-N}})
+        //   POST   /v1/auth/tcae-approle/login {"role_id":..,"secret_id":"not-the-secret-id"} (no token) -> 500
+        //          {"errors":["invalid secret id"]}
+        //   POST   /v1/auth/tcae-approle/login {"role_id":..,"secret_id":..} (no token) -> 200,
+        //          auth.client_token, auth.metadata.role_name "r1", auth.policies ["default"],
+        //          auth.lease_duration 3600
+        //   GET    /v1/auth/token/lookup-self with that token -> 200, data.display_name "tcae-approle"
+        //   DELETE /v1/sys/auth/tcae-approle -> 204 (the method is removed with its roles and tokens)
+        //   POST   /v1/auth/tcae-approle/login {..} (no token) -> 403 permission denied (the method is gone)
+        // The role id and secret id are uuids, normalized: send what the
+        // responses gave. The secret id literal is not a uuid, so it stays as
+        // written.
+        spec.it("logs in with an approle") callback {
+            rec, ok = begin("logs_in_with_an_approle", ["sys/auth/tcae-approle"], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "sys/auth/tcae-approle", "{\"type\":\"approle\"}")
+            spec.assert_eq(st, 204, "enable approle: ${b}")
+            st, b = vault_("POST", "auth/tcae-approle/role/r1", "{\"token_policies\":[\"default\"],\"token_ttl\":\"1h\"}")
+            spec.assert_eq(st, 204, "create the role: ${b}")
+            st, b = vault_("GET", "auth/tcae-approle/role/r1/role-id", "")
+            spec.assert_eq(st, 200, "role id: ${b}")
+            role_id = jstr(b, "data.role_id")
+            spec.assert_true(string.length(role_id) > 0, "a role id")
+            st, b = vault_("POST", "auth/tcae-approle/role/r1/secret-id", "")
+            spec.assert_eq(st, 200, "secret id: ${b}")
+            secret_id = jstr(b, "data.secret_id")
+            spec.assert_true(string.length(secret_id) > 0, "a secret id")
+
+            st, b = anonymous("POST", "auth/tcae-approle/login", "{\"role_id\":\"${role_id}\",\"secret_id\":\"not-the-secret-id\"}")
+            spec.assert_eq(st, 500, "a wrong secret id (Vault 1.13 answers 500): ${b}")
+            spec.assert_contains(b, "invalid secret id", "invalid secret id")
+            st, b = anonymous("POST", "auth/tcae-approle/login", "{\"role_id\":\"${role_id}\",\"secret_id\":\"${secret_id}\"}")
+            spec.assert_eq(st, 200, "the right ids log in: ${b}")
+            approle_token = jstr(b, "auth.client_token")
+            spec.assert_true(string.length(approle_token) > 0, "a client token")
+            spec.assert_str_eq(jstr(b, "auth.metadata.role_name"), "r1", "the role")
+            spec.assert_contains(b, "\"policies\":[\"default\"]", "the role's policies")
+            spec.assert_contains(b, "\"lease_duration\":3600", "the role's ttl")
+            st, b = vault_as(approle_token, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 200, "lookup-self: ${b}")
+            spec.assert_str_eq(jstr(b, "data.display_name"), "tcae-approle", "who it is (the mount's name)")
+
+            st, b = vault_("DELETE", "sys/auth/tcae-approle", "")
+            spec.assert_eq(st, 204, "disable approle: ${b}")
+            st, b = anonymous("POST", "auth/tcae-approle/login", "{\"role_id\":\"${role_id}\",\"secret_id\":\"${secret_id}\"}")
+            spec.assert_eq(st, 403, "the method is gone, so the route is unauthenticated: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: nobody, or somebody wrong. The first four send no token.
+        //   GET /v1/sys/health                 -> 200 (public)
+        //   GET /v1/secret/data/tcae/private   -> 403 {"errors":["permission denied"]}
+        //   GET /v1/sys/mounts                 -> 403
+        //   PUT /v1/secret/data/tcae/private {"data":{"a":"b"}} -> 403
+        //   GET /v1/secret/data/tcae/private  X-Vault-Token: not-a-token -> 403 (same body;
+        //     the tape's header is X_VAULT_TOKEN_1 and replay matches on presence,
+        //     so replay cannot tell this from a good token, only Vault could)
+        spec.it("refuses a client without a valid token") callback {
+            rec, ok = begin("refuses_a_client_without_a_valid_token", [], 0)
+            if ok == 0 { return }
+            st, b = anonymous("GET", "sys/health", "")
+            spec.assert_eq(st, 200, "health needs no token: ${b}")
+            st, b = anonymous("GET", "secret/data/tcae/private", "")
+            spec.assert_eq(st, 403, "reading needs a token: ${b}")
+            spec.assert_str_eq(b, "{\"errors\":[\"permission denied\"]}\n", "permission denied")
+            st, b = anonymous("GET", "sys/mounts", "")
+            spec.assert_eq(st, 403, "listing mounts needs a token: ${b}")
+            st, b = anonymous("PUT", "secret/data/tcae/private", "{\"data\":{\"a\":\"b\"}}")
+            spec.assert_eq(st, 403, "writing needs a token: ${b}")
+            st, b = vault_as("not-a-token", "GET", "secret/data/tcae/private", "")
+            spec.assert_eq(st, 403, "a made-up token: ${b}")
+            spec.assert_str_eq(b, "{\"errors\":[\"permission denied\"]}\n", "permission denied")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- sys -------------------------------------------------------------
+
+        // PORTING: the public status endpoints, no token on any of them.
+        //   GET /v1/sys/health -> 200 {"initialized":true,"sealed":false,"standby":false,..,
+        //        "version":"1.13.0","cluster_name":"vault-cluster-0","cluster_id":"{{uuid-1}}"}
+        //   GET /v1/sys/health?activecode=202 -> 202, same body (the status for "active" is
+        //        chosen by the client: load balancers use this)
+        //   GET /v1/sys/health?standbyok=true&perfstandbyok=true -> 200
+        //   GET /v1/sys/seal-status -> 200 {"type":"shamir","initialized":true,"sealed":false,
+        //        "t":1,"n":1,"progress":0,..,"storage_type":"inmem"}
+        //   GET /v1/sys/leader -> 200 {"ha_enabled":false,..,"leader_address":""}
+        //   GET /v1/sys/init   -> 200 {"initialized":true}
+        spec.it("reports health, seal status, leader and init without a token") callback {
+            rec, ok = begin("reports_health_seal_status_leader_and_init", [], 0)
+            if ok == 0 { return }
+            st, b = anonymous("GET", "sys/health", "")
+            spec.assert_eq(st, 200, "health: ${b}")
+            spec.assert_contains(b, "\"initialized\":true", "initialized")
+            spec.assert_contains(b, "\"sealed\":false", "unsealed")
+            spec.assert_contains(b, "\"standby\":false", "active")
+            spec.assert_contains(b, "\"version\":\"1.13.0\"", "version")
+            st, b = anonymous("GET", "sys/health?activecode=202", "")
+            spec.assert_eq(st, 202, "the status for an active node is the client's choice: ${b}")
+            spec.assert_contains(b, "\"initialized\":true", "the same body")
+            st, b = anonymous("GET", "sys/health?standbyok=true&perfstandbyok=true", "")
+            spec.assert_eq(st, 200, "standbyok: ${b}")
+            st, b = anonymous("GET", "sys/seal-status", "")
+            spec.assert_eq(st, 200, "seal-status: ${b}")
+            spec.assert_contains(b, "\"type\":\"shamir\"", "shamir")
+            spec.assert_contains(b, "\"sealed\":false", "unsealed")
+            spec.assert_contains(b, "\"t\":1,\"n\":1", "one key of one")
+            st, b = anonymous("GET", "sys/leader", "")
+            spec.assert_eq(st, 200, "leader: ${b}")
+            spec.assert_contains(b, "\"ha_enabled\":false", "no HA")
+            st, b = anonymous("GET", "sys/init", "")
+            spec.assert_eq(st, 200, "init: ${b}")
+            spec.assert_str_eq(b, "{\"initialized\":true}\n", "initialized")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: mounts, in tcae-kv (a KV v1 engine). Read through
+        // sys/internal/ui/mounts, not sys/mounts (see "Awkward points").
+        //   GET    /v1/sys/internal/ui/mounts -> 200 data.secret has "secret/" and "sys/"...,
+        //          data.auth has "token/" and "userpass/"
+        //   POST   /v1/sys/mounts/tcae-mount {"type":"kv","description":"a first mount","options":{"version":"1"}} -> 204
+        //   POST   /v1/sys/mounts/tcae-mount (the same) -> 400 {"errors":["path is already in use at tcae-mount/"]}
+        //   GET    /v1/sys/internal/ui/mounts/tcae-mount -> 200 data.type "kv", data.description,
+        //          data.options.version "1", data.path "tcae-mount/", data.accessor {{mount-accessor-N}}
+        //   POST   /v1/sys/mounts/tcae-mount/tune {"description":"a tuned mount","default_lease_ttl":"2h"} -> 204
+        //   GET    /v1/sys/internal/ui/mounts/tcae-mount -> the new description, config.default_lease_ttl 7200
+        //   DELETE /v1/sys/mounts/tcae-mount -> 204
+        //   GET    /v1/tcae-mount/x -> 404 {"errors":["no handler for route ..."]}
+        spec.it("mounts, tunes and unmounts a secrets engine") callback {
+            rec, ok = begin("mounts_tunes_and_unmounts_a_secrets_engine", ["sys/mounts/tcae-mount"], 0)
+            if ok == 0 { return }
+            st, b = vault_("GET", "sys/internal/ui/mounts", "")
+            spec.assert_eq(st, 200, "the mounts: ${b}")
+            spec.assert_contains(b, "\"secret/\":{", "the dev server's KV mount")
+            spec.assert_contains(b, "\"userpass/\":{", "the userpass auth method the setup enabled")
+            spec.assert_contains(b, "\"token/\":{", "the token auth method")
+            st, b = vault_("POST", "sys/mounts/tcae-mount", "{\"type\":\"kv\",\"description\":\"a first mount\",\"options\":{\"version\":\"1\"}}")
+            spec.assert_eq(st, 204, "mount: ${b}")
+            st, b = vault_("POST", "sys/mounts/tcae-mount", "{\"type\":\"kv\"}")
+            spec.assert_eq(st, 400, "mounting twice: ${b}")
+            spec.assert_contains(b, "path is already in use at tcae-mount/", "already in use")
+            st, b = vault_("GET", "sys/internal/ui/mounts/tcae-mount", "")
+            spec.assert_eq(st, 200, "read the mount: ${b}")
+            spec.assert_str_eq(jstr(b, "data.type"), "kv", "its type")
+            spec.assert_str_eq(jstr(b, "data.description"), "a first mount", "its description")
+            spec.assert_str_eq(jstr(b, "data.options.version"), "1", "KV version 1")
+            spec.assert_str_eq(jstr(b, "data.path"), "tcae-mount/", "its path")
+            st, b = vault_("POST", "sys/mounts/tcae-mount/tune", "{\"description\":\"a tuned mount\",\"default_lease_ttl\":\"2h\"}")
+            spec.assert_eq(st, 204, "tune: ${b}")
+            st, b = vault_("GET", "sys/internal/ui/mounts/tcae-mount", "")
+            spec.assert_str_eq(jstr(b, "data.description"), "a tuned mount", "the new description: ${b}")
+            spec.assert_contains(b, "\"default_lease_ttl\":7200", "the new default lease ttl")
+            st, b = vault_("DELETE", "sys/mounts/tcae-mount", "")
+            spec.assert_eq(st, 204, "unmount: ${b}")
+            st, b = vault_("GET", "tcae-mount/x", "")
+            spec.assert_eq(st, 404, "nothing is mounted there now: ${b}")
+            spec.assert_contains(b, "no handler for route", "no handler for the route")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: ACL policies, named tcae-test.
+        //   PUT    /v1/sys/policies/acl/tcae-test {"policy":"path \"secret/data/tcae/*\" {...}"} -> 204
+        //   GET    /v1/sys/policies/acl/tcae-test -> 200 data.name, data.policy (the text, with \n)
+        //   PUT    /v1/sys/policies/acl/tcae-test (a second policy text) -> 204 (an update)
+        //   GET    /v1/sys/policies/acl?list=true -> 200 data.keys ["default","tcae-admin","tcae-reader","tcae-test","root"]
+        //          (that order: Vault puts root last)
+        //   POST   /v1/sys/capabilities-self {"paths":["secret/data/tcae/x","sys/mounts"]}
+        //          -> 200 data["secret/data/tcae/x"] the alice's capabilities (sudo included)
+        //   DELETE /v1/sys/policies/acl/tcae-test -> 204
+        //   GET    /v1/sys/policies/acl/tcae-test -> 404 {"errors":[]}
+        spec.it("writes, reads, lists and deletes an ACL policy") callback {
+            rec, ok = begin("writes_reads_lists_and_deletes_an_acl_policy", ["sys/policies/acl/tcae-test"], 0)
+            if ok == 0 { return }
+            p1 = "path 'secret/data/tcae/*' {\n  capabilities = ['read']\n}"
+            p2 = "path 'secret/data/tcae/*' {\n  capabilities = ['read', 'list']\n}"
+            st, b = vault_("PUT", "sys/policies/acl/tcae-test", "{\"policy\":\"${hcl(p1)}\"}")
+            spec.assert_eq(st, 204, "write: ${b}")
+            st, b = vault_("GET", "sys/policies/acl/tcae-test", "")
+            spec.assert_eq(st, 200, "read: ${b}")
+            spec.assert_str_eq(jstr(b, "data.name"), "tcae-test", "its name")
+            spec.assert_str_eq(jstr(b, "data.policy"), string.replace_all(p1, "'", "\""), "the text as written")
+            st, b = vault_("PUT", "sys/policies/acl/tcae-test", "{\"policy\":\"${hcl(p2)}\"}")
+            spec.assert_eq(st, 204, "update: ${b}")
+            st, b = vault_("GET", "sys/policies/acl?list=true", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "\"keys\":[\"default\",\"tcae-admin\",\"tcae-reader\",\"tcae-test\",\"root\"]", "the policies, root last")
+            st, b = vault_("POST", "sys/capabilities-self", "{\"paths\":[\"secret/data/tcae/x\",\"sys/mounts\"]}")
+            spec.assert_eq(st, 200, "capabilities: ${b}")
+            spec.assert_contains(b, "\"sudo\"", "alice may sudo")
+            st, b = vault_("DELETE", "sys/policies/acl/tcae-test", "")
+            spec.assert_eq(st, 204, "delete: ${b}")
+            st, b = vault_("GET", "sys/policies/acl/tcae-test", "")
+            spec.assert_eq(st, 404, "gone: ${b}")
+            spec.assert_str_eq(b, "{\"errors\":[]}\n", "an empty error list")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: tcae-reader may read and list under secret/*/tcae/ and
+        // nothing else. Alice (admin token, X_VAULT_TOKEN_1) writes; bob (the
+        // reader, a second token) reads. Each bob refusal is
+        // {"errors":["1 error occurred:\n\t* permission denied\n\n"]} (a
+        // different body from the "permission denied" a missing token gets).
+        //   alice POST /v1/secret/data/tcae/shared {"data":{"colour":"green"}} -> 200
+        //   bob   GET  /v1/secret/data/tcae/shared -> 200, the secret
+        //   bob   GET  /v1/secret/metadata/tcae?list=true -> 200 keys ["shared"]
+        //   bob   POST /v1/secret/data/tcae/shared {"data":{"colour":"red"}} -> 403
+        //   bob   DELETE /v1/secret/data/tcae/shared -> 403
+        //   bob   GET  /v1/secret/data/other/x -> 403
+        //   bob   GET  /v1/sys/policies/acl/tcae-admin -> 403
+        //   bob   POST /v1/sys/capabilities-self {"paths":["secret/data/tcae/shared","secret/data/other/x"]}
+        //         -> 200, ["read"] and ["deny"]
+        //   alice DELETE /v1/secret/metadata/tcae/shared -> 204
+        // (Replay matches the token header on presence, so it cannot check
+        // that bob's token, not alice's, was sent: the assertions on the
+        // responses are what show it.)
+        spec.it("enforces a read-only policy") callback {
+            rec, ok = begin("enforces_a_read_only_policy", ["secret/metadata/tcae/shared"], 1)
+            if ok == 0 { return }
+            st, b = vault_("POST", "secret/data/tcae/shared", "{\"data\":{\"colour\":\"green\"}}")
+            spec.assert_eq(st, 200, "alice writes: ${b}")
+            st, b = vault_as(bob_tok, "GET", "secret/data/tcae/shared", "")
+            spec.assert_eq(st, 200, "bob reads: ${b}")
+            spec.assert_str_eq(kv_field(b, "colour"), "green", "the secret")
+            st, b = vault_as(bob_tok, "GET", "secret/metadata/tcae?list=true", "")
+            spec.assert_eq(st, 200, "bob lists: ${b}")
+            spec.assert_contains(b, "\"keys\":[\"shared\"]", "the one secret")
+            st, b = vault_as(bob_tok, "POST", "secret/data/tcae/shared", "{\"data\":{\"colour\":\"red\"}}")
+            spec.assert_eq(st, 403, "bob cannot write: ${b}")
+            spec.assert_contains(b, "permission denied", "permission denied")
+            st, b = vault_as(bob_tok, "DELETE", "secret/data/tcae/shared", "")
+            spec.assert_eq(st, 403, "bob cannot delete: ${b}")
+            st, b = vault_as(bob_tok, "GET", "secret/data/other/x", "")
+            spec.assert_eq(st, 403, "bob cannot read elsewhere: ${b}")
+            st, b = vault_as(bob_tok, "GET", "sys/policies/acl/tcae-admin", "")
+            spec.assert_eq(st, 403, "bob cannot read policies: ${b}")
+            st, b = vault_as(bob_tok, "POST", "sys/capabilities-self", "{\"paths\":[\"secret/data/tcae/shared\",\"secret/data/other/x\"]}")
+            spec.assert_eq(st, 200, "bob's capabilities: ${b}")
+            spec.assert_contains(b, "\"secret/data/tcae/shared\":[\"read\"]", "read only")
+            spec.assert_contains(b, "\"secret/data/other/x\":[\"deny\"]", "denied elsewhere")
+            st, b = vault_("DELETE", "secret/metadata/tcae/shared", "")
+            spec.assert_eq(st, 204, "alice cleans up: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- KV v2 -----------------------------------------------------------
+
+        // PORTING: versions of one secret, secret/tcae/versioned (the dev
+        // server mounts KV v2 at secret/, so data is at secret/data/... and
+        // metadata at secret/metadata/...).
+        //   POST /v1/secret/data/tcae/versioned {"data":{"foo":"bar"}} -> 200 data.version 1
+        //   POST /v1/secret/data/tcae/versioned {"data":{"foo":"bar2"},"options":{"cas":1}} -> 200 data.version 2
+        //   POST /v1/secret/data/tcae/versioned {"data":{"foo":"bar3"},"options":{"cas":1}} -> 400
+        //        {"errors":["check-and-set parameter did not match the current version"]}
+        //   GET  /v1/secret/data/tcae/versioned -> 200 data.data.foo "bar2", data.metadata.version 2
+        //   GET  /v1/secret/data/tcae/versioned?version=1 -> 200 data.data.foo "bar"
+        //   GET  /v1/secret/metadata/tcae/versioned -> 200 data.current_version 2, data.versions "1" and "2"
+        //   GET  /v1/secret/data/tcae/versioned?version=9 -> 404 {"errors":[]}
+        //   DELETE /v1/secret/metadata/tcae/versioned -> 204 (all versions and metadata)
+        //   GET  /v1/secret/data/tcae/versioned -> 404
+        spec.it("writes, reads and versions a KV v2 secret") callback {
+            rec, ok = begin("kv2_writes_reads_and_versions_a_secret", ["secret/metadata/tcae/versioned"], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "secret/data/tcae/versioned", "{\"data\":{\"foo\":\"bar\"}}")
+            spec.assert_eq(st, 200, "write: ${b}")
+            spec.assert_contains(b, "\"version\":1", "version 1")
+            st, b = vault_("POST", "secret/data/tcae/versioned", "{\"data\":{\"foo\":\"bar2\"},\"options\":{\"cas\":1}}")
+            spec.assert_eq(st, 200, "write with cas 1: ${b}")
+            spec.assert_contains(b, "\"version\":2", "version 2")
+            st, b = vault_("POST", "secret/data/tcae/versioned", "{\"data\":{\"foo\":\"bar3\"},\"options\":{\"cas\":1}}")
+            spec.assert_eq(st, 400, "a stale cas: ${b}")
+            spec.assert_contains(b, "check-and-set parameter did not match the current version", "the cas message")
+            st, b = vault_("GET", "secret/data/tcae/versioned", "")
+            spec.assert_eq(st, 200, "read: ${b}")
+            spec.assert_str_eq(kv_field(b, "foo"), "bar2", "the latest")
+            spec.assert_contains(b, "\"version\":2", "version 2")
+            st, b = vault_("GET", "secret/data/tcae/versioned?version=1", "")
+            spec.assert_eq(st, 200, "read version 1: ${b}")
+            spec.assert_str_eq(kv_field(b, "foo"), "bar", "the first")
+            st, b = vault_("GET", "secret/metadata/tcae/versioned", "")
+            spec.assert_eq(st, 200, "metadata: ${b}")
+            spec.assert_contains(b, "\"current_version\":2", "current version")
+            spec.assert_contains(b, "\"versions\":{\"1\":{", "version 1 listed")
+            spec.assert_contains(b, "\"2\":{", "version 2 listed")
+            st, b = vault_("GET", "secret/data/tcae/versioned?version=9", "")
+            spec.assert_eq(st, 404, "a version that does not exist: ${b}")
+            st, b = vault_("DELETE", "secret/metadata/tcae/versioned", "")
+            spec.assert_eq(st, 204, "delete everything: ${b}")
+            st, b = vault_("GET", "secret/data/tcae/versioned", "")
+            spec.assert_eq(st, 404, "gone: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: soft delete, undelete and destroy, secret/tcae/lifecycle
+        // (two versions written first: {"data":{"n":"one"}} and {"data":{"n":"two"}}).
+        //   DELETE /v1/secret/data/tcae/lifecycle -> 204 (soft-deletes the latest version)
+        //   GET    /v1/secret/data/tcae/lifecycle -> 404 with a body: data.data null,
+        //          data.metadata.deletion_time set (collapsed), destroyed false
+        //   POST   /v1/secret/undelete/tcae/lifecycle {"versions":[2]} -> 204
+        //   GET    /v1/secret/data/tcae/lifecycle -> 200 "two" again
+        //   POST   /v1/secret/delete/tcae/lifecycle {"versions":[1,2]} -> 204
+        //   POST   /v1/secret/destroy/tcae/lifecycle {"versions":[1]} -> 204 (for good)
+        //   GET    /v1/secret/data/tcae/lifecycle?version=1 -> 404, data.metadata.destroyed true
+        //   POST   /v1/secret/undelete/tcae/lifecycle {"versions":[1,2]} -> 204, but only 2 comes back:
+        //   GET    ...?version=1 -> still 404 destroyed; GET ...?version=2 -> 200 "two"
+        //   DELETE /v1/secret/metadata/tcae/lifecycle -> 204
+        spec.it("soft-deletes, undeletes and destroys KV v2 versions") callback {
+            rec, ok = begin("kv2_soft_deletes_undeletes_and_destroys_versions", ["secret/metadata/tcae/lifecycle"], 0)
+            if ok == 0 { return }
+            vault_("POST", "secret/data/tcae/lifecycle", "{\"data\":{\"n\":\"one\"}}")
+            vault_("POST", "secret/data/tcae/lifecycle", "{\"data\":{\"n\":\"two\"}}")
+            st, b = vault_("DELETE", "secret/data/tcae/lifecycle", "")
+            spec.assert_eq(st, 204, "soft delete: ${b}")
+            st, b = vault_("GET", "secret/data/tcae/lifecycle", "")
+            spec.assert_eq(st, 404, "a deleted version reads as 404: ${b}")
+            spec.assert_contains(b, "\"data\":null", "no data")
+            spec.assert_contains(b, "\"destroyed\":false", "not destroyed")
+            spec.assert_contains(b, "\"version\":2", "it is version 2 that was deleted")
+            st, b = vault_("POST", "secret/undelete/tcae/lifecycle", "{\"versions\":[2]}")
+            spec.assert_eq(st, 204, "undelete: ${b}")
+            st, b = vault_("GET", "secret/data/tcae/lifecycle", "")
+            spec.assert_eq(st, 200, "back: ${b}")
+            spec.assert_str_eq(kv_field(b, "n"), "two", "the value is intact")
+            st, b = vault_("POST", "secret/delete/tcae/lifecycle", "{\"versions\":[1,2]}")
+            spec.assert_eq(st, 204, "delete versions 1 and 2: ${b}")
+            st, b = vault_("POST", "secret/destroy/tcae/lifecycle", "{\"versions\":[1]}")
+            spec.assert_eq(st, 204, "destroy version 1: ${b}")
+            st, b = vault_("GET", "secret/data/tcae/lifecycle?version=1", "")
+            spec.assert_eq(st, 404, "a destroyed version: ${b}")
+            spec.assert_contains(b, "\"destroyed\":true", "destroyed")
+            st, b = vault_("POST", "secret/undelete/tcae/lifecycle", "{\"versions\":[1,2]}")
+            spec.assert_eq(st, 204, "undelete 1 and 2: ${b}")
+            st, b = vault_("GET", "secret/data/tcae/lifecycle?version=1", "")
+            spec.assert_eq(st, 404, "version 1 stays destroyed: ${b}")
+            st, b = vault_("GET", "secret/data/tcae/lifecycle?version=2", "")
+            spec.assert_eq(st, 200, "version 2 is back: ${b}")
+            st, b = vault_("DELETE", "secret/metadata/tcae/lifecycle", "")
+            spec.assert_eq(st, 204, "delete everything: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: listing, metadata and patching, under secret/tcae/tree/.
+        //   POST /v1/secret/data/tcae/tree/a {"data":{"k":"1"}} -> 200 (also tree/b and tree/sub/c)
+        //   GET  /v1/secret/metadata/tcae/tree?list=true -> 200 data.keys ["a","b","sub/"] (folders end in /)
+        //   GET  /v1/secret/metadata/tcae/tree/sub?list=true -> 200 keys ["c"]
+        //   GET  /v1/secret/metadata/tcae/nothing?list=true -> 404 {"errors":[]}
+        //   POST /v1/secret/metadata/tcae/tree/a {"max_versions":2,"custom_metadata":{"owner":"tcae"}} -> 204
+        //   POST /v1/secret/data/tcae/tree/a {"data":{"k":"2"}} and {"data":{"k":"3"}} -> 200 versions 2 and 3
+        //   GET  /v1/secret/metadata/tcae/tree/a -> 200 max_versions 2, oldest_version 2,
+        //        custom_metadata {"owner":"tcae"}, versions "2" and "3" only (1 was pruned)
+        //   GET  /v1/secret/data/tcae/tree/a?version=1 -> 404
+        //   PATCH /v1/secret/data/tcae/tree/a {"data":{"extra":"y"}} Content-Type: application/merge-patch+json
+        //        -> 200 version 4; GET shows both k "3" and extra "y"
+        //   PATCH /v1/secret/data/tcae/tree/nothing (same) -> 404
+        //   DELETE /v1/secret/metadata/tcae/tree/{a,b,sub/c} -> 204 each
+        spec.it("lists, annotates and patches KV v2 secrets") callback {
+            rec, ok = begin("kv2_lists_annotates_and_patches_secrets", ["secret/metadata/tcae/tree/a", "secret/metadata/tcae/tree/b", "secret/metadata/tcae/tree/sub/c"], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "secret/data/tcae/tree/a", "{\"data\":{\"k\":\"1\"}}")
+            spec.assert_eq(st, 200, "write a: ${b}")
+            vault_("POST", "secret/data/tcae/tree/b", "{\"data\":{\"k\":\"1\"}}")
+            vault_("POST", "secret/data/tcae/tree/sub/c", "{\"data\":{\"k\":\"1\"}}")
+            st, b = vault_("GET", "secret/metadata/tcae/tree?list=true", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "\"keys\":[\"a\",\"b\",\"sub/\"]", "keys, folders ending in a slash")
+            st, b = vault_("GET", "secret/metadata/tcae/tree/sub?list=true", "")
+            spec.assert_eq(st, 200, "list the folder: ${b}")
+            spec.assert_contains(b, "\"keys\":[\"c\"]", "its one secret")
+            st, b = vault_("GET", "secret/metadata/tcae/nothing?list=true", "")
+            spec.assert_eq(st, 404, "list where nothing is: ${b}")
+            st, b = vault_("POST", "secret/metadata/tcae/tree/a", "{\"max_versions\":2,\"custom_metadata\":{\"owner\":\"tcae\"}}")
+            spec.assert_eq(st, 204, "metadata: ${b}")
+            vault_("POST", "secret/data/tcae/tree/a", "{\"data\":{\"k\":\"2\"}}")
+            st, b = vault_("POST", "secret/data/tcae/tree/a", "{\"data\":{\"k\":\"3\"}}")
+            spec.assert_contains(b, "\"version\":3", "version 3")
+            st, b = vault_("GET", "secret/metadata/tcae/tree/a", "")
+            spec.assert_eq(st, 200, "read the metadata: ${b}")
+            spec.assert_contains(b, "\"max_versions\":2", "max_versions")
+            spec.assert_contains(b, "\"oldest_version\":2", "version 1 was pruned")
+            spec.assert_contains(b, "\"custom_metadata\":{\"owner\":\"tcae\"}", "custom metadata")
+            st, b = vault_("GET", "secret/data/tcae/tree/a?version=1", "")
+            spec.assert_eq(st, 404, "a pruned version: ${b}")
+            st, b = vault_with(tok, "PATCH", "secret/data/tcae/tree/a", "application/merge-patch+json", [], "{\"data\":{\"extra\":\"y\"}}")
+            spec.assert_eq(st, 200, "patch: ${b}")
+            spec.assert_contains(b, "\"version\":4", "a new version")
+            st, b = vault_("GET", "secret/data/tcae/tree/a", "")
+            spec.assert_str_eq(kv_field(b, "k"), "3", "the old field is kept: ${b}")
+            spec.assert_str_eq(kv_field(b, "extra"), "y", "the new field is added")
+            st, b = vault_with(tok, "PATCH", "secret/data/tcae/tree/nothing", "application/merge-patch+json", [], "{\"data\":{\"extra\":\"y\"}}")
+            spec.assert_eq(st, 404, "patching what is not there: ${b}")
+            vault_("DELETE", "secret/metadata/tcae/tree/a", "")
+            vault_("DELETE", "secret/metadata/tcae/tree/b", "")
+            st, b = vault_("DELETE", "secret/metadata/tcae/tree/sub/c", "")
+            spec.assert_eq(st, 204, "clean up: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- KV v1, the cubbyhole and wrapping -------------------------------
+
+        // PORTING: a KV v1 engine mounted at tcae-kv1 (no versions: the
+        // path is the secret's path, the body is its data).
+        //   POST   /v1/sys/mounts/tcae-kv1 {"type":"kv","options":{"version":"1"}} -> 204
+        //   POST   /v1/tcae-kv1/app {"user":"u","pass":"p"} -> 204
+        //   GET    /v1/tcae-kv1/app -> 200 data {"pass":"p","user":"u"}, lease_duration 2764800
+        //   POST   /v1/tcae-kv1/app/db {"host":"h"} -> 204 ; GET /v1/tcae-kv1?list=true -> keys ["app","app/"]
+        //   POST   /v1/tcae-kv1/app {"user":"u2"} -> 204 (replaces the whole secret)
+        //   GET    /v1/tcae-kv1/app -> data {"user":"u2"}
+        //   DELETE /v1/tcae-kv1/app -> 204 ; GET -> 404 {"errors":[]}
+        //   DELETE /v1/sys/mounts/tcae-kv1 -> 204
+        spec.it("stores and lists KV v1 secrets") callback {
+            rec, ok = begin("kv1_stores_replaces_lists_and_deletes_secrets", ["sys/mounts/tcae-kv1"], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "sys/mounts/tcae-kv1", "{\"type\":\"kv\",\"options\":{\"version\":\"1\"}}")
+            spec.assert_eq(st, 204, "mount: ${b}")
+            st, b = vault_("POST", "tcae-kv1/app", "{\"user\":\"u\",\"pass\":\"p\"}")
+            spec.assert_eq(st, 204, "write: ${b}")
+            st, b = vault_("GET", "tcae-kv1/app", "")
+            spec.assert_eq(st, 200, "read: ${b}")
+            spec.assert_contains(b, "\"data\":{\"pass\":\"p\",\"user\":\"u\"}", "the data, flat")
+            vault_("POST", "tcae-kv1/app/db", "{\"host\":\"h\"}")
+            st, b = vault_("GET", "tcae-kv1?list=true", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "\"keys\":[\"app\",\"app/\"]", "a secret and a folder of the same name")
+            st, b = vault_("POST", "tcae-kv1/app", "{\"user\":\"u2\"}")
+            spec.assert_eq(st, 204, "replace: ${b}")
+            st, b = vault_("GET", "tcae-kv1/app", "")
+            spec.assert_contains(b, "\"data\":{\"user\":\"u2\"}", "replaced, not merged")
+            vault_("DELETE", "tcae-kv1/app/db", "")
+            st, b = vault_("DELETE", "tcae-kv1/app", "")
+            spec.assert_eq(st, 204, "delete: ${b}")
+            st, b = vault_("GET", "tcae-kv1/app", "")
+            spec.assert_eq(st, 404, "gone: ${b}")
+            st, b = vault_("DELETE", "sys/mounts/tcae-kv1", "")
+            spec.assert_eq(st, 204, "unmount: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: a response is wrapped when the request carries
+        // X-Vault-Wrap-TTL; the wrapping token unwraps once.
+        //   POST /v1/auth/token/create {"policies":["default"],"ttl":"1h"} X-Vault-Wrap-TTL: 60
+        //        -> 200 with data null and wrap_info {token ({{token-N}} or X_VAULT_TOKEN_N),
+        //        ttl 60, creation_path "auth/token/create", wrapped_accessor}; no auth block
+        //   POST /v1/sys/wrapping/lookup {"token":<the wrapping token>} (no X-Vault-Token) -> 200
+        //        data.creation_path, data.creation_ttl 60
+        //   POST /v1/sys/wrapping/unwrap (no body) X-Vault-Token: <the wrapping token> -> 200,
+        //        auth.client_token, the token that was wrapped, auth.policies ["default"]
+        //   POST /v1/sys/wrapping/unwrap X-Vault-Token: <the wrapping token> -> 400
+        //        {"errors":["wrapping token is not valid or does not exist"]} (it was single use)
+        //   GET  /v1/auth/token/lookup-self X-Vault-Token: <the unwrapped token> -> 200
+        spec.it("wraps a response and unwraps it once") callback {
+            rec, ok = begin("wraps_a_response_and_unwraps_it_once", [], 0)
+            if ok == 0 { return }
+            st, b = vault_with(tok, "POST", "auth/token/create", "application/json", ["X-Vault-Wrap-TTL: 60"], "{\"policies\":[\"default\"],\"ttl\":\"1h\"}")
+            spec.assert_eq(st, 200, "create, wrapped: ${b}")
+            wrap = jstr(b, "wrap_info.token")
+            spec.assert_true(string.length(wrap) > 0, "a wrapping token")
+            spec.assert_contains(b, "\"data\":null", "the response itself is not here")
+            spec.assert_str_eq(jstr(b, "wrap_info.creation_path"), "auth/token/create", "what was wrapped")
+            st, b = anonymous("POST", "sys/wrapping/lookup", "{\"token\":\"${wrap}\"}")
+            spec.assert_eq(st, 200, "lookup the wrapping token: ${b}")
+            spec.assert_str_eq(jstr(b, "data.creation_path"), "auth/token/create", "its creation path")
+            st, b = vault_as(wrap, "POST", "sys/wrapping/unwrap", "")
+            spec.assert_eq(st, 200, "unwrap: ${b}")
+            unwrapped = jstr(b, "auth.client_token")
+            spec.assert_true(string.length(unwrapped) > 0, "the wrapped token")
+            spec.assert_contains(b, "\"policies\":[\"default\"]", "its policies")
+            st, b = vault_as(wrap, "POST", "sys/wrapping/unwrap", "")
+            spec.assert_eq(st, 400, "unwrapping twice: ${b}")
+            spec.assert_contains(b, "wrapping token is not valid or does not exist", "single use")
+            st, b = vault_as(unwrapped, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 200, "the unwrapped token works: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the cubbyhole is private to each token.
+        //   POST /v1/cubbyhole/tcae {"a":"b"} (alice's token) -> 204
+        //   GET  /v1/cubbyhole/tcae (alice's token) -> 200 data {"a":"b"}
+        //   POST /v1/auth/token/create {"policies":["tcae-admin"],"ttl":"1h"} -> 200, auth.client_token (a second token)
+        //   GET  /v1/cubbyhole/tcae (the second token) -> 404 {"errors":[]}: its own, empty, cubbyhole
+        //   DELETE /v1/cubbyhole/tcae (alice's token) -> 204
+        spec.it("keeps the cubbyhole private to each token") callback {
+            rec, ok = begin("keeps_the_cubbyhole_private_to_each_token", [], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "cubbyhole/tcae", "{\"a\":\"b\"}")
+            spec.assert_eq(st, 204, "write: ${b}")
+            st, b = vault_("GET", "cubbyhole/tcae", "")
+            spec.assert_eq(st, 200, "read: ${b}")
+            spec.assert_contains(b, "\"data\":{\"a\":\"b\"}", "the data")
+            st, b = vault_("POST", "auth/token/create", "{\"policies\":[\"tcae-admin\"],\"ttl\":\"1h\"}")
+            spec.assert_eq(st, 200, "a second token: ${b}")
+            other = jstr(b, "auth.client_token")
+            st, b = vault_as(other, "GET", "cubbyhole/tcae", "")
+            spec.assert_eq(st, 404, "another token's cubbyhole is empty: ${b}")
+            st, b = vault_("DELETE", "cubbyhole/tcae", "")
+            spec.assert_eq(st, 204, "clean up: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- transit -----------------------------------------------------------
+
+        // PORTING: a key's life, in the engine mounted at tcae-transit.
+        //   POST   /v1/sys/mounts/tcae-transit {"type":"transit"} -> 204
+        //   POST   /v1/tcae-transit/keys/k1 {"type":"aes256-gcm96"} -> 204
+        //   GET    /v1/tcae-transit/keys/k1 -> 200 data.type, data.latest_version 1, data.keys {"1":<time>},
+        //          data.deletion_allowed false, data.supports_encryption true
+        //   POST   /v1/tcae-transit/keys/k1/rotate -> 204
+        //   GET    /v1/tcae-transit/keys/k1 -> latest_version 2, keys "1" and "2"
+        //   POST   /v1/tcae-transit/keys/k1/config {"min_decryption_version":2,"deletion_allowed":true} -> 204
+        //   GET    /v1/tcae-transit/keys/k1 -> min_decryption_version 2, keys now only "2"
+        //   POST   /v1/tcae-transit/keys/k2 {"type":"ed25519"} -> 204
+        //   GET    /v1/tcae-transit/keys?list=true -> keys ["k1","k2"]
+        //   DELETE /v1/tcae-transit/keys/k1 -> 204 (deletion_allowed was set)
+        //   DELETE /v1/tcae-transit/keys/k2 -> 400 {"errors":["key is marked as not deletable..."]}
+        //   GET    /v1/tcae-transit/keys/k1 -> 404 {"errors":[]}
+        //   DELETE /v1/sys/mounts/tcae-transit -> 204
+        spec.it("creates, rotates, configures and deletes a transit key") callback {
+            rec, ok = begin("transit_creates_rotates_configures_and_deletes_a_key", ["sys/mounts/tcae-transit"], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "sys/mounts/tcae-transit", "{\"type\":\"transit\"}")
+            spec.assert_eq(st, 204, "mount: ${b}")
+            st, b = vault_("POST", "tcae-transit/keys/k1", "{\"type\":\"aes256-gcm96\"}")
+            spec.assert_eq(st, 204, "create: ${b}")
+            st, b = vault_("GET", "tcae-transit/keys/k1", "")
+            spec.assert_eq(st, 200, "read: ${b}")
+            spec.assert_str_eq(jstr(b, "data.type"), "aes256-gcm96", "its type")
+            spec.assert_contains(b, "\"latest_version\":1", "version 1")
+            spec.assert_contains(b, "\"deletion_allowed\":false", "not deletable yet")
+            spec.assert_contains(b, "\"supports_encryption\":true", "encrypts")
+            st, b = vault_("POST", "tcae-transit/keys/k1/rotate", "")
+            spec.assert_eq(st, 204, "rotate: ${b}")
+            st, b = vault_("GET", "tcae-transit/keys/k1", "")
+            spec.assert_contains(b, "\"latest_version\":2", "version 2")
+            spec.assert_contains(b, "\"keys\":{\"1\":", "key version 1 kept")
+            st, b = vault_("POST", "tcae-transit/keys/k1/config", "{\"min_decryption_version\":2,\"deletion_allowed\":true}")
+            spec.assert_eq(st, 204, "config: ${b}")
+            st, b = vault_("GET", "tcae-transit/keys/k1", "")
+            spec.assert_contains(b, "\"min_decryption_version\":2", "min_decryption_version")
+            spec.assert_contains(b, "\"deletion_allowed\":true", "deletable")
+            spec.assert_true(string.contains(b, "\"keys\":{\"1\":") == 0, "key version 1 no longer offered")
+            st, b = vault_("POST", "tcae-transit/keys/k2", "{\"type\":\"ed25519\"}")
+            spec.assert_eq(st, 204, "create k2: ${b}")
+            st, b = vault_("GET", "tcae-transit/keys?list=true", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "\"keys\":[\"k1\",\"k2\"]", "both keys")
+            st, b = vault_("DELETE", "tcae-transit/keys/k1", "")
+            spec.assert_eq(st, 204, "delete k1: ${b}")
+            st, b = vault_("DELETE", "tcae-transit/keys/k2", "")
+            spec.assert_eq(st, 400, "k2 is not deletable: ${b}")
+            st, b = vault_("GET", "tcae-transit/keys/k1", "")
+            spec.assert_eq(st, 404, "k1 is gone: ${b}")
+            st, b = vault_("DELETE", "sys/mounts/tcae-transit", "")
+            spec.assert_eq(st, 204, "unmount: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: encryption as a service, key tcae-transit/keys/k1. The
+        // plaintext is base64 ("aGVsbG8gdHJhbnNpdA==" is "hello transit").
+        //   POST /v1/sys/mounts/tcae-transit {"type":"transit"} -> 204 ; POST /v1/tcae-transit/keys/k1 {"type":"aes256-gcm96"} -> 204
+        //   POST /v1/tcae-transit/encrypt/k1 {"plaintext":"aGVsbG8gdHJhbnNpdA=="} -> 200
+        //        data.ciphertext {{blob-1}} ("vault:v1:..."), data.key_version 1
+        //   POST /v1/tcae-transit/decrypt/k1 {"ciphertext":<it>} -> 200 data.plaintext "aGVsbG8gdHJhbnNpdA=="
+        //   POST /v1/tcae-transit/keys/k1/rotate -> 204
+        //   POST /v1/tcae-transit/rewrap/k1 {"ciphertext":<it>} -> 200 data.ciphertext {{blob-2}}, key_version 2
+        //   POST /v1/tcae-transit/decrypt/k1 {"ciphertext":<the rewrapped>} -> the same plaintext
+        //   POST /v1/tcae-transit/decrypt/k1 {"ciphertext":<the old v1 one>} -> 200 too (v1 is still allowed)
+        //   POST /v1/tcae-transit/encrypt/k1 {"batch_input":[{"plaintext":"YQ=="},{"plaintext":"Yg=="}]} -> 200
+        //        data.batch_results, two ciphertexts
+        //   POST /v1/tcae-transit/decrypt/k1 {"ciphertext":"not-a-ciphertext"} -> 400
+        //        {"errors":["invalid ciphertext: no prefix"]}
+        //   POST /v1/tcae-transit/keys/nosuchkey/rotate -> 400 {"errors":["no existing key named nosuchkey could be found"]}
+        //        (encrypt, unlike rotate, CREATES a missing key on first use, so it is not an error case)
+        //   DELETE /v1/sys/mounts/tcae-transit -> 204
+        spec.it("encrypts, decrypts and rewraps with transit") callback {
+            rec, ok = begin("transit_encrypts_decrypts_and_rewraps", ["sys/mounts/tcae-transit"], 0)
+            if ok == 0 { return }
+            vault_("POST", "sys/mounts/tcae-transit", "{\"type\":\"transit\"}")
+            st, b = vault_("POST", "tcae-transit/keys/k1", "{\"type\":\"aes256-gcm96\"}")
+            spec.assert_eq(st, 204, "create the key: ${b}")
+            st, b = vault_("POST", "tcae-transit/encrypt/k1", "{\"plaintext\":\"aGVsbG8gdHJhbnNpdA==\"}")
+            spec.assert_eq(st, 200, "encrypt: ${b}")
+            ct1 = jstr(b, "data.ciphertext")
+            spec.assert_true(string.length(ct1) > 0, "a ciphertext")
+            spec.assert_contains(b, "\"key_version\":1", "key version 1")
+            st, b = vault_("POST", "tcae-transit/decrypt/k1", "{\"ciphertext\":\"${ct1}\"}")
+            spec.assert_eq(st, 200, "decrypt: ${b}")
+            spec.assert_str_eq(jstr(b, "data.plaintext"), "aGVsbG8gdHJhbnNpdA==", "the plaintext comes back")
+            st, b = vault_("POST", "tcae-transit/keys/k1/rotate", "")
+            spec.assert_eq(st, 204, "rotate: ${b}")
+            st, b = vault_("POST", "tcae-transit/rewrap/k1", "{\"ciphertext\":\"${ct1}\"}")
+            spec.assert_eq(st, 200, "rewrap: ${b}")
+            ct2 = jstr(b, "data.ciphertext")
+            spec.assert_true(string.length(ct2) > 0, "a new ciphertext")
+            spec.assert_contains(b, "\"key_version\":2", "now under key version 2")
+            st, b = vault_("POST", "tcae-transit/decrypt/k1", "{\"ciphertext\":\"${ct2}\"}")
+            spec.assert_str_eq(jstr(b, "data.plaintext"), "aGVsbG8gdHJhbnNpdA==", "the rewrapped ciphertext decrypts to the same: ${b}")
+            st, b = vault_("POST", "tcae-transit/decrypt/k1", "{\"ciphertext\":\"${ct1}\"}")
+            spec.assert_str_eq(jstr(b, "data.plaintext"), "aGVsbG8gdHJhbnNpdA==", "the old one still does: ${b}")
+            st, b = vault_("POST", "tcae-transit/encrypt/k1", "{\"batch_input\":[{\"plaintext\":\"YQ==\"},{\"plaintext\":\"Yg==\"}]}")
+            spec.assert_eq(st, 200, "batch encrypt: ${b}")
+            spec.assert_true(string.length(jstr(b, "data.batch_results.1.ciphertext")) > 0, "two results")
+            st, b = vault_("POST", "tcae-transit/decrypt/k1", "{\"ciphertext\":\"not-a-ciphertext\"}")
+            spec.assert_eq(st, 400, "a ciphertext that is not one: ${b}")
+            spec.assert_contains(b, "invalid ciphertext", "invalid ciphertext")
+            st, b = vault_("POST", "tcae-transit/keys/nosuchkey/rotate", "")
+            spec.assert_eq(st, 400, "rotating a key that does not exist: ${b}")
+            st, b = vault_("DELETE", "sys/mounts/tcae-transit", "")
+            spec.assert_eq(st, 204, "unmount: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: signing, verifying, hashing and HMAC, key ed25519 (k2) and
+        // aes256-gcm96 (k1) in tcae-transit. Inputs are base64 ("aGVsbG8=" is "hello").
+        //   POST /v1/sys/mounts/tcae-transit {"type":"transit"}; POST .../keys/k2 {"type":"ed25519"}; POST .../keys/k1 {"type":"aes256-gcm96"}
+        //   POST /v1/tcae-transit/sign/k2 {"input":"aGVsbG8="} -> 200 data.signature {{blob-1}}, key_version 1
+        //   POST /v1/tcae-transit/verify/k2 {"input":"aGVsbG8=","signature":<it>} -> 200 data.valid true
+        //   POST /v1/tcae-transit/verify/k2 {"input":"d29ybGQ=","signature":<it>} -> 200 data.valid false ("world")
+        //   POST /v1/tcae-transit/hash/sha2-256 {"input":"aGVsbG8="} -> 200 data.sum, deterministic:
+        //        2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824 (the same everywhere)
+        //   POST /v1/tcae-transit/hmac/k1 {"input":"aGVsbG8="} -> 200 data.hmac {{blob-2}}
+        //   POST /v1/tcae-transit/verify/k1 {"input":"aGVsbG8=","hmac":<it>} -> 200 data.valid true
+        //   POST /v1/tcae-transit/sign/k1 {"input":"aGVsbG8="} -> 400 (an aes key cannot sign)
+        //   DELETE /v1/sys/mounts/tcae-transit -> 204
+        spec.it("signs, verifies, hashes and HMACs with transit") callback {
+            rec, ok = begin("transit_signs_verifies_hashes_and_hmacs", ["sys/mounts/tcae-transit"], 0)
+            if ok == 0 { return }
+            vault_("POST", "sys/mounts/tcae-transit", "{\"type\":\"transit\"}")
+            st, b = vault_("POST", "tcae-transit/keys/k2", "{\"type\":\"ed25519\"}")
+            spec.assert_eq(st, 204, "create k2: ${b}")
+            st, b = vault_("POST", "tcae-transit/keys/k1", "{\"type\":\"aes256-gcm96\"}")
+            spec.assert_eq(st, 204, "create k1: ${b}")
+            st, b = vault_("POST", "tcae-transit/sign/k2", "{\"input\":\"aGVsbG8=\"}")
+            spec.assert_eq(st, 200, "sign: ${b}")
+            sig = jstr(b, "data.signature")
+            spec.assert_true(string.length(sig) > 0, "a signature")
+            st, b = vault_("POST", "tcae-transit/verify/k2", "{\"input\":\"aGVsbG8=\",\"signature\":\"${sig}\"}")
+            spec.assert_eq(st, 200, "verify: ${b}")
+            spec.assert_contains(b, "\"valid\":true", "valid")
+            st, b = vault_("POST", "tcae-transit/verify/k2", "{\"input\":\"d29ybGQ=\",\"signature\":\"${sig}\"}")
+            spec.assert_eq(st, 200, "verify other input: ${b}")
+            spec.assert_contains(b, "\"valid\":false", "not valid for other input")
+            st, b = vault_("POST", "tcae-transit/hash/sha2-256", "{\"input\":\"aGVsbG8=\"}")
+            spec.assert_eq(st, 200, "hash: ${b}")
+            spec.assert_str_eq(jstr(b, "data.sum"), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", "sha-256 of hello")
+            st, b = vault_("POST", "tcae-transit/hmac/k1", "{\"input\":\"aGVsbG8=\"}")
+            spec.assert_eq(st, 200, "hmac: ${b}")
+            mac = jstr(b, "data.hmac")
+            spec.assert_true(string.length(mac) > 0, "an hmac")
+            st, b = vault_("POST", "tcae-transit/verify/k1", "{\"input\":\"aGVsbG8=\",\"hmac\":\"${mac}\"}")
+            spec.assert_eq(st, 200, "verify hmac: ${b}")
+            spec.assert_contains(b, "\"valid\":true", "valid hmac")
+            st, b = vault_("POST", "tcae-transit/sign/k1", "{\"input\":\"aGVsbG8=\"}")
+            spec.assert_eq(st, 400, "an aes key cannot sign: ${b}")
+            st, b = vault_("DELETE", "sys/mounts/tcae-transit", "")
+            spec.assert_eq(st, 204, "unmount: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- tokens ------------------------------------------------------------
+
+        // PORTING: a child token's life.
+        //   POST /v1/auth/token/create {"policies":["default"],"ttl":"1h","display_name":"child","renewable":true}
+        //        -> 200 auth.client_token, auth.accessor ({{accessor-N}}), auth.policies ["default"],
+        //        auth.lease_duration 3600, auth.orphan false
+        //   POST /v1/auth/token/lookup {"token":<it>} -> 200 data.display_name "token-child", data.creation_ttl 3600,
+        //        data.ttl 3600 (it counts down on a real server: collapsed on the tape), data.policies ["default"]
+        //   POST /v1/auth/token/lookup-accessor {"accessor":<its accessor>} -> 200, the same data (without the id)
+        //   POST /v1/auth/token/renew {"token":<it>,"increment":"2h"} -> 200 auth.lease_duration 7200
+        //   POST /v1/auth/token/revoke {"token":<it>} -> 204
+        //   POST /v1/auth/token/lookup {"token":<it>} -> 403 {"errors":["bad token"]}
+        // Create/lookup/renew/revoke here are all done with alice's token in
+        // the header; the child's own token is only ever in a body.
+        spec.it("creates, looks up, renews and revokes a child token") callback {
+            rec, ok = begin("creates_looks_up_renews_and_revokes_a_child_token", [], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "auth/token/create", "{\"policies\":[\"default\"],\"ttl\":\"1h\",\"display_name\":\"child\",\"renewable\":true}")
+            spec.assert_eq(st, 200, "create: ${b}")
+            child = jstr(b, "auth.client_token")
+            acc = jstr(b, "auth.accessor")
+            spec.assert_true(string.length(child) > 0, "a client token")
+            spec.assert_true(string.length(acc) > 0, "an accessor")
+            spec.assert_contains(b, "\"policies\":[\"default\"]", "policies")
+            spec.assert_contains(b, "\"lease_duration\":3600", "an hour")
+            spec.assert_contains(b, "\"orphan\":false", "a child of alice's token")
+            st, b = vault_("POST", "auth/token/lookup", "{\"token\":\"${child}\"}")
+            spec.assert_eq(st, 200, "lookup: ${b}")
+            spec.assert_str_eq(jstr(b, "data.display_name"), "token-child", "display name")
+            spec.assert_contains(b, "\"creation_ttl\":3600", "creation_ttl")
+            st, b = vault_("POST", "auth/token/lookup-accessor", "{\"accessor\":\"${acc}\"}")
+            spec.assert_eq(st, 200, "lookup by accessor: ${b}")
+            spec.assert_str_eq(jstr(b, "data.display_name"), "token-child", "the same token")
+            st, b = vault_("POST", "auth/token/renew", "{\"token\":\"${child}\",\"increment\":\"2h\"}")
+            spec.assert_eq(st, 200, "renew: ${b}")
+            spec.assert_contains(b, "\"lease_duration\":7200", "two hours")
+            st, b = vault_("POST", "auth/token/revoke", "{\"token\":\"${child}\"}")
+            spec.assert_eq(st, 204, "revoke: ${b}")
+            st, b = vault_("POST", "auth/token/lookup", "{\"token\":\"${child}\"}")
+            spec.assert_eq(st, 403, "a revoked token is gone: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: a use limit, and revoking by accessor.
+        //   POST /v1/auth/token/create {"policies":["default"],"num_uses":2,"ttl":"1h"} -> 200 auth.num_uses 2
+        //   GET  /v1/auth/token/lookup-self X-Vault-Token: <it> -> 200 (first use)
+        //   GET  /v1/auth/token/lookup-self X-Vault-Token: <it> -> 200 (second and last use)
+        //   GET  /v1/auth/token/lookup-self X-Vault-Token: <it> -> 403 (spent)
+        //   POST /v1/auth/token/create {"policies":["default"],"ttl":"1h"} -> 200, a second token, with accessor
+        //   POST /v1/auth/token/revoke-accessor {"accessor":<its accessor>} -> 204
+        //   GET  /v1/auth/token/lookup-self X-Vault-Token: <the second> -> 403
+        spec.it("limits a token's uses and revokes one by accessor") callback {
+            rec, ok = begin("limits_a_tokens_uses_and_revokes_one_by_accessor", [], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "auth/token/create", "{\"policies\":[\"default\"],\"num_uses\":2,\"ttl\":\"1h\"}")
+            spec.assert_eq(st, 200, "create: ${b}")
+            limited = jstr(b, "auth.client_token")
+            spec.assert_contains(b, "\"num_uses\":2", "two uses")
+            st, b = vault_as(limited, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 200, "first use: ${b}")
+            st, b = vault_as(limited, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 200, "second use: ${b}")
+            st, b = vault_as(limited, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 403, "spent: ${b}")
+            st, b = vault_("POST", "auth/token/create", "{\"policies\":[\"default\"],\"ttl\":\"1h\"}")
+            spec.assert_eq(st, 200, "create another: ${b}")
+            second = jstr(b, "auth.client_token")
+            acc = jstr(b, "auth.accessor")
+            st, b = vault_("POST", "auth/token/revoke-accessor", "{\"accessor\":\"${acc}\"}")
+            spec.assert_eq(st, 204, "revoke by accessor: ${b}")
+            st, b = vault_as(second, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 403, "revoked: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: revoking a token revokes the tokens it made.
+        //   POST /v1/auth/token/create {"policies":["tcae-admin"],"ttl":"1h"} -> the parent
+        //   POST /v1/auth/token/create {"policies":["default"],"ttl":"1h"} X-Vault-Token: <parent> -> the child
+        //        (auth.orphan false); and one more with {"policies":["default"],"ttl":"1h","no_parent":true} -> an orphan
+        //   POST /v1/auth/token/revoke {"token":<parent>} -> 204
+        //   GET  /v1/auth/token/lookup-self X-Vault-Token: <child> -> 403 (gone with the parent)
+        //   GET  /v1/auth/token/lookup-self X-Vault-Token: <orphan> -> 200 (made by the parent, but no_parent)
+        spec.it("revokes a token's children with it") callback {
+            rec, ok = begin("revokes_a_tokens_children_with_it", [], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "auth/token/create", "{\"policies\":[\"tcae-admin\"],\"ttl\":\"1h\"}")
+            spec.assert_eq(st, 200, "the parent: ${b}")
+            parent = jstr(b, "auth.client_token")
+            st, b = vault_as(parent, "POST", "auth/token/create", "{\"policies\":[\"default\"],\"ttl\":\"1h\"}")
+            spec.assert_eq(st, 200, "the child: ${b}")
+            child = jstr(b, "auth.client_token")
+            spec.assert_contains(b, "\"orphan\":false", "not an orphan")
+            st, b = vault_as(parent, "POST", "auth/token/create", "{\"policies\":[\"default\"],\"ttl\":\"1h\",\"no_parent\":true}")
+            spec.assert_eq(st, 200, "the orphan: ${b}")
+            orphan = jstr(b, "auth.client_token")
+            spec.assert_contains(b, "\"orphan\":true", "an orphan")
+            st, b = vault_("POST", "auth/token/revoke", "{\"token\":\"${parent}\"}")
+            spec.assert_eq(st, 204, "revoke the parent: ${b}")
+            st, b = vault_as(child, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 403, "the child went with it: ${b}")
+            st, b = vault_as(orphan, "GET", "auth/token/lookup-self", "")
+            spec.assert_eq(st, 200, "the orphan did not: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- errors --------------------------------------------------------------
+
+        // PORTING: the representative error statuses, logged in as alice.
+        //   POST /v1/secret/data/tcae/err {"data":"not an object"}   -> 400 (see the assertion)
+        //   POST /v1/secret/data/tcae/err {} -> 400 {"errors":["no data provided"]}
+        //   GET  /v1/secret/data/tcae/missing -> 404 {"errors":[]}
+        //   GET  /v1/nosuch/x -> 404 {"errors":["no handler for route \"nosuch/x\". route entry not found."]}
+        //   PATCH /v1/sys/health -> 405
+        //   POST /v1/sys/mounts/tcae-bad {"type":"nosuchengine"} -> 400
+        //   (403 is shown by the no-token and read-only cases; 429 and 503 need
+        //   a standby or a sealed server, which a dev server never is)
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses", ["sys/mounts/tcae-bad"], 0)
+            if ok == 0 { return }
+            st, b = vault_("POST", "secret/data/tcae/err", "{\"data\":\"not an object\"}")
+            spec.assert_eq(st, 400, "data that is not an object: ${b}")
+            st, b = vault_("POST", "secret/data/tcae/err", "{}")
+            spec.assert_eq(st, 400, "no data: ${b}")
+            spec.assert_contains(b, "no data provided", "no data provided")
+            st, b = vault_("GET", "secret/data/tcae/missing", "")
+            spec.assert_eq(st, 404, "a secret that is not there: ${b}")
+            spec.assert_str_eq(b, "{\"errors\":[]}\n", "an empty error list")
+            st, b = vault_("GET", "nosuch/x", "")
+            spec.assert_eq(st, 404, "a path nothing is mounted at: ${b}")
+            spec.assert_contains(b, "no handler for route", "no handler for the route")
+            st, b = vault_("PATCH", "sys/health", "")
+            spec.assert_eq(st, 405, "PATCH is not offered: ${b}")
+            st, b = vault_("POST", "sys/mounts/tcae-bad", "{\"type\":\"nosuchengine\"}")
+            spec.assert_eq(st, 400, "an engine type that does not exist: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+    }
+
+    if shared_container != null {
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("vault: removing the shared container: ${e}") }
     }
     return spec.run_summary(fw)
 }

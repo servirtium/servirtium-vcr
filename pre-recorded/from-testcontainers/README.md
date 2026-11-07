@@ -48,7 +48,7 @@ them. Each suite's `LICENCE-NOTE.md` gives the clause and the commands.
 
 | Suite | Cases | Container |
 |---|---|---|
-| `vault` | 2 | `hashicorp/vault:1.13.0` |
+| `vault` | 21 (comprehensive: 19 API, 2 module; userpass and approle logins on their own tapes, health and seal status, mounts, ACL policies and their enforcement, KV v2 and v1, transit, tokens, response wrapping and the cubbyhole, errors) | `hashicorp/vault:1.13.0` |
 | `couchdb` | 18 (comprehensive: 15 API, 3 module) | `couchdb:3` |
 | `consul` | 4 | `hashicorp/consul:1.15` |
 | `openfga` | 1 | `openfga/openfga:v1.18.0` |
@@ -181,7 +181,7 @@ Per suite (registered at the top of its `main`):
 
 | Suite | Normalized (stable `{{name-N}}` tokens) | Collapsed to a constant | Redacted (put back on playback) | Headers dropped |
 |---|---|---|---|---|
-| vault | UUIDs (request and cluster ids) | `vault-cluster-<hex>`, RFC 3339 times, Unix times | the root token in `X-Vault-Token`, as `X_VAULT_TOKEN_1` (credential preset) | |
+| vault | module cases: UUIDs; API cases: uuids (entity, mount, approle role and secret ids), token accessors, mount accessors, transit ciphertexts, signatures and HMACs (`{{blob-N}}`), tokens never sent as a header (`{{token-N}}`) | `vault-cluster-<hex>`, request ids, RFC 3339 and Unix times, a token's remaining ttl | the token in `X-Vault-Token` as `X_VAULT_TOKEN_N` (credential preset: the same value is tokenized in bodies too); API cases: the login password as `REDACTED[<label>]` | |
 | couchdb | API cases: sequence ids, quoted 32-hex uuids (server, `/_uuids`, generated doc ids), base-36 ETags; module cases: the 32-hex server uuid | `instance_start_time`; API cases: the session cookie's `Expires`; module cases: `*_seq` tokens | API cases: the session cookie (credential preset, `COOKIE_N`) and the login body's password as `REDACTED[<label>]`; module cases: each `Authorization: Basic` credential, as `REDACTED[<label>]` | `X-Couch-Request-ID`, `X-CouchDB-Body-Time` |
 | consul | the node id | Raft indexes (the `X-Consul-Index` header's value too), runtime counters, `cpu_count`, `arch` in `/v1/agent/self` | | |
 | openfga | the store's ULID (it comes back in a later request path, and the token round-trips) | RFC 3339 times | | |
