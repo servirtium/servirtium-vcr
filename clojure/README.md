@@ -41,7 +41,7 @@ without a separate native FFI to maintain.
 below will not change when it lands). Until then install into `~/.m2`:
 
 ```sh
-TAG=v2.0.0-alpha.12; VER=2.0.0-alpha12   # the only things to change
+TAG=v2.0.0-alpha.12; VER=2.0.0-alpha.12   # the only things to change
 # 1. the Java binding's fat jar (six natives bundled) from the release page -> ~/.m2 as dev.servirtium:vcr
 curl -fsSLO https://github.com/servirtium/servirtium-vcr/releases/download/$TAG/servirtium-vcr-$VER.jar
 mvn -q install:install-file -Dfile=servirtium-vcr-$VER.jar -DgroupId=dev.servirtium -DartifactId=vcr -Dversion=$VER -Dpackaging=jar
@@ -55,14 +55,14 @@ mvn -q dependency:get -Dartifact=dev.servirtium:vcr-clojure:$VER && echo OK
 Alternative, from a checkout of this repo (needs `aeb` and `ae`): `aeb clojure/.package.ae`
 builds the native library and installs the same coordinate into `~/.m2`.
 
-Then depend on `dev.servirtium:vcr-clojure:2.0.0-alpha12` (use `mavenLocal()` /
+Then depend on `dev.servirtium:vcr-clojure:2.0.0-alpha.12` (use `mavenLocal()` /
 `Resolver.mavenLocal` where your build tool needs telling):
 
 ```xml
 <dependency>
   <groupId>dev.servirtium</groupId>
   <artifactId>vcr-clojure</artifactId>
-  <version>2.0.0-alpha12</version>
+  <version>2.0.0-alpha.12</version>
   <scope>test</scope>
 </dependency>
 ```
@@ -70,18 +70,18 @@ Then depend on `dev.servirtium:vcr-clojure:2.0.0-alpha12` (use `mavenLocal()` /
 ```kotlin
 // build.gradle.kts
 repositories { mavenLocal(); mavenCentral() }
-dependencies { testImplementation("dev.servirtium:vcr-clojure:2.0.0-alpha12") }
+dependencies { testImplementation("dev.servirtium:vcr-clojure:2.0.0-alpha.12") }
 ```
 
 ```scala
 // build.sbt
 resolvers += Resolver.mavenLocal
-libraryDependencies += "dev.servirtium" % "vcr-clojure" % "2.0.0-alpha12" % Test
+libraryDependencies += "dev.servirtium" % "vcr-clojure" % "2.0.0-alpha.12" % Test
 ```
 
 ```clojure
 ;; deps.edn
-{:deps {dev.servirtium/vcr-clojure {:mvn/version "2.0.0-alpha12"}}}
+{:deps {dev.servirtium/vcr-clojure {:mvn/version "2.0.0-alpha.12"}}}
 ```
 
 ### Notes for coding agents

@@ -6,4 +6,4 @@
 ;; resource. `clojure -M -m consumer-example` replays the canonical tape with
 ;; no SERVIRTIUM_VCR_LIB.
 {:paths ["src" "resources"]
- :deps {dev.servirtium/vcr-clojure {:mvn/version "2.0.0-alpha12"}}}
+ :deps {dev.servirtium/vcr-clojure {:mvn/version "2.0.0-alpha.12"}}}

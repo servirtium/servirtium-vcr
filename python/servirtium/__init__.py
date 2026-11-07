@@ -37,4 +37,4 @@ __all__ = [
     "SecretRequest",
 ]
 
-__version__ = "2.0.0"
+__version__ = "2.0.0a12"  # PEP 440 spelling of the release tag

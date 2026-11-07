@@ -119,10 +119,10 @@ so the tagged source and the binaries are the same code.
 
 ### Version strings are pre-release-aware — mind `sort -V`
 
-The canonical version is a SemVer **pre-release** (`2.0.0-alpha.2`). Two gotchas:
+The canonical version is a SemVer **pre-release** (`2.0.0-alpha.12`). Two gotchas:
 
 - **`sort -V` disagrees with SemVer on pre-releases.** SemVer orders
-  `2.0.0-alpha.2` *before* `2.0.0` (a pre-release precedes its final), but
+  `2.0.0-alpha.12` *before* `2.0.0` (a pre-release precedes its final), but
   `sort -V` puts the bare `2.0.0` first and treats any `-suffix` as *later* — so
   `sort -V | tail -1` would rank an alpha as "newer" than the final release. Do
   **not** pick "latest" by `sort -V` once a pre-release and its final coexist;
@@ -130,12 +130,12 @@ The canonical version is a SemVer **pre-release** (`2.0.0-alpha.2`). Two gotchas
   decide, or compare with a real SemVer parser.
 - **Each package ecosystem spells the pre-release differently** — the git tag is
   `v2.0.0-alpha.12`, but the per-language manifests carry the ecosystem-valid form:
-  Python `2.0.0a2` (PEP 440), RubyGems `2.0.0.alpha.2`, Maven `2.0.0-alpha2`,
-  and plain SemVer `2.0.0-alpha.2` everywhere else (npm/cargo/pub/NuGet/hex/…).
+  Python `2.0.0a12` (PEP 440), RubyGems `2.0.0.alpha.12`,
+  and plain SemVer `2.0.0-alpha.12` everywhere else (npm/cargo/pub/NuGet/hex/Maven/…).
   A single literal string is **not** portable across all of them.
 
 `release/.version.ae` (an aeb node; run `aeb release/.version.ae`) owns this: each
-pin row names the spelling it carries (tag / semver / maven / gem / PEP 440) and
+pin row names the spelling it carries (tag / semver / maven (= semver, pre-release required) / gem / PEP 440) and
 the node derives all five from the one tag. With no env var it checks every pin
 against `SERVIRTIUM_VCR_VERSION`; `SVCR_RELEASE_TAG=<tag>` checks against a tag;
 `SVCR_RELEASE_SET=<tag>` rewrites. Markdown docs (except `CHANGELOG*`) get a

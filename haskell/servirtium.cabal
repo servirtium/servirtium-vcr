@@ -1,6 +1,8 @@
 cabal-version: 1.12
 
 name:           servirtium
+-- PVP versions are digits and dots only, so a pre-release such as 2.0.0-alpha.N cannot be spelled here; this is the
+-- base of that release line (see docs/packaging.md). release/.version.ae leaves it alone.
 version:        2.0.0
 synopsis:       Thin Haskell FFI wrapper over the Aether VCR record/replay core
 description:    Please see the README on GitHub at <https://github.com/servirtium/servirtium-vcr#readme>

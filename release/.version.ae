@@ -15,7 +15,9 @@
 //
 //   @V@  v2.0.0-alpha.3   the tag: SERVIRTIUM_VCR_VERSION, loader ENGINE_VERSION
 //   @S@  2.0.0-alpha.3    semver: npm, cargo, pub, shards, julia, gleam, dub, mix, nuget
-//   @M@  2.0.0-alpha3     maven (no dot before the pre-release number)
+//   @M@  2.0.0-alpha.3    maven: the same spelling as @S@ (Maven takes the dotted form), but
+//                         the pre-release is REQUIRED, so a pom's plain x.y.z dependency
+//                         versions are left alone
 //   @G@  2.0.0.alpha.3    RubyGems
 //   @P@  2.0.0a3          PEP 440 (alpha->a, beta->b, rc->rc)
 //
@@ -24,10 +26,12 @@
 // source files.
 //
 // Docs are different from selenium's: ~29 READMEs quote the tag in download
-// URLs, so instead of one row per line, every *.md (except CHANGELOG*, and
-// anything under target/ node_modules/ .git/ dist/ _build/) has the OLD tag
-// (the one in SERVIRTIUM_VCR_VERSION) replaced by the new one in set mode, and
-// in check mode a doc still quoting the old tag fails when old != requested.
+// URLs and the dependency lines, so instead of one row per line, every *.md
+// (except CHANGELOG*, and anything under target/ node_modules/ .git/ dist/
+// _build/) has the OLD version (the one in SERVIRTIUM_VCR_VERSION) replaced by
+// the new one in set mode, in every spelling (tag, semver, RubyGems, PEP 440;
+// the bare spellings only for a pre-release, since a bare 2.0.0 is too common),
+// and in check mode a doc still quoting the old version fails when old != requested.
 import bldr
 import std.fs
 import std.map
@@ -42,6 +46,36 @@ import std.strbuilder
 // interpolation, so a literal one in a template must be spelled `[$][{]`.
 const PINS[] = [
     "SERVIRTIUM_VCR_VERSION", "^@V@\\s*$",
+    // root manifests that exist so `dub add` / `shards` can consume the monorepo
+    "dub.sdl", "^version \"@S@\"",
+    "shard.yml", "^version: @S@$",
+    "crystal/src/servirtium.cr", "VERSION = \"@S@\"",
+    "python/servirtium/__init__.py", "__version__ = \"@P@\"",
+    // OTP application versions
+    "erlang/src/servirtium_erl.app", "\\{vsn, \"@S@\"\\}",
+    "erlang/src/servirtium_nif.app", "\\{vsn, \"@S@\"\\}",
+    "lfe/src/servirtium_lfe.app", "\\{vsn, \"@S@\"\\}",
+    // published artifact labels and the tarball names built from them
+    "java/.package.ae", "dev\\.servirtium:vcr:@S@\"",
+    "java/.package.ae", "dev\\.servirtium:vcr:@S@\"",
+    "java/.example.ae", "dev\\.servirtium:vcr:@S@,",
+    "kotlin/.package.ae", "dev\\.servirtium:vcr-kotlin:@S@\"",
+    "scala/.package.ae", "dev\\.servirtium:vcr-scala:@S@\"",
+    "groovy/.package.ae", "dev\\.servirtium:vcr-groovy:@S@\"",
+    "clojure/.package.ae", "dev\\.servirtium:vcr-clojure:@S@\"",
+    "clojure/example/deps.edn", ":mvn/version \"@S@\"",
+    "c/.package.ae", "servirtium-c-@S@\\.tar",
+    "c/.package.ae", "servirtium-c-@S@\\.tar",
+    "c/.package.ae", "servirtium-c-@S@\\.tar",
+    "cpp/.package.ae", "servirtium-cpp-@S@\\.tar",
+    "cpp/.package.ae", "servirtium-cpp-@S@\\.tar",
+    "cpp/.package.ae", "servirtium-cpp-@S@\\.tar",
+    "get-package.sh", "servirtium-c-@S@\\.tar",
+    "get-package.sh", "servirtium-cpp-@S@\\.tar",
+    "get-package.sh", "dub add-local \\$_dest @S@\"",
+    "get-package.sh", ":@S@\" ;;",
+    "erlang/build-nif-app.sh", "VER=@V@ sh build-nif-app",
+    "erlang/build-nif-app.sh", "VER=@V@ sh build-nif-app",
     "javascript/package.json", "^  \"version\": \"@S@\"",
     // top-level version and packages[""] version: the name line anchors the
     // second so dependency entries are untouched
@@ -105,7 +139,7 @@ marker(template: string) -> string {
 shape(mark: string) -> string {
     if mark == "@V@" { return TAG }
     if mark == "@S@" { return "\\d+\\.\\d+\\.\\d+(?:-[a-z]+\\.\\d+)?" }
-    if mark == "@M@" { return "\\d+\\.\\d+\\.\\d+-[a-z]+\\d+" }
+    if mark == "@M@" { return "\\d+\\.\\d+\\.\\d+-[a-z]+\\.\\d+" }
     if mark == "@G@" { return "\\d+\\.\\d+\\.\\d+(?:\\.[a-z]+\\.\\d+)?" }
     return "\\d+\\.\\d+\\.\\d+(?:(?:a|b|rc)\\d+)?"
 }
@@ -122,8 +156,7 @@ spelling(tag: string, mark: string) -> (string, string) {
     dot = string.index_of(rest, ".")
     kind = string.substring(rest, 0, dot)
     num = string.substring(rest, dot + 1, string.length(rest))
-    if mark == "@S@" { return "${base}-${kind}.${num}", "" }
-    if mark == "@M@" { return "${base}-${kind}${num}", "" }
+    if mark == "@S@" || mark == "@M@" { return "${base}-${kind}.${num}", "" }
     if mark == "@G@" { return "${base}.${kind}.${num}", "" }
     k = ""
     if kind == "alpha" { k = "a" }
@@ -223,6 +256,25 @@ doc_files(root: string) -> string {
     return strbuilder.finish(sb)
 }
 
+// The spellings the doc sweep rewrites.
+const DOC_MARKS[] = ["@V@", "@S@", "@G@", "@P@"]
+
+// `content` with every spelling of `old` replaced by the same spelling of `tag`.
+// The tag first (the semver spelling is inside it); the bare spellings only for
+// a pre-release.
+swap_doc(content: string, old: string, tag: string) -> string {
+    out = content
+    for i in 0..DOC_MARKS.len {
+        m = DOC_MARKS[i]
+        if m != "@V@" && string.index_of(old, "-") < 0 { continue }
+        o, e1 = spelling(old, m)
+        n, e2 = spelling(tag, m)
+        if e1 != "" || e2 != "" { continue }
+        out = string.replace_all(out, o, n)
+    }
+    return out
+}
+
 // The release run: every pin read and retagged in memory, then either written
 // (set mode) or compared. "" when it passes, else why not.
 release(root: string, tag: string, old: string, setting: bool) -> string {
@@ -258,9 +310,11 @@ release(root: string, tag: string, old: string, setting: bool) -> string {
             content, err = fs.read("${root}/${file}")
             if err != "" { return "${file}: cannot read" }
         }
-        if old == tag || string.contains(content, old) == 0 { continue }
+        if old == tag { continue }
+        swapped = swap_doc(content, old, tag)
+        if swapped == content { continue }
         if setting {
-            map.map_put(bodies, file, string.replace_all(content, old, tag))
+            map.map_put(bodies, file, swapped)
         } else {
             detail = "${detail}\n  ${file}: still references ${old}"
             wrong += 1

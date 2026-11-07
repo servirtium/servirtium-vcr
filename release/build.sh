@@ -208,7 +208,7 @@ if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
          java/.package.ae \
          --overrideDep core/.build.ae=core/.releaseJarMatrix.ae ) >"$DIST/.jar.log" 2>&1; then
     # maven.install writes the jar to java/target/; its name carries the pom
-    # version (2.0.0-alpha2), not the git tag. Stage the main jar (not
+    # version (the semver spelling, no leading v), not the git tag. Stage the main jar (not
     # -sources/-javadoc) with a .sha256.
     jar=""
     for cand in "$ROOT"/java/target/vcr-*.jar; do
