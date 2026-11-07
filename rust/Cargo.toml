@@ -4,7 +4,7 @@ version = "2.0.0-alpha.12"
 edition = "2021"
 license = "MIT"
 description = "Record/replay HTTP service tests in the Servirtium markdown tape format — a thin Rust FFI wrapper over the Aether VCR core."
-repository = "https://github.com/servirtium/servirtium-rust"
+repository = "https://github.com/servirtium/servirtium-vcr"
 readme = "README.md"
 
 [dependencies]
