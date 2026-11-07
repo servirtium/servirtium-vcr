@@ -6218,7 +6218,7 @@ emit_rules_footer_k(key: string) -> string {
         ii = 0
         while ii < n {
             e = tape_get_k(key, ii)
-            if redaction_touches(r, raw_field_k(e, r.field)) == 1 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
+            if redaction_touches(r, ordered_field_k(key, e, r.field)) == 1 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
             ii = ii + 1
         }
         what = "(not shown: it may be the secret)"
@@ -6239,7 +6239,8 @@ emit_rules_footer_k(key: string) -> string {
             if cerr == "" {
                 e = tape_get_k(key, ii)
                 fi = 0
-                fields = [e.path, e.req_headers, e.req_body, e.resp_headers, e.body]
+                // As the rules saw them: in stable order, when registered.
+                fields = [e.path, e.req_headers, e.req_body, ordered_field_k(key, e, FIELD_RESPONSE_HEADERS), ordered_field_k(key, e, FIELD_RESPONSE_BODY)]
                 while fi < 5 && hit == 0 {
                     if string.length(fields[fi]) > 0 && regex.matches(re, fields[fi]) == 1 { hit = 1 }
                     fi = fi + 1

@@ -139,6 +139,9 @@ stable_rules(h: ptr) {
     if e == "" { e = vcr.normalize_whole_tape_h(h, "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "uuid") }
     if e != "" { fail("rule: ${e}") }
     if e == "" { e = vcr.remove_header_h(h, vcr.FIELD_RESPONSE_HEADERS, "Date") }
+    // Matches the sorted body only (the upstream's first order has "value"
+    // first): the footer must say it applied, as the rules saw the body.
+    if e == "" { e = vcr.redact_whole_tape_h(h, "\"count\":2,\"value\"", "\"count\":2,\"value\"") }
     if e != "" { fail("rule: ${e}") }
     vcr.set_rules_footer_h(h, 1)
 }
@@ -300,6 +303,7 @@ main() {
     if string.equals(r1, r2) != 1 { fail("two recordings differ:\n${r1}\n---\n${r2}") }
     need(r1, "{\"count\":2,\"value\":[{\"id\":\"{{uuid-1}}\",\"name\":\"a\"},{\"id\":\"{{uuid-2}}\",\"name\":\"b\"}]}", "sorted body, tokens in sorted order")
     need(r1, "Allow: DELETE, GET, PUT\n", "Allow's items sorted")
+    need(r1, "| collapsed | whole recording | `\"count\":2,\"value\"` | `\"count\":2,\"value\"` | 0 |", "footer: a collapse sees the sorted body")
     need(r1, "| ordered | response headers | every header | sorted by name; a repeated header's lines keep their order | 0 |", "footer: header order")
     need(r1, "| ordered | response headers | `Allow` | its comma-separated items sorted | 0 |", "footer: Allow")
     need(r1, "| ordered | response body | JSON object keys | sorted, at every depth | 0 |", "footer: keys")
