@@ -1,0 +1,123 @@
+// Ported from testcontainers-go modules/gcloud/examples/bigquery/examples_test.go (ExampleRun)
+// and modules/gcloud/bigquery/options_test.go (WithDataYAML), by way of
+// testcontainers-ae's tests/test_gcloud_bigquery.ae (moved here 2026-11-07).
+//
+// The goccy/bigquery-emulator: a SQL query run over the emulator's REST API
+// (Go's example sums a struct array with the BigQuery SDK; the same query goes
+// to REST here). The module's request defaults, ports and the data-yaml
+// duplicate check are checked too.
+//
+// PORTING: the HTTP conversation is in the tape beside this file. Requests
+// carry `Authorization: Bearer owner`, a placeholder token the emulator does
+// not check (recorded as is). The query is a synchronous jobs.query call:
+// POST /bigquery/v2/projects/<project>/queries (project "bigquery-project",
+// from the module's `project_id` option) with useLegacySql false. The emulator
+// exposes REST on 9050 and gRPC on 9060; only REST is used. The emulator
+// mints a jobId for each query (collapsed in the tape; this test never sends
+// it back, a port that polls the job would). The image is linux/amd64 only (on an arm64 host the test
+// asks the engine for that platform, which needs emulation or Rosetta). The module's own defaults, options and data-yaml checks
+// are not HTTP: they are checked only live.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.gcloud.bigquery
+
+const IMAGE = "ghcr.io/goccy/bigquery-emulator:0.6.1"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request with an optional JSON body: (status, body, error).
+fn http_do(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_header(req, "Authorization", "Bearer owner")
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: the query job's id in the response's
+    // jobReference (never sent back by this test).
+    servirtium.collapse("\"jobId\":\"[A-Za-z0-9_-]+\"", "\"jobId\":\"JOB-ID\"")
+
+    spec.describe(fw, "modules/gcloud/bigquery") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it_when(servirtium.live(), "has the module's defaults and options (engine-free)", "no container in playback") callback {
+            r = bigquery.bigquery_request_new()
+            spec.assert_str_eq(tc.req_setting(r, "bigquery.project_id"), "test-project", "default project id")
+            exposed = tc.req_exposed(r)
+            spec.assert_eq(exposed.len, 2, "REST and gRPC ports")
+            spec.assert_str_eq(exposed[0], "9050/tcp", "REST port")
+            spec.assert_str_eq(exposed[1], "9060/tcp", "gRPC port")
+            bigquery.project_id(r, "bigquery-project")
+            spec.assert_str_eq(tc.req_setting(r, "bigquery.project_id"), "bigquery-project", "project_id replaces it")
+            bigquery.bigquery_request_free(r)
+        }
+
+        spec.it_when(servirtium.live(), "adds the data yaml once (WithDataYAML, engine-free)", "no container in playback") callback {
+            r = bigquery.bigquery_request_new()
+            bigquery.data_yaml_content(r, "projects: []")
+            spec.assert_true(tc.req_has_cmd_arg(r, "--data-from-yaml"), "--data-from-yaml is on the command")
+            spec.assert_true(tc.req_has_cmd_arg(r, bigquery.DATA_YAML_PATH), "with the container path")
+            spec.assert_false(tc.req_has_setting(r, "bigquery.error"), "no error yet")
+            bigquery.data_yaml_content(r, "projects: []")
+            spec.assert_str_eq(tc.req_setting(r, "bigquery.error"), "data yaml already exists", "a second one is refused")
+            bigquery.bigquery_request_free(r)
+        }
+
+        spec.it_when(servirtium.live(), "run reports the duplicate data yaml before starting anything (engine-free)", "no container in playback") callback {
+            g, err = bigquery.run(IMAGE) {
+                data_yaml_content("projects: []")
+                data_yaml_content("projects: []")
+            }
+            spec.assert_null(g as ptr, "no container")
+            spec.assert_str_eq(err, "apply option: data yaml already exists", "the error")
+        }
+
+        spec.it("starts the emulator and runs a query (ExampleRun)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                g, err = bigquery.run(IMAGE) {
+                    // the image is published for linux/amd64 only
+                    tc.platform("linux/amd64")
+                    project_id("bigquery-project")
+                }
+                if g != null { testing.cleanup_container(g.container) }
+                spec.assert_ok(err, "bigquery starts")
+                if err != "" { return }
+                spec.assert_str_eq(bigquery.project_id_of(g), "bigquery-project", "project id")
+                spec.assert_true(string.starts_with(bigquery.uri(g), "http://") == 1, "an http:// URI: ${bigquery.uri(g)}")
+                addr = bigquery.uri(g)
+            }
+            base, rec = servirtium.recording("gcloud_bigquery", "starts_the_emulator_and_runs_a_query", addr)
+            // the example sums a struct array with a SQL function through the
+            // BigQuery SDK; the same query goes to the REST API here
+            q = "{\"query\":\"SELECT SUM(x) AS total FROM UNNEST([10, 20]) AS x\",\"useLegacySql\":false}"
+            st, body, herr = http_do("POST", "${base}/bigquery/v2/projects/bigquery-project/queries", q)
+            spec.assert_ok(herr, "query")
+            spec.assert_eq(st, 200, "query answered: ${body}")
+            spec.assert_contains(body, "30", "the sum")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

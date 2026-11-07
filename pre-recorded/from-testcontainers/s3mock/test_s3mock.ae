@@ -1,0 +1,103 @@
+// Ported from testcontainers-go modules/s3mock/s3mock_test.go, by way of
+// testcontainers-ae's tests/test_s3mock.ae (moved here 2026-11-07).
+//
+// A real S3Mock: endpoint_url() lists the initial buckets over the S3 REST
+// API (XML), an object is PUT into one and read back, and the HTTPS endpoint
+// URL has the https scheme. Not ported: the AWS SDK client calls.
+//
+// PORTING: S3Mock accepts unsigned requests, so none of these carries an
+// Authorization header and there is nothing to redact. A port's S3 client
+// will normally sign; S3Mock ignores the signature, but the tape then has to
+// treat Authorization and the date header as the MinIO tapes do.
+//
+// PORTING: only the plain-HTTP endpoint is exercised over the wire. The check
+// that https_endpoint_url() has the https scheme looks at the module's own
+// URL, not at a request, so it runs live only (the https port is never
+// called). The case's "initial buckets" are created by the module's option
+// when the container starts, so a replay needs nothing: the listing is on the
+// tape.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.s3mock
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// (status, body, error); headers are "Name: value" strings.
+fn call_api(method: string, url: string, headers: string[], body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in headers {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+const IMAGE = "adobe/s3mock:3.9.1"
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The buckets' creation times, in the listing.
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00.000Z")
+    // The time the object was stored.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "Last-Modified")
+
+    spec.describe(fw, "modules/s3mock") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves S3 with initial buckets (TestS3Mock_WithInitialBuckets)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = s3mock.run(IMAGE) {
+                    initial_buckets(["bucket-a", "bucket-b"])
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "s3mock starts")
+                if err != "" { return }
+                url, uerr = s3mock.endpoint_url(c)
+                spec.assert_ok(uerr, "endpoint url")
+                spec.assert_true(string.starts_with(url, "http://localhost:") == 1, "http:// URL: ${url}")
+                surl, serr = s3mock.https_endpoint_url(c)
+                spec.assert_ok(serr, "https endpoint url")
+                spec.assert_true(string.starts_with(surl, "https://localhost:") == 1, "https:// URL: ${surl}")
+                addr = url
+            }
+            base, rec = servirtium.recording("s3mock", "serves_s3_with_initial_buckets", addr)
+
+            ls, lb, le = call_api("GET", "${base}/", [], "", "")
+            spec.assert_ok(le, "list buckets")
+            spec.assert_eq(ls, 200, "ListBuckets is 200")
+            spec.assert_contains(lb, "<Name>bucket-a</Name>", "bucket-a exists")
+            spec.assert_contains(lb, "<Name>bucket-b</Name>", "bucket-b exists")
+
+            ps, _, pe = call_api("PUT", "${base}/bucket-a/hello.txt", [], "hello s3mock", "text/plain")
+            spec.assert_ok(pe, "PutObject")
+            spec.assert_eq(ps, 200, "PutObject is 200")
+            gs, gb, ge = call_api("GET", "${base}/bucket-a/hello.txt", [], "", "")
+            spec.assert_ok(ge, "GetObject")
+            spec.assert_eq(gs, 200, "GetObject is 200")
+            spec.assert_str_eq(gb, "hello s3mock", "the object reads back")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

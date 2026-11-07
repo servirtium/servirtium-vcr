@@ -1,0 +1,154 @@
+// Ported from testcontainers-go modules/dynamodb/dynamodb_test.go, by way of
+// testcontainers-ae's tests/test_dynamodb.ae (moved here 2026-11-07).
+//
+// A real DynamoDB Local: its JSON-over-HTTP API is called at the module's
+// connection_string with a CreateTable, a PutItem, a GetItem and a
+// ListTables (Go does the same through the AWS SDK; there is none for
+// Aether, so the wire protocol is spoken directly).
+//
+// PORTING: DynamoDB Local accepts any credentials, so the requests carry a
+// fixed, made-up SigV4 Authorization header and a fixed X-Amz-Date. Both are
+// the same on every run, so the tape holds them as sent and playback matches
+// them exactly. A port that signs for real must send its Authorization
+// through a credential preset (as the MinIO tapes do) and leave X-Amz-Date
+// out, since both change with the time they are made.
+//
+// PORTING: each call is a POST to "/" selected by the X-Amz-Target header
+// (DynamoDB_20120810.<Operation>), JSON body, content type
+// application/x-amz-json-1.0. The -sharedDb / -disableTelemetry case only
+// inspects the container's command line, so it runs live only; so does the
+// refusal of a nonexistent image tag.
+
+import std.spec
+import std.string
+import std.http.client
+import std.json
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.dynamodb
+
+const IMAGE = "amazon/dynamodb-local:2.2.1"
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+const AUTH = "AWS4-HMAC-SHA256 Credential=fake/20260101/us-east-1/dynamodb/aws4_request, SignedHeaders=host;x-amz-date, Signature=fake"
+
+// One DynamoDB JSON call: (status, body, error).
+fn ddb(url: string, target: string, body: string) -> (int, string, string) {
+    req = client.request("POST", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_header(req, "X-Amz-Target", "DynamoDB_20120810.${target}")
+    client.set_header(req, "Authorization", AUTH)
+    client.set_header(req, "X-Amz-Date", "20260101T000000Z")
+    client.set_body(req, string.bytes(body), "application/x-amz-json-1.0")
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The request id DynamoDB Local mints, and the CRC32 of a response body
+    // that carries timestamps.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amzn-RequestId")
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amz-crc32")
+    // The table's creation time and the time it was set to pay-per-request
+    // (epoch seconds with milliseconds, trailing zeros trimmed by the server).
+    servirtium.collapse("\"CreationDateTime\":[0-9.]+", "\"CreationDateTime\":1700000000.000")
+    servirtium.collapse("\"LastUpdateToPayPerRequestDateTime\":[0-9.]+", "\"LastUpdateToPayPerRequestDateTime\":1700000000.000")
+    // (The tape's Content-Length follows the body as written: Servirtium
+    // rewrites it when a rule changed the body, so no rule is needed for it.)
+
+    spec.describe(fw, "modules/dynamodb") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("creates a table, stores and reads an item (TestRun)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = dynamodb.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "dynamodb starts")
+                if err != "" { return }
+                hp, herr = dynamodb.connection_string(c)
+                spec.assert_ok(herr, "connection string")
+                spec.assert_true(string.contains(hp, "://") == 0, "host:port with no scheme: ${hp}")
+                addr = "http://${hp}"
+            }
+            url, rec = servirtium.recording("dynamodb", "creates_a_table_stores_and_reads_an_item", addr)
+
+            cs, cb, cerr = ddb(url, "CreateTable", "{\"TableName\":\"tcae\",\"AttributeDefinitions\":[{\"AttributeName\":\"id\",\"AttributeType\":\"S\"}],\"KeySchema\":[{\"AttributeName\":\"id\",\"KeyType\":\"HASH\"}],\"BillingMode\":\"PAY_PER_REQUEST\"}")
+            spec.assert_ok(cerr, "CreateTable")
+            spec.assert_eq(cs, 200, "CreateTable is 200: ${cb}")
+
+            ls, lb, lerr = ddb(url, "ListTables", "{}")
+            spec.assert_ok(lerr, "ListTables")
+            spec.assert_eq(ls, 200, "ListTables is 200")
+            spec.assert_contains(lb, "\"tcae\"", "the new table is listed")
+
+            ps, pb, perr = ddb(url, "PutItem", "{\"TableName\":\"tcae\",\"Item\":{\"id\":{\"S\":\"k1\"},\"v\":{\"S\":\"test_value\"}}}")
+            spec.assert_ok(perr, "PutItem")
+            spec.assert_eq(ps, 200, "PutItem is 200: ${pb}")
+
+            gs, gb, gerr = ddb(url, "GetItem", "{\"TableName\":\"tcae\",\"Key\":{\"id\":{\"S\":\"k1\"}}}")
+            spec.assert_ok(gerr, "GetItem")
+            spec.assert_eq(gs, 200, "GetItem is 200")
+            doc, jerr = json.parse(gb)
+            spec.assert_ok(jerr, "GetItem body is JSON")
+            if jerr == "" {
+                item, _ = json.object_get(doc, "Item")
+                v, _ = json.object_get(item, "v")
+                sv, _ = json.object_get(v, "S")
+                s, _ = json.get_string(sv)
+                spec.assert_str_eq(s, "test_value", "the stored value reads back")
+                json.free(doc)
+            }
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "passes -sharedDb and -disableTelemetry", "no container in playback") callback {
+            c, err = dynamodb.run(IMAGE) {
+                shared_db()
+                disable_telemetry()
+            }
+            testing.cleanup_container(c)
+            spec.assert_ok(err, "dynamodb starts")
+            if err == "" {
+                doc, ierr = tc.inspect(c)
+                spec.assert_ok(ierr, "inspect")
+                if ierr == "" {
+                    cfg, _ = json.object_get(doc, "Config")
+                    cmdv, _ = json.object_get(cfg, "Cmd")
+                    out = ""
+                    n = json.json_array_size(cmdv)
+                    i = 0
+                    while i < n {
+                        v, _ = json.array_get(cmdv, i)
+                        s, _ = json.get_string(v)
+                        out = "${out} ${s}"
+                        i = i + 1
+                    }
+                    json.free(doc)
+                    spec.assert_contains(out, "-sharedDb", "-sharedDb in Cmd")
+                    spec.assert_contains(out, "-disableTelemetry", "-disableTelemetry in Cmd")
+                }
+            }
+        }
+
+        spec.it_when(servirtium.live(), "fails on an image that does not exist (TestRun_withInvalidCustomImageVersion)", "no container in playback") callback {
+            c, err = dynamodb.run("amazon/dynamodb-local:0.0.7")
+            testing.cleanup_container(c)
+            spec.assert_true(err != "", "an invalid tag is an error")
+        }
+    }
+    return spec.run_summary(fw)
+}

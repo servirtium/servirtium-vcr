@@ -1,0 +1,126 @@
+// Ported from testcontainers-go modules/localstack (localstack_test.go,
+// v2/s3_test.go), by way of testcontainers-ae's tests/test_localstack.ae
+// (moved here 2026-11-07), as one representative case: a real LocalStack
+// answers /_localstack/health with S3 running, and an S3 bucket is created,
+// an object put and read back over the S3 REST API with LocalStack's
+// accept-any-credentials. Also the pure checks of Go's isMinimumVersion.
+//
+// PORTING: LocalStack accepts any credentials, so the requests carry a fixed,
+// made-up SigV4 Authorization header (a signature of "x", a fixed date in the
+// credential scope). It is the same on every run, so the tape holds it as
+// sent, nothing is redacted, and playback matches it exactly. A port's S3
+// client may sign for real instead; LocalStack would accept that too, but
+// then the Authorization must go through a credential preset as in the
+// MinIO tapes, as a real signature changes with the time it is made.
+//
+// PORTING: only the HTTP conversation is on the tape. The check that the
+// module set LOCALSTACK_HOST (tc.exec inside the container), the module's
+// endpoint() shape and the legacy-version refusal need a container and run
+// live only. is_minimum_version is pure and needs neither.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.localstack
+
+const IMAGE = "localstack/localstack:3.4"
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn call_api(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_header(req, "Authorization", "AWS4-HMAC-SHA256 Credential=test/20260101/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=x")
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "text/plain") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return st, out, ""
+}
+
+main() {
+    fw = spec.init()
+    // Per-request ids LocalStack mints, in response headers.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amz-request-id")
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amz-id-2")
+    // The time the object was stored.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "Last-Modified")
+
+    spec.describe(fw, "modules/localstack (no engine needed)") {
+        spec.it("isMinimumVersion") callback {
+            spec.assert_true(localstack.is_minimum_version("localstack/localstack:1.4.0", 0, 11), "1.4.0 >= 0.11")
+            spec.assert_true(localstack.is_minimum_version("localstack/localstack:0.11.2", 0, 11), "0.11.2 >= 0.11")
+            spec.assert_true(!localstack.is_minimum_version("localstack/localstack:0.10.9", 0, 11), "0.10.9 < 0.11")
+            spec.assert_true(localstack.is_minimum_version("localstack/localstack:latest", 2, 0), "latest is recent")
+            spec.assert_true(localstack.is_minimum_version("localstack/localstack:s3-latest", 2, 0), "s3-latest is recent")
+            spec.assert_true(localstack.is_minimum_version("localstack/localstack:2.0.1-arm64", 2, 0), "arch suffix dropped")
+            spec.assert_true(!localstack.is_minimum_version("localstack/localstack:1.4.0", 2, 0), "1.4.0 < 2.0")
+            spec.assert_true(localstack.is_minimum_version("localstack/localstack:3.4@sha256:abc", 2, 0), "digest dropped")
+            spec.assert_true(!localstack.is_minimum_version("localstack/localstack", 0, 11), "no tag is not a version")
+        }
+    }
+
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/localstack") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves S3 on the edge port (TestS3)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = localstack.run(IMAGE) {
+                    tc.env("SERVICES", "s3")
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "localstack starts")
+                if err != "" { return }
+                ep, eerr = localstack.endpoint(c)
+                spec.assert_ok(eerr, "endpoint")
+                spec.assert_true(string.starts_with(ep, "http://localhost:") == 1, "an http:// URL: ${ep}")
+                addr = ep
+
+                // the module set LOCALSTACK_HOST (version >= 2)
+                code, out, _ = tc.exec(c, ["sh", "-c", "echo $LOCALSTACK_HOST"])
+                spec.assert_eq(code, 0, "exec")
+                spec.assert_str_eq(string.trim(out), "localhost", "LOCALSTACK_HOST is the daemon host")
+            }
+            base, rec = servirtium.recording("localstack", "serves_s3_on_the_edge_port", addr)
+
+            hs, hb, herr = call_api("GET", "${base}/_localstack/health", "")
+            spec.assert_ok(herr, "GET /_localstack/health")
+            spec.assert_eq(hs, 200, "health is 200")
+            spec.assert_contains(hb, "\"s3\"", "the s3 service is listed")
+
+            // path-style S3: make a bucket, put and get an object
+            ms, _, merr = call_api("PUT", "${base}/tcae-bucket", "")
+            spec.assert_ok(merr, "create bucket")
+            spec.assert_eq(ms, 200, "bucket created")
+            ps, _, perr = call_api("PUT", "${base}/tcae-bucket/hello.txt", "hello from testcontainers-ae")
+            spec.assert_ok(perr, "put object")
+            spec.assert_eq(ps, 200, "object put")
+            gs, gb, gerr = call_api("GET", "${base}/tcae-bucket/hello.txt", "")
+            spec.assert_ok(gerr, "get object")
+            spec.assert_eq(gs, 200, "object got")
+            spec.assert_str_eq(gb, "hello from testcontainers-ae", "the object reads back")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "refuses a legacy version", "no container in playback") callback {
+            c, err = localstack.run("localstack/localstack:0.10.0")
+            testing.cleanup_container(c)
+            spec.assert_contains(err, "legacy mode", "legacy images are refused")
+        }
+    }
+    return spec.run_summary(fw)
+}

@@ -1,0 +1,198 @@
+// Ported from testcontainers-go modules/garage/garage_test.go, by way of
+// testcontainers-ae's tests/test_garage.ae (moved here 2026-11-07).
+//
+// A real Garage: the S3 API at the module's connection_string is called with
+// AWS Signature V4 (signed with std.cryptography's HMAC-SHA256): the default
+// bucket is listed with the module's credentials and region, a PUT/GET of an
+// object round-trips, and a wrong secret is refused (403). Go's test uses the
+// AWS SDK, which has no Aether counterpart.
+//
+// PORTING: each S3 request is signed with AWS Signature V4 over the time it
+// is sent, so no two runs send the same Authorization or x-amz-date. The
+// tapes write Authorization through Servirtium's credential preset
+// (AWS4-HMAC-SHA256 AUTHORIZATION_N) and leave x-amz-date out; playback
+// matches Authorization on presence and cannot check a signature (it was
+// made for another time), so the right-secret / wrong-secret distinction is
+// in the recorded responses (200 vs 403), not enforced on replay. The
+// credential scope in the header names the region (garage by default,
+// eu-west-1 in the custom case), so a port signs with the module's region.
+//
+// PORTING: SigV4 signs the Host header. Servirtium's recorder forwards with
+// the container's Host, so when recording, sign for the container's
+// host:port while sending to the recorder (sign_host below); an S3 client
+// with a configurable endpoint does that by pointing its endpoint at the
+// recorder and its signing host at the container. On playback any host will
+// do. The x-amz-content-sha256 header is the SHA-256 of the body (of the
+// empty string for the GETs), so it is stable and stays on the tape.
+//
+// PORTING: what the module's struct carries (access key, secret, bucket,
+// region), the connection string's shape and the refusal of bad options (no
+// container is started for those) are checked live only. The default bucket
+// and the credentials are created by the module when the container starts,
+// so a replay needs nothing but the tape.
+
+import std.spec
+import std.string
+import std.http.client
+import std.cryptography
+import std.time
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.garage
+
+const IMAGE = "dxflrs/garage:v2.4.1"
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn hmac_raw(key: string, msg: string) -> string {
+    d, _, _ = cryptography.hmac_sha256_bytes(string.bytes(key), string.bytes(msg))
+    return d
+}
+
+fn hmac_hex(key: string, msg: string) -> string {
+    h, _ = cryptography.hmac_sha256_hex(string.bytes(key), string.bytes(msg))
+    return h
+}
+
+// A signed S3 request (path-style), sent to `hostport` and signed for
+// `sign_host` (the Host the service will see): (status, body, error).
+fn s3(method: string, hostport: string, sign_host: string, path: string, body: string, access: string, secret: string, region: string) -> (int, string, string) {
+    now = time.now()
+    amz_date = time.strftime(now, "%Y%m%dT%H%M%SZ")
+    day = time.strftime(now, "%Y%m%d")
+    payload, _ = cryptography.sha256_hex(string.bytes(body))
+    scope = "${day}/${region}/s3/aws4_request"
+    signed = "host;x-amz-content-sha256;x-amz-date"
+    canon = "${method}\n${path}\n\nhost:${sign_host}\nx-amz-content-sha256:${payload}\nx-amz-date:${amz_date}\n\n${signed}\n${payload}"
+    ch, _ = cryptography.sha256_hex(string.bytes(canon))
+    to_sign = "AWS4-HMAC-SHA256\n${amz_date}\n${scope}\n${ch}"
+    k1 = hmac_raw("AWS4${secret}", day)
+    k2 = hmac_raw(k1, region)
+    k3 = hmac_raw(k2, "s3")
+    k4 = hmac_raw(k3, "aws4_request")
+    sig = hmac_hex(k4, to_sign)
+    req = client.request(method, "http://${hostport}${path}")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 10s)
+    client.set_header(req, "x-amz-date", amz_date)
+    client.set_header(req, "x-amz-content-sha256", payload)
+    client.set_header(req, "Authorization", "AWS4-HMAC-SHA256 Credential=${access}/${scope}, SignedHeaders=${signed}, Signature=${sig}")
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "text/plain") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+fn hostport_of(url: string) -> string { return string.substring(url, 7, string.length(url)) }
+
+// The Host to sign for: the container's when one is running, else the
+// replay server's (playback checks no signature).
+fn signing_host(container_hp: string, base: string) -> string {
+    if string.length(container_hp) > 0 { return container_hp }
+    return hostport_of(base)
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // AWS SigV4: Authorization carries a signature over this second's time,
+    // so the credential preset writes it as a numbered token and playback
+    // matches it on presence; x-amz-date, the time itself, is left out.
+    servirtium.redact_credentials()
+    servirtium.remove_header(servirtium.FIELD_REQUEST_HEADERS, "x-amz-date")
+    // The id Garage gives the stored object version, and the time it was stored.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amz-version-id")
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "last-modified")
+
+    spec.describe(fw, "modules/garage") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the default bucket with the default credentials (defaults)") callback {
+            addr = ""
+            hp = ""
+            access = "testcontainers"
+            secret = "testcontainers-secret"
+            region = "garage"
+            if servirtium.live() == 1 {
+                g, err = garage.run(IMAGE)
+                if g != null { testing.cleanup_container(g.container) }
+                spec.assert_ok(err, "garage starts")
+                if err != "" { return }
+                spec.assert_str_eq(g.access_key, "testcontainers", "default access key")
+                spec.assert_str_eq(g.secret_key, "testcontainers-secret", "default secret key")
+                spec.assert_str_eq(g.bucket, "testcontainers", "default bucket")
+                spec.assert_str_eq(g.region, "garage", "default region")
+                url, uerr = garage.connection_string(g)
+                spec.assert_ok(uerr, "connection string")
+                spec.assert_true(string.starts_with(url, "http://localhost:") == 1, "an http:// URL: ${url}")
+                addr = url
+                hp = hostport_of(url)
+            }
+            base, rec = servirtium.recording("garage", "serves_the_default_bucket_with_the_default_credentials", addr)
+            to = hostport_of(base)
+            sign_host = signing_host(hp, base)
+
+            ls, lb, lerr = s3("GET", to, sign_host, "/testcontainers", "", access, secret, region)
+            spec.assert_ok(lerr, "ListObjects")
+            spec.assert_eq(ls, 200, "the default bucket is listable: ${lb}")
+            spec.assert_contains(lb, "testcontainers", "the bucket's own listing")
+
+            ps, pb, perr = s3("PUT", to, sign_host, "/testcontainers/hello.txt", "hello garage", access, secret, region)
+            spec.assert_ok(perr, "PutObject")
+            spec.assert_eq(ps, 200, "PutObject is 200: ${pb}")
+            gs, gb, gerr = s3("GET", to, sign_host, "/testcontainers/hello.txt", "", access, secret, region)
+            spec.assert_ok(gerr, "GetObject")
+            spec.assert_eq(gs, 200, "GetObject is 200")
+            spec.assert_str_eq(gb, "hello garage", "the object reads back")
+
+            bs, _, berr = s3("GET", to, sign_host, "/testcontainers", "", access, "a-wrong-secret-key-0000", region)
+            spec.assert_ok(berr, "wrong secret request")
+            spec.assert_eq(bs, 403, "a wrong secret is refused")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("takes credentials, bucket and region (custom)") callback {
+            addr = ""
+            hp = ""
+            if servirtium.live() == 1 {
+                g, err = garage.run(IMAGE) {
+                    credentials("custom-access", "custom-secret-key")
+                    bucket("custom-bucket")
+                    region("eu-west-1")
+                }
+                if g != null { testing.cleanup_container(g.container) }
+                spec.assert_ok(err, "garage starts")
+                if err != "" { return }
+                spec.assert_str_eq(g.access_key, "custom-access", "access key")
+                spec.assert_str_eq(g.bucket, "custom-bucket", "bucket")
+                spec.assert_str_eq(g.region, "eu-west-1", "region")
+                url, _ = garage.connection_string(g)
+                addr = url
+                hp = hostport_of(url)
+            }
+            base, rec = servirtium.recording("garage", "takes_credentials_bucket_and_region", addr)
+            ls, lb, lerr = s3("GET", hostport_of(base), signing_host(hp, base), "/custom-bucket", "", "custom-access", "custom-secret-key", "eu-west-1")
+            spec.assert_ok(lerr, "ListObjects")
+            spec.assert_eq(ls, 200, "the custom bucket is listable with the custom credentials and region: ${lb}")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "refuses short credentials and an empty region", "no container in playback") callback {
+            g, err = garage.run(IMAGE) { credentials("short", "tiny") }
+            spec.assert_true(err != "", "short credentials are an error")
+            spec.assert_contains(err, "access key must be at least 8 bytes", "the reason")
+            g2, err2 = garage.run(IMAGE) { region("") }
+            spec.assert_contains(err2, "region must not be empty", "an empty region is refused")
+        }
+    }
+    return spec.run_summary(fw)
+}

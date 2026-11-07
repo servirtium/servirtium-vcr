@@ -1,0 +1,106 @@
+// Ported from testcontainers-go modules/gcloud/examples/datastore/examples_test.go (ExampleRun),
+// by way of testcontainers-ae's tests/test_gcloud_datastore.ae (moved here
+// 2026-11-07).
+//
+// The Datastore emulator from the Google Cloud SDK image: a Task entity put
+// and looked up again over the emulator's REST API (Go's example uses the
+// datastore SDK over gRPC; the emulator answers REST on the same port). The
+// module's request defaults and emulator command are checked too.
+//
+// PORTING: the HTTP conversation is in the tape beside this file. Requests
+// carry `Authorization: Bearer owner`, the emulator's fixed admin token (not a
+// secret, so it is recorded as is). The Datastore REST API is
+// /v1/projects/<project>:commit and :lookup (project "datastore-project", from
+// the module's `project_id` option). The key is named by the request, so the
+// emulator mints no ids, and a fresh emulator always answers entity version
+// "2" and indexUpdates 3, so the tape needs no rules. The module's own defaults, options and emulator command are not HTTP:
+// they are checked only live.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.gcloud.datastore
+
+const IMAGE = "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request with an optional JSON body: (status, body, error).
+fn http_do(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_header(req, "Authorization", "Bearer owner")
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // Nothing differs run to run: a fresh emulator answers the same bytes
+    // (no rules registered).
+
+    spec.describe(fw, "modules/gcloud/datastore") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it_when(servirtium.live(), "has the module's defaults and options (engine-free)", "no container in playback") callback {
+            r = datastore.datastore_request_new()
+            spec.assert_str_eq(tc.req_setting(r, "datastore.project_id"), "test-project", "default project id")
+            exposed = tc.req_exposed(r)
+            spec.assert_true(exposed.len >= 1, "ports are exposed")
+            spec.assert_str_eq(exposed[0], datastore.PORT, "the emulator port")
+            datastore.project_id(r, "datastore-project")
+            spec.assert_str_eq(tc.req_setting(r, "datastore.project_id"), "datastore-project", "project_id replaces it")
+            cmd = datastore.emulator_command("datastore-project")
+            spec.assert_eq(cmd.len, 3, "sh -c <line>")
+            spec.assert_contains(cmd[2], "gcloud beta emulators datastore start --host-port 0.0.0.0:8081 --project=datastore-project", "the emulator command")
+            spec.assert_str_eq(datastore.emulator_env_entry("localhost:1234"), "DATASTORE_EMULATOR_HOST=localhost:1234", "emulator env entry")
+            datastore.datastore_request_free(r)
+        }
+
+        spec.it("starts the emulator (ExampleRun)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                g, err = datastore.run(IMAGE) {
+                    project_id("datastore-project")
+                }
+                if g != null { testing.cleanup_container(g.container) }
+                spec.assert_ok(err, "datastore starts")
+                if err != "" { return }
+                spec.assert_true(tc.is_running(g.container), "container is running")
+                spec.assert_str_eq(datastore.project_id_of(g), "datastore-project", "project id")
+                addr = "http://${datastore.uri(g)}"
+            }
+            base, rec = servirtium.recording("gcloud_datastore", "starts_the_emulator", addr)
+            // ExampleRun: put a Task and get it back (Go's example uses the
+            // datastore SDK over gRPC; the emulator answers REST on the same port)
+            proj = "${base}/v1/projects/datastore-project"
+            key = "{\"path\":[{\"kind\":\"Task\",\"name\":\"sample\"}]}"
+            put = "{\"mode\":\"NON_TRANSACTIONAL\",\"mutations\":[{\"upsert\":{\"key\":${key},\"properties\":{\"Description\":{\"stringValue\":\"my description\"}}}}]}"
+            st, _b, herr = http_do("POST", "${proj}:commit", put)
+            spec.assert_ok(herr, "commit")
+            spec.assert_eq(st, 200, "committed")
+            st2, body2, herr2 = http_do("POST", "${proj}:lookup", "{\"keys\":[${key}]}")
+            spec.assert_ok(herr2, "lookup")
+            spec.assert_eq(st2, 200, "looked up")
+            spec.assert_contains(body2, "my description", "the saved Description")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

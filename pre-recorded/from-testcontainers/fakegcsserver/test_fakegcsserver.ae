@@ -1,0 +1,125 @@
+// Ported from testcontainers-go modules/fakegcsserver/fakegcsserver_test.go,
+// by way of testcontainers-ae's tests/test_fakegcsserver.ae (moved here
+// 2026-11-07).
+//
+// A real fake-gcs-server: storage_url() creates a bucket and lists it over
+// the GCS JSON API, uploads an object and reads it back, and an invalid
+// scheme is rejected by run; the https scheme starts (its HTTP wait skips
+// verification of the server's own certificate) and answers over HTTPS. Not
+// ported: the cloud.google.com storage client.
+//
+// PORTING: the HTTP conversation is in the tape beside this file. The
+// emulator's JSON API lives under /storage/v1 and its upload endpoint under
+// /upload/storage/v1 (both on the same port, no credentials). Only the
+// first case is recorded: the HTTPS case and the invalid-scheme case are
+// about the module's own options and are checked live only (an HTTPS
+// fake-gcs-server uses a certificate of its own that the recorder cannot
+// verify), so playback skips them.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.fakegcsserver
+
+const IMAGE = "fsouza/fake-gcs-server:1.56.1"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// (status, body, error); headers are "Name: value" strings.
+fn call_api(method: string, url: string, headers: string[], body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.starts_with(url, "https://") == 1 { client.set_insecure(req, 1) }
+    for h in headers {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: the bucket's and object's timeCreated/updated
+    // times (microsecond RFC 3339), the object's generation (a 16-digit
+    // microsecond Unix time, also in X-Goog-Generation), and Last-Modified.
+    servirtium.collapse(servirtium.RFC3339, "2026-01-01T00:00:00.000000Z")
+    servirtium.collapse("1[0-9]{15}", "1700000000000000")
+    servirtium.collapse("[A-Z][a-z]{2}, [0-9]{2} [A-Z][a-z]{2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT", "Thu, 01 Jan 2026 00:00:00 GMT")
+
+    spec.describe(fw, "modules/fakegcsserver") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the GCS JSON API at the storage URL (TestFakeGCSServer)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                g, err = fakegcsserver.run(IMAGE)
+                if g != null { testing.cleanup_container(g.container) }
+                spec.assert_ok(err, "fake-gcs-server starts")
+                if err != "" { return }
+                url, uerr = fakegcsserver.storage_url(g)
+                spec.assert_ok(uerr, "storage url")
+                spec.assert_true(string.starts_with(url, "http://localhost:") == 1, "http:// URL: ${url}")
+                spec.assert_true(string.ends_with(url, "/storage/v1") == 1, "/storage/v1: ${url}")
+                // the server's root, without the /storage/v1 suffix (11 chars)
+                addr = string.substring(url, 0, string.length(url) - 11)
+            }
+            base, rec = servirtium.recording("fakegcsserver", "serves_the_gcs_json_api_at_the_storage_url", addr)
+            url = "${base}/storage/v1"
+
+            cs, _, ce = call_api("POST", "${url}/b?project=tc", [], "{\"name\":\"tc-bucket\"}", "application/json")
+            spec.assert_ok(ce, "create bucket")
+            spec.assert_eq(cs, 200, "create bucket is 200")
+            ls, lb, le = call_api("GET", "${url}/b", [], "", "")
+            spec.assert_ok(le, "list buckets")
+            spec.assert_eq(ls, 200, "list is 200")
+            spec.assert_contains(lb, "tc-bucket", "the bucket is listed")
+
+            us, _, ue = call_api("POST", "${base}/upload/storage/v1/b/tc-bucket/o?uploadType=media&name=hello.txt", [], "hello gcs", "text/plain")
+            spec.assert_ok(ue, "upload")
+            spec.assert_eq(us, 200, "upload is 200")
+            gs, gb, ge = call_api("GET", "${url}/b/tc-bucket/o/hello.txt?alt=media", [], "", "")
+            spec.assert_ok(ge, "download")
+            spec.assert_eq(gs, 200, "download is 200")
+            spec.assert_str_eq(gb, "hello gcs", "the object reads back")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "serves over HTTPS with scheme https (TestWithScheme https)", "no container in playback") callback {
+            g, err = fakegcsserver.run(IMAGE) { scheme("https") }
+            if g != null { testing.cleanup_container(g.container) }
+            spec.assert_ok(err, "fake-gcs-server starts with https")
+            if err == "" {
+                url, _ = fakegcsserver.storage_url(g)
+                spec.assert_true(string.starts_with(url, "https://localhost:") == 1, "https:// URL: ${url}")
+                st, _, e = call_api("GET", "${url}/b", [], "", "")
+                spec.assert_ok(e, "list buckets over HTTPS")
+                spec.assert_eq(st, 200, "list is 200")
+            }
+        }
+
+        spec.it_when(servirtium.live(), "rejects an invalid scheme (TestWithScheme invalid)", "no container in playback") callback {
+            g, err = fakegcsserver.run(IMAGE) { scheme("ftp") }
+            spec.assert_true(err != "", "an invalid scheme is an error")
+            spec.assert_contains(err, "invalid scheme", "says why")
+            spec.assert_true(g == null, "no container was started")
+        }
+    }
+    return spec.run_summary(fw)
+}

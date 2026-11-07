@@ -1,0 +1,118 @@
+// Ported from testcontainers-go modules/gcloud/examples/pubsub/examples_test.go (ExampleRun),
+// by way of testcontainers-ae's tests/test_gcloud_pubsub.ae (moved here
+// 2026-11-07).
+//
+// The Pub/Sub emulator from the Google Cloud SDK image: a topic, a
+// subscription, one message published and pulled, over the emulator's REST
+// API (Go's example does it with the pubsub SDK over gRPC; the emulator
+// answers REST on the same port). The module's request defaults and emulator
+// command are checked too.
+//
+// PORTING: the HTTP conversation is in the tape beside this file. Requests
+// carry `Authorization: Bearer owner`, the emulator's fixed admin token (not a
+// secret, so it is recorded as is). The REST API is
+// /v1/projects/<project>/topics/<topic>, .../subscriptions/<sub>,
+// .../topics/<topic>:publish and .../subscriptions/<sub>:pull (project
+// "pubsub-project", from the module's `project_id` option). The message data
+// is base64 ("SGVsbG8gV29ybGQ=" is "Hello World"). A fresh
+// emulator numbers messages from 1, so messageId "1" and the ackId
+// ("projects/.../subscriptions/subscription:1") are the same every run; the
+// publishTime is collapsed in the tape. A port that acknowledges the message
+// sends that ackId back (this test does not). The module's
+// own defaults, options and emulator command are not HTTP: they are checked
+// only live.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.gcloud.pubsub
+
+const IMAGE = "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request with an optional JSON body: (status, body, error).
+fn http_do(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_header(req, "Authorization", "Bearer owner")
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: the pulled message's publishTime (RFC 3339,
+    // millisecond precision).
+    servirtium.collapse(servirtium.RFC3339, "2026-01-01T00:00:00.000Z")
+
+    spec.describe(fw, "modules/gcloud/pubsub") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it_when(servirtium.live(), "has the module's defaults and options (engine-free)", "no container in playback") callback {
+            r = pubsub.pubsub_request_new()
+            spec.assert_str_eq(tc.req_setting(r, "pubsub.project_id"), "test-project", "default project id")
+            exposed = tc.req_exposed(r)
+            spec.assert_true(exposed.len >= 1, "ports are exposed")
+            spec.assert_str_eq(exposed[0], pubsub.PORT, "the emulator port")
+            pubsub.project_id(r, "pubsub-project")
+            spec.assert_str_eq(tc.req_setting(r, "pubsub.project_id"), "pubsub-project", "project_id replaces it")
+            cmd = pubsub.emulator_command("pubsub-project")
+            spec.assert_eq(cmd.len, 3, "sh -c <line>")
+            spec.assert_contains(cmd[2], "gcloud beta emulators pubsub start --host-port 0.0.0.0:8085 --project=pubsub-project", "the emulator command")
+            spec.assert_str_eq(pubsub.emulator_env_entry("localhost:1234"), "PUBSUB_EMULATOR_HOST=localhost:1234", "emulator env entry")
+            pubsub.pubsub_request_free(r)
+        }
+
+        spec.it("starts the emulator (ExampleRun)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                g, err = pubsub.run(IMAGE) {
+                    project_id("pubsub-project")
+                }
+                if g != null { testing.cleanup_container(g.container) }
+                spec.assert_ok(err, "pubsub starts")
+                if err != "" { return }
+                spec.assert_true(tc.is_running(g.container), "container is running")
+                spec.assert_str_eq(pubsub.project_id_of(g), "pubsub-project", "project id")
+                addr = "http://${pubsub.uri(g)}"
+            }
+            base, rec = servirtium.recording("gcloud_pubsub", "starts_the_emulator", addr)
+            // ExampleRun: a topic, a subscription, one message published and pulled
+            // (Go's example does it with the pubsub SDK over gRPC; the emulator
+            // answers the REST API on the same port)
+            proj = "${base}/v1/projects/pubsub-project"
+            st, _b, herr = http_do("PUT", "${proj}/topics/greetings", "{}")
+            spec.assert_ok(herr, "create topic")
+            spec.assert_eq(st, 200, "topic created")
+            st2, _b2, herr2 = http_do("PUT", "${proj}/subscriptions/subscription", "{\"topic\":\"projects/pubsub-project/topics/greetings\"}")
+            spec.assert_ok(herr2, "create subscription")
+            spec.assert_eq(st2, 200, "subscription created")
+            st3, _b3, herr3 = http_do("POST", "${proj}/topics/greetings:publish", "{\"messages\":[{\"data\":\"SGVsbG8gV29ybGQ=\"}]}")
+            spec.assert_ok(herr3, "publish")
+            spec.assert_eq(st3, 200, "published")
+            st4, body4, herr4 = http_do("POST", "${proj}/subscriptions/subscription:pull", "{\"maxMessages\":1,\"returnImmediately\":true}")
+            spec.assert_ok(herr4, "pull")
+            spec.assert_eq(st4, 200, "pulled")
+            spec.assert_contains(body4, "SGVsbG8gV29ybGQ=", "Hello World comes back")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

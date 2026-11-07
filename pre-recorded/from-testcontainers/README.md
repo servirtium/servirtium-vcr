@@ -32,6 +32,16 @@ reference for what each case does.
 | `minio` | 2 | `cgr.dev/chainguard/minio:latest` |
 | `opensearch` | 1 | `opensearchproject/opensearch:2.11.1` |
 | `elasticsearch` | 1 | `docker.elastic.co/elasticsearch/elasticsearch:8.9.0` |
+| `localstack` | 1 | `localstack/localstack:3.4` |
+| `dynamodb` | 1 | `amazon/dynamodb-local:2.2.1` |
+| `s3mock` | 1 | `adobe/s3mock:3.9.1` |
+| `garage` | 2 | `dxflrs/garage:v2.4.1` |
+| `azurite` | 2 (3 tapes) | `mcr.microsoft.com/azure-storage/azurite:3.28.0` |
+| `fakegcsserver` | 1 | `fsouza/fake-gcs-server:1.56.1` |
+| `gcloud_firestore` | 2 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| `gcloud_datastore` | 1 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| `gcloud_pubsub` | 1 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| `gcloud_bigquery` | 1 | `ghcr.io/goccy/bigquery-emulator:0.6.1` (linux/amd64 only) |
 
 ## A tape is a test scenario you can keep
 
@@ -110,6 +120,16 @@ Per suite (registered at the top of its `main`):
 | minio | | `<RequestId>` / `<HostId>` in error bodies, `CreationDate`, `X-Ratelimit-*` | `Authorization` (SigV4), as `AWS4-HMAC-SHA256 AUTHORIZATION_N` (credential preset) | `x-amz-date` (request), `x-amz-request-id`, `x-amz-id-2` |
 | opensearch | | the node's `name`, `cluster_uuid` | | |
 | elasticsearch | | the node's `name`, `cluster_uuid` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| localstack | | | | `x-amz-request-id`, `x-amz-id-2`, `Last-Modified` |
+| dynamodb | | `CreationDateTime`, `LastUpdateToPayPerRequestDateTime` | | `x-amzn-RequestId`, `x-amz-crc32` |
+| s3mock | | `CreationDate` | | `Last-Modified` |
+| garage | | | `Authorization` (SigV4), as `AWS4-HMAC-SHA256 AUTHORIZATION_N` (credential preset) | `x-amz-date` (request), `x-amz-version-id`, `last-modified` |
+| azurite | | `RequestId:<uuid>` and `Time:<RFC 3339>` in error bodies | | `x-ms-request-id` |
+| fakegcsserver | | `timeCreated` / `updated`, an object's `generation` (in `X-Goog-Generation` too), `Last-Modified` | | |
+| gcloud_firestore | | RFC 3339 times (`createTime`, `updateTime`, `readTime`) | | |
+| gcloud_datastore | | | | |
+| gcloud_pubsub | | `publishTime` | | |
+| gcloud_bigquery | | the query job's `jobId` | | |
 
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
@@ -135,6 +155,27 @@ test talks plain HTTP to the recorder, which talks HTTPS to the container
 and verifies it against that CA (`servirtium.trust_upstream_ca`, core's
 `set_upstream_cafile_h`). TLS is the connection's business, so nothing about
 it is on the tape, and playback is plain HTTP.
+
+**The cloud emulators** mostly accept any credentials:
+- **LocalStack and DynamoDB Local:** the tests send a fixed, fake SigV4
+  `Authorization` (and DynamoDB a fixed `X-Amz-Date`), the same every run,
+  so nothing is redacted. A port that signs for real needs MinIO's
+  treatment.
+- **S3Mock:** unsigned requests.
+- **Garage:** checks signatures, so it gets MinIO's treatment (credential
+  preset, `x-amz-date` left out, signed for the container's host).
+- **Azurite:** the requests are unauthenticated. A test signing with Shared
+  Key is time-based like SigV4: credential preset, `x-ms-date` left out. Its
+  first case talks to two ports of one container (blob and queue), so it
+  records two tapes, the second named `<case>_queue`.
+- **The gcloud emulators:** the tests send `Authorization: Bearer owner`, the
+  emulators' fixed placeholder token, recorded as is. BigQuery's emulator
+  image is linux/amd64 only.
+- **Not recordable:** the Bigtable and Spanner emulators' tests only open a
+  TCP connection to a gRPC port (no HTTP), so they stay in testcontainers-ae.
+
+Checks with no HTTP in them (a module's defaults, `tc.exec`, inspecting the
+container, a refused option) run only live, and are skipped in playback.
 
 The other redactions are a literal swap: the secret is written as its placeholder,
 and on playback the placeholder in the tape is swapped back before the

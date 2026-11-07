@@ -1,0 +1,127 @@
+// Ported from testcontainers-go modules/azurite/azurite_test.go, by way of
+// testcontainers-ae's tests/test_azurite.ae (moved here 2026-11-07).
+//
+// A real Azurite: the blob service URL answers over HTTP (an unauthenticated
+// account listing is refused with 403 AuthorizationFailure, which only the
+// emulator on that port says); with enabled_services(["blob"]) the queue and
+// table ports are not published.
+//
+// PORTING: these requests are deliberately unauthenticated (no Shared Key
+// signature, no SAS), so there is no credential on the tapes and nothing to
+// redact. A test that does sign, with Azure Shared Key, signs over the
+// x-ms-date it sends, so it is time-based like SigV4: send Authorization
+// through the credential preset (playback then matches it on presence only)
+// and leave x-ms-date out, as the MinIO tapes do for x-amz-date. Shared Key
+// also signs the canonicalized resource, which starts with the account name
+// (devstoreaccount1) in the path: Azurite's path-style URLs carry it.
+//
+// PORTING: the first case talks to two different services of one container,
+// the blob and the queue port, so it has two tapes: the case's name for the
+// blob listing and the name with "_queue" for the queue listing. Azurite
+// answers each with a 403 in its own XML flavour (the Server header says
+// which). The table URL is only checked for being a third, different port.
+// Which ports are published, and the URLs the module builds, are looked at
+// live only (they are about the container, not the conversation).
+
+import std.spec
+import std.string
+import std.http.client
+import std.tcp
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.azurite
+
+const IMAGE = "mcr.microsoft.com/azure-storage/azurite:3.28.0"
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error).
+fn http_do(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 15s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The id Azurite gives each request, in a response header and again in
+    // the error body, and the time of the error, in the body.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-ms-request-id")
+    servirtium.collapse("RequestId:[0-9a-f-]{36}", "RequestId:REQUEST-ID")
+    servirtium.collapse("Time:${servirtium.RFC3339}", "Time:2000-01-01T00:00:00.000Z")
+
+    spec.describe(fw, "modules/azurite") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves blob, queue and table URLs (TestAzurite)") callback {
+            blob = ""
+            queue = ""
+            if servirtium.live() == 1 {
+                c, err = azurite.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "azurite starts")
+                if err != "" { return }
+                b, berr = azurite.blob_service_url(c)
+                spec.assert_ok(berr, "blob service url")
+                spec.assert_true(string.starts_with(b, "http://") == 1, "an http:// URL: ${b}")
+                q, qerr = azurite.queue_service_url(c)
+                spec.assert_ok(qerr, "queue service url")
+                table, terr = azurite.table_service_url(c)
+                spec.assert_ok(terr, "table service url")
+                spec.assert_true(b != q && q != table, "three different ports")
+                blob = b
+                queue = q
+            }
+            bbase, brec = servirtium.recording("azurite", "serves_blob_queue_and_table_urls", blob)
+            st, body, herr = http_do("GET", "${bbase}/${azurite.ACCOUNT_NAME}?comp=list", "")
+            spec.assert_ok(herr, "GET blob account listing")
+            spec.assert_eq(st, 403, "anonymous listing is refused")
+            spec.assert_contains(body, "AuthorizationFailure", "by Azurite's storage error")
+            servirtium.end_recording(brec)
+            qbase, qrec = servirtium.recording("azurite", "serves_blob_queue_and_table_urls_queue", queue)
+            qs, _qb, qe = http_do("GET", "${qbase}/${azurite.ACCOUNT_NAME}?comp=list", "")
+            spec.assert_ok(qe, "GET queue account listing")
+            spec.assert_eq(qs, 403, "queue service answers too")
+            servirtium.end_recording(qrec)
+        }
+
+        spec.it("runs only the enabled services (TestAzuriteWithEnabledServices)") callback {
+            blob = ""
+            if servirtium.live() == 1 {
+                c, err = azurite.run(IMAGE) {
+                    enabled_services(["blob"])
+                    in_memory_persistence(64.0)
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "azurite-blob starts")
+                if err != "" { return }
+                b, berr = azurite.blob_service_url(c)
+                spec.assert_ok(berr, "blob service url")
+                blob = b
+                // the queue port is not published
+                _q, qerr = azurite.queue_service_url(c)
+                spec.assert_true(qerr != "", "the queue port is not published")
+            }
+            base, rec = servirtium.recording("azurite", "runs_only_the_enabled_services", blob)
+            st, _b, herr = http_do("GET", "${base}/${azurite.ACCOUNT_NAME}?comp=list", "")
+            spec.assert_ok(herr, "GET blob account listing")
+            spec.assert_eq(st, 403, "blob answers")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

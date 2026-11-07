@@ -1,0 +1,138 @@
+// Ported from testcontainers-go modules/gcloud/examples/firestore/examples_test.go
+// (ExampleRun, ExampleRun_datastoreMode), by way of testcontainers-ae's
+// tests/test_gcloud_firestore.ae (moved here 2026-11-07).
+//
+// The Firestore emulator from the Google Cloud SDK image: a document created
+// and read back over the emulator's REST API (Go's example uses the Firestore
+// SDK over gRPC; the emulator answers REST on the same port), and the same
+// emulator in datastore mode answering a Datastore REST lookup. The module's
+// request defaults and emulator command are checked too.
+//
+// PORTING: the HTTP conversation is in the tapes beside this file. Requests
+// carry `Authorization: Bearer owner`, the emulator's fixed admin token (not a
+// secret, so it is recorded as is). The Firestore REST API is under
+// /v1/projects/<project>/databases/(default)/documents; in datastore mode the
+// same port serves the Datastore API (/v1/projects/<project>:lookup). The
+// project id comes from the module's `project_id` option (here
+// "firestore-project"); a port to another language only has to use the same
+// id in the path. The emulator mints no ids here (the document id is chosen
+// by the request), only create/update/read times. The module's own defaults,
+// options and emulator command are not HTTP: they are checked only live.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.gcloud.firestore
+
+const IMAGE = "gcr.io/google.com/cloudsdktool/cloud-sdk:emulators"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request with an optional JSON body: (status, body, error).
+fn http_do(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_header(req, "Authorization", "Bearer owner")
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: the document's createTime and updateTime and
+    // the datastore-mode lookup's readTime (RFC 3339 times).
+    servirtium.collapse(servirtium.RFC3339, "2026-01-01T00:00:00.000000Z")
+
+    spec.describe(fw, "modules/gcloud/firestore") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it_when(servirtium.live(), "has the module's defaults and options (engine-free)", "no container in playback") callback {
+            r = firestore.firestore_request_new()
+            spec.assert_str_eq(tc.req_setting(r, "firestore.project_id"), "test-project", "default project id")
+            exposed = tc.req_exposed(r)
+            spec.assert_eq(exposed.len, 1, "one port")
+            spec.assert_str_eq(exposed[0], "8080/tcp", "the emulator port")
+            firestore.project_id(r, "firestore-project")
+            spec.assert_str_eq(tc.req_setting(r, "firestore.project_id"), "firestore-project", "project_id replaces it")
+            spec.assert_false(tc.req_has_setting(r, "firestore.datastore_mode"), "not in datastore mode")
+            firestore.datastore_mode(r)
+            spec.assert_true(tc.req_has_setting(r, "firestore.datastore_mode"), "datastore_mode is recorded")
+            spec.assert_str_eq(firestore.emulator_env_entry("localhost:1234"), "FIRESTORE_EMULATOR_HOST=localhost:1234", "emulator env entry")
+            firestore.firestore_request_free(r)
+        }
+
+        spec.it_when(servirtium.live(), "builds the emulator command (engine-free)", "no container in playback") callback {
+            plain = firestore.emulator_command("p1", false)
+            spec.assert_eq(plain.len, 3, "sh -c <line>")
+            spec.assert_str_eq(plain[2], "gcloud beta emulators firestore start --host-port 0.0.0.0:8080 --project=p1", "plain command")
+            ds = firestore.emulator_command("p1", true)
+            spec.assert_str_eq(ds[2], "gcloud beta emulators firestore start --host-port 0.0.0.0:8080 --project=p1 --database-mode=datastore-mode", "datastore mode command")
+        }
+
+        spec.it("starts the emulator and stores a document (ExampleRun)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                g, err = firestore.run(IMAGE) {
+                    project_id("firestore-project")
+                }
+                if g != null { testing.cleanup_container(g.container) }
+                spec.assert_ok(err, "firestore starts")
+                if err != "" { return }
+                spec.assert_str_eq(firestore.project_id_of(g), "firestore-project", "project id")
+                addr = "http://${firestore.uri(g)}"
+            }
+            base, rec = servirtium.recording("gcloud_firestore", "starts_the_emulator_and_stores_a_document", addr)
+            // the example creates users/alovelace with the Firestore SDK over gRPC;
+            // the emulator answers the REST API on the same port
+            docs = "${base}/v1/projects/firestore-project/databases/(default)/documents"
+            doc = "{\"fields\":{\"firstname\":{\"stringValue\":\"Ada\"},\"lastname\":{\"stringValue\":\"Lovelace\"}}}"
+            st, _b, herr = http_do("POST", "${docs}/users?documentId=alovelace", doc)
+            spec.assert_ok(herr, "create document")
+            spec.assert_eq(st, 200, "created")
+            st2, body2, herr2 = http_do("GET", "${docs}/users/alovelace", "")
+            spec.assert_ok(herr2, "get document")
+            spec.assert_eq(st2, 200, "got it")
+            spec.assert_contains(body2, "Ada", "firstname")
+            spec.assert_contains(body2, "Lovelace", "lastname")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("starts in datastore mode (ExampleRun_datastoreMode)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                g, err = firestore.run(IMAGE) {
+                    project_id("firestore-project")
+                    datastore_mode()
+                }
+                if g != null { testing.cleanup_container(g.container) }
+                spec.assert_ok(err, "firestore in datastore mode starts")
+                if err != "" { return }
+                spec.assert_true(tc.is_running(g.container), "container is running")
+                addr = "http://${firestore.uri(g)}"
+            }
+            base, rec = servirtium.recording("gcloud_firestore", "starts_in_datastore_mode", addr)
+            // datastore mode serves the Datastore REST API on the emulator port
+            st, _b, herr = http_do("POST", "${base}/v1/projects/firestore-project:lookup", "{\"keys\":[{\"path\":[{\"kind\":\"Task\",\"name\":\"none\"}]}]}")
+            spec.assert_ok(herr, "datastore lookup")
+            spec.assert_eq(st, 200, "datastore API answers")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}
