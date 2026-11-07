@@ -24,6 +24,9 @@ diagnostics), mapped through the stack. "Test" = exercised by
 | Match on a specific request header (opt-in) | ✅ | ✅ | `matchHeader:` | — |
 | Static-content bypass | ✅ | ✅ | `staticContentMount:dir:` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `failIfChanged` | ✅ |
+| Header presets (transport / cloud vendor) | ✅ | ✅ | `removeTransportHeaders` / `removeCloudHeaders: vendor` | ✅ |
+| Credential redaction preset | ✅ | ✅ | `redactCredentials` / `redactCredentialHeader: name` | ✅ |
+| License notice / upstream CA file / pretty JSON | ✅ | ✅ | `addLicenseNotice: text` / `upstreamCafile: path` / `prettyJson: n` | ✅ notice + presets |
 | Format options (indent / emphasize) | ✅ | ✅ | `indentCodeBlocks` / `emphasizeHttpVerbs` / `prettyXml: n` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError`/`lastKind`/`lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |

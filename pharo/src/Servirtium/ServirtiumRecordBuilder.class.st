@@ -17,6 +17,9 @@ Class {
 		'indentCodeBlocks',
 		'emphasizeHttpVerbs',
 		'prettyXml',
+		'prettyJson',
+		'upstreamCafile',
+		'licenseNotice',
 		'failIfChanged'
 	],
 	#category : 'Servirtium',
@@ -40,6 +43,9 @@ ServirtiumRecordBuilder >> initializeTape: aTapePath [
 	indentCodeBlocks := false.
 	emphasizeHttpVerbs := false.
 	prettyXml := 0.
+	prettyJson := 0.
+	upstreamCafile := nil.
+	licenseNotice := nil.
 	failIfChanged := false
 ]
 
@@ -118,6 +124,39 @@ ServirtiumRecordBuilder >> prettyXml: anIndent [
 ]
 
 { #category : 'configuring' }
+ServirtiumRecordBuilder >> prettyJson [
+	"Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed."
+
+	prettyJson := 2.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> prettyJson: anIndent [
+	"Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed."
+
+	prettyJson := anIndent.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> upstreamCafile: aPath [
+	"Verify an https upstream against this PEM CA file."
+
+	upstreamCafile := aPath.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> addLicenseNotice: aText [
+	"Put aText under '## LICENSE NOTICE' at the top of each tape; playback
+	 ignores it."
+
+	licenseNotice := aText.
+	^ self
+]
+
+{ #category : 'configuring' }
 ServirtiumRecordBuilder >> failIfChanged [
 	"On stop, still write the freshly recorded tape but raise if it differs
 	 from the on-disk one — the Servirtium step-4 drift contract, so a normal
@@ -134,6 +173,15 @@ ServirtiumRecordBuilder >> applyConfig: handle [
 	indentCodeBlocks ifTrue: [ self library indentCodeBlocks: handle ].
 	emphasizeHttpVerbs ifTrue: [ self library emphasizeHttpVerbs: handle ].
 	prettyXml > 0 ifTrue: [ self library setPrettyXml: handle indent: prettyXml ].
+	prettyJson > 0 ifTrue: [ self library setPrettyJson: handle indent: prettyJson ].
+	upstreamCafile ifNotNil: [
+		self
+			check: (self library setUpstreamCafile: handle path: upstreamCafile)
+			op: 'upstreamCafile' ].
+	licenseNotice ifNotNil: [
+		self
+			check: (self library addLicenseNotice: handle text: licenseNotice)
+			op: 'addLicenseNotice' ].
 	redactions do: [ :tuple |
 		self
 			check: (self library perform: (tuple at: 1) withArguments: { handle. (tuple at: 2). (tuple at: 3). (tuple at: 4) })

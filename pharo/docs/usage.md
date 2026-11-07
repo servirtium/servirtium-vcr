@@ -170,6 +170,8 @@ API calls while CSS/JS/images come from your build output:
     indentCodeBlocks;       "4-space-indented blocks instead of ``` fences"
     emphasizeHttpVerbs;     "*GET* instead of bare GET in headings"
     prettyXml: 2;           "pretty-print recorded XML bodies"
+    prettyJson: 2;          "pretty-print recorded JSON bodies"
+    addLicenseNotice: 'Licence terms of the recorded service';  "under ## LICENSE NOTICE"
     start.
 ```
 

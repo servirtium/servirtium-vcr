@@ -18,6 +18,10 @@ Class {
 		'label',
 		'headerRemovals',
 		'ignoreVolatileHeaders',
+		'removeTransportHeaders',
+		'cloudVendors',
+		'redactCredentials',
+		'credentialHeaders',
 		'staticContents',
 		'untapedPaths',
 		'tlsCert',
@@ -44,6 +48,10 @@ ServirtiumBuilder >> initializeTape: aTapePath [
 	label := ''.
 	headerRemovals := OrderedCollection new.
 	ignoreVolatileHeaders := false.
+	removeTransportHeaders := false.
+	cloudVendors := OrderedCollection new.
+	redactCredentials := false.
+	credentialHeaders := OrderedCollection new.
 	staticContents := OrderedCollection new.
 	untapedPaths := OrderedCollection new
 ]
@@ -99,6 +107,43 @@ ServirtiumBuilder >> ignoreVolatileHeaders [
 ]
 
 { #category : 'configuring' }
+ServirtiumBuilder >> removeTransportHeaders [
+	"Leave the connection-describing headers (Host, Connection, Content-Length
+	 and the other hop-by-hop headers, Accept-Encoding) out of the recording.
+	 Works in playback and record mode."
+
+	removeTransportHeaders := true.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> removeCloudHeaders: aVendor [
+	"Drop a cloud vendor's per-request headers; aVendor is one of 'aws',
+	 'azure', 'cloudflare', 'fastly', 'gcp'. Send again for more vendors."
+
+	cloudVendors add: aVendor.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> redactCredentials [
+	"Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+	 X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the playback
+	 builder too, as with every rule."
+
+	redactCredentials := true.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> redactCredentialHeader: aName [
+	"One more credential header with the same treatment as redactCredentials."
+
+	credentialHeaders add: aName.
+	^ self
+]
+
+{ #category : 'configuring' }
 ServirtiumBuilder >> staticContentMount: aMountPath dir: anFsDir [
 	"Serve a path prefix from an on-disk directory instead of the tape /
 	 upstream (Servirtium step 11). libservirtium_vcr honors static mounts in record
@@ -146,6 +191,14 @@ ServirtiumBuilder >> applyConfig: handle [
 		self check: (self library removeHeader: handle field: assoc key name: assoc value) op: 'removeHeader' ].
 	ignoreVolatileHeaders ifTrue: [
 		self check: (self library ignoreVolatileHeaders: handle) op: 'ignoreVolatileHeaders' ].
+	removeTransportHeaders ifTrue: [
+		self check: (self library removeTransportHeaders: handle) op: 'removeTransportHeaders' ].
+	cloudVendors do: [ :vendor |
+		self check: (self library removeCloudHeaders: handle vendor: vendor) op: 'removeCloudHeaders' ].
+	redactCredentials ifTrue: [
+		self check: (self library redactCredentials: handle) op: 'redactCredentials' ].
+	credentialHeaders do: [ :name |
+		self check: (self library redactCredentialHeader: handle name: name) op: 'redactCredentialHeader' ].
 	staticContents do: [ :assoc |
 		self
 			check: (self library staticContent: handle mount: assoc key dir: assoc value)

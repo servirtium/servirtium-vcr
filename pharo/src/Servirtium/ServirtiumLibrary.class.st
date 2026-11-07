@@ -344,6 +344,48 @@ ServirtiumLibrary >> setPrettyXml: server indent: indent [
 	^ self ffiCall: #( void aether_vcr_embed_set_pretty_xml ( void* server, int indent ) )
 ]
 
+{ #category : 'ffi - format' }
+ServirtiumLibrary >> setPrettyJson: server indent: indent [
+
+	^ self ffiCall: #( void aether_vcr_embed_set_pretty_json ( void* server, int indent ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> removeTransportHeaders: server [
+
+	^ self ffiCall: #( void* aether_vcr_embed_remove_transport_headers ( void* server ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> removeCloudHeaders: server vendor: vendor [
+
+	^ self ffiCall: #( void* aether_vcr_embed_remove_cloud_headers ( void* server, String vendor ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> redactCredentials: server [
+
+	^ self ffiCall: #( void* aether_vcr_embed_redact_credentials ( void* server ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> redactCredentialHeader: server name: name [
+
+	^ self ffiCall: #( void* aether_vcr_embed_redact_credential_header ( void* server, String name ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> setUpstreamCafile: server path: path [
+
+	^ self ffiCall: #( void* aether_vcr_embed_set_upstream_cafile ( void* server, String path ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> addLicenseNotice: server text: text [
+
+	^ self ffiCall: #( void* aether_vcr_embed_add_license_notice ( void* server, String text ) )
+]
+
 { #category : 'ffi - clearing' }
 ServirtiumLibrary >> clearRedactions: server [
 

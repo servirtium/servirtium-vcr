@@ -73,6 +73,22 @@ ServirtiumRecordTest >> testRecordsThenReplaysTheSameInteraction [
 ]
 
 { #category : 'tests' }
+ServirtiumRecordTest >> testAcceptsALicenseNoticePrettyJsonAndHeaderPresets [
+
+	(Servirtium record: tape upstream: self upstreamBase)
+		addLicenseNotice: 'test notice';
+		prettyJson: 2;
+		removeTransportHeaders;
+		removeCloudHeaders: 'aws';
+		redactCredentials;
+		redactCredentialHeader: 'X-Vault-Token';
+		port: 0;
+		startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/x' ].
+
+	self assert: (tape asFileReference contents includesSubstring: '## LICENSE NOTICE')
+]
+
+{ #category : 'tests' }
 ServirtiumRecordTest >> testRedactsResponseBodyBeforeItLandsOnTheTape [
 
 	upstream onRequestRespond: [ :request |
