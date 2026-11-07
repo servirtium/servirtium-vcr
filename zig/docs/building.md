@@ -5,7 +5,7 @@ at **build time** via `build.zig`, then runs its `zig build test` suite.
 
 ## Prerequisites
 
-- **Zig 0.17.0** (`zig version` → `0.17.0`). The std build graph and several
+- **Zig 0.17.1** (`zig version` → `0.17.1`; minimum 0.17.0). The std build graph and several
   std modules (`std.Io.net`, `std.process.run(gpa, io, options)`,
   `std.ArrayList` unmanaged) match this release; see "Zig 0.16 gotchas" below.
 - **`curl`** on `PATH` — the test suite shells out to `curl` for HTTP rather
