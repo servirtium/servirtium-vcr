@@ -35,6 +35,20 @@ do
     os.remove(tape)
 end
 
+-- license notice, pretty JSON and the header presets -------------------------
+do
+    h.case("record accepts a license notice, pretty JSON and the header presets")
+    local tape = h.temp_tape("notice.md")
+    local rec = assert(servirtium.record(tape, "http://127.0.0.1:1")
+        :add_license_notice("test notice"):pretty_json(2):remove_transport_headers()
+        :remove_cloud_headers("aws"):redact_credentials():redact_credential_header("X-Vault-Token")
+        :port(0):start())
+    rec:close()
+    os.remove(tape)
+    local bad = servirtium.record(tape, "http://127.0.0.1:1"):remove_cloud_headers("nosuchvendor"):port(0):start()
+    h.eq(bad, nil, "an unknown cloud vendor is rejected")
+end
+
 -- record + replay a POST with a body -----------------------------------------
 do
     h.case("record and replay a POST with a body")

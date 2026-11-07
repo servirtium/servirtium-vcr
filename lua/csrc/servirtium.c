@@ -105,6 +105,13 @@ extern void  aether_vcr_embed_set_match_multiple(void *h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(void *h);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *h);
 extern void  aether_vcr_embed_set_pretty_xml(void *h, int indent);
+extern void  aether_vcr_embed_set_pretty_json(void *h, int indent);
+extern char *aether_vcr_embed_remove_transport_headers(void *h);
+extern char *aether_vcr_embed_remove_cloud_headers(void *h, const char *vendor);
+extern char *aether_vcr_embed_redact_credentials(void *h);
+extern char *aether_vcr_embed_redact_credential_header(void *h, const char *name);
+extern char *aether_vcr_embed_set_upstream_cafile(void *h, const char *path);
+extern char *aether_vcr_embed_add_license_notice(void *h, const char *text);
 extern void  aether_vcr_embed_clear_redactions(void *h);
 extern void  aether_vcr_embed_clear_unredactions(void *h);
 extern void  aether_vcr_embed_clear_header_removals(void *h);
@@ -565,6 +572,61 @@ static int l_set_pretty_xml(lua_State *L)
     return 0;
 }
 
+/* set_pretty_json(handle, indent) */
+static int l_set_pretty_json(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int indent = (int)luaL_checkinteger(L, 2);
+    aether_vcr_embed_set_pretty_json(h, indent);
+    return 0;
+}
+
+/* remove_transport_headers(handle) -> string (empty == ok) */
+static int l_remove_transport_headers(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    return push_owned_string(L, aether_vcr_embed_remove_transport_headers(h));
+}
+
+/* remove_cloud_headers(handle, vendor) -> string (empty == ok) */
+static int l_remove_cloud_headers(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *vendor = luaL_checkstring(L, 2);
+    return push_owned_string(L, aether_vcr_embed_remove_cloud_headers(h, vendor));
+}
+
+/* redact_credentials(handle) -> string (empty == ok) */
+static int l_redact_credentials(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    return push_owned_string(L, aether_vcr_embed_redact_credentials(h));
+}
+
+/* redact_credential_header(handle, name) -> string (empty == ok) */
+static int l_redact_credential_header(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *name = luaL_checkstring(L, 2);
+    return push_owned_string(L, aether_vcr_embed_redact_credential_header(h, name));
+}
+
+/* set_upstream_cafile(handle, path) -> string (empty == ok) */
+static int l_set_upstream_cafile(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *path = luaL_checkstring(L, 2);
+    return push_owned_string(L, aether_vcr_embed_set_upstream_cafile(h, path));
+}
+
+/* add_license_notice(handle, text) -> string (empty == ok) */
+static int l_add_license_notice(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *text = luaL_checkstring(L, 2);
+    return push_owned_string(L, aether_vcr_embed_add_license_notice(h, text));
+}
+
 /* ---- module registration ------------------------------------------------ */
 
 static int l_secret_begin(lua_State *L) { return push_owned_string(L, aether_vcr_embed_secret_begin(check_handle(L, 1), (int)luaL_checkinteger(L, 2))); }
@@ -631,6 +693,13 @@ static const luaL_Reg servirtium_funcs[] = {
     {"indent_code_blocks",              l_indent_code_blocks},
     {"emphasize_http_verbs",            l_emphasize_http_verbs},
     {"set_pretty_xml",                  l_set_pretty_xml},
+    {"set_pretty_json",                 l_set_pretty_json},
+    {"remove_transport_headers",        l_remove_transport_headers},
+    {"remove_cloud_headers",            l_remove_cloud_headers},
+    {"redact_credentials",              l_redact_credentials},
+    {"redact_credential_header",        l_redact_credential_header},
+    {"set_upstream_cafile",             l_set_upstream_cafile},
+    {"add_license_notice",              l_add_license_notice},
     {NULL, NULL},
 };
 

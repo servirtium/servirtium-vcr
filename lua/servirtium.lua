@@ -216,6 +216,18 @@ local function apply_base(b, handle)
     if b._ignore_volatile_headers then
         check(C.ignore_volatile_headers(handle), "ignore_volatile_headers")
     end
+    if b._remove_transport_headers then
+        check(C.remove_transport_headers(handle), "remove_transport_headers")
+    end
+    for _, vendor in ipairs(b._cloud_vendors) do
+        check(C.remove_cloud_headers(handle, vendor), "remove_cloud_headers")
+    end
+    if b._redact_credentials then
+        check(C.redact_credentials(handle), "redact_credentials")
+    end
+    for _, name in ipairs(b._credential_headers) do
+        check(C.redact_credential_header(handle, name), "redact_credential_header")
+    end
     for _, sc in ipairs(b._static_content) do
         check(C.static_content(handle, sc.mount, sc.dir), "static_content")
     end
@@ -238,6 +250,10 @@ local function base_builder(tape, host)
         _label = "servirtium",
         _header_removals = {},
         _ignore_volatile_headers = false,
+        _remove_transport_headers = false,
+        _cloud_vendors = {},
+        _redact_credentials = false,
+        _credential_headers = {},
         _static_content = {},
         _untaped = {},
         _tls = nil,
@@ -295,6 +311,35 @@ end
 -- and the live request before matching. Works in playback and record mode.
 function PlaybackBuilder:ignore_volatile_headers()
     self._ignore_volatile_headers = true
+    return self
+end
+
+-- Leave the connection-describing headers (Host, Connection, Content-Length and
+-- the other hop-by-hop headers, Accept-Encoding) out of the recording. Works in
+-- playback and record mode.
+function PlaybackBuilder:remove_transport_headers()
+    self._remove_transport_headers = true
+    return self
+end
+
+-- Drop a cloud vendor's per-request headers; vendor is one of "aws", "azure",
+-- "cloudflare", "fastly", "gcp". Call again for more vendors.
+function PlaybackBuilder:remove_cloud_headers(vendor)
+    table.insert(self._cloud_vendors, vendor)
+    return self
+end
+
+-- Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+-- X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the playback
+-- builder too, as with every rule.
+function PlaybackBuilder:redact_credentials()
+    self._redact_credentials = true
+    return self
+end
+
+-- One more credential header with the same treatment as redact_credentials.
+function PlaybackBuilder:redact_credential_header(name)
+    table.insert(self._credential_headers, name)
     return self
 end
 
@@ -415,6 +460,35 @@ function RecordBuilder:ignore_volatile_headers()
     return self
 end
 
+-- Leave the connection-describing headers (Host, Connection, Content-Length and
+-- the other hop-by-hop headers, Accept-Encoding) out of the recording. Works in
+-- playback and record mode.
+function RecordBuilder:remove_transport_headers()
+    self._remove_transport_headers = true
+    return self
+end
+
+-- Drop a cloud vendor's per-request headers; vendor is one of "aws", "azure",
+-- "cloudflare", "fastly", "gcp". Call again for more vendors.
+function RecordBuilder:remove_cloud_headers(vendor)
+    table.insert(self._cloud_vendors, vendor)
+    return self
+end
+
+-- Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+-- X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the playback
+-- builder too, as with every rule.
+function RecordBuilder:redact_credentials()
+    self._redact_credentials = true
+    return self
+end
+
+-- One more credential header with the same treatment as redact_credentials.
+function RecordBuilder:redact_credential_header(name)
+    table.insert(self._credential_headers, name)
+    return self
+end
+
 function RecordBuilder:redact(field, pattern, repl)
     table.insert(self._redactions, { field = field, pattern = pattern, repl = repl })
     return self
@@ -487,6 +561,24 @@ function RecordBuilder:pretty_xml(indent)
     return self
 end
 
+-- Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+function RecordBuilder:pretty_json(indent)
+    self._pretty_json = indent or 2
+    return self
+end
+
+-- Verify an https upstream against this PEM CA file.
+function RecordBuilder:upstream_cafile(path)
+    self._upstream_cafile = path
+    return self
+end
+
+-- Put text under "## LICENSE NOTICE" at the top of each tape; playback ignores it.
+function RecordBuilder:add_license_notice(text)
+    self._license_notice = text
+    return self
+end
+
 function RecordBuilder:fail_if_changed()
     self._fail_if_changed = true
     return self
@@ -514,6 +606,15 @@ function RecordBuilder:start()
         end
         if self._pretty_xml > 0 then
             C.set_pretty_xml(handle, self._pretty_xml)
+        end
+        if self._pretty_json > 0 then
+            C.set_pretty_json(handle, self._pretty_json)
+        end
+        if self._upstream_cafile then
+            check(C.set_upstream_cafile(handle, self._upstream_cafile), "set_upstream_cafile")
+        end
+        if self._license_notice then
+            check(C.add_license_notice(handle, self._license_notice), "add_license_notice")
         end
         for _, r in ipairs(self._redactions) do
             check(C[r.operation or "redact"](handle, r.field, r.pattern, r.repl), "redact")
@@ -609,6 +710,7 @@ function M.record(tapePath, upstream, opts)
     b._indent_code_blocks = false
     b._emphasize_http_verbs = false
     b._pretty_xml = 0
+    b._pretty_json = 0
     b._fail_if_changed = false
     if opts then
         if opts.port  ~= nil then b._port  = opts.port  end
