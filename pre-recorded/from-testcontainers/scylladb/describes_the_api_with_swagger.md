@@ -311,3 +311,4 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | collapsed | whole recording | `"value": "[01](\.[0-9]+)?"` | `"value": "1"` | none |
 | collapsed | whole recording | `"total":[0-9]+,"live":[0-9]+` | `"total":0,"live":0` | none |
 | collapsed | whole recording | `(?m)^[0-9]{3,9}$` | `1000000` | none |
+| ordered | response body | the root array, requests matching `^/(column_family/(name(/keyspace)?)?\|storage_service/keyspaces\|storage_service/logging_level\|system/logger)(\?\|$)` | sorted by their elements' canonical JSON | none |

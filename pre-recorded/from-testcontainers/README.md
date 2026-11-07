@@ -258,6 +258,7 @@ a client, a sorted array is a deliberate change of the recorded response):
 | vearch | | yes | | |
 | tidb | | | `GET /schema`'s databases, by `/db_name/L` | |
 | lowkeyvault | | | a `/versions` list, by `/attributes/created` (oldest first) | `Allow` |
+| scylladb | | | the hash-map listings (`/column_family/`, `/column_family/name`, `.../name/keyspace`, `/storage_service/keyspaces`, `/storage_service/logging_level`, `/system/logger`), by canonical JSON | |
 
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
@@ -360,8 +361,8 @@ it is on the tape, and playback is plain HTTP.
   inside the container, so the module's `rest_api()` option publishes it
   (`--api-address=0.0.0.0`). Keyspaces are made with `cqlsh` in the
   container, outside the tapes. Listings Seastar builds from hash maps
-  (`/column_family/`, `/storage_service/keyspaces` with several keyspaces)
-  change order between runs and are not taped.
+  (`/column_family/`, `/storage_service/keyspaces` with several keyspaces,
+  the loggers) change order between runs; the tapes have them sorted.
 - **CockroachDB (comprehensive, HTTP API v2):** a secure single node (TLS,
   SQL users with passwords, so the login is real: `POST /api/v2/login/` with
   a form body answers a session token that the other calls send as

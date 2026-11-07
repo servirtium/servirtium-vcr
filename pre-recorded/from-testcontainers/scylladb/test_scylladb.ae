@@ -74,11 +74,12 @@
 // -------------------------------
 // Seastar builds several listings from hash maps, so their order depends on
 // what was inserted and when: /column_family/ (every table), /column_family/
-// name, /column_family/name/keyspace, and /storage_service/keyspaces when
-// two or more keyspaces exist (also ?type=non_local_strategy). They would make a re-record differ, so they
-// are not taped; /storage_service/keyspaces?type=user is (with one user
-// keyspace it is a one-element array). The same goes for /storage_service/
-// logging_level, /system/logger (a few hundred names).
+// name, /column_family/name/keyspace, /storage_service/keyspaces (also
+// ?type=non_local_strategy), /storage_service/logging_level and
+// /system/logger (a few hundred names). The tapes have each of these arrays
+// sorted (Servirtium's stable order, scoped to those requests: by each
+// element's canonical JSON, so names alphabetically), and replay serves that
+// order; live, a client must not rely on any order, and the cases do not.
 //
 // In and out of scope
 // -------------------
@@ -306,6 +307,9 @@ fn api_rules() {
     // bare numbers on the tapes are one or two digits, and the ten-digit
     // generation number is the rule above).
     servirtium.collapse("(?m)^[0-9]{3,9}$", "1000000")
+    // The listings Seastar builds from hash maps (see "Order that is not
+    // deterministic" above): each root array sorted, for those requests only.
+    servirtium.sort_json_array_at("^/(column_family/(name(/keyspace)?)?|storage_service/keyspaces|storage_service/logging_level|system/logger)(\\?|$)", "", "")
 }
 
 // ---------------------------------------------------------------------------
@@ -380,8 +384,13 @@ main() {
         }
 
         // PORTING: GET /storage_service/keyspaces?type=user ([the case's
-        // keyspace]; ?type=non_local_strategy is not taped, its order of five
-        // names changes between runs), GET /storage_service/natural_endpoints/
+        // keyspace]), GET /storage_service/keyspaces (every keyspace, system
+        // ones too), ?type=non_local_strategy (the five that are not
+        // LocalStrategy), GET /column_family/name ("<keyspace>:<table>" for
+        // every table), /column_family/name/keyspace (every keyspace again)
+        // and /column_family/ (an object per table: ks, cf, type); the tapes
+        // have these lists sorted, see "Order that is not deterministic".
+        // Then GET /storage_service/natural_endpoints/
         // tcae_keyspaces?cf=items&key=1 (the replicas of a partition key: one
         // address) and GET /storage_service/ownership/tcae_keyspaces (the
         // fraction of the ring per address: "1", collapsed).
@@ -389,6 +398,11 @@ main() {
             rec, ok = begin("lists_keyspaces_and_maps_a_key_to_its_replica", "tcae_keyspaces")
             if ok == 0 { return }
             expect_body("/storage_service/keyspaces?type=user", "[\"tcae_keyspaces\"]")
+            expect_contains("/storage_service/keyspaces", "\"tcae_keyspaces\"")
+            expect_contains("/storage_service/keyspaces?type=non_local_strategy", "\"tcae_keyspaces\"")
+            expect_contains("/column_family/name", "\"tcae_keyspaces:items\"")
+            expect_contains("/column_family/name/keyspace", "\"tcae_keyspaces\"")
+            expect_contains("/column_family/", "\"cf\":\"items\"")
             expect_contains("/storage_service/natural_endpoints/tcae_keyspaces?cf=items&key=1", "[\"")
             expect_contains("/storage_service/ownership/tcae_keyspaces", "\"value\": \"")
             finish(rec, "tcae_keyspaces")
@@ -487,7 +501,10 @@ main() {
             finish(rec, "tcae_schema")
         }
 
-        // PORTING: GET /system/logger/compaction ("info"), POST /system/logger/
+        // PORTING: GET /system/logger (every logger's name) and GET
+        // /storage_service/logging_level ({"key": logger, "value": level} per
+        // logger), both sorted on the tape (see "Order that is not
+        // deterministic"); GET /system/logger/compaction ("info"), POST /system/logger/
         // compaction?level=debug (200, empty), GET (debug), POST ...?level=info,
         // GET (info). Errors: POST ...?level=loud is 400 "Unknown logging
         // level loud", GET /system/logger/nonexistent is 400 "Unknown logger
@@ -495,6 +512,8 @@ main() {
         spec.it("sets and resets a log level") callback {
             rec, ok = begin("sets_and_resets_a_log_level", "")
             if ok == 0 { return }
+            expect_contains("/system/logger", "\"compaction\"")
+            expect_contains("/storage_service/logging_level", "\"compaction\"")
             expect_body("/system/logger/compaction", "\"info\"")
             st, b = rest("POST", "/system/logger/compaction?level=debug")
             spec.assert_eq(st, 200, "set debug: ${b}")
