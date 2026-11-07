@@ -23,7 +23,7 @@ aeb(cap) {
     
         // Fresh consumer project OUTSIDE the source tree (same depth as php/example,
         // so the composer.json's `../../php` path repo resolves the same). Composer
-        // copies php/ (incl. native/) into vendor/servirtium/servirtium-php.
+        // copies php/ (incl. native/) into vendor/servirtium/vcr.
         // NOTE: Arch ships PHP's FFI extension but does not auto-load it, so we
         // enable it per-invocation with `-d extension=ffi -d ffi.enable=1` (no sudo,
         // no global php.ini edit). Composer checks the ext-ffi platform req under an

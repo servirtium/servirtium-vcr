@@ -86,7 +86,7 @@ links or loads it from there.
 | Julia | `Pkg.develop(path="…/julia")` |
 | Swift | `.package(path: "…/swift")`; from git: `.package(url: "https://github.com/servirtium/servirtium-vcr", branch: "main")` (root `Package.swift`, see below) |
 | D | `dub add-local …/d 2.0.0`; from a clone or the registry: `dub add-local <clone-root> 2.0.0-alpha.12` / `dub add servirtium` (root `dub.sdl`, see below) |
-| PHP | `composer config repositories.servirtium path …/php` |
+| PHP | `composer.json` is in `php/` (not the repo root), so no `vcs`/Packagist route yet: `composer config repositories.servirtium path …/php && composer require servirtium/vcr:@dev` |
 | Dart | `dependency_overrides: servirtium: {path: …/dart}` |
 | Pharo | `ServirtiumLibrary libPath:` the staged `.so` |
 

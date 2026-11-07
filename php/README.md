@@ -36,49 +36,82 @@ that precompiled native build and presents an idiomatic PHP fixture; it does
 
 Requires **PHP 8.2+ with the `FFI` extension** (`ext-ffi`).
 
-## Install
+## Getting it
 
-> **Note:** the `servirtium/servirtium-php` package is **not published to
-> Packagist yet**, so `composer require --dev servirtium/servirtium-php` does
-> **not** give you this library. Get the native library from GitHub releases
-> instead (below).
+The Composer name is **`servirtium/vcr`** (Packagist vendor = the GitHub org `servirtium`),
+namespace `Servirtium\`, `require php >=8.2` and `ext-ffi`. It is **not on Packagist yet**.
 
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
-
-```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
-```
-
-**Build the package locally**
-
-Nothing is published to a registry yet, so you assemble the package yourself:
-drop the downloaded library at the package-relative path below, then consume it
-from source (a `path` repository in your `composer.json`).
+**Why there is no one-line `composer require` from GitHub:** this repo is a monorepo and
+`composer.json` lives in `php/`, not at the root. Composer's `vcs` repository type reads
+`composer.json` at the repository root only (it has no subdirectory option), so
+`{"type":"vcs","url":"https://github.com/servirtium/servirtium-vcr"}` finds no package.
+Packagist has the same limit: it needs the package at a repo root, i.e. a split repo
+(a read-only mirror of `php/`, for example via `git subtree split`) registered as
+`servirtium/vcr`. None exists yet. The honest route today is a `path` repository onto a
+checkout of the tag, with the native library placed in that checkout's `php/native/`.
+Run this in your own PHP project:
 
 ```sh
-# from the php binding directory, with libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so downloaded:
-mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so native/libservirtium_vcr.so
-# the package now carries the native library; consume it from source (see this README's usage/examples).
+VER=v2.0.0-alpha.12                      # a release tag of servirtium-vcr
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$VER
+
+# 1. a checkout of that tag (only php/ is used)
+git clone --depth 1 --branch $VER https://github.com/servirtium/servirtium-vcr.git vendor-src/servirtium-vcr
+
+# 2. the native library for this OS/arch, checksum-verified, into php/native/
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64)  P=linux-x86_64;  E=so ;;
+  Linux-aarch64) P=linux-arm64;   E=so ;;
+  Darwin-arm64)  P=macos-arm64;   E=dylib ;;
+  Darwin-x86_64) P=macos-x86_64;  E=dylib ;;
+  *) echo "see the release assets for your platform"; exit 1 ;;
+esac
+LIB=libservirtium_vcr-$VER-$P.$E
+N=vendor-src/servirtium-vcr/php/native
+mkdir -p $N
+curl -fsSL -o $N/$LIB $REL/$LIB
+curl -fsSL -o $N/$LIB.sha256 $REL/$LIB.sha256
+( cd $N && { sha256sum -c $LIB.sha256 2>/dev/null || shasum -a 256 -c $LIB.sha256; } )
+cp $N/$LIB $N/libservirtium_vcr.$E
+
+# 3. a path repository onto php/ (symlinked, so native/ comes along), then require it
+composer config repositories.servirtium path vendor-src/servirtium-vcr/php
+composer require --dev servirtium/vcr:@dev
+
+# 4. check it: replay a tape through the library
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md https://raw.githubusercontent.com/servirtium/servirtium-vcr/$VER/php/example/tapes/single_get.md
+php -d ffi.enable=1 -r 'require "vendor/autoload.php";
+  $v = Servirtium\Vcr::playback("tapes/single_get.md")->port(0)->start();
+  echo file_get_contents($v->baseUrl()."/ok"), "\n"; $v->stop();'   # -> ok-body
 ```
 
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll` — adjust the
-filename accordingly.)
+(Alternatively skip step 3's `composer config` and put
+`"repositories":[{"type":"path","url":"vendor-src/servirtium-vcr/php"}]` in your
+`composer.json`. Do not use `"options":{"symlink":false}` unless the library is already in
+`php/native/`: it copies the directory into `vendor/` at install time.)
 
-Then point the binding at it via `SERVIRTIUM_VCR_LIB`:
+Windows (x86_64, arm64) and FreeBSD (x86_64) assets exist too; the Windows file name the
+loader wants is `servirtium_vcr.dll`.
 
-```sh
-export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-```
+### Notes for coding agents
 
-ext-ffi loads the library from that path at runtime.
+- The package name is `servirtium/vcr` (not `servirtium/servirtium-php`, which never
+  existed on Packagist). `Could not find a matching version of package servirtium/vcr` or
+  `could not find package` means the path repository is not configured (or points at the repo
+  root instead of its `php/` subdirectory); do not try to fix it with a `vcs` repository, it
+  cannot work for a subdirectory.
+- `FFI` must be on: `ext-ffi` is a hard requirement and `ffi.enable` must allow it. In CLI,
+  `ffi.enable=preload` (the php.ini default) still permits `FFI::cdef`; under php-fpm / Apache
+  it does not, so set `ffi.enable=1`. `Class "FFI" not found` means the extension is not
+  loaded: some distros (Arch) ship it as a shared module that php.ini does not enable, so add
+  `extension=ffi` to php.ini or pass `-d extension=ffi` on the command line.
+- `could not find native VCR library 'libservirtium_vcr.so'` means `php/native/` of the
+  checkout the path repo points at lacks that exact file name. Alternatively set
+  `SERVIRTIUM_VCR_LIB` to an absolute path, or call `->nativeLib($path)` on the builder.
+- Do not put the library in `vendor/`: `composer install` can wipe it. Do not commit
+  `vendor-src/`.
+- In-repo development: `aeb php/.tests.ae` from the repo root.
 
 ## Docs
 

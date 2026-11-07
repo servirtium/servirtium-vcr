@@ -9,7 +9,7 @@ same aeb v0.324.
 `php/.example.ae` fails intermittently, and when it does the log looks *green*:
 
 ```
-ok: consuming installed package at …/vendor/servirtium/servirtium-php
+ok: consuming installed package at …/vendor/servirtium/vcr
 ok: explicit ->nativeLib() playback (bundled .so …)
 PASS[explicit]: consumer replayed the canonical tape from the installed package
 php example: explicit-mode consumer run failed

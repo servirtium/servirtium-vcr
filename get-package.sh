@@ -96,7 +96,7 @@ consume_hint() {
                       note "PKG_CONFIG_PATH=\$PWD/dist/lib/pkgconfig pkg-config --cflags --libs servirtium$( [ "$_lang" = cpp ] && echo -cpp )"
                       note "(the prefix is relocatable — the .pc anchors on its own directory)" ;;
         lua:*)        note "package.cpath = '$_dest/?.so;' .. package.cpath   -- then require 'servirtium'" ;;
-        php:*)        note "composer config repositories.servirtium path $_dest && composer require servirtium/servirtium-php:@dev" ;;
+        php:*)        note "composer config repositories.servirtium path $_dest && composer require servirtium/vcr:@dev" ;;
         dart:*)       note "dependency_overrides:  servirtium: {path: $_dest}" ;;
         pharo:*)      note "load pharo/src into your image; ServirtiumLibrary libPath: '$_dest/native/libservirtium_vcr.so'" ;;
         julia:*)      note "julia -e 'using Pkg; Pkg.develop(path=\"$_dest\")'" ;;

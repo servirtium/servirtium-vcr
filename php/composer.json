@@ -1,5 +1,5 @@
 {
-    "name": "servirtium/servirtium-php",
+    "name": "servirtium/vcr",
     "description": "Record/replay for HTTP service tests in the Servirtium markdown tape format — a thin PHP FFI layer over the Aether VCR core.",
     "type": "library",
     "license": "MIT",

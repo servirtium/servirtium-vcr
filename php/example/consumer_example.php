@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-// Third-party consumer example for the *installed* servirtium/servirtium-php
+// Third-party consumer example for the *installed* servirtium/vcr
 // Composer package.
 //
 // Not a test inside the source tree: this is what a downstream user gets after
-// `composer require servirtium/servirtium-php`. It autoloads the package from
+// `composer require servirtium/vcr`. It autoloads the package from
 // vendor/ (asserting it is NOT the in-repo php/src), finds libservirtium_vcr
 // .so that shipped *inside* the installed package (php/native/), and replays
 // the canonical Servirtium tape — proving the package is self-contained with no
@@ -40,7 +40,7 @@ $pkgFile = (new ReflectionClass(Vcr::class))->getFileName();
 if ($pkgFile === false || !str_contains($pkgFile, '/vendor/')) {
     fail("servirtium loaded from the source tree, not an installed package: {$pkgFile}");
 }
-$pkgRoot = dirname($pkgFile, 2); // .../vendor/servirtium/servirtium-php/src/Vcr.php -> package root
+$pkgRoot = dirname($pkgFile, 2); // .../vendor/servirtium/vcr/src/Vcr.php -> package root
 echo "ok: consuming installed package at {$pkgRoot}\n";
 
 $play = static function (\Servirtium\PlaybackBuilder $builder): void {
