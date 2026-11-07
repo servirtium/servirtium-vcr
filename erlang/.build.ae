@@ -1,7 +1,8 @@
 // Erlang owns the canonical Servirtium NIF for the WHOLE BEAM family. This
-// node builds it ONCE as the OTP app `servirtium_nif` — the C NIF .so + the
-// `servirtium_nif` loader module + the idiomatic `servirtium` wrapper — into
-// _build/servirtium_nif/{ebin,priv}. The Elixir and Gleam bindings consume
+// node builds it ONCE as the OTP app `servirtium_nif` (the C NIF .so + the
+// `servirtium_nif` loader module) into _build/servirtium_nif/{ebin,priv}, and
+// the idiomatic `servirtium` wrapper as the separate Hex package/OTP app
+// `servirtium_erl` into _build/servirtium_erl/ebin. Elixir, Gleam and LFE consume
 // this same artifact via ERL_LIBS (no second NIF, no copied C source), exactly
 // as the JVM family (Kotlin/Scala/Clojure/Groovy) layers over the one Java jar.
 //
@@ -20,18 +21,21 @@ aeb(cap) {
         native = path.dirname(lib)
         erl = "${root}/erlang"
         app = "${erl}/_build/servirtium_nif"
+        eapp = "${erl}/_build/servirtium_erl"
     
         // The C NIF .so (links libservirtium_vcr; rpath libservirtium_vcr dir). erl_nif.h comes
         // from the running OTP root, so no hard-coded include path.
         mk = "ERTS_INC=$(erl -noshell -eval 'io:format(\"~s/usr/include\",[code:root_dir()]),halt()') && cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I\"$ERTS_INC\" -shared \"${erl}/c_src/servirtium_nif.c\" -L\"${native}\" -lservirtium_vcr -Wl,-rpath,\"${native}\" -o \"${app}/priv/servirtium_nif.so\""
     
         erlang.compile() {
-            step("mkdir -p \"${app}/ebin\" \"${app}/priv\"")
+            step("mkdir -p \"${app}/ebin\" \"${app}/priv\" \"${eapp}/ebin\"")
             step(mk)
             // The BEAM modules (erlc — no rebar3 needed).
-            step("erlc -o \"${app}/ebin\" \"${erl}/src/servirtium_nif.erl\" \"${erl}/src/servirtium.erl\"")
+            step("erlc -o \"${app}/ebin\" \"${erl}/src/servirtium_nif.erl\"")
+            step("erlc -o \"${eapp}/ebin\" \"${erl}/src/servirtium.erl\"")
             // The .app resource so code:priv_dir(servirtium_nif) resolves via ERL_LIBS.
             step("cp \"${erl}/src/servirtium_nif.app\" \"${app}/ebin/servirtium_nif.app\"")
+            step("cp \"${erl}/src/servirtium_erl.app\" \"${eapp}/ebin/servirtium_erl.app\"")
         }
     
         // Publish the derived NIF artifact onto this node's dep edge — the BEAM
