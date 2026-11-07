@@ -27,7 +27,7 @@ Classes:
   **tapes are not**: record your own locally (the suite's `LICENCE-NOTE.md`
   says how), and in playback with no tape the suite skips with a notice.
 
-Counts: 45 CLEAR, 11 BOUND, 3 DECISION (59 suites).
+Counts: 46 CLEAR, 11 BOUND, 3 DECISION (60 suites).
 
 Product names are their owners' trademarks, used here only to say which
 software a tape was recorded against.
@@ -52,6 +52,7 @@ licence file at the tag the image was built from.
 | cratedb | `crate:5.7` | Apache-2.0 | crate/crate `LICENSE` | none | CLEAR |
 | databend | `datafuselabs/databend:v1.2.615` | Apache-2.0 AND Elastic-2.0 | databendlabs/databend `v1.2.615/LICENSE`: enterprise code (`src/query/ee`, `src/meta/ee`, `ee_main.rs`) under Elastic License 2.0, in the same binary | ELv2: no hosted/managed service, no circumventing licence keys, keep notices | BOUND |
 | dex | `dexidp/dex:v2.45.0` | Apache-2.0 | dexidp/dex `LICENSE` | none | CLEAR |
+| dind | `docker:28.0.1-dind` (Docker Engine 28.0.1, containerd v1.7.25, runc 1.2.5; the cases run `busybox:1.36.1` inside it) | Apache-2.0 | moby/moby `v28.0.1/LICENSE`, docker/cli `v28.0.1/LICENSE` and docker-library/docker `LICENSE` (the image's packaging), all Apache-2.0; the image itself carries no licence files (checked with `find` for LICENSE/NOTICE/COPYING). The pulled-in busybox is GPL-2.0 software that is run, not recorded: the tapes hold its image id, layer digest and `echo` output only | none. Pulling from Docker Hub is under Docker's Hub terms, which concern the pull, not the tapes | CLEAR |
 | dynamodb | `amazon/dynamodb-local:2.2.1` | AWS DynamoDB Local licence agreement, proprietary, on top of the AWS Customer Agreement | `/home/dynamodblocal/LICENSE.txt` in the image (32 lines); aws.amazon.com/agreement | use "solely (i) for your internal business purposes"; needs an AWS account; no "publicly communicate, transform"; no reverse engineering | **DECISION** (tapes not shipped) |
 | elasticsearch | `docker.elastic.co/elasticsearch/elasticsearch:8.9.0` | Elastic-2.0 (the image's default distribution; the AGPL option arrived in 8.16) | `/usr/share/elasticsearch/LICENSE.txt` in the image | ELv2 limitations: no providing as a managed service, no circumventing licence keys, keep notices | BOUND |
 | etcd | `gcr.io/etcd-development/etcd:v3.5.14` | Apache-2.0 | etcd-io/etcd `LICENSE` | none | CLEAR |

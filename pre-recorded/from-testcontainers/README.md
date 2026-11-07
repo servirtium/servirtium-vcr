@@ -78,6 +78,7 @@ with restrictive terms start with a `## LICENSE NOTICE`
 | `ravendb` | 1 | `ravendb/ravendb:6.0-ubuntu-latest` |
 | `surrealdb` | 3 (+1 live only) | `surrealdb/surrealdb:v1.1.1` |
 | `tidb` | 8 (comprehensive: status and schema API on 10080, standalone, no login) | `pingcap/tidb:v8.4.0` |
+| `dind` | 7 (comprehensive: Engine API on 2375, version/info, images, containers, networks, volumes, errors; no login) | `docker:28.0.1-dind` (runs `busybox:1.36.1` inside) |
 | `trino` | 1 | `trinodb/trino:435` |
 | `presto` | 1 | `prestodb/presto:0.286` |
 | `timeplus` | test + recorder only, tapes not shipped ([why](timeplus/LICENCE-NOTE.md)) | `timeplus/timeplusd:2.3.37` |
@@ -206,6 +207,7 @@ Per suite (registered at the top of its `main`):
 | ravendb | | RFC 3339 times | | |
 | surrealdb | | per-statement `"time"` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | tidb | | the DDL owner's UUID (`{{uuid-N}}`) | the container IP, `start_timestamp`, `max_procs`, `connections`, `update_timestamp`, the case tables' ids (1001, 1002, in bodies and `table_id(s)=`), and `GET /schema`'s database list whole (Go map order) | |
+| dind | | container, network, endpoint and sandbox ids (`{{docker-id-N}}`; image ids and layer digests are content hashes and stay) | the daemon's clock fields (`Created`, `StartedAt`, `FinishedAt`, `CreatedAt`, `LastTagTime`, `SystemTime`), `/info`'s `ID`, `Name`, `NFd`, `NGoroutines`, container and image counts, `NCPU`, `MemTotal`, `KernelVersion`, a running container's `Pid`, `/netns/<hex>`, `top`'s process table, the 12-hex short container id, endpoints' random MAC addresses, a container list's Unix `Created` | | |
 | trino | | `uptime`, the query id, the `nextUri` token | | |
 | presto | | `uptime` | | |
 | timeplus | | `x-timeplus-query-id` | | |
@@ -315,6 +317,21 @@ it is on the tape, and playback is plain HTTP.
 - **Solace is not here:** its image needs `ulimit nofile=1048576`, which a
   rootless Podman machine refuses; it can be recorded on Docker or a
   rootful Podman machine.
+
+**dind (the Docker Engine API):**
+- **Rootless Podman:** `docker:dind` is privileged. A rootless Podman machine
+  runs it (`--privileged`) only in its own cgroup namespace: testcontainers-ae's
+  `dind_private_cgroupns()` option, since Go's module asks for the host's, which
+  a rootless engine refuses.
+- **No login, a fixed API version:** the plain TCP socket has no
+  authentication; every path is `/v1.48/...` (the unversioned `/_ping` and
+  `/version` are taped once).
+- **A pull is taped only when nothing downloads.** A first pull's progress
+  stream has a timing-dependent number of lines, so each case pulls the image
+  live before its recording starts and the images case taped the "Image is up
+  to date" pull.
+- **Host-specific:** the tapes were recorded on arm64 (image id and digest,
+  `Architecture`).
 
 Checks with no HTTP in them (a module's defaults, `tc.exec`, inspecting the
 container, a refused option) run only live, and are skipped in playback.

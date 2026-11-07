@@ -1,0 +1,716 @@
+// Docker-in-Docker, comprehensively: re-usable recordings of the Docker
+// Engine API, for any language's tests to replay with no Docker daemon. A
+// "comprehensive" suite of servirtium-vcr's pre-recorded/from-testcontainers
+// (the README's "Pattern for comprehensive suites"; CouchDB is the pilot).
+// Written for servirtium-vcr, not ported from testcontainers-go (whose dind
+// module test only pings the inner daemon).
+//
+// The service is `dockerd` of docker:28.0.1-dind, listening on plain
+// tcp://0.0.0.0:2375 with TLS off (testcontainers-ae's modules.dind), and a
+// client is anything that speaks the Engine API: the docker CLI with
+// DOCKER_HOST=tcp://..., a Docker SDK, testcontainers itself.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes
+// are the re-usable part. A port is a test in your language and test
+// framework that makes the same requests, in the same order, against a
+// Servirtium replay server loaded with the tape, and checks the same things.
+// Any Servirtium implementation replays them. Every request here is plain
+// HTTP/1.1 with these headers and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+//   Content-Type: application/json   (only when there is a body)
+// Playback is strict about method, path (query string included, exactly as
+// encoded here), the recorded request headers and the body (byte for byte:
+// send the JSON bodies exactly as written in this file, no spaces), and fails
+// a case whose recorded requests are not all made. Host, Connection and
+// Content-Length are on the tapes but are transport headers, not compared.
+//
+// PORTING, the tape for each case: <case>.md beside this file, where <case>
+// is the second argument of servirtium.recording(...) in that case. The
+// cases are independent: each creates its own resources under fixed names
+// (tcae-*), works in them and removes them on the tape, so any one tape
+// replays alone and in any order.
+//
+// The API version in the path is FIXED: /v1.48/... (docker 28.0.1's maximum).
+// A client library normally prefixes it itself; make yours send exactly
+// /v1.48 (the docker CLI: `DOCKER_API_VERSION=1.48`; Go SDK: WithVersion
+// ("1.48"); Python: version="1.48"). The unversioned /_ping and /version
+// are taped as well, in the first case.
+//
+// Login: there is none. The daemon's plain-TCP socket has no authentication
+// (that is why docker:dind logs a warning about it), so no tape carries a
+// credential and no case is "logged in". A daemon behind TLS client
+// certificates or a registry login (X-Registry-Auth) is a different set-up
+// and out of scope.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below, with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them all and
+// the interactions each touched ("none" where it did not). In short:
+//   - normalized (each distinct value a stable {{docker-id-N}} token, the
+//     same token wherever it recurs): the 64-hex ids Docker makes up for
+//     containers, networks, endpoints and sandboxes, which show up in
+//     create responses, inspect bodies, the paths inside them, and the 409
+//     message of an image that a container uses. (Image ids and layer
+//     digests are "sha256:<64 hex>" and are NOT touched: they are content
+//     hashes, the same on every run for the pinned image.)
+//   - collapsed (one constant; nobody sends them back): the daemon's own
+//     time fields (a container's Created / StartedAt / FinishedAt, a
+//     volume's CreatedAt, a network's Created, an image's LastTagTime, the
+//     daemon's SystemTime) and its counters (/info's NFd, NGoroutines,
+//     container and image counts, ID, Name), a process id, the sandbox
+//     path, the short container id and an endpoint's random MAC, `top`'s process table, and the machine's memory and CPU
+//     count.
+//   - left out: the Date response header, as everywhere.
+//   Everything else is deterministic and left alone, on purpose: the
+//   engine's version numbers, the image's id and digest, the bridge
+//   network's addresses (the cases fix their own subnet), exit codes.
+//   Consequence: the tapes are for the host architecture they were recorded
+//   on (arm64 here: busybox:1.36.1's image id and digest, /info's
+//   Architecture, /version's Arch). A port asserts what a client uses
+//   (status codes, the shape, names) and does not hard-code those.
+//
+// PORTING: in playback, a normalized value comes back as its token,
+// verbatim: a container id is "{{docker-id-1}}". Treat every id as an opaque
+// string (never assert its length or shape). These cases address resources
+// by NAME (/containers/tcae-hello/start), as the CLI allows, so no token is
+// ever sent back in a path.
+//
+// Pulling an image
+// ----------------
+// The first pull of an image streams progress events whose number depends
+// on timing (how many "Downloading" lines the network produced), so a tape
+// of it would differ run to run. Each case therefore makes sure the image
+// is present BEFORE its recording starts (outside the recorder, live only),
+// and the images case records a pull of an image that is already there: a
+// short, deterministic stream ending "Image is up to date". A port's
+// "already pulled" fixture is simply the tape of the case, or a stub for
+// POST /images/create. The tapes do not record the first, downloading pull.
+//
+// Streams: a pull's progress is newline-delimited JSON, container logs are
+// taped with a TTY (Tty:true) so they are the raw text, with CRLF line ends
+// from the pseudo-terminal, and a replay folds CRLF to LF (see the README):
+// assert with CRs removed (lf() below).
+//
+// In and out of scope
+// -------------------
+// In: _ping (GET and HEAD), version (versioned and not), info; images
+// (pull of a present image, list, filtered list, inspect, history, tag,
+// untag, prune); containers (create with and without a name, inspect, list
+// with filters, start, wait, logs, stop, restart, pause/unpause, top,
+// rename, remove, force remove, changes); networks (create with a fixed
+// subnet, inspect, list with filters, connect, disconnect, remove);
+// volumes (create, inspect, list with filters, remove); and the
+// representative errors 304, 400, 404, 409 and 500 (a version too old or
+// too new, a malformed body, a missing resource, a name already taken, a
+// volume or image in use).
+// Out: everything connection-level or streaming: attach, exec start, the
+// `/events` stream, `stats` (a stream by default, and volatile numbers
+// either way), `logs?follow=1`, pulls that download, image build and
+// `images/load`, `export` and `get` (binary tar). Swarm, plugins, secrets,
+// configs, `system/df` (sizes), and registry auth. Each could be a later
+// case.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test dind/test_dind.ae                     container, no Servirtium
+//   TCAE_VCR=record   ae test dind/test_dind.ae   write the tapes
+//   TCAE_VCR=check    ae test dind/test_dind.ae   fail if a tape changed
+//   TCAE_VCR=playback ae test dind/test_dind.ae   no container: the tapes
+// The cases share one dind container (started on the first and removed at
+// the end). It is privileged (that is what dind is) and, to run on a
+// rootless Podman machine, in its own cgroup namespace
+// (dind.dind_private_cgroupns(); Go's module uses the host's, which a
+// rootless engine refuses). It pulls busybox from Docker Hub, so recording
+// needs the network.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.dind
+
+const IMAGE = "docker:28.0.1-dind"
+
+// The image the cases run inside the daemon: a pinned, tiny one.
+const BUSYBOX = "busybox:1.36.1"
+
+// The API version every versioned request carries.
+const API = "/v1.48"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would (Aether's std.http.client adds none). Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
+
+// One HTTP request: (status, body, error). ctype is the body's Content-Type
+// (none when the body is empty).
+fn http_send(method: string, url: string, ctype: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 120s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+// The base URL of the current recording.
+var api: string = ""
+
+// A versioned Engine API request (path without the /v1.48): (status, body).
+// A transport error fails the case.
+fn dk(method: string, path: string, body: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}${API}${path}", "application/json", body)
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// A request with the path exactly as given (the unversioned ones).
+fn dk_raw(method: string, path: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}${path}", "application/json", "")
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// Percent-encode a query-string value (a `filters` JSON object): RFC 3986
+// unreserved bytes stay, the rest %XX.
+fn q(s: string) -> string {
+    hex = "0123456789ABCDEF"
+    out = ""
+    b = string.bytes(s)
+    i = 0
+    while i < b.len {
+        ch = b[i]
+        keep = (ch >= 48 && ch <= 57) || (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch == 45 || ch == 46 || ch == 95 || ch == 126
+        if keep {
+            out = string.concat(out, string.substring(s, i, i + 1))
+        } else {
+            hi = string.substring(hex, (ch >> 4) & 15, ((ch >> 4) & 15) + 1)
+            lo = string.substring(hex, ch & 15, (ch & 15) + 1)
+            out = "${out}%${hi}${lo}"
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// A `filters` query value for one key and one value, percent-encoded:
+// filt("name", "x") is {"name":["x"]} on the wire as %7B%22name%22....
+fn filt(key: string, val: string) -> string {
+    return q("{\"${key}\":[\"${val}\"]}")
+}
+
+// The body with its carriage returns removed (a TTY's logs end lines with
+// CRLF, and a replay folds CRLF to LF: assert on lf(body) and both pass).
+fn lf(body: string) -> string {
+    return string.replace_all(body, "\r", "")
+}
+
+// The create body of a container the cases use: the pinned image, a fixed
+// hostname (otherwise Docker uses the first 12 hex of the container id, which
+// varies), a TTY (so logs are raw text) and the command as a JSON array.
+fn create_body(cmd_json: string) -> string {
+    return "{\"Image\":\"${BUSYBOX}\",\"Hostname\":\"tcae-host\",\"Tty\":true,\"Cmd\":${cmd_json}}"
+}
+
+// ---------------------------------------------------------------------------
+// The live daemon the cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_addr: string = ""
+var shared_container: ptr = null
+
+// The daemon's base URL, starting it on first use ("" on failure).
+fn shared() -> string {
+    if string.length(shared_addr) > 0 { return shared_addr }
+    c, err = dind.run(IMAGE) { dind_private_cgroupns() }
+    if c == null {
+        spec.fail("dind starts: ${err}")
+        return ""
+    }
+    shared_container = c as ptr
+    spec.assert_ok(err, "dind starts")
+    if err != "" { return "" }
+    h, herr = dind.host(c)
+    spec.assert_ok(herr, "dind host")
+    if herr != "" { return "" }
+    shared_addr = h
+    return shared_addr
+}
+
+// Make sure the image is in the inner daemon, pulling it (and reading the
+// progress stream to its end) if not. Live only, outside any recording.
+fn ensure_image(addr: string) {
+    st, _b, err = http_send("GET", "${addr}${API}/images/${BUSYBOX}/json", "", "")
+    spec.assert_ok(err, "look for ${BUSYBOX} (not recorded)")
+    if st == 200 { return }
+    pst, pb, perr = http_send("POST", "${addr}${API}/images/create?fromImage=busybox&tag=1.36.1", "", "")
+    spec.assert_ok(perr, "pull ${BUSYBOX} (not recorded)")
+    spec.assert_eq(pst, 200, "pull ${BUSYBOX} (not recorded): ${pb}")
+}
+
+// Remove what an earlier failed run may have left behind (not recorded).
+fn sweep(addr: string) {
+    names = ["tcae-hello", "tcae-sleeper", "tcae-sleeper-renamed", "tcae-inuse", "tcae-dup", "tcae-member", "tcae-vol-user"]
+    for n in names { http_send("DELETE", "${addr}${API}/containers/${n}?force=1&v=1", "", "") }
+    http_send("DELETE", "${addr}${API}/networks/tcae-net", "", "")
+    http_send("DELETE", "${addr}${API}/volumes/tcae-vol?force=1", "", "")
+    http_send("DELETE", "${addr}${API}/images/tcae/busybox:test", "", "")
+}
+
+// Start a case: in a live mode, the shared daemon with the image present and
+// no leftovers (none of that recorded); then the recording. Sets `api`;
+// returns the recording handle, and ok = 0 when the case cannot run.
+fn begin(case_: string) -> (ptr, int) {
+    addr = ""
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+        ensure_image(addr)
+        sweep(addr)
+    }
+    base, rec = servirtium.recording("dind", case_, addr)
+    api = base
+    return rec, 1
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules
+// ---------------------------------------------------------------------------
+
+fn api_rules() {
+    servirtium.clear_rules()
+    // Docker's licence terms (UPSTREAM-TERMS.md) need no notice: Apache-2.0.
+
+    // Ids Docker makes up: containers, networks, endpoints, sandboxes, and
+    // the overlay2 directory names that appear in inspect. 64 lower-case hex,
+    // not part of a longer run and not after "sha256:" (an image id or layer
+    // digest, a content hash that is the same every run). Normalized, not
+    // collapsed: the same id recurs (a create response, the inspect path
+    // names, a network's container list) and a client may send it back.
+    servirtium.normalize("(?<!sha256:)(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])", "docker-id")
+
+    // The daemon's own clock readings, in the fields that carry them: a
+    // container's Created / StartedAt / FinishedAt, a volume's CreatedAt, a
+    // network's Created, an image's LastTagTime, /info's SystemTime. Nobody
+    // sends them back. Scoped by field name so that /version's BuildTime
+    // (the engine build, which changes only with the image) stays. (An
+    // image's own "Created" in `image inspect` shares a field name and is
+    // collapsed too; its id and digest still say which image it is.)
+    servirtium.collapse("(?<=\"Created\":\"|\"StartedAt\":\"|\"FinishedAt\":\"|\"CreatedAt\":\"|\"LastTagTime\":\"|\"SystemTime\":\")[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})", "2000-01-01T00:00:00Z")
+    // /info's identity and counters: its uuid, the host name (the dind
+    // container's id prefix), file descriptors, goroutines, and the counts of
+    // containers and images, which depend on what the other cases left
+    // around. Each regex is anchored on its field name.
+    servirtium.collapse("\"ID\":\"[0-9a-f-]{36}\"", "\"ID\":\"00000000-0000-0000-0000-000000000000\"")
+    servirtium.collapse("\"Name\":\"[0-9a-f]{12}\"", "\"Name\":\"dind-host\"")
+    servirtium.collapse("\"NFd\":[0-9]+,\"OomKillDisable\":(true|false),\"NGoroutines\":[0-9]+", "\"NFd\":0,\"OomKillDisable\":false,\"NGoroutines\":0")
+    servirtium.collapse("\"Containers\":[0-9]+,\"ContainersRunning\":[0-9]+,\"ContainersPaused\":[0-9]+,\"ContainersStopped\":[0-9]+,\"Images\":[0-9]+", "\"Containers\":0,\"ContainersRunning\":0,\"ContainersPaused\":0,\"ContainersStopped\":0,\"Images\":0")
+    // The machine the daemon runs on: left to vary it would make a re-record
+    // on another host a noisy diff, and no client sends these back.
+    servirtium.collapse("\"NCPU\":[0-9]+,\"MemTotal\":[0-9]+", "\"NCPU\":1,\"MemTotal\":1")
+    servirtium.collapse("\"KernelVersion\":\"[^\"]*\"", "\"KernelVersion\":\"kernel\"")
+    // The short (12-hex) form of a container id, which Docker also uses as a
+    // DNS alias (next to the fixed hostname, in a network endpoint's
+    // DNSNames) and in the "image is in use" message. It is a prefix of an
+    // id that is normalized above, but a regex cannot derive one token from
+    // the other, so it is collapsed; nothing sends it back.
+    servirtium.collapse("\"[0-9a-f]{12}\",\"tcae-host\"", "\"container-short-id\",\"tcae-host\"")
+    servirtium.collapse("- container [0-9a-f]{12} is using", "- container container-short-id is using")
+    // The container list's Created is Unix seconds (an image list's, which
+    // has no Command or Ports beside it, is the image's own and stays).
+    servirtium.collapse("\"Created\":[0-9]{10},\"Ports\"", "\"Created\":946684800,\"Ports\"")
+    // Docker 28 gives every endpoint a random MAC address (an empty one, on a
+    // container that has not started, is left as is).
+    servirtium.collapse("\"MacAddress\":\"[0-9a-f]{2}(:[0-9a-f]{2}){5}\"", "\"MacAddress\":\"02:42:00:00:00:00\"")
+    // The host pid of a running container (zero, for one that has exited, is
+    // left as is: it says "not running").
+    servirtium.collapse("\"Pid\":[1-9][0-9]*", "\"Pid\":4242")
+    // The network namespace path of a running container.
+    servirtium.collapse("/netns/[0-9a-f]{12}", "/netns/sandbox")
+    // `top`'s process table: host pids and a start time, both of which vary.
+    servirtium.collapse("\"Processes\":\\[\\[.*\\]\\]", "\"Processes\":[[\"root\",\"4242\",\"4241\",\"0\",\"00:00\",\"pts/0\",\"00:00:00\",\"sleep 300\"]]")
+}
+
+// ---------------------------------------------------------------------------
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    api_rules()
+    spec.describe(fw, "Docker Engine API (dind)") {
+
+        // PORTING: the daemon's identity and version negotiation.
+        //   GET  /_ping               -> 200 "OK" (headers Api-Version: 1.48, Ostype: linux, Docker-Experimental: false, Builder-Version: 2, Swarm: inactive, Cache-Control: no-cache, no-store, must-revalidate, Pragma: no-cache)
+        //   HEAD /_ping               -> 200, no body
+        //   GET  /version             -> 200 JSON: Version "28.0.1", ApiVersion "1.48", MinAPIVersion "1.24", Os, Components
+        //   GET  /v1.48/version       -> the same
+        //   GET  /v1.48/info          -> 200 JSON: ServerVersion "28.0.1", OSType "linux", Driver "overlay2", ...
+        //   GET  /v1.99/version       -> 400 {"message":"client version 1.99 is too new. Maximum supported API version is 1.48"}
+        //   GET  /v1.12/info          -> 400 {"message":"client version 1.12 is too old. Minimum supported API version is 1.24, please upgrade your client to a newer version"}
+        spec.it("reports its version, health and info") callback {
+            rec, ok = begin("reports_its_version_health_and_info")
+            if ok == 0 { return }
+            st, b = dk_raw("GET", "/_ping")
+            spec.assert_eq(st, 200, "GET /_ping")
+            spec.assert_str_eq(b, "OK", "the ping body")
+            st, b = dk_raw("HEAD", "/_ping")
+            spec.assert_eq(st, 200, "HEAD /_ping")
+            spec.assert_str_eq(b, "", "no body for HEAD")
+            st, b = dk_raw("GET", "/version")
+            spec.assert_eq(st, 200, "GET /version: ${b}")
+            spec.assert_contains(b, "\"ApiVersion\":\"1.48\"", "API version")
+            spec.assert_contains(b, "\"Version\":\"28.0.1\"", "engine version")
+            st, b = dk("GET", "/version", "")
+            spec.assert_eq(st, 200, "GET /v1.48/version: ${b}")
+            spec.assert_contains(b, "\"MinAPIVersion\":\"1.24\"", "minimum API version")
+            st, b = dk("GET", "/info", "")
+            spec.assert_eq(st, 200, "GET /info: ${b}")
+            spec.assert_contains(b, "\"ServerVersion\":\"28.0.1\"", "server version")
+            spec.assert_contains(b, "\"OSType\":\"linux\"", "OS type")
+            spec.assert_contains(b, "\"Driver\":\"overlay2\"", "storage driver")
+            st, b = dk_raw("GET", "/v1.99/version")
+            spec.assert_eq(st, 400, "a client version too new: ${b}")
+            spec.assert_contains(b, "client version 1.99 is too new. Maximum supported API version is 1.48", "too new")
+            st, b = dk_raw("GET", "/v1.12/info")
+            spec.assert_eq(st, 400, "a client version too old: ${b}")
+            spec.assert_contains(b, "client version 1.12 is too old. Minimum supported API version is 1.24", "too old")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: images. busybox:1.36.1 is already in the daemon (see "Pulling an image").
+        //   POST   /v1.48/images/create?fromImage=busybox&tag=1.36.1 -> 200, newline-delimited JSON, last line {"status":"Status: Image is up to date for busybox:1.36.1"}
+        //   GET    /v1.48/images/json                -> 200, a JSON array with RepoTags ["busybox:1.36.1"]
+        //   GET    /v1.48/images/json?filters=%7B%22reference%22%3A%5B%22busybox%22%5D%7D -> 200, the same image
+        //   GET    /v1.48/images/busybox:1.36.1/json -> 200, Id sha256:..., RepoTags, Os linux
+        //   GET    /v1.48/images/busybox:1.36.1/history -> 200, an array
+        //   POST   /v1.48/images/busybox:1.36.1/tag?repo=tcae/busybox&tag=test -> 201, no body
+        //   GET    /v1.48/images/tcae/busybox:test/json -> 200 (the same image under its second name)
+        //   DELETE /v1.48/images/tcae/busybox:test   -> 200 [{"Untagged":"tcae/busybox:test"}] (only the name goes; the image stays)
+        //   GET    /v1.48/images/tcae/busybox:test/json -> 404 {"message":"No such image: tcae/busybox:test"}
+        //   DELETE /v1.48/images/tcae/busybox:test   -> 404, same message
+        //   POST   /v1.48/images/prune?filters=%7B%22dangling%22%3A%5B%22true%22%5D%7D -> 200 {"ImagesDeleted":null,"SpaceReclaimed":0}
+        // Request bodies are empty.
+        spec.it("pulls, lists, inspects, tags and untags an image") callback {
+            rec, ok = begin("pulls_lists_inspects_tags_and_untags_an_image")
+            if ok == 0 { return }
+            st, b = dk("POST", "/images/create?fromImage=busybox&tag=1.36.1", "")
+            spec.assert_eq(st, 200, "pull of a present image: ${b}")
+            spec.assert_contains(b, "Image is up to date for busybox:1.36.1", "nothing to download")
+            st, b = dk("GET", "/images/json", "")
+            spec.assert_eq(st, 200, "GET /images/json: ${b}")
+            spec.assert_contains(b, "\"RepoTags\":[\"busybox:1.36.1\"]", "the image is listed")
+            st, b = dk("GET", "/images/json?filters=${filt("reference", "busybox")}", "")
+            spec.assert_eq(st, 200, "a filtered list: ${b}")
+            spec.assert_contains(b, "busybox:1.36.1", "the filter finds it")
+            st, b = dk("GET", "/images/${BUSYBOX}/json", "")
+            spec.assert_eq(st, 200, "inspect: ${b}")
+            spec.assert_contains(b, "\"Id\":\"sha256:", "an image id")
+            spec.assert_contains(b, "\"Os\":\"linux\"", "the OS")
+            st, b = dk("GET", "/images/${BUSYBOX}/history", "")
+            spec.assert_eq(st, 200, "history: ${b}")
+            st, b = dk("POST", "/images/${BUSYBOX}/tag?repo=tcae/busybox&tag=test", "")
+            spec.assert_eq(st, 201, "tag: ${b}")
+            st, b = dk("GET", "/images/tcae/busybox:test/json", "")
+            spec.assert_eq(st, 200, "the second name: ${b}")
+            spec.assert_contains(b, "\"tcae/busybox:test\"", "it carries the new name")
+            st, b = dk("DELETE", "/images/tcae/busybox:test", "")
+            spec.assert_eq(st, 200, "untag: ${b}")
+            spec.assert_contains(b, "{\"Untagged\":\"tcae/busybox:test\"}", "only the name goes")
+            st, b = dk("GET", "/images/tcae/busybox:test/json", "")
+            spec.assert_eq(st, 404, "the name is gone: ${b}")
+            spec.assert_contains(b, "No such image: tcae/busybox:test", "no such image")
+            st, b = dk("DELETE", "/images/tcae/busybox:test", "")
+            spec.assert_eq(st, 404, "untagging it again: ${b}")
+            st, b = dk("POST", "/images/prune?filters=${filt("dangling", "true")}", "")
+            spec.assert_eq(st, 200, "prune dangling: ${b}")
+            spec.assert_contains(b, "\"SpaceReclaimed\":0", "nothing dangling")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: one container run to completion, addressed by name.
+        //   POST   /v1.48/containers/create?name=tcae-hello
+        //          {"Image":"busybox:1.36.1","Hostname":"tcae-host","Tty":true,"Cmd":["echo","hello from the inner daemon"]}
+        //          -> 201 {"Id":"{{docker-id-1}}","Warnings":[]}
+        //   GET    /v1.48/containers/tcae-hello/json    -> 200, State.Status "created", Name "/tcae-hello", Config.Hostname "tcae-host"
+        //   GET    /v1.48/containers/json?all=1&filters={"name":["tcae-hello"]} -> 200, an array of one, State "created"
+        //   POST   /v1.48/containers/tcae-hello/start   -> 204
+        //   POST   /v1.48/containers/tcae-hello/wait    -> 200 {"StatusCode":0} (blocks until the container exits)
+        //   GET    /v1.48/containers/tcae-hello/logs?stdout=1&stderr=1 -> 200, "hello from the inner daemon\r\n" (raw stream: a TTY, no framing)
+        //   GET    /v1.48/containers/tcae-hello/json    -> 200, State.Status "exited", ExitCode 0, Pid 0
+        //   GET    /v1.48/containers/tcae-hello/changes -> 200 (null or an array: nothing the echo touched)
+        //   DELETE /v1.48/containers/tcae-hello         -> 204
+        //   GET    /v1.48/containers/tcae-hello/json    -> 404 {"message":"No such container: tcae-hello"}
+        // Create's body is sent exactly as written (no spaces).
+        spec.it("creates, starts, waits for, reads the logs of and removes a container") callback {
+            rec, ok = begin("creates_starts_waits_logs_and_removes_a_container")
+            if ok == 0 { return }
+            st, b = dk("POST", "/containers/create?name=tcae-hello", create_body("[\"echo\",\"hello from the inner daemon\"]"))
+            spec.assert_eq(st, 201, "create: ${b}")
+            spec.assert_contains(b, "\"Id\":\"", "the new container's id")
+            st, b = dk("GET", "/containers/tcae-hello/json", "")
+            spec.assert_eq(st, 200, "inspect: ${b}")
+            spec.assert_contains(b, "\"Status\":\"created\"", "created, not started")
+            spec.assert_contains(b, "\"Name\":\"/tcae-hello\"", "its name")
+            spec.assert_contains(b, "\"Hostname\":\"tcae-host\"", "its hostname")
+            st, b = dk("GET", "/containers/json?all=1&filters=${filt("name", "tcae-hello")}", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "\"/tcae-hello\"", "it is listed")
+            spec.assert_contains(b, "\"State\":\"created\"", "as created")
+            st, b = dk("POST", "/containers/tcae-hello/start", "")
+            spec.assert_eq(st, 204, "start: ${b}")
+            st, b = dk("POST", "/containers/tcae-hello/wait", "")
+            spec.assert_eq(st, 200, "wait: ${b}")
+            spec.assert_contains(b, "\"StatusCode\":0", "it exited with 0")
+            st, b = dk("GET", "/containers/tcae-hello/logs?stdout=1&stderr=1", "")
+            spec.assert_eq(st, 200, "logs: ${b}")
+            spec.assert_str_eq(lf(b), "hello from the inner daemon\n", "what it printed")
+            st, b = dk("GET", "/containers/tcae-hello/json", "")
+            spec.assert_eq(st, 200, "inspect after: ${b}")
+            spec.assert_contains(b, "\"Status\":\"exited\"", "exited")
+            spec.assert_contains(b, "\"ExitCode\":0", "exit code 0")
+            st, b = dk("GET", "/containers/tcae-hello/changes", "")
+            spec.assert_eq(st, 200, "changes: ${b}")
+            st, b = dk("DELETE", "/containers/tcae-hello", "")
+            spec.assert_eq(st, 204, "remove: ${b}")
+            st, b = dk("GET", "/containers/tcae-hello/json", "")
+            spec.assert_eq(st, 404, "it is gone: ${b}")
+            spec.assert_contains(b, "No such container: tcae-hello", "no such container")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: a long-running container, controlled.
+        //   POST /v1.48/containers/create?name=tcae-sleeper {"Image":..,"Hostname":"tcae-host","Tty":true,"Cmd":["sleep","300"]} -> 201
+        //   POST .../tcae-sleeper/start      -> 204;  again -> 304 (already started)
+        //   GET  .../tcae-sleeper/json       -> State.Status "running", Running true, Pid collapsed to 4242
+        //   GET  .../tcae-sleeper/top        -> 200 {"Titles":[..],"Processes":[[..]]} (the process table is collapsed)
+        //   POST .../tcae-sleeper/pause      -> 204; GET json: State.Paused true; POST .../unpause -> 204
+        //   POST .../tcae-sleeper/rename?name=tcae-sleeper-renamed -> 204; GET .../tcae-sleeper-renamed/json -> Name "/tcae-sleeper-renamed"
+        //   DELETE .../tcae-sleeper-renamed  -> 409 (a running container is not removed without force) {"message":"cannot remove container \"/tcae-sleeper-renamed\": container is running: stop the container before removing or force remove"}
+        //   POST .../tcae-sleeper-renamed/restart?t=1 -> 204 (stops it, 1 s grace, starts again)
+        //   POST .../tcae-sleeper-renamed/stop?t=1    -> 204;  again -> 304 (already stopped)
+        //   POST .../tcae-sleeper-renamed/wait        -> 200 {"StatusCode":137} (sleep as PID 1 ignores SIGTERM, so Docker kills it after the grace period)
+        //   POST .../tcae-sleeper-renamed/start       -> 204 (a stopped container starts again)
+        //   DELETE .../tcae-sleeper-renamed?force=1   -> 204 (kills and removes)
+        spec.it("starts, inspects, pauses, renames, restarts, stops and force-removes a running container") callback {
+            rec, ok = begin("controls_a_long_running_container")
+            if ok == 0 { return }
+            st, b = dk("POST", "/containers/create?name=tcae-sleeper", create_body("[\"sleep\",\"300\"]"))
+            spec.assert_eq(st, 201, "create: ${b}")
+            st, b = dk("POST", "/containers/tcae-sleeper/start", "")
+            spec.assert_eq(st, 204, "start: ${b}")
+            st, b = dk("POST", "/containers/tcae-sleeper/start", "")
+            spec.assert_eq(st, 304, "start of a started container: ${b}")
+            st, b = dk("GET", "/containers/tcae-sleeper/json", "")
+            spec.assert_eq(st, 200, "inspect: ${b}")
+            spec.assert_contains(b, "\"Status\":\"running\"", "running")
+            spec.assert_contains(b, "\"Running\":true", "Running true")
+            st, b = dk("GET", "/containers/tcae-sleeper/top", "")
+            spec.assert_eq(st, 200, "top: ${b}")
+            spec.assert_contains(b, "\"Titles\":[", "the column titles")
+            st, b = dk("POST", "/containers/tcae-sleeper/pause", "")
+            spec.assert_eq(st, 204, "pause: ${b}")
+            st, b = dk("GET", "/containers/tcae-sleeper/json", "")
+            spec.assert_contains(b, "\"Paused\":true", "paused")
+            st, b = dk("POST", "/containers/tcae-sleeper/unpause", "")
+            spec.assert_eq(st, 204, "unpause: ${b}")
+            st, b = dk("POST", "/containers/tcae-sleeper/rename?name=tcae-sleeper-renamed", "")
+            spec.assert_eq(st, 204, "rename: ${b}")
+            st, b = dk("GET", "/containers/tcae-sleeper-renamed/json", "")
+            spec.assert_eq(st, 200, "inspect by the new name: ${b}")
+            spec.assert_contains(b, "\"Name\":\"/tcae-sleeper-renamed\"", "the new name")
+            st, b = dk("DELETE", "/containers/tcae-sleeper-renamed", "")
+            spec.assert_eq(st, 409, "remove while running: ${b}")
+            spec.assert_contains(b, "container is running: stop the container before removing or force remove", "running containers are not removed")
+            st, b = dk("POST", "/containers/tcae-sleeper-renamed/restart?t=1", "")
+            spec.assert_eq(st, 204, "restart: ${b}")
+            st, b = dk("POST", "/containers/tcae-sleeper-renamed/stop?t=1", "")
+            spec.assert_eq(st, 204, "stop: ${b}")
+            st, b = dk("POST", "/containers/tcae-sleeper-renamed/stop?t=1", "")
+            spec.assert_eq(st, 304, "stop of a stopped container: ${b}")
+            st, b = dk("POST", "/containers/tcae-sleeper-renamed/wait", "")
+            spec.assert_eq(st, 200, "wait: ${b}")
+            spec.assert_contains(b, "\"StatusCode\":137", "killed after the grace period")
+            st, b = dk("POST", "/containers/tcae-sleeper-renamed/start", "")
+            spec.assert_eq(st, 204, "start again: ${b}")
+            st, b = dk("DELETE", "/containers/tcae-sleeper-renamed?force=1", "")
+            spec.assert_eq(st, 204, "force remove: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: networks. The subnet is fixed so the addresses on the tape are stable.
+        //   POST   /v1.48/networks/create {"Name":"tcae-net","Driver":"bridge","Labels":{"tcae":"1"},"IPAM":{"Config":[{"Subnet":"10.250.0.0/24","Gateway":"10.250.0.1"}]}}
+        //          -> 201 {"Id":"{{docker-id-N}}","Warning":""}
+        //   GET    /v1.48/networks/tcae-net -> 200, Name, Driver "bridge", IPAM.Config[0].Subnet "10.250.0.0/24", Labels {"tcae":"1"}, Containers {}
+        //   GET    /v1.48/networks?filters={"name":["tcae-net"]} -> 200, an array of one
+        //   POST   /v1.48/networks/create {"Name":"tcae-net"} -> 409 {"message":"network with name tcae-net already exists"}
+        //   POST   /v1.48/containers/create?name=tcae-member {"Image":..,"Hostname":"tcae-host","Tty":true,"Cmd":["sleep","300"]} -> 201; POST .../tcae-member/start -> 204
+        //   POST   /v1.48/networks/tcae-net/connect {"Container":"tcae-member"} -> 200
+        //   GET    /v1.48/networks/tcae-net -> Containers has the member, IPv4Address "10.250.0.2/24"
+        //   DELETE /v1.48/networks/tcae-net -> 403 (an active endpoint: "error while removing network: network tcae-net id {{docker-id-N}} has active endpoints")
+        //   POST   /v1.48/networks/tcae-net/disconnect {"Container":"tcae-member"} -> 200
+        //   DELETE /v1.48/containers/tcae-member?force=1 -> 204
+        //   DELETE /v1.48/networks/tcae-net -> 204
+        //   GET    /v1.48/networks/tcae-net -> 404 {"message":"network tcae-net not found"}
+        //   DELETE /v1.48/networks/tcae-net -> 404
+        spec.it("creates, inspects, connects to and removes a network") callback {
+            rec, ok = begin("creates_connects_and_removes_a_network")
+            if ok == 0 { return }
+            st, b = dk("POST", "/networks/create", "{\"Name\":\"tcae-net\",\"Driver\":\"bridge\",\"Labels\":{\"tcae\":\"1\"},\"IPAM\":{\"Config\":[{\"Subnet\":\"10.250.0.0/24\",\"Gateway\":\"10.250.0.1\"}]}}")
+            spec.assert_eq(st, 201, "create: ${b}")
+            spec.assert_contains(b, "\"Id\":\"", "its id")
+            st, b = dk("GET", "/networks/tcae-net", "")
+            spec.assert_eq(st, 200, "inspect: ${b}")
+            spec.assert_contains(b, "\"Name\":\"tcae-net\"", "its name")
+            spec.assert_contains(b, "\"Subnet\":\"10.250.0.0/24\"", "its subnet")
+            spec.assert_contains(b, "\"tcae\":\"1\"", "its label")
+            st, b = dk("GET", "/networks?filters=${filt("name", "tcae-net")}", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "\"Name\":\"tcae-net\"", "it is listed")
+            st, b = dk("POST", "/networks/create", "{\"Name\":\"tcae-net\"}")
+            spec.assert_eq(st, 409, "the name is taken: ${b}")
+            spec.assert_contains(b, "network with name tcae-net already exists", "a duplicate name")
+            st, b = dk("POST", "/containers/create?name=tcae-member", create_body("[\"sleep\",\"300\"]"))
+            spec.assert_eq(st, 201, "create the member: ${b}")
+            st, b = dk("POST", "/containers/tcae-member/start", "")
+            spec.assert_eq(st, 204, "start the member: ${b}")
+            st, b = dk("POST", "/networks/tcae-net/connect", "{\"Container\":\"tcae-member\"}")
+            spec.assert_eq(st, 200, "connect: ${b}")
+            st, b = dk("GET", "/networks/tcae-net", "")
+            spec.assert_eq(st, 200, "inspect with a member: ${b}")
+            spec.assert_contains(b, "\"Name\":\"tcae-member\"", "the member is on the network")
+            spec.assert_contains(b, "\"IPv4Address\":\"10.250.0.2/24\"", "its address")
+            st, b = dk("DELETE", "/networks/tcae-net", "")
+            spec.assert_eq(st, 403, "remove with an active endpoint: ${b}")
+            spec.assert_contains(b, "has active endpoints", "active endpoints")
+            st, b = dk("POST", "/networks/tcae-net/disconnect", "{\"Container\":\"tcae-member\"}")
+            spec.assert_eq(st, 200, "disconnect: ${b}")
+            st, b = dk("DELETE", "/containers/tcae-member?force=1", "")
+            spec.assert_eq(st, 204, "remove the member: ${b}")
+            st, b = dk("DELETE", "/networks/tcae-net", "")
+            spec.assert_eq(st, 204, "remove the network: ${b}")
+            st, b = dk("GET", "/networks/tcae-net", "")
+            spec.assert_eq(st, 404, "it is gone: ${b}")
+            spec.assert_contains(b, "network tcae-net not found", "not found")
+            st, b = dk("DELETE", "/networks/tcae-net", "")
+            spec.assert_eq(st, 404, "removing it again: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: volumes.
+        //   POST   /v1.48/volumes/create {"Name":"tcae-vol","Labels":{"tcae":"1"}} -> 201 {"CreatedAt":..,"Driver":"local","Labels":{"tcae":"1"},"Mountpoint":"/var/lib/docker/volumes/tcae-vol/_data","Name":"tcae-vol","Options":null,"Scope":"local"}
+        //   POST   /v1.48/volumes/create (same body)  -> 201, the same volume (create is idempotent)
+        //   GET    /v1.48/volumes/tcae-vol            -> 200, the same
+        //   GET    /v1.48/volumes?filters={"name":["tcae-vol"]} -> 200 {"Volumes":[..one..],"Warnings":null}
+        //   POST   /v1.48/containers/create?name=tcae-vol-user {"Image":..,"Hostname":"tcae-host","Tty":true,"Cmd":["true"],"HostConfig":{"Binds":["tcae-vol:/data"]}} -> 201
+        //   DELETE /v1.48/volumes/tcae-vol            -> 409 {"message":"remove tcae-vol: volume is in use - [{{docker-id-N}}]"}
+        //   DELETE /v1.48/containers/tcae-vol-user    -> 204
+        //   DELETE /v1.48/volumes/tcae-vol            -> 204
+        //   GET    /v1.48/volumes/tcae-vol            -> 404 {"message":"get tcae-vol: no such volume"}
+        //   DELETE /v1.48/volumes/tcae-vol            -> 404 {"message":"get tcae-vol: no such volume"}
+        spec.it("creates, inspects and removes a volume, and refuses to remove one in use") callback {
+            rec, ok = begin("creates_inspects_and_removes_a_volume")
+            if ok == 0 { return }
+            vol = "{\"Name\":\"tcae-vol\",\"Labels\":{\"tcae\":\"1\"}}"
+            st, b = dk("POST", "/volumes/create", vol)
+            spec.assert_eq(st, 201, "create: ${b}")
+            spec.assert_contains(b, "\"Name\":\"tcae-vol\"", "its name")
+            spec.assert_contains(b, "\"Mountpoint\":\"/var/lib/docker/volumes/tcae-vol/_data\"", "its mount point")
+            st, b = dk("POST", "/volumes/create", vol)
+            spec.assert_eq(st, 201, "create again is idempotent: ${b}")
+            st, b = dk("GET", "/volumes/tcae-vol", "")
+            spec.assert_eq(st, 200, "inspect: ${b}")
+            spec.assert_contains(b, "\"Driver\":\"local\"", "the local driver")
+            spec.assert_contains(b, "\"tcae\":\"1\"", "its label")
+            st, b = dk("GET", "/volumes?filters=${filt("name", "tcae-vol")}", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "\"Name\":\"tcae-vol\"", "it is listed")
+            st, b = dk("POST", "/containers/create?name=tcae-vol-user", "{\"Image\":\"${BUSYBOX}\",\"Hostname\":\"tcae-host\",\"Tty\":true,\"Cmd\":[\"true\"],\"HostConfig\":{\"Binds\":[\"tcae-vol:/data\"]}}")
+            spec.assert_eq(st, 201, "a container that mounts it: ${b}")
+            st, b = dk("DELETE", "/volumes/tcae-vol", "")
+            spec.assert_eq(st, 409, "remove a volume in use: ${b}")
+            spec.assert_contains(b, "volume is in use", "in use")
+            st, b = dk("DELETE", "/containers/tcae-vol-user", "")
+            spec.assert_eq(st, 204, "remove the container: ${b}")
+            st, b = dk("DELETE", "/volumes/tcae-vol", "")
+            spec.assert_eq(st, 204, "remove the volume: ${b}")
+            st, b = dk("GET", "/volumes/tcae-vol", "")
+            spec.assert_eq(st, 404, "it is gone: ${b}")
+            spec.assert_contains(b, "no such volume", "no such volume")
+            st, b = dk("DELETE", "/volumes/tcae-vol", "")
+            spec.assert_eq(st, 404, "removing it again: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the representative errors (the ones above are in their own cases too).
+        //   GET    /v1.48/containers/tcae-nope/json   -> 404 {"message":"No such container: tcae-nope"}
+        //   POST   /v1.48/containers/tcae-nope/start  -> 404, same message
+        //   GET    /v1.48/containers/tcae-nope/logs?stdout=1 -> 404, same message
+        //   DELETE /v1.48/containers/tcae-nope        -> 404, same message
+        //   POST   /v1.48/containers/create?name=tcae-dup {"Image":"tcae/not-an-image:x"} -> 404 {"message":"No such image: tcae/not-an-image:x"}
+        //   POST   /v1.48/containers/create?name=tcae-dup {not json -> 400 {"message":"invalid JSON: invalid character 'n' looking for beginning of object key string"}
+        //   POST   /v1.48/containers/create?name=tcae-dup {} -> 400 {"message":"config cannot be empty in order to create a container"}
+        //   POST   /v1.48/containers/create?name=tcae-dup <the busybox body, Cmd ["true"]> -> 201
+        //   POST   /v1.48/containers/create?name=tcae-dup <the same> -> 409 {"message":"Conflict. The container name \"/tcae-dup\" is already in use by container \"{{docker-id-N}}\". You have to remove (or rename) that container to be able to reuse that name."}
+        //   DELETE /v1.48/images/busybox:1.36.1       -> 409 (a container uses it; unable to remove repository reference ... container {{docker-id-N}} is using its referenced image)
+        //   DELETE /v1.48/containers/tcae-dup         -> 204
+        //   GET    /v1.48/no-such-endpoint            -> 404 {"message":"page not found"}
+        //   GET    /v1.48/images/tcae-nope/json       -> 404 {"message":"No such image: tcae-nope:latest"}
+        // (the 400 for a body that is not JSON is sent as the exact bytes {not json)
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses")
+            if ok == 0 { return }
+            st, b = dk("GET", "/containers/tcae-nope/json", "")
+            spec.assert_eq(st, 404, "inspect a missing container: ${b}")
+            spec.assert_contains(b, "No such container: tcae-nope", "no such container")
+            st, b = dk("POST", "/containers/tcae-nope/start", "")
+            spec.assert_eq(st, 404, "start a missing container: ${b}")
+            st, b = dk("GET", "/containers/tcae-nope/logs?stdout=1", "")
+            spec.assert_eq(st, 404, "logs of a missing container: ${b}")
+            st, b = dk("DELETE", "/containers/tcae-nope", "")
+            spec.assert_eq(st, 404, "remove a missing container: ${b}")
+            st, b = dk("POST", "/containers/create?name=tcae-dup", "{\"Image\":\"tcae/not-an-image:x\"}")
+            spec.assert_eq(st, 404, "create from a missing image: ${b}")
+            spec.assert_contains(b, "No such image: tcae/not-an-image:x", "no such image")
+            st, b = dk("POST", "/containers/create?name=tcae-dup", "{not json")
+            spec.assert_eq(st, 400, "a body that is not JSON: ${b}")
+            spec.assert_contains(b, "invalid character", "a JSON parse error")
+            st, b = dk("POST", "/containers/create?name=tcae-dup", "{}")
+            spec.assert_eq(st, 400, "an empty config: ${b}")
+            st, b = dk("POST", "/containers/create?name=tcae-dup", create_body("[\"true\"]"))
+            spec.assert_eq(st, 201, "a valid create: ${b}")
+            st, b = dk("POST", "/containers/create?name=tcae-dup", create_body("[\"true\"]"))
+            spec.assert_eq(st, 409, "the name is taken: ${b}")
+            spec.assert_contains(b, "is already in use by container", "name conflict")
+            st, b = dk("DELETE", "/images/${BUSYBOX}", "")
+            spec.assert_eq(st, 409, "an image a container uses: ${b}")
+            spec.assert_contains(b, "is using its referenced image", "image in use")
+            st, b = dk("DELETE", "/containers/tcae-dup", "")
+            spec.assert_eq(st, 204, "remove it: ${b}")
+            st, b = dk("GET", "/no-such-endpoint", "")
+            spec.assert_eq(st, 404, "an unknown endpoint: ${b}")
+            st, b = dk("GET", "/images/tcae-nope/json", "")
+            spec.assert_eq(st, 404, "inspect a missing image: ${b}")
+            spec.assert_contains(b, "No such image: tcae-nope", "no such image")
+            servirtium.end_recording(rec)
+        }
+    }
+
+    if shared_container != null {
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("dind: removing the shared container: ${e}") }
+    }
+    return spec.run_summary(fw)
+}
