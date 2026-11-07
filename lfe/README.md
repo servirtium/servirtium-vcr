@@ -66,53 +66,55 @@ one **expected** warning on every build, `redefining core function record/3`,
 which LFE gives no way to suppress selectively (only `-Werror` and
 `nowarn_unused_vars` exist). Don't "fix" it by renaming the export.
 
-## Building and testing
+## Getting it
 
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
+Hex package and OTP application: **`servirtium_lfe`** (module `servirtium_lfe`). It calls the
+shared native OTP app **`servirtium_nif`**, which `erlang/build-nif-app.sh` builds from a
+prebuilt release library (needs `erl`, `erlc`, `cc`, `curl`, plus `lfec` for this package; no
+Aether). Nothing is on Hex yet; once published it is `{deps, [{servirtium_lfe, "2.0.0-alpha.12"}]}.`
+in `rebar.config`. Until then, in your LFE project:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
+VER=v2.0.0-alpha.12                      # a release tag of servirtium-vcr
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
+
+# 1. the native app (SRC=main until a release tag contains erlang/build-nif-app.sh)
+mkdir -p beam-libs
+curl -fsSL $RAW/main/erlang/build-nif-app.sh | SRC=main VER=$VER sh -s -- ./beam-libs
+
+# 2. the LFE app: compile the one source file into its own OTP app directory
+mkdir -p beam-libs/servirtium_lfe/ebin
+curl -fsSL -o servirtium_lfe.lfe $RAW/$VER/lfe/src/servirtium_lfe.lfe
+curl -fsSL -o beam-libs/servirtium_lfe/ebin/servirtium_lfe.app $RAW/$VER/lfe/src/servirtium_lfe.app
+lfec -o beam-libs/servirtium_lfe/ebin servirtium_lfe.lfe
+rm servirtium_lfe.lfe
+
+# 3. put the apps on the code path
+export ERL_LIBS=$PWD/beam-libs
+
+# 4. check it: the repo's consumer replays a recorded tape
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/$VER/lfe/example/tapes/single_get.md
+curl -fsSL -o consumer.lfe $RAW/$VER/lfe/example/consumer.lfe
+lfec -o . consumer.lfe
+lfe -noshell -pa . -eval '(consumer:main (list))' -eval '(halt 0)'     # -> PASS ...
 ```
 
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+### Notes for coding agents
 
-**Build the package locally.** Nothing is published to a package registry yet,
-so you build both halves yourself. LFE ships **no** C source of its own — the
-native side is the shared `servirtium_nif` OTP app owned by the Erlang binding —
-but it does compile its own BEAM module (`servirtium_lfe`) with `lfec`. Needs
-`lfec`/`lfe` on PATH (plus the C compiler + Erlang/OTP for the NIF). So:
+- Package `servirtium_lfe`; its OTP app lists `servirtium_nif` in `applications`. Both app
+  directories must be under a directory named in `ERL_LIBS`.
+- `undef` on `servirtium_lfe:...` means the `.beam` is not compiled or `ERL_LIBS` does not
+  name `beam-libs`; `undef` on `servirtium_nif:...` or `bad_name` means the NIF app is missing
+  from the same place.
+- NIF load failures (`load_failed`, `cannot open shared object file`) mean `priv/` lost the
+  library beside `servirtium_nif.so`; move the app directory whole. Do not set
+  `SERVIRTIUM_VCR_LIB`.
+- `lfec` comes from an LFE install (rebar3_lfe or a release); `lfec: command not found` is
+  that, not a Servirtium problem.
+- In-repo development: `aeb lfe/.tests.ae`.
 
-1. Build the shared Erlang NIF first, per the [Erlang README's "Build the
-   package locally"](../erlang/README.md) — this produces the `servirtium_nif`
-   app.
-2. Compile this binding's own LFE module and stage it as an OTP app:
-
-   ```sh
-   mkdir -p servirtium_lfe/ebin
-   lfec -o servirtium_lfe/ebin lfe/src/servirtium_lfe.lfe
-   cp lfe/src/servirtium_lfe.app servirtium_lfe/ebin/servirtium_lfe.app
-   ```
-
-3. Put both apps' parent dir(s) on `ERL_LIBS` so `code:priv_dir` finds the NIF
-   and its `libservirtium_vcr.so`, then run over the BEAM the standard OTP way.
-
-(The `aeb lfe/.package.ae` build assembles both `servirtium_lfe` and the shared
-`servirtium_nif` under one dir a consumer points `ERL_LIBS` at.)
-
-LFE doesn't link this lib directly — it loads the shared Erlang NIF, and it's
-that NIF (`servirtium_nif`) which needs `libservirtium_vcr` present. So the
-download matters one layer down: obtaining/building the Erlang `servirtium_nif`
-app (which links the lib) is the prerequisite here. Drop the downloaded lib
-where the NIF build finds it and build that app the way the
-[erlang README](../erlang/README.md) describes; then `ERL_LIBS` puts it on the
-BEAM code path for the LFE test run.
+## Building and testing
 
 Contributors who want to build the lib from source instead (Aether toolchain
 required) can use `aeb`:

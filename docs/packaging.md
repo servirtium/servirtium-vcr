@@ -81,7 +81,7 @@ links or loads it from there.
 | Go | `go get github.com/servirtium/servirtium-vcr/go/v2@<tag>` (tag `go/<tag>`) + `CGO_LDFLAGS` for the native lib; local: `go mod edit -replace github.com/servirtium/servirtium-vcr/go/v2=…/go` |
 | Nim | `nim c --path:…/nim/src` |
 | Zig | `build.zig`, libservirtium_vcr in `zig/native/` |
-| Haskell | a path `source-repository-package` |
+| Haskell | cabal package `servirtium`: a `source-repository-package` with `subdir: haskell` (or a path package) + `cabal.project.local` naming the library dir |
 | Crystal | `servirtium: {path: "…/crystal"}` in `shard.yml`; from git: `github: servirtium/servirtium-vcr` (root `shard.yml` + `servirtium.cr`, see below) |
 | Julia | `Pkg.develop(path="…/julia")` |
 | Swift | `.package(path: "…/swift")`; from git: `.package(url: "https://github.com/servirtium/servirtium-vcr", branch: "main")` (root `Package.swift`, see below) |
@@ -118,11 +118,24 @@ untested with dub itself so far.
 
 ### A relocatable OTP app (the BEAM four)
 
+All four BEAM bindings publish to Hex, so their names are distinct:
+
+| Binding | Hex package / OTP app | Module |
+|---|---|---|
+| Erlang | `servirtium_erl` | `servirtium` |
+| Elixir | `servirtium` | `Servirtium` |
+| Gleam | `servirtium_gleam` | `servirtium` |
+| LFE | `servirtium_lfe` | `servirtium_lfe` |
+| shared native app (all four depend on it) | `servirtium_nif` | `servirtium_nif` |
+
 `erlang/.package.ae` builds the **one** `servirtium_nif` app —
 `libservirtium_vcr.so` in `priv/`, NIF linked `-Wl,-rpath,$ORIGIN` so it finds libservirtium_vcr
-beside itself wherever the app is placed. Elixir, Gleam and LFE each stage that
-same app into their own `_build_pkg/`, so every BEAM package is self-contained
-while there is still exactly one NIF in the repo.
+beside itself wherever the app is placed — and, separately, the `servirtium_erl` app (the Erlang
+`servirtium` module, depending on it). Elixir, Gleam and LFE each stage the NIF app
+into their own `_build_pkg/`, so every BEAM package is self-contained
+while there is still exactly one NIF in the repo. None is on Hex yet; until then
+`erlang/build-nif-app.sh` builds `servirtium_nif` + `servirtium_erl` from a release
+library with no Aether (see the Erlang README), and each binding README has a "Getting it" section.
 
 ```sh
 ERL_LIBS=…/erlang/_build_pkg                        # erl, escript, gleam

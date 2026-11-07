@@ -85,63 +85,61 @@ each other's state. See
 The included `test/test_helper.exs` still starts ExUnit with `max_cases: 1`,
 but that is a property of this suite, not a constraint of libservirtium_vcr.
 
-## Install
+## Getting it
 
-> **Note:** nothing is published to **hex.pm** yet, so `mix deps.get` does
-> **not** fetch this library. Until a Hex package ships, build from source (or
-> add a `:path`/`:git` dependency) and supply the prebuilt native library as
-> below.
-
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
+Hex package and OTP application: **`servirtium`** (modules `Servirtium.*`). It delegates to the
+shared native OTP app **`servirtium_nif`**, which is built from a prebuilt release library by
+`erlang/build-nif-app.sh` (needs `erl`, `erlc`, `cc`, `curl`; no Aether). Nothing is on Hex
+yet. Once published it is `{:servirtium, "~> 2.0.0-alpha.12", only: :test}` in `mix.exs` deps.
+Until then, in your Mix project:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
+VER=v2.0.0-alpha.12                      # a release tag of servirtium-vcr
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
+
+# 1. the native app (SRC=main until a release tag contains erlang/build-nif-app.sh)
+mkdir -p beam-libs
+curl -fsSL $RAW/main/erlang/build-nif-app.sh | SRC=main VER=$VER sh -s -- ./beam-libs
+
+# 2. the dependency: the repo's elixir/ subdirectory, straight from GitHub
+#    mix.exs deps:  {:servirtium, github: "servirtium/servirtium-vcr", tag: "<VER>", sparse: "elixir", only: :test}
+perl -0pi -e "s|(defp deps do\s*\[)|\$1\n      {:servirtium, github: \"servirtium/servirtium-vcr\", tag: \"$VER\", sparse: \"elixir\", only: :test},|" mix.exs
+mix deps.get
+
+# 3. mix ignores ERL_LIBS: put the NIF app on the code path in test/test_helper.exs
+cat > test/test_helper.exs <<'EOF'
+Code.append_path(System.get_env("SERVIRTIUM_NIF_EBIN") || "beam-libs/servirtium_nif/ebin")
+ExUnit.start()
+EOF
+
+# 4. check it: the repo's consumer test replays a recorded tape
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/$VER/elixir/example/tapes/single_get.md
+curl -fsSL -o test/consumer_test.exs $RAW/$VER/elixir/example/test/consumer_test.exs
+SERVIRTIUM_NIF_EBIN=$PWD/beam-libs/servirtium_nif/ebin mix test
 ```
 
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+(`sparse: "elixir"` makes Mix check out only that subdirectory of the monorepo; Mix
+supports it for `git`/`github` deps.) A local checkout works too:
+`{:servirtium, path: "/path/to/servirtium-vcr/elixir"}`.
 
-**Build the package locally.** Nothing is published to a package registry
-(hex.pm) yet, so you build the native side yourself. Elixir compiles **no** C of
-its own — the native side is the shared `servirtium_nif` OTP app owned by the
-Erlang binding, which `Servirtium.Native` `defdelegate`s onto. So:
+### Notes for coding agents
 
-1. Build the shared Erlang NIF first, per the [Erlang README's "Build the
-   package locally"](../erlang/README.md) (needs a C compiler + Erlang/OTP) —
-   this produces the `servirtium_nif` app.
-2. Put its parent dir on the BEAM code path via `SERVIRTIUM_NIF_EBIN` (mix does
-   not fold `ERL_LIBS` in — see below), then compile and run the Elixir sources
-   with `mix`:
-
-   ```sh
-   mix deps.get
-   SERVIRTIUM_NIF_EBIN=/path/to/servirtium_nif/ebin mix test
-   ```
-
-   > **`SERVIRTIUM_NIF_EBIN` is read by this binding's `test/test_helper.exs`, so
-   > it only takes effect under `mix test`.** For `mix run`, `iex -S mix`, or your
-   > own app, the env var does nothing on its own — put the NIF app on the code
-   > path yourself in your app's startup (or `test_helper.exs`):
-   > ```elixir
-   > Code.append_path(System.get_env("SERVIRTIUM_NIF_EBIN") || "/path/to/servirtium_nif/ebin")
-   > ```
-   > Without this you get `module :servirtium_nif is not available` even with the
-   > env var set.
-
-(The `aeb elixir/.package.ae` build stages the shared `servirtium_nif` app beside
-the mix source; the Elixir BEAM modules are compiled by the consumer's own `mix`.)
-
-The FFI is a **C NIF** that links `libservirtium_vcr` at **build** time (not a
-runtime `dlopen`): point `SERVIRTIUM_VCR_LIB` at the downloaded library so the
-NIF build/load resolves it against that `.so`. This is separate from
-`SERVIRTIUM_NIF_EBIN`, which puts the shared `servirtium_nif` app on the BEAM
-code path (see below) — you generally set both.
+- The Hex name is `servirtium` and the OTP app is `:servirtium`; the native app is the
+  separate `:servirtium_nif` (not an Elixir package, not yet on Hex). The Erlang wrapper
+  `servirtium_erl` has a module named `servirtium`; do not add it to the same project.
+- **`module :servirtium_nif is not available`** means the NIF app is not on the code path.
+  `mix` ignores `ERL_LIBS` and `SERVIRTIUM_NIF_EBIN` alone does nothing: the
+  `Code.append_path/1` line in `test/test_helper.exs` (or your app's startup) is what makes
+  it work. It must point at `.../servirtium_nif/ebin`, not at `beam-libs`.
+- `could not find application file: servirtium_nif.app` means the path points at the
+  wrong directory; the `.app` file is in `ebin/`.
+- A NIF load error (`load_failed`, `cannot open shared object file`) means the library that
+  sits next to `servirtium_nif.so` in `priv/` is gone; the app directory is relocatable only
+  as a whole, via its `$ORIGIN`/`@loader_path` rpath. Do not set `SERVIRTIUM_VCR_LIB`.
+- Do not vendor the sources by copying `lib/`; use the git dep or a path dep so
+  `mix.exs`, docs and version stay consistent.
+- In-repo development: `aeb elixir/.tests.ae`.
 
 ## Building from source
 

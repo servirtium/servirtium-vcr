@@ -50,53 +50,57 @@ returns.
   asserts the body + a clean match).
 - `tapes/` — sample markdown tapes.
 
-## Building and testing
+## Getting it
 
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
+Hex package: **`servirtium_gleam`** (module `servirtium`). It binds to the shared native OTP
+app **`servirtium_nif`** with `@external(erlang, "servirtium_nif", ...)`; that app is built from
+a prebuilt release library by `erlang/build-nif-app.sh` (needs `erl`, `erlc`, `cc`, `curl`; no
+Aether). Nothing is on Hex yet: once published it is `gleam add servirtium_gleam --dev`. Gleam's
+git dependencies cannot point at a subdirectory of a repository, and this package lives in
+`gleam/` of a monorepo, so until then it is a `path` dependency onto a checkout of the tag.
+In your Gleam project:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
+VER=v2.0.0-alpha.12                      # a release tag of servirtium-vcr
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
+
+# 1. a checkout of that tag (only gleam/ and erlang/ are used)
+git clone --depth 1 --branch $VER https://github.com/servirtium/servirtium-vcr.git vendor-src/servirtium-vcr
+
+# 2. the native app (SRC=main until a release tag contains erlang/build-nif-app.sh)
+mkdir -p beam-libs
+curl -fsSL $RAW/main/erlang/build-nif-app.sh | SRC=main VER=$VER sh -s -- ./beam-libs
+
+# 3. the dependency: a path dependency in gleam.toml, then resolve
+perl -pi -e 's|^\[dependencies\]|[dependencies]\nservirtium_gleam = { path = "vendor-src/servirtium-vcr/gleam" }|' gleam.toml
+gleam deps download
+
+# 4. check it: the repo's consumer program replays a recorded tape (gleam honours ERL_LIBS)
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/$VER/gleam/example/tapes/single_get.md
+curl -fsSL -o src/consumer_check.gleam $RAW/$VER/gleam/example/src/consumer_example.gleam
+ERL_LIBS=$PWD/beam-libs gleam run -m consumer_check      # -> PASS ...
+rm src/consumer_check.gleam
 ```
 
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+### Notes for coding agents
 
-**Build the package locally.** Nothing is published to a package registry
-(Hex) yet, so you build the native side yourself. Gleam ships **no** C source of
-its own — the native side is the shared `servirtium_nif` OTP app owned by the
-Erlang binding, which `src/servirtium.gleam` binds to with
-`@external(erlang, "servirtium_nif", ...)`. So:
+- Package `servirtium_gleam`, import `servirtium`. `target = "erlang"` is required; the
+  JavaScript target is not supported (NIF).
+- `gleam add servirtium_gleam` fails today (not on Hex) and so does a `git = ...` dependency
+  (no subdirectory support); use the `path` dependency above. Do not edit `manifest.toml`
+  by hand; run `gleam deps download`.
+- **`undef` / `module servirtium_nif is not available`** at runtime means `ERL_LIBS` was not
+  exported in the shell that runs `gleam run` / `gleam test`, or it names `beam-libs/servirtium_nif`
+  instead of `beam-libs` (it must be the directory that *contains* the app directory).
+- A `load_failed` / `cannot open shared object file` error means `priv/` lost the library next
+  to `servirtium_nif.so`; move the app directory whole (`$ORIGIN` rpath). Do not set
+  `SERVIRTIUM_VCR_LIB`.
+- Keep `VER` (library) and the checkout tag the same release; the NIF source and the library
+  must match.
+- In-repo development: `aeb gleam/.tests.ae`.
 
-1. Build the shared Erlang NIF first, per the [Erlang README's "Build the
-   package locally"](../erlang/README.md) (needs a C compiler + Erlang/OTP) —
-   this produces the `servirtium_nif` app.
-2. `gleam` honors `ERL_LIBS`, so point it at the app's parent dir and build/run
-   the Gleam sources normally:
-
-   ```sh
-   # from gleam/
-   ERL_LIBS=/path/to/servirtium_nif/.. gleam test
-   ```
-
-   (`ERL_LIBS` names the directory *containing* `servirtium_nif/`, so its module
-   and `priv/servirtium_nif.so` load the standard OTP way.)
-
-(The `aeb gleam/.package.ae` build stages the shared `servirtium_nif` app beside
-the gleam source; the Gleam modules are compiled by the consumer's own `gleam`.)
-
-Gleam doesn't link this lib directly — it loads the shared Erlang NIF, and it's
-that NIF (`servirtium_nif`) which needs `libservirtium_vcr` present. So the
-download matters one layer down: obtaining/building the Erlang `servirtium_nif`
-app (which links the lib) is the prerequisite here. Drop the downloaded lib
-where the NIF build finds it and build that app the way the
-[erlang README](../erlang/README.md) describes; then `ERL_LIBS` puts it on the
-BEAM code path for `gleam test`.
+## Building and testing
 
 Contributors who want to build the lib from source instead (Aether toolchain
 required) can use `aeb`:

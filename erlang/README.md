@@ -44,60 +44,69 @@ each compiling their own copy of the C source. There is exactly one
   time; one `erlang:nif_error(not_loaded)` body per `nif_funcs[]` entry.
 - `src/servirtium_nif.app` — the OTP app resource, so `code:priv_dir/1` resolves
   the `.so` when the app is on the path (via ERL_LIBS) for any BEAM consumer.
+- `src/servirtium_erl.app` — the OTP app resource of the Hex package `servirtium_erl`
+  (module `servirtium`, depends on `servirtium_nif`).
 - `src/servirtium.erl` — the idiomatic wrapper: `playback/1,2`, `record/2,3`,
   `base_url/1`, `port/1`, `tape_length/1`, `last_kind/1`, `last_error/1`,
   `last_index/1`, `close/1`.
-- `.build.ae` — compiles the shared `servirtium_nif` OTP app into `_build/`.
+- `.build.ae` — compiles the shared `servirtium_nif` and the `servirtium_erl` OTP apps into `_build/`.
+- `build-nif-app.sh` — builds both apps from a prebuilt release library (no Aether).
 - `test/playback.escript` — smoke test (curls the VCR, asserts the body).
 - `tapes/` — sample markdown tapes.
 
+## Getting it
+
+Hex package and OTP application: **`servirtium_erl`** (module `servirtium`). It runs on the
+shared native OTP app **`servirtium_nif`** (the C NIF plus `libservirtium_vcr`), which Elixir,
+Gleam and LFE use too. Neither is on Hex yet, so the sources come from this repo and
+`erlang/build-nif-app.sh` builds both apps from a prebuilt release library (no Aether needed;
+needs `erl`, `erlc`, `cc`, `curl`). Once published, a rebar3 project will just say
+`{deps, [{servirtium_erl, "2.0.0-alpha.12"}]}.` in `rebar.config`. Run this in your project:
+
+```sh
+VER=v2.0.0-alpha.12                      # a release tag of servirtium-vcr
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
+
+# 1. build servirtium_nif + servirtium_erl into ./beam-libs
+#    (SRC=main until a release tag contains erlang/build-nif-app.sh; then SRC=$VER)
+mkdir -p beam-libs
+curl -fsSL $RAW/main/erlang/build-nif-app.sh | SRC=main VER=$VER sh -s -- ./beam-libs
+
+# 2. put them on the code path: erl, escript and rebar3 shells honour ERL_LIBS
+export ERL_LIBS=$PWD/beam-libs
+
+# 3. check it: replay a recorded tape
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/$VER/erlang/example/tapes/single_get.md
+curl -fsSL -o consumer.escript    $RAW/$VER/erlang/example/consumer.escript
+escript consumer.escript                  # -> PASS ...
+```
+
+Under rebar3, either keep `ERL_LIBS` exported, or copy the two app directories into
+`_checkouts/` of your project and list `servirtium_erl` in your app's `applications`.
+Windows is not covered by the script; FreeBSD and musl builds need the matching release
+asset (`freebsd-x86_64.so`, `linux-<arch>-musl.so`) passed as `LIB=`.
+
+### Notes for coding agents
+
+- Two OTP apps, one native: `servirtium_erl` (Erlang module `servirtium`, depends on
+  `servirtium_nif`) and `servirtium_nif` (module `servirtium_nif` + `priv/servirtium_nif.so`
+  + `priv/libservirtium_vcr.so`). Both directories must be on the code path. The app was
+  previously a single `servirtium_nif` containing module `servirtium`; that is gone.
+- `{error,{bad_name,servirtium_nif}}`, `undef` on `servirtium_nif:...` or `module servirtium
+  not available` means `ERL_LIBS` does not name the directory that *contains* the app
+  directories (`beam-libs`, not `beam-libs/servirtium_nif`), or the shell that runs the
+  tests did not inherit it.
+- `{error,{load_failed,...}}` / `cannot open shared object file` from the NIF load means
+  `priv/` lost the `libservirtium_vcr` file that sits beside `servirtium_nif.so`; the NIF finds
+  it through a `$ORIGIN` rpath (`@loader_path` on macOS), so move the whole app directory,
+  never one file. `SERVIRTIUM_NIF_DIR` overrides the `priv` lookup if you must.
+- Do not compile `c_src/servirtium_nif.c` against a library from a different release: the NIF
+  and `libservirtium_vcr` must be the same version (the script uses `VER` for the library and
+  `SRC` for the sources; keep them matched). Do not set `SERVIRTIUM_VCR_LIB`.
+- In-repo development: `aeb erlang/.tests.ae` from the repo root.
+
 ## Building and testing
-
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
-
-```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
-```
-
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll`.)
-
-**Build the package locally.** Nothing is published to a package registry
-(hex.pm) yet, so you compile the shared `servirtium_nif` OTP app yourself against
-the downloaded lib. This is the **one** NIF the whole BEAM family (Elixir,
-Gleam, LFE) then reuses. Needs a C compiler (`cc`) and Erlang/OTP (`erl`,
-`erlc`). Building the relocatable app under `servirtium_nif/` from the repo root,
-with the downloaded library:
-
-```sh
-mkdir -p servirtium_nif/ebin servirtium_nif/priv
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so servirtium_nif/priv/libservirtium_vcr.so
-ERTS_INC=$(erl -noshell -eval 'io:format("~s/usr/include",[code:root_dir()]),halt()')
-cc -O2 -std=c11 -fPIC -Wno-unused-parameter -I"$ERTS_INC" -shared \
-   erlang/c_src/servirtium_nif.c \
-   -L servirtium_nif/priv -lservirtium_vcr -Wl,-rpath,'$ORIGIN' \
-   -o servirtium_nif/priv/servirtium_nif.so
-erlc -o servirtium_nif/ebin erlang/src/servirtium_nif.erl erlang/src/servirtium.erl
-cp erlang/src/servirtium_nif.app servirtium_nif/ebin/servirtium_nif.app
-```
-
-That leaves a `servirtium_nif` OTP app (`ebin/` + `priv/`, `libservirtium_vcr.so`
-beside the NIF with a `$ORIGIN` rpath, so no `SERVIRTIUM_VCR_LIB` and no
-`LD_LIBRARY_PATH`). Put its **parent** dir on `ERL_LIBS` and `code:priv_dir` finds
-the `.so` the standard OTP way. (The `aeb erlang/.package.ae` build does exactly
-this.)
-
-The C NIF (`c_src/servirtium_nif.c`) links this lib at **build time**: drop the
-downloaded `libservirtium_vcr` in as `core/native/libservirtium_vcr.so` where
-the NIF build's `-L`/rpath finds it (the rpath it embeds points at
-`core/native`). Only the C-compiler side of the build below is then needed — no
-Aether toolchain.
 
 Contributors who want to build the lib from source instead (Aether toolchain
 required) can use `aeb`:
