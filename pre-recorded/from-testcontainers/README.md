@@ -107,7 +107,7 @@ them. Each suite's `LICENCE-NOTE.md` gives the clause and the commands.
 | `timeplus` | test + recorder only, tapes not shipped ([why](timeplus/LICENCE-NOTE.md)) | `timeplus/timeplusd:2.3.37` |
 | `kurrentdb` | 1 | `kurrentplatform/kurrentdb:26.1.1` |
 | `etcd` | 4 (6 tapes; +1 live only) | `gcr.io/etcd-development/etcd:v3.5.14` |
-| `rabbitmq` | 2 (+2 live only) | `rabbitmq:3.12.11-management-alpine` |
+| `rabbitmq` | 17 (comprehensive: 15 management-API, 2 module; +2 live only; Basic auth, one login tape) | `rabbitmq:3.12.11-management-alpine` |
 | `activemq` | 1 | `apache/activemq-classic:5.18.7` |
 | `artemis` | 1 | `apache/activemq-artemis:2.30.0-alpine` |
 | `pulsar` | 1 | `apachepulsar/pulsar:4.0.9` |
@@ -238,7 +238,7 @@ Per suite (registered at the top of its `main`):
 | timeplus | | `x-timeplus-query-id` | | |
 | kurrentdb | | | | |
 | etcd | | the cluster id, member ids, the Raft term | | |
-| rabbitmq | | `rabbit@<hostname>`, scheduler counts, `object_totals`, `statistics_db_event_queue` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| rabbitmq | API cases: the node name `rabbit@<hostname>` (`{{node-N}}`); module cases: collapsed to `rabbit@node` | scheduler counts, `object_totals`, `statistics_db_event_queue`; API cases also a user's salted `password_hash` and a queue's process statistics (`memory`, `reductions`, `garbage_collection`, `idle_since`, ...) | module cases and the API login tape: each `Authorization: Basic` credential, as `REDACTED[<label>]`; API cases: the credential preset (`AUTHORIZATION_N`, presence matching) and the create-user body's password as `REDACTED[tcae-user2]` | |
 | activemq | | `Expires`, Jolokia's `timestamp`, `agentId`, `multicastGroup` / `multicastPort` | `Authorization: Basic`, as `REDACTED[admin]` | |
 | artemis | | | `Authorization: Basic`, as `REDACTED[me]` | |
 | pulsar | | | | |
@@ -345,6 +345,12 @@ it is on the tape, and playback is plain HTTP.
   console (a single redirect).
 - **Polled live until ready, then recorded:** KurrentDB (until the node is
   `leader`), etcd, RabbitMQ's management API, ActiveMQ's Jolokia.
+- **RabbitMQ (comprehensive, management API on 15672):** Basic auth has no
+  session, so the login tape is a request with credentials (right, wrong,
+  unknown user, none) and the other tapes are "already logged in" by the
+  credential preset. Queue and vhost counts come from statistics refreshed
+  every 5 s; the one case that reads them waits 7 s live, and the rest read
+  nothing that lags. `?columns=` keeps the volatile node counters off the tapes.
 - **etcd:** a case reading through several nodes records a tape per node,
   `<case>`, `<case>_node2`, `<case>_node3`.
 - **Order that changes run to run, again:** Couchbase's `componentsVersion`

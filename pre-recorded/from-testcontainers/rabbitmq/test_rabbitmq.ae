@@ -21,6 +21,146 @@
 // REDACTED[tcae-user]; replay matches them literally, which is how the 401s
 // stay distinct from the 200s.
 
+// ===========================================================================
+// RabbitMQ, comprehensively: a second suite beside the ported module cases
+// (the README's "Pattern for comprehensive suites"; CouchDB is the pilot).
+//
+// Two describe blocks, two sets of tapes:
+//   1. "modules/rabbitmq": the ported testcontainers-go cases above (AMQP
+//      handshake and management API with the default and custom credentials),
+//      one container per case; two tapes, two live-only cases.
+//   2. "RabbitMQ management HTTP API": written for servirtium-vcr.
+//      Re-usable recordings of the management plugin's HTTP API (port 15672),
+//      one tape per scenario, for any language's tests to replay with no
+//      broker. The 15 tapes of this block are the comprehensive part;
+//      everything below up to "Running it" describes them. These are
+//      component-level tests of the management API, never end-to-end ones.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes are
+// the re-usable part. A port is a test in your language that makes the same
+// requests, in the same order, against a Servirtium replay server loaded
+// with the tape, and checks the same things. Any Servirtium implementation
+// replays them. Every request is plain HTTP/1.1 with these headers and no
+// others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+//   Authorization: Basic ...          (all but the unauthenticated requests)
+//   Content-Type: application/json    (only when there is a body)
+// Playback is strict about method, path (query string included, exactly as
+// written in this file; the default vhost "/" is %2F in a path), the recorded
+// request headers and the body (byte for byte: send the JSON bodies exactly
+// as written here, no spaces, keys in this order). Host, Connection and
+// Content-Length are on the tapes but are transport headers, not compared.
+// Each case is independent: it creates its own resources under a fixed name
+// (tcae-*), works with them and deletes them on the tape, so any tape replays
+// alone and in any order. The shared broker is started on the first API case
+// (and the management API polled, unrecorded, until it answers) and removed at
+// the end.
+//
+// Login, and "already logged in"
+// ------------------------------
+// The management API has no session: every request is HTTP Basic (user and
+// password, base64). So logging in is not a step, it is a request that carries
+// credentials and what the broker answers, and the suite has:
+//   - ONE login tape, authenticates_with_http_basic: GET /api/whoami with no
+//     credentials (401, empty body, WWW-Authenticate: Basic realm="RabbitMQ
+//     Management"), with a wrong password and with an unknown user (both 401
+//     {"error":"not_authorized","reason":"Not_Authorized"}: an unknown user is
+//     not told from a wrong password), and with guest:guest (200 {"name":
+//     "guest","tags":["administrator"]}); then /api/overview with and without
+//     credentials. Its credentials are LABELLED redactions, `Authorization:
+//     Basic REDACTED[guest]`, `REDACTED[guest-wrong-password]`,
+//     `REDACTED[unknown-user]`, which playback puts back before comparing, so
+//     on replay a right and a wrong password stay distinct: a port sends the
+//     real guest:guest, guest:wrong and nobody:nobody-pw (user:password,
+//     base64). The requests with no credentials send no Authorization header.
+//   - Every other case is ALREADY LOGGED IN as guest: each request carries
+//     `Authorization: Basic AUTHORIZATION_1` on the tape, Servirtium's
+//     credential preset (redact_credentials()), which writes each distinct
+//     value as a numbered token and matches the header on PRESENCE in
+//     playback. A port's "already logged in" fixture is therefore just "send
+//     any `Authorization: Basic <anything>` header on every request"; no login
+//     tape needed. (Against a live broker send guest:guest.) A consequence of
+//     presence matching: a replay cannot tell a right password from a wrong
+//     one, so the case that shows refusals is the login tape (above) and the
+//     one case that logs in as a second user (creates_a_user_grants_
+//     permissions_and_deletes_it) shows what that user may and may not do by
+//     the recorded responses, in order.
+// guest/guest is the module's default administrator, reachable from outside
+// the container because the image's default_user is not limited to
+// localhost.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in common_rules() and api_rules() below, with its
+// reason; the "## [Recording rules]" table at the end of each tape lists them
+// and the interactions each touched. In short:
+//   - normalized (a stable {{name-N}} token, the same wherever it recurs,
+//     because a client sends it back): the node name, "rabbit@<12 hex digits of
+//     the container's hostname>", as {{node-N}} (cluster_name, a queue's node,
+//     a vhost's cluster_state, GET /api/nodes/<name>).
+//   - collapsed (one constant; nobody sends them back): the Erlang banner's
+//     scheduler counts ([smp:..] [ds:..], the host's CPUs), the overview's
+//     live "object_totals" and "statistics_db_event_queue", a user's salted
+//     "password_hash", and a queue's process statistics (memory, reductions,
+//     consumer capacity and utilisation, garbage_collection, idle_since).
+//   - redacted: Basic credentials (above), and the password in the
+//     create-user body ("password":"REDACTED[tcae-user2]", put back on
+//     replay).
+//   - left out: Date, as everywhere (the management API sends no request id).
+// Left alone, deliberately: the broker version (3.12.11), the Erlang version,
+// and every queue, exchange and binding field that is a function of what the
+// test declared.
+//
+// PORTING: in playback a normalized or redacted value comes back as its token,
+// verbatim: the node is "{{node-1}}". Treat it as an opaque string (never
+// assert its length or shape, never expect "rabbit@") and send it back exactly
+// as received, e.g. GET /api/nodes/{{node-1}}. Send the braces as they are:
+// playback compares paths byte for byte, so a client that percent-encodes `{`
+// will not match. The management API's JSON objects have no promised key
+// order (it is Erlang's map order): parse the JSON rather than comparing text,
+// as these assertions do.
+//
+// Management statistics lag: queue and vhost counts come from the statistics
+// database, refreshed every 5 s, so a count read right after a publish is old.
+// The one case that reads counts (reports_queue_depths_after_publishing)
+// waits 7 s live, between two requests, then reads; replay does not wait.
+// Everything else avoids reading statistics (the GET .../get endpoint, and the
+// publish result {"routed":true|false}, are synchronous).
+// ?columns= asks the API for part of a long object, which keeps the volatile
+// parts (hundreds of counters in /api/nodes) off the tape.
+//
+// In and out of scope
+// -------------------
+// In: whoami and Basic auth failures; overview, cluster name, extensions,
+// auth config; nodes (a few stable columns); the health checks (alarms,
+// virtual hosts, quorum, port and protocol listeners, certificate expiry,
+// aliveness test); virtual hosts CRUD; users, permissions and topic
+// permissions CRUD, and a second user logging in; exchanges and queues CRUD
+// (idempotent redeclare, the inequivalent-argument 400, pagination and name
+// filter, purge); bindings (create, list by pair, by source and by queue,
+// unbind by properties key); publishing and getting messages over HTTP
+// (routed and unrouted, requeue, redelivered, string and base64 payloads);
+// queue depths after the statistics refresh; policies, operator policies and
+// global parameters; connections, channels and consumers on a quiet broker;
+// definitions import and a vhost's export; and the representative errors
+// (401 not_authorised, 404 Object Not Found and not_found, 400 bad_request,
+// 405, and the 500 an unknown node name gets).
+// Out: the whole-broker GET /api/definitions (every user's salted hash and
+// every other vhost's contents: not stable); live connections and channels
+// (they need an AMQP client, and the module cases that have one talk to
+// their own brokers); rates and message_stats (they exist only with traffic
+// and change every second); per-vhost and per-user limits, federation and
+// shovel parameters (plugins not enabled in the image), rebalance, stream
+// connections, the Prometheus endpoint on 15692, and the AMQP, MQTT, STOMP
+// protocols (raw TCP, not HTTP: only the module cases touch AMQP).
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test rabbitmq/test_rabbitmq.ae                    container, no Servirtium
+//   TCAE_VCR=record   ae test rabbitmq/test_rabbitmq.ae  write the tapes
+//   TCAE_VCR=check    ae test rabbitmq/test_rabbitmq.ae  fail if a tape changed
+//   TCAE_VCR=playback ae test rabbitmq/test_rabbitmq.ae  no container: the tapes
+// ===========================================================================
+
 import std.spec
 import std.string
 import std.tcp
@@ -131,6 +271,219 @@ fn assert_broker_speaks_amqp(rc: *rabbitmq.RabbitMQContainer) {
 
 fn queue_free(rc: *rabbitmq.RabbitMQContainer) {
     testing.cleanup_container(rc.container)
+}
+
+// ===========================================================================
+// The "RabbitMQ management HTTP API" block: helpers
+// ===========================================================================
+
+// The management user the API cases are logged in as: the module's default.
+const ADMIN_USER = "guest"
+const ADMIN_PASSWORD = "guest"
+// A second user the users and permissions case creates.
+const TCAE_USER = "tcae-user2"
+const TCAE_PASSWORD = "tcae-user2-s3cret"
+
+// The base URL of the current recording and the headers of the last response.
+var api: string = ""
+var last_headers: string = ""
+
+// A header of the last response ("" when absent), case-insensitive.
+fn rh(name: string) -> string {
+    block = "\n${string.to_lower(last_headers)}"
+    key = "\n${string.to_lower(name)}:"
+    at = string.index_of(block, key)
+    if at < 0 { return "" }
+    from = at + string.length(key)
+    rest = string.substring(block, from, string.length(block))
+    end = string.index_of(rest, "\n")
+    if end < 0 { end = string.length(rest) }
+    orig = string.substring(last_headers, from - 1, from - 1 + end)
+    return string.trim(string.replace_all(orig, "\r", ""))
+}
+
+// A string (or number or boolean, as text) in a JSON body by a dotted path
+// ("0.name", "items.1.vhost"); "" when absent.
+fn jstr(body: string, path: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    let v: ptr = doc
+    rest = path
+    while string.length(rest) > 0 && v != null {
+        p = rest
+        dot = string.index_of(rest, ".")
+        if dot >= 0 {
+            p = string.substring(rest, 0, dot)
+            rest = string.substring(rest, dot + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        if json.json_type(v) == json.JSON_ARRAY {
+            idx, _ = string.to_int(p)
+            a, _ = json.array_get(v, idx)
+            v = a
+        } else {
+            o, _ = json.object_get(v, p)
+            v = o
+        }
+    }
+    out = ""
+    if v != null {
+        s, serr = json.get_string(v)
+        if serr == "" { out = string.copy(s) }
+    }
+    json.free(doc)
+    return out
+}
+
+// One management API request. `who`: 1 the admin (guest/guest), 0 no
+// credentials, 2 guest with a wrong password, 3 a user the server does not
+// have, 4 the user the users case creates. Returns (status, body); the
+// response headers are in last_headers.
+fn mqcall(who: int, method: string, path: string, body: string) -> (int, string) {
+    req = client.request(method, "${api}${path}")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    user = ""
+    pw = ""
+    if who == 1 {
+        user = ADMIN_USER
+        pw = ADMIN_PASSWORD
+    }
+    if who == 2 {
+        user = ADMIN_USER
+        pw = "wrong"
+    }
+    if who == 3 {
+        user = "nobody"
+        pw = "nobody-pw"
+    }
+    if who == 4 {
+        user = TCAE_USER
+        pw = TCAE_PASSWORD
+    }
+    if who != 0 {
+        client.set_header(req, "Authorization", "Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}")
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    spec.assert_ok(err, "${method} ${path}")
+    if err != "" { return 0, "" }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    last_headers = client.response_headers(r)
+    client.response_free(r)
+    return st, b
+}
+
+// A logged-in request.
+fn mq(method: string, path: string, body: string) -> (int, string) {
+    return mqcall(1, method, path, body)
+}
+
+fn assert_status(st: int, b: string, want: int, what: string) {
+    spec.assert_eq(st, want, "${what}: ${b}")
+}
+
+// The management API's JSON error bodies: {"error":"...","reason":"..."}.
+fn assert_error(st: int, b: string, want_status: int, want_error: string, what: string) {
+    spec.assert_eq(st, want_status, "${what}: status (${b})")
+    spec.assert_contains(b, "\"error\":\"${want_error}\"", "${what}: ${want_error}")
+}
+
+// ---------------------------------------------------------------------------
+// The live container the API cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_base: string = ""
+var shared_container: ptr = null
+
+// The shared broker's management URL, started on first use and polled (not
+// recorded) until the management API answers; "" on failure.
+fn shared() -> string {
+    if string.length(shared_base) > 0 { return shared_base }
+    rc, err = rabbitmq.run(IMAGE)
+    if rc == null {
+        spec.fail("rabbitmq starts: ${err}")
+        return ""
+    }
+    shared_container = rc.container as ptr
+    spec.assert_ok(err, "rabbitmq starts")
+    if err != "" { return "" }
+    m, merr = rabbitmq.http_url(rc)
+    spec.assert_ok(merr, "management url")
+    if merr != "" { return "" }
+    await_management(m, "guest", "guest")
+    shared_base = m
+    return shared_base
+}
+
+// Start an API case. The logged-in cases register the credential preset;
+// the login case labelled redactions (see api_rules, login_rules). In a live
+// mode: the shared broker (not recorded). ok = 0 when the case cannot run.
+fn begin(case_: string, login: int) -> (ptr, int) {
+    if login == 1 { login_rules() } else { api_rules() }
+    addr = ""
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+    }
+    base, rec = servirtium.recording("rabbitmq", case_, addr)
+    api = base
+    last_headers = ""
+    return rec, 1
+}
+
+// Rules both kinds of case share.
+fn common_rules() {
+    // What differs run to run and is never sent back: see each rule.
+    //
+    // The node's name is rabbit@<the container's hostname>, and a client does
+    // send it back (GET /api/nodes/<name>), so it is NORMALIZED: the same
+    // {{node-N}} wherever it recurs, in a path too.
+    servirtium.normalize("rabbit@[0-9a-f]{12}", "node")
+    // Scheduler counts in the Erlang banner (the host's CPUs).
+    servirtium.collapse("\\[smp:[0-9:]+\\] \\[ds:[0-9:]+(:[0-9]+)?\\]", "[smp:1:1] [ds:1:1:10]")
+    // The statistics database's live counters: totals of what exists right
+    // now and its event queue, which depend on timing.
+    servirtium.collapse("\"object_totals\":\\{[^}]*\\}", "\"object_totals\":{}")
+    servirtium.collapse("\"statistics_db_event_queue\":[0-9]+", "\"statistics_db_event_queue\":0")
+}
+
+// The login tape's rules: Basic credentials as labelled redactions, put
+// back on playback, so the right and the wrong password stay distinct.
+fn login_rules() {
+    servirtium.clear_rules()
+    common_rules()
+    redact_basic("guest", "guest", "guest")
+    redact_basic("guest", "wrong", "guest-wrong-password")
+    redact_basic("nobody", "nobody-pw", "unknown-user")
+}
+
+// The logged-in cases' rules.
+fn api_rules() {
+    servirtium.clear_rules()
+    common_rules()
+    // Basic auth has no session: every request carries Authorization: Basic
+    // <base64 user:password>. The credential preset writes each distinct value
+    // as `Basic AUTHORIZATION_N` and playback matches the header on PRESENCE,
+    // so a port's "already logged in" is "send any Authorization: Basic ...".
+    servirtium.redact_credentials()
+    // The password in a create-user body: a labelled redaction, put back on
+    // playback (never the password on the tape).
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "\"password\":\"${TCAE_PASSWORD}\"", "\"password\":\"REDACTED[tcae-user2]\"")
+    // A user's stored password hash is salted at random: different every
+    // time, and nobody sends it back.
+    servirtium.collapse("\"password_hash\":\"[A-Za-z0-9+/=]+\"", "\"password_hash\":\"HASH\"")
+    // Per-queue process statistics: memory, reduction counts, garbage
+    // collector counters, idle time. They depend on timing and on the host.
+    servirtium.collapse("\"memory\":[0-9.]+", "\"memory\":0")
+    servirtium.collapse("\"reductions\":[0-9.]+", "\"reductions\":0")
+    servirtium.collapse("\"consumer_capacity\":[0-9.]+", "\"consumer_capacity\":0")
+    servirtium.collapse("\"consumer_utilisation\":[0-9.]+", "\"consumer_utilisation\":0")
+    servirtium.collapse("\"garbage_collection\":\\{[^}]*\\}", "\"garbage_collection\":{}")
+    servirtium.collapse("\"idle_since\":\"[^\"]*\"", "\"idle_since\":\"2000-01-01 00:00:00\"")
 }
 
 main() {
@@ -256,6 +609,668 @@ main() {
                 json.free(doc)
             }
         }
+    }
+
+    spec.describe(fw, "RabbitMQ management HTTP API") {
+
+        // ---- the login tape -----------------------------------------------
+
+        // PORTING: the one tape with the login on it. The management API has
+        // no session: every request is HTTP Basic, so "logging in" is a
+        // request that carries credentials and what the server answers.
+        //   GET /api/whoami  (no Authorization)             -> 401, EMPTY body,
+        //                    WWW-Authenticate: Basic realm="RabbitMQ Management"
+        //   GET /api/whoami  Basic guest:wrong               -> 401 {"error":"not_authorized","reason":"Not_Authorized"}
+        //   GET /api/whoami  Basic nobody:nobody-pw          -> 401, same body (an unknown user
+        //                                                       is not told from a wrong password)
+        //   GET /api/whoami  Basic guest:guest               -> 200 {"name":"guest","tags":["administrator"]}
+        //   GET /api/overview Basic guest:guest              -> 200 (a protected resource)
+        //   GET /api/overview (no Authorization)             -> 401, empty body
+        // The three credentials are on the tape as labelled redactions,
+        // `Authorization: Basic REDACTED[guest]`, `REDACTED[guest-wrong-password]`
+        // and `REDACTED[unknown-user]`; playback puts the real header back
+        // before comparing, so a port sends Basic guest:guest, guest:wrong
+        // and nobody:nobody-pw (user:password, base64) and the right and the
+        // wrong stay distinct on replay. The unauthenticated requests send no
+        // Authorization header at all.
+        spec.it("authenticates with HTTP Basic, and refuses what is not") callback {
+            rec, ok = begin("authenticates_with_http_basic", 1)
+            if ok == 0 { return }
+            st, b = mqcall(0, "GET", "/api/whoami", "")
+            spec.assert_eq(st, 401, "no credentials: ${b}")
+            spec.assert_str_eq(b, "", "no body for a request with no credentials")
+            spec.assert_contains(rh("www-authenticate"), "Basic realm=", "a Basic challenge")
+            st, b = mqcall(2, "GET", "/api/whoami", "")
+            assert_error(st, b, 401, "not_authorized", "a wrong password")
+            st, b = mqcall(3, "GET", "/api/whoami", "")
+            assert_error(st, b, 401, "not_authorized", "an unknown user")
+            st, b = mqcall(1, "GET", "/api/whoami", "")
+            assert_status(st, b, 200, "guest/guest")
+            spec.assert_str_eq(b, "{\"name\":\"guest\",\"tags\":[\"administrator\"]}", "the user and its tags")
+            st, b = mqcall(1, "GET", "/api/overview", "")
+            assert_status(st, b, 200, "the overview, logged in")
+            st, b = mqcall(0, "GET", "/api/overview", "")
+            spec.assert_eq(st, 401, "the overview, not logged in: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- already logged in from here on: every request carries
+        // ---- `Authorization: Basic AUTHORIZATION_1` on the tape
+
+        // PORTING:
+        //   GET /api/overview     -> 200 {"management_version":..,"rabbitmq_version":"3.12.11",
+        //                            "cluster_name":"{{node-1}}","erlang_version":..,
+        //                            "listeners":[amqp, clustering, http],"contexts":[..],..}
+        //   GET /api/cluster-name -> 200 {"name":"{{node-1}}"}
+        //   GET /api/extensions   -> 200 the management plugin's UI extensions
+        //   GET /api/auth         -> 200 {"oauth_enabled":false}
+        //   GET /api/whoami       -> 200 guest (the check a port's logged-in fixture can make)
+        spec.it("reports the overview, cluster name and who it is talking to") callback {
+            rec, ok = begin("reports_the_overview_and_cluster_name", 0)
+            if ok == 0 { return }
+            st, b = mq("GET", "/api/overview", "")
+            assert_status(st, b, 200, "overview")
+            spec.assert_contains(b, "\"rabbitmq_version\":\"3.12.11\"", "the version")
+            spec.assert_contains(b, "\"product_name\":\"RabbitMQ\"", "the product")
+            st, b = mq("GET", "/api/cluster-name", "")
+            assert_status(st, b, 200, "cluster name")
+            spec.assert_true(string.contains(b, "\"name\":\"rabbit@") == 1 || string.contains(b, "\"name\":\"{{node-") == 1, "named for its node: ${b}")
+            st, b = mq("GET", "/api/extensions", "")
+            assert_status(st, b, 200, "extensions")
+            st, b = mq("GET", "/api/auth", "")
+            assert_status(st, b, 200, "auth")
+            spec.assert_contains(b, "\"oauth_enabled\":false", "no OAuth")
+            st, b = mq("GET", "/api/whoami", "")
+            assert_status(st, b, 200, "whoami")
+            spec.assert_contains(b, "\"name\":\"guest\"", "already logged in as guest")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (a node name, "rabbit@<hostname>", is normalized whole, to
+        // {{node-N}}: take the name from the first response and send it back as is):
+        //   GET /api/nodes?columns=name,type,running,mem_alarm,disk_free_alarm,partitions
+        //        -> 200 [{"name":"{{node-1}}","type":"disc","running":true,..}]
+        //        (the full node object is hundreds of fast-changing counters;
+        //        ?columns is the management API's own way to ask for part of it)
+        //   GET /api/nodes/rabbit@{{node-1}}?columns=... (the same columns) -> 200 that node
+        //   GET /api/nodes/rabbit@nosuchnode -> 500 with an EMPTY body (the management plugin
+        //        does not answer 404 for an unknown node; recorded as it is)
+        // The columns used are chosen to be stable.
+        spec.it("lists the nodes and one node") callback {
+            rec, ok = begin("lists_the_nodes_and_one_node", 0)
+            if ok == 0 { return }
+            st, b = mq("GET", "/api/nodes?columns=name,type,running,mem_alarm,disk_free_alarm,partitions", "")
+            assert_status(st, b, 200, "nodes")
+            node = jstr(b, "0.name")
+            spec.assert_true(string.starts_with(node, "rabbit@") == 1 || string.starts_with(node, "{{node-") == 1, "a node name: ${node}")
+            st, b = mq("GET", "/api/nodes/${node}?columns=name,type,running,mem_alarm,disk_free_alarm,partitions", "")
+            assert_status(st, b, 200, "one node")
+            spec.assert_contains(b, "\"running\":true", "running")
+            st, b = mq("GET", "/api/nodes/rabbit@nosuchnode", "")
+            spec.assert_eq(st, 500, "a node that is not there: ${b}")
+            spec.assert_str_eq(b, "", "with no body")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the health checks the management plugin offers. All 200
+        // on a healthy broker, each answering {"status":"ok"} (or, for the
+        // listener ones, the listener it found).
+        //   GET /api/healthchecks/node
+        //   GET /api/health/checks/alarms
+        //   GET /api/health/checks/local-alarms
+        //   GET /api/health/checks/virtual-hosts
+        //   GET /api/health/checks/node-is-quorum-critical
+        //   GET /api/health/checks/port-listener/5672
+        //   GET /api/health/checks/port-listener/6          -> 503 {"status":"failed","reason":"No active listener","missing":6,"ports":[..]}
+        //   GET /api/health/checks/protocol-listener/amqp
+        //   GET /api/health/checks/protocol-listener/mqtt   -> 503 (the plugin is not enabled)
+        //   GET /api/health/checks/certificate-expiration/1/months -> 200 (no TLS listeners: ok)
+        //   PUT /api/vhosts/tcae-alive {}   -> 201
+        //   GET /api/aliveness-test/tcae-alive -> 200 {"status":"ok"} (declares, publishes to
+        //        and consumes from a test queue in that vhost, which stays behind)
+        //   DELETE /api/vhosts/tcae-alive   -> 204
+        spec.it("answers the health checks") callback {
+            rec, ok = begin("answers_the_health_checks", 0)
+            if ok == 0 { return }
+            paths = ["/api/healthchecks/node", "/api/health/checks/alarms", "/api/health/checks/local-alarms", "/api/health/checks/virtual-hosts", "/api/health/checks/node-is-quorum-critical", "/api/health/checks/port-listener/5672", "/api/health/checks/protocol-listener/amqp", "/api/health/checks/certificate-expiration/1/months"]
+            i = 0
+            while i < paths.len {
+                st, b = mq("GET", paths[i], "")
+                assert_status(st, b, 200, "GET ${paths[i]}")
+                spec.assert_contains(b, "\"status\":\"ok\"", "GET ${paths[i]}: ok")
+                i = i + 1
+            }
+            st, b = mq("GET", "/api/health/checks/port-listener/6", "")
+            spec.assert_eq(st, 503, "no listener on port 6: ${b}")
+            spec.assert_contains(b, "\"status\":\"failed\"", "failed")
+            st, b = mq("GET", "/api/health/checks/protocol-listener/mqtt", "")
+            spec.assert_eq(st, 503, "no MQTT listener: ${b}")
+            // The aliveness test leaves a queue behind in its vhost, so it
+            // gets a vhost of its own (a listing in another case would
+            // otherwise show the queue).
+            st, b = mq("PUT", "/api/vhosts/tcae-alive", "{}")
+            assert_status(st, b, 201, "create the vhost for the aliveness test")
+            st, b = mq("GET", "/api/aliveness-test/tcae-alive", "")
+            assert_status(st, b, 200, "the aliveness test")
+            spec.assert_contains(b, "\"status\":\"ok\"", "aliveness ok")
+            st, b = mq("DELETE", "/api/vhosts/tcae-alive", "")
+            assert_status(st, b, 204, "delete that vhost")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (virtual host tcae-vhost):
+        //   GET    /api/vhosts/tcae-vhost             -> 404 Object Not Found
+        //   PUT    /api/vhosts/tcae-vhost {"description":"a test vhost","tags":"tcae,test"}
+        //                                             -> 201 (empty body)
+        //   PUT    same again                         -> 204 (already there)
+        //   GET    /api/vhosts/tcae-vhost             -> 200 name, description, tags, default_queue_type?,
+        //                                                cluster_state, metadata
+        //   GET    /api/vhosts?columns=name&sort=name -> 200 [{"name":"/"},{"name":"tcae-vhost"}]
+        //   PUT    /api/vhosts/tcae-vhost {"description":"changed",...} -> 204
+        //   GET    /api/vhosts/tcae-vhost             -> description changed
+        //   PUT    /api/vhosts/bad%2Fname?  (a slash is allowed in a vhost name, encoded) -> 201, deleted
+        //   DELETE /api/vhosts/tcae-vhost             -> 204
+        //   DELETE /api/vhosts/tcae-vhost             -> 404
+        //   GET    /api/vhosts/tcae-vhost             -> 404
+        spec.it("creates, changes, lists and deletes virtual hosts") callback {
+            rec, ok = begin("creates_changes_lists_and_deletes_virtual_hosts", 0)
+            if ok == 0 { return }
+            st, b = mq("GET", "/api/vhosts/tcae-vhost", "")
+            assert_error(st, b, 404, "Object Not Found", "not there yet")
+            st, b = mq("PUT", "/api/vhosts/tcae-vhost", "{\"description\":\"a test vhost\",\"tags\":\"tcae,test\"}")
+            assert_status(st, b, 201, "create")
+            st, b = mq("PUT", "/api/vhosts/tcae-vhost", "{\"description\":\"a test vhost\",\"tags\":\"tcae,test\"}")
+            assert_status(st, b, 204, "create again")
+            st, b = mq("GET", "/api/vhosts/tcae-vhost", "")
+            assert_status(st, b, 200, "read")
+            spec.assert_contains(b, "\"description\":\"a test vhost\"", "description")
+            spec.assert_contains(b, "\"tags\":[\"tcae\",\"test\"]", "tags")
+            st, b = mq("GET", "/api/vhosts?columns=name&sort=name", "")
+            assert_status(st, b, 200, "list")
+            spec.assert_str_eq(b, "[{\"name\":\"/\"},{\"name\":\"tcae-vhost\"}]", "both vhosts, by name")
+            st, b = mq("PUT", "/api/vhosts/tcae-vhost", "{\"description\":\"changed\",\"tags\":\"tcae\"}")
+            assert_status(st, b, 204, "change")
+            st, b = mq("GET", "/api/vhosts/tcae-vhost", "")
+            spec.assert_contains(b, "\"description\":\"changed\"", "the new description")
+            st, b = mq("DELETE", "/api/vhosts/tcae-vhost", "")
+            assert_status(st, b, 204, "delete")
+            st, b = mq("DELETE", "/api/vhosts/tcae-vhost", "")
+            assert_error(st, b, 404, "Object Not Found", "delete again")
+            st, b = mq("GET", "/api/vhosts/tcae-vhost", "")
+            assert_error(st, b, 404, "Object Not Found", "gone")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (user tcae-user2; its password is on the tape as
+        // REDACTED[tcae-user2] in the create body and put back on playback;
+        // the Basic header it logs in with is the credential preset's, so a
+        // port sends any Authorization: Basic ...):
+        //   GET    /api/users/tcae-user2              -> 404
+        //   PUT    /api/users/tcae-user2 {"password":..,"tags":"monitoring"} -> 201
+        //   GET    /api/users/tcae-user2              -> 200 name, tags ["monitoring"],
+        //                                               hashing_algorithm, password_hash (HASH)
+        //   GET    /api/users?columns=name,tags&sort=name -> guest and tcae-user2
+        //   GET    /api/users/without-permissions     -> 200, tcae-user2 (it has none yet)
+        //   GET    /api/whoami as tcae-user2          -> 200 {"name":"tcae-user2","tags":["monitoring"]}
+        //                                               (a monitoring-tagged user may log in
+        //                                               to the management API with no permissions)
+        //   PUT    /api/permissions/%2F/tcae-user2 {"configure":"^tcae-.*","write":"^tcae-.*","read":".*"} -> 201
+        //   GET    /api/permissions/%2F/tcae-user2    -> 200 the three patterns
+        //   GET    /api/users/tcae-user2/permissions  -> 200 [that one]
+        //   GET    /api/permissions?columns=user,vhost -> includes guest and tcae-user2
+        //   PUT    /api/topic-permissions/%2F/tcae-user2 {"exchange":"amq.topic","write":"^a","read":"^b"} -> 201
+        //   GET    /api/topic-permissions/%2F/tcae-user2 -> 200
+        //   DELETE /api/topic-permissions/%2F/tcae-user2 -> 204
+        //   as tcae-user2 (monitoring): GET /api/overview -> 200, PUT /api/vhosts/tcae-by-monitor -> 401
+        //   DELETE /api/permissions/%2F/tcae-user2    -> 204
+        //   DELETE /api/users/tcae-user2              -> 204
+        //   DELETE /api/users/tcae-user2              -> 404
+        spec.it("creates a user, grants permissions and deletes it") callback {
+            rec, ok = begin("creates_a_user_grants_permissions_and_deletes_it", 0)
+            if ok == 0 { return }
+            st, b = mq("GET", "/api/users/${TCAE_USER}", "")
+            assert_error(st, b, 404, "Object Not Found", "not there yet")
+            create = "{\"password\":\"${TCAE_PASSWORD}\",\"tags\":\"monitoring\"}"
+            st, b = mq("PUT", "/api/users/${TCAE_USER}", create)
+            assert_status(st, b, 201, "create")
+            st, b = mq("GET", "/api/users/${TCAE_USER}", "")
+            assert_status(st, b, 200, "read")
+            spec.assert_contains(b, "\"tags\":[\"monitoring\"]", "tags")
+            spec.assert_contains(b, "\"hashing_algorithm\":\"rabbit_password_hashing_sha256\"", "the algorithm")
+            st, b = mq("GET", "/api/users?columns=name,tags&sort=name", "")
+            assert_status(st, b, 200, "list")
+            spec.assert_contains(b, "{\"name\":\"${TCAE_USER}\",\"tags\":[\"monitoring\"]}", "the new user is listed")
+            st, b = mq("GET", "/api/users/without-permissions", "")
+            assert_status(st, b, 200, "users without permissions")
+            spec.assert_contains(b, "\"name\":\"${TCAE_USER}\"", "it has none yet")
+            st, b = mqcall(4, "GET", "/api/whoami", "")
+            assert_status(st, b, 200, "the new user logs in")
+            spec.assert_str_eq(b, "{\"name\":\"${TCAE_USER}\",\"tags\":[\"monitoring\"]}", "as itself")
+            st, b = mq("PUT", "/api/permissions/%2F/${TCAE_USER}", "{\"configure\":\"^tcae-.*\",\"write\":\"^tcae-.*\",\"read\":\".*\"}")
+            assert_status(st, b, 201, "grant")
+            st, b = mq("GET", "/api/permissions/%2F/${TCAE_USER}", "")
+            assert_status(st, b, 200, "read the grant")
+            spec.assert_contains(b, "\"configure\":\"^tcae-.*\"", "configure")
+            st, b = mq("GET", "/api/users/${TCAE_USER}/permissions", "")
+            assert_status(st, b, 200, "the user's grants")
+            st, b = mq("GET", "/api/permissions?columns=user,vhost&sort=user", "")
+            assert_status(st, b, 200, "all grants")
+            spec.assert_contains(b, "\"user\":\"${TCAE_USER}\"", "listed")
+            st, b = mq("PUT", "/api/topic-permissions/%2F/${TCAE_USER}", "{\"exchange\":\"amq.topic\",\"write\":\"^a\",\"read\":\"^b\"}")
+            assert_status(st, b, 201, "topic grant")
+            st, b = mq("GET", "/api/topic-permissions/%2F/${TCAE_USER}", "")
+            assert_status(st, b, 200, "read the topic grant")
+            spec.assert_contains(b, "\"exchange\":\"amq.topic\"", "the exchange")
+            st, b = mq("DELETE", "/api/topic-permissions/%2F/${TCAE_USER}", "")
+            assert_status(st, b, 204, "remove the topic grant")
+            st, b = mqcall(4, "GET", "/api/overview", "")
+            assert_status(st, b, 200, "a monitoring user may look")
+            st, b = mqcall(4, "PUT", "/api/vhosts/tcae-by-monitor", "{}")
+            assert_error(st, b, 401, "not_authorised", "a monitoring user may not change")
+            st, b = mq("DELETE", "/api/permissions/%2F/${TCAE_USER}", "")
+            assert_status(st, b, 204, "revoke")
+            st, b = mq("DELETE", "/api/users/${TCAE_USER}", "")
+            assert_status(st, b, 204, "delete")
+            st, b = mq("DELETE", "/api/users/${TCAE_USER}", "")
+            assert_error(st, b, 404, "Object Not Found", "delete again")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (all in the default vhost, %2F; names tcae-*):
+        //   PUT    /api/exchanges/%2F/tcae-x {"type":"direct","durable":false,"auto_delete":false,"internal":false,"arguments":{}} -> 201
+        //   PUT    same again                 -> 204 (same declaration: idempotent)
+        //   GET    /api/exchanges/%2F/tcae-x  -> 200 name, vhost, type, durable, auto_delete, internal, arguments, user_who_performed_action
+        //   PUT    same name, "type":"fanout" -> 400 bad_request, "inequivalent arg 'type' ..."
+        //   PUT    /api/exchanges/%2F/tcae-bad {"type":"nonsense"} -> 400 (unknown exchange type)
+        //   GET    /api/exchanges/%2F?name=%5Etcae-&use_regex=true&page=1&page_size=10&columns=name,type -> 200 {"items":[tcae-x],...}
+        //   DELETE /api/exchanges/%2F/tcae-x  -> 204
+        //   DELETE again                      -> 404
+        //   DELETE /api/exchanges/%2F/amq.direct -> 401 {"error":"not_authorised","reason":"Access refused."}
+        spec.it("declares, inspects and deletes exchanges") callback {
+            rec, ok = begin("declares_inspects_and_deletes_exchanges", 0)
+            if ok == 0 { return }
+            decl = "{\"type\":\"direct\",\"durable\":false,\"auto_delete\":false,\"internal\":false,\"arguments\":{}}"
+            st, b = mq("PUT", "/api/exchanges/%2F/tcae-x", decl)
+            assert_status(st, b, 201, "declare")
+            st, b = mq("PUT", "/api/exchanges/%2F/tcae-x", decl)
+            assert_status(st, b, 204, "declare again")
+            st, b = mq("GET", "/api/exchanges/%2F/tcae-x", "")
+            assert_status(st, b, 200, "read")
+            spec.assert_contains(b, "\"name\":\"tcae-x\"", "name")
+            spec.assert_contains(b, "\"type\":\"direct\"", "type")
+            spec.assert_contains(b, "\"durable\":false", "durable")
+            st, b = mq("PUT", "/api/exchanges/%2F/tcae-x", "{\"type\":\"fanout\",\"durable\":false,\"auto_delete\":false,\"internal\":false,\"arguments\":{}}")
+            assert_error(st, b, 400, "bad_request", "redeclared with another type")
+            spec.assert_contains(b, "inequivalent arg 'type'", "says why")
+            st, b = mq("PUT", "/api/exchanges/%2F/tcae-bad", "{\"type\":\"nonsense\",\"durable\":false}")
+            spec.assert_eq(st, 400, "an unknown type: ${b}")
+            st, b = mq("GET", "/api/exchanges/%2F?name=%5Etcae-&use_regex=true&page=1&page_size=10&columns=name,type", "")
+            assert_status(st, b, 200, "filtered list")
+            spec.assert_contains(b, "{\"name\":\"tcae-x\",\"type\":\"direct\"}", "the exchange is listed")
+            st, b = mq("DELETE", "/api/exchanges/%2F/tcae-x", "")
+            assert_status(st, b, 204, "delete")
+            st, b = mq("DELETE", "/api/exchanges/%2F/tcae-x", "")
+            assert_error(st, b, 404, "Object Not Found", "delete again")
+            st, b = mq("DELETE", "/api/exchanges/%2F/amq.direct", "")
+            assert_error(st, b, 401, "not_authorised", "a built-in exchange cannot be deleted")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (default vhost; queue tcae-q):
+        //   PUT    /api/queues/%2F/tcae-q {"durable":false,"auto_delete":false,"arguments":{"x-max-length":100}} -> 201
+        //   PUT    same again                 -> 204
+        //   GET    /api/queues/%2F/tcae-q     -> 200 name, vhost, durable, auto_delete, exclusive,
+        //                                        arguments, state "running", node {{node-N}}, type "classic", ...
+        //   GET    /api/queues/%2F?name=%5Etcae-&use_regex=true&page=1&page_size=10&columns=name,durable,state,type
+        //   GET    /api/queues/%2F/tcae-q/bindings -> 200 [the default-exchange binding]
+        //   DELETE /api/queues/%2F/tcae-q/contents -> 204 (purge)
+        //   DELETE /api/queues/%2F/tcae-q     -> 204
+        //   GET    /api/queues/%2F/tcae-q     -> 404
+        //   PUT    /api/queues/nosuchvhost/q  -> 404 {"error":"not_found","reason":"vhost_not_found"}
+        //   PUT    same name, other arguments -> 400 bad_request, "inequivalent arg 'x-max-length' ..."
+        spec.it("declares, inspects, purges and deletes queues") callback {
+            rec, ok = begin("declares_inspects_purges_and_deletes_queues", 0)
+            if ok == 0 { return }
+            decl = "{\"durable\":false,\"auto_delete\":false,\"arguments\":{\"x-max-length\":100}}"
+            st, b = mq("PUT", "/api/queues/%2F/tcae-q", decl)
+            assert_status(st, b, 201, "declare")
+            st, b = mq("PUT", "/api/queues/%2F/tcae-q", decl)
+            assert_status(st, b, 204, "declare again")
+            st, b = mq("GET", "/api/queues/%2F/tcae-q", "")
+            assert_status(st, b, 200, "read")
+            spec.assert_contains(b, "\"name\":\"tcae-q\"", "name")
+            spec.assert_contains(b, "\"arguments\":{\"x-max-length\":100}", "arguments")
+            spec.assert_contains(b, "\"type\":\"classic\"", "classic")
+            st, b = mq("PUT", "/api/queues/%2F/tcae-q", "{\"durable\":false,\"auto_delete\":false,\"arguments\":{\"x-max-length\":200}}")
+            assert_error(st, b, 400, "bad_request", "redeclared with other arguments")
+            spec.assert_contains(b, "inequivalent arg", "says why")
+            st, b = mq("GET", "/api/queues/%2F?name=%5Etcae-&use_regex=true&page=1&page_size=10&columns=name,durable,state,type", "")
+            assert_status(st, b, 200, "filtered list")
+            spec.assert_contains(b, "\"name\":\"tcae-q\"", "listed")
+            st, b = mq("GET", "/api/queues/%2F/tcae-q/bindings", "")
+            assert_status(st, b, 200, "its bindings")
+            spec.assert_contains(b, "\"routing_key\":\"tcae-q\"", "bound to the default exchange by its name")
+            st, b = mq("DELETE", "/api/queues/%2F/tcae-q/contents", "")
+            assert_status(st, b, 204, "purge")
+            st, b = mq("DELETE", "/api/queues/%2F/tcae-q", "")
+            assert_status(st, b, 204, "delete")
+            st, b = mq("GET", "/api/queues/%2F/tcae-q", "")
+            assert_error(st, b, 404, "Object Not Found", "gone")
+            st, b = mq("PUT", "/api/queues/nosuchvhost/q", "{\"durable\":false}")
+            assert_error(st, b, 404, "not_found", "a queue in a vhost that does not exist")
+            spec.assert_contains(b, "vhost_not_found", "says which")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (exchange tcae-bx and queues tcae-bq1, tcae-bq2, created on
+        // the tape and deleted at its end):
+        //   PUT  the exchange (topic) and both queues     -> 201 each
+        //   POST /api/bindings/%2F/e/tcae-bx/q/tcae-bq1 {"routing_key":"orders.*","arguments":{}}
+        //        -> 201, Location: tcae-bq1/orders.%252A (relative: the binding's properties key,
+        //        "orders.*" percent-encoded twice)
+        //   POST same queue, routing key "audit.#"       -> 201
+        //   POST /api/bindings/%2F/e/tcae-bx/q/tcae-bq2 {"routing_key":"orders.*",..} -> 201
+        //   GET  /api/bindings/%2F/e/tcae-bx/q/tcae-bq1  -> 200 two bindings (each with properties_key)
+        //   GET  /api/exchanges/%2F/tcae-bx/bindings/source -> 200 three bindings out of the exchange
+        //   GET  /api/queues/%2F/tcae-bq2/bindings       -> 200 default binding + the topic one
+        //   DELETE /api/bindings/%2F/e/tcae-bx/q/tcae-bq1/audit.%23 -> 204 (the properties key, # encoded)
+        //   GET  .../tcae-bq1                            -> 200 one binding left
+        //   POST a binding to a queue that is not there  -> 404 {"error":"not_found","reason":"no queue 'tcae-nosuchqueue' in vhost '/'"}
+        //   DELETE the queues and the exchange           -> 204 each
+        spec.it("binds exchanges to queues and unbinds them") callback {
+            rec, ok = begin("binds_exchanges_to_queues_and_unbinds_them", 0)
+            if ok == 0 { return }
+            st, b = mq("PUT", "/api/exchanges/%2F/tcae-bx", "{\"type\":\"topic\",\"durable\":false,\"auto_delete\":false,\"internal\":false,\"arguments\":{}}")
+            assert_status(st, b, 201, "declare the exchange")
+            st, b = mq("PUT", "/api/queues/%2F/tcae-bq1", "{\"durable\":false,\"auto_delete\":false,\"arguments\":{}}")
+            assert_status(st, b, 201, "declare queue 1")
+            st, b = mq("PUT", "/api/queues/%2F/tcae-bq2", "{\"durable\":false,\"auto_delete\":false,\"arguments\":{}}")
+            assert_status(st, b, 201, "declare queue 2")
+            st, b = mq("POST", "/api/bindings/%2F/e/tcae-bx/q/tcae-bq1", "{\"routing_key\":\"orders.*\",\"arguments\":{}}")
+            assert_status(st, b, 201, "bind orders.* to queue 1")
+            spec.assert_str_eq(rh("Location"), "tcae-bq1/orders.%252A", "a relative Location: the binding's properties key")
+            st, b = mq("POST", "/api/bindings/%2F/e/tcae-bx/q/tcae-bq1", "{\"routing_key\":\"audit.#\",\"arguments\":{}}")
+            assert_status(st, b, 201, "bind audit.# to queue 1")
+            st, b = mq("POST", "/api/bindings/%2F/e/tcae-bx/q/tcae-bq2", "{\"routing_key\":\"orders.*\",\"arguments\":{}}")
+            assert_status(st, b, 201, "bind orders.* to queue 2")
+            st, b = mq("GET", "/api/bindings/%2F/e/tcae-bx/q/tcae-bq1", "")
+            assert_status(st, b, 200, "bindings between the two")
+            spec.assert_contains(b, "\"routing_key\":\"orders.*\"", "orders.*")
+            spec.assert_contains(b, "\"routing_key\":\"audit.#\"", "audit.#")
+            st, b = mq("GET", "/api/exchanges/%2F/tcae-bx/bindings/source", "")
+            assert_status(st, b, 200, "bindings out of the exchange")
+            st, b = mq("GET", "/api/queues/%2F/tcae-bq2/bindings", "")
+            assert_status(st, b, 200, "bindings of queue 2")
+            st, b = mq("DELETE", "/api/bindings/%2F/e/tcae-bx/q/tcae-bq1/audit.%23", "")
+            assert_status(st, b, 204, "unbind audit.#")
+            st, b = mq("GET", "/api/bindings/%2F/e/tcae-bx/q/tcae-bq1", "")
+            spec.assert_false(string.contains(b, "audit.#") == 1, "audit.# is gone")
+            st, b = mq("POST", "/api/bindings/%2F/e/tcae-bx/q/tcae-nosuchqueue", "{\"routing_key\":\"k\",\"arguments\":{}}")
+            assert_error(st, b, 404, "not_found", "binding a queue that is not there")
+            st, b = mq("DELETE", "/api/queues/%2F/tcae-bq1", "")
+            assert_status(st, b, 204, "delete queue 1")
+            st, b = mq("DELETE", "/api/queues/%2F/tcae-bq2", "")
+            assert_status(st, b, 204, "delete queue 2")
+            st, b = mq("DELETE", "/api/exchanges/%2F/tcae-bx", "")
+            assert_status(st, b, 204, "delete the exchange")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (queue tcae-mq, exchange tcae-mx): messages over HTTP.
+        //   PUT  the queue and a direct exchange bound with key "k"   -> 201, 201, 201
+        //   POST /api/exchanges/%2F/tcae-mx/publish {"properties":{"content_type":"text/plain"},"routing_key":"k",
+        //        "payload":"first","payload_encoding":"string"}       -> 200 {"routed":true}
+        //   POST ... "payload":"second" and a header property         -> 200 {"routed":true}
+        //   POST ... routing_key "unrouted"                           -> 200 {"routed":false}
+        //   POST /api/exchanges/%2F/tcae-nosuch/publish               -> 400 {"error":"bad_request","reason":"404 NOT_FOUND - no exchange 'tcae-nosuch' in vhost '/'"}
+        //   POST /api/queues/%2F/tcae-mq/get {"count":1,"ackmode":"ack_requeue_true","encoding":"auto"}
+        //        -> 200 [first message, redelivered false] and it stays queued
+        //   POST the same get again                                   -> 200 [first, redelivered true]
+        //   POST get {"count":5,"ackmode":"ack_requeue_false",..}     -> 200 [first, second] and they are gone
+        //   POST get again                                            -> 200 []
+        //   publish a payload sent base64 ("payload_encoding":"base64") and get it with "encoding":"base64"
+        //   DELETE the queue, the binding's exchange                  -> 204, 204
+        // Get is synchronous; the queue's message COUNTS in GET /api/queues
+        // are statistics that lag up to 5 s, which is why they are not read
+        // here (see reports_queue_depths_after_publishing).
+        spec.it("publishes messages and gets them back over HTTP") callback {
+            rec, ok = begin("publishes_messages_and_gets_them_back_over_http", 0)
+            if ok == 0 { return }
+            st, b = mq("PUT", "/api/queues/%2F/tcae-mq", "{\"durable\":false,\"auto_delete\":false,\"arguments\":{}}")
+            assert_status(st, b, 201, "declare the queue")
+            st, b = mq("PUT", "/api/exchanges/%2F/tcae-mx", "{\"type\":\"direct\",\"durable\":false,\"auto_delete\":false,\"internal\":false,\"arguments\":{}}")
+            assert_status(st, b, 201, "declare the exchange")
+            st, b = mq("POST", "/api/bindings/%2F/e/tcae-mx/q/tcae-mq", "{\"routing_key\":\"k\",\"arguments\":{}}")
+            assert_status(st, b, 201, "bind")
+            st, b = mq("POST", "/api/exchanges/%2F/tcae-mx/publish", "{\"properties\":{\"content_type\":\"text/plain\"},\"routing_key\":\"k\",\"payload\":\"first\",\"payload_encoding\":\"string\"}")
+            assert_status(st, b, 200, "publish")
+            spec.assert_str_eq(b, "{\"routed\":true}", "routed")
+            st, b = mq("POST", "/api/exchanges/%2F/tcae-mx/publish", "{\"properties\":{\"headers\":{\"n\":2}},\"routing_key\":\"k\",\"payload\":\"second\",\"payload_encoding\":\"string\"}")
+            spec.assert_str_eq(b, "{\"routed\":true}", "routed, with a header")
+            st, b = mq("POST", "/api/exchanges/%2F/tcae-mx/publish", "{\"properties\":{},\"routing_key\":\"unrouted\",\"payload\":\"lost\",\"payload_encoding\":\"string\"}")
+            assert_status(st, b, 200, "publish with no binding")
+            spec.assert_str_eq(b, "{\"routed\":false}", "not routed")
+            st, b = mq("POST", "/api/exchanges/%2F/tcae-nosuch/publish", "{\"properties\":{},\"routing_key\":\"k\",\"payload\":\"x\",\"payload_encoding\":\"string\"}")
+            assert_error(st, b, 400, "bad_request", "an exchange that is not there")
+            spec.assert_contains(b, "404 NOT_FOUND - no exchange 'tcae-nosuch'", "the AMQP reply, in the reason")
+            st, b = mq("POST", "/api/queues/%2F/tcae-mq/get", "{\"count\":1,\"ackmode\":\"ack_requeue_true\",\"encoding\":\"auto\"}")
+            assert_status(st, b, 200, "peek")
+            spec.assert_contains(b, "\"payload\":\"first\"", "the first message")
+            spec.assert_contains(b, "\"redelivered\":false", "not redelivered")
+            st, b = mq("POST", "/api/queues/%2F/tcae-mq/get", "{\"count\":1,\"ackmode\":\"ack_requeue_true\",\"encoding\":\"auto\"}")
+            spec.assert_contains(b, "\"payload\":\"first\"", "still the first")
+            spec.assert_contains(b, "\"redelivered\":true", "now redelivered")
+            st, b = mq("POST", "/api/queues/%2F/tcae-mq/get", "{\"count\":5,\"ackmode\":\"ack_requeue_false\",\"encoding\":\"auto\"}")
+            assert_status(st, b, 200, "take both")
+            spec.assert_contains(b, "\"payload\":\"first\"", "first")
+            spec.assert_contains(b, "\"payload\":\"second\"", "second")
+            st, b = mq("POST", "/api/queues/%2F/tcae-mq/get", "{\"count\":5,\"ackmode\":\"ack_requeue_false\",\"encoding\":\"auto\"}")
+            spec.assert_str_eq(b, "[]", "nothing left")
+            st, b = mq("POST", "/api/exchanges/%2F/tcae-mx/publish", "{\"properties\":{},\"routing_key\":\"k\",\"payload\":\"AAEC/w==\",\"payload_encoding\":\"base64\"}")
+            spec.assert_str_eq(b, "{\"routed\":true}", "a binary payload, routed")
+            st, b = mq("POST", "/api/queues/%2F/tcae-mq/get", "{\"count\":1,\"ackmode\":\"ack_requeue_false\",\"encoding\":\"base64\"}")
+            spec.assert_contains(b, "\"payload\":\"AAEC/w==\"", "the same bytes back")
+            spec.assert_contains(b, "\"payload_encoding\":\"base64\"", "as base64")
+            st, b = mq("DELETE", "/api/queues/%2F/tcae-mq", "")
+            assert_status(st, b, 204, "delete the queue")
+            st, b = mq("DELETE", "/api/exchanges/%2F/tcae-mx", "")
+            assert_status(st, b, 204, "delete the exchange")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (queue tcae-dq): the statistics database refreshes every
+        // 5 s, so the test waits 7 s (live only, between two requests; a
+        // replay does not wait) before reading the counts.
+        //   PUT  the queue                                        -> 201
+        //   POST publish three messages to the default exchange "amq.default"
+        //        with routing key tcae-dq                         -> 200 {"routed":true} x3
+        //   GET  /api/queues/%2F/tcae-dq?columns=name,messages,messages_ready,messages_unacknowledged
+        //        -> 200 {"messages":3,"messages_ready":3,"messages_unacknowledged":0,"name":"tcae-dq"}
+        //   POST get 3 with ack_requeue_false                     -> 200 [3 messages]
+        //   DELETE the queue                                      -> 204
+        spec.it("reports queue depths after publishing") callback {
+            rec, ok = begin("reports_queue_depths_after_publishing", 0)
+            if ok == 0 { return }
+            st, b = mq("PUT", "/api/queues/%2F/tcae-dq", "{\"durable\":false,\"auto_delete\":false,\"arguments\":{}}")
+            assert_status(st, b, 201, "declare")
+            i = 0
+            while i < 3 {
+                st, b = mq("POST", "/api/exchanges/%2F/amq.default/publish", "{\"properties\":{},\"routing_key\":\"tcae-dq\",\"payload\":\"m${i}\",\"payload_encoding\":\"string\"}")
+                spec.assert_str_eq(b, "{\"routed\":true}", "message ${i} routed")
+                i = i + 1
+            }
+            if servirtium.live() == 1 { sleep(7000) }
+            st, b = mq("GET", "/api/queues/%2F/tcae-dq?columns=name,messages,messages_ready,messages_unacknowledged", "")
+            assert_status(st, b, 200, "the counts")
+            spec.assert_contains(b, "\"messages\":3", "three messages")
+            spec.assert_contains(b, "\"messages_ready\":3", "all ready")
+            spec.assert_contains(b, "\"messages_unacknowledged\":0", "none unacknowledged")
+            st, b = mq("POST", "/api/queues/%2F/tcae-dq/get", "{\"count\":3,\"ackmode\":\"ack_requeue_false\",\"encoding\":\"auto\"}")
+            assert_status(st, b, 200, "take them")
+            st, b = mq("DELETE", "/api/queues/%2F/tcae-dq", "")
+            assert_status(st, b, 204, "delete")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: policies, parameters and limits.
+        //   PUT    /api/policies/%2F/tcae-policy {"pattern":"^tcae-p","definition":{"max-length":10},"priority":1,"apply-to":"queues"} -> 201
+        //   GET    /api/policies/%2F/tcae-policy -> 200 the same, plus vhost and name
+        //   GET    /api/policies/%2F             -> 200 [it]
+        // (A queue a policy applies to shows it in GET /api/queues, but that is one of
+        // the statistics that lag up to 5 s; not read here.)
+        //   PUT    /api/operator-policies/%2F/tcae-op {"pattern":"^tcae-p","definition":{"max-length":5},"priority":1,"apply-to":"queues"} -> 201
+        //   DELETE it                        -> 204
+        //   DELETE /api/policies/%2F/tcae-policy -> 204
+        //   GET    /api/policies/%2F/tcae-policy -> 404
+        //   PUT    /api/global-parameters/tcae-param {"value":{"k":"v"}} -> 201
+        //   GET    /api/global-parameters/tcae-param -> 200 {"value":{"k":"v"},"name":"tcae-param"}
+        //   DELETE it                        -> 204
+        //   PUT    /api/policies/%2F/tcae-bad {"pattern":"^x","definition":{},"apply-to":"queues"} -> 400 (empty definition)
+        spec.it("sets policies, operator policies and global parameters") callback {
+            rec, ok = begin("sets_policies_operator_policies_and_global_parameters", 0)
+            if ok == 0 { return }
+            pol = "{\"pattern\":\"^tcae-p\",\"definition\":{\"max-length\":10},\"priority\":1,\"apply-to\":\"queues\"}"
+            st, b = mq("PUT", "/api/policies/%2F/tcae-policy", pol)
+            assert_status(st, b, 201, "create the policy")
+            st, b = mq("GET", "/api/policies/%2F/tcae-policy", "")
+            assert_status(st, b, 200, "read it")
+            spec.assert_contains(b, "\"definition\":{\"max-length\":10}", "its definition")
+            st, b = mq("GET", "/api/policies/%2F", "")
+            assert_status(st, b, 200, "list")
+            spec.assert_contains(b, "\"name\":\"tcae-policy\"", "listed")
+            op = "{\"pattern\":\"^tcae-p\",\"definition\":{\"max-length\":5},\"priority\":1,\"apply-to\":\"queues\"}"
+            st, b = mq("PUT", "/api/operator-policies/%2F/tcae-op", op)
+            assert_status(st, b, 201, "create the operator policy")
+            st, b = mq("DELETE", "/api/operator-policies/%2F/tcae-op", "")
+            assert_status(st, b, 204, "delete it")
+            st, b = mq("PUT", "/api/policies/%2F/tcae-bad", "{\"pattern\":\"^x\",\"definition\":{},\"apply-to\":\"queues\"}")
+            spec.assert_eq(st, 400, "an empty definition: ${b}")
+            st, b = mq("DELETE", "/api/policies/%2F/tcae-policy", "")
+            assert_status(st, b, 204, "delete the policy")
+            st, b = mq("GET", "/api/policies/%2F/tcae-policy", "")
+            assert_error(st, b, 404, "Object Not Found", "gone")
+            st, b = mq("PUT", "/api/global-parameters/tcae-param", "{\"value\":{\"k\":\"v\"}}")
+            assert_status(st, b, 201, "set a global parameter")
+            st, b = mq("GET", "/api/global-parameters/tcae-param", "")
+            assert_status(st, b, 200, "read it")
+            spec.assert_contains(b, "\"value\":{\"k\":\"v\"}", "the value")
+            spec.assert_contains(b, "\"name\":\"tcae-param\"", "the name")
+            st, b = mq("DELETE", "/api/global-parameters/tcae-param", "")
+            assert_status(st, b, 204, "delete it")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: a broker with nothing connected. (The AMQP side runs live
+        // in the module cases, on their own containers; this broker has no
+        // clients.)
+        //   GET /api/connections          -> 200 []
+        //   GET /api/channels             -> 200 []
+        //   GET /api/consumers            -> 200 []
+        //   GET /api/consumers/%2F        -> 200 []
+        //   GET /api/connections/nothing  -> 404 Object Not Found
+        //   GET /api/channels/nothing     -> 404
+        //   DELETE /api/connections/nothing -> 404
+        //   GET /api/vhosts/%2F/connections -> 200 []
+        spec.it("shows no connections, channels or consumers on a quiet broker") callback {
+            rec, ok = begin("shows_no_connections_channels_or_consumers", 0)
+            if ok == 0 { return }
+            paths = ["/api/connections", "/api/channels", "/api/consumers", "/api/consumers/%2F", "/api/vhosts/%2F/connections"]
+            i = 0
+            while i < paths.len {
+                st, b = mq("GET", paths[i], "")
+                assert_status(st, b, 200, "GET ${paths[i]}")
+                spec.assert_str_eq(b, "[]", "GET ${paths[i]}: nothing")
+                i = i + 1
+            }
+            st, b = mq("GET", "/api/connections/nothing", "")
+            assert_error(st, b, 404, "Object Not Found", "a connection that is not there")
+            st, b = mq("GET", "/api/channels/nothing", "")
+            assert_error(st, b, 404, "Object Not Found", "a channel that is not there")
+            st, b = mq("DELETE", "/api/connections/nothing", "")
+            assert_error(st, b, 404, "Object Not Found", "closing a connection that is not there")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: exporting and importing definitions (topology as JSON).
+        //   POST /api/definitions  {"vhosts":[{"name":"tcae-imported"}],
+        //        "permissions":[{"user":"guest","vhost":"tcae-imported","configure":".*","write":".*","read":".*"}],
+        //        "queues":[{"name":"imported-q","vhost":"tcae-imported","durable":true,"auto_delete":false,"arguments":{}}],
+        //        "exchanges":[{"name":"imported-x","vhost":"tcae-imported","type":"fanout","durable":true,"auto_delete":false,"internal":false,"arguments":{}}],
+        //        "bindings":[{"source":"imported-x","vhost":"tcae-imported","destination":"imported-q","destination_type":"queue","routing_key":"","arguments":{}}]}
+        //        -> 204
+        //   GET  /api/definitions/tcae-imported -> 200 the vhost's topology: queues, exchanges, bindings,
+        //        policies, parameters (the order of the keys is the server's)
+        //   GET  /api/queues/tcae-imported?columns=name,durable -> 200 [{"durable":true,"name":"imported-q"}]
+        //   POST /api/definitions with a body that is not JSON -> 400 bad_request
+        //   DELETE /api/vhosts/tcae-imported -> 204
+        // (GET /api/definitions of the whole broker is not taped: it lists
+        // every vhost, user and its salted hash the other cases of a run leave
+        // or create, and the guest user's hash is different every start.)
+        spec.it("imports definitions and exports a virtual host's") callback {
+            rec, ok = begin("imports_definitions_and_exports_a_virtual_hosts", 0)
+            if ok == 0 { return }
+            defs = "{\"vhosts\":[{\"name\":\"tcae-imported\"}],\"permissions\":[{\"user\":\"guest\",\"vhost\":\"tcae-imported\",\"configure\":\".*\",\"write\":\".*\",\"read\":\".*\"}],\"queues\":[{\"name\":\"imported-q\",\"vhost\":\"tcae-imported\",\"durable\":true,\"auto_delete\":false,\"arguments\":{}}],\"exchanges\":[{\"name\":\"imported-x\",\"vhost\":\"tcae-imported\",\"type\":\"fanout\",\"durable\":true,\"auto_delete\":false,\"internal\":false,\"arguments\":{}}],\"bindings\":[{\"source\":\"imported-x\",\"vhost\":\"tcae-imported\",\"destination\":\"imported-q\",\"destination_type\":\"queue\",\"routing_key\":\"\",\"arguments\":{}}]}"
+            st, b = mq("POST", "/api/definitions", defs)
+            assert_status(st, b, 204, "import")
+            st, b = mq("GET", "/api/definitions/tcae-imported", "")
+            assert_status(st, b, 200, "export the vhost")
+            spec.assert_contains(b, "\"name\":\"imported-q\"", "the queue")
+            spec.assert_contains(b, "\"name\":\"imported-x\"", "the exchange")
+            spec.assert_contains(b, "\"destination\":\"imported-q\"", "the binding")
+            st, b = mq("GET", "/api/queues/tcae-imported?columns=name,durable", "")
+            assert_status(st, b, 200, "the queue exists")
+            spec.assert_contains(b, "\"name\":\"imported-q\"", "the imported queue")
+            spec.assert_false(string.contains(b, "},{") == 1, "just the one")
+            st, b = mq("POST", "/api/definitions", "this is not json")
+            assert_error(st, b, 400, "bad_request", "a body that is not JSON")
+            st, b = mq("DELETE", "/api/vhosts/tcae-imported", "")
+            assert_status(st, b, 204, "delete the vhost")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- the representative errors ------------------------------------
+
+        // PORTING: errors a client has to handle that the cases above did
+        // not show. The management API answers {"error":..,"reason":..}.
+        //   GET    /api/queues/%2F/tcae-nosuch      -> 404 {"error":"Object Not Found","reason":"Not Found"}
+        //   GET    /api/exchanges/%2F/tcae-nosuch   -> 404
+        //   GET    /api/vhosts/nosuch               -> 404
+        //   GET    /api/nosuchendpoint              -> 404
+        //   PUT    /api/queues/%2F/tcae-badq {"durable":"yes"}   -> 400 {"error":"bad_request","reason":["not_boolean","yes"]}
+        //   PUT    /api/queues/%2F/tcae-badq {not json           -> 400 {"error":"bad_request","reason":"not_json"}
+        //   DELETE /api/overview                    -> 405, Allow: HEAD, GET, OPTIONS
+        //   POST   /api/queues/%2F/tcae-nosuch/get {"count":1,"ackmode":"ack_requeue_true","encoding":"auto"}
+        //          -> 404 {"error":"not_found","reason":"NOT_FOUND - no queue 'tcae-nosuch' in vhost '/'"}
+        //   PUT    /api/permissions/%2F/nosuchuser {..}  -> 400 {"error":"bad_request","reason":"vhost_or_user_not_found"}
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses", 0)
+            if ok == 0 { return }
+            st, b = mq("GET", "/api/queues/%2F/tcae-nosuch", "")
+            assert_error(st, b, 404, "Object Not Found", "a missing queue")
+            spec.assert_contains(b, "\"reason\":\"Not Found\"", "the reason")
+            st, b = mq("GET", "/api/exchanges/%2F/tcae-nosuch", "")
+            assert_error(st, b, 404, "Object Not Found", "a missing exchange")
+            st, b = mq("GET", "/api/vhosts/nosuch", "")
+            assert_error(st, b, 404, "Object Not Found", "a missing vhost")
+            st, b = mq("GET", "/api/nosuchendpoint", "")
+            spec.assert_eq(st, 404, "an endpoint that does not exist: ${b}")
+            st, b = mq("PUT", "/api/queues/%2F/tcae-badq", "{\"durable\":\"yes\"}")
+            assert_error(st, b, 400, "bad_request", "a durable that is not a boolean")
+            st, b = mq("PUT", "/api/queues/%2F/tcae-badq", "{not json")
+            assert_error(st, b, 400, "bad_request", "a body that is not JSON")
+            st, b = mq("DELETE", "/api/overview", "")
+            spec.assert_eq(st, 405, "a method the endpoint does not take: ${b}")
+            st, b = mq("POST", "/api/queues/%2F/tcae-nosuch/get", "{\"count\":1,\"ackmode\":\"ack_requeue_true\",\"encoding\":\"auto\"}")
+            assert_error(st, b, 404, "not_found", "get from a missing queue")
+            st, b = mq("PUT", "/api/permissions/%2F/nosuchuser", "{\"configure\":\".*\",\"write\":\".*\",\"read\":\".*\"}")
+            spec.assert_eq(st, 400, "permissions for a user that does not exist: ${b}")
+            servirtium.end_recording(rec)
+        }
+    }
+
+    if shared_container != null {
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("rabbitmq: removing the shared container: ${e}") }
     }
     return spec.run_summary(fw)
 }
