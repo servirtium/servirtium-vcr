@@ -31,48 +31,87 @@ opens that library with `DynamicLibrary.open` and presents an idiomatic Dart
 fixture; it does **not** reimplement Servirtium in Dart. The same binding
 serves Flutter.
 
-## Install
+## Getting it
 
-> **Note:** the `servirtium` package is **not published to pub.dev yet**, so
-> `dart pub add --dev servirtium` does **not** give you this library. Get the
-> native library from GitHub releases instead (below).
-
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
+The package is **not on pub.dev yet**. Use a pub git dependency on the release tag
+(`path: dart`, because the package is in a subdirectory), and fetch the native library from the
+same release; `dart:ffi` loads it through `SERVIRTIUM_VCR_LIB`. Run this in your own package directory (the `dart create` line makes a throwaway one; skip it to use yours):
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
+# 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
+case "$(uname -s)" in
+  Linux)   OS=linux;   EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin)  OS=macos;   EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;    LIBC= ;;
+  *) echo "unsupported OS (Windows: take the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+LIBDIR="$HOME/.servirtium-vcr/$TAG"        # keep it OUT of your git tree
+mkdir -p "$LIBDIR"
+LIB=libservirtium_vcr-$TAG-$OS-$ARCH$LIBC.$EXT
+curl -fsSL -o "$LIBDIR/$LIB" "$REL/$LIB"
+curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
+( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
+cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
+
+# 2. the dependency
+dart create -t console --force servirtium_check && cd servirtium_check   # skip: use your own package
+dart pub add servirtium --git-url https://github.com/servirtium/servirtium-vcr.git --git-ref $TAG --git-path dart
+
+# 3. check it: replay a recorded tape
+export SERVIRTIUM_VCR_LIB="$LIBDIR/libservirtium_vcr.$EXT"      # set this wherever dart test/run runs
+mkdir -p tapes bin
+curl -fsSL -o tapes/single_get.md $RAW/dart/example/tapes/single_get.md
+cat > bin/servirtium_check.dart <<'DART'
+import 'dart:io';
+import 'package:servirtium/servirtium.dart';
+
+Future<void> main() async {
+  final vcr = Vcr.playback('tapes/single_get.md').port(0).start();
+  final c = HttpClient();
+  final body = await (await (await c.getUrl(Uri.parse('${vcr.baseUrl}/ok'))).close())
+      .transform(const SystemEncoding().decoder).join();
+  print('${body.trim()} ${vcr.lastKind}');   // -> ok-body VcrOutcome.ok
+  c.close();
+  vcr.close();
+}
+DART
+dart run bin/servirtium_check.dart
 ```
 
-**Build the package locally**
+`pubspec.yaml` after step 2:
 
-Nothing is published to a registry yet, so you assemble the package yourself:
-drop the downloaded library at the package-relative path below, then consume it
-from source (a `path` or `git` dependency in your `pubspec.yaml`).
-
-```sh
-# from the dart binding directory, with libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so downloaded:
-mkdir -p lib/native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so lib/native/libservirtium_vcr.so
-# the package now carries the native library; consume it from source (see this README's usage/examples).
+```yaml
+dependencies:
+  servirtium:
+    git:
+      url: https://github.com/servirtium/servirtium-vcr.git
+      ref: v2.0.0-alpha.12
+      path: dart
 ```
 
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll` — adjust the
-filename accordingly.)
+The future registry form is `servirtium: 2.0.0-alpha.12` (pub treats the prerelease as exact
+when written that way); it does not resolve today.
 
-Then point the binding at it via `SERVIRTIUM_VCR_LIB`:
+### Notes for coding agents
 
-```sh
-export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-```
-
-`dart:ffi` loads the library from that path at runtime.
+- Do not write `servirtium: ^2.0.0` or `dart pub add servirtium` with no `--git-*`: it is not on
+  pub.dev (`Because ... depends on servirtium any which doesn't exist`). Do not omit `path: dart`: the
+  repo root has no `pubspec.yaml` (`Could not find a file named "pubspec.yaml"`). The repository
+  URL in `dart/pubspec.yaml` is informational only.
+- Use `ref:` set to a tag, not `main`: the library must be at least as new as the Dart source;
+  an older library fails with an error naming a missing `aether_vcr_embed_...` symbol.
+- `could not load native VCR library 'libservirtium_vcr.so'` means `SERVIRTIUM_VCR_LIB` is
+  unset in the process that runs the code, is not a path to an existing file, or is for the wrong
+  libc/arch (`-musl` on Alpine). `nativeLib:` on `Vcr.playback` is the in-code alternative. Do not
+  put the library in the pub cache (`~/.pub-cache/git/...`): it is a cache.
+- Flutter: the library must be reachable by the process that runs the tests (host VM
+  `flutter test`, not a device). The path must be absolute.
+- Windows: use the `.dll` asset and its full path in `SERVIRTIUM_VCR_LIB`.
 
 ## Usage
 

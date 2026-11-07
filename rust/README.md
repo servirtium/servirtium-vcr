@@ -1,4 +1,4 @@
-# servirtium-rust
+# Servirtium Rust
 
 Record/replay for HTTP service tests, in the [Servirtium](https://servirtium.dev)
 markdown tape format — for Rust.
@@ -35,51 +35,82 @@ that core (via [`libloading`](https://crates.io/crates/libloading)); it does
 > with no shim. The new builder API is below / in [docs/usage.md](docs/usage.md).
 > The tape *format* is unchanged, so existing tapes replay as-is.
 
-## Use
+## Getting it
 
-```toml
-[dev-dependencies]
-servirtium = { git = "https://github.com/servirtium/servirtium-rust" }
-```
-
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
+The crate is **not on crates.io yet**, and the repo has no root `Cargo.toml`, but Cargo finds
+a package by name inside a git dependency, so the release tag is enough. The native library
+is loaded at run time (`libloading`): fetch it from the same release and point
+`SERVIRTIUM_VCR_LIB` at it. In your own crate:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
+# 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
+case "$(uname -s)" in
+  Linux)   OS=linux;   EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin)  OS=macos;   EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;    LIBC= ;;
+  *) echo "unsupported OS (Windows: take the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+LIBDIR="$HOME/.servirtium-vcr/$TAG"        # keep it OUT of your git tree
+mkdir -p "$LIBDIR"
+LIB=libservirtium_vcr-$TAG-$OS-$ARCH$LIBC.$EXT
+curl -fsSL -o "$LIBDIR/$LIB" "$REL/$LIB"
+curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
+( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
+cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
+
+# 2. the dependency (dev-dependency here; drop --dev to use it from src/)
+[ -f Cargo.toml ] || cargo init --lib --name servirtium_check      # skip: use your own crate
+cargo add --dev servirtium --git https://github.com/servirtium/servirtium-vcr --tag $TAG
+
+# 3. check it: replay a recorded tape from an integration test
+export SERVIRTIUM_VCR_LIB="$LIBDIR/libservirtium_vcr.$EXT"      # set this wherever cargo test runs
+mkdir -p tests tapes
+curl -fsSL -o tapes/single_get.md $RAW/rust/example/tapes/single_get.md
+cat > tests/servirtium_check.rs <<'RS'
+use std::io::{Read, Write};
+#[test]
+fn replays_a_tape() {
+    let vcr = servirtium::Vcr::playback("tapes/single_get.md").port(0).start().unwrap();
+    let addr = vcr.base_url().trim_start_matches("http://").to_string();
+    let mut s = std::net::TcpStream::connect(&addr).unwrap();
+    write!(s, "GET /ok HTTP/1.0\r\nHost: {addr}\r\n\r\n").unwrap();
+    let mut out = String::new();
+    s.read_to_string(&mut out).unwrap();
+    assert!(out.contains("ok-body"), "{out}");
+    assert_eq!(vcr.last_kind(), servirtium::Outcome::Ok);
+}
+RS
+cargo test --test servirtium_check          # -> test replays_a_tape ... ok
 ```
 
-**Build the package locally**
+`Cargo.toml` after step 2:
+`servirtium = { git = "https://github.com/servirtium/servirtium-vcr", tag = "v2.0.0-alpha.12" }`
+under `[dev-dependencies]`. The future registry form is `servirtium = "=2.0.0-alpha.12"`
+(a prerelease needs the exact requirement); it does not resolve today.
 
-Nothing is published to a registry yet, so you assemble the package yourself:
-drop the downloaded library at the package-relative path below, then consume it
-from source (a git or path dependency in your `Cargo.toml`).
+### Notes for coding agents
 
-```sh
-# from the rust binding directory, with libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so downloaded:
-mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so native/libservirtium_vcr.so
-# the package now carries the native library; consume it from source (see this README's usage/examples).
-```
-
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll`.)
-
-The native library is loaded at runtime. The crate looks for it (in order)
-at `$SERVIRTIUM_VCR_LIB`, then `native/libservirtium_vcr.{so,dylib}` next to
-the crate, then via the OS loader. Point the crate at the downloaded lib:
-
-```sh
-export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-```
-
-Or, for contributors, build libservirtium_vcr from `core/` (needs the Aether
-`ae` toolchain — see [docs/building.md](docs/building.md)).
+- Do not use `servirtium = "2"` or any bare version: nothing is on crates.io, and the
+  1.x `servirtium` crate (with `#[servirtium_playback_test]` macros) that may appear there is
+  a different, removed API. Do not use `git = ".../servirtium-rust"`: that is the old 1.x repository, a
+  different API (the crate's `repository` field used to point there; it now names this repo).
+- Use `tag = "..."`, not `branch`: the library must be at least as new as the Rust source,
+  and `main` can be ahead of the last release. A library older than the crate fails at the
+  first call with a `libloading` error naming the missing `aether_vcr_embed_...` symbol.
+- `could not load the native VCR library (tried: ...)` means `SERVIRTIUM_VCR_LIB` is not
+  set in the process running the test, or points at the wrong file, or the wrong libc/arch
+  (`-musl` on Alpine). `.native_lib(path)` on the builder is the in-code alternative.
+  Cargo does not pass your shell's variable to a different user or a container.
+- Do not put the library in `native/` inside `~/.cargo/git/checkouts/...`: that is a cache,
+  and the crate's own `native/` fallback is relative to it.
+- Tape paths are relative to the working directory of the test binary, which `cargo test` sets to
+  the package root.
+- Windows: use the `.dll` asset and its full path in `SERVIRTIUM_VCR_LIB`.
 
 ## Docs
 

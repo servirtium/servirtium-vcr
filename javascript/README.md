@@ -39,73 +39,69 @@ TypeScript.
 > gone, with no shim. The new API is below / in [docs/usage.md](docs/usage.md).
 > The tape *format* is unchanged, so existing tapes replay as-is.
 
-## Install
+## Getting it
 
-> **Note:** the `@servirtium/vcr` npm package is **not published yet**, so
-> `npm install @servirtium/vcr` does **not** give you this library. Build a local
-> npm tarball from the source and a downloaded native library as shown below.
-
-You need **Node.js 22+**, npm, Git, and a native library matching your OS and
-CPU architecture. The following commands use a POSIX shell on Linux x86_64.
-No Aether compiler or build runner is needed for this path.
-
-**1. Get the JavaScript package source.** Start in a scratch directory:
+`@servirtium/vcr` is **not on the npm registry yet**. Each release attaches a
+multi-platform tarball with the native libraries inside (linux x64/arm64 glibc and musl,
+macOS x64/arm64, Windows x64/arm64), so one `npm install <url>` is the whole job. Run this
+in your own project directory (Node 22+):
 
 ```sh
-mkdir servirtium-try
-cd servirtium-try
-git clone --depth 1 https://github.com/servirtium/servirtium-vcr.git
-cd servirtium-vcr/javascript
+set -eu
+VER=2.0.0-alpha.12                       # a release version of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/v$VER
+
+# 1. install the tarball (adds "@servirtium/vcr" to package.json; koffi comes from the registry).
+#    npm 12 refuses URL dependencies by default, so allow them for direct dependencies of this project.
+[ -f package.json ] || npm init -y
+grep -qs '^allow-remote' .npmrc || echo 'allow-remote=root' >> .npmrc      # so `npm ci` works later too
+npm install $REL/servirtium-vcr-$VER.tgz
+
+# 2. check it: replay a recorded tape through the bundled library
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md https://raw.githubusercontent.com/servirtium/servirtium-vcr/v$VER/javascript/example/tapes/single_get.md
+node -e '
+const { Vcr, VcrOutcome } = require("@servirtium/vcr");
+const vcr = Vcr.playback("tapes/single_get.md").port(0).start();
+fetch(vcr.baseUrl + "/ok").then(r => r.text()).then(t => {
+  console.log(t.trim(), vcr.lastKind === VcrOutcome.Ok ? "(clean match)" : "(MISMATCH)");   // -> ok-body (clean match)
+  vcr.close();
+});'
 ```
 
-**2. Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256`. Download and verify
-the Linux x86_64 library in the `javascript/` directory:
+The same thing as a `package.json` dependency:
+`"@servirtium/vcr": "https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/servirtium-vcr-2.0.0-alpha.12.tgz"`.
+Once published it will be `npm install @servirtium/vcr@2.0.0-alpha.12`; that does not work today.
+A `.sha256` sits beside the tarball on the release page if you want to verify it first.
 
-```sh
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
-```
+### Notes for coding agents
 
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. These download URLs are specifically for Linux x86_64; choose the
-matching release asset on other machines. When staging it below, use
-`native/libservirtium_vcr.dylib` on macOS or `native/servirtium_vcr.dll` on Windows.
-
-**3. Build a tarball with the native library bundled inside.** Still in
-`servirtium-vcr/javascript`:
-
-```sh
-mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so native/libservirtium_vcr.so
-npm ci
-npm pack
-# Produces servirtium-vcr-2.0.0.tgz (for this OS/architecture).
-```
-
-`npm ci` installs the build tools and runs the TypeScript build automatically.
-The resulting package contains compiled JavaScript, TypeScript declarations,
-and the native library. Your app does not need a TypeScript compiler.
-
-**4. Install into a separate app.** Move back to the scratch directory and
-create a consumer project:
-
-```sh
-cd ../..
-mkdir app
-cd app
-npm init -y
-npm install ../servirtium-vcr/javascript/servirtium-vcr-2.0.0.tgz
-```
-
-The installed package finds its bundled library automatically. If you need to
-use a different native build, set `SERVIRTIUM_VCR_LIB` to its **absolute path**
-before starting Node, or call `.nativeLib('/absolute/path/to/library')` on the
-builder before its first `.start()`. An existing `SERVIRTIUM_VCR_LIB` setting
-overrides the bundled library; unset it to try automatic discovery.
+- **npm 12** fails a URL dependency with `EALLOWREMOTE ... Fetching packages of type "remote"
+  have been disabled`. The fix is `allow-remote=root` in the project's `.npmrc` (step 1 writes it)
+  or `--allow-remote=root` on the command; do not set `all`. It is needed again by every
+  `npm ci` on a machine without that `.npmrc`, so commit the `.npmrc`. Older npm ignores the key.
+- npm 12 also prints `install scripts blocked ... @servirtium/vcr (prepare ...)` and the same for
+  `koffi`. It is harmless here: the tarball is prebuilt and koffi ships prebuilt binaries. Do not
+  approve or `--dangerously-allow-all-scripts` to silence it.
+- Needs **Node 22+** (`engines`); on an older Node npm warns `EBADENGINE` and the package may
+  fail at run time. Use a newer Node, not a polyfill.
+- `npm install @servirtium/vcr` (registry form) fails with `E404`: not published. Do not
+  substitute another package, and do not `npm install github:servirtium/servirtium-vcr`: that
+  is a monorepo whose root has no package and no native library.
+- A release older than the one that first attached `servirtium-vcr-<ver>.tgz` has no such
+  asset (`curl`/`npm` report 404). Use a later tag, or build the tarball yourself: in a copy
+  of `javascript/`, stage the library as
+  `native/<process.platform>-<process.arch>[-musl]/libservirtium_vcr.so` (`.dylib`; `servirtium_vcr.dll`
+  on Windows), then `npm ci && npm pack`.
+- FreeBSD is not in the tarball: fetch that release asset and set `SERVIRTIUM_VCR_LIB` to its
+  absolute path. Loader order: `.nativeLib(path)`, `SERVIRTIUM_VCR_LIB`, the package's `native/`,
+  then the OS loader. Do not set `SERVIRTIUM_VCR_LIB` otherwise: it overrides the bundled library.
+- The package is CommonJS with bundled `.d.ts`; `import { Vcr } from '@servirtium/vcr'` works
+  too. You need no TypeScript compiler, and do not copy `javascript/src/*.ts` into your project.
+- Tape paths are relative to the process working directory, not to the test file.
+- A library that cannot be opened makes koffi throw `Error: Failed to load shared library: cannot
+  open shared object file: No such file or directory` at the first `.start()`, not at `require`.
+  Check `process.platform`/`process.arch` and whether the machine is musl (Alpine).
 
 ## Record and replay a local service
 

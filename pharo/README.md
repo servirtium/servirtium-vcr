@@ -36,62 +36,72 @@ FFI-calls a precompiled native build of that core
 (`native/libservirtium_vcr.so`); it does **not** reimplement Servirtium in
 Smalltalk.
 
-## Install (into a Pharo image)
+## Getting it
 
-Load the Tonel project via its Metacello baseline, pointing at this repo's
-`src/`, then tell the binding where libservirtium_vcr is (or export
-`SERVIRTIUM_VCR_LIB` before launching the image):
+Not on a Pharo catalog. Load the Tonel sources of the release tag with Metacello straight from
+GitHub, and fetch the native library from the same release; the binding reads
+`SERVIRTIUM_VCR_LIB` from the process environment **when the image starts**. You need a Pharo 12
+VM and image on `PATH`/in `$PHARO_DIR` (the `pharo` launcher below is the VM executable):
 
-```smalltalk
+```sh
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
+# 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
+case "$(uname -s)" in
+  Linux)   OS=linux;   EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin)  OS=macos;   EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;    LIBC= ;;
+  *) echo "unsupported OS (Windows: take the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+LIBDIR="$HOME/.servirtium-vcr/$TAG"        # keep it OUT of your git tree
+mkdir -p "$LIBDIR"
+LIB=libservirtium_vcr-$TAG-$OS-$ARCH$LIBC.$EXT
+curl -fsSL -o "$LIBDIR/$LIB" "$REL/$LIB"
+curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
+( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
+cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
+
+# 2. load the project into a copy of your image, with the library in the environment
+export SERVIRTIUM_VCR_LIB="$LIBDIR/libservirtium_vcr.$EXT"      # must be set before the image starts
+PHARO_IMAGE=${PHARO_IMAGE:-Pharo.image}                        # your image (the VM loads and saves it)
+pharo --headless "$PHARO_IMAGE" eval --save "
 Metacello new
-    baseline: 'Servirtium';
-    repository: 'tonel://', '/abs/path/to/servirtium-pharo/src';
-    load.   "or load: 'tests' to also load the SUnit suite"
+  baseline: 'Servirtium';
+  repository: 'github://servirtium/servirtium-vcr:$TAG/pharo/src';
+  load."
 
-ServirtiumLibrary libPath: '/abs/path/to/servirtium-pharo/native/libservirtium_vcr.so'.
+# 3. check it: replay a recorded tape
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/pharo/src/Servirtium-Tests/tapes/single_get.md
+pharo --headless "$PHARO_IMAGE" eval "
+| s | s := (Servirtium playback: 'tapes/single_get.md') port: 0; start.
+[ (ZnClient new get: s baseUrl , '/ok') displayString , ' ' , s lastKind printString ] ensure: [ s stop ]"   "-> 'ok-body' #ok"
 ```
 
-The libservirtium_vcr library is **not** committed. The no-toolchain path is to
-download a prebuilt copy:
+The Metacello dependency, in your own baseline:
+`spec baseline: 'Servirtium' with: [ spec repository: 'github://servirtium/servirtium-vcr:v2.0.0-alpha.12/pharo/src' ]`.
+There is no registry or catalog form yet.
 
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
+### Notes for coding agents
 
-```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
-```
-
-**Build the package locally**
-
-Nothing is published to a registry yet, so you assemble the package yourself:
-drop the downloaded library at the package-relative path below, then load the
-Tonel project from this local checkout (via its Metacello baseline).
-
-```sh
-# from the pharo binding directory, with libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so downloaded:
-mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so native/libservirtium_vcr.so
-# the package now carries the native library; consume it from source (see this README's usage/examples).
-```
-
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll`.)
-
-Point the FFI binding at the downloaded lib — either `ServirtiumLibrary
-libPath:` (as above) or by exporting `SERVIRTIUM_VCR_LIB` before launching the
-image:
-
-```sh
-export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-```
-
-Contributors can instead build it once with `./build-native.sh` (needs the
-Aether `ae` toolchain). See [docs/building.md](docs/building.md).
+- **Unverified recipe**: this was written from the loader source and not run (no Pharo VM was
+  available when it was written). If a step differs in your Pharo version, trust the
+  mechanism (the Metacello repository string, the environment variable) over the exact
+  command line, and tell the maintainers.
+- The repository string is `github://<owner>/<repo>:<tag>/<subdirectory>`: the Tonel
+  sources are in `pharo/src`, not at the repo root. `load: 'tests'` (instead of `load`) also
+  loads the SUnit suite.
+- `SERVIRTIUM_VCR_LIB` is read from the OS environment when the library name is resolved: set
+  it before launching the image, or call `ServirtiumLibrary libPath: '/abs/path/libservirtium_vcr.so'`
+  in the image before the first server starts. It must be an absolute path to an existing file.
+- The library must be at least as new as the Smalltalk source: same tag for both. An older
+  library fails at the first call with a `FFIExternalReferenceNotFound`-style error naming an
+  `aether_vcr_embed_...` symbol. Use `-musl` assets on Alpine.
+- Do not commit the library into the image's directory tree or the git-ignored `native/` of a clone.
+- Windows: use the `.dll` asset and its full path.
 
 ## Docs
 

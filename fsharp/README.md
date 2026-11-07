@@ -59,6 +59,68 @@ logic.
 - `tapes/single_get.md` — the canonical sample tape (`GET /ok` → `200
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
 
+## Getting it
+
+F# has no package of its own: it is ordinary F# over the C# binding, and `Servirtium.Vcr`
+(the `.nupkg` each release attaches, native libraries inside) is all you need. The F#
+loan-pattern combinators are one source file, `Servirtium.fs`, that you may copy in.
+`Servirtium.Vcr` is **not on nuget.org yet**, so use the release asset as a local feed. Run
+from your own project directory (the first two lines make a throwaway one; skip them
+to use yours):
+
+```sh
+set -eu
+VER=2.0.0-alpha.12                       # a release version of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/v$VER
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/v$VER
+
+dotnet new console -lang 'F#' -o servirtium-check --force && cd servirtium-check   # skip: use your own project
+
+# 1. the package into a local feed (checksum-verified), declared in a nuget.config
+mkdir -p nupkgs
+curl -fsSL -o nupkgs/Servirtium.Vcr.$VER.nupkg $REL/Servirtium.Vcr.$VER.nupkg
+curl -fsSL -o nupkgs/Servirtium.Vcr.$VER.nupkg.sha256 $REL/Servirtium.Vcr.$VER.nupkg.sha256
+( cd nupkgs && { sha256sum -c Servirtium.Vcr.$VER.nupkg.sha256 2>/dev/null || shasum -a 256 -c Servirtium.Vcr.$VER.nupkg.sha256; } )
+[ -f nuget.config ] || dotnet new nugetconfig
+dotnet nuget add source "$PWD/nupkgs" --name servirtium-local --configfile nuget.config
+
+# 2. the dependency line
+dotnet add package Servirtium.Vcr --version $VER
+
+# 3. check it: replay a recorded tape
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/fsharp/tapes/single_get.md
+cat > Program.fs <<'FS'
+open System.Net.Http
+open Servirtium.Vcr
+[<EntryPoint>]
+let main _ =
+    use vcr = Vcr.Playback("tapes/single_get.md").Port(0).Start()
+    use http = new HttpClient()
+    printfn "%s %A" (http.GetStringAsync(vcr.BaseUrl + "/ok").Result.Trim()) vcr.LastKind   // -> ok-body Ok
+    0
+FS
+dotnet run
+
+# optional: the F# combinators (usingPlayback, ...), one file, compiled before your own files
+curl -fsSL -o Servirtium.fs $RAW/fsharp/Servirtium.Vcr.FSharp/Servirtium.fs   # add <Compile Include="Servirtium.fs" /> above Program.fs
+```
+
+The dependency in an `.fsproj` is `<PackageReference Include="Servirtium.Vcr" Version="2.0.0-alpha.12" />`.
+There is no `Servirtium.Vcr.FSharp` package on any feed or release page; do not add that
+`PackageReference` (the repo's own example uses it from a feed that `aeb fsharp/.package.ae`
+builds locally).
+
+### Notes for coding agents
+
+- Everything in the C# notes applies (see `dotnet/README.md`): `NU1101` means the local
+  feed is not configured, `NU1102` means a wrong file name or version, and the native library
+  comes from the package, so never set `SERVIRTIUM_VCR_LIB` unless you are on FreeBSD.
+- Compile order matters in F#: `Servirtium.fs` must come before any file that uses
+  `Servirtium.usingPlayback`.
+- Do not `ProjectReference` this repo's `fsharp/` or `dotnet/` projects: they build only
+  through `aeb`.
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

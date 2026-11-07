@@ -47,45 +47,72 @@ from `SERVIRTIUM_VCR_LIB`, which is `ccall`'s library handle.
 - `tapes/single_get.md` — the canonical sample tape (`GET /ok` → `200
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
 
-## Getting the native library
+## Getting it
 
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
-
-```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
-```
-
-**Build the package locally**
-
-Nothing is published to a registry yet, so you assemble the package yourself:
-drop the downloaded library at the package-relative path below, then consume it
-from source (`Pkg.develop` on this local checkout).
+The package is **not in the Julia General registry**. Add it by URL at the release tag
+(`subdir`, because the package lives in `julia/`), and fetch the native library from the same
+release; `ccall` loads it through `SERVIRTIUM_VCR_LIB`. In your own project/environment:
 
 ```sh
-# from the julia binding directory, with libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so downloaded:
-mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so native/libservirtium_vcr.so
-# the package now carries the native library; consume it from source (see this README's usage/examples).
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
+# 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
+case "$(uname -s)" in
+  Linux)   OS=linux;   EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin)  OS=macos;   EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;    LIBC= ;;
+  *) echo "unsupported OS (Windows: take the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+LIBDIR="$HOME/.servirtium-vcr/$TAG"        # keep it OUT of your git tree
+mkdir -p "$LIBDIR"
+LIB=libservirtium_vcr-$TAG-$OS-$ARCH$LIBC.$EXT
+curl -fsSL -o "$LIBDIR/$LIB" "$REL/$LIB"
+curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
+( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
+cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
+
+# 2. the package (into the project in the current directory). SERVIRTIUM_VCR_LIB must already be
+#    exported here: Julia precompiles the package at this step and bakes the library path in.
+export SERVIRTIUM_VCR_LIB="$LIBDIR/libservirtium_vcr.$EXT"      # and set it wherever your tests run
+TAG=$TAG julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/servirtium/servirtium-vcr", rev=ENV["TAG"], subdir="julia")'
+
+# 3. check it: replay a recorded tape
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/julia/example/tapes/single_get.md
+julia --project=. -e '
+using Servirtium
+vcr = playback("tapes/single_get.md")
+try
+    println(chomp(read(`curl -s -S $(base_url(vcr))/ok`, String)), " ", last_kind(vcr))   # -> ok-body Ok
+finally
+    close!(vcr)
+end'
 ```
 
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+`Project.toml` records the package as a `[deps]` entry (`Servirtium = "9b1c4d3e-5a82-4f6b-8d31-7e2a6c4f1b93"`) and
+`Manifest.toml` pins the tag's commit (`repo-url`, `repo-rev`, `repo-subdir`). The future registry form
+is `Pkg.add(name="Servirtium", version="2.0.0-alpha.12")`; it does not resolve today.
 
-`ccall` reads its library handle from `SERVIRTIUM_VCR_LIB` at runtime — point
-it at the downloaded lib by absolute path:
+### Notes for coding agents
 
-```sh
-export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-```
-
-Contributors can instead build the `.so` from source with `aeb` (needs the
-Aether `ae` toolchain), as below.
+- `Pkg.add("Servirtium")` fails (`expected package Servirtium to be registered`): do not
+  `Pkg.develop` a clone either, unless `SERVIRTIUM_VCR_LIB` is set first; a clone has no `native/`.
+  Without `subdir="julia"` Pkg reports that there is no `Project.toml` at the repo root.
+- **Order matters.** `SERVIRTIUM_VCR_LIB` is read once, in a `const` at module load, and Julia
+  bakes that into the precompiled cache when `Pkg.add` precompiles. Exported later, it is ignored
+  and you get `could not load library "libservirtium_vcr.so" ... cannot open shared object file`.
+  Fix: export it, then force a recompile with `rm -rf ~/.julia/compiled/v*/Servirtium` (and
+  `Pkg.precompile()`). Because the path is baked in, moving the library later breaks it the same way.
+- A missing or wrong library shows as `could not load library "..."` from `ccall` (the wrong
+  libc/arch: `-musl` on Alpine). The library must be at least as new as the Julia source: a
+  library older than the binding reports an error naming the missing `aether_vcr_embed_...` symbol.
+- Without the variable the module falls back to a bundled `native/libservirtium_vcr.so`
+  (absent in a git checkout) and then the bare name via the OS loader; on macOS only the variable works.
+- The version `2.0.0-alpha.12` is valid Julia semver as written; no respelling is needed.
+- Windows: use the `.dll` asset and its full path.
 
 ## Building and testing
 

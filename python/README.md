@@ -38,62 +38,74 @@ Servirtium in Python.
 > [docs/usage.md](docs/usage.md). The tape *format* is unchanged, so existing
 > tapes replay as-is.
 
-## Install
+## Getting it
 
-> **Note.** The `servirtium` package on PyPI is the **old 1.x** pure-Python
-> implementation; the **2.0** layer documented here (the thin `ctypes` shell over
-> the Aether core) is **not on PyPI yet**, so `pip install servirtium` does *not*
-> give you the API below. Until 2.0 is published, install this package from
-> source (two steps) and point it at a prebuilt native library.
-
-Use Python 3.9+ in a virtual environment. The commands below are for a POSIX
-shell; run them from the directory where you want to try Servirtium:
+The `servirtium` name on PyPI is the **old 1.x** pure-Python package, and the 2.0 layer
+documented here is **not on PyPI**: `pip install servirtium` gives you something else. Install
+the `python/` subdirectory of the release tag straight from GitHub (no `git` needed), and
+fetch the native library from the same release; the package finds it through
+`SERVIRTIUM_VCR_LIB`. Python 3.9+, run in your own project directory:
 
 ```sh
-python3 -m venv .venv
-. .venv/bin/activate
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
+# 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
+case "$(uname -s)" in
+  Linux)   OS=linux;   EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin)  OS=macos;   EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;    LIBC= ;;
+  *) echo "unsupported OS (Windows: take the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+LIBDIR="$HOME/.servirtium-vcr/$TAG"        # keep it OUT of your git tree
+mkdir -p "$LIBDIR"
+LIB=libservirtium_vcr-$TAG-$OS-$ARCH$LIBC.$EXT
+curl -fsSL -o "$LIBDIR/$LIB" "$REL/$LIB"
+curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
+( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
+cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
+
+# 2. the package, in a virtual environment (PEP 440 spelling of the tag: 2.0.0a12)
+python3 -m venv .venv && . .venv/bin/activate
+python -m pip install "https://github.com/servirtium/servirtium-vcr/archive/refs/tags/$TAG.tar.gz#subdirectory=python"
+
+# 3. check it: replay a recorded tape
+export SERVIRTIUM_VCR_LIB="$LIBDIR/libservirtium_vcr.$EXT"      # set this wherever your tests run
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/python/example/tapes/single_get.md
+python - <<'PY'
+import urllib.request, servirtium
+with servirtium.playback("tapes/single_get.md").port(0).start() as vcr:
+    body = urllib.request.urlopen(vcr.base_url + "/ok").read().decode().strip()
+    print(body, "(clean match)" if vcr.last_kind is servirtium.Outcome.OK else "(MISMATCH)")   # -> ok-body (clean match)
+PY
 ```
 
-**1. Get the native library** (`libservirtium_vcr`) for your OS/arch. Download it
-from the [GitHub releases](https://github.com/servirtium/servirtium-vcr/releases)
-— one prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
+The dependency line, for `requirements.txt` / `pyproject.toml`:
+`servirtium @ https://github.com/servirtium/servirtium-vcr/archive/refs/tags/v2.0.0-alpha.12.tar.gz#subdirectory=python`.
+The future registry form is `servirtium==2.0.0a12` (pip also accepts `2.0.0-alpha.12`), and it
+will not resolve to this package until 2.0 is published.
 
-```sh
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
-```
+### Notes for coding agents
 
-These URLs are for Linux x86_64; select the matching release assets for your
-machine. Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library.
-
-**2. Install this package from source** and tell it where the library is via
-`SERVIRTIUM_VCR_LIB`:
-
-```sh
-python -m pip install "git+https://github.com/servirtium/servirtium-vcr.git#subdirectory=python"
-export SERVIRTIUM_VCR_LIB="$PWD/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so"
-# …then run your Python tests as usual; ctypes loads the library from that path.
-```
-
-(If you have the repo checked out, `python -m pip install /path/to/servirtium-vcr/python`
-works the same way.) Keep the library path absolute so changing directories
-doesn't affect loading. Continue with the local recording example below.
-
-**Or build a wheel.** Nothing is published to PyPI yet for 2.0, so you can build
-a self-contained wheel yourself — stage the downloaded lib at the fixed path,
-run `python3 -m build --wheel`, then install the produced wheel:
-
-```sh
-# from the python/ binding directory, with the .so downloaded here:
-mkdir -p servirtium/native && cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so servirtium/native/libservirtium_vcr.so
-python -m pip install build
-python -m build --wheel
-python -m pip install dist/*.whl
-```
+- Do **not** `pip install servirtium`: it installs the unrelated 1.x package and
+  `import servirtium` then has no `playback` (`AttributeError`). Check `servirtium.__version__`
+  (`2.0.0a12`).
+- The version in the install URL and the library must both be the same tag, and the library
+  must be at least as new as the Python source: a library older than the binding fails at the
+  first call with an error naming a missing `aether_vcr_embed_...` symbol.
+- `OSError: could not load native VCR library 'libservirtium_vcr.so'` means
+  `SERVIRTIUM_VCR_LIB` is unset in the process that runs the tests (an IDE or CI step does not
+  inherit your shell), or it is not an absolute path to an existing file. It can also be the wrong
+  libc/arch: `invalid ELF header` / `wrong ELF class` in the message; pick `-musl` on Alpine.
+  `native_lib="/abs/path"` on `servirtium.playback(...)` is the in-code alternative.
+- Do not copy the `.so` into `site-packages/servirtium/native/` by hand: it is lost on
+  reinstall. Do not commit it.
+- Do not use `pip install -e` against a clone without also setting `SERVIRTIUM_VCR_LIB`;
+  a clone has no `native/` directory.
+- Windows: use the `.dll` asset, and `SERVIRTIUM_VCR_LIB` with its full path.
 
 ## Record and replay a local service
 

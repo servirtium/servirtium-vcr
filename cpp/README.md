@@ -55,6 +55,68 @@ so its `extern "C"` symbols aren't mangled) and `libservirtium_vcr.so`.
 - `tapes/single_get.md` — the canonical sample tape (`GET /ok` → `200
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
 
+## Getting it
+
+There is no package: the binding is a header-only C++17 layer (`servirtium.hpp`) over the
+C client (`servirtium.h` and `servirtium.c`), and the native library is **linked** (no
+`dlopen`). Vendor the three files from the release tag, fetch the library from the same
+release, compile the `.c` with the C compiler and your code with the C++ one. In your own
+project:
+
+```sh
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
+# 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
+case "$(uname -s)" in
+  Linux)   OS=linux;   EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin)  OS=macos;   EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;    LIBC= ;;
+  *) echo "unsupported OS (Windows: take the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+LIBDIR="$HOME/.servirtium-vcr/$TAG"        # keep it OUT of your git tree
+mkdir -p "$LIBDIR"
+LIB=libservirtium_vcr-$TAG-$OS-$ARCH$LIBC.$EXT
+curl -fsSL -o "$LIBDIR/$LIB" "$REL/$LIB"
+curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
+( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
+cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
+
+# 2. the binding sources (vendor these three files; or keep them under third_party/)
+mkdir -p third_party/servirtium
+curl -fsSL -o third_party/servirtium/servirtium.h   $RAW/c/include/servirtium.h
+curl -fsSL -o third_party/servirtium/servirtium.c   $RAW/c/src/servirtium.c
+curl -fsSL -o third_party/servirtium/servirtium.hpp $RAW/cpp/include/servirtium.hpp
+
+# 3. check it: build and run a replay of a recorded tape
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/cpp/tapes/single_get.md
+curl -fsSL -o servirtium_check.cpp $RAW/cpp/example/consumer.cpp   # a complete main(); needs curl on PATH
+cc  -std=c99 -fPIC -Ithird_party/servirtium -c third_party/servirtium/servirtium.c -o servirtium_c.o
+c++ -std=c++17 -Ithird_party/servirtium servirtium_check.cpp servirtium_c.o \
+    -L"$LIBDIR" -lservirtium_vcr -Wl,-rpath,"$LIBDIR" -o servirtium_check
+./servirtium_check                  # -> PASS[discovery]: consumer replayed the canonical tape ...
+```
+
+Link line for your own program: `c++ -std=c++17 -Ithird_party/servirtium yours.cpp servirtium_c.o -L<dir>
+-lservirtium_vcr -Wl,-rpath,<dir>`, where `<dir>` holds a file named exactly `libservirtium_vcr.so` / `.dylib`.
+
+### Notes for coding agents
+
+- `servirtium.c` is C: compile it with `cc`, not `c++` (a C++ compiler mangles its symbols
+  and the link fails with `undefined reference to 'sv_...'`). Hence the two compile steps.
+- `-lservirtium_vcr` needs the **plain** file name; the release asset's versioned name does
+  not satisfy it (`cannot find -lservirtium_vcr` / `library 'servirtium_vcr' not found`).
+  Step 1 copies it.
+- `error while loading shared libraries: libservirtium_vcr.so` at run time means no rpath to
+  the directory (or you moved it): add `-Wl,-rpath,<dir>`, or `LD_LIBRARY_PATH` for a quick test.
+- The library must be at least as new as the sources: same tag for all four files, or the
+  link fails with `undefined reference to 'aether_vcr_embed_...'`.
+- Errors are `servirtium::Error` exceptions; the check program catches them.
+- Windows: use the `.dll` asset with its `.dll.lib` import library by hand.
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

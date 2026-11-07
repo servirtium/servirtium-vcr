@@ -38,77 +38,78 @@ reimplement Servirtium in Ruby.
 > [docs/usage.md](docs/usage.md). The tape *format* is unchanged, so existing
 > tapes replay as-is.
 
-## Install
+## Getting it
 
-> **Note:** the `servirtium` gem is **not published to RubyGems yet**, so a
-> `gem 'servirtium'` line in your Gemfile does **not** give you this library.
-> Build a local gem from this repository and a downloaded native library as
-> shown below.
-
-Use **Ruby 3.3+** with Fiddle available, RubyGems, and Git. Check `ruby --version`
-first; if you use a version manager, select an installed compatible Ruby. The
-gemspec declares the minimum version; this directory does not force a specific
-Ruby installation. The commands below use a POSIX shell on Linux x86_64.
-
-**1. Get the Ruby package source.** Start in a scratch directory:
+The `servirtium` gem is **not on RubyGems yet**. Use Bundler's git source on the release tag
+(`glob:` because the gemspec lives in the `ruby/` subdirectory), and fetch the native library
+from the same release; the gem finds it through `SERVIRTIUM_VCR_LIB`. Ruby 3.3+ with Fiddle,
+run in your own project directory:
 
 ```sh
-mkdir servirtium-try
-cd servirtium-try
-git clone --depth 1 https://github.com/servirtium/servirtium-vcr.git
-cd servirtium-vcr/ruby
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
+# 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
+case "$(uname -s)" in
+  Linux)   OS=linux;   EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin)  OS=macos;   EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;    LIBC= ;;
+  *) echo "unsupported OS (Windows: take the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+LIBDIR="$HOME/.servirtium-vcr/$TAG"        # keep it OUT of your git tree
+mkdir -p "$LIBDIR"
+LIB=libservirtium_vcr-$TAG-$OS-$ARCH$LIBC.$EXT
+curl -fsSL -o "$LIBDIR/$LIB" "$REL/$LIB"
+curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
+( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
+cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
+
+# 2. the gem, from the tag (RubyGems spelling of the tag: 2.0.0.alpha.12)
+[ -f Gemfile ] || bundle init
+bundle config set --local path vendor/bundle    # skip if your gem directory is writable (system Ruby's is not); gitignore vendor/
+echo "gem 'fiddle'" >> Gemfile                 # Ruby 3.4 warns, Ruby 4 fails under Bundler without it
+echo "gem 'servirtium', git: 'https://github.com/servirtium/servirtium-vcr.git', tag: '$TAG', glob: 'ruby/*.gemspec'" >> Gemfile
+bundle install
+
+# 3. check it: replay a recorded tape
+export SERVIRTIUM_VCR_LIB="$LIBDIR/libservirtium_vcr.$EXT"      # set this wherever your tests run
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/ruby/example/tapes/single_get.md
+bundle exec ruby -rnet/http -rservirtium -e '
+vcr = Servirtium.playback("tapes/single_get.md").port(0).start
+puts Net::HTTP.get(URI(vcr.base_url + "/ok")), vcr.last_kind_code.zero? ? "(clean match)" : "(MISMATCH)"   # -> ok-body (clean match)
+vcr.close'
 ```
 
-**2. Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256`. Download and verify
-the Linux x86_64 library in the `ruby/` directory:
+The dependency line is the `gem 'servirtium', git: ...` line above. The future registry form is
+`gem 'servirtium', '2.0.0.alpha.12'` (RubyGems rejects `2.0.0-alpha.12`: use the dotted
+spelling); it does not resolve today.
 
-```sh
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -fLO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
-```
+### Notes for coding agents
 
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. These URLs are for Linux x86_64; select the matching release asset on
-other machines. When staging it below, use `libservirtium_vcr.dylib` on macOS
-or `servirtium_vcr.dll` on Windows.
-
-**3. Build the gem with the library bundled inside.** Still in
-`servirtium-vcr/ruby`:
-
-```sh
-mkdir -p lib/servirtium/native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so lib/servirtium/native/libservirtium_vcr.so
-gem build servirtium.gemspec
-# Produces servirtium-2.0.0.gem for the selected OS/architecture.
-```
-
-No Aether compiler, `aeb`, or Bundler setup is needed to build this gem from a
-downloaded native library.
-
-**4. Install into a separate app.** Keep the experiment's gems in that app's
-own directory, without changing your system gems:
-
-```sh
-cd ../..
-mkdir app
-cd app
-export GEM_HOME="$PWD/gems"
-export GEM_PATH="$GEM_HOME"
-gem install --local --no-document --install-dir "$GEM_HOME" ../servirtium-vcr/ruby/servirtium-2.0.0.gem
-```
-
-The installed gem discovers its bundled native library. Run the example below
-in this same shell so Ruby uses the isolated gem directory. If you already set
-`SERVIRTIUM_VCR_LIB`, unset it to exercise bundled-library discovery.
-
-To use another native build, set `SERVIRTIUM_VCR_LIB` to its **absolute path**
-before running Ruby, or pass `native_lib: '/absolute/path/to/library'` to
-`Servirtium.record` / `Servirtium.playback` before the first server starts.
-Setting that variable does not copy a library into a gem at build time.
+- `Permission denied @ dir_s_mkdir - /usr/lib/ruby/gems/...` from `bundle install` means a
+  system Ruby with a root-owned gem directory: use a local `path` (as above), a Ruby version
+  manager, or `GEM_HOME`; never `sudo bundle`.
+- Do not write `gem 'servirtium'` or `gem 'servirtium', '2.0.0.alpha.12'` with no `git:`: it is not
+  published, so Bundler reports `Could not find gem 'servirtium'` (or resolves an unrelated
+  older gem of that name). Do not drop `glob: 'ruby/*.gemspec'`: without it Bundler looks for
+  a gemspec at the repo root and says `There are no gemspecs at ...`.
+- Use `tag:` (or `ref:`), not `branch: 'main'`: the library must be at least as new as the Ruby
+  source, and `main` can be ahead of the last release. A library older than the binding fails with a
+  `Fiddle::DLError` naming a missing `aether_vcr_embed_...` symbol.
+- `could not load native VCR library (tried: ...)` means `SERVIRTIUM_VCR_LIB` is unset in the
+  process running the tests (IDE, CI step, `bundle exec` in another shell), is not an absolute
+  path, or is for the wrong libc/arch (`-musl` on Alpine). `native_lib:` on `Servirtium.playback`
+  is the in-code alternative.
+- Do not copy the `.so` into the bundler checkout (`bundle info servirtium` shows it): it
+  disappears when the checkout is refreshed. Do not commit it.
+- Ruby 3.4 prints `fiddle was loaded from the standard library, but will no longer be part of
+  the default gems`; on Ruby 4+ that is a `LoadError` under Bundler. The binding does not declare
+  `fiddle` itself, so your Gemfile must (the `gem 'fiddle'` line above).
+- `servirtium.gemspec` requires Ruby `>= 3.3.0`.
+- Windows: use the `.dll` asset; `SERVIRTIUM_VCR_LIB` takes its full path.
 
 ## Record and replay a local service
 

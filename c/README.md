@@ -61,6 +61,69 @@ This header is **also** the substrate the C++ client (`cpp/`) wraps in RAII.
 - `tapes/single_get.md` — the canonical sample tape (`GET /ok` → `200
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
 
+## Getting it
+
+There is no package: the binding is one header and one source file, and the native library
+is **linked** (no `dlopen`). Vendor `servirtium.h` and `servirtium.c` from the release tag
+into your project, fetch the library from the same release, and compile the `.c` with your
+own sources. In your own project:
+
+```sh
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
+# 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
+case "$(uname -s)" in
+  Linux)   OS=linux;   EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin)  OS=macos;   EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;    LIBC= ;;
+  *) echo "unsupported OS (Windows: take the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+LIBDIR="$HOME/.servirtium-vcr/$TAG"        # keep it OUT of your git tree
+mkdir -p "$LIBDIR"
+LIB=libservirtium_vcr-$TAG-$OS-$ARCH$LIBC.$EXT
+curl -fsSL -o "$LIBDIR/$LIB" "$REL/$LIB"
+curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
+( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
+cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
+
+# 2. the binding sources (vendor these two files; or keep them under third_party/)
+mkdir -p third_party/servirtium
+curl -fsSL -o third_party/servirtium/servirtium.h $RAW/c/include/servirtium.h
+curl -fsSL -o third_party/servirtium/servirtium.c $RAW/c/src/servirtium.c
+
+# 3. check it: build and run a replay of a recorded tape
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/c/example/tapes/single_get.md
+curl -fsSL -o servirtium_check.c $RAW/c/example/consumer.c        # a complete main(); needs curl on PATH
+cc -std=gnu99 -Ithird_party/servirtium servirtium_check.c third_party/servirtium/servirtium.c \
+   -L"$LIBDIR" -lservirtium_vcr -Wl,-rpath,"$LIBDIR" -o servirtium_check
+./servirtium_check                  # -> PASS[discovery]: consumer replayed the canonical tape ...
+```
+
+Link line for your own program: `cc -std=c99 -Ithird_party/servirtium yours.c third_party/servirtium/servirtium.c
+-L<dir> -lservirtium_vcr -Wl,-rpath,<dir>`, where `<dir>` holds a file named exactly
+`libservirtium_vcr.so` / `.dylib`. Nothing to `pkg-config` unless you build the prefix
+yourself (`aeb c/.package.ae` writes a `servirtium.pc`; no release asset carries it).
+
+### Notes for coding agents
+
+- `-lservirtium_vcr` needs the **plain** file name; the release asset's versioned name does
+  not satisfy it (`cannot find -lservirtium_vcr` / `library 'servirtium_vcr' not found`).
+  Step 1 copies it to the plain name.
+- `error while loading shared libraries: libservirtium_vcr.so` at run time means the binary
+  has no rpath to the directory (or you moved it); add `-Wl,-rpath,<dir>` or set `LD_LIBRARY_PATH`
+  (`DYLD_LIBRARY_PATH` on macOS) for a quick test. The library must be at least as new as
+  `servirtium.c`: same tag for both, or the link fails with `undefined reference to 'aether_vcr_embed_...'`.
+- The binding itself is plain C99; the check program uses POSIX `popen`, hence `-std=gnu99` there
+  (`-std=c99` alone gives `implicit declaration of function 'popen'`).
+- Compile `servirtium.c` as C (`cc`), never with a C++ compiler (the symbols would be mangled);
+  C++ users see `cpp/README.md`.
+- Do not vendor the library into git; do keep the two source files at one tag.
+- Windows: use the `.dll` asset with its `.dll.lib` import library by hand.
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

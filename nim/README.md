@@ -67,65 +67,73 @@ all run against the real native libservirtium_vcr:
   not leak between fixtures; `failIfChanged` raises on drift.
 - **`tests/playback.nim`** — the original curl-driven playback smoke test.
 
-## Linking libservirtium_vcr
+## Getting it
 
-libservirtium_vcr is linked at build time via `{.passL.}` in
-`src/servirtium/native.nim`:
-
-```
-{.passL: "-L<core/native> -lservirtium_vcr -Wl,-rpath,<core/native>".}
-```
-
-The `-L`/`-rpath` **directory** is resolved at compile time: it honors
-`$SERVIRTIUM_VCR_LIB` — which must name a **directory that contains a file called
-exactly `libservirtium_vcr.so`** (that is what `-lservirtium_vcr` links against; a
-versioned filename like `libservirtium_vcr-<ver>-<os>.so` will *not* satisfy
-`-l`). If unset, it falls back to `native/` (staged below) then `core/native`
-relative to this source tree. The baked-in `-rpath` means the OS loader finds
-`libservirtium_vcr.so` at run time without `LD_LIBRARY_PATH`.
-
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
+There is no nimble package and none is published: take the release tag as source on the
+`--path`, and link the native library from the same release. The library is **linked at
+compile time** (`{.passL.}`), with its directory baked in as an rpath, so the binary then
+needs no `LD_LIBRARY_PATH`. In your own project:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
+set -eu
+TAG=v2.0.0-alpha.12                      # a release tag of servirtium-vcr; nothing else to edit
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
+# 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
+case "$(uname -s)" in
+  Linux)   OS=linux;   EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
+  Darwin)  OS=macos;   EXT=dylib; LIBC= ;;
+  FreeBSD) OS=freebsd; EXT=so;    LIBC= ;;
+  *) echo "unsupported OS (Windows: take the .dll asset by hand)"; exit 1 ;;
+esac
+case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+LIBDIR="$HOME/.servirtium-vcr/$TAG"        # keep it OUT of your git tree
+mkdir -p "$LIBDIR"
+LIB=libservirtium_vcr-$TAG-$OS-$ARCH$LIBC.$EXT
+curl -fsSL -o "$LIBDIR/$LIB" "$REL/$LIB"
+curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
+( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
+cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
+
+# 2. the Nim sources of that tag
+git clone --depth 1 --branch $TAG https://github.com/servirtium/servirtium-vcr.git third_party/servirtium-vcr
+
+# 3. check it: compile and run a replay of a recorded tape
+export SERVIRTIUM_VCR_LIB="$LIBDIR/libservirtium_vcr.$EXT"      # needed at COMPILE time, not at run time
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/nim/example/tapes/single_get.md
+cat > servirtium_check.nim <<'NIM'
+import servirtium
+import std/httpclient
+let vcr = playback("tapes/single_get.md")
+doAssert vcr.start()
+echo newHttpClient().getContent(vcr.baseUrl() & "/ok"), " ", vcr.lastKind()   # -> ok-body Ok
+vcr.close()
+NIM
+nim c -r --hints:off --path:third_party/servirtium-vcr/nim/src servirtium_check.nim
 ```
 
-**Build the package locally**
+In `config.nims` / the command line the dependency is `--path:third_party/servirtium-vcr/nim/src`
+(or `switch("path", ...)`). A future nimble form would be `requires "servirtium >= 2.0.0-alpha.12"`;
+there is none today.
 
-Nothing is published to a registry yet, so you assemble the package yourself:
-drop the downloaded library at the package-relative path below, then consume it
-from source (a local `nimble` path / this checkout).
+### Notes for coding agents
 
-```sh
-# from the nim binding directory, with libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so downloaded:
-mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so native/libservirtium_vcr.so
-# the package now carries the native library; consume it from source (see this README's usage/examples).
-```
-
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll`.)
-
-The `cp` above (to `native/libservirtium_vcr.so`) is the whole story — that
-correctly-named file is what the link resolves, so **no env var is needed**. Only
-if you want the lib somewhere else, set `SERVIRTIUM_VCR_LIB` to the **directory**
-holding a file named exactly `libservirtium_vcr.so` (not the versioned download —
-rename or symlink it first), before `nim c`:
-
-```sh
-# optional override: point at a DIRECTORY containing libservirtium_vcr.so
-mkdir -p /some/dir && cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so /some/dir/libservirtium_vcr.so
-export SERVIRTIUM_VCR_LIB=/some/dir
-```
-
-Contributors can instead build libservirtium_vcr from `core/` (needs the Aether
-`ae` toolchain).
+- `SERVIRTIUM_VCR_LIB` is read **when `nim c` runs** (`staticExec`), and it is the path of the
+  **file** `libservirtium_vcr.<so|dylib>`: Nim takes its directory for `-L` and the rpath. The
+  file must be named exactly `libservirtium_vcr.so`/`.dylib` (the versioned release name will not
+  satisfy `-lservirtium_vcr`; step 1 copies it). A directory path is wrong: Nim takes *its* parent (`-L ~/.servirtium-vcr`) and the link fails
+  with `cannot find -lservirtium_vcr`.
+  Changing the variable later does not rebuild: delete `nimcache` or pass `-f`.
+- If it is unset, the sources fall back to `core/native` beside the clone (does not exist in a
+  release checkout), then `<clone>/nim/../native`. A missing library shows as
+  `cannot find -lservirtium_vcr` at link time.
+- The library must be at least as new as the Nim source: use the same tag for both. An older
+  library fails the link with `undefined reference to 'aether_vcr_embed_...'`.
+- The binary records the library's directory as an rpath: do not delete `~/.servirtium-vcr/$TAG`
+  while binaries built against it are in use; rebuild if you move it.
+- Needs `--threads:on` only if your own code uses threads (the upstream test suites do).
+- Windows: use the `.dll` asset (`servirtium_vcr.dll`) by hand.
 
 ## Building / testing from source
 
