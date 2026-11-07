@@ -61,8 +61,10 @@
 //     a user table's on_disk_size, the container id in a metric's
 //     exported_instance label and a Prometheus sample's millisecond
 //     timestamp, in varz three machine-sized flags, the node's metric name
-//     and the tserver's heap profile path, and the whole `system` list of
-//     /api/v1/tables (its order changes between runs).
+//     and the tserver's heap profile path.
+//   - sorted: the `system` list of /api/v1/tables (its order changes between
+//     runs), by keyspace then table name (Servirtium's stable order), so
+//     replay serves it in that order.
 //   - redacted: nothing; there are no credentials.
 //   - left out: nothing beyond the Date response header, as everywhere (the
 //     servers send none).
@@ -103,7 +105,7 @@
 // health-check, varz and /status; the representative errors (404, the table
 // endpoint's missing and unknown arguments, which answer 200 with an
 // {"error": ...} body).
-// Out: the system tables of /api/v1/tables (collapsed, see api_rules), /metrics and /prometheus-metrics unfiltered (hundreds of KB of
+// Out: /metrics and /prometheus-metrics unfiltered (hundreds of KB of
 // counters: one filtered case stands for them), /dump-entities (92 KB of
 // the catalog), /api/v1/tablets on a tserver (a map keyed by random tablet
 // ids, so its order changes run to run), /api/v1/mem-trackers (limits sized
@@ -161,7 +163,9 @@ fn http_get(url: string) -> (int, string, string) {
     st = client.response_status(r)
     b = client.response_body(r)
     client.response_free(r)
-    return st, b, ""
+    // JSON without the whitespace between tokens (servirtium.json_compact), so
+    // the assertions hold live and against a pretty-printed tape alike.
+    return st, servirtium.json_compact(b), ""
 }
 
 // A GET against the current recording's base URL: (status, body). A
@@ -414,13 +418,17 @@ fn api_rules() {
     // id).
     servirtium.collapse("\"name\":\"metric_node_name\",\"value\":\"[^\"]*\"", "\"name\":\"metric_node_name\",\"value\":\"HOST:PORT\"")
     servirtium.collapse("\"name\":\"heap_profile_path\",\"value\":\"[^\"]*\"", "\"name\":\"heap_profile_path\",\"value\":\"/tmp/yb-tserver.PID\"")
-    // /api/v1/tables: the whole `system` list (about 580 tables, 98 KB). Its
+    // /api/v1/tables: the `system` list (about 580 tables, 98 KB). Its
     // entries are the same set every run but not always in the same order (the
     // master walks its catalog in hash order, so system and system_schema's
-    // tables swap places between runs), which would make every re-record
-    // differ. The `user` list before it, where a test's own tables are, is
-    // untouched. A client that wants system tables asks for one by name or id.
-    servirtium.collapse("(?s),\"system\":\\[.*\\]\\}", ",\"system\":[\"COLLAPSED\"]}")
+    // tables swap places between runs): written sorted by keyspace, then
+    // table name. The `user` list before it, where a test's own tables are,
+    // is left as sent.
+    servirtium.sort_json_array_at("^/api/v1/tables$", "/system", "/keyspace,/table_name")
+    // Sorted JSON is only written pretty-printed (a sort rule without
+    // pretty_json is refused): every JSON response body on these tapes is
+    // indented, so a reader sees it was rewritten.
+    servirtium.pretty_json(2)
     // A Prometheus sample: the exporting container's id (the host name) as a
     // label, and the sample's time in milliseconds after the value.
     servirtium.collapse("exported_instance=\"[^\"]*\"", "exported_instance=\"HOST:PORT\"")
@@ -459,10 +467,10 @@ main() {
         spec.it("reports the build version") callback {
             rec, ok = begin("reports_the_build_version", 0)
             if ok == 0 { return }
-            expect_contains("/api/v1/version", "\"version_number\": \"2024.1.3.0\"|\"build_number\": \"105\"|\"build_type\": \"RELEASE\"|\"git_hash\": \"0b04fe41caf79c06cfce56cd80731e072853fe3b\"")
+            expect_contains("/api/v1/version", "\"version_number\":\"2024.1.3.0\"|\"build_number\":\"105\"|\"build_type\":\"RELEASE\"|\"git_hash\":\"0b04fe41caf79c06cfce56cd80731e072853fe3b\"")
             servirtium.end_recording(rec)
             rec2 = begin_tserver("reports_the_build_version_tserver")
-            expect_contains("/api/v1/version", "\"version_number\": \"2024.1.3.0\"|\"build_number\": \"105\"")
+            expect_contains("/api/v1/version", "\"version_number\":\"2024.1.3.0\"|\"build_number\":\"105\"")
             servirtium.end_recording(rec2)
         }
 
@@ -515,9 +523,9 @@ main() {
         }
 
         // PORTING: master GET /api/v1/tables ({"user": [...], "index": [],
-        // "system": ["COLLAPSED"]}: live, "system" lists about 580 system
-        // tables, 98 KB, in an order that changes between runs, so the tape
-        // keeps the one word; "user" holds the two
+        // "system": [...]}: "system" lists about 580 system tables, 98 KB, in
+        // an order that changes between runs live, sorted by keyspace and
+        // table name on the tape; "user" holds the two
         // setup tables, tcae_ks.items and yugabyte.tcae_sql, each {keyspace,
         // table_name, state RUNNING, message, uuid, ysql_oid, hidden,
         // on_disk_size}); then GET /api/v1/table?id=<the YCQL table's uuid
@@ -602,7 +610,7 @@ main() {
         spec.it("reads filtered metrics as JSON and as Prometheus text") callback {
             rec, ok = begin("reads_filtered_metrics_as_json_and_as_prometheus_text", 0)
             if ok == 0 { return }
-            expect_contains("/metrics?metrics=num_tablet_servers", "\"type\": \"cluster\"|\"id\": \"yb.cluster\"|\"name\": \"num_tablet_servers_live\"|\"value\": 1|\"name\": \"num_tablet_servers_dead\"|\"value\": 0")
+            expect_contains("/metrics?metrics=num_tablet_servers", "\"type\":\"cluster\"|\"id\":\"yb.cluster\"|\"name\":\"num_tablet_servers_live\"|\"value\":1|\"name\":\"num_tablet_servers_dead\"|\"value\":0")
             expect_contains("/prometheus-metrics?metrics=num_tablet_servers", "# TYPE num_tablet_servers_live gauge|num_tablet_servers_live{exported_instance=|metric_type=\"cluster\",metric_id=\"yb.cluster\"} 1 |num_tablet_servers_dead{exported_instance=")
             servirtium.end_recording(rec)
         }
