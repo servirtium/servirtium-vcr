@@ -1,0 +1,270 @@
+// Written for servirtium-vcr, beside testcontainers-ae's tests/test_gcloud_spanner.ae
+// (which ports testcontainers-go modules/gcloud/examples/spanner/examples_test.go).
+//
+// A real Cloud Spanner emulator, driven over its REST/JSON API (port 9020;
+// the gRPC port 9010 is not used, so the tapes are plain HTTP). Google client
+// libraries that have a REST transport (.NET's RestGrpcAdapter, Node's
+// `fallback: 'rest'`, ...) can replay these tapes with no emulator.
+//
+// PORTING: the emulator is unauthenticated, so there is no login and no
+// credentials are on the tapes. Every request is JSON with content type
+// application/json; the emulator ignores Authorization. All paths are under
+// /v1/, the REST mapping of the Spanner gRPC services:
+//   GET  /v1/projects/{p}/instanceConfigs
+//   POST /v1/projects/{p}/instances                    {"instanceId","instance":{config,displayName,nodeCount}}
+//   GET  /v1/projects/{p}/instances/{i}
+//   POST /v1/projects/{p}/instances/{i}/databases      {"createStatement":"CREATE DATABASE d","extraStatements":[DDL...]}
+//   GET  /v1/projects/{p}/instances/{i}/databases[/{d}[/ddl]]
+//   PATCH /v1/projects/{p}/instances/{i}/databases/{d}/ddl  {"statements":[DDL...]}   (returns an operation)
+//   DELETE /v1/projects/{p}/instances/{i}/databases/{d}      (drops the database)
+//   POST /v1/projects/.../databases/{d}/sessions       {}   -> {"name": ".../sessions/N"}
+//   POST /v1/.../sessions/N:beginTransaction           {"options":{"readWrite":{}}} -> {"id": base64}
+//   POST /v1/.../sessions/N:executeSql                 {"sql","params","paramTypes","transaction"}
+//   POST /v1/.../sessions/N:commit                     {"transactionId"} or {"mutations","singleUseTransaction"}
+//   DELETE /v1/.../sessions/N
+// Notice the ":verb" suffix is part of the last path segment (a literal colon).
+//
+// PORTING: create instance and create database return a long-running
+// operation, and on this emulator it is already "done": true in that very
+// response (the work is synchronous), so no polling is needed and none is
+// recorded. A real Spanner would need a GET on the operation name; do not
+// expect that from these tapes. The operation names ("_auto0", "_auto1") are
+// counters of a fresh emulator; every case here starts its own emulator, so
+// they are the same every run.
+//
+// PORTING: what varies run to run and is rewritten on the tapes: RFC 3339
+// timestamps (createTime, updateTime, startTime, endTime, commitTimestamp,
+// approximateLastUseTime) are collapsed to a constant, and the read-write
+// transaction id (base64 text, different every time) is replaced by a stable
+// {{transaction-id-N}} token, since it comes back in the commit and in the
+// DML request. Session names are counters from 0 on a fresh emulator (the
+// test reads the name from the create-session response anyway, as a client
+// would). Instance and database ids are chosen by the test: deterministic.
+//
+// PORTING: the emulator's REST error mapping is uneven. A SQL error comes
+// back as a proper 400 with {"code":3,"message":...} (recorded here). A
+// NOT_FOUND (a database, an instance or a session that does not exist) comes
+// back as 500 {"code": 13, "message": "failed to marshal error message"}, an
+// emulator quirk rather than Spanner's behaviour, so the 404 case is left
+// out and only the 400 is taped.
+//
+// PORTING: DML in a read-write transaction is executeSql with
+// "transaction":{"id": <id from beginTransaction>} followed by commit with
+// {"transactionId": <id>}; "stats.rowCountExact" (a string) reports the rows
+// written. INT64 values are JSON strings ("1"), as in Spanner's REST API.
+
+import std.spec
+import std.string
+import std.http.client
+import std.json
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.gcloud.spanner
+
+const IMAGE = "gcr.io/cloud-spanner-emulator/emulator:1.5.40"
+const PROJECT = "spanner-project"
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+const DDL = "CREATE TABLE singers (id INT64 NOT NULL, name STRING(100)) PRIMARY KEY (id)"
+
+// One JSON call: (status, body, error).
+fn rest(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+// A top-level string field of a JSON body ("" when absent).
+fn field(body: string, name: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    v, _ = json.object_get(doc, name)
+    s, _ = json.get_string(v)
+    out = string.copy(s)
+    json.free(doc)
+    return out
+}
+
+fn instance_path() -> string { return "/v1/projects/${PROJECT}/instances/tcae-instance" }
+fn database_path() -> string { return "${instance_path()}/databases/tcae-db" }
+
+// Create the instance and the database (with one table); asserts what it does.
+fn setup(url: string) {
+    body = "{\"instanceId\":\"tcae-instance\",\"instance\":{\"config\":\"projects/${PROJECT}/instanceConfigs/emulator-config\",\"displayName\":\"tcae\",\"nodeCount\":1}}"
+    st, b, err = rest("POST", "${url}/v1/projects/${PROJECT}/instances", body)
+    spec.assert_ok(err, "create instance")
+    spec.assert_eq(st, 200, "create instance is 200: ${b}")
+    spec.assert_contains(b, "\"done\":true", "the instance operation is already done")
+    body = "{\"createStatement\":\"CREATE DATABASE `tcae-db`\",\"extraStatements\":[\"${DDL}\"]}"
+    st, b, err = rest("POST", "${url}${instance_path()}/databases", body)
+    spec.assert_ok(err, "create database")
+    spec.assert_eq(st, 200, "create database is 200: ${b}")
+    spec.assert_contains(b, "\"done\":true", "the database operation is already done")
+}
+
+// Start the emulator when live: the REST base URL ("" in playback).
+fn start() -> string {
+    if servirtium.live() == 0 { return "" }
+    g, err = spanner.run(IMAGE) {
+        project_id(PROJECT)
+    }
+    if g != null { testing.cleanup_container(g.container) }
+    spec.assert_ok(err, "spanner starts")
+    if err != "" { return "" }
+    return spanner.rest_url(g)
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // Times: createTime, updateTime, startTime, endTime, commitTimestamp ...
+    servirtium.collapse(servirtium.RFC3339, "2026-01-01T00:00:00.000000Z")
+    // The read-write transaction id: base64 of a clock reading (they all
+    // start "MTc" and run 24 characters or more).
+    servirtium.normalize("MTc[A-Za-z0-9+/]{18,}={0,2}", "transaction-id")
+
+    spec.describe(fw, "modules/gcloud/spanner (REST)") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("lists the instance configs") callback {
+            addr = start()
+            if servirtium.live() == 1 && addr == "" { return }
+            url, rec = servirtium.recording("gcloud_spanner", "lists_the_instance_configs", addr)
+            st, b, err = rest("GET", "${url}/v1/projects/${PROJECT}/instanceConfigs", "")
+            spec.assert_ok(err, "list instance configs")
+            spec.assert_eq(st, 200, "is 200: ${b}")
+            spec.assert_contains(b, "projects/${PROJECT}/instanceConfigs/emulator-config", "the emulator config is listed")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("creates an instance and a database with DDL, reads them back and drops it") callback {
+            addr = start()
+            if servirtium.live() == 1 && addr == "" { return }
+            url, rec = servirtium.recording("gcloud_spanner", "creates_an_instance_and_a_database_with_ddl_reads_them_back_and_drops_it", addr)
+            setup(url)
+
+            st, b, err = rest("GET", "${url}${instance_path()}", "")
+            spec.assert_ok(err, "get instance")
+            spec.assert_eq(st, 200, "get instance is 200: ${b}")
+            spec.assert_contains(b, "\"state\":\"READY\"", "the instance is ready")
+
+            st, b, err = rest("GET", "${url}${instance_path()}/databases", "")
+            spec.assert_ok(err, "list databases")
+            spec.assert_eq(st, 200, "list databases is 200: ${b}")
+            spec.assert_contains(b, "tcae-db", "the database is listed")
+
+            st, b, err = rest("GET", "${url}${database_path()}/ddl", "")
+            spec.assert_ok(err, "get ddl")
+            spec.assert_eq(st, 200, "get ddl is 200: ${b}")
+            spec.assert_contains(b, "CREATE TABLE singers", "the table is in the DDL")
+
+            // Change the schema: an operation again, done at once.
+            st, b, err = rest("PATCH", "${url}${database_path()}/ddl", "{\"statements\":[\"ALTER TABLE singers ADD COLUMN born INT64\"]}")
+            spec.assert_ok(err, "update ddl")
+            spec.assert_eq(st, 200, "update ddl is 200: ${b}")
+            st, b, err = rest("GET", "${url}${database_path()}/ddl", "")
+            spec.assert_ok(err, "get ddl again")
+            spec.assert_contains(b, "born INT64", "the new column is in the DDL")
+
+            st, b, err = rest("DELETE", "${url}${database_path()}", "")
+            spec.assert_ok(err, "drop database")
+            spec.assert_eq(st, 200, "drop database is 200: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("writes rows in a read-write transaction and by mutation, and reads them back") callback {
+            addr = start()
+            if servirtium.live() == 1 && addr == "" { return }
+            url, rec = servirtium.recording("gcloud_spanner", "writes_rows_in_a_read_write_transaction_and_by_mutation_and_reads_them_back", addr)
+            setup(url)
+
+            st, b, err = rest("POST", "${url}${database_path()}/sessions", "{}")
+            spec.assert_ok(err, "create session")
+            spec.assert_eq(st, 200, "create session is 200: ${b}")
+            session = field(b, "name")
+            spec.assert_contains(session, "/sessions/", "the session has a name")
+            s = "${url}/v1/${session}"
+
+            // DML inside an explicit read-write transaction.
+            st, b, err = rest("POST", "${s}:beginTransaction", "{\"options\":{\"readWrite\":{}}}")
+            spec.assert_ok(err, "begin transaction")
+            spec.assert_eq(st, 200, "begin transaction is 200: ${b}")
+            tx = field(b, "id")
+            spec.assert_true(string.length(tx) > 0, "a transaction id came back")
+            dml = "{\"sql\":\"INSERT INTO singers (id, name) VALUES (1, @name)\",\"params\":{\"name\":\"Marc\"},\"paramTypes\":{\"name\":{\"code\":\"STRING\"}},\"transaction\":{\"id\":\"${tx}\"}}"
+            st, b, err = rest("POST", "${s}:executeSql", dml)
+            spec.assert_ok(err, "insert by DML")
+            spec.assert_eq(st, 200, "DML is 200: ${b}")
+            spec.assert_contains(b, "\"rowCountExact\":\"1\"", "one row written")
+            st, b, err = rest("POST", "${s}:commit", "{\"transactionId\":\"${tx}\"}")
+            spec.assert_ok(err, "commit")
+            spec.assert_eq(st, 200, "commit is 200: ${b}")
+            spec.assert_contains(b, "commitTimestamp", "a commit timestamp")
+
+            // A second row by mutation, in a single-use read-write transaction.
+            mut = "{\"mutations\":[{\"insert\":{\"table\":\"singers\",\"columns\":[\"id\",\"name\"],\"values\":[[\"2\",\"Catalina\"]]}}],\"singleUseTransaction\":{\"readWrite\":{}}}"
+            st, b, err = rest("POST", "${s}:commit", mut)
+            spec.assert_ok(err, "commit mutation")
+            spec.assert_eq(st, 200, "commit mutation is 200: ${b}")
+
+            // Read both back in a strong single-use read-only transaction.
+            q = "{\"sql\":\"SELECT id, name FROM singers ORDER BY id\",\"transaction\":{\"singleUse\":{\"readOnly\":{\"strong\":true}}}}"
+            st, b, err = rest("POST", "${s}:executeSql", q)
+            spec.assert_ok(err, "query")
+            spec.assert_eq(st, 200, "query is 200: ${b}")
+            spec.assert_contains(b, "\"rows\":[[\"1\",\"Marc\"],[\"2\",\"Catalina\"]]", "both rows read back")
+
+            // A parameterized query.
+            q = "{\"sql\":\"SELECT name FROM singers WHERE id = @id\",\"params\":{\"id\":\"2\"},\"paramTypes\":{\"id\":{\"code\":\"INT64\"}},\"transaction\":{\"singleUse\":{\"readOnly\":{\"strong\":true}}}}"
+            st, b, err = rest("POST", "${s}:executeSql", q)
+            spec.assert_ok(err, "parameterized query")
+            spec.assert_contains(b, "\"rows\":[[\"Catalina\"]]", "the parameter selects one row")
+
+            st, b, err = rest("DELETE", s, "")
+            spec.assert_ok(err, "delete session")
+            spec.assert_eq(st, 200, "delete session is 200: ${b}")
+
+            st, b, err = rest("DELETE", "${url}${database_path()}", "")
+            spec.assert_ok(err, "drop database")
+            spec.assert_eq(st, 200, "drop database is 200: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("rejects bad SQL with a 400") callback {
+            addr = start()
+            if servirtium.live() == 1 && addr == "" { return }
+            url, rec = servirtium.recording("gcloud_spanner", "rejects_bad_sql_with_a_400", addr)
+            setup(url)
+            st, b, err = rest("POST", "${url}${database_path()}/sessions", "{}")
+            spec.assert_ok(err, "create session")
+            session = field(b, "name")
+            s = "${url}/v1/${session}"
+            ro = "\"transaction\":{\"singleUse\":{\"readOnly\":{\"strong\":true}}}"
+
+            st, b, err = rest("POST", "${s}:executeSql", "{\"sql\":\"SELECT * FROM nosuch\",${ro}}")
+            spec.assert_ok(err, "unknown table")
+            spec.assert_eq(st, 400, "an unknown table is 400: ${b}")
+            spec.assert_contains(b, "Table not found: nosuch", "the message names the table")
+
+            st, b, err = rest("POST", "${s}:executeSql", "{\"sql\":\"SELECT FROM WHERE\",${ro}}")
+            spec.assert_ok(err, "syntax error")
+            spec.assert_eq(st, 400, "a syntax error is 400: ${b}")
+            spec.assert_contains(b, "Syntax error", "the message says so")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

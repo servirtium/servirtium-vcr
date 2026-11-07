@@ -41,6 +41,7 @@ reference for what each case does.
 | `gcloud_firestore` | 2 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
 | `gcloud_datastore` | 1 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
 | `gcloud_pubsub` | 1 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| `gcloud_spanner` | 4 | `gcr.io/cloud-spanner-emulator/emulator:1.5.40` (REST, port 9020) |
 | `gcloud_bigquery` | 1 | `ghcr.io/goccy/bigquery-emulator:0.6.1` (linux/amd64 only) |
 | `meilisearch` | 2 | `getmeili/meilisearch:v1.10.3` |
 | `solr` | 1 | `solr:9` |
@@ -167,6 +168,7 @@ Per suite (registered at the top of its `main`):
 | gcloud_firestore | | RFC 3339 times (`createTime`, `updateTime`, `readTime`) | | |
 | gcloud_datastore | | | | |
 | gcloud_pubsub | | `publishTime` | | |
+| gcloud_spanner | the read-write transaction id (base64; it round-trips into the DML and commit) | RFC 3339 times | | |
 | gcloud_bigquery | | the query job's `jobId` | | |
 | meilisearch | | | each `Authorization: Bearer` master key, as `REDACTED[<label>]` | `vary` |
 | solr | | `QTime`, `_version_` | | |
@@ -247,8 +249,13 @@ it is on the tape, and playback is plain HTTP.
 - **The gcloud emulators:** the tests send `Authorization: Bearer owner`, the
   emulators' fixed placeholder token, recorded as is. BigQuery's emulator
   image is linux/amd64 only.
-- **Not recordable:** the Bigtable and Spanner emulators' tests only open a
-  TCP connection to a gRPC port (no HTTP), so they stay in testcontainers-ae.
+- **Spanner:** the emulator's REST/JSON API (port 9020) is taped, not its
+  gRPC port. Create instance and create database come back already done, so
+  no operation is polled. Its REST maps NOT_FOUND to a 500 ("failed to
+  marshal error message"), so the error case taped is a 400 for bad SQL.
+- **Not recordable:** the Bigtable emulator has no REST API, and its test
+  only opens a TCP connection to a gRPC port (no HTTP), so it stays in
+  testcontainers-ae.
 
 **Search, mail, identity and the rest:**
 - **Output order that changes run to run.** Meilisearch and Qdrant send
