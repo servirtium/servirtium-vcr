@@ -27,6 +27,25 @@ using its tapes, including any no-reverse-engineering clause: see
 with restrictive terms start with a `## LICENSE NOTICE`
 (`servirtium.license_notice(...)` in the test).
 
+### Tapes we don't ship
+
+For seven services we ship the test and the recorder but not the tapes. We
+are not lawyers and can't afford to argue about licences, so where a
+vendor's terms could reasonably be read as forbidding what publishing the
+tapes would amount to, we take the cautious reading and leave the tapes out.
+That is a judgement about risk, not a finding that anything is forbidden.
+Run the test with `TCAE_VCR=record` and you have your own tapes, on your own
+machine, under the terms you accepted by running the image; don't publish
+them. Each suite's `LICENCE-NOTE.md` gives the clause and the commands.
+
+| Suite | Why we are cautious |
+|---|---|
+| `dynamodb` | AWS's DynamoDB Local licence limits use to your internal business purposes and forbids publicly communicating or reverse engineering the software. |
+| `pinecone` | Pinecone Local's licence forbids copying or transmitting it, "including ... recording". |
+| `timeplus` | The closed Timeplus Enterprise engine, with no licence in the image; its likely terms are internal use only, with no reverse engineering. |
+| `gcloud_datastore`, `gcloud_firestore`, `gcloud_pubsub` | Google's own emulators of Google Cloud services; Google Cloud's terms forbid reverse engineering the Services. |
+| `cockroachdb` | The CockroachDB Software License defines "Benchmark" as "any benchmark, comparative test or evaluation of the Software", with duties to disclose; published recordings of its API could be read as one. |
+
 | Suite | Cases | Container |
 |---|---|---|
 | `vault` | 2 | `hashicorp/vault:1.13.0` |
@@ -69,7 +88,7 @@ with restrictive terms start with a `## LICENSE NOTICE`
 | `arangodb` | 1 | `arangodb:3.11.5` |
 | `couchbase` | 1 (+1 live only) | `couchbase:community-7.1.1` |
 | `clickhouse` | 1 | `clickhouse/clickhouse-server:23.3.8.21-alpine` |
-| `cockroachdb` | 12 (comprehensive: HTTP API v2, with login) | `cockroachdb/cockroach:v23.1.30` |
+| `cockroachdb` | test + recorder only, tapes not shipped ([why](cockroachdb/LICENCE-NOTE.md)); 12 cases (comprehensive: HTTP API v2, with login) | `cockroachdb/cockroach:v23.1.30` |
 | `cratedb` | 1 | `crate:5.7` |
 | `databend` | 1 | `datafuselabs/databend:v1.2.615` |
 | `influxdb` | 1 (+1 live only) | `influxdb:2.7.11` |
@@ -338,7 +357,8 @@ it is on the tape, and playback is plain HTTP.
   made once before any tape. `/events/` is read filtered by type
   (`create_role`: only the fixtures make those), so the other cases'
   schema changes never show on it; a node's `metrics` (80 KB of counters) is
-  collapsed to one entry. The licence (BOUND) is on every tape.
+  collapsed to one entry. Its tapes are not shipped (see "Tapes we don't
+  ship" above); a tape you record carries the licence terms at its top.
 - **YugabyteDB:** the master (7000) and tserver (9000) web servers, which
   the module now publishes. yb-master dies at start on an arm64 Mac's Podman
   machine (an Abseil `ElfMemImage` assertion, with the arm64 or the emulated

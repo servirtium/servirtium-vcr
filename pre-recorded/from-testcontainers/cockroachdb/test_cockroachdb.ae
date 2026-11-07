@@ -7,9 +7,11 @@
 //
 // The image is cockroachdb/cockroach:v23.1.30, a single secure node (TLS on,
 // SQL users with passwords) from testcontainers-ae's modules.cockroachdb.
-// Its licence is the CockroachDB Software License, not open source:
-// UPSTREAM-TERMS.md (BOUND) says what that means, and every tape starts with
-// a "## LICENSE NOTICE" naming the terms (servirtium.license_notice below).
+// Its licence is the CockroachDB Software License, not open source. Its tapes
+// are NOT shipped (UPSTREAM-TERMS.md, DECISION; LICENCE-NOTE.md here): run
+// this test with TCAE_VCR=record to make your own. Every tape it records
+// starts with a "## LICENSE NOTICE" naming the terms (servirtium.license_notice
+// below).
 // v23.1.30 is pinned, not the `latest-v23.1` tag, because earlier v23.1
 // patch releases shipped under the older BSL/CCL licences.
 //
@@ -332,7 +334,7 @@ fn api_rules() {
     servirtium.clear_rules()
     // The licence of the recorded image, at the top of every tape.
     servirtium.license_notice("CockroachDB v23.1.30 is under the CockroachDB Software License (Cockroach Labs, Inc.; /licenses/LICENSE in the image cockroachdb/cockroach:v23.1.30). These tapes record a single-node test cluster, the 'Limited Non-Production Use' the licence allows without a licence key (testing, one node).")
-    servirtium.license_notice("The licence has no clause against reverse engineering and none against recording or publishing HTTP responses. It does forbid circumventing its Protective Measures (licence-key and telemetry requirements), forbids removing the Licensor's notices, and defines 'Benchmark' as any benchmark, comparative test or evaluation of the Software, to be disclosed with the information needed to replicate it. Honour those terms as you would if you ran the image, and do not use these tapes as an evaluation or comparison of CockroachDB. See UPSTREAM-TERMS.md.")
+    servirtium.license_notice("The licence has no clause against reverse engineering and none against recording or publishing HTTP responses. It does forbid circumventing its Protective Measures (licence-key and telemetry requirements), forbids removing the Licensor's notices, and defines 'Benchmark' as any benchmark, comparative test or evaluation of the Software, to be disclosed with the information needed to replicate it. Honour those terms as you would if you ran the image, and do not use these tapes as an evaluation or comparison of CockroachDB. Tapes of this service are not published: this one was recorded locally and stays subject to those terms. See LICENCE-NOTE.md and UPSTREAM-TERMS.md.")
     // The session token, in X-Cockroach-API-Session on every logged-in
     // request: a credential header, written as X_COCKROACH_API_SESSION_N
     // (the same value is replaced in the login response body too) and
@@ -385,6 +387,7 @@ fn api_rules() {
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    if servirtium.skip_if_no_tape(fw, "cockroachdb", "logs_in_and_out_with_a_session_token") == 1 { return spec.run_summary(fw) }
 
     api_rules()
     spec.describe(fw, "CockroachDB HTTP API v2") {

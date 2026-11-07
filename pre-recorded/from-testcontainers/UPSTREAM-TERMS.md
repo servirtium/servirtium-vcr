@@ -27,7 +27,7 @@ Classes:
   **tapes are not**: record your own locally (the suite's `LICENCE-NOTE.md`
   says how), and in playback with no tape the suite skips with a notice.
 
-Counts: 49 CLEAR, 9 BOUND, 6 DECISION (64 suites).
+Counts: 49 CLEAR, 8 BOUND, 7 DECISION (64 suites).
 
 Product names are their owners' trademarks, used here only to say which
 software a tape was recorded against.
@@ -46,7 +46,7 @@ licence file at the tag the image was built from.
 | azurite | `mcr.microsoft.com/azure-storage/azurite:3.28.0` | MIT | Azure/Azurite `LICENSE` | none | CLEAR |
 | chroma | `chromadb/chroma:1.4.0` | Apache-2.0 | chroma-core/chroma `LICENSE` | none | CLEAR |
 | clickhouse | `clickhouse/clickhouse-server:23.3.8.21-alpine` | Apache-2.0 | ClickHouse/ClickHouse `LICENSE` | none | CLEAR |
-| cockroachdb | `cockroachdb/cockroach:v23.1.30` | CockroachDB Software License (Cockroach Labs, proprietary, source-available) | `/licenses/LICENSE` in the image (read with `podman create` + `podman cp`); `cockroach version` reports "Build Tag: v23.1.30, Build Time: 2024/12/09" and "Distribution: CCL". Earlier v23.1 patch releases shipped under the BSL/CCL licences; the final ones moved to this licence, so the version is pinned, not the `latest-v23.1` tag | No reverse-engineering clause and none against recording or publishing. Use without a licence key only as "Limited Non-Production Use" (testing, a single node); must not circumvent the licence key, telemetry or other "Protective Measures"; notices kept; "Benchmark" is "any benchmark, comparative test or evaluation of the Software", to be disclosed with replication information | BOUND |
+| cockroachdb | `cockroachdb/cockroach:v23.1.30` | CockroachDB Software License (Cockroach Labs, proprietary, source-available) | `/licenses/LICENSE` in the image (read with `podman create` + `podman cp`); `cockroach version` reports "Build Tag: v23.1.30, Build Time: 2024/12/09" and "Distribution: CCL". Earlier v23.1 patch releases shipped under the BSL/CCL licences; the final ones moved to this licence, so the version is pinned, not the `latest-v23.1` tag | No reverse-engineering clause and none against recording or publishing. Use without a licence key only as "Limited Non-Production Use" (testing, a single node); must not circumvent the licence key, telemetry or other "Protective Measures"; notices kept; "Benchmark" is "any benchmark, comparative test or evaluation of the Software", to be disclosed with replication information | **DECISION** (tapes not shipped) |
 | consul | `hashicorp/consul:1.15` (served 1.15.10) | BUSL-1.1 (HashiCorp; MPL-2.0 after four years) | hashicorp/consul `release/1.15.x/LICENSE`: "Licensed Work: Consul Version 1.15.8 or later"; the tapes report 1.15.10 | Additional Use Grant: production use allowed unless "offering the Licensed Work" to third parties competitively | BOUND |
 | couchbase | `couchbase:community-7.1.1` | Couchbase Community Edition License Agreement (CCELA/Apr2021/v3), proprietary | couchbase.com/community-license-agreement04272021 (not read from inside the image, which is not pulled here) | §4 internal business use and products that "interact with the Community Software"; §5(b) no "decompile, reverse engineer, disassemble"; §5(g) at most five nodes | BOUND |
 | couchdb | `couchdb:3` | Apache-2.0 | apache/couchdb `LICENSE` | none (floating tag) | CLEAR |
@@ -127,25 +127,6 @@ stand in for it in a competing hosted service).
   parties" in a competitive hosted or embedded offering. Each version
   becomes MPL-2.0 four years after publication. `vault` (1.13.0) predates the
   change and is MPL-2.0.
-- **cockroachdb**: the CockroachDB Software License (Cockroach Labs),
-  version v23.1.30, read from `/licenses/LICENSE` in the image. Not open
-  source, but nothing in it forbids reverse engineering, recording or
-  publishing what the software answers. Allowed without a licence key:
-  "Limited Non-Production Use" (design, prototyping, testing or development
-  in non-production environments, on a single node), which is all these
-  tapes are. Forbidden: operating it otherwise without a licence key,
-  circumventing or removing its "Protective Measures" (licence-key and
-  telemetry requirements), removing the Licensor's notices (the tape's
-  `## LICENSE NOTICE` is one: keep it), and passing any part of the Software
-  on without the licence. Its definition of "Benchmark" is broad ("any
-  benchmark, comparative test or evaluation of the Software"), and disclosing
-  one needs the information to replicate it: do not use these tapes as an
-  evaluation or comparison of CockroachDB. The tapes are API responses, not
-  the Software. Earlier v23.1 patch releases were under the BSL and the
-  CockroachDB Community License; the final ones, this one included, are under
-  the Software License, so the image is pinned to the patch version. The
-  licence is a vendor's own text and could be read as stricter than here:
-  if in doubt, treat the tapes as DECISION and record your own.
 - **couchbase**: CCELA/Apr2021/v3. Allowed: internal business use, and
   developing products that interact with the software (which is what a
   test of a client is). Forbidden: decompiling, reverse engineering,
@@ -206,6 +187,27 @@ suite skips (`servirtium.skip_if_no_tape`).
   their own tapes. (`gcloud_spanner`'s emulator is Google's open-source
   Apache-2.0 project and `gcloud_bigquery`'s a third party's MIT one: both
   stay CLEAR and ship tapes.)
+- **cockroachdb** (moved from BOUND on 2026-11-07, Paul's decision: the broad
+  "Benchmark" clause could reach published recordings, so the tapes are
+  not shipped): the CockroachDB Software License (Cockroach Labs),
+  version v23.1.30, read from `/licenses/LICENSE` in the image. Not open
+  source, but nothing in it forbids reverse engineering, recording or
+  publishing what the software answers. Allowed without a licence key:
+  "Limited Non-Production Use" (design, prototyping, testing or development
+  in non-production environments, on a single node), which is all these
+  tapes are. Forbidden: operating it otherwise without a licence key,
+  circumventing or removing its "Protective Measures" (licence-key and
+  telemetry requirements), removing the Licensor's notices (the tape's
+  `## LICENSE NOTICE` is one: keep it), and passing any part of the Software
+  on without the licence. Its definition of "Benchmark" is broad ("any
+  benchmark, comparative test or evaluation of the Software"), and disclosing
+  one needs the information to replicate it: do not use these tapes as an
+  evaluation or comparison of CockroachDB. The tapes are API responses, not
+  the Software. Earlier v23.1 patch releases were under the BSL and the
+  CockroachDB Community License; the final ones, this one included, are under
+  the Software License, so the image is pinned to the patch version. The
+  licence is a vendor's own text and could be read as stricter than here:
+  if in doubt, treat the tapes as DECISION and record your own.
 - **dynamodb** (`amazon/dynamodb-local:2.2.1`). Its licence agreement
   (`/home/dynamodblocal/LICENSE.txt` in the image) grants a "personal,
   limited, nonexclusive" licence to use the software "solely (i) for your
