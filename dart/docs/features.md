@@ -14,6 +14,9 @@ exercised by `dart test` against the real native library.
 | Unredactions | ✅ | `.unredact(field, …)` | — |
 | Header removal | ✅ | `.removeHeader(field, name)` | — |
 | Notes | ✅ | `.note()` / `server.note()` | — |
+| Header presets (transport / cloud vendor) | ✅ | `.removeTransportHeaders()` / `.removeCloudHeaders(vendor)` | ✅ |
+| Credential redaction preset | ✅ | `.redactCredentials()` / `.redactCredentialHeader(name)` | ✅ |
+| License notice / upstream CA file / pretty JSON | ✅ | `.addLicenseNotice(text)` / `.upstreamCafile(path)` / `.prettyJson(n)` | — |
 | Strict request matching | ✅ | `.strictHeaders()` | — |
 | JSON request-body matching (semantic, opt-in) | ✅ | `.matchJsonBody()` | — |
 | Reusable / order-independent matching (opt-in) | ✅ | `.matchMultiple()` | — |

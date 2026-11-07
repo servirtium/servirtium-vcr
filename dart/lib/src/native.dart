@@ -311,6 +311,20 @@ class Native {
       'aether_vcr_embed_emphasize_http_verbs');
   static final setPrettyXml =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_pretty_xml');
+  static final setPrettyJson =
+      _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_pretty_json');
+  static final removeTransportHeaders = _lib.lookupFunction<_StrHandleC, _StrHandleD>(
+      'aether_vcr_embed_remove_transport_headers');
+  static final removeCloudHeaders = _lib.lookupFunction<_UntapedC, _UntapedD>(
+      'aether_vcr_embed_remove_cloud_headers');
+  static final redactCredentials = _lib.lookupFunction<_StrHandleC, _StrHandleD>(
+      'aether_vcr_embed_redact_credentials');
+  static final redactCredentialHeader = _lib.lookupFunction<_UntapedC, _UntapedD>(
+      'aether_vcr_embed_redact_credential_header');
+  static final setUpstreamCafile = _lib.lookupFunction<_UntapedC, _UntapedD>(
+      'aether_vcr_embed_set_upstream_cafile');
+  static final addLicenseNotice = _lib.lookupFunction<_UntapedC, _UntapedD>(
+      'aether_vcr_embed_add_license_notice');
   static final clearRedactions = _lib
       .lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_clear_redactions');
   static final clearUnredactions = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(

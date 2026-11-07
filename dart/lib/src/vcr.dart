@@ -158,6 +158,10 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
   String? _nativeLib;
   final List<(VcrField, String)> _headerRemovals = [];
   bool _ignoreVolatileHeaders = false;
+  bool _removeTransportHeaders = false;
+  final List<String> _cloudVendors = [];
+  bool _redactCredentials = false;
+  final List<String> _credentialHeaders = [];
   final List<(String, String)> _staticContent = [];
   final List<String> _untaped = [];
   (String, String)? _tls;
@@ -209,6 +213,36 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     return _self;
   }
 
+  /// Leave the connection-describing headers (Host, Connection, Content-Length
+  /// and the other hop-by-hop headers, Accept-Encoding) out of the recording.
+  /// Works in both playback and record mode.
+  T removeTransportHeaders([bool on = true]) {
+    _removeTransportHeaders = on;
+    return _self;
+  }
+
+  /// Drop a cloud vendor's per-request headers. [vendor] is one of `aws`,
+  /// `azure`, `cloudflare`, `fastly`, `gcp`; call again for more vendors. Works
+  /// in both playback and record mode.
+  T removeCloudHeaders(String vendor) {
+    _cloudVendors.add(vendor);
+    return _self;
+  }
+
+  /// Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+  /// X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the playback
+  /// builder too, as with every rule.
+  T redactCredentials([bool on = true]) {
+    _redactCredentials = on;
+    return _self;
+  }
+
+  /// One more credential header with the same treatment as [redactCredentials].
+  T redactCredentialHeader(String name) {
+    _credentialHeaders.add(name);
+    return _self;
+  }
+
   /// Serve a path prefix from an on-disk directory instead of the tape.
   ///
   /// Works in both playback and record mode (recording a browser suite is
@@ -246,6 +280,18 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     }
     if (_ignoreVolatileHeaders) {
       _check(Native.ignoreVolatileHeaders(handle), 'ignoreVolatileHeaders');
+    }
+    if (_removeTransportHeaders) {
+      _check(Native.removeTransportHeaders(handle), 'removeTransportHeaders');
+    }
+    for (final vendor in _cloudVendors) {
+      withUtf8(vendor, (v) => _check(Native.removeCloudHeaders(handle, v), 'removeCloudHeaders'));
+    }
+    if (_redactCredentials) {
+      _check(Native.redactCredentials(handle), 'redactCredentials');
+    }
+    for (final name in _credentialHeaders) {
+      withUtf8(name, (n) => _check(Native.redactCredentialHeader(handle, n), 'redactCredentialHeader'));
     }
     for (final (mount, dir) in _staticContent) {
       withUtf8(mount,
@@ -403,6 +449,9 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   bool _indentCodeBlocks = false;
   bool _emphasizeHttpVerbs = false;
   int _prettyXml = 0;
+  int _prettyJson = 0;
+  String? _upstreamCafile;
+  String? _licenseNotice;
   bool _failIfChanged = false;
 
   @override
@@ -471,6 +520,25 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     return this;
   }
 
+  /// Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+  RecordBuilder prettyJson([int indent = 2]) {
+    _prettyJson = indent;
+    return this;
+  }
+
+  /// Verify an `https://` upstream against this PEM CA file.
+  RecordBuilder upstreamCafile(String path) {
+    _upstreamCafile = path;
+    return this;
+  }
+
+  /// Put [text] under `## LICENSE NOTICE` at the top of each tape; playback
+  /// ignores it.
+  RecordBuilder addLicenseNotice(String text) {
+    _licenseNotice = text;
+    return this;
+  }
+
   /// On close, still write the freshly recorded tape but throw if it differs
   /// from the on-disk one (the drift contract).
   RecordBuilder failIfChanged([bool on = true]) {
@@ -484,6 +552,15 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     if (_indentCodeBlocks) Native.indentCodeBlocks(handle);
     if (_emphasizeHttpVerbs) Native.emphasizeHttpVerbs(handle);
     if (_prettyXml > 0) Native.setPrettyXml(handle, _prettyXml);
+    if (_prettyJson > 0) Native.setPrettyJson(handle, _prettyJson);
+    final cafile = _upstreamCafile;
+    if (cafile != null) {
+      withUtf8(cafile, (c) => _check(Native.setUpstreamCafile(handle, c), 'upstreamCafile'));
+    }
+    final notice = _licenseNotice;
+    if (notice != null) {
+      withUtf8(notice, (t) => _check(Native.addLicenseNotice(handle, t), 'addLicenseNotice'));
+    }
     for (final (operation, field, pattern, replacement) in _redactions) {
       final call = switch (operation) {
         'header' => Native.redactHeader,

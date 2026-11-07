@@ -28,6 +28,30 @@ void main() {
     }
   });
 
+  test('header presets and credential redaction apply on playback', () async {
+    final vcr = Vcr.playback(_tape('single_get.md'))
+        .removeTransportHeaders().removeCloudHeaders('aws')
+        .redactCredentials().redactCredentialHeader('X-Vault-Token').port(0).start();
+    try {
+      final (status, body) = await httpGet('${vcr.baseUrl}/ok');
+      expect(status, 200);
+      expect(body, 'ok-body');
+    } finally {
+      vcr.close();
+    }
+  });
+
+  test('record accepts a license notice and pretty JSON', () {
+    final directory = Directory.systemTemp.createTempSync('vcr-notice-');
+    try {
+      final rec = Vcr.record('${directory.path}/tape.md', 'http://127.0.0.1:1')
+          .addLicenseNotice('test notice').prettyJson(2).port(0).start();
+      rec.close();
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
+  });
+
   test('flags a path mismatch via diagnostics', () async {
     final vcr = Vcr.playback(_tape('single_get.md')).port(0).start();
     try {
