@@ -177,6 +177,8 @@ withRecord (recordOptions tape upstream)
   { recIndentCodeBlocks   = True   -- 4-space-indented blocks instead of ``` fences
   , recEmphasizeHttpVerbs = True   -- *GET* instead of bare GET in headings
   , recPrettyXml          = 2      -- pretty-print recorded XML bodies (indent 1..16)
+  , recPrettyJson         = 2      -- pretty-print recorded JSON bodies (indent 1..16)
+  , recLicenseNotice      = Just "Licence terms of the recorded service"  -- under ## LICENSE NOTICE
   } $ \vcr -> ...
 ```
 

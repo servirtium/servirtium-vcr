@@ -6,6 +6,7 @@ module RecordSpec (spec) where
 
 import Data.List (isInfixOf)
 import Control.Exception (bracket_)
+import System.IO.Error (catchIOError)
 import System.Directory (doesFileExist, getTemporaryDirectory, removeFile, createDirectory, removeDirectoryRecursive)
 import System.FilePath ((</>))
 import System.Process (readProcess)
@@ -29,6 +30,14 @@ spec = describe "record then replay" $ do
           lastKind rec `shouldReturn` Ok
       _ <- run ["check", directory]
       pure ()
+  it "accepts a license notice, pretty JSON and the header presets" $ do
+    tmp <- getTemporaryDirectory
+    let tape = tmp </> "vcr-notice-haskell.md"
+    withRecord (recordOptions tape "http://127.0.0.1:1")
+      { recLicenseNotice = Just "test notice", recPrettyJson = 2
+      , recRemoveTransportHeaders = True, recRemoveCloudHeaders = ["aws"]
+      , recRedactCredentials = True, recRedactCredentialHeaders = ["X-Vault-Token"] } $ \_ -> pure ()
+    removeFile tape `catchIOError` \_ -> pure ()
   it "retains replay diffs and supports explicit consumption" $
     withPlayback (playbackOptions "../core_tests/diagnostics/playback.md") $ \server -> do
       testContext "Haskell scenario" "scenario.test" 123 server

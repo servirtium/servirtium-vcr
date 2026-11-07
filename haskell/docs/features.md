@@ -23,6 +23,9 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Match on a specific request header (opt-in) | ✅ | ✅ | `pbMatchHeaders = ["Name"]` | — |
 | Static-content bypass | ✅ | ✅ | `pbStaticContent` | — |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `recFailIfChanged` | — |
+| Header presets (transport / cloud vendor) | ✅ | ✅ | `pbRemoveTransportHeaders` / `pbRemoveCloudHeaders` (and `rec…`) | — |
+| Credential redaction preset | ✅ | ✅ | `pbRedactCredentials` / `pbRedactCredentialHeaders` (and `rec…`) | — |
+| License notice / upstream CA file / pretty JSON | ✅ | ✅ | `recLicenseNotice` / `recUpstreamCafile` / `recPrettyJson` | ✅ notice + pretty JSON |
 | Format options (indent / emphasize) | ✅ | ✅ | `recIndentCodeBlocks` / `recEmphasizeHttpVerbs` / `recPrettyXml` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError` / `lastKind` / `lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |

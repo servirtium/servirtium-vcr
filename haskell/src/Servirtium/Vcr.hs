@@ -163,6 +163,19 @@ data PlaybackOptions = PlaybackOptions
     -- call (traceparent, tracestate, Request-Id, X-Request-Id,
     -- X-Correlation-Id, baggage) from both sides before matching (default
     -- 'False').
+  , pbRemoveTransportHeaders :: Bool
+    -- ^ Leave the connection-describing headers (Host, Connection,
+    -- Content-Length and the other hop-by-hop headers, Accept-Encoding) out of
+    -- the recording (default 'False').
+  , pbRemoveCloudHeaders :: [String]
+    -- ^ Cloud vendors whose per-request headers are dropped; each is one of
+    -- @aws@, @azure@, @cloudflare@, @fastly@, @gcp@ (default @[]@).
+  , pbRedactCredentials :: Bool
+    -- ^ Redact the common credential headers (Authorization, Cookie,
+    -- Set-Cookie, X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register
+    -- on the playback options too, as with every rule (default 'False').
+  , pbRedactCredentialHeaders :: [String]
+    -- ^ One more credential header each, with the same treatment (default @[]@).
   , pbMatchMultiple  :: Bool
     -- ^ Opt in to reusable, order-independent playback: matches any recorded
     -- interaction (not just the next in sequence) and doesn't consume it — for
@@ -235,6 +248,19 @@ data RecordOptions = RecordOptions
     -- ^ Drop the per-request volatile headers modern clients inject on every
     -- call (traceparent, tracestate, Request-Id, X-Request-Id,
     -- X-Correlation-Id, baggage) before matching\/recording (default 'False').
+  , recRemoveTransportHeaders :: Bool
+    -- ^ Leave the connection-describing headers (Host, Connection,
+    -- Content-Length and the other hop-by-hop headers, Accept-Encoding) out of
+    -- the recording (default 'False').
+  , recRemoveCloudHeaders :: [String]
+    -- ^ Cloud vendors whose per-request headers are dropped; each is one of
+    -- @aws@, @azure@, @cloudflare@, @fastly@, @gcp@ (default @[]@).
+  , recRedactCredentials :: Bool
+    -- ^ Redact the common credential headers (Authorization, Cookie,
+    -- Set-Cookie, X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register
+    -- on the playback options too, as with every rule (default 'False').
+  , recRedactCredentialHeaders :: [String]
+    -- ^ One more credential header each, with the same treatment (default @[]@).
   , recNote              :: Maybe (String, String)
     -- ^ @(title, body)@ attached to the __first__ recorded interaction. For
     -- notes on later interactions, call 'note' on the running server.
@@ -244,6 +270,13 @@ data RecordOptions = RecordOptions
     -- ^ Emit the HTTP method emphasized (e.g. @*GET*@) in headings.
   , recPrettyXml          :: Int
     -- ^ Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. Default 0.
+  , recPrettyJson         :: Int
+    -- ^ Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed. Default 0.
+  , recUpstreamCafile     :: Maybe FilePath
+    -- ^ Verify an @https:\/\/@ upstream against this PEM CA file (default 'Nothing').
+  , recLicenseNotice      :: Maybe String
+    -- ^ Text put under @## LICENSE NOTICE@ at the top of each tape; playback
+    -- ignores it (default 'Nothing').
   , recFailIfChanged     :: Bool
     -- ^ On stop, write the freshly recorded tape but throw 'VcrException' if
     -- it differs from the on-disk one — the drift contract.
@@ -273,6 +306,10 @@ playbackOptions tape = PlaybackOptions
   , pbMatchJsonBody = False
   , pbMatchXmlBody  = False
   , pbIgnoreVolatileHeaders = False
+  , pbRemoveTransportHeaders = False
+  , pbRemoveCloudHeaders = []
+  , pbRedactCredentials = False
+  , pbRedactCredentialHeaders = []
   , pbMatchMultiple = False
   , pbMatchHeaders  = []
   , pbUnredactions  = []
@@ -306,10 +343,17 @@ recordOptions tape upstream = RecordOptions
   , recRedactWholeTape    = []
   , recRemoveHeaders      = []
   , recIgnoreVolatileHeaders = False
+  , recRemoveTransportHeaders = False
+  , recRemoveCloudHeaders = []
+  , recRedactCredentials = False
+  , recRedactCredentialHeaders = []
   , recNote               = Nothing
   , recIndentCodeBlocks   = False
   , recEmphasizeHttpVerbs = False
   , recPrettyXml          = 0
+  , recPrettyJson         = 0
+  , recUpstreamCafile     = Nothing
+  , recLicenseNotice      = Nothing
   , recFailIfChanged      = False
   , recStaticContent      = []
   , recUntaped            = []
@@ -362,6 +406,25 @@ applyStaticAndUntaped h statics untaped = do
               withCString path $ \cPath ->
                 N.aether_vcr_embed_untaped h cPath)
         untaped
+
+-- | Apply the header presets (transport \/ cloud vendor \/ credentials), shared
+-- by playback and record.
+applyHeaderPresets :: N.Handle -> Bool -> [String] -> Bool -> [String] -> IO ()
+applyHeaderPresets h transport vendors credentials credentialHeaders = do
+  when transport $
+    check "remove_transport_headers" $ N.aether_vcr_embed_remove_transport_headers h
+  mapM_ (\vendor ->
+            check "remove_cloud_headers" $
+              withCString vendor $ \cVendor ->
+                N.aether_vcr_embed_remove_cloud_headers h cVendor)
+        vendors
+  when credentials $
+    check "redact_credentials" $ N.aether_vcr_embed_redact_credentials h
+  mapM_ (\name ->
+            check "redact_credential_header" $
+              withCString name $ \cName ->
+                N.aether_vcr_embed_redact_credential_header h cName)
+        credentialHeaders
 
 -- | Apply a TLS cert\/key pair (playback and record).
 applyTls :: N.Handle -> Maybe (FilePath, FilePath) -> IO ()
@@ -442,6 +505,8 @@ startPlayback opts = do
       applyRemoveHeaders handle (pbRemoveHeaders opts)
       when (pbIgnoreVolatileHeaders opts) $
         check "ignore_volatile_headers" $ N.aether_vcr_embed_ignore_volatile_headers handle
+      applyHeaderPresets handle (pbRemoveTransportHeaders opts) (pbRemoveCloudHeaders opts)
+        (pbRedactCredentials opts) (pbRedactCredentialHeaders opts)
       when (pbStrictHeaders opts) $ N.aether_vcr_embed_set_strict_headers handle 1
       when (pbMatchJsonBody opts) $ N.aether_vcr_embed_set_match_json_body handle 1
       when (pbMatchXmlBody opts) $ N.aether_vcr_embed_set_match_xml_body handle 1
@@ -501,6 +566,8 @@ startRecord opts = do
       applyRemoveHeaders handle (recRemoveHeaders opts)
       when (recIgnoreVolatileHeaders opts) $
         check "ignore_volatile_headers" $ N.aether_vcr_embed_ignore_volatile_headers handle
+      applyHeaderPresets handle (recRemoveTransportHeaders opts) (recRemoveCloudHeaders opts)
+        (recRedactCredentials opts) (recRedactCredentialHeaders opts)
       mapM_ (\name -> check "redact_header" $
         withCString name $ \cName -> withCString "[REDACTED]" $ \cReplacement ->
           N.aether_vcr_embed_redact_header handle 3 cName cReplacement) (recRedactHeader opts)
@@ -522,6 +589,15 @@ startRecord opts = do
       when (recIndentCodeBlocks opts) (N.aether_vcr_embed_indent_code_blocks handle)
       when (recEmphasizeHttpVerbs opts) (N.aether_vcr_embed_emphasize_http_verbs handle)
       when (recPrettyXml opts > 0) (N.aether_vcr_embed_set_pretty_xml handle (fromIntegral (recPrettyXml opts)))
+      when (recPrettyJson opts > 0) (N.aether_vcr_embed_set_pretty_json handle (fromIntegral (recPrettyJson opts)))
+      mapM_ (\path -> check "set_upstream_cafile" $
+               withCString path $ \cPath ->
+                 N.aether_vcr_embed_set_upstream_cafile handle cPath)
+            (recUpstreamCafile opts)
+      mapM_ (\text -> check "add_license_notice" $
+               withCString text $ \cText ->
+                 N.aether_vcr_embed_add_license_notice handle cText)
+            (recLicenseNotice opts)
       mapM_ (\(f, pat, repl) ->
                 check "redact" $
                   withCString pat $ \cPat ->

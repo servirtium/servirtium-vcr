@@ -69,6 +69,13 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_indent_code_blocks
   , aether_vcr_embed_emphasize_http_verbs
   , aether_vcr_embed_set_pretty_xml
+  , aether_vcr_embed_set_pretty_json
+  , aether_vcr_embed_remove_transport_headers
+  , aether_vcr_embed_remove_cloud_headers
+  , aether_vcr_embed_redact_credentials
+  , aether_vcr_embed_redact_credential_header
+  , aether_vcr_embed_set_upstream_cafile
+  , aether_vcr_embed_add_license_notice
   , aether_vcr_embed_clear_redactions
   , aether_vcr_embed_clear_unredactions
   , aether_vcr_embed_clear_header_removals
@@ -209,6 +216,27 @@ foreign import ccall unsafe "aether_vcr_embed_emphasize_http_verbs"
 
 foreign import ccall unsafe "aether_vcr_embed_set_pretty_xml"
   aether_vcr_embed_set_pretty_xml :: Handle -> CInt -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_set_pretty_json"
+  aether_vcr_embed_set_pretty_json :: Handle -> CInt -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_remove_transport_headers"
+  aether_vcr_embed_remove_transport_headers :: Handle -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_remove_cloud_headers"
+  aether_vcr_embed_remove_cloud_headers :: Handle -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_redact_credentials"
+  aether_vcr_embed_redact_credentials :: Handle -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_redact_credential_header"
+  aether_vcr_embed_redact_credential_header :: Handle -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_set_upstream_cafile"
+  aether_vcr_embed_set_upstream_cafile :: Handle -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_add_license_notice"
+  aether_vcr_embed_add_license_notice :: Handle -> CString -> IO CString
 
 foreign import ccall unsafe "aether_vcr_embed_clear_redactions"
   aether_vcr_embed_clear_redactions :: Handle -> IO ()
