@@ -367,11 +367,7 @@ vcr_embed_redact_whole_tape_described(s: ptr, pattern: string, replacement: stri
 // is dropped from BOTH the recorded expectation and the live request
 // before strict matching. Returns "" on success, else the first error.
 vcr_embed_strict_ignore_common_headers(s: ptr) -> ptr {
-    e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "User-Agent")
-    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Accept") }
-    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Accept-Encoding") }
-    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Connection") }
-    return vcr_embed_dup(e)
+    return vcr_embed_dup(vcr.strict_ignore_common_headers_h(s))
 }
 
 // One-call opt-in for the per-request VOLATILE headers modern clients and
@@ -384,13 +380,24 @@ vcr_embed_strict_ignore_common_headers(s: ptr) -> ptr {
 // client identity headers; this covers tracing/correlation. Call both for the
 // full default-ignore set. Returns "" on success, else the first error.
 vcr_embed_ignore_volatile_headers(s: ptr) -> ptr {
-    e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "traceparent")
-    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "tracestate") }
-    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "Request-Id") }
-    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "X-Request-Id") }
-    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "X-Correlation-Id") }
-    if e == "" { e = vcr.remove_header_h(s, vcr.FIELD_REQUEST_HEADERS, "baggage") }
-    return vcr_embed_dup(e)
+    return vcr_embed_dup(vcr.ignore_volatile_headers_h(s))
+}
+
+// Opt-in header presets (see core/vcr.ae "header presets"): each registers
+// ordinary rules, listed under the preset's name in the recording-rules
+// footer. Each returns "" on success, else an error.
+vcr_embed_remove_transport_headers(s: ptr) -> ptr {
+    return vcr_embed_dup(vcr.remove_transport_headers_h(s))
+}
+// vendor: one of "aws", "azure", "cloudflare", "fastly", "gcp".
+vcr_embed_remove_cloud_headers(s: ptr, vendor: string) -> ptr {
+    return vcr_embed_dup(vcr.remove_cloud_headers_h(s, vendor))
+}
+vcr_embed_redact_credentials(s: ptr) -> ptr {
+    return vcr_embed_dup(vcr.redact_credentials_h(s))
+}
+vcr_embed_redact_credential_header(s: ptr, name: string) -> ptr {
+    return vcr_embed_dup(vcr.redact_credential_header_h(s, name))
 }
 
 vcr_embed_note(s: ptr, title: string, body: string) -> ptr {
@@ -442,6 +449,17 @@ vcr_embed_set_pretty_xml(s: ptr, indent: int) {
 }
 vcr_embed_get_pretty_xml(s: ptr) -> int {
     return vcr.get_pretty_xml_h(s)
+}
+
+// Opt-in (record side): pretty-print recorded JSON RESPONSE bodies when the
+// tape is written, keeping key order and number spellings. indent 0 = off
+// (default), 1..16 = spaces per level (>16 clamps to 16). Request bodies are
+// never changed.
+vcr_embed_set_pretty_json(s: ptr, indent: int) {
+    vcr.set_pretty_json_h(s, indent)
+}
+vcr_embed_get_pretty_json(s: ptr) -> int {
+    return vcr.get_pretty_json_h(s)
 }
 
 // Opt-in: match playback by searching all interactions (reusable, order-

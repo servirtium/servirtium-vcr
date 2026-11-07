@@ -1,0 +1,231 @@
+// The opt-in header presets: redact_credentials (plus one custom credential
+// header), remove_cloud_headers per vendor, and remove_transport_headers.
+//
+// A login-shaped flow is recorded through the presets with the footer on.
+// The recording must hold no secret; each credential value becomes a
+// numbered token (the cookie the service set and the one the client sent back
+// share COOKIE_1, a token echoed in a body becomes its header's token); the
+// vendor and transport headers are left out while Age and Via, which caching
+// acts on, stay; and the footer lists each preset as one row. Playback with
+// a different live token still matches, since credential headers match on
+// presence, and serves the tokens as recorded.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18290
+const RECORD_PORT   = 18291
+const PLAYBACK_PORT = 18292
+const SESSION       = "sess-8f3a9c2d71b4"
+const BEARER        = "tok-live-5d2e8a91"
+const VAULT         = "hvs.root-0042"
+
+tape_path() -> {
+    tmp = io.getenv("TEMP")
+    if tmp == 0 { tmp = io.getenv("TMPDIR") }
+    if tmp == 0 { tmp = "/tmp" }
+    return "${tmp}/vcr_header_presets.tape"
+}
+
+handle_login(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/json")
+    http.response_set_header(res, "Set-Cookie", "sid=${SESSION}; Path=/; HttpOnly")
+    http.response_set_header(res, "X-Amz-Cf-Id", "cdn-trace-1")
+    http.response_set_header(res, "CF-Ray", "ray-1")
+    http.response_set_header(res, "Age", "5")
+    http.response_set_header(res, "Via", "1.1 cdn")
+    http.response_set_body(res, "{\"token\":\"${BEARER}\",\"user\":\"ann\"}")
+}
+
+handle_me(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/json")
+    http.response_set_header(res, "X-Amz-Cf-Id", "cdn-trace-2")
+    http.response_set_body(res, "{\"user\":\"ann\"}")
+}
+
+wait_ready(url: string) {
+    ready = 0
+    i = 0
+    while i < 200 {
+        sleep(25)
+        req = client.request("GET", url)
+        if req != null {
+            client.set_timeout(req, 1s)
+            resp, err = client.send_request(req)
+            client.request_free(req)
+            if err == "" {
+                client.response_free(resp)
+                ready = 1
+                i = 200
+            }
+        }
+        i = i + 1
+    }
+    if ready == 0 {
+        println("FAIL: server not ready at ${url}")
+        exit(1)
+    }
+}
+
+// GET /login then /me with `bearer`; the status of each, the Set-Cookie
+// /login served and its body.
+flow(port: int, bearer: string) -> (int, int, string, string) {
+    req = client.request("GET", "http://127.0.0.1:${port}/login")
+    client.set_header(req, "Authorization", "Bearer ${bearer}")
+    client.set_header(req, "X-Vault-Token", VAULT)
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, -1, err, "" }
+    st1 = client.response_status(resp)
+    cookie = string.copy(client.response_header(resp, "Set-Cookie"))
+    body = string.copy(client.response_body(resp))
+    client.response_free(resp)
+
+    pair = cookie
+    semi = string.index_of(cookie, ";")
+    if semi > 0 { pair = string.substring(cookie, 0, semi) }
+    req2 = client.request("GET", "http://127.0.0.1:${port}/me")
+    client.set_header(req2, "Authorization", "Bearer ${bearer}")
+    client.set_header(req2, "Cookie", "${pair}; lang=en")
+    client.set_timeout(req2, 5s)
+    resp2, err2 = client.send_request(req2)
+    client.request_free(req2)
+    if err2 != "" { return st1, -1, err2, "" }
+    st2 = client.response_status(resp2)
+    client.response_free(resp2)
+    return st1, st2, cookie, body
+}
+
+need(tape: string, text: string, what: string) {
+    if string.contains(tape, text) != 1 {
+        println("FAIL: the tape lacks ${what}:\n  ${text}")
+        println(tape)
+        exit(1)
+    }
+}
+
+lacks(tape: string, text: string, what: string) {
+    if string.contains(tape, text) == 1 {
+        println("FAIL: the tape holds ${what}: ${text}")
+        println(tape)
+        exit(1)
+    }
+}
+
+presets(h: ptr) {
+    e = vcr.redact_credentials_h(h)
+    if e == "" { e = vcr.redact_credential_header_h(h, "X-Vault-Token") }
+    if e == "" { e = vcr.remove_cloud_headers_h(h, "aws") }
+    if e == "" { e = vcr.remove_cloud_headers_h(h, "Cloudflare") }
+    if e == "" { e = vcr.remove_transport_headers_h(h) }
+    if e != "" { println("FAIL: preset ${e}"); exit(1) }
+}
+
+main() {
+    println("=== VCR header presets ===")
+    TAPE_PATH = tape_path()
+    fs.delete(TAPE_PATH)
+
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { println("FAIL: upstream server_create"); exit(1) }
+    http.server_get(upstream, "/login", handle_login, 0)
+    http.server_get(upstream, "/me", handle_me, 0)
+    serr1 = http.server_start_background(upstream)
+    if serr1 != "" { println("FAIL: upstream start ${serr1}"); exit(1) }
+    wait_ready("http://127.0.0.1:${UPSTREAM_PORT}/me")
+
+    recorder = vcr.load_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if recorder == null { println("FAIL: load_record"); exit(1) }
+    bad = vcr.remove_cloud_headers_h(recorder, "acme-cdn")
+    if string.contains(bad, "unknown vendor 'acme-cdn' (known: aws, azure, cloudflare, fastly, gcp)") != 1 {
+        println("FAIL: unknown vendor error was '${bad}'")
+        exit(1)
+    }
+    presets(recorder)
+    vcr.set_rules_footer_h(recorder, 1)
+    serr2 = http.server_start_background(recorder)
+    if serr2 != "" { println("FAIL: recorder start ${serr2}"); exit(1) }
+    sleep(250)
+
+    st1, st2, live_cookie, _b = flow(RECORD_PORT, BEARER)
+    if st1 != 200 || st2 != 200 {
+        println("FAIL: record ${st1}/${st2}; vcr.last_error: ${vcr.last_error()}")
+        exit(1)
+    }
+    if string.contains(live_cookie, SESSION) != 1 {
+        println("FAIL: recording changed what the client got: ${live_cookie}")
+        exit(1)
+    }
+    ferr = vcr.eject_record(recorder, TAPE_PATH)
+    if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
+
+    tape, terr = fs.read(TAPE_PATH)
+    if terr != "" { println("FAIL: read tape ${terr}"); exit(1) }
+    lacks(tape, SESSION, "the session cookie")
+    lacks(tape, BEARER, "the bearer token")
+    lacks(tape, VAULT, "the vault token")
+    need(tape, "Set-Cookie: sid=COOKIE_1; Path=/; HttpOnly", "the Set-Cookie with its value numbered, attributes kept")
+    need(tape, "Cookie: sid=COOKIE_1; lang=COOKIE_2", "the Cookie sent back, sharing COOKIE_1")
+    need(tape, "Authorization: Bearer AUTHORIZATION_1", "the bearer token numbered, scheme kept")
+    need(tape, "X-Vault-Token: X_VAULT_TOKEN_1", "the custom credential header")
+    need(tape, "{\"token\":\"AUTHORIZATION_1\",\"user\":\"ann\"}", "the token echoed in the body, as its header's token")
+    println("  PASS credentials: numbered per value, correlated, no secret left")
+
+    // The interactions, without the footer (which names what was removed).
+    body_part = string.substring(tape, 0, string.index_of(tape, "## [Recording rules]"))
+    lacks(body_part, "X-Amz-Cf-Id", "an aws header")
+    lacks(body_part, "CF-Ray", "a cloudflare header")
+    need(body_part, "Age: 5", "Age, which caching acts on")
+    need(body_part, "Via: 1.1 cdn", "Via")
+    lacks(body_part, "Host:", "the transport Host header")
+    lacks(body_part, "Content-Length:", "a transport Content-Length")
+    println("  PASS cloud and transport headers left out; Age and Via kept")
+
+    need(tape, "| removed (cloud: aws) | response headers | `X-Amz-Cf-Id`, `X-Amz-Cf-Pop`, `X-Amzn-Trace-Id`, `X-Amzn-RequestId`, `X-Amz-Apigw-Id`, `X-Cache` | (left out) | 0, 1 |", "the aws row")
+    need(tape, "| removed (cloud: aws) | request headers | `X-Amzn-Trace-Id` | (left out) | none |", "the aws request row")
+    need(tape, "| removed (cloud: cloudflare) | response headers | `CF-Ray`, `CF-Cache-Status`, `cf-request-id` | (left out) | 0 |", "the cloudflare row")
+    need(tape, "| removed (transport) | request headers | `Host`,", "the transport request row")
+    need(tape, "| redacted credential | request and response headers | `Authorization` | `<scheme> AUTHORIZATION_N` | 0, 1 |", "the Authorization row")
+    need(tape, "| redacted credential | request headers | `Cookie` | `<name>=COOKIE_N` | 1 |", "the Cookie row")
+    need(tape, "| redacted credential | response headers | `Set-Cookie` | `<name>=COOKIE_N; <attributes>` | 0 |", "the Set-Cookie row")
+    need(tape, "| redacted credential | request and response headers | `Proxy-Authorization` | `<scheme> PROXY_AUTHORIZATION_N` | none |", "an unused credential header")
+    need(tape, "| redacted credential | request and response headers | `X-Vault-Token` | `X_VAULT_TOKEN_N` | 0 |", "the custom credential row")
+    println("  PASS the footer lists each preset as one row")
+
+    // Playback with a different live token: credential headers match on
+    // presence; the replayed Set-Cookie is the one the client sends back.
+    playback = vcr.load(TAPE_PATH, PLAYBACK_PORT)
+    if playback == null { println("FAIL: load playback: ${vcr.last_error()}"); exit(1) }
+    presets(playback)
+    serr3 = http.server_start_background(playback)
+    if serr3 != "" { println("FAIL: playback start ${serr3}"); exit(1) }
+    sleep(250)
+    pst1, pst2, pcookie, pbody = flow(PLAYBACK_PORT, "another-token-ZZZZ")
+    if pst1 != 200 || pst2 != 200 {
+        println("FAIL: playback ${pst1}/${pst2}; vcr.last_error: ${vcr.last_error_h(playback)}")
+        exit(1)
+    }
+    if pcookie != "sid=COOKIE_1; Path=/; HttpOnly" || string.contains(pbody, "AUTHORIZATION_1") != 1 {
+        println("FAIL: playback served '${pcookie}' and '${pbody}'")
+        exit(1)
+    }
+    aerr = vcr.assert_all_consumed_h(playback)
+    if aerr != "" { println("FAIL: ${aerr}"); exit(1) }
+    println("  PASS playback matches a different live token and serves the tokens")
+
+    vcr.eject(playback)
+    http_server_stop(upstream)
+    fs.delete(TAPE_PATH)
+    println("PASS")
+    exit(0)
+}

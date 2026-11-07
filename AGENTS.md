@@ -108,7 +108,10 @@ Diagnostics (read after a request): `last_kind(h)` (Outcome, below),
 Config: `redact(h, field, pat, repl)` / `unredact(...)`;
 `normalize_whole_tape(h, pat, name)` vs `redact_whole_tape(h, pat, repl)`
 (see Gotchas); `remove_header(h, field, name)`;
-`strict_ignore_common_headers(h)`; `set_strict_headers(h, int)`;
+`strict_ignore_common_headers(h)`, `ignore_volatile_headers(h)`,
+`remove_transport_headers(h)`, `remove_cloud_headers(h, vendor)`,
+`redact_credentials(h)`, `redact_credential_header(h, name)` (the opt-in
+header presets, below); `set_strict_headers(h, int)`;
 `set_match_json_body(h, int)` (opt-in JSON-semantic request-body matching, below);
 `set_match_multiple(h, int)` (reusable/order-independent playback) and
 `match_header(h, name)` / `clear_match_headers(h)` (ByHeader — match a specific
@@ -242,6 +245,45 @@ from the tape:
 
 Guarded by `core_tests/test_vcr_keeps_headers.ae`. Tapes recorded before this
 (no `Host` etc.) play back unchanged.
+
+## Header presets (opt-in)
+
+Most tests want the same few rules, so each of these is one call that
+registers ordinary rules. None is on by default. The footer lists each one
+under its preset's name, so a reader sees which preset left a header out.
+
+| Preset | What it does |
+|---|---|
+| `redact_credentials_h(h)` | `Authorization` / `Proxy-Authorization` keep their scheme (`Bearer AUTHORIZATION_1`); each cookie's value in `Cookie` and `Set-Cookie` becomes `COOKIE_N` (attributes kept); `X-Api-Key` and `X-Auth-Token` become `API_KEY_N` / `AUTH_TOKEN_N` |
+| `redact_credential_header_h(h, name)` | one more header the same way, its whole value a token named after it (`X-Vault-Token: X_VAULT_TOKEN_1`) |
+| `remove_cloud_headers_h(h, vendor)` | a vendor's CDN / load-balancer tracing and cache-status headers; vendors in `CLOUD_VENDORS` (`aws, azure, cloudflare, fastly, gcp`), unknown names are an error |
+| `remove_transport_headers_h(h)` | `Host`, `Connection`, `Content-Length`, the other hop-by-hop headers and the request's `Accept-Encoding` (Servirtium 1's behaviour) |
+| `strict_ignore_common_headers_h(h)` | the request's `User-Agent`, `Accept`, `Accept-Encoding`, `Connection` |
+| `ignore_volatile_headers_h(h)` | the request's `traceparent`, `tracestate`, `Request-Id`, `X-Request-Id`, `X-Correlation-Id`, `baggage` |
+
+Credentials are numbered per distinct value across the recording, in order of
+appearance, so the cookie a service set and the one the client sent back are
+both `COOKIE_1`, and a guest session and a logged-in one stay distinct. A
+value of 8 characters or more is also replaced wherever else it appears (a
+token echoed in a body); a shorter one only in its header. Playback matches
+credential headers on **presence, not value**: a test's live token rarely
+equals the recorded one. Register the preset on the playback handle too.
+
+No vendor list holds `Age`, `Via`, `Cache-Control`, `ETag`, `Last-Modified`,
+`Date` or `Vary`, though CDNs set them: HTTP cache libraries act on them, so
+removing them could change what the app under test does.
+
+**Servirtium records HTTP messages, not connections.** The recording holds
+what the app means (method, path, headers, bodies), never the connection
+(TLS, keep-alive, chunk boundaries, compression, HTTP/2 framing, timing).
+Playback is a real HTTP server that does all of that itself, which is why
+transport headers are made, not replayed, and why TLS works: playback serves
+its own certificate, which the test trusts; a playback that took part in
+the connection itself could never be extended to TLS. A test that
+depends on connection-level behaviour is outside what Servirtium can test;
+don't stretch it there.
+
+Guarded by `core_tests/test_vcr_header_presets.ae`.
 
 ## The recording-rules footer (opt-in)
 

@@ -54,7 +54,11 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-11-04 (latest): ae 0.860.0 -> 0.878.0, for std.xml's `pretty` (first
+# 2026-11-07 (latest): ae 0.878.0 -> 0.897.0, for std.json's `pretty` (first
+# released in 0.897.0, aether #3620), which the opt-in `pretty_json` recording
+# option calls at tape-write time. Evidence-based floor: core/vcr.ae does not
+# compile on older ae. aeb unchanged (see the VERIFIED line in the commit).
+# 2026-11-04: ae 0.860.0 -> 0.878.0, for std.xml's `pretty` (first
 # released in 0.878.0), which the opt-in `pretty_xml` recording option calls at
 # tape-write time. Evidence-based floor: core/vcr.ae does not compile on older
 # ae. aeb stays v0.340 (no aeb change needed for this feature; see the
@@ -110,8 +114,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.878.0"
-AE_FETCH="v0.878.0"
+AE_PIN="0.897.0"
+AE_FETCH="v0.897.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

@@ -125,6 +125,7 @@ exports (
     vcr_record_interaction_full, vcr_add_static_content, vcr_add_untaped,
     vcr_set_indent_code_blocks, vcr_set_emphasize_http_verbs,
     vcr_set_pretty_xml, vcr_get_pretty_xml,
+    vcr_set_pretty_json, vcr_get_pretty_json,
     vcr_get_tape_count, vcr_get_method, vcr_get_path, vcr_get_status,
     vcr_get_content_type, vcr_get_body, vcr_get_req_headers, vcr_get_req_body,
     vcr_get_resp_headers, vcr_decode_base64_body_raw,
@@ -177,11 +178,15 @@ exports (
     redact_header, redact_query_param, redact_json_field,
     redact_header_h, redact_query_param_h, redact_json_field_h,
     redact_h, unredact_h, remove_header_h, note_h,
+    remove_transport_headers_h, remove_cloud_headers_h, CLOUD_VENDORS,
+    strict_ignore_common_headers_h, ignore_volatile_headers_h,
+    redact_credentials_h, redact_credential_header_h,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     normalize_whole_tape_described_h, redact_whole_tape_described_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
     set_rules_footer_h, get_rules_footer_h, RULES_FOOTER_HEADING,
     set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
+    set_pretty_json_h, get_pretty_json_h,
     set_tls_h, set_tls_pem_h, tls_enabled_h, last_tls_protocol_h,
     substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h,
@@ -296,6 +301,18 @@ struct NormToken {
 struct HeaderRemoval {
     field: int
     name: string
+    origin: string           // "" for remove_header; a preset's name
+                              // ("transport", "cloud: aws", ...) for a removal a
+                              // preset registered, grouped as one footer row
+}
+
+// A credential header redact_credentials registered. kind: 0 the whole value,
+// 1 "<scheme> <secret>" (the scheme kept), 2 a Cookie header (each cookie's
+// value), 3 a Set-Cookie header (the cookie's value, attributes kept).
+struct CredHeader {
+    name: string
+    kind: int
+    prefix: string
 }
 
 // A request header name the fixture opted to match on (ByHeader). Playback then
@@ -468,6 +485,8 @@ unredactions_k(key: string) -> ptr     { return list_handle(slot(key, "unredacti
 normalizations_k(key: string) -> ptr   { return list_handle(slot(key, "normalizations")) }
 normtokens_k(key: string) -> ptr       { return list_handle(slot(key, "normtokens")) }
 header_removals_k(key: string) -> ptr  { return list_handle(slot(key, "header_removals")) }
+credheaders_k(key: string) -> ptr      { return list_handle(slot(key, "credheaders")) }
+credtokens_k(key: string) -> ptr       { return list_handle(slot(key, "credtokens")) }
 match_headers_k(key: string) -> ptr    { return list_handle(slot(key, "match_headers")) }
 mounts_k(key: string) -> ptr           { return list_handle(slot(key, "mounts")) }
 untaped_list_k(key: string) -> ptr     { return list_handle(slot(key, "untaped")) }
@@ -606,6 +625,19 @@ vcr_set_pretty_xml_k(key: string, indent: int) {
 vcr_set_pretty_xml(indent: int) { vcr_set_pretty_xml_k(cur_key(), indent) }
 vcr_get_pretty_xml_k(key: string) -> int { return cfg_get_int(slot(key, "pretty_xml"), 0) }
 vcr_get_pretty_xml() -> int { return vcr_get_pretty_xml_k(cur_key()) }
+
+// Opt-in pretty-printing of recorded JSON bodies, the same shape as
+// pretty_xml: 0 = off (default), 1..16 = spaces per level, above 16 clamps to
+// 16, below 0 is off. See pretty_json_body_k.
+vcr_set_pretty_json_k(key: string, indent: int) {
+    n = indent
+    if n < 0 { n = 0 }
+    if n > 16 { n = 16 }
+    cfg_set_int(slot(key, "pretty_json"), n)
+}
+vcr_set_pretty_json(indent: int) { vcr_set_pretty_json_k(cur_key(), indent) }
+vcr_get_pretty_json_k(key: string) -> int { return cfg_get_int(slot(key, "pretty_json"), 0) }
+vcr_get_pretty_json() -> int { return vcr_get_pretty_json_k(cur_key()) }
 
 cursor_k(key: string) -> int { return cfg_get_int(slot(key, "cursor"), 0) }
 set_cursor_k(key: string, i: int) { cfg_set_int(slot(key, "cursor"), i) }
@@ -1090,6 +1122,7 @@ vcr_add_header_removal(field: int, name: string) -> int {
     h = malloc(sizeof(HeaderRemoval)) as *HeaderRemoval
     h.field = field
     h.name = string.copy(name)
+    h.origin = string.copy("")
     list_add_raw(header_removals(), h)
     return 1
 }
@@ -1597,6 +1630,7 @@ live_headers_blob_k(srvkey: string, req: ptr, drop_transport: int) -> string {
         }
         i = i + 1
     }
+    if drop_transport == 1 { collected = cred_mask_block_k(srvkey, collected) }
     return sort_join_lines(collected)
 }
 normalize_live_headers(req: ptr) -> string {
@@ -2276,6 +2310,7 @@ interaction_matches_pre(srvkey: string, index: int, e: *Interaction, req: ptr, g
     expected_req_headers = rt_apply_unredactions_for_k(srvkey, e.req_headers, FIELD_REQUEST_HEADERS)
     expected_req_headers = remove_headers_from_block_k(srvkey, expected_req_headers, FIELD_REQUEST_HEADERS)
     expected_req_headers = strip_transport_headers(expected_req_headers)
+    expected_req_headers = cred_mask_block_k(srvkey, expected_req_headers)
     // Full-block header match applies when strict is on, or when the tape
     // carries request headers AND the fixture didn't opt into surgical ByHeader
     // matching (which matches only the named headers, ignoring the rest).
@@ -2385,6 +2420,7 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
     expected_req_body = rt_apply_unredactions_for_k(srvkey, e.req_body, FIELD_REQUEST_BODY)
     expected_req_headers = remove_headers_from_block_k(srvkey, expected_req_headers, FIELD_REQUEST_HEADERS)
     expected_req_headers = strip_transport_headers(expected_req_headers)
+    expected_req_headers = cred_mask_block_k(srvkey, expected_req_headers)
 
     got_method = http_request_method(req)
     got_path = http_request_path(req)
@@ -2936,6 +2972,336 @@ remove_header_h(server: ptr, field: int, name: string) -> string {
     set_cur_key(key_for(server))
     return remove_header(field, name)
 }
+// ---- header presets (opt-in) -----------------------------------------
+//
+// Each preset is one call that registers ordinary rules, so a recording
+// made with one says so in its recording-rules footer (set_rules_footer_h),
+// grouped under the preset's name. None is on by default: a recording keeps
+// what was sent unless the test asks otherwise.
+//
+// Servirtium records HTTP messages, not connections. Playback is a real HTTP
+// server that frames its own replies (Content-Length, Connection, chunking,
+// compression, TLS), so nothing a preset removes has to be replayed.
+
+// Register a header removal on behalf of preset `origin`.
+add_preset_removal_k(key: string, field: int, name: string, origin: string) {
+    h = malloc(sizeof(HeaderRemoval)) as *HeaderRemoval
+    h.field = field
+    h.name = string.copy(name)
+    h.origin = string.copy(origin)
+    list_add_raw(header_removals_k(key), h)
+}
+
+// Register a removal for each name in a comma-separated list.
+add_preset_removals_k(key: string, field: int, names: string, origin: string) {
+    i = 0
+    n = string.length(names)
+    while i < n {
+        end = string.index_of_from(names, ",", i)
+        if end < 0 { end = n }
+        name = trim_ws_cr(string.substring(names, i, end))
+        if string.length(name) > 0 { add_preset_removal_k(key, field, name, origin) }
+        i = end + 1
+    }
+}
+
+// The headers that describe the recording connection, not the conversation:
+// Host, Connection, Content-Length and the other hop-by-hop headers, and the
+// request's Accept-Encoding. Matching already skips them; this leaves them
+// out of the recording too (Servirtium 1's behaviour). Playback makes its
+// own.
+remove_transport_headers_h(server: ptr) -> string {
+    key = key_for(server)
+    add_preset_removals_k(key, FIELD_REQUEST_HEADERS, "Host, Connection, Content-Length, Transfer-Encoding, Keep-Alive, TE, Trailer, Upgrade, Accept-Encoding", "transport")
+    add_preset_removals_k(key, FIELD_RESPONSE_HEADERS, "Connection, Content-Length, Transfer-Encoding, Keep-Alive, Trailer, Upgrade, Proxy-Authenticate", "transport")
+    return ""
+}
+
+const CLOUD_VENDORS = "aws, azure, cloudflare, fastly, gcp"
+
+// The tracing and cache-status headers a vendor's CDN, load balancer or API
+// gateway adds to responses: headers the app maker never agreed to and that
+// differ on every request. Deliberately NOT in any list, though CDNs set or
+// change them: Age, Via, Cache-Control, ETag, Last-Modified, Date and Vary.
+// HTTP cache libraries act on those (Age with Cache-Control decides
+// freshness), so removing them could change what the app under test does.
+cloud_vendor_headers(vendor: string) -> string {
+    if icmp_rt(vendor, "aws") == 0 { return "X-Amz-Cf-Id, X-Amz-Cf-Pop, X-Amzn-Trace-Id, X-Amzn-RequestId, X-Amz-Apigw-Id, X-Cache" }
+    if icmp_rt(vendor, "azure") == 0 { return "X-Azure-Ref, X-MSEdge-Ref" }
+    if icmp_rt(vendor, "cloudflare") == 0 { return "CF-Ray, CF-Cache-Status, cf-request-id" }
+    if icmp_rt(vendor, "fastly") == 0 { return "X-Served-By, X-Cache, X-Cache-Hits, X-Timer" }
+    if icmp_rt(vendor, "gcp") == 0 { return "X-Cloud-Trace-Context, X-GUploader-UploadID" }
+    return ""
+}
+
+// Leave a cloud vendor's added response headers out of the recording
+// (and out of matching). `vendor` is one of CLOUD_VENDORS; call once per
+// vendor in front of the service. AWS's X-Amzn-Trace-Id is also dropped from
+// requests, since AWS SDKs and X-Ray send it.
+remove_cloud_headers_h(server: ptr, vendor: string) -> string {
+    names = cloud_vendor_headers(vendor)
+    if string.length(names) == 0 {
+        return "remove_cloud_headers: unknown vendor '${vendor}' (known: ${CLOUD_VENDORS})"
+    }
+    key = key_for(server)
+    origin = "cloud: ${string.to_lower(vendor)}"
+    add_preset_removals_k(key, FIELD_RESPONSE_HEADERS, names, origin)
+    if icmp_rt(vendor, "aws") == 0 { add_preset_removal_k(key, FIELD_REQUEST_HEADERS, "X-Amzn-Trace-Id", origin) }
+    return ""
+}
+
+// The identity headers stock HTTP clients attach (User-Agent, Accept,
+// Accept-Encoding, Connection), left out of the recording and out of
+// matching, for a test whose recording and playback clients differ.
+strict_ignore_common_headers_h(server: ptr) -> string {
+    add_preset_removals_k(key_for(server), FIELD_REQUEST_HEADERS, "User-Agent, Accept, Accept-Encoding, Connection", "common client headers")
+    return ""
+}
+
+// The per-request tracing and correlation headers clients and service meshes
+// inject (traceparent, tracestate, Request-Id, X-Request-Id,
+// X-Correlation-Id, baggage), left out of the recording and out of matching.
+ignore_volatile_headers_h(server: ptr) -> string {
+    add_preset_removals_k(key_for(server), FIELD_REQUEST_HEADERS, "traceparent, tracestate, Request-Id, X-Request-Id, X-Correlation-Id, baggage", "tracing headers")
+    return ""
+}
+
+// ---- redact_credentials ----
+//
+// The values of the usual credential headers, written as numbered tokens:
+//
+//   Authorization: Bearer AUTHORIZATION_1        (the scheme kept)
+//   Proxy-Authorization: Basic PROXY_AUTHORIZATION_1
+//   Cookie: sid=COOKIE_1; theme=COOKIE_2         (each cookie's value)
+//   Set-Cookie: sid=COOKIE_1; Path=/; HttpOnly   (attributes kept)
+//   X-Api-Key: API_KEY_1
+//   X-Auth-Token: AUTH_TOKEN_1
+//
+// Each distinct value gets its own number, the same one wherever it appears,
+// so a cookie the service set and the client sent back read as the same
+// COOKIE_1, and a guest session and a logged-in one stay told apart. A value
+// of 8 characters or more is also replaced wherever else it appears in the
+// recording (a token echoed in a body); a shorter one only in its header,
+// since "en" or "1" would hit ordinary text.
+//
+// Playback matches these headers on presence, not value: a test's live
+// token rarely equals the recorded one, and a replayed Set-Cookie: sid=COOKIE_1
+// comes back as Cookie: sid=COOKIE_1 anyway. Register the preset on the
+// playback handle too, as with every rule.
+redact_credentials_h(server: ptr) -> string {
+    key = key_for(server)
+    add_cred_header_k(key, "Authorization", 1, "AUTHORIZATION")
+    add_cred_header_k(key, "Proxy-Authorization", 1, "PROXY_AUTHORIZATION")
+    add_cred_header_k(key, "Cookie", 2, "COOKIE")
+    add_cred_header_k(key, "Set-Cookie", 3, "COOKIE")
+    add_cred_header_k(key, "X-Api-Key", 0, "API_KEY")
+    add_cred_header_k(key, "X-Auth-Token", 0, "AUTH_TOKEN")
+    return ""
+}
+
+// One more credential header for the same treatment, its whole value a
+// numbered token named after it (X-Vault-Token: X_VAULT_TOKEN_1).
+redact_credential_header_h(server: ptr, name: string) -> string {
+    if string.length(name) == 0 { return "redact_credential_header: name is empty" }
+    i = 0
+    prefix = ""
+    while i < string.length(name) {
+        c = string.char_at(name, i)
+        if c <= 32 || c >= 127 || c == 58 { return "redact_credential_header: invalid header name" }
+        if c == 45 { prefix = string_concat(prefix, "_") } else { prefix = string_concat(prefix, string.substring(name, i, i + 1)) }
+        i = i + 1
+    }
+    add_cred_header_k(key_for(server), name, 0, string.to_upper(prefix))
+    return ""
+}
+
+add_cred_header_k(key: string, name: string, kind: int, prefix: string) {
+    if cred_find_k(key, name) != null { return }
+    c = malloc(sizeof(CredHeader)) as *CredHeader
+    c.name = string.copy(name)
+    c.kind = kind
+    c.prefix = string.copy(prefix)
+    list_add_raw(credheaders_k(key), c)
+}
+
+cred_find_k(key: string, name: string) -> *CredHeader {
+    l = credheaders_k(key)
+    i = 0
+    while i < list_size(l) {
+        c = list_get_raw(l, i) as *CredHeader
+        if icmp_rt(c.name, name) == 0 { return c }
+        i = i + 1
+    }
+    return null
+}
+
+// Whether credential header `c` is looked for in header block `field`.
+cred_applies(c: *CredHeader, field: int) -> int {
+    if c.kind == 2 { return field == FIELD_REQUEST_HEADERS }
+    if c.kind == 3 { return field == FIELD_RESPONSE_HEADERS }
+    return 1
+}
+
+cred_lookup_k(key: string, value: string) -> string {
+    l = credtokens_k(key)
+    i = 0
+    while i < list_size(l) {
+        t = list_get_raw(l, i) as *NormToken
+        if string.equals(t.value, value) == 1 { return t.token }
+        i = i + 1
+    }
+    return ""
+}
+
+// mode 0: register `secret` (first appearance numbers it); 1: its token.
+cred_secret_k(key: string, secret: string, prefix: string, mode: int) -> string {
+    if string.length(secret) == 0 { return secret }
+    tok = cred_lookup_k(key, secret)
+    if mode == 1 {
+        if string.length(tok) > 0 { return tok }
+        return secret
+    }
+    if string.length(tok) > 0 { return secret }
+    counter_slot = slot(key, "credn.${prefix}")
+    n = cfg_get_int(counter_slot, 0) + 1
+    cfg_set_int(counter_slot, n)
+    t = malloc(sizeof(NormToken)) as *NormToken
+    t.value = string.copy(secret)
+    t.token = "${prefix}_${n}"
+    list_add_raw(credtokens_k(key), t)
+    return secret
+}
+
+// "name=value" with the value through cred_secret_k; anything else as is.
+cred_cookie_pair_k(key: string, pair: string, prefix: string, mode: int) -> string {
+    eq = string.index_of(pair, "=")
+    if eq <= 0 { return pair }
+    return string_concat(string.substring(pair, 0, eq + 1), cred_secret_k(key, string.substring(pair, eq + 1, string.length(pair)), prefix, mode))
+}
+
+// One credential header value, its secret parts registered (mode 0),
+// replaced by their tokens (1) or the whole value masked as "*" (2).
+cred_value_k(key: string, c: *CredHeader, value: string, mode: int) -> string {
+    if mode == 2 { return "*" }
+    if c.kind == 1 {
+        sp = string.index_of(value, " ")
+        if sp > 0 {
+            return string_concat(string.substring(value, 0, sp + 1), cred_secret_k(key, trim_ws_cr(string.substring(value, sp + 1, string.length(value))), c.prefix, mode))
+        }
+        return cred_secret_k(key, value, c.prefix, mode)
+    }
+    if c.kind == 2 {
+        out = ""
+        i = 0
+        n = string.length(value)
+        while i <= n {
+            end = string.index_of_from(value, ";", i)
+            if end < 0 { end = n }
+            part = string.substring(value, i, end)
+            lead = ""
+            while string.length(part) > 0 && string.char_at(part, 0) == 32 {
+                lead = string_concat(lead, " ")
+                part = string.substring(part, 1, string.length(part))
+            }
+            out = string_concat(out, lead)
+            out = string_concat(out, cred_cookie_pair_k(key, part, c.prefix, mode))
+            if end < n { out = string_concat(out, ";") }
+            i = end + 1
+        }
+        return out
+    }
+    if c.kind == 3 {
+        semi = string.index_of(value, ";")
+        if semi < 0 { return cred_cookie_pair_k(key, value, c.prefix, mode) }
+        return string_concat(cred_cookie_pair_k(key, string.substring(value, 0, semi), c.prefix, mode), string.substring(value, semi, string.length(value)))
+    }
+    return cred_secret_k(key, value, c.prefix, mode)
+}
+
+// Run every credential header line in a header block through cred_value_k.
+cred_rewrite_block_k(key: string, headers: string, field: int, mode: int) -> string {
+    if list_size(credheaders_k(key)) == 0 || string.length(headers) == 0 { return headers }
+    out = string.copy("")
+    cursor = 0
+    h_len = string.length(headers)
+    while cursor < h_len {
+        nl_idx = string.index_of_from(headers, "\n", cursor)
+        line_end = h_len
+        if nl_idx >= 0 { line_end = nl_idx }
+        content_end = line_end
+        if content_end > cursor && string.char_at(headers, content_end - 1) == 13 { content_end = content_end - 1 }
+        line = string.substring(headers, cursor, content_end)
+        colon_idx = string.index_of(line, ":")
+        if colon_idx > 0 {
+            c = cred_find_k(key, string.substring(line, 0, colon_idx))
+            if c != null && cred_applies(c, field) == 1 {
+                v = trim_ws_cr(string.substring(line, colon_idx + 1, string.length(line)))
+                line = string_concat(string.substring(line, 0, colon_idx), ": ${cred_value_k(key, c, v, mode)}")
+            }
+        }
+        out = string_concat(out, line)
+        out = string_concat(out, string.substring(headers, content_end, line_end))
+        if nl_idx >= 0 { out = string_concat(out, "\n") }
+        if nl_idx < 0 { break }
+        cursor = nl_idx + 1
+    }
+    return out
+}
+
+// Request headers for matching: credential values masked as "*".
+cred_mask_block_k(key: string, headers: string) -> string {
+    return cred_rewrite_block_k(key, headers, FIELD_REQUEST_HEADERS, 2)
+}
+
+// Number every credential value across the tape, in order of appearance.
+build_credential_map_k(key: string) {
+    list_reset(slot(key, "credtokens"))
+    cl = credheaders_k(key)
+    if list_size(cl) == 0 { return }
+    ci = 0
+    while ci < list_size(cl) {
+        c = list_get_raw(cl, ci) as *CredHeader
+        cfg_set_int(slot(key, "credn.${c.prefix}"), 0)
+        ci = ci + 1
+    }
+    n = list_size(tape_list_k(key))
+    i = 0
+    while i < n {
+        e = tape_get_k(key, i)
+        _r1 = cred_rewrite_block_k(key, string.copy(e.req_headers), FIELD_REQUEST_HEADERS, 0)
+        _r2 = cred_rewrite_block_k(key, string.copy(e.resp_headers), FIELD_RESPONSE_HEADERS, 0)
+        i = i + 1
+    }
+}
+
+// Replace each credential value of 8 or more characters wherever it appears
+// in `s`, longest first (so a value inside a longer one cannot split it).
+cred_apply_values_k(key: string, s: string) -> string {
+    if string.length(s) == 0 { return s }
+    l = credtokens_k(key)
+    out = s
+    below = 2147483647
+    while 1 == 1 {
+        best = -1
+        i = 0
+        while i < list_size(l) {
+            t = list_get_raw(l, i) as *NormToken
+            len = string.length(t.value)
+            if len >= 8 && len < below && len > best { best = len }
+            i = i + 1
+        }
+        if best < 0 { break }
+        i = 0
+        while i < list_size(l) {
+            t = list_get_raw(l, i) as *NormToken
+            if string.length(t.value) == best { out = str_replace_all(out, t.value, t.token) }
+            i = i + 1
+        }
+        below = best
+    }
+    return out
+}
+
 note_h(server: ptr, title: string, body: string) -> string {
     set_cur_key(key_for(server))
     return note(title, body)
@@ -3037,6 +3403,8 @@ set_match_json_body_h(server: ptr, on: int) { vcr_set_match_json_body_k(key_for(
 set_match_xml_body_h(server: ptr, on: int) { vcr_set_match_xml_body_k(key_for(server), on) }
 set_pretty_xml_h(server: ptr, indent: int) { vcr_set_pretty_xml_k(key_for(server), indent) }
 get_pretty_xml_h(server: ptr) -> int { return vcr_get_pretty_xml_k(key_for(server)) }
+set_pretty_json_h(server: ptr, indent: int) { vcr_set_pretty_json_k(key_for(server), indent) }
+get_pretty_json_h(server: ptr) -> int { return vcr_get_pretty_json_k(key_for(server)) }
 set_match_multiple_h(server: ptr, on: int) { vcr_set_match_multiple_k(key_for(server), on) }
 add_match_header_h(server: ptr, name: string) { set_cur_key(key_for(server)); vcr_add_match_header(name) }
 clear_match_headers_h(server: ptr) { set_cur_key(key_for(server)); vcr_clear_match_headers() }
@@ -3931,6 +4299,7 @@ redact_json_field_h(h: ptr, field: int, name: string, replacement: string) -> st
 // next.
 clear_redactions() {
     vcr_clear_redactions()
+    list_reset(slot(cur_key(), "credheaders"))
 }
 
 // Register a whole-tape normalization: every distinct match of `pattern`
@@ -4193,6 +4562,7 @@ clear_format_options() {
     vcr_set_indent_code_blocks(0)
     vcr_set_emphasize_http_verbs(0)
     vcr_set_pretty_xml(0)
+    vcr_set_pretty_json(0)
 }
 
 // ---- Aether-side tape emitter ---------------------------------------
@@ -4617,6 +4987,42 @@ pretty_xml_body_k(key: string, ctype: string, body: string) -> string {
     return formatted
 }
 
+// ---- Opt-in JSON pretty-printing at record time (pretty_json) --------
+//
+// True when `ctype` names JSON: application/json, text/json, or any
+// <type>/<subtype>+json (problem+json, ld+json, vnd.api+json, ...). A
+// base64-marked content type is binary, never JSON.
+content_type_is_json(ctype: string) -> int {
+    if ascii_ci_contains(ctype, "base64 below") == 1 { return 0 }
+    mime = ctype
+    semi = string.index_of(mime, ";")
+    if semi >= 0 { mime = string.substring(mime, 0, semi) }
+    mime = rtrim(trim_leading_ws(mime))
+    if icmp_rt(mime, "application/json") == 0 { return 1 }
+    if icmp_rt(mime, "text/json") == 0 { return 1 }
+    n = string.length(mime)
+    if n > 5 && icmp_rt(string.substring(mime, n - 5, n), "+json") == 0 { return 1 }
+    return 0
+}
+
+// Reformat a RESPONSE `body` with json.pretty when pretty_json is on and
+// `ctype` is JSON, under the same rules as pretty_xml_body_k: last, after
+// redactions, secret patches and normalizations, so they act on the raw
+// bytes; any json.pretty error keeps the body byte-exact; request bodies are
+// never touched. json.pretty re-indents the text itself, so key order and
+// number spellings stay as the service sent them.
+pretty_json_body_k(key: string, ctype: string, body: string) -> string {
+    indent = vcr_get_pretty_json_k(key)
+    if indent <= 0 { return body }
+    if string.length(body) == 0 { return body }
+    if content_type_is_json(ctype) == 0 { return body }
+    formatted, err = json.pretty(body, indent)
+    if err != "" || string.length(formatted) == 0 { return body }
+    // Keep a trailing newline the original body had (json.pretty writes none).
+    if string.char_at(body, string.length(body) - 1) == 10 { return string_concat(formatted, "\n") }
+    return formatted
+}
+
 emit_one_interaction_k(key: string, i: int) -> string {
     // Read fields from THIS handle's tape via the keyed struct accessor — no
     // ambient cur_key(), so a concurrent flush on another handle cannot change
@@ -4643,6 +5049,19 @@ emit_one_interaction_k(key: string, i: int) -> string {
     req_h_out  = remove_headers_for_k(key, req_h_out, FIELD_REQUEST_HEADERS)
     resp_h_out = remove_headers_for_k(key, resp_h_out, FIELD_RESPONSE_HEADERS)
 
+    // redact_credentials: each credential header's secret becomes its
+    // numbered token, and a long enough secret is replaced wherever else it
+    // appears (a token echoed in a body).
+    if list_size(credheaders_k(key)) > 0 {
+        req_h_out  = cred_rewrite_block_k(key, req_h_out, FIELD_REQUEST_HEADERS, 1)
+        resp_h_out = cred_rewrite_block_k(key, resp_h_out, FIELD_RESPONSE_HEADERS, 1)
+        path_out   = cred_apply_values_k(key, path_out)
+        req_h_out  = cred_apply_values_k(key, req_h_out)
+        req_b_out  = cred_apply_values_k(key, req_b_out)
+        resp_h_out = cred_apply_values_k(key, resp_h_out)
+        body_out   = cred_apply_values_k(key, body_out)
+    }
+
     path_out = secret_emission_field_k(key, i, FIELD_PATH, path_out)
     req_h_out = secret_emission_field_k(key, i, FIELD_REQUEST_HEADERS, req_h_out)
     req_b_out = secret_emission_field_k(key, i, FIELD_REQUEST_BODY, req_b_out)
@@ -4662,6 +5081,7 @@ emit_one_interaction_k(key: string, i: int) -> string {
     resp_ct = ctype
     if string.length(resp_ct) == 0 { resp_ct = header_value_in_block(resp_h, "Content-Type") }
     body_out = pretty_xml_body_k(key, resp_ct, body_out)
+    body_out = pretty_json_body_k(key, resp_ct, body_out)
 
     // A Content-Length on the tape describes the body the tape holds: when a
     // redaction, normalization or pretty-print changed a body, its recorded
@@ -4750,6 +5170,7 @@ emit_tape_k(key: string) -> string {
         return ""
     }
     build_normalization_map_k(key)
+    build_credential_map_k(key)
     n = list_size(tape_list_k(key))
     out = string.copy("")
     i = 0
@@ -4867,18 +5288,65 @@ emit_rules_footer_k(key: string) -> string {
     ri = 0
     while ri < list_size(rl) {
         h = list_get_raw(rl, ri) as *HeaderRemoval
+        if string.length(h.origin) == 0 {
+            hits = ""
+            ii = 0
+            while ii < n {
+                e = tape_get_k(key, ii)
+                if header_line_present(raw_field_k(e, h.field), h.name) == 1 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
+                ii = ii + 1
+            }
+            rows = string_concat(rows, "| removed | ${field_label(h.field)} | ${md_cell_code(h.name)} | (left out) | ${interaction_ranges(hits)} |\n")
+        } else if removal_group_seen_k(key, ri) == 0 {
+            // A preset's removals for one field: one row, every name, the
+            // interactions any of them was in.
+            names = ""
+            hits = ""
+            ii = 0
+            while ii < n { hits = string_concat(hits, "0"); ii = ii + 1 }
+            rj = ri
+            while rj < list_size(rl) {
+                g = list_get_raw(rl, rj) as *HeaderRemoval
+                if g.field == h.field && string.equals(g.origin, h.origin) == 1 {
+                    if string.length(names) > 0 { names = string_concat(names, ", ") }
+                    names = string_concat(names, md_cell_code(g.name))
+                    nh = ""
+                    ii = 0
+                    while ii < n {
+                        e = tape_get_k(key, ii)
+                        if string.char_at(hits, ii) == 49 || header_line_present(raw_field_k(e, g.field), g.name) == 1 { nh = string_concat(nh, "1") } else { nh = string_concat(nh, "0") }
+                        ii = ii + 1
+                    }
+                    hits = nh
+                }
+                rj = rj + 1
+            }
+            rows = string_concat(rows, "| removed (${h.origin}) | ${field_label(h.field)} | ${names} | (left out) | ${interaction_ranges(hits)} |\n")
+        }
+        ri = ri + 1
+    }
+
+    cl = credheaders_k(key)
+    ci = 0
+    while ci < list_size(cl) {
+        c = list_get_raw(cl, ci) as *CredHeader
         hits = ""
         ii = 0
         while ii < n {
             e = tape_get_k(key, ii)
-            v = response_header_value_from_block(raw_field_k(e, h.field), h.name)
-            present = 0
-            if string.length(v) > 0 || header_line_present(raw_field_k(e, h.field), h.name) == 1 { present = 1 }
-            if present == 1 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
+            hit = 0
+            if cred_applies(c, FIELD_REQUEST_HEADERS) == 1 && header_line_present(e.req_headers, c.name) == 1 { hit = 1 }
+            if cred_applies(c, FIELD_RESPONSE_HEADERS) == 1 && header_line_present(e.resp_headers, c.name) == 1 { hit = 1 }
+            if hit == 1 { hits = string_concat(hits, "1") } else { hits = string_concat(hits, "0") }
             ii = ii + 1
         }
-        rows = string_concat(rows, "| removed | ${field_label(h.field)} | ${md_cell_code(h.name)} | (left out) | ${interaction_ranges(hits)} |\n")
-        ri = ri + 1
+        applies = "request and response headers"
+        written = md_cell_code("${c.prefix}_N")
+        if c.kind == 1 { written = md_cell_code("<scheme> ${c.prefix}_N") }
+        if c.kind == 2 { applies = "request headers"; written = md_cell_code("<name>=${c.prefix}_N") }
+        if c.kind == 3 { applies = "response headers"; written = md_cell_code("<name>=${c.prefix}_N; <attributes>") }
+        rows = string_concat(rows, "| redacted credential | ${applies} | ${md_cell_code(c.name)} | ${written} | ${interaction_ranges(hits)} |\n")
+        ci = ci + 1
     }
 
     dl = redactions_k(key)
@@ -4940,7 +5408,25 @@ emit_rules_footer_k(key: string) -> string {
     out = string_concat(out, "What the test asked Servirtium to leave out or rewrite when it wrote this recording; everything else is as sent. Playback does not read this section.\n\n")
     out = string_concat(out, "| Rule | Applies to | Matching | Written as | Interactions |\n")
     out = string_concat(out, "|---|---|---|---|---|\n")
-    return string_concat(out, rows)
+    out = string_concat(out, rows)
+    if list_size(cl) > 0 {
+        out = string_concat(out, "\nA credential's `N` numbers each distinct value: the same value has the same number wherever it appears, and one of 8 characters or more is replaced in bodies and paths too. Playback matches credential headers on presence, not value.\n")
+    }
+    return out
+}
+
+// Whether an earlier removal shares removal `ri`'s preset and field (its row
+// was written with that one's).
+removal_group_seen_k(key: string, ri: int) -> int {
+    rl = header_removals_k(key)
+    h = list_get_raw(rl, ri) as *HeaderRemoval
+    j = 0
+    while j < ri {
+        g = list_get_raw(rl, j) as *HeaderRemoval
+        if g.field == h.field && string.equals(g.origin, h.origin) == 1 { return 1 }
+        j = j + 1
+    }
+    return 0
 }
 
 // Whether a "Name:" line for `name` is in the header block (an empty value
