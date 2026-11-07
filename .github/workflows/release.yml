@@ -41,7 +41,8 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libssl-dev zlib1g-dev libnghttp2-dev libpcre2-dev
+          # libfyaml: Aether's runtime links it since 0.897.0 (std.yaml).
+          sudo apt-get install -y --no-install-recommends libssl-dev zlib1g-dev libnghttp2-dev libpcre2-dev libfyaml-dev
 
       # The fat Java jar needs a JDK >= 22 (FFM / Project Panama) + Maven, and the
       # multi-RID .NET nupkg needs the .NET SDK (dotnet pack). ubuntu-22.04 ships
