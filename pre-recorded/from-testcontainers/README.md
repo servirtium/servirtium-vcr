@@ -76,7 +76,7 @@ them. Each suite's `LICENCE-NOTE.md` gives the clause and the commands.
 | `milvus` | 1 | `milvusdb/milvus:v2.3.9` |
 | `pinecone` | test + recorder only, tapes not shipped ([why](pinecone/LICENCE-NOTE.md)) | `ghcr.io/pinecone-io/pinecone-local:v0.7.0` |
 | `vearch` | 1 | `vearch/vearch:3.5.1` |
-| `mailpit` | 2 | `axllent/mailpit:v1.20` |
+| `mailpit` | 10 (comprehensive: 8 API, 2 module; the REST API and health endpoints, Send API, paging, search, read state, tags, deletes, an SMTP-received mail, errors; no login: Mailpit's API is open) | `axllent/mailpit:v1.20` |
 | `inbucket` | 1 | `inbucket/inbucket:sha-2d409bb` |
 | `papercutsmtp` | 1 | `changemakerstudiosus/papercut-smtp:latest` |
 | `dex` | 1 | `dexidp/dex:v2.45.0` |
@@ -209,7 +209,7 @@ Per suite (registered at the top of its `main`):
 | milvus | | | | |
 | pinecone | | | | |
 | vearch | | | | |
-| mailpit | | message `ID`, `MessageID`, `Created`, `Size`, the CSP `nonce-` | | |
+| mailpit | API cases: the message `ID` (`{{id-N}}`) | `MessageID` (generated), the Send API's MIME boundaries, times (JSON and RFC 5322 `Date`), the SMTP `Received` header (it names the recording machine), `Size`, the CSP `nonce-`; module cases: message `ID`, `MessageID`, `Created`, `Size`, the nonce | | |
 | inbucket | | message `id`, `date`, `posix-millis` | | |
 | papercutsmtp | | | | |
 | dex | | the signing key's `kid` and RSA modulus `n` | | |

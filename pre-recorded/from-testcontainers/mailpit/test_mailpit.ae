@@ -1,20 +1,121 @@
-// Ported from testcontainers-go modules/mailpit/mailpit_test.go, by way of
-// testcontainers-ae's tests/test_mailpit.ae (moved here 2026-11-07).
+// Mailpit, comprehensively: servirtium-vcr's pre-recorded/from-testcontainers
+// "Pattern for comprehensive suites" (README) applied to Mailpit v1.20 (MIT),
+// after the CouchDB pilot.
 //
-// A real Mailpit: a mail is sent over SMTP at the mapped port (EHLO, MAIL
-// FROM, RCPT TO, DATA, by hand over std.tcp) and read back over the REST API
-// (GET /api/v1/messages) at the mapped HTTP port.
+// Two describe blocks, two sets of tapes:
 //
-// PORTING: only the REST read-back is on the tapes. The SMTP conversation is
-// a TCP protocol, not HTTP, so it is part of the live setup: the test sends
-// the mail before it starts recording, and a port that replays the tape sends
-// nothing and needs no container. The SMTP-auth case is all SMTP plus
-// tc.exec, so it runs only live.
+// 1. "modules/mailpit": ported from testcontainers-go modules/mailpit/mailpit_test.go,
+//    by way of testcontainers-ae's tests/test_mailpit.ae (moved here 2026-11-07).
+//    It tests the MODULE (SMTP and HTTP endpoints, smtp_auth, message_limit):
+//    one container per case, the original representative tapes.
+//
+// 2. "Mailpit REST API": written for servirtium-vcr. Re-usable recordings of
+//    Mailpit's REST API (and its health endpoints), one tape per scenario, for
+//    any language's tests to replay with no Mailpit. This is the comprehensive
+//    part. Component-level tests of Mailpit's API, never "end-to-end": the
+//    tapes stand in for Mailpit.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes are
+// the re-usable part. A port is a test in your language and test framework
+// that makes the same requests in the same order against a Servirtium replay
+// server loaded with the tape, and checks the same things. Every request is
+// plain HTTP/1.1 with these headers and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+//   Content-Type: application/json   (only when there is a body)
+// Playback is strict about method, path (query string included, exactly as
+// written here), the recorded request headers and the body (byte for byte:
+// send the JSON bodies exactly as written in this file, no spaces), and fails
+// a case whose recorded requests are not all made. Host, Connection and
+// Content-Length are on the tapes but are transport headers, not compared.
+//
+// Login
+// -----
+// There is none. Mailpit's UI and API are open unless it is started with
+// MP_UI_AUTH (HTTP Basic), which this module does not set, so these tapes
+// carry no credential and need no "already logged in" fixture (the way the
+// TiDB and Dind suites need none). Credentials never appear on a tape because
+// none are used; the SMTP-auth case of the module block is TCP and live only.
+//
+// Mail in, mail out
+// -----------------
+// Most cases make their mail ON the tape with Mailpit's own Send API
+// (POST /api/v1/send), so each tape is self-contained and replays with nothing
+// but HTTP. One case, receives_a_multipart_mail_over_smtp_and_serves_it,
+// shows mail that arrived over SMTP (envelope Bcc, the Received header, a
+// sender's own Message-ID). SMTP is TCP: the recorder only proxies HTTP, so
+// the SMTP conversation is part of the case's live setup (the `live()`
+// branch) and is not on the tape; a port that replays the tape sends no mail
+// and needs no container.
+//
+// Every case starts from an empty mailbox (a live run clears it first,
+// unrecorded: DELETE /api/v1/messages) and, being independent, leaves it
+// empty or at least needs nothing of the others. Message ids, and the tags
+// and subjects the cases make, are fixed names so a tape replays alone.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below, with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them and the
+// interactions each touched. In short:
+//   - normalized ({{id-N}}, the same token wherever the value recurs, because a
+//     client sends it back in /message/<id> and {"IDs":[..]}): a message's id.
+//   - collapsed (one constant; nobody sends them back): the generated
+//     Message-ID (".. @mailpit"), the Send API's MIME boundaries, every time
+//     (Created, Date, and the RFC 5322 Date header), the Received header
+//     Mailpit adds to mail taken over SMTP (it names the recording machine),
+//     the message Size, and the Content-Security-Policy nonce.
+//   - left out: Date (response header), as everywhere.
+// PORTING: in playback a normalized value comes back as its token, verbatim
+// ("{{id-1}}"); treat the id as an opaque string (never assert its length or
+// shape) and send it back exactly as received. Send the braces as they are:
+// playback compares paths and bodies byte for byte, so a client that
+// percent-encodes `{` will not match. Mailpit answers raw messages and
+// attachments with CR LF line ends; Servirtium's playback folds a tape's CR LF
+// to LF when it reads it, so replayed text has LF only: assert with the CRs
+// removed (lf() below).
+//
+// Awkward points
+// --------------
+// None of Mailpit's lists is unordered: messages come newest first, tags and
+// search results likewise in a fixed order, JSON keys sorted. The cases send
+// their mails one request after another, so "newest first" is the reverse of
+// the send order (a mail sent in the same millisecond as another could swap;
+// each send is a separate HTTP round trip, so this has not happened). Nothing
+// here needs the opt-in stable ordering being added to Servirtium's core.
+//
+// In and out of scope
+// -------------------
+// In: the health endpoints (/livez, /readyz) and the web UI configuration;
+// the Send API (HTML and text bodies, Cc, Bcc, custom headers, tags,
+// attachments); listing, paging (start, limit) and searching (subject:,
+// from:, tag:, has:attachment, is:read, is:unread, free text), deleting by
+// search; one message in full, its headers, raw text and parts (attachments);
+// mark read and unread (some or all); tags (set, list, rename, delete, search
+// by tag); deleting some or all messages; mail received over SMTP (as live
+// setup); the representative errors 400 and 404.
+// Out: webhooks and anything pushed (the websocket at /api/events, the live
+// UI: connections, not messages), releasing a message to an SMTP relay and
+// the relay's allow-lists (needs a second SMTP server), the SpamAssassin,
+// HTML-check and link-check endpoints (they need SpamAssassin, a network and
+// a compatibility database; link-check fetches URLs), POP3, TLS, the chaos
+// SMTP triggers, /api/v1/info (it reports the memory in use, the database
+// path and the latest GitHub release: every run differs), thumbnails of
+// inline images, message and tag auto-tagging options (environment), and
+// the Basic-auth UI (MP_UI_AUTH, not set by the module). Each could be a later case.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test mailpit/test_mailpit.ae                         container, no Servirtium
+//   TCAE_VCR=record   ae test mailpit/test_mailpit.ae       write the tapes
+//   TCAE_VCR=check    ae test mailpit/test_mailpit.ae       fail if a tape changed
+//   TCAE_VCR=playback ae test mailpit/test_mailpit.ae       no container: the tapes
+// The API cases share one container (started on the first one and removed at
+// the end); the module cases each start their own.
 
 import std.spec
 import std.string
 import std.tcp
 import std.http.client
+import std.json
 import testcontainers as tc
 import testcontainers.docker
 import testcontainers.testing
@@ -103,9 +204,169 @@ fn http_get(url: string) -> (int, string, string) {
     return status, body, ""
 }
 
-main() {
-    fw = spec.init()
-    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+// ---------------------------------------------------------------------------
+// The comprehensive "Mailpit REST API" block: helpers
+// ---------------------------------------------------------------------------
+
+// Send raw message data to several recipients: "" or the error. The envelope
+// (RCPT TO) is what Mailpit records as To, Cc and Bcc recipients, so a
+// recipient that is in no header is a Bcc. data is the message with LF line
+// ends, the dot-stuffing left to the caller (none here).
+fn send_raw(endpoint: string, from: string, rcpts: string[], data: string) -> string {
+    i = string.index_of(endpoint, ":")
+    h = string.substring(endpoint, 0, i)
+    port, _ = string.to_int(string.substring(endpoint, i + 1, string.length(endpoint)))
+    sock, cerr = tcp.connect(h, port)
+    if cerr != "" { return "connect ${endpoint}: ${cerr}" }
+    banner, berr = smtp_reply(sock)
+    if berr != "" || string.starts_with(banner, "220") == 0 { tcp.tcp_close(sock); return "banner: ${banner} ${berr}" }
+    e = smtp_cmd(sock, "EHLO tcae.test", "250")
+    if e == "" { e = smtp_cmd(sock, "MAIL FROM:<${from}>", "250") }
+    for r in rcpts {
+        if e == "" { e = smtp_cmd(sock, "RCPT TO:<${r}>", "250") }
+    }
+    if e == "" { e = smtp_cmd(sock, "DATA", "354") }
+    if e == "" {
+        crlf = string.replace_all(data, "\n", "\r\n")
+        e = smtp_cmd(sock, "${crlf}\r\n.", "250")
+    }
+    if e == "" { e = smtp_cmd(sock, "QUIT", "221") }
+    tcp.tcp_close(sock)
+    return e
+}
+
+// A string in a JSON body by a dotted path ("messages.0.ID", "Attachments.0.PartID");
+// "" when absent or not a string.
+fn jstr(body: string, path: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    let v: ptr = doc
+    rest = path
+    while string.length(rest) > 0 && v != null {
+        p = rest
+        dot = string.index_of(rest, ".")
+        if dot >= 0 {
+            p = string.substring(rest, 0, dot)
+            rest = string.substring(rest, dot + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        if json.json_type(v) == json.JSON_ARRAY {
+            idx, _ = string.to_int(p)
+            a, _ = json.array_get(v, idx)
+            v = a
+        } else {
+            o, _ = json.object_get(v, p)
+            v = o
+        }
+    }
+    out = ""
+    if v != null {
+        s, serr = json.get_string(v)
+        if serr == "" { out = string.copy(s) }
+    }
+    json.free(doc)
+    return out
+}
+
+// A number in a JSON body by a dotted path, as text ("" when absent): the
+// counts a list response carries ("total", "unread", "count").
+fn jnum(body: string, path: string) -> string {
+    marker = "\"${path}\":"
+    i = string.index_of(body, marker)
+    if i < 0 { return "" }
+    j = i + string.length(marker)
+    out = ""
+    while j < string.length(body) {
+        ch = string.char_at(body, j)
+        if ch < 48 || ch > 57 { return out }
+        out = string.concat(out, string.from_char(ch))
+        j = j + 1
+    }
+    return out
+}
+
+fn lf(body: string) -> string {
+    return string.replace_all(body, "\r", "")
+}
+
+var api: string = ""
+var smtp_addr: string = ""
+
+// One request to the API: (status, body). A transport error fails the case.
+// No credentials: Mailpit's UI and API are open unless MP_UI_AUTH is set.
+fn mp(method: string, path: string, body: string) -> (int, string) {
+    req = client.request(method, "${api}${path}")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    spec.assert_ok(err, "${method} ${path}")
+    if err != "" { return 0, "" }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b
+}
+
+// The Send API's request for a message: alice to bob with the given subject
+// and tags (a JSON array text such as "[\"a\",\"b\"]", or "[]").
+fn send_body(subject: string, text: string, tags: string) -> string {
+    return "{\"From\":{\"Email\":\"alice@example.com\",\"Name\":\"Alice\"},\"To\":[{\"Email\":\"bob@example.com\",\"Name\":\"Bob\"}],\"Subject\":\"${subject}\",\"Text\":\"${text}\",\"Tags\":${tags}}"
+}
+
+// POST /api/v1/send and return the new message's id.
+fn send_mail_api(subject: string, text: string, tags: string) -> string {
+    st, b = mp("POST", "/api/v1/send", send_body(subject, text, tags))
+    spec.assert_eq(st, 200, "send ${subject}: ${b}")
+    return jstr(b, "ID")
+}
+
+var shared_container: ptr = null
+var shared_base: string = ""
+
+// The shared Mailpit's base URL, starting it on first use ("" on failure).
+fn shared() -> string {
+    if string.length(shared_base) > 0 { return shared_base }
+    c, err = mailpit.run(IMAGE)
+    spec.assert_ok(err, "mailpit starts")
+    if err != "" { return "" }
+    shared_container = c as ptr
+    s, e1 = mailpit.smtp_endpoint(c)
+    spec.assert_ok(e1, "smtp endpoint")
+    b, e2 = mailpit.http_url(c)
+    spec.assert_ok(e2, "http url")
+    smtp_addr = s
+    shared_base = b
+    return shared_base
+}
+
+// Start an API case: in a live mode, the shared Mailpit with an empty mailbox
+// (DELETE /api/v1/messages, unrecorded), then the recording. Sets `api`;
+// returns the recording handle, and ok = 0 when the case cannot run.
+fn begin(case_: string) -> (ptr, int) {
+    addr = ""
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+        req = client.request("DELETE", "${addr}/api/v1/messages")
+        client.set_header(req, "User-Agent", USER_AGENT)
+        client.set_timeout(req, 30s)
+        r, err = client.send_request(req)
+        client.request_free(req)
+        spec.assert_ok(err, "empty the mailbox (not recorded)")
+        if err == "" { client.response_free(r) }
+    }
+    base, rec = servirtium.recording("mailpit", case_, addr)
+    api = base
+    return rec, 1
+}
+
+// The module cases' rules.
+fn module_rules() {
+    servirtium.clear_rules()
     // What differs run to run, none of it sent back by the test: the message's
     // ID and Message-ID, its Created time, and the nonce in the response's
     // Content-Security-Policy header.
@@ -116,7 +377,50 @@ main() {
     // header (21 or 22 characters, depending on the run).
     servirtium.collapse("\"Size\":[0-9]+", "\"Size\":0")
     servirtium.collapse("nonce-[A-Za-z0-9]{22}", "nonce-NONCE")
+}
 
+// The API cases' rules. Rules apply to every recording after them, so the two
+// blocks each clear and register their own.
+fn api_rules() {
+    servirtium.clear_rules()
+    // A message's id (22 base62 characters): Mailpit makes it, and the client
+    // sends it back in paths (/message/<id>) and bodies ({"IDs":[..]}).
+    // Normalized, so the same message has the same {{id-N}} in all of them.
+    // Scoped to the "ID" field of a response so that no other 22-character
+    // word is touched; the value is then replaced wherever it recurs.
+    servirtium.normalize("(?<=\"ID\":\")[A-Za-z0-9]{22}(?=\")", "id")
+    // The Message-ID Mailpit generates for a mail that has none (the Send API
+    // always, SMTP when the sender gave none): 21 or 22 base62 characters
+    // and "@mailpit", in the list ("MessageID":"..."), in the raw message and
+    // in the headers ("Message-Id"). Nobody sends it back: collapsed. Mails
+    // sent over SMTP here give a fixed Message-ID, which is left alone.
+    servirtium.collapse("[A-Za-z0-9]{21,22}@mailpit", "MESSAGE-ID@mailpit")
+    // The Send API's MIME boundaries are "enmime-<uuid>", random.
+    servirtium.collapse(string.concat("enmime-", servirtium.UUID), "enmime-BOUNDARY")
+    // Times: Created, Date (RFC 3339, in JSON) and the RFC 5322 Date header
+    // (in raw messages and the headers listing). Collapsed: nobody sends
+    // them back (a search by date would, and none is made).
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+    servirtium.collapse("(Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-9]{2} [A-Z][a-z]{2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4}", "Sat, 01 Jan 2000 00:00:00 +0000")
+    // The Received header Mailpit adds to a mail it takes over SMTP: the
+    // sender's host name, the container id and address, and the time. Hostile
+    // to a tape (it names the machine that recorded it), and no client sends
+    // it back. Collapsed whole (one line, so the rules table stays a table),
+    // in the raw message and in the JSON headers.
+    servirtium.collapse("(?s)Received: from .*?\\(UTC\\)", "Received: from CLIENT by CONTAINER (Mailpit) with SMTP; Sat, 1 Jan 2000 00:00:00 +0000 (UTC)")
+    servirtium.collapse("(?s)\"Received\":\\[\"from .*?\\(UTC\\)\"\\]", "\"Received\":[\"from CLIENT by CONTAINER (Mailpit) with SMTP; Sat, 1 Jan 2000 00:00:00 +0000 (UTC)\"]")
+    // The message's Size in bytes: it includes the Received header and any
+    // generated Message-ID, whose lengths vary.
+    servirtium.collapse("\"Size\":[0-9]+", "\"Size\":0")
+    // The nonce in every response's Content-Security-Policy header.
+    servirtium.collapse("nonce-[A-Za-z0-9]{22}", "nonce-NONCE")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    module_rules()
     spec.describe(fw, "modules/mailpit") {
         spec.after_each() callback { testing.cleanup_all() }
 
@@ -193,6 +497,371 @@ main() {
             spec.assert_contains(body, "\"total\":1", "the mail arrived")
             servirtium.end_recording(rec)
         }
+    }
+
+    api_rules()
+    spec.describe(fw, "Mailpit REST API") {
+        spec.after_each() callback { api = "" }
+
+        // PORTING: the health endpoints and an empty mailbox; the first two
+        // have an empty body.
+        //   GET /livez           -> 200
+        //   GET /readyz          -> 200
+        //   GET /api/v1/webui    -> 200 {"Label":"","MessageRelay":{"Enabled":false,..},"SpamAssassin":false,"DuplicatesIgnored":false}
+        //   GET /api/v1/messages -> 200 {"total":0,"unread":0,"count":0,"messages_count":0,"start":0,"tags":[],"messages":[]}
+        //   GET /api/v1/tags     -> 200 []
+        //   GET /api/v1/search?query=anything -> 200 an empty list (total 0)
+        spec.it("reports readiness and an empty mailbox") callback {
+            rec, ok = begin("reports_readiness_and_an_empty_mailbox")
+            if ok == 0 { return }
+            st, b = mp("GET", "/livez", "")
+            spec.assert_eq(st, 200, "livez: ${b}")
+            st, b = mp("GET", "/readyz", "")
+            spec.assert_eq(st, 200, "readyz: ${b}")
+            st, b = mp("GET", "/api/v1/webui", "")
+            spec.assert_eq(st, 200, "webui: ${b}")
+            spec.assert_contains(b, "\"SpamAssassin\":false", "no SpamAssassin")
+            spec.assert_contains(b, "\"Enabled\":false", "no relay")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_eq(st, 200, "messages: ${b}")
+            spec.assert_str_eq(jnum(b, "total"), "0", "no messages")
+            spec.assert_contains(b, "\"messages\":[]", "an empty list")
+            st, b = mp("GET", "/api/v1/tags", "")
+            spec.assert_eq(st, 200, "tags: ${b}")
+            spec.assert_str_eq(string.trim(b), "[]", "no tags")
+            st, b = mp("GET", "/api/v1/search?query=anything", "")
+            spec.assert_eq(st, 200, "search: ${b}")
+            spec.assert_contains(b, "\"messages\":[]", "no matches")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the Send API (an HTTP way to make a mail; no SMTP), then
+        // every way of reading it back. Bcc is a list of addresses.
+        //   POST /api/v1/send {"From":{"Email":"alice@example.com","Name":"Alice"},"To":[{"Email":"bob@example.com","Name":"Bob"}],
+        //        "Cc":[{"Email":"carol@example.com"}],"Bcc":["dave@example.com"],"Subject":"Hello Bob","Text":"plain body",
+        //        "HTML":"<p>html <b>body</b></p>","Tags":["greeting","tcae"],"Headers":{"X-Tcae":"1"},
+        //        "Attachments":[{"Content":"aGVsbG8gYXR0YWNobWVudA==","Filename":"note.txt"}]} -> 200 {"ID":{{id-1}}}
+        //   GET  /api/v1/messages -> 200 total 1, unread 1, messages[0]: ID, From {Name,Address}, To, Cc, Bcc, Subject,
+        //        Tags ["greeting","tcae"], Attachments 1, Snippet "html body"
+        //   GET  /api/v1/message/<id> -> 200 the full message: Text "plain body", HTML, Attachments [{PartID "2",
+        //        FileName "note.txt", ContentType "text/plain", Size 16}] (reading it marks it read)
+        //   GET  /api/v1/message/<id>/headers -> 200 {"Bcc":[..],"Cc":[..],"From":[..],"X-Tags":["greeting, tcae"],"X-Tcae":["1"],..}
+        //   GET  /api/v1/message/<id>/raw -> 200 the RFC 5322 text, multipart/mixed with a multipart/alternative
+        //   GET  /api/v1/message/<id>/part/2 -> 200 "hello attachment" (Content-Type text/plain,
+        //        Content-Disposition filename="note.txt")
+        //   GET  /api/v1/message/latest -> 200 the same message, Read true now
+        //   GET  /api/v1/messages -> unread 0
+        spec.it("sends a mail with the Send API and reads it back every way") callback {
+            rec, ok = begin("sends_a_mail_with_the_send_api_and_reads_it_back")
+            if ok == 0 { return }
+            body = "{\"From\":{\"Email\":\"alice@example.com\",\"Name\":\"Alice\"},\"To\":[{\"Email\":\"bob@example.com\",\"Name\":\"Bob\"}],\"Cc\":[{\"Email\":\"carol@example.com\"}],\"Bcc\":[\"dave@example.com\"],\"Subject\":\"Hello Bob\",\"Text\":\"plain body\",\"HTML\":\"<p>html <b>body</b></p>\",\"Tags\":[\"greeting\",\"tcae\"],\"Headers\":{\"X-Tcae\":\"1\"},\"Attachments\":[{\"Content\":\"aGVsbG8gYXR0YWNobWVudA==\",\"Filename\":\"note.txt\"}]}"
+            st, b = mp("POST", "/api/v1/send", body)
+            spec.assert_eq(st, 200, "send: ${b}")
+            id = jstr(b, "ID")
+            spec.assert_true(string.length(id) > 0, "an id")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_str_eq(jnum(b, "total"), "1", "one message")
+            spec.assert_str_eq(jnum(b, "unread"), "1", "unread")
+            spec.assert_str_eq(jstr(b, "messages.0.ID"), id, "the one we sent")
+            spec.assert_str_eq(jstr(b, "messages.0.From.Address"), "alice@example.com", "from")
+            spec.assert_str_eq(jstr(b, "messages.0.To.0.Name"), "Bob", "to")
+            spec.assert_str_eq(jstr(b, "messages.0.Cc.0.Address"), "carol@example.com", "cc")
+            spec.assert_str_eq(jstr(b, "messages.0.Bcc.0.Address"), "dave@example.com", "bcc")
+            spec.assert_str_eq(jstr(b, "messages.0.Subject"), "Hello Bob", "subject")
+            spec.assert_str_eq(jstr(b, "messages.0.Tags.1"), "tcae", "tags")
+            spec.assert_str_eq(jstr(b, "messages.0.Snippet"), "html body", "snippet")
+            spec.assert_contains(b, "\"Attachments\":1", "one attachment")
+            st, b = mp("GET", "/api/v1/message/${id}", "")
+            spec.assert_eq(st, 200, "message: ${b}")
+            spec.assert_str_eq(jstr(b, "Text"), "plain body", "text")
+            spec.assert_str_eq(jstr(b, "HTML"), "<p>html <b>body</b></p>", "html")
+            spec.assert_str_eq(jstr(b, "Attachments.0.FileName"), "note.txt", "attachment name")
+            partid = jstr(b, "Attachments.0.PartID")
+            spec.assert_true(string.length(partid) > 0, "a part id")
+            st, b = mp("GET", "/api/v1/message/${id}/headers", "")
+            spec.assert_eq(st, 200, "headers: ${b}")
+            spec.assert_contains(b, "\"X-Tcae\":[\"1\"]", "the custom header")
+            spec.assert_contains(b, "\"X-Tags\":[\"greeting, tcae\"]", "the tags header")
+            st, b = mp("GET", "/api/v1/message/${id}/raw", "")
+            spec.assert_eq(st, 200, "raw: ${b}")
+            spec.assert_contains(lf(b), "Subject: Hello Bob\n", "the raw subject")
+            spec.assert_contains(lf(b), "Content-Type: multipart/mixed;", "multipart/mixed")
+            st, b = mp("GET", "/api/v1/message/${id}/part/${partid}", "")
+            spec.assert_eq(st, 200, "part: ${b}")
+            spec.assert_str_eq(lf(b), "hello attachment", "the attachment's bytes")
+            st, b = mp("GET", "/api/v1/message/latest", "")
+            spec.assert_eq(st, 200, "latest: ${b}")
+            spec.assert_str_eq(jstr(b, "ID"), id, "the same message")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "unread"), "0", "reading marked it read")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: mail that arrives over SMTP, which is TCP and so is part of
+        // the live setup, not of the tape: a port's replay sends nothing. The
+        // setup sends one multipart mail with RCPT TO for bob, carol and
+        // hidden@example.com (a Bcc: in no header), a fixed Message-ID
+        // <report-1@tcae.test> and a text/csv attachment. The tape holds the reads:
+        //   GET /api/v1/messages -> 200 total 1; messages[0]: MessageID "report-1@tcae.test", To [Bob], Cc [carol],
+        //        Bcc [hidden@example.com] (from the envelope), Subject "Quarterly report", Attachments 1
+        //   GET /api/v1/message/<id> -> 200: Text "Plain text body", HTML, ReturnPath "alice@example.com",
+        //        Attachments [{PartID "2", FileName "report.csv", ContentType "text/csv"}]
+        //   GET /api/v1/message/<id>/part/2 -> 200 "a,b\n1,2" ; GET .../raw -> the message with Mailpit's
+        //        Received header added (collapsed, it names the sending machine) ; GET .../headers -> includes Received
+        // Servirtium's playback folds CR LF to LF when it reads a tape, so the
+        // attachment and the raw text come back with LF: compare with CRs removed.
+        spec.it("receives a multipart mail over SMTP and serves it") callback {
+            rec, ok = begin("receives_a_multipart_mail_over_smtp_and_serves_it")
+            if ok == 0 { return }
+            if servirtium.live() == 1 {
+                msg = "From: Alice <alice@example.com>\nTo: Bob <bob@example.com>\nCc: carol@example.com\nSubject: Quarterly report\nDate: Sat, 07 Nov 2026 10:00:00 +0000\nMessage-ID: <report-1@tcae.test>\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=\"tcae-b1\"\n\n--tcae-b1\nContent-Type: multipart/alternative; boundary=\"tcae-b2\"\n\n--tcae-b2\nContent-Type: text/plain; charset=utf-8\n\nPlain text body\n--tcae-b2\nContent-Type: text/html; charset=utf-8\n\n<p>HTML <b>body</b></p>\n--tcae-b2--\n--tcae-b1\nContent-Type: text/csv; name=\"report.csv\"\nContent-Disposition: attachment; filename=\"report.csv\"\n\na,b\n1,2\n--tcae-b1--\n"
+                se = send_raw(smtp_addr, "alice@example.com", ["bob@example.com", "carol@example.com", "hidden@example.com"], msg)
+                spec.assert_ok(se, "SMTP conversation (not recorded)")
+            }
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_str_eq(jnum(b, "total"), "1", "one message")
+            id = jstr(b, "messages.0.ID")
+            spec.assert_true(string.length(id) > 0, "an id")
+            spec.assert_str_eq(jstr(b, "messages.0.MessageID"), "report-1@tcae.test", "the sender's Message-ID is kept")
+            spec.assert_str_eq(jstr(b, "messages.0.To.0.Address"), "bob@example.com", "to")
+            spec.assert_str_eq(jstr(b, "messages.0.Cc.0.Address"), "carol@example.com", "cc")
+            spec.assert_str_eq(jstr(b, "messages.0.Bcc.0.Address"), "hidden@example.com", "bcc, from the envelope")
+            spec.assert_str_eq(jstr(b, "messages.0.Subject"), "Quarterly report", "subject")
+            spec.assert_contains(b, "\"Attachments\":1", "one attachment")
+            st, b = mp("GET", "/api/v1/message/${id}", "")
+            spec.assert_eq(st, 200, "message: ${b}")
+            spec.assert_str_eq(lf(jstr(b, "Text")), "Plain text body", "text")
+            spec.assert_str_eq(lf(jstr(b, "HTML")), "<p>HTML <b>body</b></p>", "html")
+            spec.assert_str_eq(jstr(b, "ReturnPath"), "alice@example.com", "the envelope sender")
+            spec.assert_str_eq(jstr(b, "Attachments.0.FileName"), "report.csv", "attachment name")
+            spec.assert_str_eq(jstr(b, "Attachments.0.ContentType"), "text/csv", "attachment type")
+            partid = jstr(b, "Attachments.0.PartID")
+            st, b = mp("GET", "/api/v1/message/${id}/part/${partid}", "")
+            spec.assert_eq(st, 200, "part: ${b}")
+            spec.assert_str_eq(string.trim(lf(b)), "a,b\n1,2", "the csv")
+            st, b = mp("GET", "/api/v1/message/${id}/raw", "")
+            spec.assert_eq(st, 200, "raw: ${b}")
+            spec.assert_contains(lf(b), "Received: from ", "Mailpit's Received header (collapsed on the tape)")
+            spec.assert_contains(lf(b), "Message-ID: <report-1@tcae.test>", "the Message-ID")
+            st, b = mp("GET", "/api/v1/message/${id}/headers", "")
+            spec.assert_eq(st, 200, "headers: ${b}")
+            spec.assert_contains(b, "\"Subject\":[\"Quarterly report\"]", "the subject header")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: paging and searching, four mails sent by the Send API (all from
+        // alice@example.com to bob@example.com; the id of each is {{id-N}}):
+        //   POST /api/v1/send  subjects "alpha report" (tag "q1"), "beta report" (tag "q1"), "gamma note", "delta note"
+        //        Text bodies "first", "second", "third", "fourth"; "delta note" has an attachment; each -> 200 {"ID":..}
+        //   GET /api/v1/messages -> total 4, newest first: delta, gamma, beta, alpha
+        //   GET /api/v1/messages?start=0&limit=2 -> count 2 (delta, gamma), total 4; ?start=2&limit=2 -> beta, alpha
+        //   GET /api/v1/search?query=subject:report -> beta, alpha (count 2)
+        //   GET /api/v1/search?query=tag:q1 -> beta, alpha
+        //   GET /api/v1/search?query=gamma -> 1 (free text, matches the subject)
+        //   GET /api/v1/search?query=has:attachment -> delta
+        //   GET /api/v1/search?query=from:alice@example.com -> 4
+        //   GET /api/v1/search?query=is:unread -> 4 ; ?query=nosuchword -> 0
+        //   DELETE /api/v1/search?query=subject:note -> 200 "ok" ; GET /api/v1/messages -> total 2 (the reports)
+        spec.it("pages through and searches messages") callback {
+            rec, ok = begin("pages_through_and_searches_messages")
+            if ok == 0 { return }
+            send_mail_api("alpha report", "first", "[\"q1\"]")
+            send_mail_api("beta report", "second", "[\"q1\"]")
+            send_mail_api("gamma note", "third", "[]")
+            st, b = mp("POST", "/api/v1/send", "{\"From\":{\"Email\":\"alice@example.com\",\"Name\":\"Alice\"},\"To\":[{\"Email\":\"bob@example.com\",\"Name\":\"Bob\"}],\"Subject\":\"delta note\",\"Text\":\"fourth\",\"Attachments\":[{\"Content\":\"eA==\",\"Filename\":\"x.txt\"}]}")
+            spec.assert_eq(st, 200, "send delta: ${b}")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_str_eq(jnum(b, "total"), "4", "four messages")
+            spec.assert_str_eq(jstr(b, "messages.0.Subject"), "delta note", "newest first")
+            spec.assert_str_eq(jstr(b, "messages.3.Subject"), "alpha report", "oldest last")
+            st, b = mp("GET", "/api/v1/messages?start=0&limit=2", "")
+            spec.assert_str_eq(jnum(b, "count"), "2", "a page of two")
+            spec.assert_str_eq(jnum(b, "total"), "4", "of four")
+            spec.assert_str_eq(jstr(b, "messages.1.Subject"), "gamma note", "page 1, second")
+            st, b = mp("GET", "/api/v1/messages?start=2&limit=2", "")
+            spec.assert_str_eq(jstr(b, "messages.0.Subject"), "beta report", "page 2, first")
+            spec.assert_str_eq(jstr(b, "messages.1.Subject"), "alpha report", "page 2, second")
+            st, b = mp("GET", "/api/v1/search?query=subject:report", "")
+            spec.assert_eq(st, 200, "search subject: ${b}")
+            spec.assert_str_eq(jnum(b, "count"), "2", "two reports")
+            spec.assert_str_eq(jstr(b, "messages.0.Subject"), "beta report", "newest first")
+            st, b = mp("GET", "/api/v1/search?query=tag:q1", "")
+            spec.assert_str_eq(jnum(b, "count"), "2", "two tagged q1: ${b}")
+            st, b = mp("GET", "/api/v1/search?query=gamma", "")
+            spec.assert_str_eq(jnum(b, "count"), "1", "free text: ${b}")
+            st, b = mp("GET", "/api/v1/search?query=has:attachment", "")
+            spec.assert_str_eq(jnum(b, "count"), "1", "has:attachment: ${b}")
+            spec.assert_str_eq(jstr(b, "messages.0.Subject"), "delta note", "the one with the attachment")
+            st, b = mp("GET", "/api/v1/search?query=from:alice@example.com", "")
+            spec.assert_str_eq(jnum(b, "count"), "4", "from:: ${b}")
+            st, b = mp("GET", "/api/v1/search?query=is:unread", "")
+            spec.assert_str_eq(jnum(b, "count"), "4", "is:unread: ${b}")
+            st, b = mp("GET", "/api/v1/search?query=nosuchword", "")
+            spec.assert_str_eq(jnum(b, "count"), "0", "no match: ${b}")
+            st, b = mp("DELETE", "/api/v1/search?query=subject:note", "")
+            spec.assert_eq(st, 200, "delete by search: ${b}")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "total"), "2", "the reports are left: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: read state, with three mails "one", "two", "three" from the Send API.
+        //   GET /api/v1/messages -> total 3, unread 3
+        //   PUT /api/v1/messages {"IDs":[<one>],"Read":true} -> 200 "ok" ; GET -> unread 2
+        //   PUT /api/v1/messages {"IDs":[<one>],"Read":false} -> 200 "ok" ; GET -> unread 3
+        //   GET /api/v1/message/<two> -> 200 (reading a message marks it read) ; GET /api/v1/messages -> unread 2
+        //   PUT /api/v1/messages {"Read":true} (no IDs: every message) -> 200 "ok" ; GET -> unread 0
+        //   GET /api/v1/search?query=is:read -> 3 ; ?query=is:unread -> 0
+        spec.it("marks messages read and unread") callback {
+            rec, ok = begin("marks_messages_read_and_unread")
+            if ok == 0 { return }
+            one = send_mail_api("one", "1", "[]")
+            two = send_mail_api("two", "2", "[]")
+            send_mail_api("three", "3", "[]")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "unread"), "3", "all unread: ${b}")
+            st, b = mp("PUT", "/api/v1/messages", "{\"IDs\":[\"${one}\"],\"Read\":true}")
+            spec.assert_eq(st, 200, "mark one read: ${b}")
+            spec.assert_str_eq(string.trim(b), "ok", "ok")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "unread"), "2", "two unread: ${b}")
+            st, b = mp("PUT", "/api/v1/messages", "{\"IDs\":[\"${one}\"],\"Read\":false}")
+            spec.assert_eq(st, 200, "mark it unread again: ${b}")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "unread"), "3", "three unread: ${b}")
+            st, b = mp("GET", "/api/v1/message/${two}", "")
+            spec.assert_eq(st, 200, "open two: ${b}")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "unread"), "2", "opening marks read: ${b}")
+            st, b = mp("PUT", "/api/v1/messages", "{\"Read\":true}")
+            spec.assert_eq(st, 200, "mark all read: ${b}")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "unread"), "0", "none unread: ${b}")
+            st, b = mp("GET", "/api/v1/search?query=is:read", "")
+            spec.assert_str_eq(jnum(b, "count"), "3", "three read: ${b}")
+            st, b = mp("GET", "/api/v1/search?query=is:unread", "")
+            spec.assert_str_eq(jnum(b, "count"), "0", "none unread by search: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: tags, with two mails "red" and "blue" from the Send API (no tags).
+        //   PUT /api/v1/tags {"IDs":[<red>],"Tags":["x","y"]} -> 200 "ok"
+        //   PUT /api/v1/tags {"IDs":[<blue>],"Tags":["y"]} -> 200 "ok"
+        //   GET /api/v1/tags -> 200 ["x","y"] (sorted)
+        //   GET /api/v1/search?query=tag:y -> 2 ; ?query=tag:x -> 1
+        //   PUT /api/v1/tags/x {"Name":"renamed"} -> 200 "ok" ; GET /api/v1/tags -> ["renamed","y"]
+        //   PUT /api/v1/tags {"IDs":[<red>],"Tags":[]} -> 200 "ok" (clears red's tags) ; GET /api/v1/tags -> ["y"]
+        //   DELETE /api/v1/tags/y -> 200 "ok" ; GET /api/v1/tags -> []
+        //   DELETE /api/v1/tags/nosuch -> 400 "tag not found: nosuch"
+        //   (the mails themselves are not deleted: GET /api/v1/messages -> total 2)
+        spec.it("tags, renames and untags messages") callback {
+            rec, ok = begin("tags_renames_and_untags_messages")
+            if ok == 0 { return }
+            red = send_mail_api("red", "r", "[]")
+            blue = send_mail_api("blue", "b", "[]")
+            st, b = mp("PUT", "/api/v1/tags", "{\"IDs\":[\"${red}\"],\"Tags\":[\"x\",\"y\"]}")
+            spec.assert_eq(st, 200, "tag red: ${b}")
+            st, b = mp("PUT", "/api/v1/tags", "{\"IDs\":[\"${blue}\"],\"Tags\":[\"y\"]}")
+            spec.assert_eq(st, 200, "tag blue: ${b}")
+            st, b = mp("GET", "/api/v1/tags", "")
+            spec.assert_eq(st, 200, "tags: ${b}")
+            spec.assert_str_eq(jstr(b, "0"), "x", "x")
+            spec.assert_str_eq(jstr(b, "1"), "y", "y")
+            st, b = mp("GET", "/api/v1/search?query=tag:y", "")
+            spec.assert_str_eq(jnum(b, "count"), "2", "two tagged y: ${b}")
+            st, b = mp("GET", "/api/v1/search?query=tag:x", "")
+            spec.assert_str_eq(jnum(b, "count"), "1", "one tagged x: ${b}")
+            st, b = mp("PUT", "/api/v1/tags/x", "{\"Name\":\"renamed\"}")
+            spec.assert_eq(st, 200, "rename: ${b}")
+            st, b = mp("GET", "/api/v1/tags", "")
+            spec.assert_str_eq(jstr(b, "0"), "renamed", "renamed: ${b}")
+            st, b = mp("PUT", "/api/v1/tags", "{\"IDs\":[\"${red}\"],\"Tags\":[]}")
+            spec.assert_eq(st, 200, "clear red's tags: ${b}")
+            st, b = mp("GET", "/api/v1/tags", "")
+            spec.assert_str_eq(string.trim(b), "[\"y\"]", "only y is left: ${b}")
+            st, b = mp("DELETE", "/api/v1/tags/y", "")
+            spec.assert_eq(st, 200, "delete the tag: ${b}")
+            st, b = mp("GET", "/api/v1/tags", "")
+            spec.assert_str_eq(string.trim(b), "[]", "no tags: ${b}")
+            st, b = mp("DELETE", "/api/v1/tags/nosuch", "")
+            spec.assert_eq(st, 400, "a tag that does not exist: ${b}")
+            spec.assert_contains(b, "tag not found: nosuch", "tag not found")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "total"), "2", "the mails are still there: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: deleting, with three mails "a", "b", "c" from the Send API.
+        //   DELETE /api/v1/messages {"IDs":[<a>]} -> 200 "ok" ; GET /api/v1/messages -> total 2
+        //   GET /api/v1/message/<a> -> 404 "404 page not found" (plain text)
+        //   DELETE /api/v1/messages {"IDs":[<a>]} -> 200 "ok" (deleting what is gone is not an error)
+        //   DELETE /api/v1/messages (no body: every message) -> 200 "ok" ; GET -> total 0
+        spec.it("deletes selected messages, then all of them") callback {
+            rec, ok = begin("deletes_selected_messages_then_all_of_them")
+            if ok == 0 { return }
+            a = send_mail_api("a", "a", "[]")
+            send_mail_api("b", "b", "[]")
+            send_mail_api("c", "c", "[]")
+            st, b = mp("DELETE", "/api/v1/messages", "{\"IDs\":[\"${a}\"]}")
+            spec.assert_eq(st, 200, "delete a: ${b}")
+            spec.assert_str_eq(string.trim(b), "ok", "ok")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "total"), "2", "two left: ${b}")
+            st, b = mp("GET", "/api/v1/message/${a}", "")
+            spec.assert_eq(st, 404, "a is gone: ${b}")
+            st, b = mp("DELETE", "/api/v1/messages", "{\"IDs\":[\"${a}\"]}")
+            spec.assert_eq(st, 200, "deleting it again: ${b}")
+            st, b = mp("DELETE", "/api/v1/messages", "")
+            spec.assert_eq(st, 200, "delete all: ${b}")
+            st, b = mp("GET", "/api/v1/messages", "")
+            spec.assert_str_eq(jnum(b, "total"), "0", "none left: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the representative error statuses (Mailpit's errors are
+        // JSON {"Error":..} for bad input and plain text for a missing route,
+        // and it answers a wrong method with 404 too).
+        //   POST /api/v1/send {"To":[{"Email":"b@x.com"}]} -> 400 {"Error":"error building message: from not set"}
+        //   POST /api/v1/send {bad -> 400 {"Error":"invalid character 'b' looking for beginning of object key string"}
+        //   GET  /api/v1/search -> 400 "Error: no search query" (plain text)
+        //   GET  /api/v1/message/nosuchid -> 404 "404 page not found"
+        //   GET  /api/v1/message/<an id of a message that exists>/part/9 -> 404 "404 page not found"
+        //   GET  /api/v1/nosuch -> 404 "404 page not found"
+        //   POST /api/v1/messages -> 404 (the path takes GET, PUT and DELETE)
+        //   DELETE /api/v1/tags/nosuch -> 400 "tag not found: nosuch"
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses")
+            if ok == 0 { return }
+            id = send_mail_api("exists", "e", "[]")
+            st, b = mp("POST", "/api/v1/send", "{\"To\":[{\"Email\":\"b@x.com\"}]}")
+            spec.assert_eq(st, 400, "a message with no sender: ${b}")
+            spec.assert_contains(b, "from not set", "from not set")
+            st, b = mp("POST", "/api/v1/send", "{bad")
+            spec.assert_eq(st, 400, "a body that is not JSON: ${b}")
+            spec.assert_contains(b, "invalid character", "invalid character")
+            st, b = mp("GET", "/api/v1/search", "")
+            spec.assert_eq(st, 400, "a search with no query: ${b}")
+            spec.assert_contains(b, "no search query", "no search query")
+            st, b = mp("GET", "/api/v1/message/nosuchid", "")
+            spec.assert_eq(st, 404, "a message that is not there: ${b}")
+            st, b = mp("GET", "/api/v1/message/${id}/part/9", "")
+            spec.assert_eq(st, 404, "a part that is not there: ${b}")
+            st, b = mp("GET", "/api/v1/nosuch", "")
+            spec.assert_eq(st, 404, "a path that is no endpoint: ${b}")
+            st, b = mp("POST", "/api/v1/messages", "")
+            spec.assert_eq(st, 404, "a method the path does not take: ${b}")
+            st, b = mp("DELETE", "/api/v1/tags/nosuch", "")
+            spec.assert_eq(st, 400, "a tag that is not there: ${b}")
+            servirtium.end_recording(rec)
+        }
+    }
+
+    if shared_container != null {
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("mailpit: removing the shared container: ${e}") }
     }
     return spec.run_summary(fw)
 }
