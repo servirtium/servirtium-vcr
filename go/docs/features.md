@@ -18,6 +18,9 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Whole-tape normalize (correlated values → `{{name-N}}`) | ✅ | ✅ | `.NormalizeWholeTape(pattern, name)` | ✅ core probe |
 | Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `.RedactWholeTape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `.Note(…)` / `Server.Note` | ✅ |
+| Header presets (transport / cloud vendor) | ✅ | ✅ | `.RemoveTransportHeaders()` / `.RemoveCloudHeaders(vendor)` | ✅ |
+| Credential redaction preset | ✅ | ✅ | `.RedactCredentials()` / `.RedactCredentialHeader(name)` | ✅ |
+| License notice / upstream CA file / pretty JSON | ✅ | ✅ | `.AddLicenseNotice(text)` / `.UpstreamCafile(path)` / `.PrettyJSON(n)` | ✅ notice + pretty JSON |
 | Strict request matching | ✅ | ✅ | `.StrictHeaders()` | ✅ pass + fail |
 | JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.MatchJSONBody()` | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `.MatchMultiple()` | — |

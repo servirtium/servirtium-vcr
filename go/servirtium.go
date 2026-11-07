@@ -92,6 +92,13 @@ void   aether_vcr_embed_match_header(void* server, const char* name);
 void   aether_vcr_embed_indent_code_blocks(void* server);
 void   aether_vcr_embed_emphasize_http_verbs(void* server);
 void   aether_vcr_embed_set_pretty_xml(void* server, int indent);
+void   aether_vcr_embed_set_pretty_json(void* server, int indent);
+char*  aether_vcr_embed_remove_transport_headers(void* server);
+char*  aether_vcr_embed_remove_cloud_headers(void* server, const char* vendor);
+char*  aether_vcr_embed_redact_credentials(void* server);
+char*  aether_vcr_embed_redact_credential_header(void* server, const char* name);
+char*  aether_vcr_embed_set_upstream_cafile(void* server, const char* path);
+char*  aether_vcr_embed_add_license_notice(void* server, const char* text);
 void   aether_vcr_embed_clear_redactions(void* server);
 void   aether_vcr_embed_clear_unredactions(void* server);
 void   aether_vcr_embed_clear_header_removals(void* server);
@@ -206,16 +213,20 @@ type replacement struct {
 }
 
 type baseBuilder struct {
-	tapePath              string
-	host                  string
-	port                  int
-	label                 string
-	headerRemovals        []headerRemoval
-	ignoreVolatileHeaders bool
-	staticContent         []struct{ mount, dir string }
-	untaped               []string
-	tlsCert, tlsKey       string
-	tlsCertPem, tlsKeyPem string
+	tapePath               string
+	host                   string
+	port                   int
+	label                  string
+	headerRemovals         []headerRemoval
+	ignoreVolatileHeaders  bool
+	removeTransportHeaders bool
+	cloudVendors           []string
+	redactCredentials      bool
+	credentialHeaders      []string
+	staticContent          []struct{ mount, dir string }
+	untaped                []string
+	tlsCert, tlsKey        string
+	tlsCertPem, tlsKeyPem  string
 }
 
 // applyBase registers the config shared by both builders: header removals,
@@ -235,6 +246,32 @@ func (b *baseBuilder) applyBase(handle unsafe.Pointer) error {
 	}
 	if b.ignoreVolatileHeaders {
 		if err := checkErr(C.aether_vcr_embed_ignore_volatile_headers(handle), "IgnoreVolatileHeaders"); err != nil {
+			return err
+		}
+	}
+	if b.removeTransportHeaders {
+		if err := checkErr(C.aether_vcr_embed_remove_transport_headers(handle), "RemoveTransportHeaders"); err != nil {
+			return err
+		}
+	}
+	for _, v := range b.cloudVendors {
+		cVendor := C.CString(v)
+		res := C.aether_vcr_embed_remove_cloud_headers(handle, cVendor)
+		C.free(unsafe.Pointer(cVendor))
+		if err := checkErr(res, "RemoveCloudHeaders"); err != nil {
+			return err
+		}
+	}
+	if b.redactCredentials {
+		if err := checkErr(C.aether_vcr_embed_redact_credentials(handle), "RedactCredentials"); err != nil {
+			return err
+		}
+	}
+	for _, n := range b.credentialHeaders {
+		cName := C.CString(n)
+		res := C.aether_vcr_embed_redact_credential_header(handle, cName)
+		C.free(unsafe.Pointer(cName))
+		if err := checkErr(res, "RedactCredentialHeader"); err != nil {
 			return err
 		}
 	}
@@ -388,6 +425,37 @@ func (b *PlaybackBuilder) MatchXMLBody() *PlaybackBuilder { b.matchXMLBody = tru
 // distributed-tracing / correlation noise.
 func (b *PlaybackBuilder) IgnoreVolatileHeaders() *PlaybackBuilder {
 	b.ignoreVolatileHeaders = true
+	return b
+}
+
+// RemoveTransportHeaders leaves the connection-describing headers (Host,
+// Connection, Content-Length and the other hop-by-hop headers, Accept-Encoding)
+// out of the recording. Works in both playback and record mode.
+func (b *PlaybackBuilder) RemoveTransportHeaders() *PlaybackBuilder {
+	b.removeTransportHeaders = true
+	return b
+}
+
+// RemoveCloudHeaders drops a cloud vendor's per-request headers; vendor is one
+// of "aws", "azure", "cloudflare", "fastly", "gcp". Call again for more
+// vendors. Works in both playback and record mode.
+func (b *PlaybackBuilder) RemoveCloudHeaders(vendor string) *PlaybackBuilder {
+	b.cloudVendors = append(b.cloudVendors, vendor)
+	return b
+}
+
+// RedactCredentials redacts the common credential headers (Authorization,
+// Cookie, Set-Cookie, X-Api-Key, X-Auth-Token, ...) as numbered tokens.
+// Register it on the playback builder too, as with every rule.
+func (b *PlaybackBuilder) RedactCredentials() *PlaybackBuilder {
+	b.redactCredentials = true
+	return b
+}
+
+// RedactCredentialHeader gives one more credential header the same treatment
+// as RedactCredentials.
+func (b *PlaybackBuilder) RedactCredentialHeader(name string) *PlaybackBuilder {
+	b.credentialHeaders = append(b.credentialHeaders, name)
 	return b
 }
 
@@ -562,6 +630,9 @@ type RecordBuilder struct {
 	indentCodeBlocks    bool
 	emphasizeHTTPVerb   bool
 	prettyXML           int
+	prettyJSON          int
+	upstreamCafile      string
+	licenseNotice       string
 	failIfChanged       bool
 }
 
@@ -591,6 +662,37 @@ func (b *RecordBuilder) RemoveHeader(field Field, name string) *RecordBuilder {
 // common-header ignoring for distributed-tracing / correlation noise.
 func (b *RecordBuilder) IgnoreVolatileHeaders() *RecordBuilder {
 	b.ignoreVolatileHeaders = true
+	return b
+}
+
+// RemoveTransportHeaders leaves the connection-describing headers (Host,
+// Connection, Content-Length and the other hop-by-hop headers, Accept-Encoding)
+// out of the recording. Works in both playback and record mode.
+func (b *RecordBuilder) RemoveTransportHeaders() *RecordBuilder {
+	b.removeTransportHeaders = true
+	return b
+}
+
+// RemoveCloudHeaders drops a cloud vendor's per-request headers; vendor is one
+// of "aws", "azure", "cloudflare", "fastly", "gcp". Call again for more
+// vendors. Works in both playback and record mode.
+func (b *RecordBuilder) RemoveCloudHeaders(vendor string) *RecordBuilder {
+	b.cloudVendors = append(b.cloudVendors, vendor)
+	return b
+}
+
+// RedactCredentials redacts the common credential headers (Authorization,
+// Cookie, Set-Cookie, X-Api-Key, X-Auth-Token, ...) as numbered tokens.
+// Register it on the playback builder too, as with every rule.
+func (b *RecordBuilder) RedactCredentials() *RecordBuilder {
+	b.redactCredentials = true
+	return b
+}
+
+// RedactCredentialHeader gives one more credential header the same treatment
+// as RedactCredentials.
+func (b *RecordBuilder) RedactCredentialHeader(name string) *RecordBuilder {
+	b.credentialHeaders = append(b.credentialHeaders, name)
 	return b
 }
 
@@ -704,6 +806,19 @@ func (b *RecordBuilder) EmphasizeHTTPVerbs() *RecordBuilder { b.emphasizeHTTPVer
 // PrettyXML: Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
 func (b *RecordBuilder) PrettyXML(indent int) *RecordBuilder { b.prettyXML = indent; return b }
 
+// PrettyJSON pretty-prints recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+func (b *RecordBuilder) PrettyJSON(indent int) *RecordBuilder { b.prettyJSON = indent; return b }
+
+// UpstreamCafile verifies an https upstream against this PEM CA file.
+func (b *RecordBuilder) UpstreamCafile(path string) *RecordBuilder { b.upstreamCafile = path; return b }
+
+// AddLicenseNotice puts text under "## LICENSE NOTICE" at the top of each
+// tape; playback ignores it.
+func (b *RecordBuilder) AddLicenseNotice(text string) *RecordBuilder {
+	b.licenseNotice = text
+	return b
+}
+
 // FailIfChanged makes Close still write the freshly recorded tape but return
 // an error if it differs from the on-disk one — the Servirtium step-4 drift
 // contract, so a normal git diff shows the change and CI fails loudly.
@@ -721,6 +836,25 @@ func (b *RecordBuilder) applyConfig(handle unsafe.Pointer) error {
 	}
 	if b.prettyXML > 0 {
 		C.aether_vcr_embed_set_pretty_xml(handle, C.int(b.prettyXML))
+	}
+	if b.prettyJSON > 0 {
+		C.aether_vcr_embed_set_pretty_json(handle, C.int(b.prettyJSON))
+	}
+	if b.upstreamCafile != "" {
+		cPath := C.CString(b.upstreamCafile)
+		res := C.aether_vcr_embed_set_upstream_cafile(handle, cPath)
+		C.free(unsafe.Pointer(cPath))
+		if err := checkErr(res, "UpstreamCafile"); err != nil {
+			return err
+		}
+	}
+	if b.licenseNotice != "" {
+		cText := C.CString(b.licenseNotice)
+		res := C.aether_vcr_embed_add_license_notice(handle, cText)
+		C.free(unsafe.Pointer(cText))
+		if err := checkErr(res, "AddLicenseNotice"); err != nil {
+			return err
+		}
 	}
 	for _, r := range b.redactions {
 		cPat, cRep := C.CString(r.pattern), C.CString(r.replacem)

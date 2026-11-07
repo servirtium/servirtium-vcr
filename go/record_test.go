@@ -212,6 +212,22 @@ func TestStructuredRedactionHelpers(t *testing.T) {
 	run("check", directory)
 }
 
+func TestRecordLicenseNoticeAndPresets(t *testing.T) {
+	tape := filepath.Join(t.TempDir(), "tape.md")
+	rec, err := servirtium.Record(tape, "http://127.0.0.1:1").
+		AddLicenseNotice("test notice").PrettyJSON(2).RemoveTransportHeaders().
+		RemoveCloudHeaders("aws").RedactCredentials().RedactCredentialHeader("X-Vault-Token").Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rec.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := servirtium.Record(tape, "http://127.0.0.1:1").RemoveCloudHeaders("nosuchvendor").Start(); err == nil {
+		t.Fatal("expected an unknown cloud vendor to be rejected")
+	}
+}
+
 func TestRetainedReplayDiagnostics(t *testing.T) {
 	_, source, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(source), "..")
