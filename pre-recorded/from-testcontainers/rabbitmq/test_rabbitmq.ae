@@ -45,7 +45,7 @@
 //   User-Agent: testcontainers-ae-tests (Aether std.http.client)
 //   Authorization: Basic ...          (all but the unauthenticated requests)
 //   Content-Type: application/json    (only when there is a body)
-// Playback is strict about method, path (query string included, exactly as
+// Playback is strict about method, path (query string included; send it as
 // written in this file; the default vhost "/" is %2F in a path), the recorded
 // request headers and the body (byte for byte: send the JSON bodies exactly
 // as written here, no spaces, keys in this order). Host, Connection and
@@ -114,9 +114,10 @@
 // PORTING: in playback a normalized or redacted value comes back as its token,
 // verbatim: the node is "{{node-1}}". Treat it as an opaque string (never
 // assert its length or shape, never expect "rabbit@") and send it back exactly
-// as received, e.g. GET /api/nodes/{{node-1}}. Send the braces as they are:
-// playback compares paths byte for byte, so a client that percent-encodes `{`
-// will not match. The management API's JSON objects have no promised key
+// as received, e.g. GET /api/nodes/{{node-1}}. (Playback normalizes paths per
+// RFC 3986, so a client that encodes the braces as %7B%7B still matches; an
+// encoded delimiter such as the %2F of the default vhost must stay as it is
+// here.) The management API's JSON objects have no promised key
 // order (it is Erlang's map order): parse the JSON rather than comparing text,
 // as these assertions do.
 //
