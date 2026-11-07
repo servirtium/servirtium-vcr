@@ -27,7 +27,7 @@ Classes:
   **tapes are not**: record your own locally (the suite's `LICENCE-NOTE.md`
   says how), and in playback with no tape the suite skips with a notice.
 
-Counts: 44 CLEAR, 11 BOUND, 3 DECISION (58 suites).
+Counts: 45 CLEAR, 11 BOUND, 3 DECISION (59 suites).
 
 Product names are their owners' trademarks, used here only to say which
 software a tape was recorded against.
@@ -91,6 +91,7 @@ licence file at the tag the image was built from.
 | s3mock | `adobe/s3mock:3.9.1` | Apache-2.0 | adobe/S3Mock `LICENSE` | none | CLEAR |
 | solr | `solr:9` | Apache-2.0 | apache/solr `LICENSE.txt` | none (floating tag) | CLEAR |
 | surrealdb | `surrealdb/surrealdb:v1.1.1` | BUSL-1.1 (Apache-2.0 on 2027-04-01) | surrealdb/surrealdb `v1.1.1/LICENSE` | Additional Use Grant: may not use it "for a Database Service" | BOUND |
+| tidb | `pingcap/tidb:v8.4.0` | Apache-2.0 | pingcap/tidb `v8.4.0/LICENSE`; the image (`/tidb-server -V`) reports "Release Version: v8.4.0, Edition: Community" and carries no licence file of its own | none | CLEAR |
 | timeplus | `timeplus/timeplusd:2.3.37` | none shipped; closed-source Timeplus Enterprise engine (not the Apache-2.0 Proton) | the image holds no licence for `timeplusd` (only Python's under `/usr/lib/python*`); likely terms: timeplus.com/eusa (End User Subscription Agreement, 2024-06-10) | EUSA §2.1.1 "solely for Customer's internal use"; §2.1.3 evaluation 30 days, internal; §2.3(f) no reverse engineering; §7 the Products are Confidential Information | **DECISION** (tapes not shipped) |
 | toxiproxy | `ghcr.io/shopify/toxiproxy:2.12.0` | MIT | Shopify/toxiproxy `LICENSE` | none | CLEAR |
 | trino | `trinodb/trino:435` | Apache-2.0 | trinodb/trino `LICENSE` | none | CLEAR |

@@ -77,6 +77,7 @@ with restrictive terms start with a `## LICENSE NOTICE`
 | `questdb` | 1 | `questdb/questdb:9.0.0` |
 | `ravendb` | 1 | `ravendb/ravendb:6.0-ubuntu-latest` |
 | `surrealdb` | 3 (+1 live only) | `surrealdb/surrealdb:v1.1.1` |
+| `tidb` | 8 (comprehensive: status and schema API on 10080, standalone, no login) | `pingcap/tidb:v8.4.0` |
 | `trino` | 1 | `trinodb/trino:435` |
 | `presto` | 1 | `prestodb/presto:0.286` |
 | `timeplus` | test + recorder only, tapes not shipped ([why](timeplus/LICENCE-NOTE.md)) | `timeplus/timeplusd:2.3.37` |
@@ -204,6 +205,7 @@ Per suite (registered at the top of its `main`):
 | questdb | | | | |
 | ravendb | | RFC 3339 times | | |
 | surrealdb | | per-statement `"time"` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| tidb | | the DDL owner's UUID (`{{uuid-N}}`) | the container IP, `start_timestamp`, `max_procs`, `connections`, `update_timestamp`, the case tables' ids (1001, 1002, in bodies and `table_id(s)=`), and `GET /schema`'s database list whole (Go map order) | |
 | trino | | `uptime`, the query id, the `nextUri` token | | |
 | presto | | `uptime` | | |
 | timeplus | | `x-timeplus-query-id` | | |
@@ -303,6 +305,13 @@ it is on the tape, and playback is plain HTTP.
 - **Order that changes run to run, again:** Couchbase's `componentsVersion`
   object and OrientDB's whole `/server` report are collapsed (see the
   ordering note above).
+- **TiDB (comprehensive, status port 10080):** the image runs standalone
+  (unistore: no PD, no TiKV), so `/regions/meta` and table regions are 404s
+  (taped as such), and the status port needs no login. Tables are created
+  with SQL (testcontainers-ae's `sql.mysql`) before each tape, never on it.
+  `GET /schema` lists databases in Go map order, different each run, so its
+  body is collapsed to the list in id order (a case table's ids are
+  collapsed to constants in bodies and in `table_id(s)=`).
 - **Solace is not here:** its image needs `ulimit nofile=1048576`, which a
   rootless Podman machine refuses; it can be recorded on Docker or a
   rootful Podman machine.

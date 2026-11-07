@@ -1,0 +1,516 @@
+// TiDB's status / HTTP API (port 10080), comprehensively: a "comprehensive"
+// suite of servirtium-vcr's pre-recorded/from-testcontainers, following the
+// README's "Pattern for comprehensive suites" (couchdb/test_couchdb.ae is the
+// reference implementation). Written for servirtium-vcr, not ported from
+// testcontainers-go. Re-usable recordings of the API for any language's tests
+// to replay with no TiDB, one tape per scenario.
+//
+// The image is pingcap/tidb:v8.4.0 (Apache-2.0: UPSTREAM-TERMS.md, CLEAR).
+// It is TiDB's standalone mode (the "unistore" store, no PD, no TiKV): one
+// process, the MySQL protocol on 4000 and the status port on 10080. Both
+// facts shape what is on the tapes (see "In and out of scope").
+//
+// PORTING: this file is the reference for what each tape holds; the tapes
+// are the re-usable part. A port is a test in your language and test
+// framework that makes the same requests, in the same order, against a
+// Servirtium replay server loaded with the tape, and checks the same things.
+// Every request is a plain HTTP/1.1 GET with these headers and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+// Playback is strict about method, path (query string included), and the
+// recorded request headers; a case whose recorded requests are not all made
+// fails. Host, Connection and Content-Length are on the tapes but are
+// transport headers, not compared.
+//
+// PORTING, the tape for each case: <case>.md beside this file, where <case>
+// is the second argument of servirtium.recording(...) in that case. The cases
+// are independent: each creates the tables it inspects (database tcae_shop,
+// tables tcae_orders and tcae_customers) with SQL BEFORE the recording and
+// drops them after, so none of that is on a tape and any one tape replays
+// alone and in any order. The only case that changes the schema mid-scenario
+// (sees_a_schema_change) does the ALTER TABLE between two requests, in the
+// `live()` branch: on a tape the second GET simply answers differently.
+//
+// Login: there is none. TiDB's status port is unauthenticated (it is a
+// diagnostic port, not meant to be exposed), so no case has a login tape, no
+// request carries a credential, and nothing has to be redacted. SQL (the
+// MySQL protocol, root with no password) is used only as setup, outside the
+// tapes, with testcontainers-ae's `sql.mysql` driver.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below, with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them all and the
+// interactions each touched ("none" where it did not). In short:
+//   - normalized (each distinct value a stable {{name-N}} token, the same
+//     token wherever it recurs): the DDL owner's id, a UUID ({{uuid-N}}),
+//     so /info/all's "owner_id" and its key in all_servers_info still show
+//     they are one server.
+//   - collapsed (one constant; nobody sends them back): the container's IP,
+//     the process start time, the host's CPU count ("max_procs"), the open
+//     connection count, a table's update_timestamp (a TSO), and the ids
+//     TiDB gives the tables the cases create: each case table has its own
+//     constant id (tcae_orders 1001, tcae_customers 1002), in the body and in
+//     a ?table_id= / ?table_ids= query, so a client that reads an id and
+//     sends it back still works on replay.
+//   - collapsed whole: GET /schema's list of databases. TiDB writes it in Go
+//     map order, which is different run to run, so a re-record would differ;
+//     the tape holds the list in id order (see sees_the_databases below).
+//
+// PORTING: a collapsed table id is a valid JSON number on the tape (1001),
+// not a token, so replayed bodies parse as JSON. Only the one case table's id
+// is stable: treat an id as an opaque number, and send it back as received.
+//
+// In and out of scope
+// -------------------
+// In: /status; /info and /info/all; /settings; /schema (the databases) and
+// /schema/<db> (a database's tables) and /schema/<db>/<table> (columns,
+// indexes, partition and storage options), also by id (/schema?table_id=,
+// ?table_ids=) and after a DDL change; /schema_storage/<db>[/<table>]
+// (TiDB's information_schema.tables sizes); and the representative errors:
+// 400 for an unknown database, table or id and for a malformed id, 404 for an
+// unknown path.
+// Out, because standalone TiDB lacks them: /regions/meta, /regions/<id> and
+// /tables/<db>/<table>/regions (table regions) are registered only when the
+// store is TiKV; here they are plain 404s, taped as one case so a port sees
+// what to expect (replaying_a_cluster's regions needs a PD and a TiKV). Out,
+// because their output is asynchronous or varying: /stats/dump/... (row
+// counts and versions move with a background statistics worker), /ddl/history
+// (job ids and timestamps, a copy of every table's schema), /mvcc/... and
+// /debug/zip (binary, profiles), /metrics (Prometheus counters), and
+// /debug/pprof. Each could be a later case.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test tidb/test_tidb.ae                    container, no Servirtium
+//   TCAE_VCR=record   ae test tidb/test_tidb.ae  write the tapes
+//   TCAE_VCR=check    ae test tidb/test_tidb.ae  fail if a tape changed
+//   TCAE_VCR=playback ae test tidb/test_tidb.ae  no container: the tapes
+// The cases share one container (started on the first one, removed at the
+// end).
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import sql
+import sql.mysql as mysqldrv
+import servirtium
+import modules.tidb
+
+const IMAGE = "pingcap/tidb:v8.4.0"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would (Aether's std.http.client adds none); Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// ---------------------------------------------------------------------------
+// HTTP helper
+// ---------------------------------------------------------------------------
+
+// The base URL of the current recording.
+var api: string = ""
+
+// A GET: (status, body). A transport error fails the case.
+fn get(path: string) -> (int, string) {
+    req = client.request("GET", "${api}${path}")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    spec.assert_ok(err, "GET ${path}")
+    if err != "" { return 0, "" }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b
+}
+
+// A live-only GET straight to the container, outside any recording.
+fn live_get(base: string, path: string) -> (int, string) {
+    req = client.request("GET", "${base}${path}")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "" }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b
+}
+
+// The numeric id after the first `"id": ` in a table's JSON, as text (on
+// replay it is the collapsed constant). Text, not a JSON parse: the id is
+// only ever sent back.
+fn first_id(body: string) -> string {
+    key = "\"id\": "
+    i = string.index_of(body, key)
+    if i < 0 { return "" }
+    rest = string.substring(body, i + string.length(key), string.length(body))
+    j = string.index_of(rest, ",")
+    if j < 0 { return "" }
+    return string.substring(rest, 0, j)
+}
+
+// ---------------------------------------------------------------------------
+// The live container the cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_addr: string = ""
+var shared_container: ptr = null
+var sqldb: ptr = null
+
+// The shared container's status base URL, starting it on first use ("" on
+// failure). Not recorded: it also waits until TiDB has finished loading its
+// statistics (/status "init_stats_percentage":100), the one startup phase
+// that shows on /status.
+fn shared() -> string {
+    if string.length(shared_addr) > 0 { return shared_addr }
+    t, err = tidb.run(IMAGE)
+    if t == null {
+        spec.fail("tidb starts: ${err}")
+        return ""
+    }
+    shared_container = t.container as ptr
+    spec.assert_ok(err, "tidb starts")
+    if err != "" { return "" }
+    port, _ = tc.mapped_port(t.container, tidb.REST_PORT)
+    base = "http://localhost:${port}"
+    tries = 0
+    ready = false
+    while !ready && tries < 100 {
+        st, b = live_get(base, "/status")
+        if st == 200 && string.contains(b, "\"init_stats_percentage\":100") == 1 { ready = true }
+        if !ready { sleep(200) }
+        tries = tries + 1
+    }
+    spec.assert_true(ready, "tidb finished initialising its statistics")
+    dsn, cerr = tidb.connection_string(t, "")
+    spec.assert_ok(cerr, "connection string")
+    mysqldrv.register()
+    d, oerr = sql.open("mysql", dsn)
+    spec.assert_ok(oerr, "open the SQL connection (setup only)")
+    sqldb = d
+    shared_addr = base
+    return shared_addr
+}
+
+// SQL, setup and teardown only (never on a tape).
+fn setup_sql(stmt: string) {
+    _, err = sql.exec(sqldb, stmt, [])
+    spec.assert_ok(err, stmt)
+}
+
+// The case tables: database tcae_shop with tcae_orders (primary key, an
+// index, four typed columns) and tcae_customers (a unique key). Empty:
+// statistics (row counts) are updated by a background worker, so a case
+// never inserts rows it then reads counts of.
+fn create_tables() {
+    setup_sql("DROP DATABASE IF EXISTS tcae_shop")
+    setup_sql("CREATE DATABASE tcae_shop")
+    setup_sql("CREATE TABLE tcae_shop.tcae_orders (id BIGINT PRIMARY KEY AUTO_INCREMENT, customer VARCHAR(64) NOT NULL, total DECIMAL(10,2), placed DATETIME, KEY idx_customer (customer))")
+    setup_sql("CREATE TABLE tcae_shop.tcae_customers (id INT PRIMARY KEY, email VARCHAR(128) NOT NULL, UNIQUE KEY uq_email (email))")
+}
+
+fn drop_tables() {
+    setup_sql("DROP DATABASE IF EXISTS tcae_shop")
+}
+
+// Start a case: in a live mode, the shared container and the case tables
+// (none of that is recorded), then the recording. Sets `api`; returns the
+// recording handle, and ok = 0 when the case cannot run.
+fn begin(case_: string, tables: int) -> (ptr, int) {
+    addr = ""
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+        if tables == 1 { create_tables() }
+    }
+    base, rec = servirtium.recording("tidb", case_, addr)
+    api = base
+    return rec, 1
+}
+
+fn finish(rec: ptr, tables: int) {
+    servirtium.end_recording(rec)
+    if servirtium.live() == 1 && tables == 1 { drop_tables() }
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules
+// ---------------------------------------------------------------------------
+
+fn api_rules() {
+    servirtium.clear_rules()
+    // /info and /info/all: the DDL owner's id (and the server's own ddl_id) is
+    // a random UUID per process. Normalized, not collapsed: in /info/all the
+    // owner_id is also the key of all_servers_info, and the same token in both
+    // places keeps that relation readable.
+    servirtium.normalize(servirtium.UUID, "uuid")
+    // The container's IP (/info, /info/all "ip", /settings
+    // "advertise-address"): different per run and per host. Collapsed.
+    servirtium.collapse("\"ip\": \"[0-9.]+\"", "\"ip\": \"10.0.0.1\"")
+    servirtium.collapse("\"advertise-address\": \"[0-9.]+\"", "\"advertise-address\": \"10.0.0.1\"")
+    // Unix seconds the process started.
+    servirtium.collapse("\"start_timestamp\": [0-9]+", "\"start_timestamp\": 946684800")
+    // The host's CPU count (GOMAXPROCS).
+    servirtium.collapse("\"max_procs\": [0-9]+", "\"max_procs\": 1")
+    // Connections open when /status is asked: the SQL setup connection is
+    // still open while the case runs, so the number is the test's own.
+    servirtium.collapse("\"connections\":[0-9]+", "\"connections\":0")
+    // A table's update_timestamp is a TSO (milliseconds shifted left 18 bits
+    // plus a logical part): the clock at its last DDL.
+    servirtium.collapse("\"update_timestamp\": [0-9]+", "\"update_timestamp\": 450000000000000000")
+    // The ids TiDB gives the tables a case creates grow with every DDL the
+    // container has run, so they depend on which cases ran before. Collapsed
+    // to a constant per table (the system tables' ids are fixed by
+    // bootstrap and are left alone), in the table's own "id", scoped by the
+    // name that follows it in the pretty-printed JSON ...
+    servirtium.collapse("(?<=\\n \"id\": )[0-9]+(?=,\\n \"name\": \\{\\n  \"O\": \"tcae_orders\")", "1001")
+    servirtium.collapse("(?<=\\n \"id\": )[0-9]+(?=,\\n \"name\": \\{\\n  \"O\": \"tcae_customers\")", "1002")
+    // ... and in the id a client sends back (tcae_orders': the cases that
+    // ask by id ask for that table, so one constant is enough). Only ids of
+    // three or four digits: the error case asks for 99999 on purpose, which
+    // must stay as it is (playback does not rewrite requests).
+    servirtium.collapse("(?<=table_id=)[0-9]{3,4}(?![0-9])", "1001")
+    servirtium.collapse("(?<=table_ids=)[0-9]{3,4}(?![0-9])", "1001")
+    // GET /schema writes its databases in Go map order: a different order
+    // every run, which no rewrite of values can fix, so the whole list is
+    // collapsed to the one a fresh container gives, in id order (the
+    // user database's id, 110 there, is collapsed with it). The whole-tape
+    // pattern runs from the opening "[" of the first database, whose
+    // "id" and "db_name" lead the object, to the first "]" at the start of
+    // a line; the replacement is that list exactly as TiDB prints it.
+    servirtium.collapse("\\[\\n \\{\\n  \"id\": [0-9]+,\\n  \"db_name\": \\{[\\s\\S]*?\\n\\]", SCHEMA_LIST)
+}
+
+// GET /schema, canonical: test(2), mysql(1), sys(102), tcae_shop(110) and the
+// three virtual databases, in id order, as TiDB pretty-prints them.
+const SCHEMA_LIST = "[\n {\n  \"id\": 1,\n  \"db_name\": {\n   \"O\": \"mysql\",\n   \"L\": \"mysql\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 5,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 2,\n  \"db_name\": {\n   \"O\": \"test\",\n   \"L\": \"test\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 5,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 102,\n  \"db_name\": {\n   \"O\": \"sys\",\n   \"L\": \"sys\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 5,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 110,\n  \"db_name\": {\n   \"O\": \"tcae_shop\",\n   \"L\": \"tcae_shop\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 5,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 4611686018427387905,\n  \"db_name\": {\n   \"O\": \"INFORMATION_SCHEMA\",\n   \"L\": \"information_schema\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 0,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 4611686018427397904,\n  \"db_name\": {\n   \"O\": \"PERFORMANCE_SCHEMA\",\n   \"L\": \"performance_schema\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 0,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 4611686018427407904,\n  \"db_name\": {\n   \"O\": \"METRICS_SCHEMA\",\n   \"L\": \"metrics_schema\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 0,\n  \"policy_ref_info\": null\n }\n]"
+
+// ---------------------------------------------------------------------------
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    api_rules()
+    spec.describe(fw, "TiDB status API") {
+
+        // PORTING: no login tape; the status port is unauthenticated.
+        //   GET /status -> 200 {"connections":0,"version":"8.0.11-TiDB-v8.4.0",
+        //                       "git_hash":"1a9f0fa2...","status":{"init_stats_percentage":100}}
+        //   GET /info   -> 200 pretty JSON: is_owner true, version, git_hash, ddl_id
+        //                  {{uuid-1}}, ip, listening_port 4000, status_port 10080,
+        //                  lease "45s", start_timestamp, labels {}, server_id 0
+        //   GET /info/all -> 200 servers_num 1, owner_id {{uuid-1}},
+        //                  is_all_server_version_consistent true, all_servers_info
+        //                  keyed by that uuid
+        spec.it("reports the status and the server info") callback {
+            rec, ok = begin("reports_the_status_and_the_server_info", 0)
+            if ok == 0 { return }
+            st, b = get("/status")
+            spec.assert_eq(st, 200, "GET /status: ${b}")
+            spec.assert_contains(b, "\"version\":\"8.0.11-TiDB-v8.4.0\"", "the version")
+            spec.assert_contains(b, "\"init_stats_percentage\":100", "ready")
+            st, b = get("/info")
+            spec.assert_eq(st, 200, "GET /info: ${b}")
+            spec.assert_contains(b, "\"is_owner\": true", "the only server owns DDL")
+            spec.assert_contains(b, "\"listening_port\": 4000", "the SQL port")
+            spec.assert_contains(b, "\"status_port\": 10080", "the status port")
+            st, b = get("/info/all")
+            spec.assert_eq(st, 200, "GET /info/all: ${b}")
+            spec.assert_contains(b, "\"servers_num\": 1", "one server")
+            spec.assert_contains(b, "\"is_all_server_version_consistent\": true", "consistent")
+            finish(rec, 0)
+        }
+
+        // PORTING: GET /settings -> 200, the running configuration as one
+        // pretty JSON object (about 25 KB): host "0.0.0.0", advertise-address
+        // (collapsed), port 4000, store "unistore", path "/tmp/tidb", lease
+        // "45s", and the nested log / instance / security / status /
+        // performance / tikv-client ... sections. Assert on a few settings
+        // only; the document is the build's defaults.
+        spec.it("reports the running configuration") callback {
+            rec, ok = begin("reports_the_running_configuration", 0)
+            if ok == 0 { return }
+            st, b = get("/settings")
+            spec.assert_eq(st, 200, "GET /settings")
+            spec.assert_contains(b, "\"port\": 4000", "the SQL port")
+            spec.assert_contains(b, "\"store\": \"unistore\"", "the standalone store")
+            spec.assert_contains(b, "\"level\": \"info\"", "the log level")
+            finish(rec, 0)
+        }
+
+        // PORTING: tcae_shop exists (created before the tape).
+        //   GET /schema -> 200 a JSON array of 7 databases (mysql 1, test 2,
+        //                  sys 102, tcae_shop, and the virtual INFORMATION_SCHEMA,
+        //                  PERFORMANCE_SCHEMA, METRICS_SCHEMA), each
+        //                  {"id","db_name":{"O","L"},"charset","collate",
+        //                  "Deprecated","state","policy_ref_info"}; the tape
+        //                  has them in id order, see api_rules
+        //   GET /schema/tcae_shop -> 200 a JSON array of its two tables,
+        //                  tcae_orders (id 1001) then tcae_customers (1002),
+        //                  each a full table description (see the next case)
+        spec.it("sees the databases and a database's tables") callback {
+            rec, ok = begin("sees_the_databases_and_a_databases_tables", 1)
+            if ok == 0 { return }
+            st, b = get("/schema")
+            spec.assert_eq(st, 200, "GET /schema: ${b}")
+            spec.assert_contains(b, "\"L\": \"tcae_shop\"", "the case database is listed")
+            spec.assert_contains(b, "\"L\": \"mysql\"", "the system database is listed")
+            spec.assert_contains(b, "\"L\": \"information_schema\"", "the virtual database is listed")
+            st, b = get("/schema/tcae_shop")
+            spec.assert_eq(st, 200, "GET /schema/tcae_shop")
+            spec.assert_contains(b, "\"O\": \"tcae_orders\"", "tcae_orders")
+            spec.assert_contains(b, "\"O\": \"tcae_customers\"", "tcae_customers")
+            finish(rec, 1)
+        }
+
+        // PORTING:
+        //   GET /schema/tcae_shop/tcae_orders -> 200 one table: "id" 1001,
+        //      "name":{"O","L"}, "charset" utf8mb4, "cols" (id BIGINT: Tp 8,
+        //      customer VARCHAR(64): Tp 15, Flen 64, NOT NULL; total
+        //      DECIMAL(10,2): Tp 246, Flen 10, Decimal 2; placed DATETIME:
+        //      Tp 12), "index_info" (idx_customer), "pk_is_handle": true,
+        //      "update_timestamp" (collapsed), "partition": null ...
+        //   GET /schema/tcae_shop/tcae_customers -> 200, one index
+        //      (uq_email, is_unique true), no auto-increment
+        //   GET /schema?table_id=1001 -> 200 the same table by id (id read
+        //      from the first response, sent back as received)
+        //   GET /schema?table_ids=1001 -> 200 {"1001": <the table>}
+        spec.it("describes a table's columns and indexes, by name and by id") callback {
+            rec, ok = begin("describes_a_tables_columns_and_indexes_by_name_and_by_id", 1)
+            if ok == 0 { return }
+            st, b = get("/schema/tcae_shop/tcae_orders")
+            spec.assert_eq(st, 200, "GET the orders table")
+            spec.assert_contains(b, "\"O\": \"customer\"", "a column")
+            spec.assert_contains(b, "\"Tp\": 246", "DECIMAL is type 246")
+            spec.assert_contains(b, "\"O\": \"idx_customer\"", "an index")
+            spec.assert_contains(b, "\"pk_is_handle\": true", "the integer primary key is the row handle")
+            orders_id = first_id(b)
+            st, b = get("/schema/tcae_shop/tcae_customers")
+            spec.assert_eq(st, 200, "GET the customers table")
+            spec.assert_contains(b, "\"is_unique\": true", "a unique index")
+            st, b = get("/schema?table_id=${orders_id}")
+            spec.assert_eq(st, 200, "GET /schema?table_id=: ${b}")
+            spec.assert_contains(b, "\"O\": \"tcae_orders\"", "the table by id")
+            st, b = get("/schema?table_ids=${orders_id}")
+            spec.assert_eq(st, 200, "GET /schema?table_ids=: ${b}")
+            spec.assert_contains(b, "\"O\": \"tcae_orders\"", "the table by ids")
+            finish(rec, 1)
+        }
+
+        // PORTING: the schema changes under the client.
+        //   GET /schema/tcae_shop/tcae_orders -> 200, 4 columns, 1 index
+        //   (between the requests, live only: ALTER TABLE tcae_orders ADD
+        //    COLUMN note VARCHAR(32), ADD INDEX idx_total (total))
+        //   GET /schema/tcae_shop/tcae_orders -> 200, now 5 columns (note
+        //      appended) and 2 indexes
+        spec.it("sees a schema change") callback {
+            rec, ok = begin("sees_a_schema_change", 1)
+            if ok == 0 { return }
+            st, b = get("/schema/tcae_shop/tcae_orders")
+            spec.assert_eq(st, 200, "before")
+            spec.assert_false(string.contains(b, "\"O\": \"note\"") == 1, "no note column yet")
+            spec.assert_false(string.contains(b, "\"O\": \"idx_total\"") == 1, "no idx_total yet")
+            if servirtium.live() == 1 {
+                setup_sql("ALTER TABLE tcae_shop.tcae_orders ADD COLUMN note VARCHAR(32), ADD INDEX idx_total (total)")
+            }
+            st, b = get("/schema/tcae_shop/tcae_orders")
+            spec.assert_eq(st, 200, "after")
+            spec.assert_contains(b, "\"O\": \"note\"", "the new column")
+            spec.assert_contains(b, "\"O\": \"idx_total\"", "the new index")
+            finish(rec, 1)
+        }
+
+        // PORTING: sizes, from TiDB's information_schema.tables. Both tables
+        // are empty (see create_tables), so every figure is 0.
+        //   GET /schema_storage/tcae_shop -> 200 array of 2: {"table_schema",
+        //      "table_name","table_rows","avg_row_length","data_length",
+        //      "max_data_length","index_length","data_free"}
+        //   GET /schema_storage/tcae_shop/tcae_orders -> 200 the one object
+        //   GET /schema_storage/tcae_shop/nope -> 200 an empty or null body
+        //      (recorded as TiDB sends it; see the assertion)
+        spec.it("reports a table's storage figures") callback {
+            rec, ok = begin("reports_a_tables_storage_figures", 1)
+            if ok == 0 { return }
+            st, b = get("/schema_storage/tcae_shop")
+            spec.assert_eq(st, 200, "GET /schema_storage/tcae_shop: ${b}")
+            spec.assert_contains(b, "\"table_name\": \"tcae_orders\"", "orders")
+            spec.assert_contains(b, "\"table_name\": \"tcae_customers\"", "customers")
+            st, b = get("/schema_storage/tcae_shop/tcae_orders")
+            spec.assert_eq(st, 200, "GET one table's storage: ${b}")
+            spec.assert_contains(b, "\"table_schema\": \"tcae_shop\"", "its database")
+            spec.assert_contains(b, "\"table_rows\": 0", "empty")
+            st, b = get("/schema_storage/tcae_shop/nope")
+            spec.assert_eq(st, 400, "an unknown table's storage: ${b}")
+            finish(rec, 1)
+        }
+
+        // PORTING: what standalone TiDB does NOT have: table regions.
+        //   GET /regions/meta                      -> 404 "404 page not found\n"
+        //   GET /regions/1                         -> 404, same body
+        //   GET /tables/tcae_shop/tcae_orders/regions -> 404, same body
+        //   GET /tables/tcae_shop/tcae_orders/scatter -> 404, same body
+        // (Content-Type text/plain; charset=utf-8, X-Content-Type-Options:
+        // nosniff.) With a PD and TiKV these routes answer JSON; this image
+        // does not run either.
+        spec.it("has no region endpoints without a TiKV store") callback {
+            rec, ok = begin("has_no_region_endpoints_without_a_tikv_store", 1)
+            if ok == 0 { return }
+            st, b = get("/regions/meta")
+            spec.assert_eq(st, 404, "GET /regions/meta: ${b}")
+            spec.assert_contains(b, "404 page not found", "Go's default 404 body")
+            st, b = get("/regions/1")
+            spec.assert_eq(st, 404, "GET /regions/1")
+            st, b = get("/tables/tcae_shop/tcae_orders/regions")
+            spec.assert_eq(st, 404, "table regions")
+            st, b = get("/tables/tcae_shop/tcae_orders/scatter")
+            spec.assert_eq(st, 404, "scatter")
+            finish(rec, 1)
+        }
+
+        // PORTING: errors. Plain-text bodies, not JSON, whatever the route's
+        // Content-Type is for success.
+        //   GET /schema/nope                       -> 400 "[schema:1049]Unknown database 'nope'"
+        //   GET /schema/tcae_shop/nope             -> 400 "[schema:1146]Table 'tcae_shop.nope' doesn't exist"
+        //   GET /schema?table_id=99999             -> 400 "[schema:1146]Table which ID=99999 does not exist."
+        //   GET /schema?table_id=abc               -> 400 `strconv.Atoi: parsing "abc": invalid syntax`
+        //   GET /schema?table_ids=99999            -> 400 "All tables are not found"
+        //   GET /schema/tcae_shop/tcae_orders/x    -> 404 "404 page not found"
+        //   GET /nope                              -> 404 "404 page not found"
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses", 1)
+            if ok == 0 { return }
+            st, b = get("/schema/nope")
+            spec.assert_eq(st, 400, "an unknown database: ${b}")
+            spec.assert_contains(b, "Unknown database 'nope'", "1049")
+            st, b = get("/schema/tcae_shop/nope")
+            spec.assert_eq(st, 400, "an unknown table: ${b}")
+            spec.assert_contains(b, "Table 'tcae_shop.nope' doesn't exist", "1146")
+            st, b = get("/schema?table_id=99999")
+            spec.assert_eq(st, 400, "an unknown table id: ${b}")
+            st, b = get("/schema?table_id=abc")
+            spec.assert_eq(st, 400, "a malformed table id: ${b}")
+            spec.assert_contains(b, "invalid syntax", "strconv's message")
+            st, b = get("/schema?table_ids=99999")
+            spec.assert_eq(st, 400, "unknown table ids: ${b}")
+            spec.assert_contains(b, "All tables are not found", "none found")
+            st, b = get("/schema/tcae_shop/tcae_orders/x")
+            spec.assert_eq(st, 404, "a path too deep: ${b}")
+            st, b = get("/nope")
+            spec.assert_eq(st, 404, "an unknown path: ${b}")
+            finish(rec, 1)
+        }
+    }
+
+    if shared_container != null {
+        if sqldb != null { sql.close(sqldb) }
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("tidb: removing the shared container: ${e}") }
+    }
+    return spec.run_summary(fw)
+}
