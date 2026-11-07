@@ -60,6 +60,11 @@ jobs:
         with:
           dotnet-version: '8.0'
 
+      - name: Install Node.js (for the multi-platform npm tarball)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install pinned toolchains and FreeBSD sysroot
         env:
           GH_TOKEN: ${{ github.token }}
@@ -109,7 +114,7 @@ jobs:
       - name: Verify release version and toolchain pins
         run: SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_MODE=version aeb release/.artifacts.ae
 
-      - name: Build all nine libraries, nine ae-add packages, and the two binding packages
+      - name: Build all nine libraries, nine ae-add packages, and the three binding packages
         env:
           TARGETS: x86_64-linux aarch64-linux x86_64-linux-musl aarch64-linux-musl x86_64-macos aarch64-macos x86_64-windows aarch64-windows x86_64-freebsd
           # Widen the release for exactly the fat Java jar (6 natives) and the
@@ -118,12 +123,13 @@ jobs:
           RELEASE_BINDING_PACKAGES: '1'
         run: release/build.sh
 
-      - name: Require the two multi-platform binding packages
+      - name: Require the three multi-platform binding packages
         shell: bash
         run: |
           set -euo pipefail
           compgen -G 'release/dist/servirtium-vcr-*.jar' >/dev/null
           compgen -G 'release/dist/Servirtium.Vcr.*.nupkg' >/dev/null
+          compgen -G 'release/dist/servirtium-vcr-*.tgz' >/dev/null
 
       - name: Verify release artifacts and Linux ABI
         run: SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_MODE=bindings aeb release/.artifacts.ae
@@ -143,10 +149,13 @@ jobs:
           GNU and musl Linux packages have distinct asset names; consumption
           requires Aether 0.838.0 or newer for libc-aware selection.
 
-          Two ready-to-consume multi-platform binding packages are also attached:
+          Three ready-to-consume multi-platform binding packages are also attached:
           a fat Java jar (servirtium-vcr-*.jar) bundling the six glibc/macOS/Windows
           natives under /native/<os>-<arch>/, and a multi-RID .NET NuGet package
-          (Servirtium.Vcr.*.nupkg) bundling all eight runtimes/<rid>/native/ libraries.
+          (Servirtium.Vcr.*.nupkg) bundling all eight runtimes/<rid>/native/ libraries,
+          and a multi-platform npm tarball (servirtium-vcr-*.tgz) bundling the same
+          eight under native/<platform>-<arch>[-musl]/; install it with
+          `npm install <this tarball's download URL>`.
           Other language packages and registry publishing remain separate.
 
           All nine libraries built successfully. The Linux x86_64 library was
@@ -158,7 +167,7 @@ jobs:
           gh release create "$RELEASE_TAG" --verify-tag "${flags[@]}" \
             --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" \
             release/dist/*.so release/dist/*.dylib release/dist/*.dll \
-            release/dist/*.dll.lib release/dist/*.jar release/dist/*.nupkg \
+            release/dist/*.dll.lib release/dist/*.jar release/dist/*.nupkg release/dist/*.tgz \
             release/dist/*.sha256 release/dist/SHA256SUMS.txt \
             release/dist/ae-add/servirtium_vcr-* release/dist/ae-add/aether.toml
 
@@ -171,4 +180,4 @@ jobs:
           downloaded="$RUNNER_TEMP/published-core"
           gh release download "$RELEASE_TAG" --dir "$downloaded"
           SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_DIST="$downloaded" SVCR_ARTIFACTS_MODE=bindings aeb release/.artifacts.ae
-          echo "Downloaded and verified all nine libraries, nine ae-add packages, the fat Java jar, the multi-RID .NET nupkg, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
+          echo "Downloaded and verified all nine libraries, nine ae-add packages, the fat Java jar, the multi-RID .NET nupkg, the npm tarball, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

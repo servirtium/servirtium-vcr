@@ -1,6 +1,10 @@
 # Packaging — getting the gem (wheel, nupkg, shard, …) you actually want
 
-Nothing in this repo is published to a registry. There is no
+Nothing in this repo is published to a registry yet. Each GitHub release does
+attach three ready-made multi-platform packages: the fat Java jar, the
+multi-RID .NET nupkg, and an npm tarball with all eight native libraries under
+`native/<platform>-<arch>[-musl]/` (`npm install <its release download URL>`).
+Beyond those, there is no
 `gem push`, no `npm publish`, no NuGet upload — and there may never be. What
 there *is*: **one aeb target per language that builds the distributable
 locally**, in the shape that language's tooling expects, with libservirtium_vcr

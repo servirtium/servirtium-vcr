@@ -181,7 +181,8 @@ if [ "$built" -gt 0 ] && [ -f "$AEADD/aether.toml" ]; then
 fi
 
 # ---- official multi-platform binding packages (opt-in) ----------------------
-# SCOPE: ONLY the fat Java jar and the multi-RID .NET nupkg. svcr deliberately
+# SCOPE: ONLY the fat Java jar, the multi-RID .NET nupkg and the multi-platform
+# npm tarball. svcr deliberately
 # does NOT ship ruby/python/js/crystal/julia binding packages from here (core +
 # ae-add only — see release/README.md); this widens the release for exactly the
 # two multi-platform packages a consumer cannot easily assemble themselves.
@@ -276,12 +277,59 @@ if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
     tail -80 "$DIST/.nupkg.log" >&2
     die "multi-RID .NET nupkg build failed — see $DIST/.nupkg.log"
   fi
+
+  # -- the multi-platform npm tarball (npm pack) --
+  say "building the multi-platform npm tarball (8 natives) …"
+  # A copy of javascript/ (no node_modules, no dev native/) in target/, the
+  # eight verified release libraries staged under native/<platform>-<arch>[-musl]/
+  # where javascript/src/native.ts looks for them (process.platform and
+  # process.arch names), then npm ci (whose prepare script compiles dist/) and
+  # npm pack. Nothing is run beyond the TypeScript compile.
+  if ( set -e
+       cd "$ROOT"
+       rm -rf target/npm-pkg
+       mkdir -p target/npm-pkg target/dist/npm
+       tar -C javascript --exclude=node_modules --exclude=native --exclude=dist \
+         --exclude=pkgout --exclude=tapes --exclude=example -cf - . | tar -C target/npm-pkg -xf -
+       stage_npm() { # <release-dist-name> <dir> <packaged-name>
+         local src="$DIST/$1" dir="$2" name="$3"
+         [ -f "$src" ] || { echo "release npm library missing: $src" >&2; return 1; }
+         mkdir -p "target/npm-pkg/native/$dir"
+         cp "$src" "target/npm-pkg/native/$dir/$name"
+       }
+       stage_npm "libservirtium_vcr-$TAG-linux-x86_64.so"       linux-x64        libservirtium_vcr.so
+       stage_npm "libservirtium_vcr-$TAG-linux-arm64.so"        linux-arm64      libservirtium_vcr.so
+       stage_npm "libservirtium_vcr-$TAG-linux-x86_64-musl.so"  linux-x64-musl   libservirtium_vcr.so
+       stage_npm "libservirtium_vcr-$TAG-linux-arm64-musl.so"   linux-arm64-musl libservirtium_vcr.so
+       stage_npm "libservirtium_vcr-$TAG-macos-x86_64.dylib"    darwin-x64       libservirtium_vcr.dylib
+       stage_npm "libservirtium_vcr-$TAG-macos-arm64.dylib"     darwin-arm64     libservirtium_vcr.dylib
+       stage_npm "libservirtium_vcr-$TAG-windows-x86_64.dll"    win32-x64        servirtium_vcr.dll
+       stage_npm "libservirtium_vcr-$TAG-windows-arm64.dll"     win32-arm64      servirtium_vcr.dll
+       cd target/npm-pkg
+       npm ci --no-audit --no-fund
+       npm pack --pack-destination "$ROOT/target/dist/npm"
+     ) >"$DIST/.npm.log" 2>&1; then
+    found=0
+    for tgz in "$ROOT"/target/dist/npm/*.tgz; do
+      [ -f "$tgz" ] || continue
+      cp "$tgz" "$DIST/" || die "could not stage $(basename "$tgz")"
+      ( cd "$DIST" && sha256sum "$(basename "$tgz")" > "$(basename "$tgz").sha256" ) \
+        || die "could not checksum $(basename "$tgz")"
+      say "  npm: $(basename "$tgz") ($(du -h "$tgz" | cut -f1)) staged + .sha256"
+      found=$((found+1))
+    done
+    [ "$found" -gt 0 ] || die "no .tgz produced by npm pack"
+    rm -f "$DIST/.npm.log"
+  else
+    tail -80 "$DIST/.npm.log" >&2
+    die "multi-platform npm tarball build failed — see $DIST/.npm.log"
+  fi
 fi
 
 # Regenerate the combined manifest so the jar + nupkg ride it too (a no-op
 # re-list of the engine libs when RELEASE_BINDING_PACKAGES is unset — the glob
 # simply finds no .jar/.nupkg). SHA256SUMS.txt is thus always complete.
-( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib ./*.jar ./*.nupkg 2>/dev/null > SHA256SUMS.txt || true )
+( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib ./*.jar ./*.nupkg ./*.tgz 2>/dev/null > SHA256SUMS.txt || true )
 
 say "built $built libservirtium_vcr artifact(s) into release/dist/ ($failed failed)"
 [ "$built" -gt 0 ] || die "no artifacts built"

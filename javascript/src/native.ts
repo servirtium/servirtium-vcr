@@ -30,6 +30,17 @@ function fileName(): string {
   }
 }
 
+// The release tarball's per-platform directory name: process.platform and
+// process.arch, plus "-musl" on a Linux without glibc (Alpine and the like).
+function platformDir(): string {
+  let dir = `${process.platform}-${process.arch}`
+  if (process.platform === 'linux') {
+    const report = process.report?.getReport() as { header?: { glibcVersionRuntime?: string } } | undefined
+    if (!report?.header?.glibcVersionRuntime) dir += '-musl'
+  }
+  return dir
+}
+
 // Resolve the native library across the layouts it can ship in, in order:
 //   1. SERVIRTIUM_VCR_LIB (explicit path — point it at a fresh
 //      `ae build --emit=lib` artifact during development);
@@ -58,11 +69,19 @@ function resolveLibraryPath(): string {
   if (override && fs.existsSync(override)) {
     return override
   }
-  // 3. the package's bundled native/ dir (a shipped npm tarball's .so)
+  // 3. the package's bundled native/ dir: the multi-platform release
+  //    tarball has native/<platform>-<arch>[-musl]/ (process.platform and
+  //    process.arch names); a single-platform get-package tarball has the
+  //    library directly in native/.
   //    dist/native.js -> ../native ; src/native.ts -> ../native
-  const nativeDir = path.resolve(__dirname, '..', 'native', fileName())
-  if (fs.existsSync(nativeDir)) {
-    return nativeDir
+  const nativeRoot = path.resolve(__dirname, '..', 'native')
+  const perPlatform = path.join(nativeRoot, platformDir(), fileName())
+  if (fs.existsSync(perPlatform)) {
+    return perPlatform
+  }
+  const flat = path.join(nativeRoot, fileName())
+  if (fs.existsSync(flat)) {
+    return flat
   }
   // 4. bare name (OS loader: LD_LIBRARY_PATH / system paths)
   return fileName()

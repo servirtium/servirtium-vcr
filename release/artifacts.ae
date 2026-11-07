@@ -114,21 +114,23 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
     return ""
 }
 check_packages(dist: string) -> string {
-    jars = 0; nupkgs = 0
+    jars = 0; nupkgs = 0; tgzs = 0
     entries = fs.list_dir(dist)!
     defer fs.dir_list_free(entries)
     for i in 0..fs.dir_list_count(entries) {
         name = fs.dir_list_get(entries, i)
         jar = string.starts_with(name, "servirtium-vcr-") == 1 && string.ends_with(name, ".jar") == 1 && string.ends_with(name, "-sources.jar") == 0 && string.ends_with(name, "-javadoc.jar") == 0
         nupkg = string.starts_with(name, "Servirtium.Vcr.") == 1 && string.ends_with(name, ".nupkg") == 1
-        if jar || nupkg {
+        tgz = string.starts_with(name, "servirtium-vcr-") == 1 && string.ends_with(name, ".tgz") == 1
+        if jar || nupkg || tgz {
             _digest, err = checksum("${dist}/${name}")
             if err != "" { return err }
-            if jar { jars += 1 } else { nupkgs += 1 }
+            if jar { jars += 1 } else if nupkg { nupkgs += 1 } else { tgzs += 1 }
         }
     }
     if jars == 0 { return "no fat Java jar (servirtium-vcr-*.jar) in dist" }
     if nupkgs == 0 { return "no multi-RID .NET nupkg (Servirtium.Vcr.*.nupkg) in dist" }
-    println("Verified ${jars} fat Java jar(s) and ${nupkgs} multi-RID .NET nupkg(s) with checksums.")
+    if tgzs == 0 { return "no multi-platform npm tarball (servirtium-vcr-*.tgz) in dist" }
+    println("Verified ${jars} fat Java jar(s), ${nupkgs} multi-RID .NET nupkg(s) and ${tgzs} npm tarball(s) with checksums.")
     return ""
 }

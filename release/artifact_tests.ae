@@ -74,6 +74,8 @@ main() {
     asset("${dist}/servirtium-vcr-1.jar", "fixture fat jar")
     check(artifacts.check_packages(dist) != "", "missing .NET package")
     asset("${dist}/Servirtium.Vcr.1.nupkg", "fixture NuGet package")
+    check(artifacts.check_packages(dist) != "", "missing npm tarball")
+    asset("${dist}/servirtium-vcr-1.tgz", "fixture npm tarball")
     check(artifacts.check_packages(dist) == "", "binding packages")
     raw = "${dist}/libservirtium_vcr-${TAG}-linux-x86_64.so"
     sidecar = fs.read("${raw}.sha256")!
