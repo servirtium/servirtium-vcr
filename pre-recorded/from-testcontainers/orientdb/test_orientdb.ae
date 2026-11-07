@@ -10,8 +10,8 @@
 // live, since playback starts no container. The root password ("s3cret") is
 // on the tape as REDACTED[root], the default ("rootpwd") the refused request
 // sends as REDACTED[root-default]; replay matches them literally. The
-// tape's /server body is an empty stand-in for the real 56 KB status report
-// (see the collapse in main), so check the status, not the body.
+// tape's /server body is the real 56 KB status report with its keys sorted
+// and the connection's address and times collapsed (see main).
 
 import std.spec
 import std.string
@@ -69,11 +69,20 @@ main() {
     // Both Basic credentials the case sends are kept off the tape.
     redact_basic("root", "s3cret", "root")
     redact_basic("root", "rootpwd", "root-default")
-    // What differs run to run: GET /server answers a 56 KB status report (JVM
-    // and memory figures, live connections with the client's address and
-    // times, thread dumps); the case checks only its 200, so the whole body
-    // is collapsed to an empty report.
-    servirtium.collapse("\\{\"connections\":[^\n]*", "{\"connections\":[],\"dbs\":[]}")
+    // GET /server answers a 56 KB status report: the live connections, the
+    // databases and storages, and every global configuration property. Its
+    // JSON keys are written sorted (Servirtium's stable order: OrientDB's
+    // maps do not promise an order). What differs run to run is in the
+    // connection list: the client's address and port, and the connection's
+    // times; collapsed. The rest is kept as sent.
+    servirtium.sort_json_keys()
+    servirtium.collapse("\"remoteAddress\":\"[^\"]*\"", "\"remoteAddress\":\"/10.0.0.1:40000\"")
+    for key in ["connectedOn", "lastCommandOn"] {
+        servirtium.collapse("\"${key}\":\"[0-9 :-]+\"", "\"${key}\":\"2000-01-01 00:00:00\"")
+    }
+    for key in ["lastExecutionTime", "totalWorkingTime"] {
+        servirtium.collapse("\"${key}\":\"[0-9]+\"", "\"${key}\":\"0\"")
+    }
 
     spec.describe(fw, "modules/orientdb") {
         spec.after_each() callback { testing.cleanup_all() }

@@ -219,14 +219,14 @@ Per suite (registered at the top of its `main`):
 | grafana_lgtm | | `createdAt` / `updatedAt` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | nginx | | | | `Last-Modified`, `ETag` |
 | arangodb | | | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
-| couchbase | | 32-hex ids, the container IP, node ports, memory figures, `uptime`, `nodeHash`, the `componentsVersion` object, `interestingStats` / `basicStats` | `Authorization: Basic`, as `REDACTED[admin]` | |
+| couchbase | | 32-hex ids, the container IP, node ports, memory figures, `uptime`, `nodeHash`, `interestingStats` / `basicStats` | `Authorization: Basic`, as `REDACTED[admin]` | |
 | clickhouse | | the server's display name, `X-ClickHouse-Query-Id` | each `X-ClickHouse-Key`, as `REDACTED[<label>]` | |
 | cockroachdb | | | RFC 3339 times, an event's `Timestamp` and `unique_id`, a session's id, client address and active time, `descriptor_id`, a node's `started_at` / `updated_at` / memory / CPU count / whole `metrics` object | the session token (`X-Cockroach-API-Session`, credential preset, `X_COCKROACH_API_SESSION_N`) and the login bodies' passwords as `REDACTED[<label>]` | response `Content-Length` |
 | cratedb | | the node's `name`, `duration` | | |
 | databend | | query and session UUIDs, the node id, RFC 3339 times, `running_time_ms` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | influxdb | | 16-hex ids, RFC 3339 times | `Authorization: Token`, as `REDACTED[admin-token]` | |
 | neo4j | | | | |
-| orientdb | | the whole `/server` status body | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| orientdb | | a `/server` connection's `remoteAddress`, `connectedOn`, `lastCommandOn`, `lastExecutionTime`, `totalWorkingTime` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | questdb | | | | |
 | ravendb | | RFC 3339 times | | |
 | surrealdb | | per-statement `"time"` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
@@ -256,6 +256,8 @@ a client, a sorted array is a deliberate change of the recorded response):
 | meilisearch | yes | | | |
 | qdrant | yes | | | |
 | vearch | | yes | | |
+| couchbase | | yes | | |
+| orientdb | | yes | | |
 | tidb | | | `GET /schema`'s databases, by `/db_name/L` | |
 | lowkeyvault | | | a `/versions` list, by `/attributes/created` (oldest first) | `Allow` |
 | scylladb | | | the hash-map listings (`/column_family/`, `/column_family/name`, `.../name/keyspace`, `/storage_service/keyspaces`, `/storage_service/logging_level`, `/system/logger`), by canonical JSON | |
@@ -354,8 +356,8 @@ it is on the tape, and playback is plain HTTP.
 - **etcd:** a case reading through several nodes records a tape per node,
   `<case>`, `<case>_node2`, `<case>_node3`.
 - **Order that changes run to run, again:** Couchbase's `componentsVersion`
-  object and OrientDB's whole `/server` report are collapsed (see the
-  ordering note above).
+  object (an Erlang map) and OrientDB's `/server` report are kept with
+  their JSON keys sorted (the stable-order table above).
 - **TiDB (comprehensive, status port 10080):** the image runs standalone
   (unistore: no PD, no TiKV), so `/regions/meta` and table regions are 404s
   (taped as such), and the status port needs no login. Tables are created

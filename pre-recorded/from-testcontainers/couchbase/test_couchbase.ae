@@ -60,12 +60,14 @@ main() {
     servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${encoding.base64_encode_padded(string.bytes("admin:secret1"))}", "Basic REDACTED[admin]")
     // What differs run to run, none of it sent back: the cluster's and
     // bucket's 32-hex ids, the container's IP, the node's randomised ports,
-    // its memory figures, uptime and hash, and the Erlang component versions
-    // (a map whose key order changes from one run to the next).
+    // its memory figures, uptime and hash. The Erlang component versions (a
+    // map whose key order changes from one run to the next) are kept: the
+    // tape has every JSON object's keys sorted (Servirtium's stable order;
+    // key order means nothing to a client).
+    servirtium.sort_json_keys()
     servirtium.collapse("[0-9a-f]{32}", "00000000000000000000000000000000")
     servirtium.collapse("10\\.[0-9]+\\.[0-9]+\\.[0-9]+", "10.0.0.1")
-    servirtium.collapse("\"componentsVersion\":\\{[^}]*\\}", "\"componentsVersion\":{}")
-    servirtium.collapse("\"ports\":\\{\"kv\":[0-9]+,\"capiSSL\":[0-9]+,\"capi\":[0-9]+,\"mgmtSSL\":[0-9]+,\"mgmt\":[0-9]+\\}", "\"ports\":{}")
+    servirtium.collapse("\"ports\":\\{\"capi\":[0-9]+,\"capiSSL\":[0-9]+,\"kv\":[0-9]+,\"mgmt\":[0-9]+,\"mgmtSSL\":[0-9]+\\}", "\"ports\":{}")
     for key in ["nodeHash", "mem_free", "memoryFree", "memoryTotal", "mem_total", "mem_limit"] {
         servirtium.collapse("\"${key}\":[0-9]+", "\"${key}\":0")
     }
