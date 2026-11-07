@@ -69,6 +69,7 @@ with restrictive terms start with a `## LICENSE NOTICE`
 | `arangodb` | 1 | `arangodb:3.11.5` |
 | `couchbase` | 1 (+1 live only) | `couchbase:community-7.1.1` |
 | `clickhouse` | 1 | `clickhouse/clickhouse-server:23.3.8.21-alpine` |
+| `cockroachdb` | 12 (comprehensive: HTTP API v2, with login) | `cockroachdb/cockroach:v23.1.30` |
 | `cratedb` | 1 | `crate:5.7` |
 | `databend` | 1 | `datafuselabs/databend:v1.2.615` |
 | `influxdb` | 1 (+1 live only) | `influxdb:2.7.11` |
@@ -199,6 +200,7 @@ Per suite (registered at the top of its `main`):
 | arangodb | | | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | couchbase | | 32-hex ids, the container IP, node ports, memory figures, `uptime`, `nodeHash`, the `componentsVersion` object, `interestingStats` / `basicStats` | `Authorization: Basic`, as `REDACTED[admin]` | |
 | clickhouse | | the server's display name, `X-ClickHouse-Query-Id` | each `X-ClickHouse-Key`, as `REDACTED[<label>]` | |
+| cockroachdb | | | RFC 3339 times, an event's `Timestamp` and `unique_id`, a session's id, client address and active time, `descriptor_id`, a node's `started_at` / `updated_at` / memory / CPU count / whole `metrics` object | the session token (`X-Cockroach-API-Session`, credential preset, `X_COCKROACH_API_SESSION_N`) and the login bodies' passwords as `REDACTED[<label>]` | response `Content-Length` |
 | cratedb | | the node's `name`, `duration` | | |
 | databend | | query and session UUIDs, the node id, RFC 3339 times, `running_time_ms` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | influxdb | | 16-hex ids, RFC 3339 times | `Authorization: Token`, as `REDACTED[admin-token]` | |
@@ -322,6 +324,17 @@ it is on the tape, and playback is plain HTTP.
   container, outside the tapes. Listings Seastar builds from hash maps
   (`/column_family/`, `/storage_service/keyspaces` with several keyspaces)
   change order between runs and are not taped.
+- **CockroachDB (comprehensive, HTTP API v2):** a secure single node (TLS,
+  SQL users with passwords, so the login is real: `POST /api/v2/login/` with
+  a form body answers a session token that the other calls send as
+  `X-Cockroach-API-Session`; logout kills it server-side). The recorder
+  verifies the node's own CA (`servirtium.trust_upstream_ca`), against
+  `127.0.0.1`, the name its certificate carries. The databases, tables and
+  users the cases read are SQL fixtures (testcontainers-ae's `sql.postgres`),
+  made once before any tape. `/events/` is read filtered by type
+  (`create_role`: only the fixtures make those), so the other cases'
+  schema changes never show on it; a node's `metrics` (80 KB of counters) is
+  collapsed to one entry. The licence (BOUND) is on every tape.
 - **Solace is not here:** its image needs `ulimit nofile=1048576`, which a
   rootless Podman machine refuses; it can be recorded on Docker or a
   rootful Podman machine.

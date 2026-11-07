@@ -1,0 +1,767 @@
+// CockroachDB's HTTP API v2 (/api/v2/), comprehensively: a "comprehensive"
+// suite of servirtium-vcr's pre-recorded/from-testcontainers, following the
+// README's "Pattern for comprehensive suites" (couchdb/test_couchdb.ae is the
+// reference implementation). Written for servirtium-vcr, not ported from
+// testcontainers-go. Re-usable recordings of the API for any language's tests
+// to replay with no CockroachDB, one tape per scenario.
+//
+// The image is cockroachdb/cockroach:v23.1.30, a single secure node (TLS on,
+// SQL users with passwords) from testcontainers-ae's modules.cockroachdb.
+// Its licence is the CockroachDB Software License, not open source:
+// UPSTREAM-TERMS.md (BOUND) says what that means, and every tape starts with
+// a "## LICENSE NOTICE" naming the terms (servirtium.license_notice below).
+// v23.1.30 is pinned, not the `latest-v23.1` tag, because earlier v23.1
+// patch releases shipped under the older BSL/CCL licences.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes
+// are the re-usable part. A port is a test in your language and test
+// framework that makes the same requests, in the same order, against a
+// Servirtium replay server loaded with the tape, and checks the same things.
+// Every request is plain HTTP/1.1 (the recorder talks TLS to the container;
+// a tape is plain HTTP) with these headers and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+//   X-Cockroach-API-Session: <token>     (the logged-in cases, see below)
+//   Content-Type: application/x-www-form-urlencoded  (POST /login/ only)
+//   Content-Type: application/json                   (POST /sql/ only)
+// Playback is strict about method, path (query string included), the
+// recorded request headers and the body (byte for byte); a case whose
+// recorded requests are not all made fails. Host, Connection and
+// Content-Length are on the tapes but are transport headers, not compared.
+// Every path is under /api/v2/ and ends in a slash (the API's own form).
+//
+// PORTING, the tape for each case: <case>.md beside this file, where <case>
+// is the second argument of servirtium.recording(...) in that case. The
+// cases are independent: any one tape replays alone and in any order. What
+// a case reads is a fixture created ONCE, before any tape, with SQL (the
+// database tcae_shop with tables orders and customers, and the SQL user
+// tcae_reader); a case that writes (runs_sql_over_http) makes its own table
+// in defaultdb and drops it on the tape.
+//
+// Login, and "already logged in"
+// ------------------------------
+// API v2 authenticates with a session token. POST /api/v2/login/ with a SQL
+// user's name and password as a FORM body (username=..&password=..) answers
+// {"session":"<token>"}, and every other request sends it back as
+//   X-Cockroach-API-Session: <token>
+// POST /api/v2/logout/ ends the session on the server (the token stops
+// working at once, unlike a signed cookie). Logging in gets ONE tape,
+// logs_in_and_out_with_a_session_token: a form without credentials, a wrong
+// password, an unknown user, the right password, a call with the token,
+// logout, and the call again with the dead token. Every other case is
+// ALREADY LOGGED IN: it carries a token minted by the test directly against
+// the container, outside the recorder (login_live below), so that login is
+// not on that case's tape. Cases that show the lack of one (refuses_a_client_
+// that_has_not_logged_in) send no token; refuses_a_user_without_admin_rights
+// carries a second user's token (tcae_reader, no admin role).
+//
+// PORTING, getting into the logged-in state without the login tape: send
+// any `X-Cockroach-API-Session: <anything>` header on every request. The
+// tapes hold it as `X-Cockroach-API-Session: X_COCKROACH_API_SESSION_1`
+// (Servirtium's redact_credential_header preset), and playback matches that
+// header on PRESENCE, not value: present, it matches; missing, it does not.
+// A port's "is-already-logged-in" fixture is just that header; to test the
+// login itself, replay the login tape. A consequence of presence matching:
+// a replay cannot tell a valid token from a forged one (nor the admin's
+// from the reader's: that is told apart by tape, not by header), so the
+// unauthenticated case sends no token at all. In the login tape the token
+// in the login response body is the same placeholder (Servirtium replaces a
+// credential's value wherever it appears), so a client that reads the
+// session from the body and sends it back works on replay.
+//
+// Passwords are in the login bodies, as labelled literal redactions, put
+// back on replay: `password=REDACTED[tcaeuser]`, `password=REDACTED[
+// tcae_reader]` and `password=REDACTED[wrong-password]`. A port sends the
+// real test passwords (tcae-secret, reader-secret, not-the-password), which
+// are test credentials of this suite's own container.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below, with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them all and the
+// interactions each touched ("none" where it did not). In short:
+//   - redacted: the session token (a credential header, matched on
+//     presence) and the passwords in the login bodies.
+//   - collapsed (one constant; nothing here is sent back): RFC 3339 times
+//     (events, sessions and SQL results), the nanosecond Timestamp inside
+//     an event's info, an event's unique_id, a session's id, client address
+//     and active time, descriptor_id (a database's, a table's), and a
+//     node's runtime numbers (started_at, updated_at, memory, CPU count and
+//     its whole metrics object, which is some 80 KB of counters).
+//   - left out: the response Content-Length (a collapsed body changes
+//     length run to run; a transport header).
+// Nothing is normalized (no stable {{name-N}} tokens): the API hands out
+// no id a client sends back, apart from the session token.
+//
+// PORTING: replay answers are exactly the tape's: a collapsed value is a
+// constant (the same in every tape), never a token to send back.
+//
+// In and out of scope
+// -------------------
+// In: login and logout; health (/health/, ?ready=true, no login needed);
+// the node list (/nodes/); databases, a database's tables and grants, a
+// table's columns, indexes, grants, zone configuration and CREATE statement
+// (/databases/...); SQL users (/users/); the event log, filtered by type
+// (/events/); SQL sessions (/sessions/); running SQL over HTTP (POST /sql/,
+// the endpoint of this API); the alerting and recording rules
+// (/rules/); pagination (limit, offset, next) and the representative errors
+// 400, 401, 403, 404, 405 and 500.
+// Out, because the numbers are node-specific, time-dependent or huge: ranges
+// (/ranges/hot/, /nodes/<id>/ranges/, /ranges/<id>/) and their QPS,
+// lease histories and sizes; the unfiltered event log (the cluster's
+// bootstrap, one event per default setting) and unfiltered users; the
+// statements and insights endpoints of later versions. Not in this image:
+// version 23.1 has no /api/v2/stmts/. Each could be a later case.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test cockroachdb/test_cockroachdb.ae                    container, no Servirtium
+//   TCAE_VCR=record   ae test cockroachdb/test_cockroachdb.ae  write the tapes
+//   TCAE_VCR=check    ae test cockroachdb/test_cockroachdb.ae  fail if a tape changed
+//   TCAE_VCR=playback ae test cockroachdb/test_cockroachdb.ae  no container: the tapes
+// The cases share one container (started on the first one, removed at the
+// end). The first start of the image pulls it (about 250 MB).
+
+import std.spec
+import std.string
+import std.fs
+import std.json
+import std.url
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import sql
+import sql.postgres as pgsql
+import servirtium
+import modules.cockroachdb
+
+const IMAGE = "cockroachdb/cockroach:v23.1.30"
+
+// The module's SQL users: tcaeuser (admin, the module's user) and the
+// non-admin tcae_reader created with the fixtures. Test credentials of this
+// suite's own throwaway container.
+const ADMIN_USER = "tcaeuser"
+const ADMIN_PASSWORD = "tcae-secret"
+const READER_USER = "tcae_reader"
+const READER_PASSWORD = "reader-secret"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would (Aether's std.http.client adds none); Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// The token the logged-in cases send in playback, where there is no
+// CockroachDB to log in to. Any value does: the tapes match the header on
+// presence (see "already logged in" above).
+const PLAYBACK_TOKEN = "any-value-replay-matches-on-presence"
+
+const FORM = "application/x-www-form-urlencoded"
+const JSON_TYPE = "application/json"
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
+
+// The CA file the live container's certificate is verified against (set
+// once the container is up) and the base URL of the current recording.
+var ca_file: string = ""
+var api: string = ""
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_send(method: string, url: string, hdrs: string[], ctype: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(ca_file) > 0 && string.starts_with(url, "https:") == 1 {
+        cerr = client.set_cafile(req, ca_file)
+        if cerr != "" { return 0, "", cerr }
+    }
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+// A request to the recorder / replay server with a session token ("" for
+// none): (status, body). A transport error fails the case.
+fn crdb_call(method: string, path: string, token: string, body: string) -> (int, string) {
+    string[] hdrs = []
+    if string.length(token) > 0 { hdrs.push("X-Cockroach-API-Session: ${token}") }
+    ctype = JSON_TYPE
+    if string.starts_with(path, "/api/v2/login/") == 1 && string.starts_with(body, "{") == 0 { ctype = FORM }
+    st, b, err = http_send(method, "${api}${path}", hdrs, ctype, body)
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+fn get(path: string, token: string) -> (int, string) {
+    return crdb_call("GET", path, token, "")
+}
+
+// POST /api/v2/login/ with a form body: (status, body).
+fn login(user: string, password: string) -> (int, string) {
+    return crdb_call("POST", "/api/v2/login/", "", "username=${user}&password=${password}")
+}
+
+// POST /api/v2/sql/ with one statement (executed) in `database`.
+fn run_sql(token: string, database: string, stmt: string) -> (int, string) {
+    body = "{\"database\":\"${database}\",\"execute\":true,\"statements\":[{\"sql\":\"${stmt}\"}]}"
+    return crdb_call("POST", "/api/v2/sql/", token, body)
+}
+
+// A string member of a JSON object ("" when absent): used on live bodies and
+// on the login tape's replayed body, where the session is a placeholder
+// string.
+fn jstr(body: string, key: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    out = ""
+    o, _ = json.object_get(doc, key)
+    if o != null {
+        s, serr = json.get_string(o)
+        if serr == "" { out = string.copy(s) }
+    }
+    json.free(doc)
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// The live container the cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_addr: string = ""
+var shared_container: ptr = null
+var sqldb: ptr = null
+var tmp_dir: string = ""
+var sql_port: int = 0
+
+// The shared container's admin base URL (https), starting it on first use and
+// creating the fixtures with SQL (never on a tape); "" on failure.
+fn shared() -> string {
+    if string.length(shared_addr) > 0 { return shared_addr }
+    c, err = cockroachdb.run(IMAGE) {
+        user(ADMIN_USER)
+        password(ADMIN_PASSWORD)
+    }
+    if c == null {
+        spec.fail("cockroachdb starts: ${err}")
+        return ""
+    }
+    shared_container = c.container as ptr
+    spec.assert_ok(err, "cockroachdb starts")
+    if err != "" { return "" }
+    ca, cerr = cockroachdb.ca_cert(c)
+    spec.assert_ok(cerr, "the CA certificate")
+    d, derr = fs.make_temp_dir("", "tcae-crdb-")
+    spec.assert_ok(derr, "temp dir")
+    tmp_dir = d
+    ca_file = "${d}/ca.crt"
+    fs.write(ca_file, ca)
+    servirtium.trust_upstream_ca(ca_file)
+    addr, aerr = cockroachdb.admin_endpoint(c)
+    spec.assert_ok(aerr, "admin endpoint")
+    // The node's certificate names 127.0.0.1, not localhost (the module's
+    // Go original dials 127.0.0.1 too), so verify against that name.
+    addr = string.replace_all(addr, "localhost", "127.0.0.1")
+    // The SQL side, for the fixtures only: 127.0.0.1 is the name the node's
+    // certificate carries.
+    port, _ = tc.mapped_port(c.container, cockroachdb.SQL_PORT)
+    sql_port = port
+    pgsql.register()
+    dsn = "postgres://${ADMIN_USER}:${ADMIN_PASSWORD}@127.0.0.1:${port}/defaultdb?sslmode=verify-full&sslrootcert=${url.encode(ca_file)}"
+    db, oerr = sql.open("postgres", dsn)
+    spec.assert_ok(oerr, "open the SQL connection (fixtures only)")
+    sqldb = db
+    fixture("CREATE DATABASE tcae_shop")
+    fixture("CREATE TABLE tcae_shop.orders (id INT PRIMARY KEY, customer STRING NOT NULL, total DECIMAL(10,2), placed TIMESTAMP, INDEX idx_customer (customer))")
+    fixture("CREATE TABLE tcae_shop.customers (id INT PRIMARY KEY, email STRING UNIQUE NOT NULL)")
+    fixture("CREATE USER ${READER_USER} WITH PASSWORD '${READER_PASSWORD}'")
+    shared_addr = addr
+    return shared_addr
+}
+
+fn fixture(stmt: string) {
+    _, err = sql.exec(sqldb, stmt, [])
+    spec.assert_ok(err, stmt)
+}
+
+// Log in directly against the container, outside any recording: the session
+// token a logged-in case carries.
+fn login_live(addr: string, user: string, password: string) -> string {
+    st, b, err = http_send("POST", "${addr}/api/v2/login/", [], FORM, "username=${user}&password=${password}")
+    spec.assert_ok(err, "log in (not recorded)")
+    spec.assert_eq(st, 200, "log in (not recorded): ${b}")
+    return jstr(b, "session")
+}
+
+// Start a case: in a live mode, the shared container (and, for a logged-in
+// case, a fresh session token for `user`, none of it recorded); then the
+// recording. Sets `api`; returns the recording handle, the token (the
+// placeholder in playback, "" when user is "") and ok = 0 when the case
+// cannot run.
+fn begin(case_: string, user: string) -> (ptr, string, int) {
+    addr = ""
+    token = ""
+    if string.length(user) > 0 { token = PLAYBACK_TOKEN }
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, "", 0 }
+        if string.length(user) > 0 {
+            pw = ADMIN_PASSWORD
+            if user == READER_USER { pw = READER_PASSWORD }
+            token = login_live(addr, user, pw)
+        }
+    }
+    base, rec = servirtium.recording("cockroachdb", case_, addr)
+    api = base
+    return rec, token, 1
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules
+// ---------------------------------------------------------------------------
+
+fn api_rules() {
+    servirtium.clear_rules()
+    // The licence of the recorded image, at the top of every tape.
+    servirtium.license_notice("CockroachDB v23.1.30 is under the CockroachDB Software License (Cockroach Labs, Inc.; /licenses/LICENSE in the image cockroachdb/cockroach:v23.1.30). These tapes record a single-node test cluster, the 'Limited Non-Production Use' the licence allows without a licence key (testing, one node).")
+    servirtium.license_notice("The licence has no clause against reverse engineering and none against recording or publishing HTTP responses. It does forbid circumventing its Protective Measures (licence-key and telemetry requirements), forbids removing the Licensor's notices, and defines 'Benchmark' as any benchmark, comparative test or evaluation of the Software, to be disclosed with the information needed to replicate it. Honour those terms as you would if you ran the image, and do not use these tapes as an evaluation or comparison of CockroachDB. See UPSTREAM-TERMS.md.")
+    // The session token, in X-Cockroach-API-Session on every logged-in
+    // request: a credential header, written as X_COCKROACH_API_SESSION_N
+    // (the same value is replaced in the login response body too) and
+    // matched on presence in playback.
+    servirtium.redact_credential_header("X-Cockroach-API-Session")
+    // The passwords in the login form bodies: labelled literal redactions,
+    // put back on replay, so the right and the wrong password stay distinct.
+    // (A placeholder must not contain another.)
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "password=${ADMIN_PASSWORD}", "password=REDACTED[tcaeuser]")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "password=${READER_PASSWORD}", "password=REDACTED[tcae_reader]")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "password=not-the-password", "password=REDACTED[wrong-password]")
+    // A collapsed body changes length from run to run (a time's fractional
+    // seconds are 6 to 9 digits), so the length header is left out: it is a
+    // transport header, and the replay server writes its own.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "Content-Length")
+    // Times: an event's "timestamp", a session's "start" and "end", a SQL
+    // statement's "start" and "end". RFC 3339 with nanoseconds, Z. Nobody
+    // sends them back.
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+    // The same instant again inside an event's "info" string, as Unix
+    // nanoseconds: \"Timestamp\":1794069897782582300 (the backslashes are in
+    // the JSON text, since info is a JSON document in a string).
+    servirtium.collapse("Timestamp\\\\\":[0-9]+", "Timestamp\\\\\":946684800000000000")
+    // An event's unique_id, a random 16 bytes in base64.
+    servirtium.collapse("\"unique_id\":\"[A-Za-z0-9+/]{22}==\"", "\"unique_id\":\"AAAAAAAAAAAAAAAAAAAAAA==\"")
+    // A SQL session's id (16 bytes, base64), the client's address (the
+    // container-side peer, with an ephemeral port) and the time it spent
+    // active. The stable fields (user, application name, last query and its
+    // fingerprint, transaction count) are left as they are.
+    servirtium.collapse("\"id\":\"[A-Za-z0-9+/]{22}==\"", "\"id\":\"AAAAAAAAAAAAAAAAAAAAAA==\"")
+    servirtium.collapse("\"client_address\":\"[0-9.:a-f]+\"", "\"client_address\":\"10.0.0.1:50000\"")
+    servirtium.collapse("\"total_active_time\":[0-9]+", "\"total_active_time\":1000000")
+    // A descriptor id (a database's, a table's) grows with every schema
+    // change the container has run, so it depends on which cases ran before.
+    // Collapsed to one constant; nothing sends it back.
+    servirtium.collapse("\"descriptor_id\":[0-9]+", "\"descriptor_id\":100")
+    // A node's runtime numbers: when it started and was last updated (Unix
+    // nanoseconds), the host's memory and CPU count. And its whole metrics
+    // object: some 700 counters with this run's values, 80 KB, replaced by
+    // one entry. (A flat object of numbers, so [^{}]* ends it.)
+    servirtium.collapse("\"started_at\":[0-9]+", "\"started_at\":946684800000000000")
+    servirtium.collapse("\"updated_at\":[0-9]+", "\"updated_at\":946684800000000000")
+    servirtium.collapse("\"total_system_memory\":[0-9]+", "\"total_system_memory\":8589934592")
+    servirtium.collapse("\"num_cpus\":[0-9]+", "\"num_cpus\":4")
+    servirtium.collapse("\"metrics\":\\{[^{}]*\\}", "\"metrics\":{\"liveness.livenodes\":1}")
+}
+
+// ---------------------------------------------------------------------------
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    api_rules()
+    spec.describe(fw, "CockroachDB HTTP API v2") {
+
+        // ---- the login tape ----------------------------------------------
+
+        // PORTING: the one tape with the login on it. No token on the
+        // requests until the right login.
+        //   POST /api/v2/login/ username=tcaeuser&password=<wrong>   -> 401
+        //        text/plain "the provided credentials did not match any account on the server"
+        //   POST /api/v2/login/ username=nobody&password=x           -> 401, same body
+        //   POST /api/v2/login/ JSON {"username":..} (not a form)    -> 400 text/plain "username not specified"
+        //   POST /api/v2/login/ username=tcaeuser&password=<right>   -> 200
+        //        {"session":"X_COCKROACH_API_SESSION_1"}
+        //   GET  /api/v2/databases/  X-Cockroach-API-Session: <it>   -> 200 {"databases":[...]}
+        //   POST /api/v2/logout/     with it                         -> 200 {"logged_out":true}
+        //   GET  /api/v2/databases/  with the same token             -> 401
+        //        "the provided authentication session could not be validated"
+        // The passwords are REDACTED[...] on the tape (see the header); a port
+        // sends tcae-secret and not-the-password. The session placeholder is
+        // what the replayed login returns, and what the next requests send.
+        spec.it("logs in and out with a session token") callback {
+            rec, _tok, ok = begin("logs_in_and_out_with_a_session_token", "")
+            if ok == 0 { return }
+            st, b = login(ADMIN_USER, "not-the-password")
+            spec.assert_eq(st, 401, "a wrong password is refused: ${b}")
+            spec.assert_contains(b, "did not match any account", "the message")
+            st, b = login("nobody", "x")
+            spec.assert_eq(st, 401, "an unknown user is refused: ${b}")
+            st, b = crdb_call("POST", "/api/v2/login/", "", "{\"username\":\"${ADMIN_USER}\"}")
+            spec.assert_eq(st, 400, "login takes a form, not JSON: ${b}")
+            spec.assert_contains(b, "username not specified", "the message")
+            st, b = login(ADMIN_USER, ADMIN_PASSWORD)
+            spec.assert_eq(st, 200, "the right password logs in: ${b}")
+            token = jstr(b, "session")
+            spec.assert_true(string.length(token) > 0, "a session token: ${b}")
+            st, b = get("/api/v2/databases/", token)
+            spec.assert_eq(st, 200, "the token works: ${b}")
+            spec.assert_contains(b, "\"databases\":[", "databases")
+            st, b = crdb_call("POST", "/api/v2/logout/", token, "")
+            spec.assert_eq(st, 200, "logout: ${b}")
+            spec.assert_str_eq(b, "{\"logged_out\":true}", "logged out")
+            st, b = get("/api/v2/databases/", token)
+            spec.assert_eq(st, 401, "the token is dead: ${b}")
+            spec.assert_contains(b, "could not be validated", "the message")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: no token at all (no X-Cockroach-API-Session header).
+        //   GET /api/v2/health/    -> 200 {} (health needs no login)
+        //   GET /api/v2/nodes/     -> 401 text/plain "invalid session header"
+        //   GET /api/v2/databases/ -> 401, same body
+        //   GET /api/v2/databases/ with X-Cockroach-API-Session: not-a-session
+        //        -> 400 "illegal base64 data at input byte 3" (a token is base64
+        //        of a protobuf, so a malformed one is a 400, a well-formed dead
+        //        one a 401: see the login tape)
+        //   POST /api/v2/sql/      -> 401 "invalid session header"
+        // Not "a wrong token" as the way to be unauthenticated: replay matches
+        // the header on presence, so the made-up token is its own recorded
+        // request (a header IS present there), answered from the tape.
+        spec.it("refuses a client that has not logged in") callback {
+            rec, _tok, ok = begin("refuses_a_client_that_has_not_logged_in", "")
+            if ok == 0 { return }
+            st, b = get("/api/v2/health/", "")
+            spec.assert_eq(st, 200, "health needs no login: ${b}")
+            st, b = get("/api/v2/nodes/", "")
+            spec.assert_eq(st, 401, "nodes needs a login: ${b}")
+            st, b = get("/api/v2/databases/", "")
+            spec.assert_eq(st, 401, "databases needs a login: ${b}")
+            st, b = get("/api/v2/databases/", "not-a-session")
+            spec.assert_eq(st, 400, "a made-up session is refused: ${b}")
+            spec.assert_contains(b, "illegal base64", "a token is base64 of a protobuf")
+            st, b = run_sql("", "defaultdb", "SELECT 1")
+            spec.assert_eq(st, 401, "SQL needs a login: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- already logged in from here on: every request carries the token
+
+        // PORTING: logged in as tcae_reader, a SQL user without the admin
+        // role (the token is the placeholder).
+        //   GET /api/v2/health/                      -> 200 {}
+        //   GET /api/v2/databases/                   -> 200 only the databases the
+        //        user may see: defaultdb, postgres, tcae_shop (not system)
+        //   GET /api/v2/databases/tcae_shop/tables/  -> 200 {"table_names":[..]}
+        //   GET /api/v2/nodes/    -> 403 "user not allowed to access this endpoint"
+        //   GET /api/v2/events/   -> 403, same body
+        //   GET /api/v2/sessions/ -> 403, same body
+        //   GET /api/v2/users/    -> 500 "An internal server error has occurred..."
+        //        (what 23.1 answers a non-admin; a 403 would be expected)
+        spec.it("refuses a user without admin rights") callback {
+            rec, token, ok = begin("refuses_a_user_without_admin_rights", READER_USER)
+            if ok == 0 { return }
+            st, b = get("/api/v2/health/", token)
+            spec.assert_eq(st, 200, "health: ${b}")
+            st, b = get("/api/v2/databases/", token)
+            spec.assert_eq(st, 200, "databases: ${b}")
+            spec.assert_contains(b, "\"tcae_shop\"", "tcae_shop is visible")
+            spec.assert_false(string.contains(b, "\"system\"") == 1, "system is not")
+            st, b = get("/api/v2/databases/tcae_shop/tables/", token)
+            spec.assert_eq(st, 200, "tables: ${b}")
+            st, b = get("/api/v2/nodes/", token)
+            spec.assert_eq(st, 403, "nodes is admin-only: ${b}")
+            spec.assert_contains(b, "not allowed to access this endpoint", "the message")
+            st, b = get("/api/v2/events/", token)
+            spec.assert_eq(st, 403, "events is admin-only: ${b}")
+            st, b = get("/api/v2/sessions/", token)
+            spec.assert_eq(st, 403, "sessions is admin-only: ${b}")
+            st, b = get("/api/v2/users/", token)
+            spec.assert_eq(st, 500, "users answers a non-admin with a 500: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: as the admin.
+        //   GET /api/v2/health/             -> 200 {}
+        //   GET /api/v2/health/?ready=true  -> 200 {}
+        //   GET /api/v2/rules/              -> 200 text/plain (chunked), the
+        //        node's Prometheus alerting and recording rules as YAML:
+        //        "rules/alerts:\n    rules:\n        - alert: UnavailableRanges ..."
+        spec.it("reports health and the monitoring rules") callback {
+            rec, token, ok = begin("reports_health_and_the_monitoring_rules", ADMIN_USER)
+            if ok == 0 { return }
+            st, b = get("/api/v2/health/", token)
+            spec.assert_eq(st, 200, "health: ${b}")
+            spec.assert_str_eq(b, "{}", "an empty object when healthy")
+            st, b = get("/api/v2/health/?ready=true", token)
+            spec.assert_eq(st, 200, "ready: ${b}")
+            spec.assert_str_eq(b, "{}", "ready")
+            st, b = get("/api/v2/rules/", token)
+            spec.assert_eq(st, 200, "rules")
+            spec.assert_contains(b, "alert: UnavailableRanges", "an alerting rule")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: as the admin.
+        //   GET /api/v2/nodes/          -> 200 one line of JSON,
+        //        {"nodes":[{"node_id":1,"address":{"network_field":"tcp","address_field":"127.0.0.1:26257"},
+        //        "attrs":{},"locality":{"tiers":null},"ServerVersion":{"major":23,"minor":1,...},
+        //        "build_tag":"v23.1.30","started_at":<collapsed>,"cluster_name":"",
+        //        "sql_address":{..},"metrics":{"liveness.livenodes":1} (collapsed),
+        //        "total_system_memory":..,"num_cpus":..,"updated_at":..,"liveness_status":3}]}
+        //   GET /api/v2/nodes/?limit=1  -> 200 the same (one node, so no "next")
+        spec.it("lists the node") callback {
+            rec, token, ok = begin("lists_the_node", ADMIN_USER)
+            if ok == 0 { return }
+            st, b = get("/api/v2/nodes/", token)
+            spec.assert_eq(st, 200, "nodes")
+            spec.assert_contains(b, "\"node_id\":1", "node 1")
+            spec.assert_contains(b, "\"build_tag\":\"v23.1.30\"", "the build")
+            spec.assert_contains(b, "\"liveness_status\":3", "live")
+            st, b = get("/api/v2/nodes/?limit=1", token)
+            spec.assert_eq(st, 200, "nodes, limit=1")
+            spec.assert_contains(b, "\"node_id\":1", "node 1")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: as the admin; tcae_shop and the roles are fixtures.
+        //   GET /api/v2/databases/                        -> 200 {"databases":["defaultdb","postgres","system","tcae_shop"]}
+        //   GET /api/v2/databases/?limit=2&offset=1       -> 200 {"databases":["postgres","system"],"next":3}
+        //   GET /api/v2/databases/tcae_shop/              -> 200 {"descriptor_id":100}
+        //   GET /api/v2/databases/tcae_shop/grants/       -> 200 {"grants":[{"user":"admin","privileges":["ALL"]},
+        //        {"user":"public","privileges":["CONNECT"]},{"user":"root",..},{"user":"tcaeuser",..}]}
+        //   GET /api/v2/databases/tcae_shop/tables/       -> 200 {"table_names":["public.customers","public.orders"]}
+        //   GET /api/v2/databases/tcae_shop/tables/?limit=1 -> 200 {"table_names":["public.customers"],"next":1}
+        //   GET /api/v2/databases/tcae_shop/tables/?limit=1&offset=1 -> 200 public.orders, no "next"
+        spec.it("lists databases, tables and grants, with pagination") callback {
+            rec, token, ok = begin("lists_databases_tables_and_grants_with_pagination", ADMIN_USER)
+            if ok == 0 { return }
+            st, b = get("/api/v2/databases/", token)
+            spec.assert_eq(st, 200, "databases: ${b}")
+            spec.assert_str_eq(b, "{\"databases\":[\"defaultdb\",\"postgres\",\"system\",\"tcae_shop\"]}", "all four, sorted")
+            st, b = get("/api/v2/databases/?limit=2&offset=1", token)
+            spec.assert_eq(st, 200, "a page of databases: ${b}")
+            spec.assert_str_eq(b, "{\"databases\":[\"postgres\",\"system\"],\"next\":3}", "two, and where the next page starts")
+            st, b = get("/api/v2/databases/tcae_shop/", token)
+            spec.assert_eq(st, 200, "a database: ${b}")
+            spec.assert_contains(b, "\"descriptor_id\":", "its descriptor id")
+            st, b = get("/api/v2/databases/tcae_shop/grants/", token)
+            spec.assert_eq(st, 200, "grants: ${b}")
+            spec.assert_contains(b, "{\"user\":\"public\",\"privileges\":[\"CONNECT\"]}", "public may connect")
+            st, b = get("/api/v2/databases/tcae_shop/tables/", token)
+            spec.assert_eq(st, 200, "tables: ${b}")
+            spec.assert_str_eq(b, "{\"table_names\":[\"public.customers\",\"public.orders\"]}", "both, schema-qualified")
+            st, b = get("/api/v2/databases/tcae_shop/tables/?limit=1", token)
+            spec.assert_eq(st, 200, "first table: ${b}")
+            spec.assert_contains(b, "\"next\":1", "next")
+            st, b = get("/api/v2/databases/tcae_shop/tables/?limit=1&offset=1", token)
+            spec.assert_eq(st, 200, "second table: ${b}")
+            spec.assert_contains(b, "public.orders", "orders")
+            spec.assert_contains(b, "\"next\":2", "next, even past the last table (the cursor is just the offset)")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: as the admin.
+        //   GET /api/v2/databases/tcae_shop/tables/orders/        -> 200 {"grants":[..],"columns":[
+        //        {"name":"id","type":"INT8"},{"name":"customer","type":"STRING"},
+        //        {"name":"total","type":"DECIMAL(10,2)","nullable":true},
+        //        {"name":"placed","type":"TIMESTAMP","nullable":true}],"indexes":[
+        //        {"name":"idx_customer","seq":1,"column":"customer","direction":"ASC"}, ... orders_pkey ...],
+        //        "range_count":1,"create_table_statement":"CREATE TABLE public.orders (...)",
+        //        "zone_config":{..},"zone_config_level":1,"descriptor_id":100,
+        //        "configure_zone_statement":"ALTER RANGE default CONFIGURE ZONE USING ..."}
+        //   GET /api/v2/databases/tcae_shop/tables/public.orders/ -> 200, the same table (schema-qualified)
+        //   GET /api/v2/databases/tcae_shop/tables/customers/     -> 200, a UNIQUE index customers_email_key
+        //   GET /api/v2/databases/tcae_shop/tables/nope/          -> 404 text/plain "database or table not found"
+        spec.it("describes a table's columns, indexes and zone configuration") callback {
+            rec, token, ok = begin("describes_a_tables_columns_indexes_and_zone_configuration", ADMIN_USER)
+            if ok == 0 { return }
+            st, b = get("/api/v2/databases/tcae_shop/tables/orders/", token)
+            spec.assert_eq(st, 200, "orders")
+            spec.assert_contains(b, "{\"name\":\"total\",\"type\":\"DECIMAL(10,2)\",\"nullable\":true}", "a nullable decimal")
+            spec.assert_contains(b, "{\"name\":\"idx_customer\",\"seq\":1,\"column\":\"customer\",\"direction\":\"ASC\"}", "a secondary index")
+            spec.assert_contains(b, "CREATE TABLE public.orders", "the CREATE statement")
+            spec.assert_contains(b, "\"zone_config_level\":1", "the zone config is the cluster default's")
+            st, b2 = get("/api/v2/databases/tcae_shop/tables/public.orders/", token)
+            spec.assert_eq(st, 200, "orders, schema-qualified")
+            spec.assert_str_eq(b2, b, "the same table either way")
+            st, b = get("/api/v2/databases/tcae_shop/tables/customers/", token)
+            spec.assert_eq(st, 200, "customers")
+            spec.assert_contains(b, "\"name\":\"customers_email_key\",\"unique\":true", "a unique index")
+            st, b = get("/api/v2/databases/tcae_shop/tables/nope/", token)
+            spec.assert_eq(st, 404, "a missing table: ${b}")
+            spec.assert_contains(b, "database or table not found", "the message")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: as the admin. The roles are fixtures: root, tcae_reader,
+        // tcaeuser (the module's), sorted by name.
+        //   GET /api/v2/users/ -> 200 {"users":[{"username":"root"},{"username":"tcae_reader"},{"username":"tcaeuser"}]}
+        spec.it("lists the SQL users") callback {
+            rec, token, ok = begin("lists_the_sql_users", ADMIN_USER)
+            if ok == 0 { return }
+            st, b = get("/api/v2/users/", token)
+            spec.assert_eq(st, 200, "users: ${b}")
+            spec.assert_str_eq(b, "{\"users\":[{\"username\":\"root\"},{\"username\":\"tcae_reader\"},{\"username\":\"tcaeuser\"}]}", "the three users")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: as the admin. Filtered by type: create_role events come
+        // only from the module (tcaeuser) and the fixtures (tcae_reader), so
+        // the list is the same whatever the other cases did. Newest first.
+        //   GET /api/v2/events/?type=create_role          -> 200 {"events":[
+        //        {"timestamp":"2000-01-01T00:00:00Z","event_type":"create_role","reporting_id":1,
+        //         "info":"{\"EventType\":\"create_role\",\"RoleName\":\"tcae_reader\",...}","unique_id":..},
+        //        {... "RoleName":"tcaeuser" ...}]}
+        //   GET /api/v2/events/?type=create_role&limit=1  -> 200 one event (tcae_reader)
+        //   GET /api/v2/events/?type=no_such_type         -> 200 {"events":null}
+        // "info" is a JSON document inside a JSON string.
+        spec.it("reads the event log, filtered by type") callback {
+            rec, token, ok = begin("reads_the_event_log_filtered_by_type", ADMIN_USER)
+            if ok == 0 { return }
+            st, b = get("/api/v2/events/?type=create_role", token)
+            spec.assert_eq(st, 200, "events: ${b}")
+            spec.assert_contains(b, "RoleName\\\":\\\"tcae_reader\\\"", "the reader's creation")
+            spec.assert_contains(b, "RoleName\\\":\\\"tcaeuser\\\"", "the module user's creation")
+            st, b = get("/api/v2/events/?type=create_role&limit=1", token)
+            spec.assert_eq(st, 200, "one event: ${b}")
+            spec.assert_contains(b, "tcae_reader", "the newest")
+            spec.assert_false(string.contains(b, "RoleName\\\":\\\"tcaeuser\\\"") == 1, "not the older one")
+            st, b = get("/api/v2/events/?type=no_such_type", token)
+            spec.assert_eq(st, 200, "an unknown type: ${b}")
+            spec.assert_str_eq(b, "{\"events\":null}", "no events")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: as the admin. Before the tape (live only) tcae_reader
+        // opens a SQL connection with application_name tcae-app, runs
+        // SELECT 1 and closes it.
+        //   GET /api/v2/sessions/?username=tcae_reader -> 200 {"sessions":[{"node_id":1,
+        //        "username":"tcae_reader","client_address":"10.0.0.1:50000","application_name":"tcae-app",
+        //        "active_queries":null,"start":..,"last_active_query":"SELECT 1","id":..,
+        //        "max_alloc_bytes":20480,"last_active_query_no_constants":"SELECT _","status":1,
+        //        "end":..,"num_txns_executed":1,"txn_fingerprint_ids":[..],"total_active_time":..}],
+        //        "errors":[],"internal_app_name_prefix":"$ internal","next":"fDB8MHw="}
+        //   GET /api/v2/sessions/?username=nobody      -> 200 {"sessions":[],"errors":[],...}
+        spec.it("lists a user's SQL sessions") callback {
+            if servirtium.live() == 1 {
+                addr = shared()
+                if addr == "" { return }
+                // (a connection of its own, as the reader, closed again)
+                dsn = "postgres://${READER_USER}:${READER_PASSWORD}@127.0.0.1:${sql_port}/tcae_shop?sslmode=verify-full&sslrootcert=${url.encode(ca_file)}&application_name=tcae-app"
+                rdb, rerr = sql.open("postgres", dsn)
+                spec.assert_ok(rerr, "open the reader's SQL connection")
+                _, qerr = sql.exec(rdb, "SELECT 1", [])
+                spec.assert_ok(qerr, "SELECT 1")
+                sql.close(rdb)
+            }
+            rec, token, ok = begin("lists_a_users_sql_sessions", ADMIN_USER)
+            if ok == 0 { return }
+            st, b = get("/api/v2/sessions/?username=${READER_USER}", token)
+            spec.assert_eq(st, 200, "sessions: ${b}")
+            spec.assert_contains(b, "\"username\":\"tcae_reader\"", "the reader's session")
+            spec.assert_contains(b, "\"application_name\":\"tcae-app\"", "its application name")
+            spec.assert_contains(b, "\"last_active_query\":\"SELECT 1\"", "its last query")
+            st, b = get("/api/v2/sessions/?username=nobody", token)
+            spec.assert_eq(st, 200, "no sessions: ${b}")
+            spec.assert_contains(b, "\"sessions\":[]", "none")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: as the admin. POST /api/v2/sql/ takes a JSON body
+        // {"database":..,"execute":true|false,"statements":[{"sql":..}]}
+        // (Content-Type: application/json required) and runs it. The case makes its own table in
+        // defaultdb and drops it.
+        //   POST {"database":"defaultdb","execute":true,"statements":[{"sql":"CREATE TABLE tcae_http_demo (id INT PRIMARY KEY, name STRING)"}]}
+        //        -> 200 {"num_statements":1,"execution":{"txn_results":[{"statement":1,"tag":"CREATE TABLE",
+        //           "start":..,"end":..,"rows_affected":0}]}}
+        //   POST ... "INSERT INTO tcae_http_demo VALUES (1,'ada'),(2,'bob')"  -> tag "INSERT", rows_affected 2
+        //   POST ... "SELECT id, name FROM tcae_http_demo ORDER BY id"        -> "columns":[{"name":"id","type":"INT8","oid":20},
+        //           {"name":"name","type":"STRING","oid":25}],"rows":[{"id":1,"name":"ada"},{"id":2,"name":"bob"}]
+        //   POST ... "SELEC 1"          -> 200 {"num_statements":0,"execution":{...},"error":{"code":"42601",
+        //           "message":"at or near \"selec\": syntax error",...}} (check the tape for the exact body)
+        //   POST ... "DROP TABLE tcae_http_demo" -> tag "DROP TABLE"
+        //   POST {"statements":[..],"execute":false} (no execute) -> 200 the parsed request echoed
+        //           {"num_statements":1,"request":{"timeout":"5s","max_result_size":10000,...}}
+        spec.it("runs SQL over HTTP") callback {
+            rec, token, ok = begin("runs_sql_over_http", ADMIN_USER)
+            if ok == 0 { return }
+            st, b = run_sql(token, "defaultdb", "CREATE TABLE tcae_http_demo (id INT PRIMARY KEY, name STRING)")
+            spec.assert_eq(st, 200, "create: ${b}")
+            spec.assert_contains(b, "\"tag\":\"CREATE TABLE\"", "tag")
+            st, b = run_sql(token, "defaultdb", "INSERT INTO tcae_http_demo VALUES (1, 'ada'), (2, 'bob')")
+            spec.assert_eq(st, 200, "insert: ${b}")
+            spec.assert_contains(b, "\"rows_affected\":2", "two rows")
+            st, b = run_sql(token, "defaultdb", "SELECT id, name FROM tcae_http_demo ORDER BY id")
+            spec.assert_eq(st, 200, "select: ${b}")
+            spec.assert_contains(b, "\"rows\":[{\"id\":1,\"name\":\"ada\"},{\"id\":2,\"name\":\"bob\"}]", "the rows")
+            st, b = run_sql(token, "defaultdb", "SELEC 1")
+            spec.assert_eq(st, 400, "a syntax error is a 400 with a JSON error: ${b}")
+            spec.assert_contains(b, "\"code\":\"42601\"", "SQLSTATE 42601")
+            spec.assert_contains(b, "syntax error", "the message")
+            st, b = run_sql(token, "defaultdb", "DROP TABLE tcae_http_demo")
+            spec.assert_eq(st, 200, "drop: ${b}")
+            st, b = crdb_call("POST", "/api/v2/sql/", token, "{\"database\":\"defaultdb\",\"statements\":[{\"sql\":\"SELECT 1\"}]}")
+            spec.assert_eq(st, 200, "without execute it only parses: ${b}")
+            spec.assert_contains(b, "\"num_statements\":1", "one statement")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: as the admin. Plain-text bodies, not JSON.
+        //   GET  /api/v2/nope/                       -> 404 "404 page not found"
+        //   GET  /api/v2/databases/nope/             -> 500 "An internal server error has occurred. Please check your CockroachDB logs for more details."
+        //        (an unknown database is a 500 in 23.1)
+        //   GET  /api/v2/nodes/9/ranges/             -> 500, same body (an unknown node)
+        //   GET  /api/v2/databases/tcae_shop/tables/nope/ -> 404 "database or table not found"
+        //   GET  /api/v2/sql/                        -> 405 JSON {"error":{"code":"XXUUU","message":"only POST supported",...}}
+        //   POST /api/v2/login/ with no body         -> 400 text/plain (see the tape)
+        //   GET  /api/v2/login/                      -> 404 "not found"
+        spec.it("answers the representative error statuses") callback {
+            rec, token, ok = begin("answers_the_representative_error_statuses", ADMIN_USER)
+            if ok == 0 { return }
+            st, b = get("/api/v2/nope/", token)
+            spec.assert_eq(st, 404, "an unknown path: ${b}")
+            spec.assert_contains(b, "404 page not found", "Go's default body")
+            st, b = get("/api/v2/databases/nope/", token)
+            spec.assert_eq(st, 500, "an unknown database: ${b}")
+            spec.assert_contains(b, "internal server error", "the generic 500")
+            st, b = get("/api/v2/nodes/9/ranges/", token)
+            spec.assert_eq(st, 500, "an unknown node: ${b}")
+            st, b = get("/api/v2/databases/tcae_shop/tables/nope/", token)
+            spec.assert_eq(st, 404, "an unknown table: ${b}")
+            st, b = get("/api/v2/sql/", token)
+            spec.assert_eq(st, 405, "GET on the SQL endpoint: ${b}")
+            spec.assert_contains(b, "only POST supported", "the message")
+            st, b = crdb_call("POST", "/api/v2/login/", "", "")
+            spec.assert_eq(st, 400, "login without a form: ${b}")
+            st, b = get("/api/v2/login/", "")
+            spec.assert_eq(st, 404, "GET on login: ${b}")
+            servirtium.end_recording(rec)
+        }
+    }
+
+    if shared_container != null {
+        if sqldb != null { sql.close(sqldb) }
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("cockroachdb: removing the shared container: ${e}") }
+        if string.length(tmp_dir) > 0 { fs.delete(ca_file) }
+    }
+    return spec.run_summary(fw)
+}

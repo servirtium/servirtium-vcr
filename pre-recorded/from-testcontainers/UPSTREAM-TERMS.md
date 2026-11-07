@@ -27,7 +27,7 @@ Classes:
   **tapes are not**: record your own locally (the suite's `LICENCE-NOTE.md`
   says how), and in playback with no tape the suite skips with a notice.
 
-Counts: 47 CLEAR, 11 BOUND, 3 DECISION (61 suites).
+Counts: 47 CLEAR, 12 BOUND, 3 DECISION (62 suites).
 
 Product names are their owners' trademarks, used here only to say which
 software a tape was recorded against.
@@ -125,8 +125,26 @@ stand in for it in a competing hosted service).
   parties" in a competitive hosted or embedded offering. Each version
   becomes MPL-2.0 four years after publication. `vault` (1.13.0) predates the
   change and is MPL-2.0.
+- **cockroachdb**: the CockroachDB Software License (Cockroach Labs),
+  version v23.1.30, read from `/licenses/LICENSE` in the image. Not open
+  source, but nothing in it forbids reverse engineering, recording or
+  publishing what the software answers. Allowed without a licence key:
+  "Limited Non-Production Use" (design, prototyping, testing or development
+  in non-production environments, on a single node), which is all these
+  tapes are. Forbidden: operating it otherwise without a licence key,
+  circumventing or removing its "Protective Measures" (licence-key and
+  telemetry requirements), removing the Licensor's notices (the tape's
+  `## LICENSE NOTICE` is one: keep it), and passing any part of the Software
+  on without the licence. Its definition of "Benchmark" is broad ("any
+  benchmark, comparative test or evaluation of the Software"), and disclosing
+  one needs the information to replicate it: do not use these tapes as an
+  evaluation or comparison of CockroachDB. The tapes are API responses, not
+  the Software. Earlier v23.1 patch releases were under the BSL and the
+  CockroachDB Community License; the final ones, this one included, are under
+  the Software License, so the image is pinned to the patch version. The
+  licence is a vendor's own text and could be read as stricter than here:
+  if in doubt, treat the tapes as DECISION and record your own.
 - **couchbase**: CCELA/Apr2021/v3. Allowed: internal business use, and
-
   developing products that interact with the software (which is what a
   test of a client is). Forbidden: decompiling, reverse engineering,
   disassembling (§5(b)), distributing the software standalone (§5(d)),
