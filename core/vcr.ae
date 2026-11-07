@@ -5140,16 +5140,17 @@ content_type_is_json(ctype: string) -> int {
 }
 
 // Reformat a RESPONSE `body` with json.pretty when pretty_json is on and
-// `ctype` is JSON, under the same rules as pretty_xml_body_k: last, after
-// redactions, secret patches and normalizations, so they act on the raw
-// bytes; any json.pretty error keeps the body byte-exact; request bodies are
-// never touched. json.pretty re-indents the text itself, so key order and
-// number spellings stay as the service sent them.
-pretty_json_body_k(key: string, ctype: string, body: string) -> string {
+// the body is JSON (response_body_is_json_k: its `ctype` says so, or a
+// sort_json_array_at rule names its request path `req_path`), under the same
+// rules as pretty_xml_body_k: last, after redactions, secret patches and
+// normalizations, so they act on the raw bytes; any json.pretty error keeps
+// the body byte-exact; request bodies are never touched. json.pretty
+// re-indents the text itself, so key order and number spellings stay as the
+// service sent them (or as stable order wrote them).
+pretty_json_body_k(key: string, req_path: string, ctype: string, body: string) -> string {
     indent = vcr_get_pretty_json_k(key)
     if indent <= 0 { return body }
-    if string.length(body) == 0 { return body }
-    if content_type_is_json(ctype) == 0 { return body }
+    if response_body_is_json_k(key, req_path, ctype, body) == 0 { return body }
     formatted, err = json.pretty(body, indent)
     if err != "" || string.length(formatted) == 0 { return body }
     // Keep a trailing newline the original body had (json.pretty writes none).
@@ -5221,6 +5222,17 @@ pretty_json_body_k(key: string, ctype: string, body: string) -> string {
 //   - sort by a value that is the same each run: sorting by a random id
 //     gives a random order, normalized or not;
 //   - pretty_json then lays out the sorted body; json.pretty keeps key order.
+//
+// Sorted JSON is only ever written pretty-printed: sort_json_keys and every
+// sort_json_array[_at] rule need pretty_json on, and a tape that would be
+// emitted with one of them and pretty_json off is refused (emit_error, so
+// flush, check and fail-if-changed all return it and write nothing). A
+// compact body that has been reordered looks byte-faithful to a reader but
+// is not; a pretty-printed one is visibly rewritten. The check is made when
+// the tape is emitted, not when a rule is registered, since rules and
+// pretty_json are set in any order. pretty_json alone still keeps the
+// service's key order, and the header rules (sort_response_headers,
+// sort_header_value) are not JSON and need nothing.
 // Sorting keeps every byte of the body but its order (the whitespace between
 // members stays where it was, by position), so a body's length does not
 // change and neither does its Content-Length; were it ever to, the rewrite
@@ -5232,8 +5244,9 @@ pretty_json_body_k(key: string, ctype: string, body: string) -> string {
 // client's serializer is deterministic; a test whose client really does send
 // keys in a varying order turns on set_match_json_body_h instead (JSON-
 // semantic matching). Request headers are already written sorted by name.
-// A body that is not JSON by its Content-Type, or does not parse, is left
-// byte-exact. The recording-rules footer lists each ordering rule ("ordered")
+// A body that is not JSON (response_body_is_json_k: by its Content-Type, or
+// a JSON object or array on a request path a sort_json_array_at rule names),
+// or does not parse, is left byte-exact. The recording-rules footer lists each ordering rule ("ordered")
 // with the interactions it applies to (not those whose order it happened to
 // change: that would make the footer itself differ run to run).
 
@@ -5689,19 +5702,68 @@ stable_order_on_k(key: string) -> int {
     return 0
 }
 
-// A response body in stable order, or byte-exact when no JSON rule is on,
-// the content type is not JSON, or the body does not parse. `req_path` is
+// Whether a response body is JSON to stable order and pretty_json: its
+// Content-Type says JSON (content_type_is_json) and it parses; or, whatever
+// its Content-Type, `req_path` (the request path, query included, as sent)
+// matches the request pattern of a sort_json_array_at rule and the body is a
+// JSON object or array that parses. A service that serves JSON as text/plain
+// (YugabyteDB's /api/v1) is sorted, and so pretty-printed, only on the
+// endpoints a rule names: a text/plain body elsewhere that happens to start
+// with "{" stays byte-exact. Never a base64 body. In playback no array rule
+// is registered, so this is the Content-Type test alone.
+response_body_is_json_k(key: string, req_path: string, ctype: string, body: string) -> int {
+    if string.length(body) == 0 { return 0 }
+    if ascii_ci_contains(ctype, "base64 below") == 1 { return 0 }
+    if content_type_is_json(ctype) == 0 {
+        st = json_skip_space(body, 0)
+        if st >= string.length(body) { return 0 }
+        c = string.char_at(body, st)
+        if c != 123 && c != 91 { return 0 }
+        named = 0
+        l = array_sorts_k(key)
+        i = 0
+        while i < list_size(l) && named == 0 {
+            r = list_get_raw(l, i) as *ArraySort
+            if string.length(r.request) > 0 {
+                re, cerr = regex.compile(r.request)
+                if cerr == "" {
+                    if regex.matches(re, req_path) == 1 { named = 1 }
+                    regex.free(re)
+                }
+            }
+            i = i + 1
+        }
+        if named == 0 { return 0 }
+    }
+    tree, err = json.parse(body)
+    if err != "" || tree == null { return 0 }
+    json.json_free(tree)
+    return 1
+}
+
+// Why this handle's tape may not be emitted under stable order, or "": a
+// JSON sort rule (sort_json_keys, sort_json_array[_at]) with pretty_json
+// off. Sorted JSON is only written pretty-printed.
+stable_order_pretty_error_k(key: string) -> string {
+    if vcr_get_pretty_json_k(key) > 0 { return "" }
+    if vcr_get_sort_json_keys_k(key) == 1 {
+        return "sort_json_keys needs pretty_json: sorted JSON is only written pretty-printed (turn pretty_json on)"
+    }
+    if list_size(array_sorts_k(key)) > 0 {
+        return "sort_json_array needs pretty_json: sorted JSON is only written pretty-printed (turn pretty_json on)"
+    }
+    return ""
+}
+
+// A response body in stable order, or byte-exact when no JSON rule is on or
+// the body is not JSON (response_body_is_json_k). `req_path` is
 // the interaction's request path, for rules scoped to some requests.
 stable_order_body_k(key: string, req_path: string, ctype: string, body: string) -> string {
     sk = vcr_get_sort_json_keys_k(key)
     l = array_sorts_k(key)
     na = list_size(l)
     if sk == 0 && na == 0 { return body }
-    if string.length(body) == 0 { return body }
-    if content_type_is_json(ctype) == 0 { return body }
-    tree, err = json.parse(body)
-    if err != "" || tree == null { return body }
-    json.json_free(tree)
+    if response_body_is_json_k(key, req_path, ctype, body) == 0 { return body }
     mask = ""
     i = 0
     while i < na {
@@ -5890,14 +5952,7 @@ stable_order_footer_rows_k(key: string) -> string {
         while ai < na { cfg_set_int(slot(key, "so_hit.${ai}"), 0); ai = ai + 1 }
         ct = e.content_type
         if string.length(ct) == 0 { ct = header_value_in_block(e.resp_headers, "Content-Type") }
-        is_json = 0
-        if string.length(e.body) > 0 && content_type_is_json(ct) == 1 {
-            tree, err = json.parse(e.body)
-            if err == "" && tree != null {
-                is_json = 1
-                json.json_free(tree)
-            }
-        }
+        is_json = response_body_is_json_k(key, e.path, ct, e.body)
         if is_json == 1 && na > 0 { stable_order_body_k(key, e.path, ct, e.body) }
         if is_json == 1 { khits = string_concat(khits, "1") } else { khits = string_concat(khits, "0") }
         ai = 0
@@ -5989,7 +6044,7 @@ emit_one_interaction_k(key: string, i: int) -> string {
     resp_ct = ctype
     if string.length(resp_ct) == 0 { resp_ct = header_value_in_block(resp_h, "Content-Type") }
     body_out = pretty_xml_body_k(key, resp_ct, body_out)
-    body_out = pretty_json_body_k(key, resp_ct, body_out)
+    body_out = pretty_json_body_k(key, path, resp_ct, body_out)
 
     // A Content-Length on the tape describes the body the tape holds: when a
     // redaction, normalization or pretty-print changed a body, its recorded
@@ -6075,6 +6130,11 @@ emit_tape_k(key: string) -> string {
     }
     if secret_state == "pending" || secret_state == "failed" {
         config.put(slot(key, "emit_error"), "secret callback staging did not complete; tape was not written")
+        return ""
+    }
+    so_err = stable_order_pretty_error_k(key)
+    if so_err != "" {
+        config.put(slot(key, "emit_error"), so_err)
         return ""
     }
     build_normalization_map_k(key)

@@ -307,6 +307,20 @@ is off by default and registered explicitly (Paul's rule: nothing implicit);
 a tape recorded without them is byte-exact. All record side: the tape is
 what is written, and playback serves it as it is.
 
+**Sorted JSON is only written pretty-printed** (Paul's rule, 2026-11-07).
+`sort_json_keys` and every `sort_json_array[_at]` rule need `pretty_json` on;
+with one of them registered and `pretty_json` off, the tape is refused when
+it is emitted (flush, check and fail-if-changed return
+`sort_json_keys needs pretty_json: sorted JSON is only written
+pretty-printed (turn pretty_json on)`, or the same for `sort_json_array`, and
+write nothing). Why: a compact body that has been reordered looks
+byte-faithful to a reader and is not; a pretty-printed one is visibly
+rewritten. It is checked at emit time, not when a rule is set, because rules
+and `pretty_json` arrive in any order; and `pretty_json` is never turned on
+for you. The two stay separate opt-ins: `pretty_json` alone keeps the
+service's key order. The header rules (`sort_response_headers`,
+`sort_header_value`) are not JSON and need nothing.
+
 | Core (`_h`; bare form without it) | C ABI (`aether_vcr_embed_…`) | What it writes |
 |---|---|---|
 | `sort_json_keys_h(h, on)` | `set_sort_json_keys` / `get_sort_json_keys` | JSON response bodies' object keys sorted by their bytes, at every depth; duplicates keep their order |
@@ -330,7 +344,8 @@ Decisions, and why:
   comma-separated (`/keyspace,/table_name`: the first decides, the next
   breaks ties; so a member name holding a comma cannot be used), or `""` for
   each element's canonical JSON (keys sorted, no whitespace). Two integers compare by value
-  (any size), anything else by canonical bytes. If any element lacks `by`,
+  (any size), anything else by canonical bytes. If any element lacks `by`
+  (any of its keys),
   that array is written as sent. The first rule that selects an array sorts
   it. `sort_json_array_at` adds a request-path regex, for when one
   endpoint's list must be sorted and another's of the same shape must not
@@ -347,6 +362,15 @@ Decisions, and why:
   numbers its `{{name-N}}` tokens in the sorted order, so numbering is as
   stable as the order; pretty_json lays out the sorted body. Sort by a
   value that is the same each run: by a random id is a random order.
+- **What is JSON.** A response body whose Content-Type says JSON
+  (`application/json`, `text/json`, `*+json`) and that parses. Also, on a
+  request path a `sort_json_array_at` rule's pattern matches, a body that is
+  a JSON object or array and parses whatever its Content-Type: YugabyteDB
+  serves its JSON API as `text/plain`, and naming the endpoint in a rule is
+  the opt-in. Such a body is then key-sorted and pretty-printed like any
+  other JSON. A `text/plain` body anywhere else that happens to start with
+  `{` stays byte-exact; never a base64 body. (An earlier draft treated any
+  body that parsed as JSON as JSON; that reached text the test never named.)
 - **Content-Length.** Sorting keeps a body's bytes, so its length stays; the
   usual rewrite (a changed body's recorded Content-Length follows it) covers
   any combination with other rules.
@@ -364,8 +388,9 @@ Decisions, and why:
 Guarded by `core_tests/test_vcr_stable_order.ae` (including a real upstream
 that flips its order per request: two recordings, one tape). The
 pre-recorded recorder exposes them as `servirtium.sort_json_keys()`,
-`sort_json_array(path, by)`, `sort_response_headers()`,
-`sort_header_value(name)`.
+`sort_json_array(path, by)`, `sort_json_array_at(request, path, by)`,
+`sort_response_headers()`, `sort_header_value(name)`, with
+`servirtium.pretty_json(2)` beside any JSON one.
 
 ## The recording-rules footer (opt-in)
 

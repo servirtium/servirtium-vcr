@@ -130,7 +130,8 @@ One libservirtium_vcr; every binding exposes the same surface.
   each run: JSON object keys sorted, chosen JSON arrays sorted by a member,
   response headers sorted by name, a set-valued header's items (`Allow`)
   sorted (AGENTS.md, "Stable order"), so a re-record is byte-identical
-  without leaving content out.
+  without leaving content out. Sorted JSON is only written pretty-printed:
+  a JSON sort rule needs `pretty_json` on, or the tape is refused.
   Bodies are byte-exact, CRs included (CouchDB's CRLF-separated rows, a
   multipart request); a tape converted wholesale to CRLF line endings (an
   autocrlf checkout) still parses. Keep tapes out of git's line-ending

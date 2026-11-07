@@ -6,8 +6,8 @@
 //
 // Part A drives the emitter directly (record_full_response + flush):
 //    1. Off by default: the tape is byte-exact.
-//    2. sort_json_keys: keys sorted at every depth; whitespace kept where it
-//       was; array order kept; duplicate keys keep their order.
+//    2. sort_json_keys: keys sorted at every depth; array order kept;
+//       duplicate keys keep their order.
 //    3. sort_json_array: by a member, by a JSON pointer, by canonical JSON;
 //       "*" and bare-name paths; integers by value; an element without the
 //       member leaves its array as sent; unselected arrays untouched;
@@ -16,9 +16,15 @@
 //       sort_header_value (Allow).
 //    5. normalize's tokens are numbered in the sorted order: two recordings
 //       of the same content in different orders write the same bytes.
-//    6. pretty_json lays out the sorted body.
-//    7. Bad rules refused; non-JSON and malformed bodies byte-exact;
-//       request bodies never reordered.
+//    6. Sorted JSON is only written pretty-printed: a JSON sort rule with
+//       pretty_json off refuses to emit (flush, check, fail-if-changed),
+//       whatever order the calls came in; sort and pretty_json together
+//       emit; pretty_json alone keeps the service's key order; the header
+//       rules need no pretty_json (Test 4).
+//    7. Bad rules refused; non-JSON and malformed bodies byte-exact; a body
+//       served as text/plain is JSON only on a request path a
+//       sort_json_array_at rule names; request bodies never reordered.
+// The JSON sort tests run with pretty_json on; pj() is the expected layout.
 // Part B records through a real upstream that flips its order on every
 // request: two recordings are byte-identical, the footer lists the ordering
 // rules, and playback serves the sorted response with a matching
@@ -30,6 +36,7 @@ import std.http.client
 import std.fs
 import std.string
 import std.io
+import std.json
 
 extern exit(code: int)
 extern http_server_stop(server: ptr)
@@ -77,6 +84,24 @@ rec(path: string, ctype: string, body: string, resp_h: string, req_b: string) ->
 reset_all() {
     vcr.clear_format_options()
     vcr.clear_normalizations()
+}
+
+// reset_all, then pretty_json on: the JSON sort rules need it.
+reset_pretty() {
+    reset_all()
+    vcr.vcr_set_pretty_json(2)
+}
+
+// A body as the tape fences it.
+fenced(b: string) -> string {
+    return "```\n${b}\n```"
+}
+
+// `compact` as pretty_json(2) writes it (json.pretty keeps key order).
+pj(compact: string) -> string {
+    f, err = json.pretty(compact, 2)
+    if err != "" { fail("pj: ${err} in ${compact}") }
+    return f
 }
 
 // The upstream: the same content in one order, then the other, by request.
@@ -144,6 +169,9 @@ stable_rules(h: ptr) {
     if e == "" { e = vcr.redact_whole_tape_h(h, "\"count\":2,\"value\"", "\"count\":2,\"value\"") }
     if e != "" { fail("rule: ${e}") }
     vcr.set_rules_footer_h(h, 1)
+    // Last: the need for pretty_json is checked when the tape is written,
+    // so the order of the calls does not matter.
+    vcr.set_pretty_json_h(h, 2)
 }
 
 record_once(path: string, rport: int) -> string {
@@ -175,81 +203,87 @@ main() {
     need(t1, RESP_H, "response headers as sent")
     println("  PASS")
 
-    println("Test 2: sort_json_keys, recursive, whitespace by position, arrays and duplicates kept in order")
+    println("Test 2: sort_json_keys, recursive, arrays and duplicates kept in order")
+    reset_pretty()
     vcr.sort_json_keys(1)
     t2 = rec(OUT, "application/json", UNSORTED, RESP_H, UNSORTED)
-    need(t2, "```\n{\"a\":{\"c\":null,\"y\":[{\"b\":2,\"q\":1},3]},\"m\":\"x\",\"m\":\"y\",\"z\":1}\n```", "keys sorted at every depth")
+    need(t2, fenced(pj("{\"a\":{\"c\":null,\"y\":[{\"b\":2,\"q\":1},3]},\"m\":\"x\",\"m\":\"y\",\"z\":1}")), "keys sorted at every depth")
     need(t2, "```\n${UNSORTED}\n```", "the request body is never reordered")
     need(t2, "Content-Type: application/json\nX-Zeta: 1", "headers untouched by the JSON option")
     pretty_in = "{\n  \"b\": 1,\n  \"a\": {\n    \"d\": true,\n    \"c\": \"x\"\n  }\n}"
     t2b = rec(OUT, "application/json", pretty_in, "", "")
-    need(t2b, "{\n  \"a\": {\n    \"c\": \"x\",\n    \"d\": true\n  },\n  \"b\": 1\n}", "a pretty body keeps its layout")
+    need(t2b, "{\n  \"a\": {\n    \"c\": \"x\",\n    \"d\": true\n  },\n  \"b\": 1\n}", "a pretty body sorted")
     println("  PASS")
 
     println("Test 3: sort_json_array by member, pointer, canonical form; paths; integers; missing member")
-    reset_all()
+    reset_pretty()
     e = vcr.sort_json_array("", "name")
     if e != "" { fail(e) }
     t3 = rec(OUT, "application/json", "[{\"name\":\"b\",\"n\":1},{\"name\":\"a\",\"n\":2}]", "", "")
-    need(t3, "[{\"name\":\"a\",\"n\":2},{\"name\":\"b\",\"n\":1}]", "root array by member")
-    reset_all()
+    need(t3, pj("[{\"name\":\"a\",\"n\":2},{\"name\":\"b\",\"n\":1}]"), "root array by member")
+    reset_pretty()
     e = vcr.sort_json_array("/dbs", "/db_name/L")
     if e != "" { fail(e) }
     t3b = rec(OUT, "application/json", "{\"dbs\":[{\"id\":110,\"db_name\":{\"L\":\"shop\"}},{\"id\":1,\"db_name\":{\"L\":\"mysql\"}}],\"other\":[3,1,2]}", "", "")
-    need(t3b, "{\"dbs\":[{\"id\":1,\"db_name\":{\"L\":\"mysql\"}},{\"id\":110,\"db_name\":{\"L\":\"shop\"}}],\"other\":[3,1,2]}", "by pointer; an unselected array untouched; keys left unsorted")
-    reset_all()
+    need(t3b, pj("{\"dbs\":[{\"id\":1,\"db_name\":{\"L\":\"mysql\"}},{\"id\":110,\"db_name\":{\"L\":\"shop\"}}],\"other\":[3,1,2]}"), "by pointer; an unselected array untouched; keys left unsorted")
+    reset_pretty()
     e = vcr.sort_json_array("/items/*/tags", "")
     if e != "" { fail(e) }
     t3c = rec(OUT, "application/json", "{\"items\":[{\"tags\":[\"z\",{\"b\":1,\"a\":2},\"a\"]},{\"tags\":[3,1]}],\"tags\":[\"y\",\"x\"]}", "", "")
-    need(t3c, "{\"items\":[{\"tags\":[\"a\",\"z\",{\"b\":1,\"a\":2}]},{\"tags\":[1,3]}],\"tags\":[\"y\",\"x\"]}", "wildcard path, canonical form")
-    reset_all()
+    need(t3c, pj("{\"items\":[{\"tags\":[\"a\",\"z\",{\"b\":1,\"a\":2}]},{\"tags\":[1,3]}],\"tags\":[\"y\",\"x\"]}"), "wildcard path, canonical form")
+    reset_pretty()
     e = vcr.sort_json_array("tags", "")
     if e != "" { fail(e) }
     t3d = rec(OUT, "application/json", "{\"items\":[{\"tags\":[\"z\",\"a\"]}],\"tags\":[\"y\",\"x\"],\"other\":[\"b\",\"a\"]}", "", "")
-    need(t3d, "{\"items\":[{\"tags\":[\"a\",\"z\"]}],\"tags\":[\"x\",\"y\"],\"other\":[\"b\",\"a\"]}", "a bare name selects that member's arrays at any depth")
-    reset_all()
+    need(t3d, pj("{\"items\":[{\"tags\":[\"a\",\"z\"]}],\"tags\":[\"x\",\"y\"],\"other\":[\"b\",\"a\"]}"), "a bare name selects that member's arrays at any depth")
+    reset_pretty()
     e = vcr.sort_json_array("", "id")
     if e != "" { fail(e) }
     t3e = rec(OUT, "application/json", "[{\"id\":4611686018427387905},{\"id\":10},{\"id\":-3},{\"id\":2}]", "", "")
-    need(t3e, "[{\"id\":-3},{\"id\":2},{\"id\":10},{\"id\":4611686018427387905}]", "integers by value, any size")
+    need(t3e, pj("[{\"id\":-3},{\"id\":2},{\"id\":10},{\"id\":4611686018427387905}]"), "integers by value, any size")
     t3f = rec(OUT, "application/json", "[{\"id\":2},{\"x\":1},{\"id\":1}]", "", "")
-    need(t3f, "[{\"id\":2},{\"x\":1},{\"id\":1}]", "an element without the member leaves its array as sent")
+    need(t3f, pj("[{\"id\":2},{\"x\":1},{\"id\":1}]"), "an element without the member leaves its array as sent")
     t3g = rec(OUT, "application/json", "[{\"id\":1,\"k\":\"second\"},{\"id\":0},{\"id\":1,\"k\":\"first\"}]", "", "")
-    need(t3g, "[{\"id\":0},{\"id\":1,\"k\":\"second\"},{\"id\":1,\"k\":\"first\"}]", "the sort is stable")
+    need(t3g, pj("[{\"id\":0},{\"id\":1,\"k\":\"second\"},{\"id\":1,\"k\":\"first\"}]"), "the sort is stable")
     // Several keys: the first decides, the next breaks ties.
-    reset_all()
+    reset_pretty()
     e = vcr.sort_json_array("", "/ks,name")
     if e != "" { fail(e) }
     t3k = rec(OUT, "application/json", "[{\"ks\":\"b\",\"name\":\"x\"},{\"ks\":\"a\",\"name\":\"y\"},{\"ks\":\"a\",\"name\":\"x\"}]", "", "")
-    need(t3k, "[{\"ks\":\"a\",\"name\":\"x\"},{\"ks\":\"a\",\"name\":\"y\"},{\"ks\":\"b\",\"name\":\"x\"}]", "two keys")
+    need(t3k, pj("[{\"ks\":\"a\",\"name\":\"x\"},{\"ks\":\"a\",\"name\":\"y\"},{\"ks\":\"b\",\"name\":\"x\"}]"), "two keys")
+    t3l = rec(OUT, "application/json", "[{\"ks\":\"b\",\"name\":\"x\"},{\"ks\":\"a\"}]", "", "")
+    need(t3l, pj("[{\"ks\":\"b\",\"name\":\"x\"},{\"ks\":\"a\"}]"), "an element without the second key leaves its array as sent")
     if vcr.sort_json_array("", "a,") == "" { fail("an empty key in 'by' accepted") }
+    if vcr.sort_json_array("", ",a") == "" { fail("an empty first key in 'by' accepted") }
+    if vcr.sort_json_array("", "a,x/y") == "" { fail("a relative second key with '/' accepted") }
     // Scoped to request paths: only the interaction whose path matches.
-    reset_all()
+    reset_pretty()
     e = vcr.sort_json_array_at("^/y", "", "id")
     if e != "" { fail(e) }
     t3i = rec(OUT, "application/json", "[{\"id\":2},{\"id\":1}]", "", "")
-    need(t3i, "[{\"id\":2},{\"id\":1}]", "a rule for another request path leaves the array as sent")
+    need(t3i, pj("[{\"id\":2},{\"id\":1}]"), "a rule for another request path leaves the array as sent")
     e = vcr.sort_json_array_at("^/x$", "", "id")
     if e != "" { fail(e) }
     t3j = rec(OUT, "application/json", "[{\"id\":2},{\"id\":1}]", "", "")
-    need(t3j, "[{\"id\":1},{\"id\":2}]", "a rule for this request path sorts")
+    need(t3j, pj("[{\"id\":1},{\"id\":2}]"), "a rule for this request path sorts")
     if vcr.sort_json_array_at("(", "", "id") == "" { fail("a bad request-path regex accepted") }
     // Sort keys too: the canonical-form sort sees sorted keys.
-    reset_all()
+    reset_pretty()
     vcr.sort_json_keys(1)
     e = vcr.sort_json_array("", "")
     if e != "" { fail(e) }
     t3h = rec(OUT, "application/json", "[ {\"b\": 2, \"a\": 2}, {\"a\": 1} ]", "", "")
-    need(t3h, "[ {\"a\": 1}, {\"a\": 2, \"b\": 2} ]", "keys and array together, gaps by position")
+    need(t3h, pj("[{\"a\":1},{\"a\":2,\"b\":2}]"), "keys and array together")
     println("  PASS")
 
-    println("Test 4: sort_response_headers (stable for a repeated header) and sort_header_value")
+    println("Test 4: sort_response_headers (stable for a repeated header) and sort_header_value, no pretty_json needed")
     reset_all()
     vcr.sort_response_headers(1)
     e = vcr.sort_header_value("Allow")
     if e != "" { fail(e) }
-    t4 = rec(OUT, "application/json", "{}", RESP_H, "")
+    t4 = rec(OUT, "application/json", "{\"b\":1,\"a\":2}", RESP_H, "")
     need(t4, "```\nallow: DELETE, GET, PUT\nContent-Type: application/json\nSet-Cookie: s=2\nSet-Cookie: s=1\nX-Alpha: 2\nX-Zeta: 1\n```", "lines by name, repeated header in order, Allow's items sorted (name matched case-insensitively)")
+    need(t4, "```\n{\"b\":1,\"a\":2}\n```", "the body as sent: header rules are not JSON rules")
     reset_all()
     e = vcr.sort_header_value("Allow")
     t4b = rec(OUT, "application/json", "{}", RESP_H, "")
@@ -260,37 +294,102 @@ main() {
     UUID_RE = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
     A = "{\"id\":\"7d444840-9dc0-11d1-b245-5ffdce74fad2\",\"at\":3}"
     B = "{\"id\":\"0e4b3a1c-1111-4222-8333-944455556666\",\"at\":1}"
-    reset_all()
+    reset_pretty()
     e = vcr.normalize_whole_tape(UUID_RE, "uuid")
     if e == "" { e = vcr.sort_json_array("", "at") }
     if e != "" { fail(e) }
     t5a = rec(OUT, "application/json", "[${A},${B}]", "", "")
     t5b = rec(OUT, "application/json", "[${B},${A}]", "", "")
     if string.equals(t5a, t5b) != 1 { fail("two orders, two tapes:\n${t5a}\n---\n${t5b}") }
-    need(t5a, "[{\"id\":\"{{uuid-1}}\",\"at\":1},{\"id\":\"{{uuid-2}}\",\"at\":3}]", "token 1 is the first in sorted order")
+    need(t5a, pj("[{\"id\":\"{{uuid-1}}\",\"at\":1},{\"id\":\"{{uuid-2}}\",\"at\":3}]"), "token 1 is the first in sorted order")
     println("  PASS")
 
-    println("Test 6: pretty_json lays out the sorted body")
+    println("Test 6: sorted JSON is only written pretty-printed")
+    // A JSON sort rule with pretty_json off: nothing is written, and the
+    // error says why (flush, check and fail-if-changed alike).
     reset_all()
     vcr.sort_json_keys(1)
+    vcr.clear_recording()
+    re1 = vcr.record_full_response("POST", "/x", 200, "application/json", "{\"b\":1,\"a\":2}", REQ_HDRS, "", "")
+    if re1 != "" { fail("record_full_response: ${re1}") }
+    fs.delete(OUT)
+    f6 = vcr.flush(OUT)
+    need(f6, "sort_json_keys needs pretty_json: sorted JSON is only written pretty-printed", "flush refused")
+    _, rd6 = fs.read(OUT)
+    if rd6 == "" { fail("a refused flush wrote a tape") }
+    f6b = vcr.flush_and_fail_if_changed(OUT)
+    need(f6b, "sort_json_keys needs pretty_json", "fail-if-changed refused")
+    _, rd6b = fs.read(OUT)
+    if rd6b == "" { fail("a refused fail-if-changed wrote a tape") }
+    fs.write(OUT, "x")
+    f6c = vcr.flush_or_check(OUT)
+    need(f6c, "sort_json_keys needs pretty_json", "check refused")
+    reset_all()
+    e = vcr.sort_json_array_at("^/x$", "", "id")
+    if e != "" { fail(e) }
+    vcr.clear_recording()
+    re2 = vcr.record_full_response("POST", "/x", 200, "application/json", "[{\"id\":2},{\"id\":1}]", REQ_HDRS, "", "")
+    if re2 != "" { fail("record_full_response: ${re2}") }
+    f6d = vcr.flush(OUT)
+    need(f6d, "sort_json_array needs pretty_json: sorted JSON is only written pretty-printed", "an array rule refused too")
+    // Even when no body in the tape is JSON: the rule is checked, not its hits.
+    vcr.clear_recording()
+    re3 = vcr.record_full_response("POST", "/x", 200, "text/plain", "hello", REQ_HDRS, "", "")
+    if re3 != "" { fail("record_full_response: ${re3}") }
+    f6e = vcr.flush(OUT)
+    need(f6e, "sort_json_array needs pretty_json", "refused whatever the bodies")
+    // Rule, then pretty_json, or the other way round: both emit (checked when
+    // the tape is written, not when a rule is set).
+    reset_all()
+    e = vcr.sort_json_array("", "id")
+    if e != "" { fail(e) }
     vcr.vcr_set_pretty_json(2)
+    t6a = rec(OUT, "application/json", "[{\"id\":2},{\"id\":1}]", "", "")
+    need(t6a, fenced(pj("[{\"id\":1},{\"id\":2}]")), "rule first, then pretty_json")
+    reset_all()
+    vcr.vcr_set_pretty_json(2)
+    vcr.sort_json_keys(1)
     t6 = rec(OUT, "application/json", "{\"b\":[2,1],\"a\":1.0}", "", "")
-    need(t6, "{\n  \"a\": 1.0,\n  \"b\": [\n    2,\n    1\n  ]\n}", "sorted, then indented")
+    need(t6, "```\n{\n  \"a\": 1.0,\n  \"b\": [\n    2,\n    1\n  ]\n}\n```", "pretty_json first, then the rule: sorted, then indented")
+    // Turning pretty_json off again refuses again.
+    vcr.vcr_set_pretty_json(0)
+    vcr.clear_recording()
+    vcr.record_full_response("POST", "/x", 200, "application/json", "{}", REQ_HDRS, "", "")
+    need(vcr.flush(OUT), "sort_json_keys needs pretty_json", "pretty_json turned off again")
+    // pretty_json alone keeps the service's key order.
+    reset_all()
+    vcr.vcr_set_pretty_json(2)
+    t6p = rec(OUT, "application/json", "{\"b\":[2,1],\"a\":1}", "", "")
+    need(t6p, "```\n{\n  \"b\": [\n    2,\n    1\n  ],\n  \"a\": 1\n}\n```", "pretty_json alone: key order as sent")
     println("  PASS")
 
-    println("Test 7: bad rules refused; non-JSON and malformed bodies byte-exact")
-    reset_all()
+    println("Test 7: bad rules refused; non-JSON and malformed bodies byte-exact; text/plain JSON only where a rule names it")
+    reset_pretty()
     if vcr.sort_json_array("a/b", "") == "" { fail("a relative path with '/' accepted") }
     if vcr.sort_json_array("/a", "x/y") == "" { fail("a relative 'by' with '/' accepted") }
     if vcr.sort_header_value("") == "" { fail("an empty header name accepted") }
     if vcr.sort_header_value("A: b") == "" { fail("a header line accepted as a name") }
     vcr.sort_json_keys(1)
     t7 = rec(OUT, "text/plain", "{\"b\":1,\"a\":2}", "", "")
-    need(t7, "{\"b\":1,\"a\":2}", "text/plain untouched")
+    need(t7, "```\n{\"b\":1,\"a\":2}\n```", "text/plain untouched: no rule names its path")
     t7b = rec(OUT, "application/json", "{\"b\":1,\"a\":}", "", "")
-    need(t7b, "{\"b\":1,\"a\":}", "malformed JSON untouched")
+    need(t7b, "```\n{\"b\":1,\"a\":}\n```", "malformed JSON untouched")
     t7c = rec(OUT, "application/vnd.api+json; charset=utf-8", "{\"b\":1,\"a\":2}", "", "")
-    need(t7c, "{\"a\":2,\"b\":1}", "+json sorted")
+    need(t7c, pj("{\"a\":2,\"b\":1}"), "+json sorted")
+    // A service serving JSON as text/plain (YugabyteDB): JSON on the request
+    // paths a sort_json_array_at rule names, and only there.
+    e = vcr.sort_json_array_at("^/y$", "/l", "")
+    if e != "" { fail(e) }
+    t7e = rec(OUT, "text/plain", "{\"l\":[2,1],\"b\":1}", "", "")
+    need(t7e, "```\n{\"l\":[2,1],\"b\":1}\n```", "text/plain on a path no rule names: untouched")
+    e = vcr.sort_json_array_at("^/x$", "/l", "")
+    if e != "" { fail(e) }
+    t7f = rec(OUT, "text/plain", "{\"l\":[2,1],\"b\":1}", "", "")
+    need(t7f, fenced(pj("{\"b\":1,\"l\":[1,2]}")), "text/plain JSON on a named path: sorted and pretty-printed")
+    t7g = rec(OUT, "text/plain", "{not json", "", "")
+    need(t7g, "```\n{not json\n```", "text/plain that does not parse on a named path: untouched")
+    t7h = rec(OUT, "text/html", "<p>{\"b\":1,\"a\":2}</p>", "", "")
+    need(t7h, "<p>{\"b\":1,\"a\":2}</p>", "HTML on a named path: untouched")
     println("  PASS")
     reset_all()
 
@@ -308,7 +407,8 @@ main() {
     r1 = record_once(P1, RECORD_PORT)
     r2 = record_once(P2, RECORD_PORT)
     if string.equals(r1, r2) != 1 { fail("two recordings differ:\n${r1}\n---\n${r2}") }
-    need(r1, "{\"count\":2,\"value\":[{\"id\":\"{{uuid-1}}\",\"name\":\"a\"},{\"id\":\"{{uuid-2}}\",\"name\":\"b\"}]}", "sorted body, tokens in sorted order")
+    SORTED = pj("{\"count\":2,\"value\":[{\"id\":\"{{uuid-1}}\",\"name\":\"a\"},{\"id\":\"{{uuid-2}}\",\"name\":\"b\"}]}")
+    need(r1, "```\n${SORTED}\n```", "sorted and pretty-printed body, tokens in sorted order")
     need(r1, "Allow: DELETE, GET, PUT\n", "Allow's items sorted")
     need(r1, "| collapsed | whole recording | `\"count\":2,\"value\"` | `\"count\":2,\"value\"` | 0 |", "footer: a collapse sees the sorted body")
     need(r1, "| ordered | response headers | every header | sorted by name; a repeated header's lines keep their order | 0 |", "footer: header order")
@@ -330,7 +430,7 @@ main() {
     sleep(250)
     st, b, cl = get_list(PLAYBACK_PORT)
     if st != 200 { fail("playback: ${st} ${vcr.last_error_h(playback)}") }
-    need(b, "\"value\":[{\"id\":\"{{uuid-1}}\",\"name\":\"a\"}", "playback serves the sorted order")
+    if string.equals(b, SORTED) != 1 { fail("playback serves the sorted order, pretty-printed; got:\n${b}") }
     if string.length(cl) > 0 && string.equals(cl, "${string.length(b)}") != 1 { fail("Content-Length ${cl} != ${string.length(b)} bytes served") }
     vcr.eject(playback)
     http_server_stop(upstream)

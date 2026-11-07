@@ -42,7 +42,9 @@ round varying order use it. The bindings do not wrap its ABI calls yet:
 by)` (error string, caller frees),
 `_set_sort_response_headers` / `_get_sort_response_headers`,
 `_sort_header_value(h, name)` (error string, caller frees),
-`_clear_stable_order`.
+`_clear_stable_order`. A binding's tests should cover the refusal: a JSON
+sort rule without `_set_pretty_json` makes the flush return
+`sort_json_keys needs pretty_json: …` (or `sort_json_array …`).
 
 ## Additional language bindings
 
