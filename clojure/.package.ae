@@ -14,7 +14,7 @@ aeb(cap) {
         // module_dir (clojure/) — no ${root}/clojure hardcode.
         maven.install()
 
-        publish_artifact("maven_gav", "dev.servirtium:vcr-clojure:2.0.0-alpha.12")
+        publish_artifact("maven_gav", "dev.servirtium:vcr-clojure:2.0.0-alpha.13")
         println("clojure package: installed vcr-clojure jar to ~/.m2")
         return 0
     }

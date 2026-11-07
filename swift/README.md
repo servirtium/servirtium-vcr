@@ -94,7 +94,7 @@ Fetch the native library and build:
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.12                      # a release tag from the releases page; nothing else to edit
+TAG=v2.0.0-alpha.13                      # a release tag from the releases page; nothing else to edit
 case "$(uname -s)" in
   Linux)  OS=linux;  EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
   Darwin) OS=macos;  EXT=dylib; LIBC= ;;
@@ -156,9 +156,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.13/libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.13/libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so.sha256   # -> OK
 ```
 
 **Build the package locally**
@@ -168,9 +168,9 @@ drop the downloaded library at the package-relative path below, then consume it
 from source (a local/path Swift Package Manager dependency).
 
 ```sh
-# from the swift binding directory, with libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so downloaded:
+# from the swift binding directory, with libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so downloaded:
 mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so native/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so native/libservirtium_vcr.so
 # the package now carries the native library; consume it from source (see this README's usage/examples).
 ```
 

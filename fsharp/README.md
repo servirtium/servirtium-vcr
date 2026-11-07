@@ -70,7 +70,7 @@ to use yours):
 
 ```sh
 set -eu
-VER=2.0.0-alpha.12                       # a release version of servirtium-vcr; nothing else to edit
+VER=2.0.0-alpha.13                       # a release version of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/v$VER
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/v$VER
 
@@ -106,7 +106,7 @@ dotnet run
 curl -fsSL -o Servirtium.fs $RAW/fsharp/Servirtium.Vcr.FSharp/Servirtium.fs   # add <Compile Include="Servirtium.fs" /> above Program.fs
 ```
 
-The dependency in an `.fsproj` is `<PackageReference Include="Servirtium.Vcr" Version="2.0.0-alpha.12" />`.
+The dependency in an `.fsproj` is `<PackageReference Include="Servirtium.Vcr" Version="2.0.0-alpha.13" />`.
 There is no `Servirtium.Vcr.FSharp` package on any feed or release page; do not add that
 `PackageReference` (the repo's own example uses it from a feed that `aeb fsharp/.package.ae`
 builds locally).
@@ -129,9 +129,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.13/libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.13/libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so.sha256   # -> OK
 ```
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows

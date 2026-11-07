@@ -60,10 +60,10 @@ needs `SERVIRTIUM_VCR_LIB`.
 | JavaScript | `javascript/pkgout/*.tgz` | `npm install <file>` |
 | .NET (C#) | `dotnet/pkg/` (a local NuGet feed) | `dotnet nuget add source <dir>` |
 | F# | `fsharp/pkg/` (**both** nupkgs) | `dotnet nuget add source <dir>` |
-| C | `c/servirtium-c-2.0.0-alpha.12.tar.gz` | `tar xzf` + `pkg-config servirtium` |
-| C++ | `cpp/servirtium-cpp-2.0.0-alpha.12.tar.gz` | `tar xzf` + `pkg-config servirtium-cpp` |
+| C | `c/servirtium-c-2.0.0-alpha.13.tar.gz` | `tar xzf` + `pkg-config servirtium` |
+| C++ | `cpp/servirtium-cpp-2.0.0-alpha.13.tar.gz` | `tar xzf` + `pkg-config servirtium-cpp` |
 | Lua | `lua/dist/` | put on `package.cpath` |
-| Java + Kotlin/Scala/Clojure/Groovy | jar in `~/.m2` | `dev.servirtium:vcr[-<lang>]:2.0.0-alpha.12` |
+| Java + Kotlin/Scala/Clojure/Groovy | jar in `~/.m2` | `dev.servirtium:vcr[-<lang>]:2.0.0-alpha.13` |
 
 F# ships **managed-only** and takes `Servirtium.Vcr` as a NuGet *dependency* —
 the CLR family rides one native assembly, so a second copy of the `.so` would
@@ -85,7 +85,7 @@ links or loads it from there.
 | Crystal | `servirtium: {path: "…/crystal"}` in `shard.yml`; from git: `github: servirtium/servirtium-vcr` (root `shard.yml` + `servirtium.cr`, see below) |
 | Julia | `Pkg.develop(path="…/julia")` |
 | Swift | `.package(path: "…/swift")`; from git: `.package(url: "https://github.com/servirtium/servirtium-vcr", branch: "main")` (root `Package.swift`, see below) |
-| D | `dub add-local …/d 2.0.0`; from a clone or the registry: `dub add-local <clone-root> 2.0.0-alpha.12` / `dub add servirtium` (root `dub.sdl`, see below) |
+| D | `dub add-local …/d 2.0.0`; from a clone or the registry: `dub add-local <clone-root> 2.0.0-alpha.13` / `dub add servirtium` (root `dub.sdl`, see below) |
 | PHP | `composer.json` is in `php/` (not the repo root), so no `vcs`/Packagist route yet: `composer config repositories.servirtium path …/php && composer require servirtium/vcr:@dev` |
 | Dart | `dependency_overrides: servirtium: {path: …/dart}` |
 | Pharo | `ServirtiumLibrary libPath:` the staged `.so` |
@@ -176,15 +176,15 @@ matches the release just published; see the [release instructions](../release/RE
 
 ## Version strings differ per ecosystem — and one of them can't comply
 
-The release tag is `v2.0.0-alpha.12`, but almost every packaging system spells a
+The release tag is `v2.0.0-alpha.13`, but almost every packaging system spells a
 prerelease its own way, and a consumer copying the tag string gets an
 unresolvable coordinate. Audited 2026-09-20:
 
 | binding | declared | note |
 |---|---|---|
-| python | `2.0.0a12` | PEP 440 (`alpha.N` -> `aN`) |
-| ruby | `2.0.0.alpha.12` | RubyGems |
-| javascript, rust, crystal, zig, d, gleam, elixir, erlang, lfe, dotnet, fsharp, dart, julia, java (+ the 4 JVM wrappers) | `2.0.0-alpha.12` | SemVer; Maven takes the dotted form too |
+| python | `2.0.0a13` | PEP 440 (`alpha.N` -> `aN`) |
+| ruby | `2.0.0.alpha.13` | RubyGems |
+| javascript, rust, crystal, zig, d, gleam, elixir, erlang, lfe, dotnet, fsharp, dart, julia, java (+ the 4 JVM wrappers) | `2.0.0-alpha.13` | SemVer; Maven takes the dotted form too |
 | **haskell** | **`2.0.0`** | **cannot express a prerelease — see below** |
 | nim, php, lua, pharo, swift, go | unversioned | consumed from source / VCS tag |
 
@@ -194,7 +194,7 @@ unresolvable coordinate. Audited 2026-09-20:
 One trap follows from this.
 
 **Haskell's `2.0.0` will collide with the real 2.0.0.** Cabal versions are PVP —
-digits and dots only — so `2.0.0-alpha.12` is not a legal version there and the
+digits and dots only — so `2.0.0-alpha.13` is not a legal version there and the
 package has to call itself something numeric. It currently calls itself exactly
 what the GA release will call itself. A consumer who pins
 `servirtium == 2.0.0` today gets the alpha; after GA the same constraint
