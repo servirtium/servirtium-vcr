@@ -52,6 +52,21 @@ public class RecordTests : IDisposable
         Assert.Equal(VcrOutcome.Ok, play.LastKind);
     }
 
+    [Fact]
+    public async Task AddLicenseNotice_writes_notice_at_top_of_tape()
+    {
+        using (var rec = Vcr.Record(_tapePath, _upstreamBase).Port(0)
+                   .AddLicenseNotice("Recorded under the MIT licence").Start())
+        using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
+        {
+            await client.GetStringAsync("/greeting");
+        }
+
+        string tape = File.ReadAllText(_tapePath);
+        Assert.Contains("## LICENSE NOTICE", tape);
+        Assert.Contains("Recorded under the MIT licence", tape);
+    }
+
     private void ServeUpstream()
     {
         try

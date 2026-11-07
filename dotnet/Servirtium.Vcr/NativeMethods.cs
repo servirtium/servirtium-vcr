@@ -192,6 +192,24 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_ignore_volatile_headers", CharSet = CharSet.Ansi)]
     internal static extern IntPtr IgnoreVolatileHeaders(IntPtr server);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_remove_transport_headers", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr RemoveTransportHeaders(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_remove_cloud_headers", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr RemoveCloudHeaders(IntPtr server, string vendor);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_redact_credentials", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr RedactCredentials(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_redact_credential_header", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr RedactCredentialHeader(IntPtr server, string name);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_add_license_notice", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr AddLicenseNotice(IntPtr server, string text);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_upstream_cafile", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr SetUpstreamCafile(IntPtr server, string path);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_note", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Note(IntPtr server, string title, string body);
 
@@ -236,6 +254,9 @@ internal static class NativeMethods
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_pretty_xml")]
     internal static extern void SetPrettyXml(IntPtr server, int indent);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_pretty_json")]
+    internal static extern void SetPrettyJson(IntPtr server, int indent);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_redactions")]
     internal static extern void ClearRedactions(IntPtr server);

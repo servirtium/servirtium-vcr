@@ -46,6 +46,50 @@ module Servirtium =
     let redactJsonField (name: string) (builder: RecordBuilder) : RecordBuilder =
         builder.RedactJsonField(name)
 
+    /// Pretty-print recorded JSON response bodies (indent 1..16); request bodies are never changed.
+    let prettyJson (indent: int) (builder: RecordBuilder) : RecordBuilder =
+        builder.PrettyJson(indent)
+
+    /// Write `text` under "## LICENSE NOTICE" at the top of every recorded tape; playback ignores it.
+    let addLicenseNotice (text: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.AddLicenseNotice(text)
+
+    /// Record mode: verify an https upstream against this PEM CA file.
+    let upstreamCafile (path: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.UpstreamCafile(path)
+
+    /// Header presets (opt-in): drop Host, Connection, Content-Length, ... on the record builder.
+    let removeTransportHeaders (builder: RecordBuilder) : RecordBuilder =
+        builder.RemoveTransportHeaders()
+
+    /// Header presets (opt-in): drop a vendor's headers (aws, azure, cloudflare, fastly, gcp).
+    let removeCloudHeaders (vendor: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.RemoveCloudHeaders(vendor)
+
+    /// Redact Authorization, cookies, X-Api-Key and X-Auth-Token on the record builder.
+    let redactCredentials (builder: RecordBuilder) : RecordBuilder =
+        builder.RedactCredentials()
+
+    /// Redact one more credential header (its whole value becomes a token) on the record builder.
+    let redactCredentialHeader (name: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.RedactCredentialHeader(name)
+
+    /// The transport-header preset on the playback builder.
+    let removeTransportHeadersOnPlayback (builder: PlaybackBuilder) : PlaybackBuilder =
+        builder.RemoveTransportHeaders()
+
+    /// The cloud-header preset on the playback builder.
+    let removeCloudHeadersOnPlayback (vendor: string) (builder: PlaybackBuilder) : PlaybackBuilder =
+        builder.RemoveCloudHeaders(vendor)
+
+    /// The credential-redaction preset on the playback builder (matches on presence, not value).
+    let redactCredentialsOnPlayback (builder: PlaybackBuilder) : PlaybackBuilder =
+        builder.RedactCredentials()
+
+    /// One more credential header on the playback builder.
+    let redactCredentialHeaderOnPlayback (name: string) (builder: PlaybackBuilder) : PlaybackBuilder =
+        builder.RedactCredentialHeader(name)
+
     /// Return None to leave a field alone; Some token names the playback secret.
     let secretRedactor (callback: string -> SecretRequest -> string option) (builder: RecordBuilder) =
         builder.SecretRedactor(System.Func<string, SecretRequest, string>(fun key request ->

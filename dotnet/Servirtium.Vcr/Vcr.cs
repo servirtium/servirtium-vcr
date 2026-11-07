@@ -61,6 +61,10 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     private readonly List<(string mount, string dir)> _staticContent = new();
     private readonly List<string> _untaped = new();
     private bool _ignoreVolatileHeaders;
+    private bool _removeTransportHeaders;
+    private bool _redactCredentials;
+    private readonly List<string> _cloudVendors = new();
+    private readonly List<string> _credentialHeaders = new();
     private (string cert, string key)? _tls;
     private (string certPem, string keyPem)? _tlsPem;
 
@@ -99,6 +103,56 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     public TSelf IgnoreVolatileHeaders(bool on = true)
     {
         _ignoreVolatileHeaders = on;
+        return Self;
+    }
+
+    /// <summary>
+    /// Drop the transport headers: <c>Host</c>, <c>Connection</c>,
+    /// <c>Content-Length</c>, the other hop-by-hop headers and the request's
+    /// <c>Accept-Encoding</c> (Servirtium 1's behaviour), from both the
+    /// recorded tape and the live request. Opt-in; listed in the
+    /// recording-rules footer under the preset's name.
+    /// </summary>
+    public TSelf RemoveTransportHeaders(bool on = true)
+    {
+        _removeTransportHeaders = on;
+        return Self;
+    }
+
+    /// <summary>
+    /// Drop a cloud vendor's CDN / load-balancer tracing and cache-status
+    /// headers. <paramref name="vendor"/> is one of <c>"aws"</c>,
+    /// <c>"azure"</c>, <c>"cloudflare"</c>, <c>"fastly"</c>, <c>"gcp"</c>; an
+    /// unknown name fails at <c>Start()</c>. May be called once per vendor.
+    /// </summary>
+    public TSelf RemoveCloudHeaders(string vendor)
+    {
+        _cloudVendors.Add(vendor);
+        return Self;
+    }
+
+    /// <summary>
+    /// Redact credentials: <c>Authorization</c> / <c>Proxy-Authorization</c>
+    /// keep their scheme (<c>Bearer AUTHORIZATION_1</c>), each cookie value in
+    /// <c>Cookie</c> / <c>Set-Cookie</c> becomes <c>COOKIE_N</c>,
+    /// <c>X-Api-Key</c> and <c>X-Auth-Token</c> become tokens. Playback
+    /// matches these headers on presence, not value, so register this on the
+    /// playback builder too.
+    /// </summary>
+    public TSelf RedactCredentials(bool on = true)
+    {
+        _redactCredentials = on;
+        return Self;
+    }
+
+    /// <summary>
+    /// Redact one more credential header the same way as
+    /// <see cref="RedactCredentials"/>: its whole value becomes a token named
+    /// after the header (<c>X-Vault-Token: X_VAULT_TOKEN_1</c>).
+    /// </summary>
+    public TSelf RedactCredentialHeader(string name)
+    {
+        _credentialHeaders.Add(name);
         return Self;
     }
 
@@ -178,6 +232,22 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
         if (_ignoreVolatileHeaders)
         {
             Check(NativeMethods.IgnoreVolatileHeaders(handle), nameof(IgnoreVolatileHeaders));
+        }
+        if (_removeTransportHeaders)
+        {
+            Check(NativeMethods.RemoveTransportHeaders(handle), nameof(RemoveTransportHeaders));
+        }
+        foreach (string vendor in _cloudVendors)
+        {
+            Check(NativeMethods.RemoveCloudHeaders(handle, vendor), nameof(RemoveCloudHeaders));
+        }
+        if (_redactCredentials)
+        {
+            Check(NativeMethods.RedactCredentials(handle), nameof(RedactCredentials));
+        }
+        foreach (string name in _credentialHeaders)
+        {
+            Check(NativeMethods.RedactCredentialHeader(handle, name), nameof(RedactCredentialHeader));
         }
         if (_tlsPem is (string certPem, string keyPem))
         {
@@ -418,6 +488,9 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     private bool _indentCodeBlocks;
     private bool _emphasizeHttpVerbs;
     private int _prettyXml;
+    private int _prettyJson;
+    private string? _licenseNotice;
+    private string? _upstreamCafile;
     private bool _failIfChanged;
     private bool _requireLoopbackUpstream;
 
@@ -511,6 +584,33 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         return this;
     }
 
+    /// <summary>Pretty-print recorded JSON response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't valid JSON.</summary>
+    public RecordBuilder PrettyJson(int indent = 2)
+    {
+        _prettyJson = indent;
+        return this;
+    }
+
+    /// <summary>
+    /// Write <paramref name="text"/> under a <c>## LICENSE NOTICE</c> heading
+    /// at the top of every tape this recording produces. Playback ignores it.
+    /// </summary>
+    public RecordBuilder AddLicenseNotice(string text)
+    {
+        _licenseNotice = text;
+        return this;
+    }
+
+    /// <summary>
+    /// Verify an https upstream against this PEM CA file instead of the system
+    /// trust store. Record mode only.
+    /// </summary>
+    public RecordBuilder UpstreamCafile(string path)
+    {
+        _upstreamCafile = path;
+        return this;
+    }
+
     /// <summary>
     /// On dispose, still write the freshly recorded tape but throw if it
     /// differs from the on-disk one — the Servirtium step-4 drift contract,
@@ -568,6 +668,15 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         if (_indentCodeBlocks) NativeMethods.IndentCodeBlocks(handle);
         if (_emphasizeHttpVerbs) NativeMethods.EmphasizeHttpVerbs(handle);
         if (_prettyXml > 0) NativeMethods.SetPrettyXml(handle, _prettyXml);
+        if (_prettyJson > 0) NativeMethods.SetPrettyJson(handle, _prettyJson);
+        if (_licenseNotice is not null)
+        {
+            Check(NativeMethods.AddLicenseNotice(handle, _licenseNotice), nameof(AddLicenseNotice));
+        }
+        if (_upstreamCafile is not null)
+        {
+            Check(NativeMethods.SetUpstreamCafile(handle, _upstreamCafile), nameof(UpstreamCafile));
+        }
         foreach (var (operation, field, pattern, replacement) in _redactions)
         {
             Check(operation(handle, (int)field, pattern, replacement), nameof(Redact));
