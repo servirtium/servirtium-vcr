@@ -82,6 +82,7 @@ with restrictive terms start with a `## LICENSE NOTICE`
 | `dind` | 7 (comprehensive: Engine API on 2375, version/info, images, containers, networks, volumes, errors; no login) | `docker:28.0.1-dind` (runs `busybox:1.36.1` inside) |
 | `lowkeyvault` | 8 tapes, 7 cases (comprehensive: Azure Key Vault REST API over HTTPS, secrets, keys, certificates, errors; login on its own two tapes) | `nagyesta/lowkey-vault:7.3.48-ubi10-minimal` |
 | `scylladb` | 16 (comprehensive: REST management API on 10000, identity and ring, keyspaces, table metrics, flush/compact, snapshots, schema version, log levels, tracing, gossip, errors; no login) | `scylladb/scylla:6.2` |
+| `yugabytedb` | 11 tapes, 9 cases (comprehensive: master 7000 and tserver 9000 JSON endpoints, version, masters, tablet servers, health, cluster config, tables, varz, filtered metrics, errors; no login; recorded on x86_64 Linux) | `yugabytedb/yugabyte:2024.1.3.0-b105` |
 | `trino` | 1 | `trinodb/trino:435` |
 | `presto` | 1 | `prestodb/presto:0.286` |
 | `timeplus` | test + recorder only, tapes not shipped ([why](timeplus/LICENCE-NOTE.md)) | `timeplus/timeplusd:2.3.37` |
@@ -224,6 +225,7 @@ Per suite (registered at the top of its `main`):
 | pulsar | | | | |
 | redpanda | | | | |
 | scylladb | the node's UUIDs (host id, schema version, `{{uuid-N}}`) and IPv4 address (`{{ip-N}}`) | the 256 random tokens (whole array), the generation number, `load_map` bytes, ownership shares, snapshot sizes, `uptime_ms` | | |
+| yugabytedb | random v4 UUIDs, hyphenated or bare (`{{uuid-N}}`), IPv4 addresses (`{{ip-N}}`) | `instance_seqno`, `start_time_us`, uptimes, heartbeat ages, RAM and disk figures, rates and tablet counts, a table's `on_disk_size`, the `system` list of `/api/v1/tables`, three machine-sized varz flags, the node's metric name, the heap profile path, a Prometheus sample's `exported_instance` and timestamp | | |
 
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
@@ -337,6 +339,14 @@ it is on the tape, and playback is plain HTTP.
   (`create_role`: only the fixtures make those), so the other cases'
   schema changes never show on it; a node's `metrics` (80 KB of counters) is
   collapsed to one entry. The licence (BOUND) is on every tape.
+- **YugabyteDB:** the master (7000) and tserver (9000) web servers, which
+  the module now publishes. yb-master dies at start on an arm64 Mac's Podman
+  machine (an Abseil `ElfMemImage` assertion, with the arm64 or the emulated
+  amd64 image), so these tapes were recorded on a native x86_64 Linux host;
+  playback runs anywhere. A case touching both servers records two tapes
+  (`<case>`, `<case>_tserver`). The tables are made with `ycqlsh` and
+  `ysqlsh` in the container, outside the tapes; `/api/v1/tables`'s `system`
+  list (order changes between runs) is collapsed.
 - **Solace is not here:** its image needs `ulimit nofile=1048576`, which a
   rootless Podman machine refuses; it can be recorded on Docker or a
   rootful Podman machine.

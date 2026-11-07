@@ -27,7 +27,7 @@ Classes:
   **tapes are not**: record your own locally (the suite's `LICENCE-NOTE.md`
   says how), and in playback with no tape the suite skips with a notice.
 
-Counts: 48 CLEAR, 12 BOUND, 3 DECISION (63 suites).
+Counts: 49 CLEAR, 12 BOUND, 3 DECISION (64 suites).
 
 Product names are their owners' trademarks, used here only to say which
 software a tape was recorded against.
@@ -103,6 +103,7 @@ licence file at the tag the image was built from.
 | vault | `hashicorp/vault:1.13.0` | MPL-2.0 (before HashiCorp's BSL change) | hashicorp/vault `v1.13.0/LICENSE`; the tapes report 1.13.0 | none | CLEAR |
 | vearch | `vearch/vearch:3.5.1` | Apache-2.0 | vearch/vearch `LICENSE` | none | CLEAR |
 | weaviate | `semitechnologies/weaviate:1.29.0` | BSD-3-Clause | weaviate/weaviate `LICENSE` | none | CLEAR |
+| yugabytedb | `yugabytedb/yugabyte:2024.1.3.0-b105` | Apache-2.0 (the standard binaries); the Polyform Free Trial License 1.0.0 covers only the separate `-managed` binaries (YugabyteDB Anywhere), which this image is not | yugabyte/yugabyte-db `v2024.1.3.0/LICENSE.md`: "The build produces two sets of binaries ... The binaries that contain `-managed` in the artifact name are licensed under the Polyform Free Trial License 1.0.0. By default, only the Apache License 2.0 binaries are generated." The image ships no licence file (checked: `/home/yugabyte` has none) and its `version_metadata.json` names no `-managed` build | none | CLEAR |
 
 For the CLEAR rows the licence was taken from the project's repository at or
 near the pinned version, not from inside each image: only some images were

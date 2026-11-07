@@ -1,0 +1,648 @@
+// YugabyteDB's master and tserver JSON HTTP endpoints, recorded
+// comprehensively: one of the "comprehensive" suites of servirtium-vcr's
+// pre-recorded/from-testcontainers (the README's "Pattern for comprehensive
+// suites" says what they share; couchdb/test_couchdb.ae is the reference
+// implementation).
+//
+// What is recorded: the web servers every YugabyteDB process runs, yb-master
+// on port 7000 and yb-tserver on port 9000, and the JSON under /api/v1/ that
+// monitoring tools, operators and YugabyteDB Anywhere read: version,
+// masters, tablet servers, health check, cluster config, tables, one table
+// in detail, the process flags (varz), a filtered slice of the metrics, and
+// the representative errors. From `yugabytedb/yugabyte:2024.1.3.0-b105`
+// (yugabyted, one node). Not the SQL (5433) or CQL (9042) ports: those are
+// PostgreSQL's and Cassandra's wire protocols, not HTTP; the test uses them
+// only to create the tables the listing case shows.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes
+// are the re-usable part. A port is a test in your language and test
+// framework that makes the same requests, in the same order, against a
+// Servirtium replay server loaded with the tape, and checks the same things.
+// Any Servirtium implementation replays them. Every request is plain
+// HTTP/1.1 GET with one header and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+// Playback is strict about method, path (query string included, exactly as
+// written in this file) and the recorded request headers, and fails a case
+// whose recorded requests are not all made. Host, Connection and
+// Content-Length are on the tapes but are transport headers, not compared.
+// yb-master and yb-tserver are two servers, so a case that touches both
+// records two tapes: <case> for the master and <case>_tserver for the
+// tserver (the master's is the one the case is named for). Each replays on
+// its own server.
+//
+// PORTING, the tape for each case: <case>.md beside this file, where <case>
+// is the second argument of servirtium.recording(...) in that case. The cases
+// are independent. The one that needs tables (lists_user_tables_and_describes_
+// them) creates them BEFORE its recording starts, a YCQL keyspace tcae_ks
+// with a table `items` through ycqlsh, a YSQL table tcae_sql through ysqlsh
+// (both inside the container), and drops them after; neither is on a tape, so
+// on replay just skip that step: the tape starts from "the tables exist".
+//
+// Authentication: none. Both web servers are unauthenticated, so there is no
+// login tape and no credential on any tape.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below, with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them and the
+// interactions each touched ("none" where it did not). In short:
+//   - normalized (each distinct value a stable {{name-N}} token, the same
+//     token wherever it recurs, because a client sends it back): random v4
+//     UUIDs, with or without hyphens ({{uuid-N}}: a master's or tserver's
+//     permanent uuid, the cluster, universe and placement uuids, a table's
+//     id, a tablet id, the replica ids in a table's locations; the table id
+//     comes back in the request path of /api/v1/table?id=...), and IPv4
+//     addresses ({{ip-N}}: the address the node advertises, different on
+//     every machine and run).
+//   - collapsed (one constant; nobody sends them back): start times and
+//     sequence numbers (instance_seqno, start_time_us), uptimes, heartbeat
+//     ages, RAM and disk figures, operation rates and tablet counts in
+//     /api/v1/tablet-servers (they move with every table made or dropped),
+//     a user table's on_disk_size, the container id in a metric's
+//     exported_instance label and a Prometheus sample's millisecond
+//     timestamp, in varz three machine-sized flags, the node's metric name
+//     and the tserver's heap profile path, and the whole `system` list of
+//     /api/v1/tables (its order changes between runs).
+//   - redacted: nothing; there are no credentials.
+//   - left out: nothing beyond the Date response header, as everywhere (the
+//     servers send none).
+// Left alone, because they are the same every run: build information
+// (version 2024.1.3.0, build 105, git hash), placement (cloud1 / datacenter1
+// / rack1), replication factor and the config's `version`, the system tables'
+// ids (they are not v4 UUIDs: 000000010000300080000000000000af and the like,
+// derived from the PostgreSQL OIDs of the initial catalog), YSQL's first
+// user table (OID 16384, uuid 000033c3000030008000000000004000).
+//
+// PORTING: in playback, a normalized value comes back as its token,
+// verbatim (the numbers N are arbitrary: the system tables in the collapsed
+// part of /api/v1/tables still take some numbers when the tape is written):
+// a permanent uuid is "{{uuid-1}}", the node's address "{{ip-1}}".
+// Treat every id and address as an opaque string (never assert its length or
+// shape) and send it back exactly as received; /api/v1/table?id={{uuid-3}}
+// goes out with the braces as they are (playback compares paths byte for
+// byte, so do not percent-encode them). Both servers answer JSON with
+// `Content-Type: text/plain`, so do not rely on the content type to parse
+// it; every body here is JSON except the 404 page ("Error 404: Not Found
+// File not found").
+//
+// What cannot be re-recorded exactly
+// -----------------------------------
+// Machine-dependent values the tapes keep as recorded: /api/v1/varz carries
+// a few defaults that follow the host (the three collapsed ones, and,
+// maybe, others on a machine with a different CPU count or RAM size; only
+// this machine's record runs were compared). Re-record on a differently
+// sized machine and look at `git diff`: a diff in the varz tapes is the
+// machine, not the service.
+//
+// In and out of scope
+// -------------------
+// In: master /api/v1/version, masters, is-leader, tablet-servers,
+// health-check, cluster-config, tables, table (by id and by keyspace and
+// table name), tablet-replication, xcluster, varz, /status, /metrics and
+// /prometheus-metrics filtered with ?metrics=; tserver /api/v1/version,
+// health-check, varz and /status; the representative errors (404, the table
+// endpoint's missing and unknown arguments, which answer 200 with an
+// {"error": ...} body).
+// Out: the system tables of /api/v1/tables (collapsed, see api_rules), /metrics and /prometheus-metrics unfiltered (hundreds of KB of
+// counters: one filtered case stands for them), /dump-entities (92 KB of
+// the catalog), /api/v1/tablets on a tserver (a map keyed by random tablet
+// ids, so its order changes run to run), /api/v1/mem-trackers (limits sized
+// from the host's RAM), the HTML pages (/, /tablet-servers, /tasks,
+// /varz, ...), the SQL and CQL ports, yugabyted's own UI (15433), and
+// anything that changes the cluster (adding a node, setting the config).
+//
+// Where it runs: the container needs an x86_64 Linux host. On an arm64
+// Mac's Podman machine (applehv) yb-master dies at start with an Abseil
+// assertion (ElfMemImage::Init), whether the image is arm64 or emulated
+// amd64, so these tapes were recorded on a native x86_64 Linux host.
+// Playback runs anywhere.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test yugabytedb/test_yugabytedb.ae                    container, no Servirtium
+//   TCAE_VCR=record   ae test yugabytedb/test_yugabytedb.ae  write the tapes
+//   TCAE_VCR=check    ae test yugabytedb/test_yugabytedb.ae  fail if a tape changed
+//   TCAE_VCR=playback ae test yugabytedb/test_yugabytedb.ae  no container: the tapes
+// The cases share one container (started on the first one, removed at the
+// end). YugabyteDB takes a minute or two to start: the module waits for the
+// ports, then the test polls until the master sees its tablet server ALIVE,
+// outside any recording.
+
+import std.spec
+import std.string
+import std.json
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.yugabytedb
+
+const IMAGE = "yugabytedb/yugabyte:2024.1.3.0-b105"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would; Aether's std.http.client adds none. Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
+
+var api: string = ""
+
+// One GET: (status, body, error).
+fn http_get(url: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+// A GET against the current recording's base URL: (status, body). A
+// transport error fails the case.
+fn get(path: string) -> (int, string) {
+    st, b, err = http_get("${api}${path}")
+    spec.assert_ok(err, "GET ${path}")
+    return st, b
+}
+
+// GET path, expect 200 and a body containing every one of the pieces
+// (separated by "|").
+fn expect_contains(path: string, pieces: string) -> string {
+    st, b = get(path)
+    spec.assert_eq(st, 200, "GET ${path}: ${b}")
+    rest = pieces
+    while string.length(rest) > 0 {
+        piece = rest
+        bar = string.index_of(rest, "|")
+        if bar >= 0 {
+            piece = string.substring(rest, 0, bar)
+            rest = string.substring(rest, bar + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        spec.assert_contains(b, piece, "GET ${path}: ${b}")
+    }
+    return b
+}
+
+// A string in a JSON body by a dotted path ("masters.0.role"); "" when absent
+// or not a string.
+fn jstr(body: string, path: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    let v: ptr = doc
+    rest = path
+    while string.length(rest) > 0 && v != null {
+        p = rest
+        dot = string.index_of(rest, ".")
+        if dot >= 0 {
+            p = string.substring(rest, 0, dot)
+            rest = string.substring(rest, dot + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        if json.json_type(v) == json.JSON_ARRAY {
+            idx, _ = string.to_int(p)
+            a, _ = json.array_get(v, idx)
+            v = a
+        } else {
+            o, _ = json.object_get(v, p)
+            v = o
+        }
+    }
+    out = ""
+    if v != null {
+        s, serr = json.get_string(v)
+        if serr == "" { out = string.copy(s) }
+    }
+    json.free(doc)
+    return out
+}
+
+// The "uuid" of the table named `name` in a /api/v1/tables listing ("" when
+// there is none).
+fn uuid_of(listing: string, name: string) -> string {
+    at = string.index_of(listing, "\"table_name\":\"${name}\"")
+    if at < 0 { return "" }
+    tail = string.substring(listing, at, string.length(listing))
+    u = string.index_of(tail, "\"uuid\":\"")
+    if u < 0 { return "" }
+    after = string.substring(tail, u + 8, string.length(tail))
+    q = string.index_of(after, "\"")
+    return string.substring(after, 0, q)
+}
+
+// ---------------------------------------------------------------------------
+// The live container the cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_master: string = ""
+var shared_tserver: string = ""
+var shared_container: ptr = null
+
+// Run a shell command inside the container (live only; never on a tape).
+fn inside(cmd: string) {
+    if servirtium.live() != 1 { return }
+    code, out, err = tc.exec(shared_container as *docker.Container, ["sh", "-c", cmd])
+    spec.assert_eq(code, 0, "${cmd}: ${out} ${err}")
+}
+
+// The same, ignoring failure (clearing leftovers that may not exist).
+fn try_inside(cmd: string) {
+    if servirtium.live() != 1 { return }
+    tc.exec(shared_container as *docker.Container, ["sh", "-c", cmd])
+}
+
+// The master's and tserver's base URLs, starting the container on first use
+// ("" on failure). Waits until the master sees the tserver ALIVE and the
+// tserver's health check answers (the ports listening is not enough).
+fn shared() -> string {
+    if string.length(shared_master) > 0 { return shared_master }
+    y, err = yugabytedb.run(IMAGE)
+    if y == null {
+        spec.fail("yugabytedb starts: ${err}")
+        return ""
+    }
+    shared_container = y.container as ptr
+    spec.assert_ok(err, "yugabytedb starts")
+    if err != "" { return "" }
+    mh, merr = yugabytedb.master_http_host(y)
+    th, terr = yugabytedb.tserver_http_host(y)
+    spec.assert_ok(merr, "master web port")
+    spec.assert_ok(terr, "tserver web port")
+    master = "http://${mh}"
+    tserver = "http://${th}"
+    tries = 0
+    ready = 0
+    while ready == 0 && tries < 180 {
+        st, b, rerr = http_get("${master}/api/v1/tablet-servers")
+        st2, b2, rerr2 = http_get("${tserver}/api/v1/health-check")
+        if rerr == "" && rerr2 == "" && st == 200 && st2 == 200 && string.contains(b, "ALIVE") == 1 && string.contains(b, "\"path_metrics\":[{") == 1 { ready = 1 }
+        if ready == 0 { sleep(1000) }
+        tries = tries + 1
+    }
+    spec.assert_eq(ready, 1, "the tablet server is ALIVE")
+    if ready == 0 { return "" }
+    shared_master = master
+    shared_tserver = tserver
+    return shared_master
+}
+
+// ycqlsh and ysqlsh in the container, at the address yugabyted bound to. The
+// module starts yugabyted with authentication on, and puts the credentials
+// in the container's environment (YCQL_USER, YCQL_PASSWORD, YSQL_USER,
+// YSQL_PASSWORD, YSQL_DB), so the shell reads them from there: no secret is
+// written in this file, and none is HTTP (the web servers need none).
+fn ycql(stmt: string) {
+    inside("bin/ycqlsh -u $YCQL_USER -p $YCQL_PASSWORD $(hostname -i) -e \"${stmt}\"")
+}
+
+fn ysql(stmt: string) {
+    inside("PGPASSWORD=$YSQL_PASSWORD bin/ysqlsh -h $(hostname -i) -U $YSQL_USER -d $YSQL_DB -c \"${stmt}\"")
+}
+
+// The tables the listing case shows: YCQL keyspace tcae_ks with table items
+// (and a row), YSQL table tcae_sql in database yugabyte. Any leftovers of a
+// failed run go first.
+fn make_tables() {
+    drop_tables()
+    ycql("CREATE KEYSPACE tcae_ks")
+    ycql("CREATE TABLE tcae_ks.items (id int PRIMARY KEY, name text)")
+    ycql("INSERT INTO tcae_ks.items (id, name) VALUES (1, 'a')")
+    ysql("CREATE TABLE tcae_sql (id int PRIMARY KEY, name text)")
+}
+
+fn drop_tables() {
+    if servirtium.live() != 1 { return }
+    try_inside("bin/ycqlsh -u $YCQL_USER -p $YCQL_PASSWORD $(hostname -i) -e \"DROP TABLE IF EXISTS tcae_ks.items\"")
+    try_inside("bin/ycqlsh -u $YCQL_USER -p $YCQL_PASSWORD $(hostname -i) -e \"DROP KEYSPACE IF EXISTS tcae_ks\"")
+    try_inside("PGPASSWORD=$YSQL_PASSWORD bin/ysqlsh -h $(hostname -i) -U $YSQL_USER -d $YSQL_DB -c \"DROP TABLE IF EXISTS tcae_sql\"")
+}
+
+// Start a case on the master (which = 0) or the tserver (which = 1): in a
+// live mode the shared container (not recorded); then the recording. Sets
+// `api`; returns the recording handle, and ok = 0 when the case cannot run.
+fn begin(case_: string, which: int) -> (ptr, int) {
+    addr = ""
+    if servirtium.live() == 1 {
+        m = shared()
+        if m == "" { return null, 0 }
+        addr = shared_master
+        if which == 1 { addr = shared_tserver }
+    }
+    base, rec = servirtium.recording("yugabytedb", case_, addr)
+    api = base
+    return rec, 1
+}
+
+// The second server of a case that touches both: a recording of its own.
+fn begin_tserver(case_: string) -> ptr {
+    addr = ""
+    if servirtium.live() == 1 { addr = shared_tserver }
+    base, rec = servirtium.recording("yugabytedb", case_, addr)
+    api = base
+    return rec
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules
+// ---------------------------------------------------------------------------
+
+// `"name":<number>` collapsed to `"name":0`.
+fn collapse_num(name: string) {
+    servirtium.collapse("\"${name}\":-?[0-9][0-9.eE+-]*", "\"${name}\":0")
+}
+
+// `"name":"<text>"` collapsed to `"name":"X"`.
+fn collapse_str(name: string) {
+    servirtium.collapse("\"${name}\":\"[^\"]*\"", "\"${name}\":\"X\"")
+}
+
+fn api_rules() {
+    servirtium.clear_rules()
+    // When a process started: the master's registration (microseconds since
+    // the epoch, twice) and a counter derived from it. Nobody sends them back.
+    collapse_num("instance_seqno")
+    collapse_num("start_time_us")
+    // /api/v1/tablet-servers: heartbeat age, uptime, memory, disk and rates
+    // are readings; the tablet counts move with every table made or dropped
+    // (the listing case makes two). A client reads them, never sends them.
+    collapse_str("time_since_hb")
+    collapse_num("time_since_hb_sec")
+    collapse_num("uptime_seconds")
+    collapse_str("ram_used")
+    collapse_num("ram_used_bytes")
+    collapse_num("num_sst_files")
+    collapse_str("total_sst_file_size")
+    collapse_num("total_sst_file_size_bytes")
+    collapse_str("uncompressed_sst_file_size")
+    collapse_num("uncompressed_sst_file_size_bytes")
+    collapse_num("space_used")
+    collapse_num("total_space_size")
+    collapse_num("read_ops_per_sec")
+    collapse_num("write_ops_per_sec")
+    collapse_num("user_tablets_total")
+    collapse_num("user_tablets_leaders")
+    collapse_num("system_tablets_total")
+    collapse_num("system_tablets_leaders")
+    collapse_num("active_tablets")
+    // The same readings in a user table's on_disk_size (/api/v1/tables): the
+    // WAL is preallocated lazily, so its size is 0B or 1.00M depending on
+    // timing. (uncompressed_sst_file_size, above, is the same field there.)
+    collapse_str("wal_files_size")
+    collapse_num("wal_files_size_bytes")
+    collapse_str("sst_files_size")
+    collapse_num("sst_files_size_bytes")
+    collapse_str("uncompressed_sst_files_size")
+    // /api/v1/health-check on the master: seconds since the newest node
+    // started.
+    collapse_num("most_recent_uptime")
+    // /api/v1/varz: three flags sized from the host (memory and thread-cache
+    // budgets), as {"name":"<flag>","value":"<number>",...}.
+    servirtium.collapse("\"name\":\"mem_tracker_tcmalloc_gc_release_bytes\",\"value\":\"[0-9]+\"", "\"name\":\"mem_tracker_tcmalloc_gc_release_bytes\",\"value\":\"0\"")
+    servirtium.collapse("\"name\":\"server_tcmalloc_max_total_thread_cache_bytes\",\"value\":\"[0-9]+\"", "\"name\":\"server_tcmalloc_max_total_thread_cache_bytes\",\"value\":\"0\"")
+    servirtium.collapse("\"name\":\"default_memory_limit_to_ram_ratio\",\"value\":\"[0-9.]+\"", "\"name\":\"default_memory_limit_to_ram_ratio\",\"value\":\"0\"")
+    // Two flags that name this run: the node's metric name (the container's
+    // host name, a 12-hex id) and the tserver's heap profile path (its process
+    // id).
+    servirtium.collapse("\"name\":\"metric_node_name\",\"value\":\"[^\"]*\"", "\"name\":\"metric_node_name\",\"value\":\"HOST:PORT\"")
+    servirtium.collapse("\"name\":\"heap_profile_path\",\"value\":\"[^\"]*\"", "\"name\":\"heap_profile_path\",\"value\":\"/tmp/yb-tserver.PID\"")
+    // /api/v1/tables: the whole `system` list (about 580 tables, 98 KB). Its
+    // entries are the same set every run but not always in the same order (the
+    // master walks its catalog in hash order, so system and system_schema's
+    // tables swap places between runs), which would make every re-record
+    // differ. The `user` list before it, where a test's own tables are, is
+    // untouched. A client that wants system tables asks for one by name or id.
+    servirtium.collapse("(?s),\"system\":\\[.*\\]\\}", ",\"system\":[\"COLLAPSED\"]}")
+    // A Prometheus sample: the exporting container's id (the host name) as a
+    // label, and the sample's time in milliseconds after the value.
+    servirtium.collapse("exported_instance=\"[^\"]*\"", "exported_instance=\"HOST:PORT\"")
+    servirtium.collapse("(?<=\\} [0-9]{1,6} )1[0-9]{12}", "1000000000000")
+    // Random v4 UUIDs, hyphenated (cluster, universe, placement) or bare 32
+    // hex (permanent uuids, table and tablet ids). The v4 shape (a 4 where the
+    // version goes, 8, 9, a or b where the variant goes) leaves the system
+    // tables' derived ids alone (their version nibble is 3). Normalized: a
+    // table's id is sent back in /api/v1/table?id=..., and a replica's uuid
+    // names the same server as in /masters.
+    servirtium.normalize("(?<![0-9a-fA-F-])[0-9a-f]{8}-?[0-9a-f]{4}-?4[0-9a-f]{3}-?[89ab][0-9a-f]{3}-?[0-9a-f]{12}(?![0-9a-fA-F-])", "uuid")
+    // The advertised address: the node's IPv4 address on the machine or
+    // network the container sits on. Four dotted numbers, not preceded or
+    // followed by a digit or dot, so the build string "2024.1.3.0" (four
+    // dotted numbers!) must be spared: it is, because its first group is
+    // four digits, which the 1-3 digit groups cannot start.
+    servirtium.normalize("(?<![0-9.])(?!127\\.)[0-9]{1,3}(\\.[0-9]{1,3}){3}(?![0-9.])", "ip")
+}
+
+// ---------------------------------------------------------------------------
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    api_rules()
+    spec.describe(fw, "YugabyteDB master and tserver HTTP API") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        // PORTING: master GET /api/v1/version, then (second tape, tserver)
+        // GET /api/v1/version. Both answer 200 with the same pretty-printed
+        // JSON object: git_hash, build_hostname, build_timestamp,
+        // build_username, build_clean_repo, build_id, build_type (RELEASE),
+        // version_number (2024.1.3.0) and build_number (105). All of it is
+        // fixed by the image, so nothing is rewritten.
+        spec.it("reports the build version") callback {
+            rec, ok = begin("reports_the_build_version", 0)
+            if ok == 0 { return }
+            expect_contains("/api/v1/version", "\"version_number\": \"2024.1.3.0\"|\"build_number\": \"105\"|\"build_type\": \"RELEASE\"|\"git_hash\": \"0b04fe41caf79c06cfce56cd80731e072853fe3b\"")
+            servirtium.end_recording(rec)
+            rec2 = begin_tserver("reports_the_build_version_tserver")
+            expect_contains("/api/v1/version", "\"version_number\": \"2024.1.3.0\"|\"build_number\": \"105\"")
+            servirtium.end_recording(rec2)
+        }
+
+        // PORTING: master GET /api/v1/masters ({"masters": [{"instance_id":
+        // {"permanent_uuid", "instance_seqno", "start_time_us"},
+        // "registration": {"private_rpc_addresses", "http_addresses",
+        // "cloud_info", "broadcast_addresses"}, "role": "LEADER"}]}),
+        // /api/v1/is-leader ({"STATUS":"OK"}), /status ({}),
+        // /api/v1/tablet-replication ({"leaderless_tablets":[]}) and
+        // /api/v1/xcluster (the cross-cluster replication state: version 0
+        // and empty lists, because none is set up).
+        spec.it("reports the masters and who leads") callback {
+            rec, ok = begin("reports_the_masters_and_who_leads", 0)
+            if ok == 0 { return }
+            b = expect_contains("/api/v1/masters", "\"role\":\"LEADER\"|\"permanent_uuid\":\"|\"placement_zone\":\"rack1\"")
+            spec.assert_true(string.length(jstr(b, "masters.0.instance_id.permanent_uuid")) > 0, "the leader has a permanent uuid")
+            st, body = get("/api/v1/is-leader")
+            spec.assert_eq(st, 200, "is-leader: ${body}")
+            spec.assert_str_eq(body, "{\"STATUS\":\"OK\"}", "this master is the leader")
+            st, body = get("/status")
+            spec.assert_eq(st, 200, "status: ${body}")
+            spec.assert_str_eq(body, "{}", "status is an empty object")
+            st, body = get("/api/v1/tablet-replication")
+            spec.assert_eq(st, 200, "tablet-replication: ${body}")
+            spec.assert_str_eq(body, "{\"leaderless_tablets\":[]}", "no tablet lacks a leader")
+            expect_contains("/api/v1/xcluster", "\"xcluster_config\":{\"version\":0}|\"outbound_replication_groups\":[]|\"consumer_registry\":{}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: master GET /api/v1/tablet-servers ({"<placement uuid>":
+        // {"<address:9000>": {status ALIVE, time_since_hb, uptime_seconds,
+        // ram_used, path_metrics, ops per second, tablet counts, cloud,
+        // region, zone}}}; every reading is collapsed to 0 or "X"),
+        // /api/v1/health-check ({"dead_nodes":[],"most_recent_uptime":0,
+        // "under_replicated_tablets":[]}) and /api/v1/cluster-config
+        // ({"version":1, "replication_info": {"live_replicas":
+        // {"num_replicas":1, "placement_blocks":[...], "placement_uuid"}},
+        // "cluster_uuid", "universe_uuid"}).
+        spec.it("reports the tablet servers and the health of the cluster") callback {
+            rec, ok = begin("reports_the_tablet_servers_and_the_health_of_the_cluster", 0)
+            if ok == 0 { return }
+            expect_contains("/api/v1/tablet-servers", "\"status\":\"ALIVE\"|\"cloud\":\"cloud1\"|\"region\":\"datacenter1\"|\"zone\":\"rack1\"|\"path_metrics\":[{\"path\":\"/root/var/data\"")
+            st, body = get("/api/v1/health-check")
+            spec.assert_eq(st, 200, "health-check: ${body}")
+            spec.assert_contains(body, "\"dead_nodes\":[]", "no dead node")
+            spec.assert_contains(body, "\"under_replicated_tablets\":[]", "nothing under-replicated")
+            b = expect_contains("/api/v1/cluster-config", "\"version\":1|\"num_replicas\":1|\"placement_cloud\":\"cloud1\"|\"min_num_replicas\":1|\"cluster_uuid\":\"|\"universe_uuid\":\"")
+            spec.assert_true(string.length(jstr(b, "cluster_uuid")) > 0, "a cluster uuid")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: master GET /api/v1/tables ({"user": [...], "index": [],
+        // "system": ["COLLAPSED"]}: live, "system" lists about 580 system
+        // tables, 98 KB, in an order that changes between runs, so the tape
+        // keeps the one word; "user" holds the two
+        // setup tables, tcae_ks.items and yugabyte.tcae_sql, each {keyspace,
+        // table_name, state RUNNING, message, uuid, ysql_oid, hidden,
+        // on_disk_size}); then GET /api/v1/table?id=<the YCQL table's uuid
+        // from that listing> (the table in detail: table_name
+        // "tcae_ks.items", table_type YQL_TABLE_TYPE, table_state Running,
+        // table_replication_info, columns id int32 NOT NULL HASH and name
+        // string NULLABLE VALUE, one tablet with its LEADER location) and GET
+        // /api/v1/table?keyspace_name=tcae_ks&table_name=items (the same by
+        // name, YCQL only) and GET /api/v1/table?id=<the YSQL table's uuid from
+        // the listing> (table_name "yugabyte.tcae_sql", table_type
+        // PGSQL_TABLE_TYPE; its uuid, 000033c3000030008000000000004000, is not
+        // random, so it is on the tape as it is).
+        spec.it("lists the user tables and describes them") callback {
+            if servirtium.live() == 1 {
+                if shared() == "" { return }
+                make_tables()
+            }
+            rec, ok = begin("lists_the_user_tables_and_describes_them", 0)
+            if ok == 0 { return }
+            st, listing = get("/api/v1/tables")
+            spec.assert_eq(st, 200, "tables: status")
+            spec.assert_contains(listing, "\"user\":[", "a user list")
+            spec.assert_contains(listing, "\"keyspace\":\"tcae_ks\",\"table_name\":\"items\",\"state\":\"RUNNING\"", "the YCQL table")
+            spec.assert_contains(listing, "\"keyspace\":\"yugabyte\",\"table_name\":\"tcae_sql\",\"state\":\"RUNNING\"", "the YSQL table")
+            spec.assert_contains(listing, "\"system\":[", "a system list (collapsed on the tape)")
+            // each table's uuid: the "uuid" after its table_name in the listing
+            tid = uuid_of(listing, "items")
+            sid = uuid_of(listing, "tcae_sql")
+            b = expect_contains("/api/v1/table?id=${tid}", "\"table_name\":\"tcae_ks.items\"|\"table_type\":\"YQL_TABLE_TYPE\"|\"table_state\":\"Running\"|\"column\":\"id\",\"id\":\"0\",\"type\":\"int32 NOT NULL HASH\"|\"column\":\"name\",\"id\":\"1\",\"type\":\"string NULLABLE VALUE\"|\"role\":\"LEADER\"")
+            spec.assert_str_eq(jstr(b, "table_id"), tid, "the detail is for that table")
+            expect_contains("/api/v1/table?keyspace_name=tcae_ks&table_name=items", "\"table_name\":\"tcae_ks.items\"|\"table_state\":\"Running\"")
+            expect_contains("/api/v1/table?id=${sid}", "\"table_name\":\"yugabyte.tcae_sql\"|\"table_type\":\"PGSQL_TABLE_TYPE\"|\"table_state\":\"Running\"")
+            servirtium.end_recording(rec)
+            drop_tables()
+        }
+
+        // PORTING: master GET /api/v1/varz ({"flags": [{"name", "value",
+        // "type"}, ...]}: about 1540 process flags, 117 KB; type is
+        // "Default", "Auto", "Custom" or "NodeInfo"). The Custom ones are
+        // what yugabyted set: fs_data_dirs /root/var/data, replication_factor
+        // 1, master_addresses ...:7100, and so on.
+        spec.it("reports the flags of the master") callback {
+            rec, ok = begin("reports_the_flags_of_the_master", 0)
+            if ok == 0 { return }
+            expect_contains("/api/v1/varz", "{\"flags\":[{\"name\":|\"name\":\"fs_data_dirs\",\"value\":\"/root/var/data\",\"type\":\"Custom\"|\"name\":\"replication_factor\",\"value\":\"1\",\"type\":\"Custom\"")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: tserver GET /api/v1/varz: the same shape as the master's,
+        // with the tserver's own flags (cql_proxy_bind_address, ...).
+        spec.it("reports the flags of the tserver") callback {
+            rec, ok = begin("reports_the_flags_of_the_tserver", 1)
+            if ok == 0 { return }
+            expect_contains("/api/v1/varz", "{\"flags\":[{\"name\":|\"name\":\"fs_data_dirs\",\"value\":\"/root/var/data\",\"type\":\"Custom\"|\"name\":\"cql_proxy_bind_address\"")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: tserver GET /api/v1/health-check ({"failed_tablets":[]})
+        // and /status ({}).
+        spec.it("reports the health of the tserver") callback {
+            rec, ok = begin("reports_the_health_of_the_tserver", 1)
+            if ok == 0 { return }
+            st, body = get("/api/v1/health-check")
+            spec.assert_eq(st, 200, "health-check: ${body}")
+            spec.assert_str_eq(body, "{\"failed_tablets\":[]}", "no failed tablet")
+            st, body = get("/status")
+            spec.assert_eq(st, 200, "status: ${body}")
+            spec.assert_str_eq(body, "{}", "status is an empty object")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the metrics endpoints, filtered, because unfiltered they
+        // are a flood (350 KB of JSON, 1.5 MB of Prometheus text). Master GET
+        // /metrics?metrics=num_tablet_servers (a JSON array with one entity,
+        // {"type":"cluster","id":"yb.cluster","attributes":{},"metrics":
+        // [{"name":"num_tablet_servers_live","value":1},
+        // {"name":"num_tablet_servers_dead","value":0}]}, pretty-printed),
+        // and GET /prometheus-metrics?metrics=num_tablet_servers (the same
+        // two gauges as Prometheus text: "# HELP", "# TYPE", then
+        // num_tablet_servers_live{exported_instance="HOST:PORT",
+        // metric_type="cluster",metric_id="yb.cluster"} 1 <ms timestamp>).
+        spec.it("reads filtered metrics as JSON and as Prometheus text") callback {
+            rec, ok = begin("reads_filtered_metrics_as_json_and_as_prometheus_text", 0)
+            if ok == 0 { return }
+            expect_contains("/metrics?metrics=num_tablet_servers", "\"type\": \"cluster\"|\"id\": \"yb.cluster\"|\"name\": \"num_tablet_servers_live\"|\"value\": 1|\"name\": \"num_tablet_servers_dead\"|\"value\": 0")
+            expect_contains("/prometheus-metrics?metrics=num_tablet_servers", "# TYPE num_tablet_servers_live gauge|num_tablet_servers_live{exported_instance=|metric_type=\"cluster\",metric_id=\"yb.cluster\"} 1 |num_tablet_servers_dead{exported_instance=")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: master GET /api/v1/nope: 404, the plain text "Error 404:
+        // Not Found\nFile not found" (with no Content-Type);
+        // GET /api/v1/table (no argument): 200 with {"error":"Missing 'id'
+        // argument or 'keyspace_name, table_name' argument pair. ..."};
+        // GET /api/v1/table?id=nope: 200 with {"error":"Table not found!"}
+        // (errors in the body, not the status); GET /api/v1/table?
+        // keyspace_name=nope&table_name=nope: 200 with an {"error":...} body.
+        // Then, second tape, tserver GET /api/v1/nope: the same 404 page.
+        spec.it("answers errors with 404 and an error body") callback {
+            rec, ok = begin("answers_errors_with_404_and_an_error_body", 0)
+            if ok == 0 { return }
+            st, body = get("/api/v1/nope")
+            spec.assert_eq(st, 404, "unknown path: ${body}")
+            spec.assert_contains(body, "Error 404: Not Found", "the 404 page")
+            st, body = get("/api/v1/table")
+            spec.assert_eq(st, 200, "no argument: ${body}")
+            spec.assert_contains(body, "\"error\":\"Missing 'id' argument", "the missing-argument error")
+            st, body = get("/api/v1/table?id=nope")
+            spec.assert_eq(st, 200, "unknown id: ${body}")
+            spec.assert_str_eq(body, "{\"error\":\"Table not found!\"}", "table not found")
+            st, body = get("/api/v1/table?keyspace_name=nope&table_name=nope")
+            spec.assert_eq(st, 200, "unknown name: ${body}")
+            spec.assert_contains(body, "\"error\":", "an error body")
+            servirtium.end_recording(rec)
+            rec2 = begin_tserver("answers_errors_with_404_and_an_error_body_tserver")
+            st, body = get("/api/v1/nope")
+            spec.assert_eq(st, 404, "tserver unknown path: ${body}")
+            spec.assert_contains(body, "Error 404: Not Found", "the 404 page")
+            servirtium.end_recording(rec2)
+        }
+    }
+
+    if shared_container != null {
+        drop_tables()
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("yugabytedb: removing the shared container: ${e}") }
+    }
+    return spec.run_summary(fw)
+}
