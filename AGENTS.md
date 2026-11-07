@@ -326,8 +326,10 @@ Decisions, and why:
   JSON pointer from the root (`""` the root array, `/value`,
   `/items/*/tags`, `*` any one segment) or a bare member name (`versions`:
   every array that member holds, at any depth). `by` is a member name, a
-  pointer inside each element (`/db_name/L`), or `""` for each element's
-  canonical JSON (keys sorted, no whitespace). Two integers compare by value
+  pointer inside each element (`/db_name/L`), several of those
+  comma-separated (`/keyspace,/table_name`: the first decides, the next
+  breaks ties; so a member name holding a comma cannot be used), or `""` for
+  each element's canonical JSON (keys sorted, no whitespace). Two integers compare by value
   (any size), anything else by canonical bytes. If any element lacks `by`,
   that array is written as sent. The first rule that selects an array sorts
   it. `sort_json_array_at` adds a request-path regex, for when one

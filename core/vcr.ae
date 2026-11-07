@@ -5198,8 +5198,11 @@ pretty_json_body_k(key: string, ctype: string, body: string) -> string {
 // "/value" the root object's "value", "/items/*/tags" every item's tags. A
 // path without a leading "/" names a member: "versions" is every array that
 // is the value of a member called versions, at any depth. `by` is a member
-// name ("name") or a JSON pointer inside each element ("/db_name/L"); two
-// integers compare as numbers, anything else by its canonical JSON's bytes.
+// name ("name") or a JSON pointer inside each element ("/db_name/L"), or
+// several of those separated by commas ("/keyspace,/table_name": the first
+// decides, the next breaks its ties; a member whose name holds a comma
+// cannot be named); two integers compare as numbers, anything else by its
+// canonical JSON's bytes.
 // If any element lacks `by` (or is not an object), that array is left as
 // sent. The sort is stable, so equal keys keep the order they came in; pick
 // a `by` that is unique. The first registered rule that selects an array
@@ -5275,8 +5278,21 @@ vcr_sort_json_array_at_k(key: string, request: string, path: string, by: string)
     if string.length(path) > 0 && string.char_at(path, 0) != 47 && string.index_of(path, "/") >= 0 {
         return "sort_json_array: a path is a JSON pointer starting with '/', or one member name without '/' (got '${path}')"
     }
-    if string.length(by) > 0 && string.char_at(by, 0) != 47 && string.index_of(by, "/") >= 0 {
-        return "sort_json_array: 'by' is a JSON pointer starting with '/', one member name, or \"\" (got '${by}')"
+    // `by`: "" (canonical JSON), or keys separated by commas, each a JSON
+    // pointer starting with '/' or one member name.
+    if string.length(by) > 0 {
+        pc = 0
+        while pc <= string.length(by) {
+            comma = string.index_of_from(by, ",", pc)
+            pe = string.length(by)
+            if comma >= 0 { pe = comma }
+            part = string.substring(by, pc, pe)
+            if string.length(part) == 0 || (string.char_at(part, 0) != 47 && string.index_of(part, "/") >= 0) {
+                return "sort_json_array: 'by' is \"\" or comma-separated keys, each a JSON pointer starting with '/' or one member name (got '${by}')"
+            }
+            if comma < 0 { break }
+            pc = comma + 1
+        }
     }
     r = malloc(sizeof(ArraySort)) as *ArraySort
     r.path = string.copy(path)
@@ -5400,6 +5416,18 @@ sort_key_compare(a: string, b: string) -> int {
     return string.compare(a, b)
 }
 
+// Compare elements i and j by their np sort keys in sk (np per element),
+// the first key first.
+sort_keys_compare(sk: string[], i: int, j: int, np: int) -> int {
+    c = 0
+    while c < np {
+        r = sort_key_compare(sk[i * np + c], sk[j * np + c])
+        if r != 0 { return r }
+        c = c + 1
+    }
+    return 0
+}
+
 // Rewrite the JSON value at s[i] (no whitespace before it): object keys
 // sorted when sort_keys is 1, the arrays an array rule selects sorted when
 // rules is 1, and whitespace kept by position (compact 0) or dropped
@@ -5521,14 +5549,35 @@ so_array(key: string, s: string, i: int, p: string, sort_keys: int, compact: int
         ri = array_rule_for_k(key, p)
         if ri >= 0 {
             r = list_get_raw(array_sorts_k(key), ri) as *ArraySort
+            // `by` may name several keys, comma-separated: the first
+            // decides, the next breaks its ties. sk holds np keys per element.
+            string[] parts = []
             by = r.by
+            if string.length(by) == 0 {
+                parts.push("")
+            } else {
+                pc = 0
+                while pc <= string.length(by) {
+                    comma = string.index_of_from(by, ",", pc)
+                    pe = string.length(by)
+                    if comma >= 0 { pe = comma }
+                    parts.push(string.substring(by, pc, pe))
+                    if comma < 0 { break }
+                    pc = comma + 1
+                }
+            }
+            np = parts.len
             string[] sk = []
             all = 1
             k = 0
             while k < m && all == 1 {
-                kv, found = so_sort_key(items[k], by)
-                if found == 0 { all = 0 }
-                sk.push(kv)
+                pi = 0
+                while pi < np && all == 1 {
+                    kv, found = so_sort_key(items[k], parts[pi])
+                    if found == 0 { all = 0 }
+                    sk.push(kv)
+                    pi = pi + 1
+                }
                 k = k + 1
             }
             if all == 1 {
@@ -5537,7 +5586,7 @@ so_array(key: string, s: string, i: int, p: string, sort_keys: int, compact: int
                 while a < m {
                     cur = order[a]
                     b = a - 1
-                    while b >= 0 && sort_key_compare(sk[order[b]], sk[cur]) > 0 {
+                    while b >= 0 && sort_keys_compare(sk, order[b], cur, np) > 0 {
                         order[b + 1] = order[b]
                         b = b - 1
                     }

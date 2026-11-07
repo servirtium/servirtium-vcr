@@ -276,7 +276,8 @@ sort_json_keys() {
 // The JSON response arrays `path` selects sorted by member `by`: path is a
 // JSON pointer from the root ("" the root array, "/value", "/items/*/tags")
 // or a bare member name (every array that member holds, at any depth); by is
-// a member name, a pointer inside each element ("/db_name/L"), or "" for the
+// a member name, a pointer inside each element ("/db_name/L"), several of
+// those comma-separated (the next breaks the first's ties), or "" for the
 // element's canonical JSON. Array order can be meaning: the tape keeps the
 // sorted order, and so does playback.
 sort_json_array(path: string, by: string) {

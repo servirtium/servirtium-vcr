@@ -216,6 +216,13 @@ main() {
     need(t3f, "[{\"id\":2},{\"x\":1},{\"id\":1}]", "an element without the member leaves its array as sent")
     t3g = rec(OUT, "application/json", "[{\"id\":1,\"k\":\"second\"},{\"id\":0},{\"id\":1,\"k\":\"first\"}]", "", "")
     need(t3g, "[{\"id\":0},{\"id\":1,\"k\":\"second\"},{\"id\":1,\"k\":\"first\"}]", "the sort is stable")
+    // Several keys: the first decides, the next breaks ties.
+    reset_all()
+    e = vcr.sort_json_array("", "/ks,name")
+    if e != "" { fail(e) }
+    t3k = rec(OUT, "application/json", "[{\"ks\":\"b\",\"name\":\"x\"},{\"ks\":\"a\",\"name\":\"y\"},{\"ks\":\"a\",\"name\":\"x\"}]", "", "")
+    need(t3k, "[{\"ks\":\"a\",\"name\":\"x\"},{\"ks\":\"a\",\"name\":\"y\"},{\"ks\":\"b\",\"name\":\"x\"}]", "two keys")
+    if vcr.sort_json_array("", "a,") == "" { fail("an empty key in 'by' accepted") }
     // Scoped to request paths: only the interaction whose path matches.
     reset_all()
     e = vcr.sort_json_array_at("^/y", "", "id")
