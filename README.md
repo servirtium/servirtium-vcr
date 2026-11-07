@@ -142,6 +142,11 @@ One libservirtium_vcr; every binding exposes the same surface.
 - **Header removal · notes · untaped paths** — drop incidental headers, attach
   Servirtium notes, and 404 incidental requests (e.g. `/favicon.ico`) without
   consuming the playback cursor.
+- **Licence conditions** — `add_license_condition(text)` writes plain text at
+  the top of every tape, before `## Interaction 0`: the recorded service's
+  licence terms (a vendor's no-reverse-engineering clause, say), so whoever
+  reads or replays the tape sees them. Line breaks are the developer's own;
+  playback ignores the text.
 - **Static-content mounts** — serve a path prefix from disk same-origin, so a
   browser suite runs against the VCR (no CORS noise on the tape).
 - **One server per port** — N independent VCR servers in one process,

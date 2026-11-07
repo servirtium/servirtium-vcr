@@ -1,0 +1,119 @@
+// add_license_condition: plain text the developer supplies, written at the
+// top of the tape before "## Interaction 0" and ignored by playback.
+//
+// Drives the record-side emitter directly (vcr.record_full + vcr.flush, no
+// upstream), reads the tape back, then replays it over real HTTP. Cases:
+//
+//   1. One condition: the text, as given (the developer's own line breaks
+//      kept), then a blank line, then "## Interaction 0".
+//   2. Two calls: two paragraphs, in call order.
+//   3. Replay: the tape loads and serves the interaction; the text is not
+//      read as part of it.
+//   4. Refused: empty text, and text with a line starting "## ".
+//   5. clear_license_conditions: the next tape starts at "## Interaction 0".
+
+import core.vcr
+import std.http
+import std.http.client
+import std.fs
+import std.string
+import std.io
+
+extern exit(code: int)
+extern http_server_start_raw(server: ptr) -> int
+
+const PORT = 18298
+
+const LIC1 = "Recorded against Example DB 1.0, under the Example Licence.\nNo reverse engineering: see section 3(b)."
+const LIC2 = "Use of this tape is subject to those terms."
+
+flush_out_path() -> {
+    tmp = io.getenv("TEMP")
+    if tmp == 0 { tmp = io.getenv("TMPDIR") }
+    if tmp == 0 { tmp = "/tmp" }
+    return "${tmp}/vcr_license_condition_test.tape"
+}
+
+message StartVCR { raw: ptr }
+message Noop {}
+
+actor VCRActor {
+    state s = 0
+    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
+}
+
+actor SchedHelper {
+    state x = 0
+    receive { Noop() -> { x = 1 } }
+}
+
+fail(msg: string) {
+    println("  FAIL: ${msg}")
+    exit(1)
+}
+
+record_and_read(path: string) -> string {
+    vcr.clear_recording()
+    e = vcr.record_full("GET", "/x", 200, "text/plain", "hello", "", "")
+    if e != "" { fail("record_full: ${e}") }
+    f = vcr.flush(path)
+    if f != "" { fail("flush: ${f}") }
+    t, de = fs.read(path)
+    if de != "" { fail("read back: ${de}") }
+    return t
+}
+
+main() {
+    println("=== VCR add_license_condition ===\n")
+    OUT = flush_out_path()
+
+    println("Test 1: the text comes first, as given, then the interactions")
+    vcr.clear_license_conditions()
+    e1 = vcr.add_license_condition(LIC1)
+    if e1 != "" { fail("add_license_condition: ${e1}") }
+    t1 = record_and_read(OUT)
+    if string.starts_with(t1, "${LIC1}\n\n## Interaction 0") != 1 { fail("tape does not start with the condition:\n${t1}") }
+    println("  PASS")
+
+    println("Test 2: two calls make two paragraphs, in order")
+    e2 = vcr.add_license_condition(LIC2)
+    if e2 != "" { fail("second add: ${e2}") }
+    t2 = record_and_read(OUT)
+    if string.starts_with(t2, "${LIC1}\n\n${LIC2}\n\n## Interaction 0") != 1 { fail("two paragraphs not as expected:\n${t2}") }
+    println("  PASS")
+
+    println("Test 3: playback ignores the text")
+    raw = vcr.load(OUT, PORT)
+    if raw == null { fail("vcr.load: the condition broke parsing") }
+    spawn(SchedHelper())
+    a = spawn(VCRActor())
+    a ! StartVCR { raw: raw }
+    sleep(500)
+    creq = client.request("GET", "http://127.0.0.1:${PORT}/x")
+    cresp, cerr = client.send_request(creq)
+    client.request_free(creq)
+    if cerr != "" { fail("transport: ${cerr}") }
+    s3 = client.response_status(cresp)
+    b3 = string.copy(client.response_body(cresp))
+    client.response_free(cresp)
+    if s3 != 200 { fail("status ${s3}, last_error='${vcr.last_error_h(raw)}'") }
+    if string.equals(b3, "hello") != 1 { fail("body '${b3}'") }
+    vcr.eject(raw)
+    println("  PASS")
+
+    println("Test 4: empty text and '## ' lines are refused")
+    if vcr.add_license_condition("  \n ") == "" { fail("empty text accepted") }
+    if vcr.add_license_condition("Terms\n## Interaction 9: GET /") == "" { fail("'## ' line accepted") }
+    if vcr.add_license_condition("## [Recording rules]") == "" { fail("leading '## ' accepted") }
+    println("  PASS")
+
+    println("Test 5: clear_license_conditions")
+    vcr.clear_license_conditions()
+    t5 = record_and_read(OUT)
+    if string.starts_with(t5, "## Interaction 0") != 1 { fail("still has a preamble:\n${t5}") }
+    println("  PASS")
+
+    fs.delete(OUT)
+    println("\n=== All add_license_condition tests passed ===")
+    exit(0)
+}

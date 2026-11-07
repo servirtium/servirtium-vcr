@@ -118,6 +118,10 @@ an https upstream against this PEM CA, e.g. Elasticsearch 8's own; guarded by
 `set_match_multiple(h, int)` (reusable/order-independent playback) and
 `match_header(h, name)` / `clear_match_headers(h)` (ByHeader — match a specific
 request header), both below;
+`add_license_condition(h, text)` / `clear_license_conditions(h)` (plain text
+written at the top of each tape, before `## Interaction 0`, for the recorded
+service's licence terms; the developer supplies any line breaks; playback
+ignores it, so no line may start `## `; `core_tests/test_vcr_license_condition.ae`);
 `note(h, k, v)`; `static_content(h, mount, dir)`; `untaped(h, path)`;
 `indent_code_blocks(h)` / `emphasize_http_verbs(h)`; plus `clear_*` resets.
 

@@ -180,7 +180,8 @@ exports (
     redact_h, unredact_h, remove_header_h, note_h,
     remove_transport_headers_h, remove_cloud_headers_h, CLOUD_VENDORS,
     strict_ignore_common_headers_h, ignore_volatile_headers_h,
-    redact_credentials_h, redact_credential_header_h,
+    redact_credentials_h, redact_credential_header_h, add_license_condition_h, add_license_condition,
+    clear_license_conditions_h, clear_license_conditions,
     normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     normalize_whole_tape_described_h, redact_whole_tape_described_h,
     static_content_h, untaped_h, set_strict_headers_h, set_match_json_body_h,
@@ -3305,6 +3306,38 @@ cred_apply_values_k(key: string, s: string) -> string {
     return out
 }
 
+// ---- licence conditions ----------------------------------------------
+//
+// add_license_condition_h(server, text): plain text written at the top of
+// every tape this handle records, before "## Interaction 0". It is for the
+// licence or terms the recorded service is under (for example a vendor's
+// "no reverse engineering" clause), so whoever reads or replays the tape
+// sees them. Servirtium writes the text as given: the developer puts in any
+// line breaks they want. Several calls add several paragraphs, in call order.
+// Playback ignores it: tapes are parsed from the first "## Interaction "
+// heading. So the text may not contain a line that starts "## " (that would
+// read as an interaction or the rules footer).
+add_license_condition_h(server: ptr, text: string) -> string {
+    return add_license_condition_k(key_for(server), text)
+}
+add_license_condition(text: string) -> string {
+    return add_license_condition_k(cur_key(), text)
+}
+clear_license_conditions_h(server: ptr) { config.put(slot(key_for(server), "license_conditions"), "") }
+clear_license_conditions() { config.put(slot(cur_key(), "license_conditions"), "") }
+add_license_condition_k(key: string, text: string) -> string {
+    if string.length(string.trim(text)) == 0 { return "add_license_condition: text is empty" }
+    t = normalize_tape_bytes(text)
+    if string.starts_with(t, "## ") == 1 || string.index_of(t, "\n## ") >= 0 {
+        return "add_license_condition: a line may not start with '## ' (it would read as a tape heading)"
+    }
+    prev = cfg_get_str(slot(key, "license_conditions"))
+    para = string.trim(t)
+    if string.length(prev) > 0 { para = "${prev}\n\n${para}" }
+    config.put(slot(key, "license_conditions"), para)
+    return ""
+}
+
 note_h(server: ptr, title: string, body: string) -> string {
     set_cur_key(key_for(server))
     return note(title, body)
@@ -5186,6 +5219,8 @@ emit_tape_k(key: string) -> string {
     build_credential_map_k(key)
     n = list_size(tape_list_k(key))
     out = string.copy("")
+    lic = cfg_get_str(slot(key, "license_conditions"))
+    if string.length(lic) > 0 { out = "${lic}\n\n" }
     i = 0
     while i < n {
         chunk = emit_one_interaction_k(key, i)
