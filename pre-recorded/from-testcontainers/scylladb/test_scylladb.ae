@@ -1,0 +1,683 @@
+// ScyllaDB's REST management API, recorded comprehensively: one of the
+// "comprehensive" suites of servirtium-vcr's pre-recorded/from-testcontainers
+// (the README's "Pattern for comprehensive suites" says what they share;
+// couchdb/test_couchdb.ae is the reference implementation).
+//
+// What is recorded: the HTTP/JSON API on port 10000 that nodetool, the
+// monitoring tools and the Scylla Manager agent talk to (storage_service,
+// system, column_family, failure_detector, gossiper, cache_service, ...),
+// from `scylladb/scylla:6.2` (6.2.3). Not the CQL port (9042, a binary
+// protocol), Alternator (8000, DynamoDB's API, a different suite's job) or
+// the Prometheus port (9180, a flood of counters).
+//
+// PORTING: this file is the reference for what each tape holds; the tapes
+// are the re-usable part. A port is a test in your language and test
+// framework that makes the same requests, in the same order, against a
+// Servirtium replay server loaded with the tape, and checks the same things.
+// Any Servirtium implementation replays them. Every request is plain
+// HTTP/1.1 with one header and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+// (the POSTs and DELETEs have no body and no Content-Type). Playback is
+// strict about method, path (query string included, exactly as written in
+// this file) and the recorded request headers, and fails a case whose
+// recorded requests are not all made. Host, Connection and Content-Length
+// are on the tapes but are transport headers, not compared.
+//
+// PORTING, the tape for each case: <case>.md beside this file, where <case>
+// is the second argument of servirtium.recording(...) in that case. The
+// cases are independent: each makes the keyspace it needs (a fixed name,
+// with one table `items` and two rows) BEFORE the recording starts and drops
+// it after, both through `cqlsh` inside the container, so none of it is on a
+// tape. A tape starts from "the keyspace exists", and any one replays alone
+// and in any order. Where a case changes the schema or the data between two
+// requests (schema_version_changes_with_a_ddl_statement, flushes_and_
+// compacts_a_keyspace) that step is a cqlsh call between two requests; it is
+// not on the tape, so on replay just skip it: the second request's answer is
+// already there.
+//
+// Authentication: none. The REST API is unauthenticated (it listens on
+// loopback inside the container by default; the module's rest_api() option
+// makes it listen on 0.0.0.0 so the published port reaches it), so there is
+// no login tape and no credential on any tape.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below, with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them and the
+// interactions each touched ("none" where it did not). In short:
+//   - normalized (each distinct value a stable {{name-N}} token, the same
+//     token wherever it recurs, because a client sends it back): UUIDs
+//     ({{uuid-N}}: the host id, the schema version, a raft leader's id) and
+//     the node's IPv4 address ({{ip-N}}: the container's address on the
+//     engine's network, different on every machine and run).
+//   - collapsed (one constant; nobody sends them back): the node's tokens
+//     (256 random numbers per run, so the whole array becomes one
+//     "TOKEN" entry), the generation number (the node's start time in Unix
+//     seconds), bytes loaded, a snapshot's byte sizes, the uptime in
+//     milliseconds.
+//   - redacted: nothing; there are no credentials.
+//   - left out: nothing beyond the Date response header, as everywhere.
+// Leave alone, because they are the same every run: the release versions
+// (3.0.8 is the Cassandra version Scylla claims to be, the Scylla version is
+// 6.2.3-0.20250119.bff9ddde1283), the datacenter and rack names, the
+// partitioner, the RPC timeouts, the log levels.
+//
+// PORTING: in playback, a normalized value comes back as its token,
+// verbatim: the host id is "{{uuid-1}}", the node address "{{ip-1}}". Treat
+// every id and address as an opaque string (never assert its length or
+// shape) and send it back exactly as received. The Seastar HTTP server sends
+// `Content-Length` and `Content-Type: application/json` on JSON (and no
+// Content-Type on the empty 200 of a POST); every body here is JSON or a
+// bare JSON scalar ("info", 0.25, true).
+//
+// Order that is not deterministic
+// -------------------------------
+// Seastar builds several listings from hash maps, so their order depends on
+// what was inserted and when: /column_family/ (every table), /column_family/
+// name, /column_family/name/keyspace, and /storage_service/keyspaces when
+// two or more keyspaces exist (also ?type=non_local_strategy). They would make a re-record differ, so they
+// are not taped; /storage_service/keyspaces?type=user is (with one user
+// keyspace it is a one-element array). The same goes for /storage_service/
+// logging_level, /system/logger (a few hundred names).
+//
+// In and out of scope
+// -------------------
+// In: build and cluster identity (release_version, scylla_release_version,
+// cluster_name, partitioner_name, snitch), the node's identity and ring
+// state (host_id, tokens, tokens_endpoint, ownership, operation_mode,
+// is_initialized, gossiping, native_transport, nodes/joining|leaving|moving,
+// load_map, raft/leader_host), keyspaces (all, user, non_local_strategy,
+// natural_endpoints, ownership per keyspace), table metrics, flush and
+// compaction, snapshots (take, list, delete), the schema version before and
+// after a DDL statement, log levels (get, set, reset, the 400s), tracing
+// probability and slow-query settings, gossip and the failure detector,
+// storage_proxy timeouts and hinted handoff, the compaction and task
+// managers, the cache service, node paths, uptime, the swagger index, and
+// the representative errors (400 unknown keyspace, level, logger and
+// missing parameter; 404; 500 "not supported yet").
+// Out: describe_ring (256 ranges of random tokens), /failure_detector/
+// endpoints (gossip application states with tokens, generation and
+// timestamps), /compaction_manager/compaction_history (ids and times),
+// /messaging_service/messages/* (counters that move with every request),
+// repair, streaming and decommission/removenode (multi-node, asynchronous),
+// the Prometheus endpoint, and anything that stops or reconfigures the node
+// (drain, decommission, truncate).
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test scylladb/test_scylladb.ae                    container, no Servirtium
+//   TCAE_VCR=record   ae test scylladb/test_scylladb.ae  write the tapes
+//   TCAE_VCR=check    ae test scylladb/test_scylladb.ae  fail if a tape changed
+//   TCAE_VCR=playback ae test scylladb/test_scylladb.ae  no container: the tapes
+// The cases share one container (started on the first one, removed at the
+// end). ScyllaDB is slow to start (about a minute): the module waits for CQL
+// and for the REST port, then the test polls /storage_service/operation_mode
+// until it says NORMAL before the first case, outside any recording.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.scylladb
+
+const IMAGE = "scylladb/scylla:6.2"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would; Aether's std.http.client adds none. Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
+
+var api: string = ""
+var last_content_type: string = ""
+
+// One request with no body: (status, body, error).
+fn http_send(method: string, url: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    last_content_type = client.response_header(r, "Content-Type")
+    client.response_free(r)
+    return st, b, ""
+}
+
+// A request to the current recording's base URL: (status, body). A transport
+// error fails the case.
+fn rest(method: string, path: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}${path}")
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// GET path, expect 200 and exactly this body.
+fn expect_body(path: string, want: string) {
+    st, b = rest("GET", path)
+    spec.assert_eq(st, 200, "GET ${path}: ${b}")
+    spec.assert_str_eq(b, want, "GET ${path}")
+}
+
+// GET path, expect 200 and a body containing this.
+fn expect_contains(path: string, want: string) {
+    st, b = rest("GET", path)
+    spec.assert_eq(st, 200, "GET ${path}: ${b}")
+    spec.assert_contains(b, want, "GET ${path}: ${b}")
+}
+
+// A request that must fail with this status and a message containing want.
+fn expect_error(method: string, path: string, status: int, want: string) {
+    st, b = rest(method, path)
+    spec.assert_eq(st, status, "${method} ${path}: ${b}")
+    spec.assert_contains(b, want, "${method} ${path}: ${b}")
+}
+
+// ---------------------------------------------------------------------------
+// The live container the cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_addr: string = ""
+var shared_container: ptr = null
+
+// Run a CQL statement inside the container with cqlsh (live only; never on
+// a tape).
+fn cql(stmt: string) {
+    if servirtium.live() != 1 { return }
+    code, out, err = tc.exec(shared_container as *docker.Container, ["cqlsh", "-e", stmt])
+    spec.assert_eq(code, 0, "cqlsh: ${stmt}: ${out} ${err}")
+}
+
+// The REST API's base URL, starting the container on first use ("" on
+// failure). Waits until the node says NORMAL (CQL being up is not enough:
+// the API answers 200 for most things earlier).
+fn shared() -> string {
+    if string.length(shared_addr) > 0 { return shared_addr }
+    c, err = scylladb.run(IMAGE) { rest_api() }
+    if c == null {
+        spec.fail("scylladb starts: ${err}")
+        return ""
+    }
+    shared_container = c as ptr
+    spec.assert_ok(err, "scylladb starts")
+    if err != "" { return "" }
+    host, herr = scylladb.rest_api_connection_host(c)
+    spec.assert_ok(herr, "REST API host")
+    base = "http://${host}"
+    tries = 0
+    ready = 0
+    while ready == 0 && tries < 120 {
+        st, b, rerr = http_send("GET", "${base}/storage_service/operation_mode")
+        if rerr == "" && st == 200 && string.contains(b, "NORMAL") == 1 { ready = 1 }
+        if ready == 0 { sleep(1000) }
+        tries = tries + 1
+    }
+    spec.assert_eq(ready, 1, "the node reaches NORMAL")
+    if ready == 0 { return "" }
+    shared_addr = base
+    return shared_addr
+}
+
+// A keyspace the case works in: one node, vnodes (tablets off, so ownership
+// and natural_endpoints work; a tablet keyspace answers 400 there), one
+// table `items` (id int primary key, name text) and two rows.
+fn make_keyspace(ks: string) {
+    cql("DROP KEYSPACE IF EXISTS ${ks}")
+    cql("CREATE KEYSPACE ${ks} WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': 1} AND tablets = {'enabled': false}")
+    cql("CREATE TABLE ${ks}.items (id int PRIMARY KEY, name text)")
+    cql("INSERT INTO ${ks}.items (id, name) VALUES (1, 'a')")
+    cql("INSERT INTO ${ks}.items (id, name) VALUES (2, 'b')")
+}
+
+// Start a case: in a live mode the shared container and, when the case uses
+// a keyspace, that keyspace (none of it recorded); then the recording. Sets
+// `api`; returns the recording handle, and ok = 0 when the case cannot run.
+fn begin(case_: string, ks: string) -> (ptr, int) {
+    addr = ""
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+        // DROP KEYSPACE takes a "pre-drop-<time>" snapshot of every table
+        // (auto_snapshot), so an earlier case's cleanup leaves some behind:
+        // delete every snapshot (no tag means all) before this case starts.
+        http_send("DELETE", "${addr}/storage_service/snapshots")
+        if string.length(ks) > 0 { make_keyspace(ks) }
+    }
+    base, rec = servirtium.recording("scylladb", case_, addr)
+    api = base
+    return rec, 1
+}
+
+// End a case: the recording, then (live) the case's keyspace dropped.
+fn finish(rec: ptr, ks: string) {
+    servirtium.end_recording(rec)
+    if string.length(ks) > 0 { cql("DROP KEYSPACE IF EXISTS ${ks}") }
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules
+// ---------------------------------------------------------------------------
+
+fn api_rules() {
+    servirtium.clear_rules()
+    // The node's tokens: 256 random numbers per run (vnodes), as a JSON array
+    // of strings (/storage_service/tokens) and as {"key": token, "value":
+    // address} objects (/tokens_endpoint). Nobody sends them back; the whole
+    // array becomes one entry. These two come first so that the address
+    // inside the second is swallowed, not normalized.
+    servirtium.collapse("\\[\"-?[0-9]{10,}\"(, \"-?[0-9]{10,}\")*\\]", "[\"TOKEN\"]")
+    servirtium.collapse("\\[\\{\"key\":\"-?[0-9]{10,}\",\"value\":\"[^\"]*\"\\}(, \\{\"key\":\"-?[0-9]{10,}\",\"value\":\"[^\"]*\"\\})*\\]", "[{\"key\":\"TOKEN\",\"value\":\"ADDRESS\"}]")
+    // The host id, the schema version (a time UUID that changes with every
+    // DDL statement), a snapshot's or task's id: UUIDs, different every run.
+    // Normalized, since a client reads one and sends it back (nodetool does
+    // with the host id) or compares two (before and after a DDL statement).
+    servirtium.normalize(servirtium.UUID, "uuid")
+    // The node's address: the container's IP on the engine's network. It
+    // appears as a map key and a value all over (host_id, ownership,
+    // gossiper, load_map, natural_endpoints), and a client sends it back
+    // (/failure_detector/endpoints/..., /messaging_service/version?addr=).
+    // Four dotted numbers, not preceded or followed by a digit or dot, so a
+    // three-part version (3.0.8) and the 6.2.3-0.2025... build string are
+    // left alone; 127.x (the recorder's own, already {{request.host}}) too.
+    servirtium.normalize("(?<![0-9.])(?!127\\.)[0-9]{1,3}(\\.[0-9]{1,3}){3}(?![0-9.])", "ip")
+    // The generation number: the node's start time in Unix seconds, a bare
+    // ten-digit number (the lookarounds keep it off the 19-digit tokens).
+    servirtium.collapse("(?<![0-9])1[0-9]{9}(?![0-9])", "1000000000")
+    // /storage_service/load_map: bytes on disk per node, a number that moves
+    // as the node writes. The only place `"value": <digits>}` occurs.
+    servirtium.collapse("\"value\": [0-9]+\\}", "\"value\": 0}")
+    // /storage_service/ownership: the share of the ring as a string
+    // ("1", "0.9999998", "1.0000004"): the 256 random tokens' rounding differs
+    // every run. Collapsed to "1".
+    servirtium.collapse("\"value\": \"[01](\\.[0-9]+)?\"", "\"value\": \"1\"")
+    // A snapshot's size on disk and its live part (block-size dependent).
+    servirtium.collapse("\"total\":[0-9]+,\"live\":[0-9]+", "\"total\":0,\"live\":0")
+    // /system/uptime_ms: a bare number of milliseconds (three to nine digits:
+    // from a fraction of a second to a day or so) that is the whole body. The
+    // rules run over each field, so (?m) anchors the line: a line of nothing
+    // but digits is a bare body. Only that call returns such a body (the other
+    // bare numbers on the tapes are one or two digits, and the ten-digit
+    // generation number is the rule above).
+    servirtium.collapse("(?m)^[0-9]{3,9}$", "1000000")
+}
+
+// ---------------------------------------------------------------------------
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    api_rules()
+    spec.describe(fw, "ScyllaDB REST API") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        // PORTING: GET /storage_service/release_version, /scylla_release_version,
+        // /cluster_name, /partitioner_name, then GET /snitch/name, /snitch/datacenter,
+        // /snitch/rack and GET /system/highest_supported_sstable_version. Each
+        // answers 200 with a bare JSON string.
+        spec.it("reports the release and the cluster identity") callback {
+            rec, ok = begin("reports_the_release_and_the_cluster_identity", "")
+            if ok == 0 { return }
+            expect_body("/storage_service/release_version", "\"3.0.8\"")
+            expect_contains("/storage_service/scylla_release_version", "\"6.2.")
+            expect_body("/storage_service/cluster_name", "\"Test Cluster\"")
+            expect_body("/storage_service/partitioner_name", "\"org.apache.cassandra.dht.Murmur3Partitioner\"")
+            expect_body("/snitch/name", "\"org.apache.cassandra.locator.SimpleSnitch\"")
+            expect_body("/snitch/datacenter", "\"datacenter1\"")
+            expect_body("/snitch/rack", "\"rack1\"")
+            expect_body("/system/highest_supported_sstable_version", "\"me\"")
+            finish(rec, "")
+        }
+
+        // PORTING: GET /storage_service/host_id (a list of {key: address,
+        // value: host id}), /storage_service/hostid/local (the id as a string),
+        // /storage_service/tokens (array of strings), /tokens_endpoint,
+        // /ownership (the share of the ring, "1" for the only node, collapsed), /generation_number, /operation_mode, /is_initialized,
+        // /is_starting, /gossiping, /native_transport, /rpc_server (false: the
+        // Thrift server is gone), /join_ring, /nodes/joining, /nodes/leaving,
+        // /nodes/moving, /load_map, /removal_status and GET /raft/leader_host.
+        // The host id returned by hostid/local is the one in host_id's value,
+        // and raft/leader_host names the same node: all {{uuid-1}} on replay.
+        spec.it("reports the node identity and the state of the ring") callback {
+            rec, ok = begin("reports_the_node_identity_and_the_state_of_the_ring", "")
+            if ok == 0 { return }
+            st, b = rest("GET", "/storage_service/host_id")
+            spec.assert_eq(st, 200, "host_id: ${b}")
+            // one node: [{"key": "<address>", "value": "<host id>"}]
+            spec.assert_contains(b, "\"key\": \"", "an address")
+            spec.assert_contains(b, "\"value\": \"", "a host id")
+            st2, local = rest("GET", "/storage_service/hostid/local")
+            spec.assert_eq(st2, 200, "hostid/local")
+            spec.assert_contains(b, string.substring(local, 1, string.length(local) - 1), "hostid/local is host_id's value")
+            expect_contains("/storage_service/tokens", "[\"")
+            expect_contains("/storage_service/tokens_endpoint", "[{\"key\":\"")
+            expect_contains("/storage_service/ownership", "\"value\": \"")
+            st3, gen = rest("GET", "/storage_service/generation_number")
+            spec.assert_eq(st3, 200, "generation_number: ${gen}")
+            expect_body("/storage_service/operation_mode", "\"NORMAL\"")
+            expect_body("/storage_service/is_initialized", "true")
+            expect_body("/storage_service/is_starting", "false")
+            expect_body("/storage_service/gossiping", "true")
+            expect_body("/storage_service/native_transport", "true")
+            expect_body("/storage_service/rpc_server", "false")
+            expect_body("/storage_service/join_ring", "true")
+            expect_body("/storage_service/nodes/joining", "[]")
+            expect_body("/storage_service/nodes/leaving", "[]")
+            expect_body("/storage_service/nodes/moving", "[]")
+            expect_contains("/storage_service/load_map", "\"value\": ")
+            expect_body("/storage_service/removal_status", "\"No token removals in process.\"")
+            st4, leader = rest("GET", "/raft/leader_host")
+            spec.assert_eq(st4, 200, "raft/leader_host: ${leader}")
+            spec.assert_str_eq(leader, local, "the Raft leader is this node")
+            finish(rec, "")
+        }
+
+        // PORTING: GET /storage_service/keyspaces?type=user ([the case's
+        // keyspace]; ?type=non_local_strategy is not taped, its order of five
+        // names changes between runs), GET /storage_service/natural_endpoints/
+        // tcae_keyspaces?cf=items&key=1 (the replicas of a partition key: one
+        // address) and GET /storage_service/ownership/tcae_keyspaces (the
+        // fraction of the ring per address: "1", collapsed).
+        spec.it("lists keyspaces and maps a key to its replica") callback {
+            rec, ok = begin("lists_keyspaces_and_maps_a_key_to_its_replica", "tcae_keyspaces")
+            if ok == 0 { return }
+            expect_body("/storage_service/keyspaces?type=user", "[\"tcae_keyspaces\"]")
+            expect_contains("/storage_service/natural_endpoints/tcae_keyspaces?cf=items&key=1", "[\"")
+            expect_contains("/storage_service/ownership/tcae_keyspaces", "\"value\": \"")
+            finish(rec, "tcae_keyspaces")
+        }
+
+        // PORTING: GET /column_family/metrics/<what>/tcae_metrics:items, where
+        // a table is "<keyspace>:<table>": write (2 rows written), read (0),
+        // live_ss_table_count (0, nothing flushed yet), pending_flushes,
+        // pending_compactions, memtable_switch_count; each a bare number.
+        // Then GET .../write/tcae_metrics:nope and GET .../write/nope:nope,
+        // both 400 with "Can't find a column family".
+        spec.it("reads the metrics of a table") callback {
+            rec, ok = begin("reads_the_metrics_of_a_table", "tcae_metrics")
+            if ok == 0 { return }
+            expect_body("/column_family/metrics/write/tcae_metrics:items", "2")
+            expect_body("/column_family/metrics/read/tcae_metrics:items", "0")
+            expect_body("/column_family/metrics/live_ss_table_count/tcae_metrics:items", "0")
+            expect_body("/column_family/metrics/pending_flushes/tcae_metrics:items", "0")
+            expect_body("/column_family/metrics/pending_compactions/tcae_metrics:items", "0")
+            expect_body("/column_family/metrics/memtable_switch_count/tcae_metrics:items", "0")
+            expect_error("GET", "/column_family/metrics/write/tcae_metrics:nope", 400, "Can't find a column family nope in keyspace tcae_metrics")
+            expect_error("GET", "/column_family/metrics/write/nope:nope", 400, "Can't find a column family nope in keyspace nope")
+            finish(rec, "tcae_metrics")
+        }
+
+        // PORTING: GET live_ss_table_count (0), POST /storage_service/
+        // keyspace_flush/tcae_flush (200, empty body), GET live_ss_table_count
+        // (1); then a cqlsh INSERT (not on the tape), POST keyspace_flush again,
+        // GET live_ss_table_count (2); POST /storage_service/keyspace_compaction/
+        // tcae_flush (200, empty body), GET live_ss_table_count (1). Then POST
+        // /storage_service/keyspace_flush/nope: 400 "Can't find a keyspace nope".
+        spec.it("flushes and compacts a keyspace") callback {
+            rec, ok = begin("flushes_and_compacts_a_keyspace", "tcae_flush")
+            if ok == 0 { return }
+            count = "/column_family/metrics/live_ss_table_count/tcae_flush:items"
+            expect_body(count, "0")
+            st, b = rest("POST", "/storage_service/keyspace_flush/tcae_flush")
+            spec.assert_eq(st, 200, "flush: ${b}")
+            spec.assert_str_eq(b, "", "an empty body")
+            expect_body(count, "1")
+            cql("INSERT INTO tcae_flush.items (id, name) VALUES (3, 'c')")
+            st, b = rest("POST", "/storage_service/keyspace_flush/tcae_flush")
+            spec.assert_eq(st, 200, "second flush: ${b}")
+            expect_body(count, "2")
+            st, b = rest("POST", "/storage_service/keyspace_compaction/tcae_flush")
+            spec.assert_eq(st, 200, "compaction: ${b}")
+            expect_body(count, "1")
+            expect_error("POST", "/storage_service/keyspace_flush/nope", 400, "Can't find a keyspace nope")
+            finish(rec, "tcae_flush")
+        }
+
+        // PORTING: GET /storage_service/snapshots ([]), POST /storage_service/
+        // snapshots?tag=tcae_snap&kn=tcae_snapshot (200, empty), GET
+        // /storage_service/snapshots (one entry: {"key": tag, "value": [{"ks",
+        // "cf", "total", "live"}]}, sizes collapsed to 0), DELETE
+        // /storage_service/snapshots?tag=tcae_snap&kn=tcae_snapshot (200,
+        // empty), GET /storage_service/snapshots ([] again). Then POST
+        // .../snapshots?tag=x&kn=nope: 400 "Can't find a keyspace nope".
+        spec.it("takes, lists and deletes a snapshot") callback {
+            rec, ok = begin("takes_lists_and_deletes_a_snapshot", "tcae_snapshot")
+            if ok == 0 { return }
+            expect_body("/storage_service/snapshots", "[]")
+            st, b = rest("POST", "/storage_service/snapshots?tag=tcae_snap&kn=tcae_snapshot")
+            spec.assert_eq(st, 200, "snapshot: ${b}")
+            st, b = rest("GET", "/storage_service/snapshots")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "\"key\":\"tcae_snap\"", "the tag: ${b}")
+            spec.assert_contains(b, "\"ks\":\"tcae_snapshot\",\"cf\":\"items\"", "the table: ${b}")
+            st, b = rest("DELETE", "/storage_service/snapshots?tag=tcae_snap&kn=tcae_snapshot")
+            spec.assert_eq(st, 200, "delete: ${b}")
+            expect_body("/storage_service/snapshots", "[]")
+            expect_error("POST", "/storage_service/snapshots?tag=x&kn=nope", 400, "Can't find a keyspace nope")
+            finish(rec, "tcae_snapshot")
+        }
+
+        // PORTING: GET /storage_service/schema_version (a UUID string), GET
+        // /storage_proxy/schema_versions ([{"key": schema version, "value":
+        // [address]}]: every node agrees on one), then a cqlsh CREATE TABLE
+        // (not on the tape), then the same two GETs: the version is a different
+        // UUID, {{uuid-N}} with a new N, and schema_versions agrees with it.
+        spec.it("changes the schema version with a DDL statement") callback {
+            rec, ok = begin("schema_version_changes_with_a_ddl_statement", "tcae_schema")
+            if ok == 0 { return }
+            st, v1 = rest("GET", "/storage_service/schema_version")
+            spec.assert_eq(st, 200, "schema_version: ${v1}")
+            st, vs1 = rest("GET", "/storage_proxy/schema_versions")
+            spec.assert_eq(st, 200, "schema_versions: ${vs1}")
+            spec.assert_contains(vs1, string.substring(v1, 1, string.length(v1) - 1), "one version, the node's own")
+            cql("CREATE TABLE tcae_schema.more (id int PRIMARY KEY)")
+            st, v2 = rest("GET", "/storage_service/schema_version")
+            spec.assert_eq(st, 200, "schema_version after: ${v2}")
+            spec.assert_true(v1 != v2, "a DDL statement changes the schema version")
+            st, vs2 = rest("GET", "/storage_proxy/schema_versions")
+            spec.assert_eq(st, 200, "schema_versions after: ${vs2}")
+            spec.assert_contains(vs2, string.substring(v2, 1, string.length(v2) - 1), "and agreement on the new one")
+            finish(rec, "tcae_schema")
+        }
+
+        // PORTING: GET /system/logger/compaction ("info"), POST /system/logger/
+        // compaction?level=debug (200, empty), GET (debug), POST ...?level=info,
+        // GET (info). Errors: POST ...?level=loud is 400 "Unknown logging
+        // level loud", GET /system/logger/nonexistent is 400 "Unknown logger
+        // name nonexistent".
+        spec.it("sets and resets a log level") callback {
+            rec, ok = begin("sets_and_resets_a_log_level", "")
+            if ok == 0 { return }
+            expect_body("/system/logger/compaction", "\"info\"")
+            st, b = rest("POST", "/system/logger/compaction?level=debug")
+            spec.assert_eq(st, 200, "set debug: ${b}")
+            expect_body("/system/logger/compaction", "\"debug\"")
+            st, b = rest("POST", "/system/logger/compaction?level=info")
+            spec.assert_eq(st, 200, "set info: ${b}")
+            expect_body("/system/logger/compaction", "\"info\"")
+            expect_error("POST", "/system/logger/compaction?level=loud", 400, "Unknown logging level loud")
+            expect_error("GET", "/system/logger/nonexistent", 400, "Unknown logger name nonexistent")
+            finish(rec, "")
+        }
+
+        // PORTING: GET /storage_service/trace_probability (0), POST
+        // .../trace_probability?probability=0.25, GET (0.25), POST
+        // ...?probability=0 (back), GET (0). GET /storage_service/slow_query
+        // ({"enable": false, "ttl": 86400, "threshold": 500000, "fast":
+        // false}), POST /storage_service/slow_query?enable=true&threshold=1000,
+        // GET (enable true, threshold 1000), POST ?enable=false&threshold=500000
+        // (back), GET (as at first).
+        spec.it("sets and resets tracing and slow query settings") callback {
+            rec, ok = begin("sets_and_resets_tracing_and_slow_query_settings", "")
+            if ok == 0 { return }
+            expect_body("/storage_service/trace_probability", "0")
+            st, b = rest("POST", "/storage_service/trace_probability?probability=0.25")
+            spec.assert_eq(st, 200, "set probability: ${b}")
+            expect_body("/storage_service/trace_probability", "0.25")
+            st, b = rest("POST", "/storage_service/trace_probability?probability=0")
+            spec.assert_eq(st, 200, "reset probability: ${b}")
+            expect_body("/storage_service/trace_probability", "0")
+            slow = "{\"enable\": false, \"ttl\": 86400, \"threshold\": 500000, \"fast\": false}"
+            expect_body("/storage_service/slow_query", slow)
+            st, b = rest("POST", "/storage_service/slow_query?enable=true&threshold=1000")
+            spec.assert_eq(st, 200, "enable slow query: ${b}")
+            expect_contains("/storage_service/slow_query", "\"enable\": true, \"ttl\": 86400, \"threshold\": 1000")
+            st, b = rest("POST", "/storage_service/slow_query?enable=false&threshold=500000")
+            spec.assert_eq(st, 200, "reset slow query: ${b}")
+            expect_body("/storage_service/slow_query", slow)
+            finish(rec, "")
+        }
+
+        // PORTING: GET /gossiper/endpoint/live ([address]), /gossiper/endpoint/
+        // down ([]), /failure_detector/simple_states ([{"key": address,
+        // "value": "UP"}]), /failure_detector/count/endpoint/up (1), .../down
+        // (0), /failure_detector/phi (8, the convict threshold),
+        // /failure_detector/endpoint_phi_values ([]: no peers to measure).
+        spec.it("reports gossip and the failure detector") callback {
+            rec, ok = begin("reports_gossip_and_the_failure_detector", "")
+            if ok == 0 { return }
+            st, live = rest("GET", "/gossiper/endpoint/live")
+            spec.assert_eq(st, 200, "live: ${live}")
+            spec.assert_true(string.starts_with(live, "[\"") == 1, "one address: ${live}")
+            expect_body("/gossiper/endpoint/down", "[]")
+            expect_contains("/failure_detector/simple_states", "\"value\": \"UP\"")
+            expect_body("/failure_detector/count/endpoint/up", "1")
+            expect_body("/failure_detector/count/endpoint/down", "0")
+            expect_body("/failure_detector/phi", "8")
+            expect_body("/failure_detector/endpoint_phi_values", "[]")
+            finish(rec, "")
+        }
+
+        // PORTING: GET /storage_proxy/rpc_timeout (10), read_rpc_timeout (5),
+        // write_rpc_timeout (2), range_rpc_timeout (10), truncate_rpc_timeout
+        // (60), cas_contention_timeout (1), hinted_handoff_enabled (true),
+        // hinted_handoff_enabled_by_dc ([]), read_repair_attempted (0). Then
+        // the calls this Scylla answers 500 "API call is not supported yet":
+        // GET /storage_proxy/max_hint_window, /storage_proxy/total_hints,
+        // /hinted_handoff/hints, /storage_service/tombstone_warn_threshold.
+        spec.it("reports storage proxy settings and unsupported calls") callback {
+            rec, ok = begin("reports_storage_proxy_settings_and_unsupported_calls", "")
+            if ok == 0 { return }
+            expect_body("/storage_proxy/rpc_timeout", "10")
+            expect_body("/storage_proxy/read_rpc_timeout", "5")
+            expect_body("/storage_proxy/write_rpc_timeout", "2")
+            expect_body("/storage_proxy/range_rpc_timeout", "10")
+            expect_body("/storage_proxy/truncate_rpc_timeout", "60")
+            expect_body("/storage_proxy/cas_contention_timeout", "1")
+            expect_body("/storage_proxy/hinted_handoff_enabled", "true")
+            expect_body("/storage_proxy/hinted_handoff_enabled_by_dc", "[]")
+            expect_body("/storage_proxy/read_repair_attempted", "0")
+            expect_error("GET", "/storage_proxy/max_hint_window", 500, "API call is not supported yet")
+            expect_error("GET", "/storage_proxy/total_hints", 500, "API call is not supported yet")
+            expect_error("GET", "/hinted_handoff/hints", 500, "API call is not supported yet")
+            expect_error("GET", "/storage_service/tombstone_warn_threshold", 500, "API call is not supported yet")
+            finish(rec, "")
+        }
+
+        // PORTING: GET /compaction_manager/compactions ([]: none running),
+        // /compaction_manager/metrics/pending_tasks (0), GET /task_manager/
+        // list_modules (the five task manager modules), /task_manager/ttl (0),
+        // GET /stream_manager/ ([]), /storage_service/active_repair/ ([]),
+        // /storage_service/raft_topology/upgrade ("done").
+        spec.it("reports the compaction, task and stream managers") callback {
+            rec, ok = begin("reports_the_compaction_task_and_stream_managers", "")
+            if ok == 0 { return }
+            expect_body("/compaction_manager/compactions", "[]")
+            expect_body("/compaction_manager/metrics/pending_tasks", "0")
+            expect_body("/task_manager/list_modules", "[\"sstables_loader\",\"repair\",\"node_ops\",\"snapshot\",\"compaction\"]")
+            expect_body("/task_manager/ttl", "0")
+            expect_body("/stream_manager/", "[]")
+            expect_body("/storage_service/active_repair/", "[]")
+            expect_body("/storage_service/raft_topology/upgrade", "\"done\"")
+            finish(rec, "")
+        }
+
+        // PORTING: GET /cache_service/row_cache_save_period, key_cache_save_period,
+        // counter_cache_save_period (0 each), GET /cache_service/metrics/key/
+        // capacity (0), /metrics/key/entries (0), /metrics/counter/capacity (0).
+        // (/metrics/row/capacity, 484442112, is left out: a bare number of nine
+        // digits would be collapsed like the uptime.) Then GET /cache_service/
+        // row_cache_keys_to_save: 500 "API call is not supported yet".
+        spec.it("reports the cache service") callback {
+            rec, ok = begin("reports_the_cache_service", "")
+            if ok == 0 { return }
+            expect_body("/cache_service/row_cache_save_period", "0")
+            expect_body("/cache_service/key_cache_save_period", "0")
+            expect_body("/cache_service/counter_cache_save_period", "0")
+            expect_body("/cache_service/metrics/key/capacity", "0")
+            expect_body("/cache_service/metrics/key/entries", "0")
+            expect_body("/cache_service/metrics/counter/capacity", "0")
+            expect_error("GET", "/cache_service/row_cache_keys_to_save", 500, "API call is not supported yet")
+            finish(rec, "")
+        }
+
+        // PORTING: GET /system/uptime_ms (a bare number of milliseconds,
+        // collapsed to 1000000), /storage_service/data_file/locations (["/var/
+        // lib/scylla/data"]), /storage_service/saved_caches/location, /storage_
+        // service/commitlog, /storage_service/incremental_backups (false),
+        // /storage_service/compaction_throughput (0).
+        spec.it("reports the uptime and the node's paths") callback {
+            rec, ok = begin("reports_the_uptime_and_the_nodes_paths", "")
+            if ok == 0 { return }
+            st, up = rest("GET", "/system/uptime_ms")
+            spec.assert_eq(st, 200, "uptime_ms: ${up}")
+            expect_body("/storage_service/data_file/locations", "[\"/var/lib/scylla/data\"]")
+            expect_body("/storage_service/saved_caches/location", "\"/var/lib/scylla/saved_caches\"")
+            expect_body("/storage_service/commitlog", "\"/var/lib/scylla/commitlog\"")
+            expect_body("/storage_service/incremental_backups", "false")
+            expect_body("/storage_service/compaction_throughput", "0")
+            finish(rec, "")
+        }
+
+        // PORTING: GET /api-doc (the Swagger 1.2 index: {"apiVersion": "0.0.1",
+        // "swaggerVersion": "1.2", "apis": [{"path": "/system", ...}, ...]}) and
+        // GET /api-doc/system/ (the module's own description). The address in
+        // the second's "basePath" is the replay server's own: {{request.host}}
+        // on the tape, so a replay answers with the host:port it runs on.
+        // (GET /api-doc/system, without the slash, is a 301 to the slash form.)
+        spec.it("describes the API with swagger") callback {
+            rec, ok = begin("describes_the_api_with_swagger", "")
+            if ok == 0 { return }
+            expect_contains("/api-doc", "\"swaggerVersion\": \"1.2\"")
+            expect_contains("/api-doc", "{\"path\": \"/storage_service\", \"description\": \"The storage service API\"}")
+            expect_contains("/api-doc/system/", "\"resourcePath\":\"/system\"")
+            finish(rec, "")
+        }
+
+        // PORTING: the representative errors. GET /nope and GET /storage_
+        // service/nope: 404 {"message": "Not found", "code": 404}; GET
+        // /messaging_service/version: 400 "Missing mandatory parameter 'addr'";
+        // GET /storage_service/toppartitions/: 400 "Missing mandatory parameter
+        // 'duration'"; GET /storage_service/repair_status/?id=1: 400 "unknown
+        // repair id 1"; POST /storage_service/keyspace_compaction/nope: 400
+        // "Can't find a keyspace nope"; GET /storage_service/describe_ring/nope:
+        // 400 (a keyspace that is not there); GET /storage_service/stream_
+        // throughput: 500 "API call is not supported yet".
+        spec.it("answers errors with 400, 404 and 500") callback {
+            rec, ok = begin("answers_errors_with_400_404_and_500", "")
+            if ok == 0 { return }
+            expect_error("GET", "/nope", 404, "Not found")
+            expect_error("GET", "/storage_service/nope", 404, "Not found")
+            expect_error("GET", "/messaging_service/version", 400, "Missing mandatory parameter 'addr'")
+            expect_error("GET", "/storage_service/toppartitions/", 400, "Missing mandatory parameter 'duration'")
+            expect_error("GET", "/storage_service/repair_status/?id=1", 400, "unknown repair id 1")
+            expect_error("POST", "/storage_service/keyspace_compaction/nope", 400, "Can't find a keyspace nope")
+            expect_error("GET", "/storage_service/describe_ring/nope", 400, "nope")
+            expect_error("GET", "/storage_service/stream_throughput", 500, "API call is not supported yet")
+            finish(rec, "")
+        }
+    }
+
+    if shared_container != null {
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("scylladb: removing the shared container: ${e}") }
+    }
+    return spec.run_summary(fw)
+}

@@ -27,7 +27,7 @@ Classes:
   **tapes are not**: record your own locally (the suite's `LICENCE-NOTE.md`
   says how), and in playback with no tape the suite skips with a notice.
 
-Counts: 46 CLEAR, 11 BOUND, 3 DECISION (60 suites).
+Counts: 47 CLEAR, 11 BOUND, 3 DECISION (61 suites).
 
 Product names are their owners' trademarks, used here only to say which
 software a tape was recorded against.
@@ -46,6 +46,7 @@ licence file at the tag the image was built from.
 | azurite | `mcr.microsoft.com/azure-storage/azurite:3.28.0` | MIT | Azure/Azurite `LICENSE` | none | CLEAR |
 | chroma | `chromadb/chroma:1.4.0` | Apache-2.0 | chroma-core/chroma `LICENSE` | none | CLEAR |
 | clickhouse | `clickhouse/clickhouse-server:23.3.8.21-alpine` | Apache-2.0 | ClickHouse/ClickHouse `LICENSE` | none | CLEAR |
+| cockroachdb | `cockroachdb/cockroach:v23.1.30` | CockroachDB Software License (Cockroach Labs, proprietary, source-available) | `/licenses/LICENSE` in the image (read with `podman create` + `podman cp`); `cockroach version` reports "Build Tag: v23.1.30, Build Time: 2024/12/09" and "Distribution: CCL". Earlier v23.1 patch releases shipped under the BSL/CCL licences; the final ones moved to this licence, so the version is pinned, not the `latest-v23.1` tag | No reverse-engineering clause and none against recording or publishing. Use without a licence key only as "Limited Non-Production Use" (testing, a single node); must not circumvent the licence key, telemetry or other "Protective Measures"; notices kept; "Benchmark" is "any benchmark, comparative test or evaluation of the Software", to be disclosed with replication information | BOUND |
 | consul | `hashicorp/consul:1.15` (served 1.15.10) | BUSL-1.1 (HashiCorp; MPL-2.0 after four years) | hashicorp/consul `release/1.15.x/LICENSE`: "Licensed Work: Consul Version 1.15.8 or later"; the tapes report 1.15.10 | Additional Use Grant: production use allowed unless "offering the Licensed Work" to third parties competitively | BOUND |
 | couchbase | `couchbase:community-7.1.1` | Couchbase Community Edition License Agreement (CCELA/Apr2021/v3), proprietary | couchbase.com/community-license-agreement04272021 (not read from inside the image, which is not pulled here) | §4 internal business use and products that "interact with the Community Software"; §5(b) no "decompile, reverse engineer, disassemble"; §5(g) at most five nodes | BOUND |
 | couchdb | `couchdb:3` | Apache-2.0 | apache/couchdb `LICENSE` | none (floating tag) | CLEAR |
@@ -90,6 +91,7 @@ licence file at the tag the image was built from.
 | redpanda | `docker.io/redpandadata/redpanda:v25.2.4` | BUSL-1.1 (Community Edition; Apache-2.0 after four years) and the Redpanda Community License (Enterprise features) | redpanda-data/redpanda `v25.2.4/licenses/bsl.md`, `licenses/rcl.md` | BSL: not "for a Streaming or Queuing Service"; RCL: Enterprise features paid, or a one-time trial "solely for ... internal evaluation"; RCL §9 no trademark rights | BOUND |
 | registry | `registry:2.8.3` (+ `alpine:3` pushed as content) | Apache-2.0 (+ Alpine's packages: MIT, GPL-2.0 BusyBox and others) | distribution/distribution `LICENSE` | none | CLEAR |
 | s3mock | `adobe/s3mock:3.9.1` | Apache-2.0 | adobe/S3Mock `LICENSE` | none | CLEAR |
+| scylladb | `scylladb/scylla:6.2` (served 6.2.3-0.20250119.bff9ddde1283) | AGPL-3.0 | `/usr/share/doc/scylla-server/copyright` in the image (`License: AGPL-3.0`; seastar Apache-2.0); `/opt/scylladb/share/doc/scylla/NOTICE.txt`. The ScyllaDB Source Available License (2025.1 and later, announced December 2024) is not in this image: 6.2 is the last AGPL line | none (floating tag `6.2`, which stops at 6.2.3; a 2025.x image would need re-reading) | CLEAR |
 | solr | `solr:9` | Apache-2.0 | apache/solr `LICENSE.txt` | none (floating tag) | CLEAR |
 | surrealdb | `surrealdb/surrealdb:v1.1.1` | BUSL-1.1 (Apache-2.0 on 2027-04-01) | surrealdb/surrealdb `v1.1.1/LICENSE` | Additional Use Grant: may not use it "for a Database Service" | BOUND |
 | tidb | `pingcap/tidb:v8.4.0` | Apache-2.0 | pingcap/tidb `v8.4.0/LICENSE`; the image (`/tidb-server -V`) reports "Release Version: v8.4.0, Edition: Community" and carries no licence file of its own | none | CLEAR |
@@ -124,6 +126,7 @@ stand in for it in a competing hosted service).
   becomes MPL-2.0 four years after publication. `vault` (1.13.0) predates the
   change and is MPL-2.0.
 - **couchbase**: CCELA/Apr2021/v3. Allowed: internal business use, and
+
   developing products that interact with the software (which is what a
   test of a client is). Forbidden: decompiling, reverse engineering,
   disassembling (§5(b)), distributing the software standalone (§5(d)),

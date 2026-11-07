@@ -9,8 +9,8 @@ clickhouse/testdata/init-db.sh come from the same modules' testdata/ in
 testcontainers-go; rabbitmq/testdata/placeholder.pem was written for
 testcontainers-ae. Some cases were written for servirtium-vcr rather than
 ported, and say so at the top of their file: gcloud_spanner's, the
-"CouchDB HTTP API" block of couchdb/test_couchdb.ae, tidb/test_tidb.ae and
-dind/test_dind.ae.
+"CouchDB HTTP API" block of couchdb/test_couchdb.ae, tidb/test_tidb.ae,
+dind/test_dind.ae and scylladb/test_scylladb.ae.
 
 The tapes (*.md beside each test) are recordings of the named container
 images' responses.

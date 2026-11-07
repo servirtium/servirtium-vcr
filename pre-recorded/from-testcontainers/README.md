@@ -79,6 +79,7 @@ with restrictive terms start with a `## LICENSE NOTICE`
 | `surrealdb` | 3 (+1 live only) | `surrealdb/surrealdb:v1.1.1` |
 | `tidb` | 8 (comprehensive: status and schema API on 10080, standalone, no login) | `pingcap/tidb:v8.4.0` |
 | `dind` | 7 (comprehensive: Engine API on 2375, version/info, images, containers, networks, volumes, errors; no login) | `docker:28.0.1-dind` (runs `busybox:1.36.1` inside) |
+| `scylladb` | 16 (comprehensive: REST management API on 10000, identity and ring, keyspaces, table metrics, flush/compact, snapshots, schema version, log levels, tracing, gossip, errors; no login) | `scylladb/scylla:6.2` |
 | `trino` | 1 | `trinodb/trino:435` |
 | `presto` | 1 | `prestodb/presto:0.286` |
 | `timeplus` | test + recorder only, tapes not shipped ([why](timeplus/LICENCE-NOTE.md)) | `timeplus/timeplusd:2.3.37` |
@@ -218,6 +219,7 @@ Per suite (registered at the top of its `main`):
 | artemis | | | `Authorization: Basic`, as `REDACTED[me]` | |
 | pulsar | | | | |
 | redpanda | | | | |
+| scylladb | the node's UUIDs (host id, schema version, `{{uuid-N}}`) and IPv4 address (`{{ip-N}}`) | the 256 random tokens (whole array), the generation number, `load_map` bytes, ownership shares, snapshot sizes, `uptime_ms` | | |
 
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
@@ -314,6 +316,12 @@ it is on the tape, and playback is plain HTTP.
   `GET /schema` lists databases in Go map order, different each run, so its
   body is collapsed to the list in id order (a case table's ids are
   collapsed to constants in bodies and in `table_id(s)=`).
+- **ScyllaDB:** the REST management API (port 10000) listens on loopback
+  inside the container, so the module's `rest_api()` option publishes it
+  (`--api-address=0.0.0.0`). Keyspaces are made with `cqlsh` in the
+  container, outside the tapes. Listings Seastar builds from hash maps
+  (`/column_family/`, `/storage_service/keyspaces` with several keyspaces)
+  change order between runs and are not taped.
 - **Solace is not here:** its image needs `ulimit nofile=1048576`, which a
   rootless Podman machine refuses; it can be recorded on Docker or a
   rootful Podman machine.
