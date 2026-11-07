@@ -129,7 +129,10 @@ playback ignores it, so no line may start `## Interaction ` or
 `set_sort_json_keys(h, int)`, `sort_json_array(h, path, by)`,
 `sort_json_array_at(h, request, path, by)`,
 `set_sort_response_headers(h, int)`, `sort_header_value(h, name)`,
-`clear_stable_order(h)` (opt-in stable order, below); plus `clear_*` resets.
+`clear_stable_order(h)` (opt-in stable order, below);
+`set_playback_range(h, from, to)` (caller frees) / `clear_playback_range(h)` /
+`get_playback_range_from(h)` / `get_playback_range_to(h)` (replay only a slice
+of the tape, below); plus `clear_*` resets.
 
 `Field` (int): `Path=1, ResponseBody=2, RequestHeaders=3, RequestBody=4,
 ResponseHeaders=5`.
@@ -391,6 +394,64 @@ pre-recorded recorder exposes them as `servirtium.sort_json_keys()`,
 `sort_json_array(path, by)`, `sort_json_array_at(request, path, by)`,
 `sort_response_headers()`, `sort_header_value(name)`, with
 `servirtium.pretty_json(2)` beside any JSON one.
+
+## Playback range (opt-in)
+
+Replay only interactions `from`..`to` of a tape, inclusive. The motivating
+case is a Selenium suite that sets a session cookie, goes straight to the
+card page and replays only "purchase rejected with wrong CVC": the later
+interactions of a tape recorded through login, cart and payment. It
+complements the "already logged in" tapes of `pre-recorded/` (one scenario
+per tape): the whole journey stays one tape, and a test picks its slice.
+
+| Core (`_h`; bare form without it) | C ABI (`aether_vcr_embed_…`) |
+|---|---|
+| `set_playback_range_h(h, from, to)` → error | `set_playback_range` (caller frees) |
+| `clear_playback_range_h(h)` | `clear_playback_range` |
+| `playback_range_from_h(h)` / `playback_range_to_h(h)` | `get_playback_range_from` / `get_playback_range_to` (-1 when none) |
+
+Semantics, and why:
+- **Numbers are the tape's `## Interaction N` headings**, 0-based and
+  inclusive; `to` < 0 means through the last. They shift when a tape is
+  re-recorded. Set after open, before start; a bad range (from < 0, to before
+  from, either past the tape's last interaction) is refused by the setter,
+  and checked again at `start_background_h` (a `load_append_h` in between
+  could change the tape), which then fails the start with `last_error`.
+- **Ordered playback starts its cursor at `from`**; `reset_cursor` returns
+  to `from`; a request once the cursor is past `to` fails with kind
+  TapeExhausted, "past the end of the playback range 4–6" (naming the
+  interaction outside the range it would have matched, if any).
+- **Outside the range is never served.** A request that does not fit the
+  expected interaction but fully fits one outside the range (or, when
+  nothing inside the range shares its method and path, has that one's
+  method and path) fails with kind PathOrMethodDiff and "interaction 2 is
+  outside the playback range 4–6 (expected interaction 4: GET …)"; the
+  cursor stays. No new Outcome kind: the int contract stays as it is. The
+  message is last_error, the 599 body, and the first line of the retained
+  diagnostic's diff (so `diagnostics_json` and `assert_no_mismatches` carry
+  it). Any other mismatch keeps its ordinary message.
+- **MatchMultiple searches only the range**, and its miss says "no recorded
+  interaction in the playback range 4–6 matches …" (or the outside-range
+  message above).
+- **`assert_all_consumed` counts only the range** ("1 of 3 recorded
+  interaction(s) in the playback range 4–6 were never replayed").
+  `tape_length` stays the whole tape.
+- **Playback only.** A record handle (check mode records too) refuses it:
+  a recording always captures the whole conversation. Refuse rather than
+  ignore, so a test that thinks it is replaying a slice cannot silently
+  overwrite the journey's tape with one.
+- **Tokens and credentials.** Values first introduced in skipped
+  interactions are on the tape as normalized tokens (a cart id as
+  `{{uuid-1}}`); the test never received them, so it sends them literally.
+  Under the credential preset (`redact_credentials_h` on the playback
+  handle) credential headers match on presence, so a cookie the test set
+  itself passes; without the preset it is a HeaderValueDiff.
+
+Guarded by `core_tests/test_vcr_playback_range.ae` (tape
+`core_tests/tapes/playback_range.tape`, the shop journey). The pre-recorded
+recorder exposes it as `servirtium.replaying_part(suite, case, url, from,
+to)`: playback only; in record and check mode that case gets the
+container's URL and records nothing.
 
 ## The recording-rules footer (opt-in)
 

@@ -202,7 +202,9 @@ exports (
     tape_length_h, reset_cursor_h, load_error_h, assert_all_consumed_h, assert_all_redactions_used_h,
     assert_no_unfilled_placeholders_h,
     stop_and_flush_h, stop_and_flush_fail_if_changed_h, stop_and_flush_or_check_h,
-    discard_h
+    discard_h,
+    set_playback_range_h, clear_playback_range_h, playback_range_from_h, playback_range_to_h,
+    set_playback_range, clear_playback_range
 )
 
 // HTTP client functions for load_url (http_get_with_timeout_raw,
@@ -650,7 +652,7 @@ cursor() -> int { return cursor_k(cur_key()) }
 set_cursor(i: int) { set_cursor_k(cur_key(), i) }
 
 vcr_reset_cursor_k(key: string) {
-    set_cursor_k(key, 0)
+    set_cursor_k(key, range_from_k(key))   // 0 unless a playback range is set
     cfg_set_str(slot(key, "last_error"), "")
     set_last_kind_k(key, KIND_OK)
     set_last_index_k(key, -1)
@@ -2420,7 +2422,9 @@ do_playback_multiple(srvkey: string, req: ptr, res: ptr) {
     live_body = read_full_request_body(req)          // read once, reused per candidate
 
     found = -1
-    i = 0
+    // Only the playback range, when one is set (else the whole tape).
+    i = range_from_k(srvkey)
+    n = range_to_k(srvkey) + 1
     while i < n {
         e = tape_get_k(srvkey, i)
         if interaction_matches_pre(srvkey, i, e, req, got_method, got_path_plain, got_path_q, live_headers, live_body) == 1 {
@@ -2431,21 +2435,27 @@ do_playback_multiple(srvkey: string, req: ptr, res: ptr) {
     }
 
     if found < 0 {
+        if range_set_k(srvkey) == 1 && range_multiple_miss_k(srvkey, req, res) == 1 { return }
         gp = got_path_q
         if string.length(gp) == 0 { gp = "(null)" }
         msg = "no recorded interaction matches ${got_method} ${gp}"
+        if range_set_k(srvkey) == 1 {
+            rtext = range_text_k(srvkey)
+            msg = "no recorded interaction in the playback range ${rtext} matches ${got_method} ${gp}"
+        }
         set_last_error_k(srvkey, msg)
         set_last_kind_k(srvkey, KIND_PATH_OR_METHOD_DIFF)
         set_last_index_k(srvkey, -1)
         candidate_index = -1
         candidate_entry = null as *Interaction
-        j = 0
+        j = range_from_k(srvkey)
         while j < n {
             entry = tape_get_k(srvkey, j)
             if entry.method == got_method { candidate_index = j; candidate_entry = entry; break }
             j = j + 1
         }
-        if candidate_entry == null && n > 0 { candidate_index = 0; candidate_entry = tape_get_k(srvkey, 0) }
+        first = range_from_k(srvkey)
+        if candidate_entry == null && n > first { candidate_index = first; candidate_entry = tape_get_k(srvkey, first) }
         retain_replay_mismatch_k(srvkey, KIND_PATH_OR_METHOD_DIFF, candidate_index, candidate_entry, req, live_body, 1)
         emit_mismatch_response(res, msg, KIND_PATH_OR_METHOD_DIFF)
         return
@@ -2477,6 +2487,9 @@ do_playback(srvkey: string, req: ptr, res: ptr) {
         do_playback_multiple(srvkey, req, res)
         return
     }
+    // Playback range (opt-in): past its end, or a request that fits only an
+    // interaction outside it, is answered here.
+    if range_ordered_precheck_k(srvkey, req, res) == 1 { return }
     cur = cursor_k(srvkey)
     n = list_size(tape_list_k(srvkey))
     if cur >= n {
@@ -2899,6 +2912,11 @@ start_background_h(server: ptr, timeout_ms: int) -> int {
     // the one point where the server exists but has not yet bound. A TLS
     // failure (unreadable/parse/mismatched PEM, or a build without OpenSSL)
     // fails the start -- the handle's last_error carries the reason.
+    rerr = range_check_at_start_k(key_for(server))
+    if rerr != "" {
+        set_last_error_k(key_for(server), rerr)
+        return -1
+    }
     terr = apply_tls_h(server)
     if terr != "" {
         set_last_error_k(key_for(server), string_concat("tls: ", terr))
@@ -3636,8 +3654,10 @@ assert_all_consumed_h(server: ptr) -> string {
     n = list_size(tl)
     unused = 0
     detail = ""
-    i = 0
-    while i < n {
+    // Only the playback range counts, when one is set.
+    i = range_from_k(key)
+    last = range_to_k(key)
+    while i <= last {
         e = list_get_raw(tl, i) as *Interaction
         if e.used == 0 {
             unused = unused + 1
@@ -3646,6 +3666,11 @@ assert_all_consumed_h(server: ptr) -> string {
         i = i + 1
     }
     if unused == 0 { return "" }
+    if range_set_k(key) == 1 {
+        rtext = range_text_k(key)
+        count = last - range_from_k(key) + 1
+        return "vcr: ${unused} of ${count} recorded interaction(s) in the playback range ${rtext} were never replayed:${detail}"
+    }
     return "vcr: ${unused} of ${n} recorded interaction(s) were never replayed:${detail}"
 }
 load_error_h(server: ptr) -> string { return vcr_load_err_k(key_for(server)) }
@@ -7704,4 +7729,236 @@ secret_canonical_live_k(key: string, index: int, field: int, source: string) -> 
         i = i + 1
     }
     return string_concat(out, string.substring(source, cursor, string.length(source)))
+}
+
+// ---- Playback range (opt-in) -------------------------------------------
+//
+// Replay only a slice of a tape: interactions `from`..`to` (inclusive, the
+// numbers of the tape's `## Interaction N` headings; they shift if the tape is
+// re-recorded). Motivating case: a browser suite sets a session cookie itself
+// and goes straight to the card page, so it replays only the later part of a
+// tape recorded through the whole journey (login, cart, pay).
+//
+//   * set after open, before start; `to` < 0 means through the last one.
+//   * ordered playback starts its cursor at `from`; reset_cursor goes back
+//     to `from`; a request after `to` is "past the end of the playback range".
+//   * match_multiple searches only the range.
+//   * an interaction outside the range is never served: a request that would
+//     have matched only one of those fails as an unexpected request (kind
+//     PathOrMethodDiff), and last_error / diagnostics say "interaction 3 is
+//     outside the playback range 7–9".
+//   * assert_all_consumed counts the range only.
+//   * playback only: a record (or check) handle refuses it, because a
+//     recording always captures the whole conversation.
+//
+// State: slots "range_from" / "range_to" (-1 = no range; "range_to" -1 with
+// a range = through the end, resolved against the tape length when used).
+
+range_set_k(key: string) -> int {
+    if cfg_get_int(slot(key, "range_from"), -1) >= 0 { return 1 }
+    return 0
+}
+range_from_k(key: string) -> int {
+    f = cfg_get_int(slot(key, "range_from"), -1)
+    if f < 0 { return 0 }
+    return f
+}
+// Inclusive last index the range allows (the tape's last when unset or open).
+range_to_k(key: string) -> int {
+    n = list_size(tape_list_k(key))
+    if range_set_k(key) == 0 { return n - 1 }
+    t = cfg_get_int(slot(key, "range_to"), -1)
+    if t < 0 || t > n - 1 { return n - 1 }
+    return t
+}
+range_contains_k(key: string, i: int) -> int {
+    if i < range_from_k(key) { return 0 }
+    if i > range_to_k(key) { return 0 }
+    return 1
+}
+range_text_k(key: string) -> string {
+    f = range_from_k(key)
+    t = range_to_k(key)
+    return "${f}–${t}"
+}
+
+// "" if the stored range fits this handle's tape and mode, else why not.
+range_validate_k(key: string, from: int, to: int) -> string {
+    if string.equals(mode_k(key), "record") == 1 {
+        return "set_playback_range: playback only; a recording always captures the whole conversation"
+    }
+    if from < 0 { return "set_playback_range: from (${from}) must be 0 or more" }
+    n = list_size(tape_list_k(key))
+    if from > n - 1 {
+        last = n - 1
+        return "set_playback_range: from (${from}) is past the tape's last interaction (${last})"
+    }
+    if to >= 0 && to < from { return "set_playback_range: to (${to}) is before from (${from})" }
+    if to > n - 1 {
+        last = n - 1
+        return "set_playback_range: to (${to}) is past the tape's last interaction (${last})"
+    }
+    return ""
+}
+
+vcr_set_playback_range_k(key: string, from: int, to: int) -> string {
+    err = range_validate_k(key, from, to)
+    if err != "" { return err }
+    cfg_set_int(slot(key, "range_from"), from)
+    cfg_set_int(slot(key, "range_to"), to)
+    set_cursor_k(key, from)
+    return ""
+}
+vcr_clear_playback_range_k(key: string) {
+    if range_set_k(key) == 1 && cursor_k(key) == range_from_k(key) { set_cursor_k(key, 0) }
+    cfg_set_int(slot(key, "range_from"), -1)
+    cfg_set_int(slot(key, "range_to"), -1)
+}
+
+set_playback_range_h(server: ptr, from: int, to: int) -> string { return vcr_set_playback_range_k(key_for(server), from, to) }
+clear_playback_range_h(server: ptr) { vcr_clear_playback_range_k(key_for(server)) }
+// The resolved range (-1, -1 when none is set).
+playback_range_from_h(server: ptr) -> int {
+    key = key_for(server)
+    if range_set_k(key) == 0 { return -1 }
+    return range_from_k(key)
+}
+playback_range_to_h(server: ptr) -> int {
+    key = key_for(server)
+    if range_set_k(key) == 0 { return -1 }
+    return range_to_k(key)
+}
+// Bare (current-key) forms.
+set_playback_range(from: int, to: int) -> string { return vcr_set_playback_range_k(cur_key(), from, to) }
+clear_playback_range() { vcr_clear_playback_range_k(cur_key()) }
+
+// At start: re-check the range against the tape as it now is (load_append_h
+// may have run since) and put the cursor at `from` if nothing has played yet.
+range_check_at_start_k(key: string) -> string {
+    if range_set_k(key) == 0 { return "" }
+    err = range_validate_k(key, cfg_get_int(slot(key, "range_from"), -1), cfg_get_int(slot(key, "range_to"), -1))
+    if err != "" { return err }
+    if cursor_k(key) < range_from_k(key) { set_cursor_k(key, range_from_k(key)) }
+    return ""
+}
+
+// Method and path only (the request line), as the matchers compare them.
+range_line_matches_k(key: string, index: int, e: *Interaction, req: ptr) -> int {
+    expected_path = rt_apply_unredactions_for_k(key, e.path, FIELD_PATH)
+    got_path = http_request_path(req)
+    if expected_path_includes_query(expected_path) == 1 { got_path = build_recorded_path(req) }
+    got_path = secret_canonical_live_k(key, index, FIELD_PATH, got_path)
+    if string.equals(http_request_method(req), e.method) == 0 { return 0 }
+    if string.length(got_path) == 0 || request_paths_equal(got_path, expected_path) == 0 { return 0 }
+    return 1
+}
+
+// 1 if some interaction INSIDE the range has the request's method and path.
+range_line_inside_k(key: string, req: ptr) -> int {
+    i = range_from_k(key)
+    last = range_to_k(key)
+    while i <= last {
+        if range_line_matches_k(key, i, tape_get_k(key, i), req) == 1 { return 1 }
+        i = i + 1
+    }
+    return 0
+}
+
+// The interaction OUTSIDE the range the request was meant for, or -1: the
+// first that fully fits it, else (when nothing inside the range has the
+// request's method and path, so the request line itself is the problem) the
+// first with its method and path.
+range_outside_k(key: string, req: ptr) -> int {
+    j = range_outside_match_k(key, req)
+    if j >= 0 { return j }
+    if range_line_inside_k(key, req) == 1 { return -1 }
+    n = list_size(tape_list_k(key))
+    i = 0
+    while i < n {
+        if range_contains_k(key, i) == 0 && range_line_matches_k(key, i, tape_get_k(key, i), req) == 1 { return i }
+        i = i + 1
+    }
+    return -1
+}
+
+// The first interaction OUTSIDE the range that fully fits the request, or -1.
+range_outside_match_k(key: string, req: ptr) -> int {
+    if range_set_k(key) == 0 { return -1 }
+    n = list_size(tape_list_k(key))
+    got_method = http_request_method(req)
+    got_path_plain = http_request_path(req)
+    got_path_q = build_recorded_path(req)
+    live_headers = normalize_live_headers_k(key, req)
+    live_body = read_full_request_body(req)
+    i = 0
+    while i < n {
+        if range_contains_k(key, i) == 0 {
+            e = tape_get_k(key, i)
+            if interaction_matches_pre(key, i, e, req, got_method, got_path_plain, got_path_q, live_headers, live_body) == 1 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// Put `note` (one line) at the top of the newest retained diagnostic.
+range_annotate_last_diagnostic_k(key: string, note: string) {
+    events = replay_diagnostics_k(key)
+    n = list_size(events)
+    if n == 0 { return }
+    e = list_get_raw(events, n - 1) as *ReplayDiagnostic
+    e.detail = string_concat(string_concat(note, "\n"), e.detail)
+}
+
+// Fail the request with a range message; `index` is the interaction the
+// diagnostic is about (-1 for none), `expected` its entry (or null).
+range_fail_k(key: string, req: ptr, res: ptr, kind: int, msg: string, index: int, expected: *Interaction) {
+    set_last_error_k(key, msg)
+    set_last_kind_k(key, kind)
+    set_last_index_k(key, index)
+    retain_replay_mismatch_k(key, kind, index, expected, req, read_full_request_body(req), 0)
+    range_annotate_last_diagnostic_k(key, msg)
+    emit_mismatch_response(res, msg, kind)
+}
+
+// Ordered playback, before the usual matching: 1 if the range decided this
+// request (and answered it), else 0.
+range_ordered_precheck_k(key: string, req: ptr, res: ptr) -> int {
+    if range_set_k(key) == 0 { return 0 }
+    cur = cursor_k(key)
+    rtext = range_text_k(key)
+    method = http_request_method(req)
+    path = build_recorded_path(req)
+    if cur > range_to_k(key) {
+        msg = "${method} ${path} is past the end of the playback range ${rtext}"
+        j = range_outside_k(key, req)
+        if j >= 0 { msg = "${msg} (it matches interaction ${j}, which is outside the playback range ${rtext})" }
+        range_fail_k(key, req, res, KIND_TAPE_EXHAUSTED, msg, cur, null)
+        return 1
+    }
+    e = tape_get_k(key, cur)
+    live_headers = normalize_live_headers_k(key, req)
+    live_body = read_full_request_body(req)
+    if interaction_matches_pre(key, cur, e, req, method, http_request_path(req), path, live_headers, live_body) == 1 { return 0 }
+    j = range_outside_k(key, req)
+    if j < 0 { return 0 }
+    expected_path = rt_apply_unredactions_for_k(key, e.path, FIELD_PATH)
+    msg = "unexpected request ${method} ${path}: interaction ${j} is outside the playback range ${rtext} (expected interaction ${cur}: ${e.method} ${expected_path})"
+    range_fail_k(key, req, res, KIND_PATH_OR_METHOD_DIFF, msg, cur, e)
+    return 1
+}
+
+// match_multiple found nothing in the range: say so if the request fits an
+// interaction outside it. 1 if answered here, else 0.
+range_multiple_miss_k(key: string, req: ptr, res: ptr) -> int {
+    j = range_outside_k(key, req)
+    if j < 0 { return 0 }
+    rtext = range_text_k(key)
+    method = http_request_method(req)
+    path = build_recorded_path(req)
+    msg = "unexpected request ${method} ${path}: interaction ${j} is outside the playback range ${rtext}"
+    range_fail_k(key, req, res, KIND_PATH_OR_METHOD_DIFF, msg, -1, null)
+    return 1
 }

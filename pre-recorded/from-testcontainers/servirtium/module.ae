@@ -65,7 +65,7 @@ import servirtium_vcr.vcr
 import testcontainers.testing
 
 exports(
-    mode, live, playback, recording, end_recording, tape_path, case_name,
+    mode, live, playback, recording, replaying_part, end_recording, tape_path, case_name,
     skip_if_no_engine, skip_if_no_tape, normalize, collapse, redact,
     remove_header, clear_rules, license_notice,
     redact_credentials, redact_credential_header, remove_cloud_headers,
@@ -462,6 +462,23 @@ fn free_port() -> int {
 // null). A failure to start fails the current case and hands back the
 // upstream URL, so the test still runs against the container.
 recording(suite: string, case_: string, upstream_url: string) -> (string, ptr) {
+    return open_recording(suite, case_, upstream_url, -1, -1)
+}
+
+// Replay only interactions from..to (inclusive, the `## Interaction N`
+// numbers of <suite>/<case>.md; to < 0 = through the last) of a tape another
+// case records through the whole journey: for a test that sets up its own
+// state (a session cookie it sets itself) and skips the steps before `from`.
+// Numbers shift when that tape is re-recorded. Playback only: in record and
+// check mode this case does not record (it would overwrite the whole
+// journey's tape with its slice) and gets the container's URL back, like
+// TCAE_VCR=off. end_recording then checks only the range was played.
+replaying_part(suite: string, case_: string, upstream_url: string, from: int, to: int) -> (string, ptr) {
+    if mode() != MODE_PLAYBACK { return upstream_url, null }
+    return open_recording(suite, case_, upstream_url, from, to)
+}
+
+fn open_recording(suite: string, case_: string, upstream_url: string, from: int, to: int) -> (string, ptr) {
     m = mode()
     if m == MODE_OFF { return upstream_url, null }
     tape = tape_path(suite, case_)
@@ -495,6 +512,10 @@ recording(suite: string, case_: string, upstream_url: string) -> (string, ptr) {
     }
     rerr = apply_rules(h, m, upstream_url, "127.0.0.1:${port}")
     if rerr != "" { spec.fail("servirtium: a rule was refused: ${rerr}") }
+    if from >= 0 {
+        perr = vcr.set_playback_range_h(h, from, to)
+        if perr != "" { spec.fail("servirtium: ${tape}: ${perr}") }
+    }
     if vcr.start_background_h(h, 5000) != 0 {
         spec.fail("servirtium: the server on port ${port} did not start: ${vcr.last_error_h(h)}")
         return upstream_url, null

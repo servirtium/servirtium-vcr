@@ -1,0 +1,221 @@
+// Playback range: replay only a slice of a tape (set_playback_range_h).
+//
+// Tape (core_tests/tapes/playback_range.tape), a shop journey recorded end to
+// end: 0 GET /login, 1 POST /login (sets the session cookie, taped COOKIE_1),
+// 2 POST /cart (the cart id comes back, normalized to {{uuid-1}}),
+// 3 PUT /cart/{{uuid-1}}/items, 4 GET /checkout/{{uuid-1}}/card,
+// 5 POST /checkout/{{uuid-1}}/pay (402 "rejected: wrong CVC"),
+// 6 GET /checkout/{{uuid-1}}/card again, 7 GET /logout.
+//
+// The motivating story: a Selenium suite sets the session cookie itself, goes
+// straight to the card page and replays only 4..6. It never logged in, so its
+// cookie value is its own (the credential preset matches Cookie on presence),
+// and it never saw the cart id, so it sends the taped {{uuid-1}} literally.
+
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+
+extern exit(code: int)
+
+const TAPE = "core_tests/tapes/playback_range.tape"
+const FORM = "application/x-www-form-urlencoded"
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+// One request; (status, body). cookie/body "" = none.
+do_request(port: int, method: string, path: string, cookie: string, body: string) -> (int, string) {
+    req = client.request(method, "http://127.0.0.1:${port}${path}")
+    if req == null { return -1, "" }
+    client.set_timeout(req, 5s)
+    if string.length(cookie) > 0 { client.set_header(req, "Cookie", cookie) }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), FORM) }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -2, err }
+    st = client.response_status(resp)
+    bd = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return st, bd
+}
+
+expect(h: ptr, port: int, method: string, path: string, body: string, want_status: int, want_body: string, want_index: int) {
+    st, bd = do_request(port, method, path, "sid=live-session-from-the-test", body)
+    if st != want_status || string.contains(bd, want_body) != 1 {
+        fail("${method} ${path}: expected ${want_status} '${want_body}', got ${st} '${bd}'; last_error: ${vcr.last_error_h(h)}")
+    }
+    if vcr.last_index_h(h) != want_index {
+        li = vcr.last_index_h(h)
+        fail("${method} ${path}: expected interaction ${want_index}, served ${li}")
+    }
+    println("  ok: ${method} ${path} -> ${st} (interaction ${want_index})")
+}
+
+// A request the range refuses: 599, the kind, and these words in last_error.
+refused(h: ptr, port: int, method: string, path: string, kind: int, words: string) {
+    st, bd = do_request(port, method, path, "sid=live-session-from-the-test", "")
+    if st != 599 { fail("${method} ${path}: expected 599, got ${st} '${bd}'") }
+    if vcr.last_kind_h(h) != kind {
+        k = vcr.last_kind_h(h)
+        fail("${method} ${path}: expected kind ${kind}, got ${k}")
+    }
+    if string.contains(bd, words) != 1 { fail("${method} ${path}: response body lacks '${words}': ${bd}") }
+    js = vcr.diagnostics_json_h(h, 0)
+    if string.contains(js, words) != 1 { fail("${method} ${path}: diagnostics_json lacks '${words}': ${js}") }
+    le = vcr.last_error_h(h)
+    if string.contains(le, words) != 1 { fail("${method} ${path}: last_error lacks '${words}': ${le}") }
+    println("  ok: ${method} ${path} -> 599: ${bd}")
+}
+
+// A playback handle on `port` with the credential preset (Cookie matches on
+// presence) and the common client headers ignored.
+open_range(port: int, from: int, to: int, presets: int) -> ptr {
+    h = vcr.load(TAPE, port)
+    if h == null { fail("load: ${vcr.load_error()}") }
+    if presets == 1 {
+        e = vcr.redact_credentials_h(h)
+        if e != "" { fail("redact_credentials: ${e}") }
+    }
+    vcr.strict_ignore_common_headers_h(h)
+    if from >= 0 {
+        e2 = vcr.set_playback_range_h(h, from, to)
+        if e2 != "" { fail("set_playback_range(${from}, ${to}): ${e2}") }
+    }
+    if vcr.start_background_h(h, 10000) != 0 { fail("start: ${vcr.last_error_h(h)}") }
+    return h
+}
+
+main() {
+    println("=== VCR playback range ===\n")
+    card = "/checkout/{{uuid-1}}/card"
+    pay = "/checkout/{{uuid-1}}/pay"
+
+    println("-- the Selenium story: replay 4..6 with the test's own cookie")
+    h = open_range(18340, 4, 6, 1)
+    if vcr.playback_range_from_h(h) != 4 || vcr.playback_range_to_h(h) != 6 { fail("range getters") }
+    expect(h, 18340, "GET", card, "", 200, "card-form", 4)
+    expect(h, 18340, "POST", pay, "card=4111111111111111&cvc=999", 402, "rejected: wrong CVC", 5)
+    expect(h, 18340, "GET", card, "", 200, "card-form-again", 6)
+    ac = vcr.assert_all_consumed_h(h)
+    if ac != "" { fail("assert_all_consumed should count only 4..6: ${ac}") }
+    println("  ok: assert_all_consumed counts only the range")
+    if vcr.assert_no_mismatches_h(h) != "" { fail("unexpected mismatches") }
+    // Past the end: interaction 7 exists, but not in the range.
+    refused(h, 18340, "GET", "/logout", vcr.KIND_TAPE_EXHAUSTED, "past the end of the playback range 4–6")
+    if string.contains(vcr.last_error_h(h), "it matches interaction 7, which is outside the playback range 4–6") != 1 {
+        fail("past-the-end message should name interaction 7: ${vcr.last_error_h(h)}")
+    }
+    // reset_cursor goes back to `from`, not 0.
+    vcr.reset_cursor_h(h)
+    expect(h, 18340, "GET", card, "", 200, "card-form", 4)
+    vcr.eject(h)
+
+    println("-- a request for a skipped interaction is unexpected")
+    h2 = open_range(18341, 4, 6, 1)
+    refused(h2, 18341, "POST", "/cart", vcr.KIND_PATH_OR_METHOD_DIFF, "interaction 2 is outside the playback range 4–6")
+    if vcr.last_index_h(h2) != 4 { fail("last_index should be the expected interaction 4") }
+    if string.contains(vcr.last_error_h(h2), "expected interaction 4: GET /checkout/{{uuid-1}}/card") != 1 {
+        fail("message should name the interaction expected: ${vcr.last_error_h(h2)}")
+    }
+    refused(h2, 18341, "GET", "/login", vcr.KIND_PATH_OR_METHOD_DIFF, "interaction 0 is outside the playback range 4–6")
+    // Not even a full match for interaction 2 (a body, so a Content-Type it
+    // never had), but nothing in the range has POST /cart either: the
+    // request line names it.
+    stb, bdb = do_request(18341, "POST", "/cart", "sid=x", "item=1")
+    if stb != 599 || string.contains(bdb, "interaction 2 is outside the playback range 4–6") != 1 {
+        fail("a POST /cart with a body should still name interaction 2: ${stb} '${bdb}'")
+    }
+    println("  ok: POST /cart (with a body) -> 599: ${bdb}")
+    // The cursor did not move: the range still starts at 4.
+    expect(h2, 18341, "GET", card, "", 200, "card-form", 4)
+    // A request that fits nothing anywhere keeps the ordinary message.
+    st, bd = do_request(18341, "GET", "/nowhere", "sid=x", "")
+    if st != 599 || string.contains(bd, "outside the playback range") == 1 || string.contains(bd, "tape mismatch at interaction 5") != 1 {
+        fail("an unknown request should get the ordinary mismatch: ${st} '${bd}'")
+    }
+    println("  ok: GET /nowhere -> 599: ${bd}")
+    // Partly consumed range: 5 and 6 unplayed, counted out of 3.
+    ac2 = vcr.assert_all_consumed_h(h2)
+    if string.contains(ac2, "2 of 3 recorded interaction(s) in the playback range 4–6 were never replayed") != 1 ||
+       string.contains(ac2, "[7]") == 1 || string.contains(ac2, "[0]") == 1 {
+        fail("assert_all_consumed over the range: ${ac2}")
+    }
+    println("  ok: ${ac2}")
+    vcr.assert_no_mismatches_h(h2)
+    vcr.eject(h2)
+
+    println("-- match_multiple chooses only within the range")
+    h3 = vcr.load(TAPE, 18342)
+    if h3 == null { fail("load h3") }
+    vcr.redact_credentials_h(h3)
+    vcr.strict_ignore_common_headers_h(h3)
+    vcr.set_match_multiple_h(h3, 1)
+    if vcr.set_playback_range_h(h3, 4, 6) != "" { fail("range h3") }
+    if vcr.start_background_h(h3, 10000) != 0 { fail("start h3") }
+    // Interactions 4 and 6 are both GET card; the search starts at 4.
+    expect(h3, 18342, "GET", card, "", 200, "card-form", 4)
+    expect(h3, 18342, "GET", card, "", 200, "card-form", 4)
+    refused(h3, 18342, "POST", "/cart", vcr.KIND_PATH_OR_METHOD_DIFF, "interaction 2 is outside the playback range 4–6")
+    refused(h3, 18342, "GET", "/logout", vcr.KIND_PATH_OR_METHOD_DIFF, "interaction 7 is outside the playback range 4–6")
+    st3, bd3 = do_request(18342, "GET", "/nowhere", "sid=x", "")
+    if st3 != 599 || string.contains(bd3, "no recorded interaction in the playback range 4–6 matches GET /nowhere") != 1 {
+        fail("match_multiple miss inside the range: ${st3} '${bd3}'")
+    }
+    println("  ok: GET /nowhere -> 599: ${bd3}")
+    ac3 = vcr.assert_all_consumed_h(h3)
+    if string.contains(ac3, "2 of 3") != 1 || string.contains(ac3, "[5]") != 1 || string.contains(ac3, "[6]") != 1 {
+        fail("match_multiple assert_all_consumed: ${ac3}")
+    }
+    vcr.assert_no_mismatches_h(h3)
+    vcr.eject(h3)
+
+    println("-- without the credential preset the test's own cookie does not match")
+    h4 = open_range(18343, 4, 6, 0)
+    st4, bd4 = do_request(18343, "GET", card, "sid=live-session-from-the-test", "")
+    if st4 != 599 || vcr.last_kind_h(h4) != vcr.KIND_HEADER_VALUE_DIFF {
+        k4 = vcr.last_kind_h(h4)
+        fail("without the preset: expected 599 kind 3, got ${st4} kind ${k4} '${bd4}'")
+    }
+    println("  ok: 599 kind 3 (${bd4})")
+    vcr.assert_no_mismatches_h(h4)
+    vcr.eject(h4)
+
+    println("-- to < 0 runs to the end; validation; clear")
+    h5 = vcr.load(TAPE, 18344)
+    if h5 == null { fail("load h5") }
+    if vcr.set_playback_range_h(h5, 6, 4) == "" { fail("6..4 should be refused") }
+    if vcr.set_playback_range_h(h5, -1, 2) == "" { fail("from -1 should be refused") }
+    if vcr.set_playback_range_h(h5, 8, -1) == "" { fail("from past the tape should be refused") }
+    e5 = vcr.set_playback_range_h(h5, 2, 8)
+    if string.contains(e5, "past the tape's last interaction (7)") != 1 { fail("to past the tape: '${e5}'") }
+    if vcr.playback_range_from_h(h5) != -1 { fail("a refused range must not be set") }
+    if vcr.set_playback_range_h(h5, 7, -1) != "" { fail("7..end") }
+    if vcr.playback_range_from_h(h5) != 7 || vcr.playback_range_to_h(h5) != 7 { fail("7..end resolves to 7..7") }
+    vcr.redact_credentials_h(h5)
+    vcr.strict_ignore_common_headers_h(h5)
+    if vcr.start_background_h(h5, 10000) != 0 { fail("start h5") }
+    expect(h5, 18344, "GET", "/logout", "", 200, "bye", 7)
+    vcr.clear_playback_range_h(h5)
+    if vcr.playback_range_from_h(h5) != -1 { fail("clear") }
+    vcr.reset_cursor_h(h5)
+    expect(h5, 18344, "GET", "/login", "", 200, "login-form", 0)
+    vcr.eject(h5)
+    println("  ok: validation, open-ended range, clear")
+
+    println("-- record mode refuses a range")
+    rec = vcr.load_record("target/core_tests/playback_range_record.md", "http://127.0.0.1:9", 18345)
+    if rec == null { fail("load_record: ${vcr.load_error()}") }
+    er = vcr.set_playback_range_h(rec, 0, 0)
+    if string.contains(er, "playback only") != 1 { fail("record mode should refuse: '${er}'") }
+    if vcr.playback_range_from_h(rec) != -1 { fail("record handle got a range") }
+    vcr.discard_h(rec, "")
+    println("  ok: ${er}")
+
+    println("\n=== playback range: PASS ===")
+    exit(0)
+}

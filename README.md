@@ -146,6 +146,7 @@ One libservirtium_vcr; every binding exposes the same surface.
   named request header, ignoring the rest of the block; and *MatchMultiple* —
   reusable, order-independent replay (an interaction can match repeatedly and
   out of sequence), for polling / retries / non-deterministic request order.
+  A *playback range* replays only a slice of a tape (below).
 - **Redaction** — scrub a value out of a field before it lands on the tape
   (`redact`), and restore it on playback so a committed tape still matches
   (`unredact`).
@@ -206,6 +207,36 @@ Shared test drivers and release verification are Aether too: `aeb core_tests/.fi
 builds the HTTP fixtures under `target/test-tools/`, and `aeb release/.tests.ae`
 checks the release verifier’s success and failure paths. Binding test leaves build
 the fixtures automatically.
+
+### Replaying part of a tape
+
+`set_playback_range(h, from, to)` (core `set_playback_range_h`, C ABI
+`aether_vcr_embed_set_playback_range`) replays only interactions `from` to
+`to`, inclusive: the numbers of the tape's `## Interaction N` headings
+(`to` < 0 runs to the last one). Call it after open and before start. The
+numbers shift if the tape is re-recorded, so a test that uses one moves
+with its tape.
+
+The case it is for: a Selenium suite records the whole journey once (log
+in, add to cart, card page, pay with the wrong CVC). Another test wants only
+"purchase rejected with wrong CVC": it sets the session cookie itself, opens
+the card page directly and replays interactions 4 to 6. Two things make that
+work without the earlier steps:
+
+- **The cookie.** With the credential preset (`redact_credentials`) on the
+  playback handle, `Cookie` matches on presence, so the cookie the test set
+  passes though the tape says `sid=COOKIE_1`.
+- **Values from skipped interactions.** A cart id the service minted in
+  interaction 2 is on the tape as `{{uuid-1}}`; the test never received it,
+  so it sends `{{uuid-1}}` literally (`/checkout/{{uuid-1}}/card`).
+
+Interactions outside the range are never served. A request that would have
+matched one fails as an unexpected request and says so ("interaction 2 is
+outside the playback range 4–6"); one after `to` is "past the end of the
+playback range". MatchMultiple searches only the range, `reset_cursor` goes
+back to `from`, and `assert_all_consumed` counts only the range. Playback
+only: a record (or check) handle refuses it, since a recording always
+captures the whole conversation.
 
 ## Compared with other mocking / virtualization tools
 

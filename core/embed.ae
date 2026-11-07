@@ -525,6 +525,27 @@ vcr_embed_set_match_multiple(s: ptr, on: int) {
     vcr.set_match_multiple_h(s, on)
 }
 
+// Playback range (opt-in): replay only interactions `from`..`to` (inclusive,
+// the tape's `## Interaction N` numbers; `to` < 0 = through the last one).
+// Set after open, before start. The cursor starts at `from`; interactions
+// outside the range are never served (a request that fits only one of them
+// fails, and the diagnostics name it); assert_all_consumed counts the range.
+// Playback only: a record handle refuses it. Returns "" or the reason it
+// was refused (caller frees).
+vcr_embed_set_playback_range(s: ptr, from: int, to: int) -> ptr {
+    return vcr_embed_dup(vcr.set_playback_range_h(s, from, to))
+}
+vcr_embed_clear_playback_range(s: ptr) {
+    vcr.clear_playback_range_h(s)
+}
+// The range in force: first and last interaction, or -1 when none is set.
+vcr_embed_get_playback_range_from(s: ptr) -> int {
+    return vcr.playback_range_from_h(s)
+}
+vcr_embed_get_playback_range_to(s: ptr) -> int {
+    return vcr.playback_range_to_h(s)
+}
+
 // ByHeader: require a specific named request header's live value to equal the
 // recorded interaction's value during playback matching (opt-in, additive to
 // any other rules). Call once per header name; clear resets the set.

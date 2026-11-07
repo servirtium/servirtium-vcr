@@ -519,6 +519,12 @@ HTTP API" block); later suites follow the same shape:
    - The recorded request `Content-Length` of a redacted body is the
      redacted body's; playback does not compare it (a transport header).
 
+A journey that cannot be split into independent scenarios (a browser flow
+whose later steps need state the earlier ones made) can stay one tape,
+recorded end to end by one case; another case replays only its later part
+with `replaying_part` (below), setting the session credential itself, the
+same way an "already logged in" tape is replayed.
+
 ## Where the code comes from
 
 - **Servirtium:** `lib/servirtium_vcr` is a relative symlink to this
@@ -568,6 +574,17 @@ spec.it("reads a secret") callback {
     servirtium.end_recording(rec)
 }
 ```
+
+`replaying_part(suite, case, upstream_url, from, to)` replays only
+interactions `from` to `to` (inclusive, the tape's `## Interaction N`
+numbers; `to` < 0 to the last) of `<suite>/<case>.md`, which another case
+records through the whole journey. Interactions outside the range are not
+served, and `end_recording` checks only the range was played. The numbers
+shift if that tape is re-recorded. Playback only: under `record` or `check`
+it returns `upstream_url` and null, so the case runs live and never
+overwrites the journey's tape with its slice. Values the skipped
+interactions introduced are sent as the tape has them (`{{uuid-1}}`), and a
+credential the test sets itself matches under `redact_credentials()`.
 
 `suite` and `case` are snake-cased (`case_name`). Rules (`normalize`,
 `collapse`, `redact`, `remove_header` and the presets) apply to every
