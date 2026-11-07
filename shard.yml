@@ -1,0 +1,26 @@
+# WHY THIS FILE IS AT THE REPOSITORY ROOT
+# Crystal shards can only consume a package whose shard.yml is at the root of
+# the repository (`github: servirtium/servirtium-vcr`). This is a monorepo with
+# one directory per language binding, so this root manifest exists only to make
+# that dependency line work. It points into the crystal/ subdirectory: the
+# root servirtium.cr forwards `require "servirtium"` to crystal/src/servirtium.cr,
+# where the real binding lives. crystal/shard.yml is the in-tree copy (used by
+# the aeb leaves and path dependencies on crystal/); KEEP THE TWO IN STEP.
+#
+# Native library: a git-sourced install has an empty crystal/native/ (the .so is
+# git-ignored and staged by aeb). Download the platform library from the GitHub
+# release page, name it libservirtium_vcr.<ext> and set SERVIRTIUM_VCR_LIB_DIR
+# to its directory when compiling; otherwise crystal/native/ is used.
+name: servirtium
+version: 2.0.0-alpha.12
+description: |
+  Record/replay for HTTP service tests in the Servirtium markdown tape format —
+  a thin Crystal binding over libservirtium_vcr.
+authors:
+  - Paul Hammant
+
+crystal: ">= 1.0.0"
+license: MIT
+
+libraries:
+  libservirtium_vcr: "2.0.0"

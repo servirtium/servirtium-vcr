@@ -288,7 +288,8 @@ public final class Vcr {
     }
 
     public func strictIgnoreCommonHeaders() {
-        aether_vcr_embed_strict_ignore_common_headers(handle)
+        // The core returns an owned (always empty) char*; free it like every other string call.
+        _ = take(aether_vcr_embed_strict_ignore_common_headers(handle))
     }
 
     /// Drop the per-request volatile headers modern clients inject on every call
@@ -296,7 +297,7 @@ public final class Vcr {
     /// baggage) from both sides before matching — the companion to
     /// strictIgnoreCommonHeaders for tracing / correlation noise.
     public func ignoreVolatileHeaders() {
-        aether_vcr_embed_ignore_volatile_headers(handle)
+        _ = take(aether_vcr_embed_ignore_volatile_headers(handle))
     }
 
     // Opt-in header presets: each registers ordinary rules, listed under the

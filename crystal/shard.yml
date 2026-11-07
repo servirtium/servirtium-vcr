@@ -9,8 +9,12 @@ authors:
 crystal: ">= 1.0.0"
 license: MIT
 
+# A root shard.yml (../shard.yml) makes the repo installable as
+# `github: servirtium/servirtium-vcr`; KEEP THE TWO IN STEP.
+#
 # Consumed as a source shard. libservirtium_vcr's shared library ships in native/ and
 # is found two ways: the @[Link] ldflags carry a self-locating -L/-rpath off
-# __DIR__, and CRYSTAL_LIBRARY_PATH=native works for a bare `crystal build`.
+# __DIR__ (or SERVIRTIUM_VCR_LIB_DIR when set at compile time), and
+# CRYSTAL_LIBRARY_PATH=native works for a bare `crystal build`.
 libraries:
   libservirtium_vcr: "2.0.0"

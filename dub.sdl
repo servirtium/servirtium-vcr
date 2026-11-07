@@ -1,0 +1,23 @@
+// WHY THIS FILE IS AT THE REPOSITORY ROOT
+// The dub registry (and `dub add` / a git dependency) can only consume a
+// package whose manifest is at the root of the repository. This is a monorepo
+// with one directory per language binding, so this root dub.sdl exists only to
+// make `dub add servirtium` work. It points into the d/ subdirectory
+// (d/src); the real binding, its tests and its README live there. d/dub.json
+// is the in-tree package (aeb leaves, path dependencies on d/); it is a
+// separate package that happens to share the name. KEEP THE TWO IN STEP.
+//
+// Native library: a registry/git install has an empty d/native/ (the .so is
+// git-ignored and staged by aeb). Download the platform library from the GitHub
+// release page, name it libservirtium_vcr.<ext>, and set SERVIRTIUM_VCR_LIB_DIR
+// to its directory. dub cannot default an unset variable, so for THIS root
+// package the variable is REQUIRED (for in-tree work use d/dub.json instead).
+name "servirtium"
+version "2.0.0-alpha.12"
+description "Record/replay for HTTP service tests in the Servirtium markdown tape format - a thin D binding over libservirtium_vcr."
+authors "Paul Hammant"
+license "MIT"
+targetType "library"
+importPaths "d/src"
+sourcePaths "d/src"
+lflags "-L$SERVIRTIUM_VCR_LIB_DIR" "-lservirtium_vcr" "-rpath" "$SERVIRTIUM_VCR_LIB_DIR"

@@ -3,6 +3,10 @@
 // libservirtium_vcr's flat C ABI (aether_vcr_embed_*) via a module map; Servirtium is the
 // idiomatic Swift surface over it. The libservirtium_vcr.so is found at link/run time via
 // the -L/-rpath below (the .tests.ae stages native/).
+//
+// There is a second manifest at the REPOSITORY ROOT (../Package.swift) that makes
+// the package consumable by git URL; it declares the same package with `path:`
+// into this directory. KEEP THE TWO IN STEP (name, products, targets, flags).
 import Foundation
 import PackageDescription
 

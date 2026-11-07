@@ -19,10 +19,16 @@
 # request matching, redactions and drift detection all live in the in-repo
 # pure-Aether core/vcr.ae libservirtium_vcr.
 
-# -L/-rpath are made self-locating from this source file's dir (../native holds
-# the staged libservirtium_vcr.so) so the link works regardless of the linker's
-# cwd; interpolation expands __DIR__ at compile time.
-@[Link(ldflags: "-L#{__DIR__}/../native -Wl,-rpath,#{__DIR__}/../native -lservirtium_vcr")]
+# -L/-rpath point at the directory holding libservirtium_vcr: the env var
+# SERVIRTIUM_VCR_LIB_DIR if set at COMPILE time (a git-sourced `shards install`
+# has an empty crystal/native/, so the user unpacks the release library
+# somewhere and names it here), else this binding's own ../native (in-tree
+# dev, where aeb stages the .so). Absolute either way, so the link works
+# regardless of the linker's cwd; the macro reads the env var and expands
+# __DIR__ at compile time.
+{% libdir = env("SERVIRTIUM_VCR_LIB_DIR")
+   libdir = __DIR__ + "/../native" if !libdir || libdir.empty? %}
+@[Link(ldflags: "-L{{libdir.id}} -Wl,-rpath,{{libdir.id}} -lservirtium_vcr")]
 lib LibVcr
   # Lifecycle. The opaque handle is a pointer; NULL from an open means failure.
   fun open_playback = aether_vcr_embed_open_playback(label : LibC::Char*, tape : LibC::Char*, host : LibC::Char*, port : LibC::Int) : Void*
