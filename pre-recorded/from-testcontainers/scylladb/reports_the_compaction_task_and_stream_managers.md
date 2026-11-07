@@ -66,14 +66,20 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 63
+Content-Length: 79
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-["sstables_loader","repair","node_ops","snapshot","compaction"]
+[
+  "sstables_loader",
+  "repair",
+  "node_ops",
+  "snapshot",
+  "compaction"
+]
 ```
 
 ## Interaction 3: GET /task_manager/ttl

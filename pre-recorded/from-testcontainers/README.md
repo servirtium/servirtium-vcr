@@ -272,7 +272,17 @@ one. CouchDB's API cases do both: the session cookie through the preset, the
 login body's password as labelled redactions (see the pattern below). The module also
 offers `redact_credentials()`, `remove_cloud_headers(vendor)`,
 `remove_transport_headers()` and `pretty_json(indent)`; see servirtium-vcr's
-AGENTS.md, "Header presets".
+AGENTS.md, "Header presets". For a service that answers in a different
+order each run it offers `sort_json_keys()`, `sort_json_array(path, by)`,
+`sort_json_array_at(request_regex, path, by)`, `sort_response_headers()` and
+`sort_header_value(name)` (AGENTS.md, "Stable order"). The JSON ones
+(`sort_json_*`) need `pretty_json(2)` too: sorted JSON is only written
+pretty-printed, and a recording with one and without `pretty_json` is
+refused when the tape is written. Playback then serves those JSON bodies
+indented, so such a suite's assertions about a fragment of a body go
+through `servirtium.json_compact(body)` (the whitespace between JSON tokens
+dropped; a body that is not JSON returned as it is) and hold live and in
+playback alike.
 
 **MinIO** signs every S3 request with AWS Signature V4 over the time it is
 sent, so its `Authorization` goes through the credential preset (playback
@@ -504,7 +514,8 @@ HTTP API" block); later suites follow the same shape:
      compares paths byte for byte, and `%7B` does not match `{`.
    - A service that orders output differently each run (several shards,
      concurrent writers) needs a deterministic setup (CouchDB databases
-     are created with `?q=1`) or, failing that, the TODO.md ordering work.
+     are created with `?q=1`) or, failing that, Servirtium's stable order (`sort_json_keys`,
+     `sort_json_array[_at]`, `sort_response_headers`, `sort_header_value`).
    - The recorded request `Content-Length` of a redacted body is the
      redacted body's; playback does not compare it (a transport header).
 

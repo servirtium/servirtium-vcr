@@ -24,7 +24,14 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"resource":"https://vault.azure.net","access_token":"{{jwt-1}}","refresh_token":"{{jwt-1}}","expires_in":3600,"expires_on":946684800,"token_type":"Bearer"}
+{
+  "resource": "https://vault.azure.net",
+  "access_token": "{{jwt-1}}",
+  "refresh_token": "{{jwt-1}}",
+  "expires_in": 3600,
+  "expires_on": 946684800,
+  "token_type": "Bearer"
+}
 ```
 
 

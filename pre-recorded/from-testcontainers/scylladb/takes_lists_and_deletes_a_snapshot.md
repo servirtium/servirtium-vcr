@@ -72,7 +72,19 @@ Server: Seastar httpd
 ### Response body recorded for playback (200: application/json):
 
 ```
-[{"key":"tcae_snap","value":[{"ks":"tcae_snapshot","cf":"items","total":0,"live":0}]}]
+[
+  {
+    "key": "tcae_snap",
+    "value": [
+      {
+        "ks": "tcae_snapshot",
+        "cf": "items",
+        "total": 0,
+        "live": 0
+      }
+    ]
+  }
+]
 ```
 
 ## Interaction 3: DELETE /storage_service/snapshots?tag=tcae_snap&kn=tcae_snapshot
@@ -142,14 +154,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 54
+Content-Length: 60
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"message": "Can't find a keyspace nope", "code": 400}
+{
+  "message": "Can't find a keyspace nope",
+  "code": 400
+}
 ```
 
 

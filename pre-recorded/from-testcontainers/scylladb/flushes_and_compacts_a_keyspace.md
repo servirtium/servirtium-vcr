@@ -193,14 +193,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 54
+Content-Length: 60
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"message": "Can't find a keyspace nope", "code": 400}
+{
+  "message": "Can't find a keyspace nope",
+  "code": 400
+}
 ```
 
 

@@ -142,14 +142,19 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 67
+Content-Length: 77
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"enable": false, "ttl": 86400, "threshold": 500000, "fast": false}
+{
+  "enable": false,
+  "ttl": 86400,
+  "threshold": 500000,
+  "fast": false
+}
 ```
 
 ## Interaction 6: POST /storage_service/slow_query?enable=true&threshold=1000
@@ -193,14 +198,19 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 64
+Content-Length: 74
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"enable": true, "ttl": 86400, "threshold": 1000, "fast": false}
+{
+  "enable": true,
+  "ttl": 86400,
+  "threshold": 1000,
+  "fast": false
+}
 ```
 
 ## Interaction 8: POST /storage_service/slow_query?enable=false&threshold=500000
@@ -244,14 +254,19 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 67
+Content-Length: 77
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"enable": false, "ttl": 86400, "threshold": 500000, "fast": false}
+{
+  "enable": false,
+  "ttl": 86400,
+  "threshold": 500000,
+  "fast": false
+}
 ```
 
 

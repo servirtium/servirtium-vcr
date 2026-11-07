@@ -15,12 +15,25 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 
 ```
 Content-Type: application/json
-Content-Length: 217
+Content-Length: 288
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"code":0,"data":{"cluster_name":"vearch","cluster_uuid":"","name":"vearch","tagline":"","version":{"build_time":"2024-05-28 03:18.52","build_version":"v3.5.1","commit_id":"7cf28c0872c7efafeedcaa7b2fa9cfcf27bddb66"}}}
+{
+  "code": 0,
+  "data": {
+    "cluster_name": "vearch",
+    "cluster_uuid": "",
+    "name": "vearch",
+    "tagline": "",
+    "version": {
+      "build_time": "2024-05-28 03:18.52",
+      "build_version": "v3.5.1",
+      "commit_id": "7cf28c0872c7efafeedcaa7b2fa9cfcf27bddb66"
+    }
+  }
+}
 ```
 
 

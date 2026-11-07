@@ -285,6 +285,10 @@ fn api_rules() {
     // collapsed, as the case tables' ids are, to the one a fresh container
     // gives (110).
     servirtium.sort_json_array("", "/db_name/L")
+    // Sorted JSON is only written pretty-printed (a sort rule without
+    // pretty_json is refused): every JSON response body on these tapes is
+    // indented, so a reader sees it was rewritten.
+    servirtium.pretty_json(2)
     servirtium.collapse("(?<=\\n  \"id\": )[0-9]+(?=,\\n  \"db_name\": \\{\\n   \"O\": \"tcae_shop\")", "110")
 }
 
@@ -311,8 +315,8 @@ main() {
             if ok == 0 { return }
             st, b = get("/status")
             spec.assert_eq(st, 200, "GET /status: ${b}")
-            spec.assert_contains(b, "\"version\":\"8.0.11-TiDB-v8.4.0\"", "the version")
-            spec.assert_contains(b, "\"init_stats_percentage\":100", "ready")
+            spec.assert_contains(servirtium.json_compact(b), "\"version\":\"8.0.11-TiDB-v8.4.0\"", "the version")
+            spec.assert_contains(servirtium.json_compact(b), "\"init_stats_percentage\":100", "ready")
             st, b = get("/info")
             spec.assert_eq(st, 200, "GET /info: ${b}")
             spec.assert_contains(b, "\"is_owner\": true", "the only server owns DDL")

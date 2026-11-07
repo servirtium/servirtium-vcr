@@ -170,14 +170,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 84
+Content-Length: 90
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"message": "Can't find a column family nope in keyspace tcae_metrics", "code": 400}
+{
+  "message": "Can't find a column family nope in keyspace tcae_metrics",
+  "code": 400
+}
 ```
 
 ## Interaction 7: GET /column_family/metrics/write/nope:nope
@@ -196,14 +199,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 76
+Content-Length: 82
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"message": "Can't find a column family nope in keyspace nope", "code": 400}
+{
+  "message": "Can't find a column family nope in keyspace nope",
+  "code": 400
+}
 ```
 
 

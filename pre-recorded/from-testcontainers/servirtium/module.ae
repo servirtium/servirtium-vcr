@@ -60,6 +60,7 @@ import std.string
 import std.os
 import std.http
 import std.fs
+import std.json
 import servirtium_vcr.vcr
 import testcontainers.testing
 
@@ -68,7 +69,7 @@ exports(
     skip_if_no_engine, skip_if_no_tape, normalize, collapse, redact,
     remove_header, clear_rules, license_notice,
     redact_credentials, redact_credential_header, remove_cloud_headers,
-    remove_transport_headers, pretty_json, trust_upstream_ca,
+    remove_transport_headers, pretty_json, json_compact, trust_upstream_ca,
     sort_json_keys, sort_json_array, sort_json_array_at, sort_response_headers, sort_header_value,
     UUID, RFC3339, EPOCH_TIMESTAMP,
     MODE_OFF, MODE_RECORD, MODE_PLAYBACK, MODE_CHECK,
@@ -262,6 +263,38 @@ remove_transport_headers() {
 // JSON response bodies indented by `indent` in the recording (0 is off).
 pretty_json(indent: int) {
     add_rule(RULE_PRETTY_JSON, indent, "", "")
+}
+
+// `body` without the whitespace between JSON tokens (whitespace inside a
+// string kept), for a test's assertions about a fragment of a JSON response:
+// they then hold whether the body is as the service sent it (live) or
+// pretty-printed by pretty_json (replayed from a tape). Key order is not
+// changed: under sort_json_keys assert on values (or one key), not on two
+// keys' order. A body that does not parse as JSON is returned as it is.
+json_compact(body: string) -> string {
+    // Only a body that is JSON: text (a Prometheus page, an error line) is
+    // returned as it is.
+    doc, err = json.parse(body)
+    if err != "" || doc == null { return body }
+    json.json_free(doc)
+    out = ""
+    n = string.length(body)
+    i = 0
+    start = 0
+    in_str = 0
+    while i < n {
+        c = string.char_at(body, i)
+        if in_str == 1 {
+            if c == 92 { i = i + 1 } else if c == 34 { in_str = 0 }
+        } else if c == 34 {
+            in_str = 1
+        } else if c == 32 || c == 10 || c == 13 || c == 9 {
+            out = string.concat(out, string.substring(body, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return string.concat(out, string.substring(body, start, n))
 }
 
 // Stable order, for a service that answers in a different order every run

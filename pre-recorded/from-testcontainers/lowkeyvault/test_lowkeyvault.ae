@@ -236,7 +236,9 @@ fn http_send(method: string, url: string, hdrs: string[], ctype: string, body: s
     b = client.response_body(r)
     last_www_authenticate = client.response_header(r, "WWW-Authenticate")
     client.response_free(r)
-    return st, b, ""
+    // JSON without the whitespace between tokens (servirtium.json_compact), so
+    // the assertions hold live and against a pretty-printed tape alike.
+    return st, servirtium.json_compact(b), ""
 }
 
 
@@ -452,6 +454,10 @@ fn api_rules() {
     // oldest first, by its raw creation time (sorting sees values before the
     // time is collapsed, and the {{version-N}} tokens are numbered after).
     servirtium.sort_json_array_at("/versions\\?", "/value", "/attributes/created")
+    // Sorted JSON is only written pretty-printed (a sort rule without
+    // pretty_json is refused): every JSON response body on these tapes is
+    // indented, so a reader sees it was rewritten.
+    servirtium.pretty_json(2)
     // The identity endpoint's JWTs (access_token and refresh_token are the
     // same string): header.payload.signature, the payload carrying issue and
     // expiry times and the signature a fresh value. A client sends the access

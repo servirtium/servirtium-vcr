@@ -27,7 +27,32 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign","verify","wrapKey","unwrapKey","encrypt","decrypt"],"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-1}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"test"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign",
+      "verify",
+      "wrapKey",
+      "unwrapKey",
+      "encrypt",
+      "decrypt"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-1}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {
+    "purpose": "test"
+  }
+}
 ```
 
 ## Interaction 1: POST /keys/tcae-rsa/create?api-version=7.4
@@ -59,7 +84,32 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign","verify","wrapKey","unwrapKey","encrypt","decrypt"],"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-2}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"test"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign",
+      "verify",
+      "wrapKey",
+      "unwrapKey",
+      "encrypt",
+      "decrypt"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-2}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {
+    "purpose": "test"
+  }
+}
 ```
 
 ## Interaction 2: GET /keys/tcae-rsa?api-version=7.4
@@ -88,7 +138,32 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign","verify","wrapKey","unwrapKey","encrypt","decrypt"],"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-2}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"test"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign",
+      "verify",
+      "wrapKey",
+      "unwrapKey",
+      "encrypt",
+      "decrypt"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-2}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {
+    "purpose": "test"
+  }
+}
 ```
 
 ## Interaction 3: GET /keys/tcae-rsa/{{version-1}}?api-version=7.4
@@ -117,7 +192,32 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign","verify","wrapKey","unwrapKey","encrypt","decrypt"],"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-1}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"test"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign",
+      "verify",
+      "wrapKey",
+      "unwrapKey",
+      "encrypt",
+      "decrypt"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-1}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {
+    "purpose": "test"
+  }
+}
 ```
 
 ## Interaction 4: GET /keys/tcae-rsa/versions?api-version=7.4
@@ -146,7 +246,36 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-1}}","tags":{"purpose":"test"}},{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-2}}","tags":{"purpose":"test"}}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-1}}",
+      "tags": {
+        "purpose": "test"
+      }
+    },
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-2}}",
+      "tags": {
+        "purpose": "test"
+      }
+    }
+  ]
+}
 ```
 
 ## Interaction 5: POST /keys/tcae-rsa/{{version-1}}/sign?api-version=7.4
@@ -178,7 +307,10 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-1}}","value":"{{blob-1}}"}
+{
+  "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-1}}",
+  "value": "{{blob-1}}"
+}
 ```
 
 ## Interaction 6: POST /keys/tcae-rsa/{{version-1}}/verify?api-version=7.4
@@ -210,7 +342,9 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":true}
+{
+  "value": true
+}
 ```
 
 ## Interaction 7: POST /keys/tcae-rsa/{{version-1}}/verify?api-version=7.4
@@ -242,7 +376,9 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":false}
+{
+  "value": false
+}
 ```
 
 ## Interaction 8: POST /keys/tcae-rsa/{{version-1}}/wrapkey?api-version=7.4
@@ -274,7 +410,10 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-1}}","value":"{{blob-2}}"}
+{
+  "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-1}}",
+  "value": "{{blob-2}}"
+}
 ```
 
 ## Interaction 9: POST /keys/tcae-rsa/{{version-1}}/unwrapkey?api-version=7.4
@@ -306,7 +445,10 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-1}}","value":"LPJNul-wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ"}
+{
+  "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-1}}",
+  "value": "LPJNul-wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ"
+}
 ```
 
 ## Interaction 10: POST /keys/tcae-rsa/{{version-1}}/encrypt?api-version=7.4
@@ -338,7 +480,10 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-1}}","value":"{{blob-3}}"}
+{
+  "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-1}}",
+  "value": "{{blob-3}}"
+}
 ```
 
 ## Interaction 11: POST /keys/tcae-rsa/{{version-1}}/decrypt?api-version=7.4
@@ -370,7 +515,10 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-1}}","value":"aGVsbG8"}
+{
+  "kid": "https://{{request.host}}/keys/tcae-rsa/{{version-1}}",
+  "value": "aGVsbG8"
+}
 ```
 
 ## Interaction 12: POST /keys/tcae-ec/create?api-version=7.4
@@ -402,7 +550,27 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"crv":"P-256","key_ops":["sign","verify"],"kid":"https://{{request.host}}/keys/tcae-ec/{{version-3}}","kty":"EC","x":"EC-X","y":"EC-Y"},"tags":{}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "crv": "P-256",
+    "key_ops": [
+      "sign",
+      "verify"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-ec/{{version-3}}",
+    "kty": "EC",
+    "x": "EC-X",
+    "y": "EC-Y"
+  },
+  "tags": {}
+}
 ```
 
 ## Interaction 13: POST /keys/tcae-ec/{{version-3}}/sign?api-version=7.4
@@ -434,7 +602,10 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"kid":"https://{{request.host}}/keys/tcae-ec/{{version-3}}","value":"{{blob-4}}"}
+{
+  "kid": "https://{{request.host}}/keys/tcae-ec/{{version-3}}",
+  "value": "{{blob-4}}"
+}
 ```
 
 ## Interaction 14: POST /keys/tcae-ec/{{version-3}}/verify?api-version=7.4
@@ -466,7 +637,9 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":true}
+{
+  "value": true
+}
 ```
 
 ## Interaction 15: GET /keys?api-version=7.4
@@ -495,7 +668,34 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"kid":"https://{{request.host}}/keys/tcae-ec","tags":{}},{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"kid":"https://{{request.host}}/keys/tcae-rsa","tags":{"purpose":"test"}}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "kid": "https://{{request.host}}/keys/tcae-ec",
+      "tags": {}
+    },
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "kid": "https://{{request.host}}/keys/tcae-rsa",
+      "tags": {
+        "purpose": "test"
+      }
+    }
+  ]
+}
 ```
 
 ## Interaction 16: GET /keys/tcae-ec/versions?api-version=7.4
@@ -524,7 +724,21 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"kid":"https://{{request.host}}/keys/tcae-ec/{{version-3}}","tags":{}}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "kid": "https://{{request.host}}/keys/tcae-ec/{{version-3}}",
+      "tags": {}
+    }
+  ]
+}
 ```
 
 

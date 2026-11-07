@@ -14,14 +14,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 37
+Content-Length: 43
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"message": "Not found", "code": 404}
+{
+  "message": "Not found",
+  "code": 404
+}
 ```
 
 ## Interaction 1: GET /storage_service/nope
@@ -40,14 +43,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 37
+Content-Length: 43
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"message": "Not found", "code": 404}
+{
+  "message": "Not found",
+  "code": 404
+}
 ```
 
 ## Interaction 2: GET /messaging_service/version
@@ -66,14 +72,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 62
+Content-Length: 68
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"message": "Missing mandatory parameter 'addr'", "code": 400}
+{
+  "message": "Missing mandatory parameter 'addr'",
+  "code": 400
+}
 ```
 
 ## Interaction 3: GET /storage_service/toppartitions/
@@ -92,14 +101,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 66
+Content-Length: 72
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"message": "Missing mandatory parameter 'duration'", "code": 400}
+{
+  "message": "Missing mandatory parameter 'duration'",
+  "code": 400
+}
 ```
 
 ## Interaction 4: GET /storage_service/repair_status/?id=1
@@ -118,14 +130,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 47
+Content-Length: 53
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"message": "unknown repair id 1", "code": 400}
+{
+  "message": "unknown repair id 1",
+  "code": 400
+}
 ```
 
 ## Interaction 5: POST /storage_service/keyspace_compaction/nope
@@ -144,14 +159,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 54
+Content-Length: 60
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"message": "Can't find a keyspace nope", "code": 400}
+{
+  "message": "Can't find a keyspace nope",
+  "code": 400
+}
 ```
 
 ## Interaction 6: GET /storage_service/describe_ring/nope
@@ -170,14 +188,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 54
+Content-Length: 60
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"message": "Can't find a keyspace nope", "code": 400}
+{
+  "message": "Can't find a keyspace nope",
+  "code": 400
+}
 ```
 
 ## Interaction 7: GET /storage_service/stream_throughput
@@ -196,14 +217,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 57
+Content-Length: 63
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"message": "API call is not supported yet", "code": 500}
+{
+  "message": "API call is not supported yet",
+  "code": 500
+}
 ```
 
 

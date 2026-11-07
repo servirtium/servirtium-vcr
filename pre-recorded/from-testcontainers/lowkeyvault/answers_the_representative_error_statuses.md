@@ -24,7 +24,12 @@ Connection: keep-alive
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Key not found: secret:https://{{request.host}}/tcae-nope/--"}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.NotFoundException",
+    "message": "Key not found: secret:https://{{request.host}}/tcae-nope/--"
+  }
+}
 ```
 
 ## Interaction 1: GET /keys/tcae-nope?api-version=7.4
@@ -53,7 +58,12 @@ Connection: keep-alive
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Key not found: key:https://{{request.host}}/tcae-nope/--"}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.NotFoundException",
+    "message": "Key not found: key:https://{{request.host}}/tcae-nope/--"
+  }
+}
 ```
 
 ## Interaction 2: GET /certificates/tcae-nope?api-version=7.4
@@ -82,7 +92,12 @@ Connection: keep-alive
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Key not found: certificate:https://{{request.host}}/tcae-nope/--"}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.NotFoundException",
+    "message": "Key not found: certificate:https://{{request.host}}/tcae-nope/--"
+  }
+}
 ```
 
 ## Interaction 3: PATCH /secrets/tcae-nope/tcae-no-such-version?api-version=7.4
@@ -113,7 +128,12 @@ Connection: close
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"timestamp":"2000-01-01T00:00:00.000Z","status":500,"error":"Internal Server Error","path":"/secrets/tcae-nope/tcae-no-such-version"}
+{
+  "timestamp": "2000-01-01T00:00:00.000Z",
+  "status": 500,
+  "error": "Internal Server Error",
+  "path": "/secrets/tcae-nope/tcae-no-such-version"
+}
 ```
 
 ## Interaction 4: PUT /secrets/tcae-bad?api-version=7.4
@@ -144,7 +164,12 @@ Connection: close
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"timestamp":"2000-01-01T00:00:00.000Z","status":400,"error":"Bad Request","path":"/secrets/tcae-bad"}
+{
+  "timestamp": "2000-01-01T00:00:00.000Z",
+  "status": 400,
+  "error": "Bad Request",
+  "path": "/secrets/tcae-bad"
+}
 ```
 
 ## Interaction 5: POST /keys/tcae-bad/create?api-version=7.4
@@ -175,7 +200,12 @@ Connection: close
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"timestamp":"2000-01-01T00:00:00.000Z","status":400,"error":"Bad Request","path":"/keys/tcae-bad/create"}
+{
+  "timestamp": "2000-01-01T00:00:00.000Z",
+  "status": 400,
+  "error": "Bad Request",
+  "path": "/keys/tcae-bad/create"
+}
 ```
 
 ## Interaction 6: GET /secrets/tcae-x?api-version=1.0
@@ -203,7 +233,12 @@ Connection: close
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"timestamp":"2000-01-01T00:00:00.000Z","status":400,"error":"Bad Request","path":"/secrets/tcae-x"}
+{
+  "timestamp": "2000-01-01T00:00:00.000Z",
+  "status": 400,
+  "error": "Bad Request",
+  "path": "/secrets/tcae-x"
+}
 ```
 
 ## Interaction 7: GET /secrets/tcae-x
@@ -231,7 +266,12 @@ Connection: close
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"timestamp":"2000-01-01T00:00:00.000Z","status":400,"error":"Bad Request","path":"/secrets/tcae-x"}
+{
+  "timestamp": "2000-01-01T00:00:00.000Z",
+  "status": 400,
+  "error": "Bad Request",
+  "path": "/secrets/tcae-x"
+}
 ```
 
 ## Interaction 8: POST /secrets/tcae-x?api-version=7.4
@@ -261,7 +301,12 @@ Connection: keep-alive
 ### Response body recorded for playback (405: application/json):
 
 ```
-{"timestamp":"2000-01-01T00:00:00.000Z","status":405,"error":"Method Not Allowed","path":"/secrets/tcae-x"}
+{
+  "timestamp": "2000-01-01T00:00:00.000Z",
+  "status": 405,
+  "error": "Method Not Allowed",
+  "path": "/secrets/tcae-x"
+}
 ```
 
 ## Interaction 9: PUT /secrets/tcae_bad_name?api-version=7.4
@@ -292,7 +337,12 @@ Connection: close
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"timestamp":"2000-01-01T00:00:00.000Z","status":500,"error":"Internal Server Error","path":"/secrets/tcae_bad_name"}
+{
+  "timestamp": "2000-01-01T00:00:00.000Z",
+  "status": 500,
+  "error": "Internal Server Error",
+  "path": "/secrets/tcae_bad_name"
+}
 ```
 
 

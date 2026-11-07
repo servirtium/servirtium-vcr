@@ -27,7 +27,19 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-secret/{{version-1}}","managed":false,"tags":{},"value":"first"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "id": "https://{{request.host}}/secrets/tcae-secret/{{version-1}}",
+  "managed": false,
+  "tags": {},
+  "value": "first"
+}
 ```
 
 ## Interaction 1: PUT /secrets/tcae-secret?api-version=7.4
@@ -59,7 +71,23 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":1900000000,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"contentType":"text/plain","id":"https://{{request.host}}/secrets/tcae-secret/{{version-2}}","managed":false,"tags":{"purpose":"test"},"value":"second"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 1900000000,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "contentType": "text/plain",
+  "id": "https://{{request.host}}/secrets/tcae-secret/{{version-2}}",
+  "managed": false,
+  "tags": {
+    "purpose": "test"
+  },
+  "value": "second"
+}
 ```
 
 ## Interaction 2: GET /secrets/tcae-secret?api-version=7.4
@@ -88,7 +116,23 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":1900000000,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"contentType":"text/plain","id":"https://{{request.host}}/secrets/tcae-secret/{{version-2}}","managed":false,"tags":{"purpose":"test"},"value":"second"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 1900000000,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "contentType": "text/plain",
+  "id": "https://{{request.host}}/secrets/tcae-secret/{{version-2}}",
+  "managed": false,
+  "tags": {
+    "purpose": "test"
+  },
+  "value": "second"
+}
 ```
 
 ## Interaction 3: GET /secrets/tcae-secret/{{version-1}}?api-version=7.4
@@ -117,7 +161,19 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-secret/{{version-1}}","managed":false,"tags":{},"value":"first"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "id": "https://{{request.host}}/secrets/tcae-secret/{{version-1}}",
+  "managed": false,
+  "tags": {},
+  "value": "first"
+}
 ```
 
 ## Interaction 4: PATCH /secrets/tcae-secret/{{version-2}}?api-version=7.4
@@ -149,7 +205,23 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":false,"exp":1900000000,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"contentType":"text/plain","id":"https://{{request.host}}/secrets/tcae-secret/{{version-2}}","managed":false,"tags":{"purpose":"patched"},"value":"second"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": false,
+    "exp": 1900000000,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "contentType": "text/plain",
+  "id": "https://{{request.host}}/secrets/tcae-secret/{{version-2}}",
+  "managed": false,
+  "tags": {
+    "purpose": "patched"
+  },
+  "value": "second"
+}
 ```
 
 ## Interaction 5: GET /secrets/tcae-secret?api-version=7.4
@@ -178,7 +250,12 @@ Connection: keep-alive
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Operation get is not allowed on a disabled entity."}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.NotFoundException",
+    "message": "Operation get is not allowed on a disabled entity."
+  }
+}
 ```
 
 ## Interaction 6: GET /secrets/tcae-secret/{{version-1}}?api-version=7.4
@@ -207,7 +284,19 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-secret/{{version-1}}","managed":false,"tags":{},"value":"first"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "id": "https://{{request.host}}/secrets/tcae-secret/{{version-1}}",
+  "managed": false,
+  "tags": {},
+  "value": "first"
+}
 ```
 
 ## Interaction 7: GET /secrets/tcae-secret/versions?api-version=7.4
@@ -236,7 +325,36 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-secret/{{version-1}}","tags":{}},{"attributes":{"created":946684800,"enabled":false,"exp":1900000000,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"contentType":"text/plain","id":"https://{{request.host}}/secrets/tcae-secret/{{version-2}}","tags":{"purpose":"patched"}}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "id": "https://{{request.host}}/secrets/tcae-secret/{{version-1}}",
+      "tags": {}
+    },
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": false,
+        "exp": 1900000000,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "contentType": "text/plain",
+      "id": "https://{{request.host}}/secrets/tcae-secret/{{version-2}}",
+      "tags": {
+        "purpose": "patched"
+      }
+    }
+  ]
+}
 ```
 
 ## Interaction 8: PUT /secrets/tcae-secret-b?api-version=7.4
@@ -268,7 +386,19 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-secret-b/{{version-3}}","managed":false,"tags":{},"value":"b"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "id": "https://{{request.host}}/secrets/tcae-secret-b/{{version-3}}",
+  "managed": false,
+  "tags": {},
+  "value": "b"
+}
 ```
 
 ## Interaction 9: GET /secrets/tcae-secret-b/versions?api-version=7.4
@@ -297,7 +427,21 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-secret-b/{{version-3}}","tags":{}}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "id": "https://{{request.host}}/secrets/tcae-secret-b/{{version-3}}",
+      "tags": {}
+    }
+  ]
+}
 ```
 
 ## Interaction 10: GET /secrets?api-version=7.4&maxresults=1
@@ -326,7 +470,26 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":false,"exp":1900000000,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"contentType":"text/plain","id":"https://{{request.host}}/secrets/tcae-secret","tags":{"purpose":"patched"}}],"nextLink":"https://{{request.host}}/secrets?api-version=7.4&$skiptoken=1&maxresults=1"}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": false,
+        "exp": 1900000000,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "contentType": "text/plain",
+      "id": "https://{{request.host}}/secrets/tcae-secret",
+      "tags": {
+        "purpose": "patched"
+      }
+    }
+  ],
+  "nextLink": "https://{{request.host}}/secrets?api-version=7.4&$skiptoken=1&maxresults=1"
+}
 ```
 
 ## Interaction 11: GET /secrets?api-version=7.4&$skiptoken=1&maxresults=1
@@ -355,7 +518,21 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-secret-b","tags":{}}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "id": "https://{{request.host}}/secrets/tcae-secret-b",
+      "tags": {}
+    }
+  ]
+}
 ```
 
 

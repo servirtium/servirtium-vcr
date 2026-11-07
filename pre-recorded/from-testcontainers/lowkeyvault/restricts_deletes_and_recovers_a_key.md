@@ -27,7 +27,30 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign","verify","encrypt","decrypt","wrapKey","unwrapKey"],"kid":"https://{{request.host}}/keys/tcae-key/{{version-1}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign",
+      "verify",
+      "encrypt",
+      "decrypt",
+      "wrapKey",
+      "unwrapKey"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-key/{{version-1}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {}
+}
 ```
 
 ## Interaction 1: PATCH /keys/tcae-key/{{version-1}}?api-version=7.4
@@ -59,7 +82,27 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign"],"kid":"https://{{request.host}}/keys/tcae-key/{{version-1}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"signing only"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-key/{{version-1}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {
+    "purpose": "signing only"
+  }
+}
 ```
 
 ## Interaction 2: POST /keys/tcae-key/{{version-1}}/wrapkey?api-version=7.4
@@ -90,7 +133,12 @@ Connection: close
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"error":{"code":"java.lang.IllegalStateException","message":"key:https://localhost:8443/tcae-key/{{version-1}} does not have ENCRYPT operation assigned."}}
+{
+  "error": {
+    "code": "java.lang.IllegalStateException",
+    "message": "key:https://localhost:8443/tcae-key/{{version-1}} does not have ENCRYPT operation assigned."
+  }
+}
 ```
 
 ## Interaction 3: POST /keys/tcae-key/{{version-1}}/sign?api-version=7.4
@@ -121,7 +169,12 @@ Connection: close
 ### Response body recorded for playback (400: application/json):
 
 ```
-{"timestamp":"2000-01-01T00:00:00.000Z","status":400,"error":"Bad Request","path":"/keys/tcae-key/{{version-1}}/sign"}
+{
+  "timestamp": "2000-01-01T00:00:00.000Z",
+  "status": 400,
+  "error": "Bad Request",
+  "path": "/keys/tcae-key/{{version-1}}/sign"
+}
 ```
 
 ## Interaction 4: DELETE /keys/tcae-key?api-version=7.4
@@ -150,7 +203,30 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"deletedDate":946684800,"key":{"e":"AQAB","key_ops":["sign"],"kid":"https://{{request.host}}/keys/tcae-key/{{version-1}}","kty":"RSA","n":"RSA-MODULUS"},"recoveryId":"https://{{request.host}}/deletedkeys/tcae-key","scheduledPurgeDate":954460800,"tags":{"purpose":"signing only"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "deletedDate": 946684800,
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-key/{{version-1}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "recoveryId": "https://{{request.host}}/deletedkeys/tcae-key",
+  "scheduledPurgeDate": 954460800,
+  "tags": {
+    "purpose": "signing only"
+  }
+}
 ```
 
 ## Interaction 5: GET /keys/tcae-key?api-version=7.4
@@ -179,7 +255,12 @@ Connection: keep-alive
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Key not found: key:https://{{request.host}}/tcae-key/--"}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.NotFoundException",
+    "message": "Key not found: key:https://{{request.host}}/tcae-key/--"
+  }
+}
 ```
 
 ## Interaction 6: GET /deletedkeys?api-version=7.4
@@ -208,7 +289,26 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"deletedDate":946684800,"kid":"https://{{request.host}}/keys/tcae-key","recoveryId":"https://{{request.host}}/deletedkeys/tcae-key","scheduledPurgeDate":954460800,"tags":{"purpose":"signing only"}}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "deletedDate": 946684800,
+      "kid": "https://{{request.host}}/keys/tcae-key",
+      "recoveryId": "https://{{request.host}}/deletedkeys/tcae-key",
+      "scheduledPurgeDate": 954460800,
+      "tags": {
+        "purpose": "signing only"
+      }
+    }
+  ]
+}
 ```
 
 ## Interaction 7: GET /deletedkeys/tcae-key?api-version=7.4
@@ -237,7 +337,30 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"deletedDate":946684800,"key":{"e":"AQAB","key_ops":["sign"],"kid":"https://{{request.host}}/keys/tcae-key/{{version-1}}","kty":"RSA","n":"RSA-MODULUS"},"recoveryId":"https://{{request.host}}/deletedkeys/tcae-key","scheduledPurgeDate":954460800,"tags":{"purpose":"signing only"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "deletedDate": 946684800,
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-key/{{version-1}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "recoveryId": "https://{{request.host}}/deletedkeys/tcae-key",
+  "scheduledPurgeDate": 954460800,
+  "tags": {
+    "purpose": "signing only"
+  }
+}
 ```
 
 ## Interaction 8: POST /deletedkeys/tcae-key/recover?api-version=7.4
@@ -266,7 +389,27 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign"],"kid":"https://{{request.host}}/keys/tcae-key/{{version-1}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"signing only"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-key/{{version-1}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {
+    "purpose": "signing only"
+  }
+}
 ```
 
 ## Interaction 9: GET /keys/tcae-key?api-version=7.4
@@ -295,7 +438,27 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign"],"kid":"https://{{request.host}}/keys/tcae-key/{{version-1}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"signing only"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-key/{{version-1}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {
+    "purpose": "signing only"
+  }
+}
 ```
 
 ## Interaction 10: POST /keys/tcae-key/rotate?api-version=7.4
@@ -324,7 +487,27 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign"],"kid":"https://{{request.host}}/keys/tcae-key/{{version-2}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"signing only"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-key/{{version-2}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {
+    "purpose": "signing only"
+  }
+}
 ```
 
 ## Interaction 11: GET /keys/tcae-key?api-version=7.4
@@ -353,7 +536,27 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"key":{"e":"AQAB","key_ops":["sign"],"kid":"https://{{request.host}}/keys/tcae-key/{{version-2}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"signing only"}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "key": {
+    "e": "AQAB",
+    "key_ops": [
+      "sign"
+    ],
+    "kid": "https://{{request.host}}/keys/tcae-key/{{version-2}}",
+    "kty": "RSA",
+    "n": "RSA-MODULUS"
+  },
+  "tags": {
+    "purpose": "signing only"
+  }
+}
 ```
 
 

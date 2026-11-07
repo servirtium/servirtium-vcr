@@ -65,11 +65,20 @@ main() {
     // tape has every JSON object's keys sorted (Servirtium's stable order;
     // key order means nothing to a client).
     servirtium.sort_json_keys()
+    // Sorted JSON is only written pretty-printed (a sort rule without
+    // pretty_json is refused): every JSON response body on these tapes is
+    // indented, so a reader sees it was rewritten.
+    servirtium.pretty_json(2)
     servirtium.collapse("[0-9a-f]{32}", "00000000000000000000000000000000")
     servirtium.collapse("10\\.[0-9]+\\.[0-9]+\\.[0-9]+", "10.0.0.1")
     servirtium.collapse("\"ports\":\\{\"capi\":[0-9]+,\"capiSSL\":[0-9]+,\"kv\":[0-9]+,\"mgmt\":[0-9]+,\"mgmtSSL\":[0-9]+\\}", "\"ports\":{}")
     for key in ["nodeHash", "mem_free", "memoryFree", "memoryTotal", "mem_total", "mem_limit"] {
         servirtium.collapse("\"${key}\":[0-9]+", "\"${key}\":0")
+    }
+    // The node's systemStats come from the host the engine runs on (its
+    // allocation stalls, CPU and swap use), not from Couchbase.
+    for key in ["allocstall", "cpu_utilization_rate", "cpu_stolen_rate", "swap_total", "swap_used"] {
+        servirtium.collapse("\"${key}\":[0-9.]+", "\"${key}\":0")
     }
     // The bucket's statistics fill in as it warms up (an empty object on one
     // run, figures on the next).
@@ -108,11 +117,11 @@ main() {
             st, body, gerr = get("${base}/pools", "admin", "secret1")
             spec.assert_ok(gerr, "GET /pools")
             spec.assert_eq(st, 200, "the REST API accepts the credentials")
-            spec.assert_contains(body, "\"isEnterprise\":false", "the community edition")
+            spec.assert_contains(servirtium.json_compact(body), "\"isEnterprise\":false", "the community edition")
             st2, buckets, berr = get("${base}/pools/default/buckets", "admin", "secret1")
             spec.assert_ok(berr, "GET buckets")
             spec.assert_eq(st2, 200, "buckets listed")
-            spec.assert_contains(buckets, "\"name\":\"tcae\"", "the bucket exists")
+            spec.assert_contains(servirtium.json_compact(buckets), "\"name\":\"tcae\"", "the bucket exists")
             servirtium.end_recording(rec)
         }
     }

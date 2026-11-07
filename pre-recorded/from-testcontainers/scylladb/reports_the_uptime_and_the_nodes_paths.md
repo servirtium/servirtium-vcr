@@ -40,14 +40,16 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 24
+Content-Length: 28
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-["/var/lib/scylla/data"]
+[
+  "/var/lib/scylla/data"
+]
 ```
 
 ## Interaction 2: GET /storage_service/saved_caches/location

@@ -40,14 +40,21 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 46
+Content-Length: 74
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-[{"key": "{{uuid-1}}", "value": ["{{ip-1}}"]}]
+[
+  {
+    "key": "{{uuid-1}}",
+    "value": [
+      "{{ip-1}}"
+    ]
+  }
+]
 ```
 
 ## Interaction 2: GET /storage_service/schema_version
@@ -92,14 +99,21 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 46
+Content-Length: 74
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-[{"key": "{{uuid-2}}", "value": ["{{ip-1}}"]}]
+[
+  {
+    "key": "{{uuid-2}}",
+    "value": [
+      "{{ip-1}}"
+    ]
+  }
+]
 ```
 
 

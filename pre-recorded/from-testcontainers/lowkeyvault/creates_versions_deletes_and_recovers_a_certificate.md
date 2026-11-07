@@ -27,7 +27,20 @@ Connection: keep-alive
 ### Response body recorded for playback (202: application/json):
 
 ```
-{"cancellation_requested":false,"csr":"CERTIFICATE-REQUEST","id":"https://{{request.host}}/certificates/tcae-cert/pending","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"request_id":"{{version-1}}","status":"completed","status_details":null,"target":"https://{{request.host}}/certificates/tcae-cert"}
+{
+  "cancellation_requested": false,
+  "csr": "CERTIFICATE-REQUEST",
+  "id": "https://{{request.host}}/certificates/tcae-cert/pending",
+  "issuer": {
+    "cert_transparency": false,
+    "cty": null,
+    "name": "Self"
+  },
+  "request_id": "{{version-1}}",
+  "status": "completed",
+  "status_details": null,
+  "target": "https://{{request.host}}/certificates/tcae-cert"
+}
 ```
 
 ## Interaction 1: GET /certificates/tcae-cert/pending?api-version=7.4
@@ -56,7 +69,20 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"cancellation_requested":false,"csr":"CERTIFICATE-REQUEST","id":"https://{{request.host}}/certificates/tcae-cert/pending","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"request_id":"{{version-1}}","status":"completed","status_details":null,"target":"https://{{request.host}}/certificates/tcae-cert"}
+{
+  "cancellation_requested": false,
+  "csr": "CERTIFICATE-REQUEST",
+  "id": "https://{{request.host}}/certificates/tcae-cert/pending",
+  "issuer": {
+    "cert_transparency": false,
+    "cty": null,
+    "name": "Self"
+  },
+  "request_id": "{{version-1}}",
+  "status": "completed",
+  "status_details": null,
+  "target": "https://{{request.host}}/certificates/tcae-cert"
+}
 ```
 
 ## Interaction 2: GET /certificates/tcae-cert?api-version=7.4
@@ -85,7 +111,74 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"cer":"CERTIFICATE-DER","id":"https://{{request.host}}/certificates/tcae-cert/{{version-1}}","kid":"https://{{request.host}}/keys/tcae-cert/{{version-1}}","policy":{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-1}}/policy","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"key_props":{"exportable":true,"key_size":2048,"kty":"RSA","reuse_key":false},"lifetime_actions":[{"action":{"action_type":"AutoRenew"},"trigger":{"lifetime_percentage":80}}],"secret_props":{"contentType":"application/x-pkcs12"},"x509_props":{"ekus":["1.3.6.1.5.5.7.3.1"],"key_usage":["digitalSignature"],"sans":{"dns_names":[],"emails":[],"upns":[]},"subject":"CN=example.com","validity_months":12}},"sid":"https://{{request.host}}/secrets/tcae-cert/{{version-1}}","tags":{},"x5t":"THUMBPRINT"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 978307200,
+    "nbf": 946684800,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "cer": "CERTIFICATE-DER",
+  "id": "https://{{request.host}}/certificates/tcae-cert/{{version-1}}",
+  "kid": "https://{{request.host}}/keys/tcae-cert/{{version-1}}",
+  "policy": {
+    "attributes": {
+      "created": 946684800,
+      "enabled": true,
+      "exp": 978307200,
+      "nbf": 946684800,
+      "recoverableDays": 90,
+      "recoveryLevel": "Recoverable",
+      "updated": 946684800
+    },
+    "id": "https://{{request.host}}/certificates/tcae-cert/{{version-1}}/policy",
+    "issuer": {
+      "cert_transparency": false,
+      "cty": null,
+      "name": "Self"
+    },
+    "key_props": {
+      "exportable": true,
+      "key_size": 2048,
+      "kty": "RSA",
+      "reuse_key": false
+    },
+    "lifetime_actions": [
+      {
+        "action": {
+          "action_type": "AutoRenew"
+        },
+        "trigger": {
+          "lifetime_percentage": 80
+        }
+      }
+    ],
+    "secret_props": {
+      "contentType": "application/x-pkcs12"
+    },
+    "x509_props": {
+      "ekus": [
+        "1.3.6.1.5.5.7.3.1"
+      ],
+      "key_usage": [
+        "digitalSignature"
+      ],
+      "sans": {
+        "dns_names": [],
+        "emails": [],
+        "upns": []
+      },
+      "subject": "CN=example.com",
+      "validity_months": 12
+    }
+  },
+  "sid": "https://{{request.host}}/secrets/tcae-cert/{{version-1}}",
+  "tags": {},
+  "x5t": "THUMBPRINT"
+}
 ```
 
 ## Interaction 3: GET /certificates/tcae-cert/versions?api-version=7.4
@@ -114,7 +207,24 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-1}}","tags":{},"x5t":"THUMBPRINT"}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "exp": 978307200,
+        "nbf": 946684800,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "id": "https://{{request.host}}/certificates/tcae-cert/{{version-1}}",
+      "tags": {},
+      "x5t": "THUMBPRINT"
+    }
+  ]
+}
 ```
 
 ## Interaction 4: POST /certificates/tcae-cert/create?api-version=7.4
@@ -146,7 +256,20 @@ Connection: keep-alive
 ### Response body recorded for playback (202: application/json):
 
 ```
-{"cancellation_requested":false,"csr":"CERTIFICATE-REQUEST","id":"https://{{request.host}}/certificates/tcae-cert/pending","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"request_id":"{{version-2}}","status":"completed","status_details":null,"target":"https://{{request.host}}/certificates/tcae-cert"}
+{
+  "cancellation_requested": false,
+  "csr": "CERTIFICATE-REQUEST",
+  "id": "https://{{request.host}}/certificates/tcae-cert/pending",
+  "issuer": {
+    "cert_transparency": false,
+    "cty": null,
+    "name": "Self"
+  },
+  "request_id": "{{version-2}}",
+  "status": "completed",
+  "status_details": null,
+  "target": "https://{{request.host}}/certificates/tcae-cert"
+}
 ```
 
 ## Interaction 5: GET /certificates/tcae-cert/{{version-1}}?api-version=7.4
@@ -175,7 +298,74 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"cer":"CERTIFICATE-DER","id":"https://{{request.host}}/certificates/tcae-cert/{{version-1}}","kid":"https://{{request.host}}/keys/tcae-cert/{{version-1}}","policy":{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-1}}/policy","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"key_props":{"exportable":true,"key_size":2048,"kty":"RSA","reuse_key":false},"lifetime_actions":[{"action":{"action_type":"AutoRenew"},"trigger":{"lifetime_percentage":80}}],"secret_props":{"contentType":"application/x-pkcs12"},"x509_props":{"ekus":["1.3.6.1.5.5.7.3.1"],"key_usage":["digitalSignature"],"sans":{"dns_names":[],"emails":[],"upns":[]},"subject":"CN=example.com","validity_months":12}},"sid":"https://{{request.host}}/secrets/tcae-cert/{{version-1}}","tags":{},"x5t":"THUMBPRINT"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 978307200,
+    "nbf": 946684800,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "cer": "CERTIFICATE-DER",
+  "id": "https://{{request.host}}/certificates/tcae-cert/{{version-1}}",
+  "kid": "https://{{request.host}}/keys/tcae-cert/{{version-1}}",
+  "policy": {
+    "attributes": {
+      "created": 946684800,
+      "enabled": true,
+      "exp": 978307200,
+      "nbf": 946684800,
+      "recoverableDays": 90,
+      "recoveryLevel": "Recoverable",
+      "updated": 946684800
+    },
+    "id": "https://{{request.host}}/certificates/tcae-cert/{{version-1}}/policy",
+    "issuer": {
+      "cert_transparency": false,
+      "cty": null,
+      "name": "Self"
+    },
+    "key_props": {
+      "exportable": true,
+      "key_size": 2048,
+      "kty": "RSA",
+      "reuse_key": false
+    },
+    "lifetime_actions": [
+      {
+        "action": {
+          "action_type": "AutoRenew"
+        },
+        "trigger": {
+          "lifetime_percentage": 80
+        }
+      }
+    ],
+    "secret_props": {
+      "contentType": "application/x-pkcs12"
+    },
+    "x509_props": {
+      "ekus": [
+        "1.3.6.1.5.5.7.3.1"
+      ],
+      "key_usage": [
+        "digitalSignature"
+      ],
+      "sans": {
+        "dns_names": [],
+        "emails": [],
+        "upns": []
+      },
+      "subject": "CN=example.com",
+      "validity_months": 12
+    }
+  },
+  "sid": "https://{{request.host}}/secrets/tcae-cert/{{version-1}}",
+  "tags": {},
+  "x5t": "THUMBPRINT"
+}
 ```
 
 ## Interaction 6: GET /certificates/tcae-cert?api-version=7.4
@@ -204,7 +394,74 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"cer":"CERTIFICATE-DER","id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}","kid":"https://{{request.host}}/keys/tcae-cert/{{version-2}}","policy":{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"key_props":{"exportable":true,"key_size":2048,"kty":"RSA","reuse_key":false},"lifetime_actions":[{"action":{"action_type":"AutoRenew"},"trigger":{"lifetime_percentage":80}}],"secret_props":{"contentType":"application/x-pkcs12"},"x509_props":{"ekus":["1.3.6.1.5.5.7.3.1"],"key_usage":["digitalSignature"],"sans":{"dns_names":[],"emails":[],"upns":[]},"subject":"CN=example.com","validity_months":12}},"sid":"https://{{request.host}}/secrets/tcae-cert/{{version-2}}","tags":{},"x5t":"THUMBPRINT"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 978307200,
+    "nbf": 946684800,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "cer": "CERTIFICATE-DER",
+  "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}",
+  "kid": "https://{{request.host}}/keys/tcae-cert/{{version-2}}",
+  "policy": {
+    "attributes": {
+      "created": 946684800,
+      "enabled": true,
+      "exp": 978307200,
+      "nbf": 946684800,
+      "recoverableDays": 90,
+      "recoveryLevel": "Recoverable",
+      "updated": 946684800
+    },
+    "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy",
+    "issuer": {
+      "cert_transparency": false,
+      "cty": null,
+      "name": "Self"
+    },
+    "key_props": {
+      "exportable": true,
+      "key_size": 2048,
+      "kty": "RSA",
+      "reuse_key": false
+    },
+    "lifetime_actions": [
+      {
+        "action": {
+          "action_type": "AutoRenew"
+        },
+        "trigger": {
+          "lifetime_percentage": 80
+        }
+      }
+    ],
+    "secret_props": {
+      "contentType": "application/x-pkcs12"
+    },
+    "x509_props": {
+      "ekus": [
+        "1.3.6.1.5.5.7.3.1"
+      ],
+      "key_usage": [
+        "digitalSignature"
+      ],
+      "sans": {
+        "dns_names": [],
+        "emails": [],
+        "upns": []
+      },
+      "subject": "CN=example.com",
+      "validity_months": 12
+    }
+  },
+  "sid": "https://{{request.host}}/secrets/tcae-cert/{{version-2}}",
+  "tags": {},
+  "x5t": "THUMBPRINT"
+}
 ```
 
 ## Interaction 7: GET /certificates/tcae-cert/versions?api-version=7.4
@@ -233,7 +490,38 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-1}}","tags":{},"x5t":"THUMBPRINT"},{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}","tags":{},"x5t":"THUMBPRINT"}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "exp": 978307200,
+        "nbf": 946684800,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "id": "https://{{request.host}}/certificates/tcae-cert/{{version-1}}",
+      "tags": {},
+      "x5t": "THUMBPRINT"
+    },
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "exp": 978307200,
+        "nbf": 946684800,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}",
+      "tags": {},
+      "x5t": "THUMBPRINT"
+    }
+  ]
+}
 ```
 
 ## Interaction 8: GET /certificates?api-version=7.4
@@ -262,7 +550,24 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert","tags":{},"x5t":"THUMBPRINT"}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "exp": 978307200,
+        "nbf": 946684800,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "id": "https://{{request.host}}/certificates/tcae-cert",
+      "tags": {},
+      "x5t": "THUMBPRINT"
+    }
+  ]
+}
 ```
 
 ## Interaction 9: GET /certificates/tcae-cert/policy?api-version=7.4
@@ -291,7 +596,57 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"key_props":{"exportable":true,"key_size":2048,"kty":"RSA","reuse_key":false},"lifetime_actions":[{"action":{"action_type":"AutoRenew"},"trigger":{"lifetime_percentage":80}}],"secret_props":{"contentType":"application/x-pkcs12"},"x509_props":{"ekus":["1.3.6.1.5.5.7.3.1"],"key_usage":["digitalSignature"],"sans":{"dns_names":[],"emails":[],"upns":[]},"subject":"CN=example.com","validity_months":12}}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 978307200,
+    "nbf": 946684800,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy",
+  "issuer": {
+    "cert_transparency": false,
+    "cty": null,
+    "name": "Self"
+  },
+  "key_props": {
+    "exportable": true,
+    "key_size": 2048,
+    "kty": "RSA",
+    "reuse_key": false
+  },
+  "lifetime_actions": [
+    {
+      "action": {
+        "action_type": "AutoRenew"
+      },
+      "trigger": {
+        "lifetime_percentage": 80
+      }
+    }
+  ],
+  "secret_props": {
+    "contentType": "application/x-pkcs12"
+  },
+  "x509_props": {
+    "ekus": [
+      "1.3.6.1.5.5.7.3.1"
+    ],
+    "key_usage": [
+      "digitalSignature"
+    ],
+    "sans": {
+      "dns_names": [],
+      "emails": [],
+      "upns": []
+    },
+    "subject": "CN=example.com",
+    "validity_months": 12
+  }
+}
 ```
 
 ## Interaction 10: DELETE /certificates/tcae-cert?api-version=7.4
@@ -320,7 +675,77 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"cer":"CERTIFICATE-DER","deletedDate":946684800,"id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}","kid":"https://{{request.host}}/keys/tcae-cert/{{version-2}}","policy":{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"key_props":{"exportable":true,"key_size":2048,"kty":"RSA","reuse_key":false},"lifetime_actions":[{"action":{"action_type":"AutoRenew"},"trigger":{"lifetime_percentage":80}}],"secret_props":{"contentType":"application/x-pkcs12"},"x509_props":{"ekus":["1.3.6.1.5.5.7.3.1"],"key_usage":["digitalSignature"],"sans":{"dns_names":[],"emails":[],"upns":[]},"subject":"CN=example.com","validity_months":12}},"recoveryId":"https://{{request.host}}/deletedcertificates/tcae-cert","scheduledPurgeDate":954460800,"sid":"https://{{request.host}}/secrets/tcae-cert/{{version-2}}","tags":{},"x5t":"THUMBPRINT"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 978307200,
+    "nbf": 946684800,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "cer": "CERTIFICATE-DER",
+  "deletedDate": 946684800,
+  "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}",
+  "kid": "https://{{request.host}}/keys/tcae-cert/{{version-2}}",
+  "policy": {
+    "attributes": {
+      "created": 946684800,
+      "enabled": true,
+      "exp": 978307200,
+      "nbf": 946684800,
+      "recoverableDays": 90,
+      "recoveryLevel": "Recoverable",
+      "updated": 946684800
+    },
+    "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy",
+    "issuer": {
+      "cert_transparency": false,
+      "cty": null,
+      "name": "Self"
+    },
+    "key_props": {
+      "exportable": true,
+      "key_size": 2048,
+      "kty": "RSA",
+      "reuse_key": false
+    },
+    "lifetime_actions": [
+      {
+        "action": {
+          "action_type": "AutoRenew"
+        },
+        "trigger": {
+          "lifetime_percentage": 80
+        }
+      }
+    ],
+    "secret_props": {
+      "contentType": "application/x-pkcs12"
+    },
+    "x509_props": {
+      "ekus": [
+        "1.3.6.1.5.5.7.3.1"
+      ],
+      "key_usage": [
+        "digitalSignature"
+      ],
+      "sans": {
+        "dns_names": [],
+        "emails": [],
+        "upns": []
+      },
+      "subject": "CN=example.com",
+      "validity_months": 12
+    }
+  },
+  "recoveryId": "https://{{request.host}}/deletedcertificates/tcae-cert",
+  "scheduledPurgeDate": 954460800,
+  "sid": "https://{{request.host}}/secrets/tcae-cert/{{version-2}}",
+  "tags": {},
+  "x5t": "THUMBPRINT"
+}
 ```
 
 ## Interaction 11: GET /certificates/tcae-cert?api-version=7.4
@@ -349,7 +774,12 @@ Connection: keep-alive
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Key not found: certificate:https://{{request.host}}/tcae-cert/--"}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.NotFoundException",
+    "message": "Key not found: certificate:https://{{request.host}}/tcae-cert/--"
+  }
+}
 ```
 
 ## Interaction 12: GET /deletedcertificates?api-version=7.4
@@ -378,7 +808,27 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"deletedDate":946684800,"id":"https://{{request.host}}/certificates/tcae-cert","recoveryId":"https://{{request.host}}/deletedcertificates/tcae-cert","scheduledPurgeDate":954460800,"tags":{},"x5t":"THUMBPRINT"}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "exp": 978307200,
+        "nbf": 946684800,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "deletedDate": 946684800,
+      "id": "https://{{request.host}}/certificates/tcae-cert",
+      "recoveryId": "https://{{request.host}}/deletedcertificates/tcae-cert",
+      "scheduledPurgeDate": 954460800,
+      "tags": {},
+      "x5t": "THUMBPRINT"
+    }
+  ]
+}
 ```
 
 ## Interaction 13: POST /deletedcertificates/tcae-cert/recover?api-version=7.4
@@ -407,7 +857,74 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"cer":"CERTIFICATE-DER","id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}","kid":"https://{{request.host}}/keys/tcae-cert/{{version-2}}","policy":{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"key_props":{"exportable":true,"key_size":2048,"kty":"RSA","reuse_key":false},"lifetime_actions":[{"action":{"action_type":"AutoRenew"},"trigger":{"lifetime_percentage":80}}],"secret_props":{"contentType":"application/x-pkcs12"},"x509_props":{"ekus":["1.3.6.1.5.5.7.3.1"],"key_usage":["digitalSignature"],"sans":{"dns_names":[],"emails":[],"upns":[]},"subject":"CN=example.com","validity_months":12}},"sid":"https://{{request.host}}/secrets/tcae-cert/{{version-2}}","tags":{},"x5t":"THUMBPRINT"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 978307200,
+    "nbf": 946684800,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "cer": "CERTIFICATE-DER",
+  "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}",
+  "kid": "https://{{request.host}}/keys/tcae-cert/{{version-2}}",
+  "policy": {
+    "attributes": {
+      "created": 946684800,
+      "enabled": true,
+      "exp": 978307200,
+      "nbf": 946684800,
+      "recoverableDays": 90,
+      "recoveryLevel": "Recoverable",
+      "updated": 946684800
+    },
+    "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy",
+    "issuer": {
+      "cert_transparency": false,
+      "cty": null,
+      "name": "Self"
+    },
+    "key_props": {
+      "exportable": true,
+      "key_size": 2048,
+      "kty": "RSA",
+      "reuse_key": false
+    },
+    "lifetime_actions": [
+      {
+        "action": {
+          "action_type": "AutoRenew"
+        },
+        "trigger": {
+          "lifetime_percentage": 80
+        }
+      }
+    ],
+    "secret_props": {
+      "contentType": "application/x-pkcs12"
+    },
+    "x509_props": {
+      "ekus": [
+        "1.3.6.1.5.5.7.3.1"
+      ],
+      "key_usage": [
+        "digitalSignature"
+      ],
+      "sans": {
+        "dns_names": [],
+        "emails": [],
+        "upns": []
+      },
+      "subject": "CN=example.com",
+      "validity_months": 12
+    }
+  },
+  "sid": "https://{{request.host}}/secrets/tcae-cert/{{version-2}}",
+  "tags": {},
+  "x5t": "THUMBPRINT"
+}
 ```
 
 ## Interaction 14: GET /certificates/tcae-cert?api-version=7.4
@@ -436,7 +953,74 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"cer":"CERTIFICATE-DER","id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}","kid":"https://{{request.host}}/keys/tcae-cert/{{version-2}}","policy":{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"key_props":{"exportable":true,"key_size":2048,"kty":"RSA","reuse_key":false},"lifetime_actions":[{"action":{"action_type":"AutoRenew"},"trigger":{"lifetime_percentage":80}}],"secret_props":{"contentType":"application/x-pkcs12"},"x509_props":{"ekus":["1.3.6.1.5.5.7.3.1"],"key_usage":["digitalSignature"],"sans":{"dns_names":[],"emails":[],"upns":[]},"subject":"CN=example.com","validity_months":12}},"sid":"https://{{request.host}}/secrets/tcae-cert/{{version-2}}","tags":{},"x5t":"THUMBPRINT"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 978307200,
+    "nbf": 946684800,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "cer": "CERTIFICATE-DER",
+  "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}",
+  "kid": "https://{{request.host}}/keys/tcae-cert/{{version-2}}",
+  "policy": {
+    "attributes": {
+      "created": 946684800,
+      "enabled": true,
+      "exp": 978307200,
+      "nbf": 946684800,
+      "recoverableDays": 90,
+      "recoveryLevel": "Recoverable",
+      "updated": 946684800
+    },
+    "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy",
+    "issuer": {
+      "cert_transparency": false,
+      "cty": null,
+      "name": "Self"
+    },
+    "key_props": {
+      "exportable": true,
+      "key_size": 2048,
+      "kty": "RSA",
+      "reuse_key": false
+    },
+    "lifetime_actions": [
+      {
+        "action": {
+          "action_type": "AutoRenew"
+        },
+        "trigger": {
+          "lifetime_percentage": 80
+        }
+      }
+    ],
+    "secret_props": {
+      "contentType": "application/x-pkcs12"
+    },
+    "x509_props": {
+      "ekus": [
+        "1.3.6.1.5.5.7.3.1"
+      ],
+      "key_usage": [
+        "digitalSignature"
+      ],
+      "sans": {
+        "dns_names": [],
+        "emails": [],
+        "upns": []
+      },
+      "subject": "CN=example.com",
+      "validity_months": 12
+    }
+  },
+  "sid": "https://{{request.host}}/secrets/tcae-cert/{{version-2}}",
+  "tags": {},
+  "x5t": "THUMBPRINT"
+}
 ```
 
 ## Interaction 15: DELETE /certificates/tcae-cert?api-version=7.4
@@ -465,7 +1049,77 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"cer":"CERTIFICATE-DER","deletedDate":946684800,"id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}","kid":"https://{{request.host}}/keys/tcae-cert/{{version-2}}","policy":{"attributes":{"created":946684800,"enabled":true,"exp":978307200,"nbf":946684800,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy","issuer":{"cert_transparency":false,"cty":null,"name":"Self"},"key_props":{"exportable":true,"key_size":2048,"kty":"RSA","reuse_key":false},"lifetime_actions":[{"action":{"action_type":"AutoRenew"},"trigger":{"lifetime_percentage":80}}],"secret_props":{"contentType":"application/x-pkcs12"},"x509_props":{"ekus":["1.3.6.1.5.5.7.3.1"],"key_usage":["digitalSignature"],"sans":{"dns_names":[],"emails":[],"upns":[]},"subject":"CN=example.com","validity_months":12}},"recoveryId":"https://{{request.host}}/deletedcertificates/tcae-cert","scheduledPurgeDate":954460800,"sid":"https://{{request.host}}/secrets/tcae-cert/{{version-2}}","tags":{},"x5t":"THUMBPRINT"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "exp": 978307200,
+    "nbf": 946684800,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "cer": "CERTIFICATE-DER",
+  "deletedDate": 946684800,
+  "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}",
+  "kid": "https://{{request.host}}/keys/tcae-cert/{{version-2}}",
+  "policy": {
+    "attributes": {
+      "created": 946684800,
+      "enabled": true,
+      "exp": 978307200,
+      "nbf": 946684800,
+      "recoverableDays": 90,
+      "recoveryLevel": "Recoverable",
+      "updated": 946684800
+    },
+    "id": "https://{{request.host}}/certificates/tcae-cert/{{version-2}}/policy",
+    "issuer": {
+      "cert_transparency": false,
+      "cty": null,
+      "name": "Self"
+    },
+    "key_props": {
+      "exportable": true,
+      "key_size": 2048,
+      "kty": "RSA",
+      "reuse_key": false
+    },
+    "lifetime_actions": [
+      {
+        "action": {
+          "action_type": "AutoRenew"
+        },
+        "trigger": {
+          "lifetime_percentage": 80
+        }
+      }
+    ],
+    "secret_props": {
+      "contentType": "application/x-pkcs12"
+    },
+    "x509_props": {
+      "ekus": [
+        "1.3.6.1.5.5.7.3.1"
+      ],
+      "key_usage": [
+        "digitalSignature"
+      ],
+      "sans": {
+        "dns_names": [],
+        "emails": [],
+        "upns": []
+      },
+      "subject": "CN=example.com",
+      "validity_months": 12
+    }
+  },
+  "recoveryId": "https://{{request.host}}/deletedcertificates/tcae-cert",
+  "scheduledPurgeDate": 954460800,
+  "sid": "https://{{request.host}}/secrets/tcae-cert/{{version-2}}",
+  "tags": {},
+  "x5t": "THUMBPRINT"
+}
 ```
 
 ## Interaction 16: DELETE /deletedcertificates/tcae-cert?api-version=7.4
@@ -493,7 +1147,12 @@ Connection: close
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"error":{"code":"java.lang.IllegalStateException","message":"The selected elements cannot be purged."}}
+{
+  "error": {
+    "code": "java.lang.IllegalStateException",
+    "message": "The selected elements cannot be purged."
+  }
+}
 ```
 
 

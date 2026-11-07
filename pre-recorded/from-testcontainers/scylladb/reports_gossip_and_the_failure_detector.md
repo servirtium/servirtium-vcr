@@ -14,14 +14,16 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 12
+Content-Length: 16
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-["{{ip-1}}"]
+[
+  "{{ip-1}}"
+]
 ```
 
 ## Interaction 1: GET /gossiper/endpoint/down
@@ -66,14 +68,19 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 36
+Content-Length: 52
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-[{"key": "{{ip-1}}", "value": "UP"}]
+[
+  {
+    "key": "{{ip-1}}",
+    "value": "UP"
+  }
+]
 ```
 
 ## Interaction 3: GET /failure_detector/count/endpoint/up

@@ -170,14 +170,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 57
+Content-Length: 63
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"message": "API call is not supported yet", "code": 500}
+{
+  "message": "API call is not supported yet",
+  "code": 500
+}
 ```
 
 

@@ -15,12 +15,19 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 
 ```
 Content-Type: application/json
-Content-Length: 141
+Content-Length: 167
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"connections":0,"version":"8.0.11-TiDB-v8.4.0","git_hash":"1a9f0fa25580907d3266dc3edf000ba24379a600","status":{"init_stats_percentage":100}}
+{
+  "connections": 0,
+  "version": "8.0.11-TiDB-v8.4.0",
+  "git_hash": "1a9f0fa25580907d3266dc3edf000ba24379a600",
+  "status": {
+    "init_stats_percentage": 100
+  }
+}
 ```
 
 ## Interaction 1: GET /info
@@ -40,25 +47,25 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 
 ```
 Content-Type: application/json
-Content-Length: 315
+Content-Length: 328
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
 {
- "is_owner": true,
- "max_procs": 1,
- "gogc": 100,
- "version": "8.0.11-TiDB-v8.4.0",
- "git_hash": "1a9f0fa25580907d3266dc3edf000ba24379a600",
- "ddl_id": "{{uuid-1}}",
- "ip": "10.0.0.1",
- "listening_port": 4000,
- "status_port": 10080,
- "lease": "45s",
- "start_timestamp": 946684800,
- "labels": {},
- "server_id": 0
+  "is_owner": true,
+  "max_procs": 1,
+  "gogc": 100,
+  "version": "8.0.11-TiDB-v8.4.0",
+  "git_hash": "1a9f0fa25580907d3266dc3edf000ba24379a600",
+  "ddl_id": "{{uuid-1}}",
+  "ip": "10.0.0.1",
+  "listening_port": 4000,
+  "status_port": 10080,
+  "lease": "45s",
+  "start_timestamp": 946684800,
+  "labels": {},
+  "server_id": 0
 }
 ```
 
@@ -79,29 +86,29 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 
 ```
 Content-Type: application/json
-Content-Length: 422
+Content-Length: 461
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
 {
- "servers_num": 1,
- "owner_id": "{{uuid-1}}",
- "is_all_server_version_consistent": true,
- "all_servers_info": {
-  "{{uuid-1}}": {
-   "version": "8.0.11-TiDB-v8.4.0",
-   "git_hash": "1a9f0fa25580907d3266dc3edf000ba24379a600",
-   "ddl_id": "{{uuid-1}}",
-   "ip": "10.0.0.1",
-   "listening_port": 4000,
-   "status_port": 10080,
-   "lease": "45s",
-   "start_timestamp": 946684800,
-   "labels": {},
-   "server_id": 0
+  "servers_num": 1,
+  "owner_id": "{{uuid-1}}",
+  "is_all_server_version_consistent": true,
+  "all_servers_info": {
+    "{{uuid-1}}": {
+      "version": "8.0.11-TiDB-v8.4.0",
+      "git_hash": "1a9f0fa25580907d3266dc3edf000ba24379a600",
+      "ddl_id": "{{uuid-1}}",
+      "ip": "10.0.0.1",
+      "listening_port": 4000,
+      "status_port": 10080,
+      "lease": "45s",
+      "start_timestamp": 946684800,
+      "labels": {},
+      "server_id": 0
+    }
   }
- }
 }
 ```
 

@@ -149,7 +149,9 @@ fn http_send(method: string, url: string) -> (int, string, string) {
     b = client.response_body(r)
     last_content_type = client.response_header(r, "Content-Type")
     client.response_free(r)
-    return st, b, ""
+    // JSON without the whitespace between tokens (servirtium.json_compact), so
+    // the assertions hold live and against a pretty-printed tape alike.
+    return st, servirtium.json_compact(b), ""
 }
 
 // A request to the current recording's base URL: (status, body). A transport
@@ -310,6 +312,10 @@ fn api_rules() {
     // The listings Seastar builds from hash maps (see "Order that is not
     // deterministic" above): each root array sorted, for those requests only.
     servirtium.sort_json_array_at("^/(column_family/(name(/keyspace)?)?|storage_service/keyspaces|storage_service/logging_level|system/logger)(\\?|$)", "", "")
+    // Sorted JSON is only written pretty-printed (a sort rule without
+    // pretty_json is refused): every JSON response body on these tapes is
+    // indented, so a reader sees it was rewritten.
+    servirtium.pretty_json(2)
 }
 
 // ---------------------------------------------------------------------------
@@ -355,14 +361,14 @@ main() {
             st, b = rest("GET", "/storage_service/host_id")
             spec.assert_eq(st, 200, "host_id: ${b}")
             // one node: [{"key": "<address>", "value": "<host id>"}]
-            spec.assert_contains(b, "\"key\": \"", "an address")
-            spec.assert_contains(b, "\"value\": \"", "a host id")
+            spec.assert_contains(b, "\"key\":\"", "an address")
+            spec.assert_contains(b, "\"value\":\"", "a host id")
             st2, local = rest("GET", "/storage_service/hostid/local")
             spec.assert_eq(st2, 200, "hostid/local")
             spec.assert_contains(b, string.substring(local, 1, string.length(local) - 1), "hostid/local is host_id's value")
             expect_contains("/storage_service/tokens", "[\"")
             expect_contains("/storage_service/tokens_endpoint", "[{\"key\":\"")
-            expect_contains("/storage_service/ownership", "\"value\": \"")
+            expect_contains("/storage_service/ownership", "\"value\":\"")
             st3, gen = rest("GET", "/storage_service/generation_number")
             spec.assert_eq(st3, 200, "generation_number: ${gen}")
             expect_body("/storage_service/operation_mode", "\"NORMAL\"")
@@ -375,7 +381,7 @@ main() {
             expect_body("/storage_service/nodes/joining", "[]")
             expect_body("/storage_service/nodes/leaving", "[]")
             expect_body("/storage_service/nodes/moving", "[]")
-            expect_contains("/storage_service/load_map", "\"value\": ")
+            expect_contains("/storage_service/load_map", "\"value\":")
             expect_body("/storage_service/removal_status", "\"No token removals in process.\"")
             st4, leader = rest("GET", "/raft/leader_host")
             spec.assert_eq(st4, 200, "raft/leader_host: ${leader}")
@@ -404,7 +410,7 @@ main() {
             expect_contains("/column_family/name/keyspace", "\"tcae_keyspaces\"")
             expect_contains("/column_family/", "\"cf\":\"items\"")
             expect_contains("/storage_service/natural_endpoints/tcae_keyspaces?cf=items&key=1", "[\"")
-            expect_contains("/storage_service/ownership/tcae_keyspaces", "\"value\": \"")
+            expect_contains("/storage_service/ownership/tcae_keyspaces", "\"value\":\"")
             finish(rec, "tcae_keyspaces")
         }
 
@@ -543,11 +549,11 @@ main() {
             st, b = rest("POST", "/storage_service/trace_probability?probability=0")
             spec.assert_eq(st, 200, "reset probability: ${b}")
             expect_body("/storage_service/trace_probability", "0")
-            slow = "{\"enable\": false, \"ttl\": 86400, \"threshold\": 500000, \"fast\": false}"
+            slow = "{\"enable\":false,\"ttl\":86400,\"threshold\":500000,\"fast\":false}"
             expect_body("/storage_service/slow_query", slow)
             st, b = rest("POST", "/storage_service/slow_query?enable=true&threshold=1000")
             spec.assert_eq(st, 200, "enable slow query: ${b}")
-            expect_contains("/storage_service/slow_query", "\"enable\": true, \"ttl\": 86400, \"threshold\": 1000")
+            expect_contains("/storage_service/slow_query", "\"enable\":true,\"ttl\":86400,\"threshold\":1000")
             st, b = rest("POST", "/storage_service/slow_query?enable=false&threshold=500000")
             spec.assert_eq(st, 200, "reset slow query: ${b}")
             expect_body("/storage_service/slow_query", slow)
@@ -566,7 +572,7 @@ main() {
             spec.assert_eq(st, 200, "live: ${live}")
             spec.assert_true(string.starts_with(live, "[\"") == 1, "one address: ${live}")
             expect_body("/gossiper/endpoint/down", "[]")
-            expect_contains("/failure_detector/simple_states", "\"value\": \"UP\"")
+            expect_contains("/failure_detector/simple_states", "\"value\":\"UP\"")
             expect_body("/failure_detector/count/endpoint/up", "1")
             expect_body("/failure_detector/count/endpoint/down", "0")
             expect_body("/failure_detector/phi", "8")
@@ -664,8 +670,8 @@ main() {
         spec.it("describes the API with swagger") callback {
             rec, ok = begin("describes_the_api_with_swagger", "")
             if ok == 0 { return }
-            expect_contains("/api-doc", "\"swaggerVersion\": \"1.2\"")
-            expect_contains("/api-doc", "{\"path\": \"/storage_service\", \"description\": \"The storage service API\"}")
+            expect_contains("/api-doc", "\"swaggerVersion\":\"1.2\"")
+            expect_contains("/api-doc", "{\"path\":\"/storage_service\",\"description\":\"The storage service API\"}")
             expect_contains("/api-doc/system/", "\"resourcePath\":\"/system\"")
             finish(rec, "")
         }

@@ -15,32 +15,32 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 
 ```
 Content-Type: application/json
-Content-Length: 391
+Content-Length: 427
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
 [
- {
-  "table_schema": "tcae_shop",
-  "table_name": "tcae_orders",
-  "table_rows": 0,
-  "avg_row_length": 0,
-  "data_length": 0,
-  "max_data_length": 0,
-  "index_length": 0,
-  "data_free": 0
- },
- {
-  "table_schema": "tcae_shop",
-  "table_name": "tcae_customers",
-  "table_rows": 0,
-  "avg_row_length": 0,
-  "data_length": 0,
-  "max_data_length": 0,
-  "index_length": 0,
-  "data_free": 0
- }
+  {
+    "table_schema": "tcae_shop",
+    "table_name": "tcae_orders",
+    "table_rows": 0,
+    "avg_row_length": 0,
+    "data_length": 0,
+    "max_data_length": 0,
+    "index_length": 0,
+    "data_free": 0
+  },
+  {
+    "table_schema": "tcae_shop",
+    "table_name": "tcae_customers",
+    "table_rows": 0,
+    "avg_row_length": 0,
+    "data_length": 0,
+    "max_data_length": 0,
+    "index_length": 0,
+    "data_free": 0
+  }
 ]
 ```
 
@@ -61,20 +61,20 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 
 ```
 Content-Type: application/json
-Content-Length: 181
+Content-Length: 189
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
 {
- "table_schema": "tcae_shop",
- "table_name": "tcae_orders",
- "table_rows": 0,
- "avg_row_length": 0,
- "data_length": 0,
- "max_data_length": 0,
- "index_length": 0,
- "data_free": 0
+  "table_schema": "tcae_shop",
+  "table_name": "tcae_orders",
+  "table_rows": 0,
+  "avg_row_length": 0,
+  "data_length": 0,
+  "max_data_length": 0,
+  "index_length": 0,
+  "data_free": 0
 }
 ```
 

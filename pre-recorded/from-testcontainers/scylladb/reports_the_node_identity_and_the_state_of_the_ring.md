@@ -14,14 +14,19 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 44
+Content-Length: 60
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-[{"key": "{{ip-1}}", "value": "{{uuid-1}}"}]
+[
+  {
+    "key": "{{ip-1}}",
+    "value": "{{uuid-1}}"
+  }
+]
 ```
 
 ## Interaction 1: GET /storage_service/hostid/local
@@ -73,7 +78,9 @@ Server: Seastar httpd
 ### Response body recorded for playback (200: application/json):
 
 ```
-["TOKEN"]
+[
+  "TOKEN"
+]
 ```
 
 ## Interaction 3: GET /storage_service/tokens_endpoint
@@ -99,7 +106,12 @@ Server: Seastar httpd
 ### Response body recorded for playback (200: application/json):
 
 ```
-[{"key":"TOKEN","value":"ADDRESS"}]
+[
+  {
+    "key": "TOKEN",
+    "value": "ADDRESS"
+  }
+]
 ```
 
 ## Interaction 4: GET /storage_service/ownership
@@ -118,14 +130,19 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 35
+Content-Length: 51
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-[{"key": "{{ip-1}}", "value": "1"}]
+[
+  {
+    "key": "{{ip-1}}",
+    "value": "1"
+  }
+]
 ```
 
 ## Interaction 5: GET /storage_service/generation_number
@@ -430,14 +447,19 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 33
+Content-Length: 49
 Content-Type: application/json
 Server: Seastar httpd
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-[{"key": "{{ip-1}}", "value": 0}]
+[
+  {
+    "key": "{{ip-1}}",
+    "value": 0
+  }
+]
 ```
 
 ## Interaction 17: GET /storage_service/removal_status

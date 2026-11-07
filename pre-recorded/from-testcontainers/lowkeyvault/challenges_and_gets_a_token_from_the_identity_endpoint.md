@@ -50,7 +50,9 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[]}
+{
+  "value": []
+}
 ```
 
 ## Interaction 2: GET /secrets?api-version=7.4
@@ -79,7 +81,9 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[]}
+{
+  "value": []
+}
 ```
 
 

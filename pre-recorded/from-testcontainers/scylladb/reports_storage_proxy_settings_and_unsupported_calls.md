@@ -248,14 +248,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 57
+Content-Length: 63
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"message": "API call is not supported yet", "code": 500}
+{
+  "message": "API call is not supported yet",
+  "code": 500
+}
 ```
 
 ## Interaction 10: GET /storage_proxy/total_hints
@@ -274,14 +277,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 57
+Content-Length: 63
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"message": "API call is not supported yet", "code": 500}
+{
+  "message": "API call is not supported yet",
+  "code": 500
+}
 ```
 
 ## Interaction 11: GET /hinted_handoff/hints
@@ -300,14 +306,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 57
+Content-Length: 63
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"message": "API call is not supported yet", "code": 500}
+{
+  "message": "API call is not supported yet",
+  "code": 500
+}
 ```
 
 ## Interaction 12: GET /storage_service/tombstone_warn_threshold
@@ -326,14 +335,17 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 ### Response headers recorded for playback:
 
 ```
-Content-Length: 57
+Content-Length: 63
 Server: Seastar httpd
 Content-Type: application/json
 ```
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"message": "API call is not supported yet", "code": 500}
+{
+  "message": "API call is not supported yet",
+  "code": 500
+}
 ```
 
 

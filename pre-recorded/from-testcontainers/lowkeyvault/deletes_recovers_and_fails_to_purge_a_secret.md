@@ -27,7 +27,19 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-del/{{version-1}}","managed":false,"tags":{},"value":"gone soon"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "id": "https://{{request.host}}/secrets/tcae-del/{{version-1}}",
+  "managed": false,
+  "tags": {},
+  "value": "gone soon"
+}
 ```
 
 ## Interaction 1: DELETE /secrets/tcae-del?api-version=7.4
@@ -56,7 +68,22 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"deletedDate":946684800,"id":"https://{{request.host}}/secrets/tcae-del/{{version-1}}","managed":false,"recoveryId":"https://{{request.host}}/deletedsecrets/tcae-del","scheduledPurgeDate":954460800,"tags":{},"value":"gone soon"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "deletedDate": 946684800,
+  "id": "https://{{request.host}}/secrets/tcae-del/{{version-1}}",
+  "managed": false,
+  "recoveryId": "https://{{request.host}}/deletedsecrets/tcae-del",
+  "scheduledPurgeDate": 954460800,
+  "tags": {},
+  "value": "gone soon"
+}
 ```
 
 ## Interaction 2: GET /secrets/tcae-del?api-version=7.4
@@ -85,7 +112,12 @@ Connection: keep-alive
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Key not found: secret:https://{{request.host}}/tcae-del/--"}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.NotFoundException",
+    "message": "Key not found: secret:https://{{request.host}}/tcae-del/--"
+  }
+}
 ```
 
 ## Interaction 3: GET /deletedsecrets?api-version=7.4
@@ -114,7 +146,24 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"value":[{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"deletedDate":946684800,"id":"https://{{request.host}}/secrets/tcae-del","recoveryId":"https://{{request.host}}/deletedsecrets/tcae-del","scheduledPurgeDate":954460800,"tags":{}}]}
+{
+  "value": [
+    {
+      "attributes": {
+        "created": 946684800,
+        "enabled": true,
+        "recoverableDays": 90,
+        "recoveryLevel": "Recoverable",
+        "updated": 946684800
+      },
+      "deletedDate": 946684800,
+      "id": "https://{{request.host}}/secrets/tcae-del",
+      "recoveryId": "https://{{request.host}}/deletedsecrets/tcae-del",
+      "scheduledPurgeDate": 954460800,
+      "tags": {}
+    }
+  ]
+}
 ```
 
 ## Interaction 4: GET /deletedsecrets/tcae-del?api-version=7.4
@@ -143,7 +192,22 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"deletedDate":946684800,"id":"https://{{request.host}}/secrets/tcae-del/{{version-1}}","managed":false,"recoveryId":"https://{{request.host}}/deletedsecrets/tcae-del","scheduledPurgeDate":954460800,"tags":{},"value":"gone soon"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "deletedDate": 946684800,
+  "id": "https://{{request.host}}/secrets/tcae-del/{{version-1}}",
+  "managed": false,
+  "recoveryId": "https://{{request.host}}/deletedsecrets/tcae-del",
+  "scheduledPurgeDate": 954460800,
+  "tags": {},
+  "value": "gone soon"
+}
 ```
 
 ## Interaction 5: PUT /secrets/tcae-del?api-version=7.4
@@ -175,7 +239,12 @@ Connection: keep-alive
 ### Response body recorded for playback (409: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.AlreadyExistsException","message":"A deleted entity already exists with this name: secret:https://localhost:8443/tcae-del/{{version-2}}"}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.AlreadyExistsException",
+    "message": "A deleted entity already exists with this name: secret:https://localhost:8443/tcae-del/{{version-2}}"
+  }
+}
 ```
 
 ## Interaction 6: POST /deletedsecrets/tcae-del/recover?api-version=7.4
@@ -204,7 +273,19 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-del/{{version-1}}","managed":false,"tags":{},"value":"gone soon"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "id": "https://{{request.host}}/secrets/tcae-del/{{version-1}}",
+  "managed": false,
+  "tags": {},
+  "value": "gone soon"
+}
 ```
 
 ## Interaction 7: GET /secrets/tcae-del?api-version=7.4
@@ -233,7 +314,19 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-del/{{version-1}}","managed":false,"tags":{},"value":"gone soon"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "id": "https://{{request.host}}/secrets/tcae-del/{{version-1}}",
+  "managed": false,
+  "tags": {},
+  "value": "gone soon"
+}
 ```
 
 ## Interaction 8: DELETE /secrets/tcae-del?api-version=7.4
@@ -262,7 +355,22 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"deletedDate":946684800,"id":"https://{{request.host}}/secrets/tcae-del/{{version-1}}","managed":false,"recoveryId":"https://{{request.host}}/deletedsecrets/tcae-del","scheduledPurgeDate":954460800,"tags":{},"value":"gone soon"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "deletedDate": 946684800,
+  "id": "https://{{request.host}}/secrets/tcae-del/{{version-1}}",
+  "managed": false,
+  "recoveryId": "https://{{request.host}}/deletedsecrets/tcae-del",
+  "scheduledPurgeDate": 954460800,
+  "tags": {},
+  "value": "gone soon"
+}
 ```
 
 ## Interaction 9: DELETE /deletedsecrets/tcae-del?api-version=7.4
@@ -290,7 +398,12 @@ Connection: close
 ### Response body recorded for playback (500: application/json):
 
 ```
-{"error":{"code":"java.lang.IllegalStateException","message":"The selected elements cannot be purged."}}
+{
+  "error": {
+    "code": "java.lang.IllegalStateException",
+    "message": "The selected elements cannot be purged."
+  }
+}
 ```
 
 ## Interaction 10: POST /deletedsecrets/tcae-del/recover?api-version=7.4
@@ -319,7 +432,19 @@ Connection: keep-alive
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"attributes":{"created":946684800,"enabled":true,"recoverableDays":90,"recoveryLevel":"Recoverable","updated":946684800},"id":"https://{{request.host}}/secrets/tcae-del/{{version-1}}","managed":false,"tags":{},"value":"gone soon"}
+{
+  "attributes": {
+    "created": 946684800,
+    "enabled": true,
+    "recoverableDays": 90,
+    "recoveryLevel": "Recoverable",
+    "updated": 946684800
+  },
+  "id": "https://{{request.host}}/secrets/tcae-del/{{version-1}}",
+  "managed": false,
+  "tags": {},
+  "value": "gone soon"
+}
 ```
 
 ## Interaction 11: DELETE /secrets/tcae-missing?api-version=7.4
@@ -348,7 +473,12 @@ Connection: keep-alive
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Entity not found: secret:https://{{request.host}}/tcae-missing/--"}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.NotFoundException",
+    "message": "Entity not found: secret:https://{{request.host}}/tcae-missing/--"
+  }
+}
 ```
 
 ## Interaction 12: POST /deletedsecrets/tcae-missing/recover?api-version=7.4
@@ -377,7 +507,12 @@ Connection: keep-alive
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Entity not found: secret:https://{{request.host}}/tcae-missing/--"}}
+{
+  "error": {
+    "code": "com.github.nagyesta.lowkeyvault.service.exception.NotFoundException",
+    "message": "Entity not found: secret:https://{{request.host}}/tcae-missing/--"
+  }
+}
 ```
 
 
