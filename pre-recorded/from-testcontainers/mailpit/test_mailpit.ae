@@ -68,11 +68,11 @@
 // PORTING: in playback a normalized value comes back as its token, verbatim
 // ("{{id-1}}"); treat the id as an opaque string (never assert its length or
 // shape) and send it back exactly as received. Send the braces as they are:
-// playback compares paths and bodies byte for byte, so a client that
-// percent-encodes `{` will not match. Mailpit answers raw messages and
-// attachments with CR LF line ends; Servirtium's playback folds a tape's CR LF
-// to LF when it reads it, so replayed text has LF only: assert with the CRs
-// removed (lf() below).
+// playback compares paths after RFC 3986 normalization, so `{{id-1}}` and
+// its percent-encoded form (%7B%7Bid-1%7D%7D) both match. Mailpit answers raw
+// messages and attachments with CR LF line ends; the tapes keep the CRs and
+// playback serves them as recorded. The assertions ignore CRs (lf() below),
+// which is harmless.
 //
 // Awkward points
 // --------------
@@ -609,8 +609,8 @@ main() {
         //        Attachments [{PartID "2", FileName "report.csv", ContentType "text/csv"}]
         //   GET /api/v1/message/<id>/part/2 -> 200 "a,b\n1,2" ; GET .../raw -> the message with Mailpit's
         //        Received header added (collapsed, it names the sending machine) ; GET .../headers -> includes Received
-        // Servirtium's playback folds CR LF to LF when it reads a tape, so the
-        // attachment and the raw text come back with LF: compare with CRs removed.
+        // The attachment and the raw text have CR LF line ends (kept on the
+        // tape and in replay); the assertions compare with CRs removed.
         spec.it("receives a multipart mail over SMTP and serves it") callback {
             rec, ok = begin("receives_a_multipart_mail_over_smtp_and_serves_it")
             if ok == 0 { return }

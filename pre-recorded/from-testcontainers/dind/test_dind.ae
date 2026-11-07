@@ -89,8 +89,8 @@
 //
 // Streams: a pull's progress is newline-delimited JSON, container logs are
 // taped with a TTY (Tty:true) so they are the raw text, with CRLF line ends
-// from the pseudo-terminal, and a replay folds CRLF to LF (see the README):
-// assert with CRs removed (lf() below).
+// from the pseudo-terminal, kept on the tape and in replay: the assertions
+// compare with CRs removed (lf() below), which works either way.
 //
 // In and out of scope
 // -------------------
@@ -212,7 +212,8 @@ fn filt(key: string, val: string) -> string {
 }
 
 // The body with its carriage returns removed (a TTY's logs end lines with
-// CRLF, and a replay folds CRLF to LF: assert on lf(body) and both pass).
+// CRLF; record and replay both keep them, and lf() makes the assertions
+// indifferent to them).
 fn lf(body: string) -> string {
     return string.replace_all(body, "\r", "")
 }

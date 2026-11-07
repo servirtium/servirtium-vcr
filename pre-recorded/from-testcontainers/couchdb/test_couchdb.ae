@@ -90,12 +90,13 @@
 // ETag as an opaque string (never assert its length or shape) and send it
 // back exactly as received; the tape expects the token in the later request,
 // e.g. `GET /tcae_ids/{{uuid-2}}` and `GET .../_changes?since={{seq-2}}`.
-// Send the braces as they are: playback compares paths byte for byte, so a
-// client that percent-encodes `{` as %7B will not match. Also: CouchDB
-// separates the rows of view, _find and _changes results with CRLF; the
-// tapes keep the CRs, but Servirtium's playback folds a tape's CRLF to LF
-// when it reads it, so replayed rows are LF-separated. Parse the JSON, or
-// ignore CRs, rather than comparing those bodies byte for byte.
+// A client may send the braces as they are or percent-encoded (%7B, %7D):
+// since f788ce1 playback compares paths after RFC 3986 normalization, so both
+// match. Also: CouchDB separates the rows of view, _find and _changes results
+// with CRLF; the tapes keep the CRs and, since f788ce1, playback serves them
+// byte for byte (only a tape whose own structure was converted to CRLF, e.g.
+// by git autocrlf, is folded to LF; .gitattributes marks tapes -text). The
+// assertions still ignore CRs (lf() below), which is harmless.
 //
 // Revisions are NOT rewritten. A _rev is "<generation>-<md5 of the body,
 // the previous rev and the deleted flag>", so the same writes give the same
@@ -273,10 +274,9 @@ fn q(s: string) -> string {
 }
 
 // The body with its carriage returns removed. CouchDB streams view, _find
-// and _changes results with CRLF between rows; the tape keeps the CRs, but
-// Servirtium's playback reads a tape with CRLF folded to LF (so a tape
-// checked out with autocrlf still parses), so on replay the rows are
-// LF-separated. Assert on lf(body) and both pass.
+// and _changes results with CRLF between rows. The tape keeps the CRs and
+// playback now serves them as recorded (f788ce1), so record and replay give
+// the same bytes; lf() predates that and stays as a harmless normalization.
 fn lf(body: string) -> string {
     return string.replace_all(body, "\r", "")
 }
