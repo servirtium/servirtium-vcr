@@ -86,16 +86,19 @@
 // and bodies byte for byte, so a client that percent-encodes `{` will not
 // match. Deterministic values are left alone: versions, key names, policy text.
 //
-// Awkward points (random order, and the workaround)
-// -------------------------------------------------
+// Awkward points (random order)
+// -----------------------------
 // Vault 1.13 copies the data of GET sys/mounts, sys/auth, sys/mounts/<path>,
-// sys/auth/<path> and .../tune to the TOP LEVEL of the response as well (a
-// legacy form), and that copy's keys come in a different order on every
-// request, so a tape of it would never be stable. These cases use
-// sys/internal/ui/mounts[/<path>] instead, which gives the same mount facts
-// (type, accessor, options, config) with no legacy copy, so with sorted keys.
-// An opt-in "stable key order" option in Servirtium's core would let a case
-// read sys/mounts directly. Every other response here is already stable.
+// sys/auth/<path>, .../tune and POST sys/capabilities-self (with more than
+// one path) to the TOP LEVEL of the response as well (a legacy form), and
+// that copy's keys come in a different order on every request. The cases
+// that call them (mounts_tunes_and_unmounts_a_secrets_engine,
+// writes_reads_lists_and_deletes_an_acl_policy, enforces_a_read_only_policy)
+// have their JSON keys written sorted (Servirtium's stable order; key order
+// means nothing to a client) and so, by Servirtium's rule for sorted JSON,
+// their JSON bodies pretty-printed (sorted_rules below). Their assertions
+// are about values, not the layout or key order (servirtium.json_compact).
+// Every other response here is already stable and is on its tape as sent.
 //
 // In and out of scope
 // -------------------
@@ -427,6 +430,16 @@ fn api_rules() {
     servirtium.collapse("(?<=\"ttl\":)(?:35[0-9]{2}|3600|276[0-9]{4})(?=[,}])", "3600")
 }
 
+// api_rules, then JSON keys sorted, so JSON bodies pretty-printed: for the
+// cases whose responses carry Vault's legacy top-level copy (see "Awkward
+// points"). A case calls it before begin and api_rules after, so only its
+// own tape is affected.
+fn sorted_rules() {
+    api_rules()
+    servirtium.sort_json_keys()
+    servirtium.pretty_json(2)
+}
+
 // ---------------------------------------------------------------------------
 
 main() {
@@ -701,42 +714,51 @@ main() {
             servirtium.end_recording(rec)
         }
 
-        // PORTING: mounts, in tcae-kv (a KV v1 engine). Read through
-        // sys/internal/ui/mounts, not sys/mounts (see "Awkward points").
-        //   GET    /v1/sys/internal/ui/mounts -> 200 data.secret has "secret/" and "sys/"...,
-        //          data.auth has "token/" and "userpass/"
+        // PORTING: mounts, in tcae-mount (a KV v1 engine). On this tape the
+        // JSON keys are sorted and the JSON bodies pretty-printed (see
+        // "Awkward points"); Vault itself sends them compact, in a varying
+        // key order. Each read has the facts twice: at the top level and in
+        // data.
+        //   GET    /v1/sys/mounts -> 200 "secret/", "sys/", "cubbyhole/", "identity/" ...
+        //   GET    /v1/sys/auth -> 200 "token/" and "userpass/"
         //   POST   /v1/sys/mounts/tcae-mount {"type":"kv","description":"a first mount","options":{"version":"1"}} -> 204
         //   POST   /v1/sys/mounts/tcae-mount (the same) -> 400 {"errors":["path is already in use at tcae-mount/"]}
-        //   GET    /v1/sys/internal/ui/mounts/tcae-mount -> 200 data.type "kv", data.description,
-        //          data.options.version "1", data.path "tcae-mount/", data.accessor {{mount-accessor-N}}
+        //   GET    /v1/sys/mounts/tcae-mount -> 200 data.type "kv", data.description,
+        //          data.options.version "1", data.accessor {{mount-accessor-N}}
         //   POST   /v1/sys/mounts/tcae-mount/tune {"description":"a tuned mount","default_lease_ttl":"2h"} -> 204
-        //   GET    /v1/sys/internal/ui/mounts/tcae-mount -> the new description, config.default_lease_ttl 7200
+        //   GET    /v1/sys/mounts/tcae-mount/tune -> data.description "a tuned mount", data.default_lease_ttl 7200
         //   DELETE /v1/sys/mounts/tcae-mount -> 204
         //   GET    /v1/tcae-mount/x -> 404 {"errors":["no handler for route ..."]}
         spec.it("mounts, tunes and unmounts a secrets engine") callback {
+            sorted_rules()
             rec, ok = begin("mounts_tunes_and_unmounts_a_secrets_engine", ["sys/mounts/tcae-mount"], 0)
+            api_rules()
             if ok == 0 { return }
-            st, b = vault_("GET", "sys/internal/ui/mounts", "")
-            spec.assert_eq(st, 200, "the mounts: ${b}")
-            spec.assert_contains(b, "\"secret/\":{", "the dev server's KV mount")
-            spec.assert_contains(b, "\"userpass/\":{", "the userpass auth method the setup enabled")
-            spec.assert_contains(b, "\"token/\":{", "the token auth method")
+            st, b = vault_("GET", "sys/mounts", "")
+            spec.assert_eq(st, 200, "the secrets engines: ${b}")
+            spec.assert_contains(servirtium.json_compact(b), "\"secret/\":{", "the dev server's KV mount")
+            spec.assert_contains(servirtium.json_compact(b), "\"sys/\":{", "the system backend")
+            spec.assert_contains(servirtium.json_compact(b), "\"cubbyhole/\":{", "the cubbyhole")
+            st, b = vault_("GET", "sys/auth", "")
+            spec.assert_eq(st, 200, "the auth methods: ${b}")
+            spec.assert_contains(servirtium.json_compact(b), "\"userpass/\":{", "the userpass auth method the setup enabled")
+            spec.assert_contains(servirtium.json_compact(b), "\"token/\":{", "the token auth method")
             st, b = vault_("POST", "sys/mounts/tcae-mount", "{\"type\":\"kv\",\"description\":\"a first mount\",\"options\":{\"version\":\"1\"}}")
             spec.assert_eq(st, 204, "mount: ${b}")
             st, b = vault_("POST", "sys/mounts/tcae-mount", "{\"type\":\"kv\"}")
             spec.assert_eq(st, 400, "mounting twice: ${b}")
             spec.assert_contains(b, "path is already in use at tcae-mount/", "already in use")
-            st, b = vault_("GET", "sys/internal/ui/mounts/tcae-mount", "")
+            st, b = vault_("GET", "sys/mounts/tcae-mount", "")
             spec.assert_eq(st, 200, "read the mount: ${b}")
             spec.assert_str_eq(jstr(b, "data.type"), "kv", "its type")
             spec.assert_str_eq(jstr(b, "data.description"), "a first mount", "its description")
             spec.assert_str_eq(jstr(b, "data.options.version"), "1", "KV version 1")
-            spec.assert_str_eq(jstr(b, "data.path"), "tcae-mount/", "its path")
             st, b = vault_("POST", "sys/mounts/tcae-mount/tune", "{\"description\":\"a tuned mount\",\"default_lease_ttl\":\"2h\"}")
             spec.assert_eq(st, 204, "tune: ${b}")
-            st, b = vault_("GET", "sys/internal/ui/mounts/tcae-mount", "")
+            st, b = vault_("GET", "sys/mounts/tcae-mount/tune", "")
+            spec.assert_eq(st, 200, "read the tuning: ${b}")
             spec.assert_str_eq(jstr(b, "data.description"), "a tuned mount", "the new description: ${b}")
-            spec.assert_contains(b, "\"default_lease_ttl\":7200", "the new default lease ttl")
+            spec.assert_contains(servirtium.json_compact(b), "\"default_lease_ttl\":7200", "the new default lease ttl")
             st, b = vault_("DELETE", "sys/mounts/tcae-mount", "")
             spec.assert_eq(st, 204, "unmount: ${b}")
             st, b = vault_("GET", "tcae-mount/x", "")
@@ -756,7 +778,9 @@ main() {
         //   DELETE /v1/sys/policies/acl/tcae-test -> 204
         //   GET    /v1/sys/policies/acl/tcae-test -> 404 {"errors":[]}
         spec.it("writes, reads, lists and deletes an ACL policy") callback {
+            sorted_rules()
             rec, ok = begin("writes_reads_lists_and_deletes_an_acl_policy", ["sys/policies/acl/tcae-test"], 0)
+            api_rules()
             if ok == 0 { return }
             p1 = "path 'secret/data/tcae/*' {\n  capabilities = ['read']\n}"
             p2 = "path 'secret/data/tcae/*' {\n  capabilities = ['read', 'list']\n}"
@@ -770,7 +794,7 @@ main() {
             spec.assert_eq(st, 204, "update: ${b}")
             st, b = vault_("GET", "sys/policies/acl?list=true", "")
             spec.assert_eq(st, 200, "list: ${b}")
-            spec.assert_contains(b, "\"keys\":[\"default\",\"tcae-admin\",\"tcae-reader\",\"tcae-test\",\"root\"]", "the policies, root last")
+            spec.assert_contains(servirtium.json_compact(b), "\"keys\":[\"default\",\"tcae-admin\",\"tcae-reader\",\"tcae-test\",\"root\"]", "the policies, root last")
             st, b = vault_("POST", "sys/capabilities-self", "{\"paths\":[\"secret/data/tcae/x\",\"sys/mounts\"]}")
             spec.assert_eq(st, 200, "capabilities: ${b}")
             spec.assert_contains(b, "\"sudo\"", "alice may sudo")
@@ -778,7 +802,7 @@ main() {
             spec.assert_eq(st, 204, "delete: ${b}")
             st, b = vault_("GET", "sys/policies/acl/tcae-test", "")
             spec.assert_eq(st, 404, "gone: ${b}")
-            spec.assert_str_eq(b, "{\"errors\":[]}\n", "an empty error list")
+            spec.assert_str_eq(servirtium.json_compact(b), "{\"errors\":[]}", "an empty error list")
             servirtium.end_recording(rec)
         }
 
@@ -801,7 +825,9 @@ main() {
         // that bob's token, not alice's, was sent: the assertions on the
         // responses are what show it.)
         spec.it("enforces a read-only policy") callback {
+            sorted_rules()
             rec, ok = begin("enforces_a_read_only_policy", ["secret/metadata/tcae/shared"], 1)
+            api_rules()
             if ok == 0 { return }
             st, b = vault_("POST", "secret/data/tcae/shared", "{\"data\":{\"colour\":\"green\"}}")
             spec.assert_eq(st, 200, "alice writes: ${b}")
@@ -810,7 +836,7 @@ main() {
             spec.assert_str_eq(kv_field(b, "colour"), "green", "the secret")
             st, b = vault_as(bob_tok, "GET", "secret/metadata/tcae?list=true", "")
             spec.assert_eq(st, 200, "bob lists: ${b}")
-            spec.assert_contains(b, "\"keys\":[\"shared\"]", "the one secret")
+            spec.assert_contains(servirtium.json_compact(b), "\"keys\":[\"shared\"]", "the one secret")
             st, b = vault_as(bob_tok, "POST", "secret/data/tcae/shared", "{\"data\":{\"colour\":\"red\"}}")
             spec.assert_eq(st, 403, "bob cannot write: ${b}")
             spec.assert_contains(b, "permission denied", "permission denied")
@@ -822,8 +848,8 @@ main() {
             spec.assert_eq(st, 403, "bob cannot read policies: ${b}")
             st, b = vault_as(bob_tok, "POST", "sys/capabilities-self", "{\"paths\":[\"secret/data/tcae/shared\",\"secret/data/other/x\"]}")
             spec.assert_eq(st, 200, "bob's capabilities: ${b}")
-            spec.assert_contains(b, "\"secret/data/tcae/shared\":[\"read\"]", "read only")
-            spec.assert_contains(b, "\"secret/data/other/x\":[\"deny\"]", "denied elsewhere")
+            spec.assert_contains(servirtium.json_compact(b), "\"secret/data/tcae/shared\":[\"read\"]", "read only")
+            spec.assert_contains(servirtium.json_compact(b), "\"secret/data/other/x\":[\"deny\"]", "denied elsewhere")
             st, b = vault_("DELETE", "secret/metadata/tcae/shared", "")
             spec.assert_eq(st, 204, "alice cleans up: ${b}")
             servirtium.end_recording(rec)

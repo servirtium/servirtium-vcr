@@ -21,12 +21,27 @@ X-Vault-Token: X_VAULT_TOKEN_1
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 269
+Content-Length: 335
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"request_id":"00000000-0000-0000-0000-000000000000","lease_id":"","renewable":false,"lease_duration":0,"data":{"created_time":"2000-01-01T00:00:00Z","custom_metadata":null,"deletion_time":"","destroyed":false,"version":1},"wrap_info":null,"warnings":null,"auth":null}
+{
+  "auth": null,
+  "data": {
+    "created_time": "2000-01-01T00:00:00Z",
+    "custom_metadata": null,
+    "deletion_time": "",
+    "destroyed": false,
+    "version": 1
+  },
+  "lease_duration": 0,
+  "lease_id": "",
+  "renewable": false,
+  "request_id": "00000000-0000-0000-0000-000000000000",
+  "warnings": null,
+  "wrap_info": null
+}
 
 ```
 
@@ -50,12 +65,32 @@ X-Vault-Token: X_VAULT_TOKEN_2
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 308
+Content-Length: 414
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"request_id":"00000000-0000-0000-0000-000000000000","lease_id":"","renewable":false,"lease_duration":0,"data":{"data":{"colour":"green"},"metadata":{"created_time":"2000-01-01T00:00:00Z","custom_metadata":null,"deletion_time":"","destroyed":false,"version":1}},"wrap_info":null,"warnings":null,"auth":null}
+{
+  "auth": null,
+  "data": {
+    "data": {
+      "colour": "green"
+    },
+    "metadata": {
+      "created_time": "2000-01-01T00:00:00Z",
+      "custom_metadata": null,
+      "deletion_time": "",
+      "destroyed": false,
+      "version": 1
+    }
+  },
+  "lease_duration": 0,
+  "lease_id": "",
+  "renewable": false,
+  "request_id": "00000000-0000-0000-0000-000000000000",
+  "warnings": null,
+  "wrap_info": null
+}
 
 ```
 
@@ -79,12 +114,25 @@ X-Vault-Token: X_VAULT_TOKEN_2
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 177
+Content-Length: 231
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"request_id":"00000000-0000-0000-0000-000000000000","lease_id":"","renewable":false,"lease_duration":0,"data":{"keys":["shared"]},"wrap_info":null,"warnings":null,"auth":null}
+{
+  "auth": null,
+  "data": {
+    "keys": [
+      "shared"
+    ]
+  },
+  "lease_duration": 0,
+  "lease_id": "",
+  "renewable": false,
+  "request_id": "00000000-0000-0000-0000-000000000000",
+  "warnings": null,
+  "wrap_info": null
+}
 
 ```
 
@@ -111,12 +159,16 @@ X-Vault-Token: X_VAULT_TOKEN_2
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 60
+Content-Length: 73
 ```
 ### Response body recorded for playback (403: application/json):
 
 ```
-{"errors":["1 error occurred:\n\t* permission denied\n\n"]}
+{
+  "errors": [
+    "1 error occurred:\n\t* permission denied\n\n"
+  ]
+}
 
 ```
 
@@ -140,12 +192,16 @@ X-Vault-Token: X_VAULT_TOKEN_2
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 60
+Content-Length: 73
 ```
 ### Response body recorded for playback (403: application/json):
 
 ```
-{"errors":["1 error occurred:\n\t* permission denied\n\n"]}
+{
+  "errors": [
+    "1 error occurred:\n\t* permission denied\n\n"
+  ]
+}
 
 ```
 
@@ -169,12 +225,16 @@ X-Vault-Token: X_VAULT_TOKEN_2
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 60
+Content-Length: 73
 ```
 ### Response body recorded for playback (403: application/json):
 
 ```
-{"errors":["1 error occurred:\n\t* permission denied\n\n"]}
+{
+  "errors": [
+    "1 error occurred:\n\t* permission denied\n\n"
+  ]
+}
 
 ```
 
@@ -198,12 +258,16 @@ X-Vault-Token: X_VAULT_TOKEN_2
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 60
+Content-Length: 73
 ```
 ### Response body recorded for playback (403: application/json):
 
 ```
-{"errors":["1 error occurred:\n\t* permission denied\n\n"]}
+{
+  "errors": [
+    "1 error occurred:\n\t* permission denied\n\n"
+  ]
+}
 
 ```
 
@@ -230,12 +294,34 @@ X-Vault-Token: X_VAULT_TOKEN_2
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 291
+Content-Length: 387
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"secret/data/tcae/shared":["read"],"secret/data/other/x":["deny"],"request_id":"00000000-0000-0000-0000-000000000000","lease_id":"","renewable":false,"lease_duration":0,"data":{"secret/data/other/x":["deny"],"secret/data/tcae/shared":["read"]},"wrap_info":null,"warnings":null,"auth":null}
+{
+  "auth": null,
+  "data": {
+    "secret/data/other/x": [
+      "deny"
+    ],
+    "secret/data/tcae/shared": [
+      "read"
+    ]
+  },
+  "lease_duration": 0,
+  "lease_id": "",
+  "renewable": false,
+  "request_id": "00000000-0000-0000-0000-000000000000",
+  "secret/data/other/x": [
+    "deny"
+  ],
+  "secret/data/tcae/shared": [
+    "read"
+  ],
+  "warnings": null,
+  "wrap_info": null
+}
 
 ```
 
@@ -291,5 +377,6 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | collapsed | whole recording | `(?<="server_time_utc":\|"creation_time":)1[0-9]{9}` | `946684800` | none |
 | collapsed | whole recording | `(?<="[0-9]":)1[0-9]{9}` | `946684800` | none |
 | collapsed | whole recording | `(?<="ttl":)(?:35[0-9]{2}\|3600\|276[0-9]{4})(?=[,}])` | `3600` | none |
+| ordered | response body | JSON object keys | sorted, at every depth | 0–7 |
 
 A credential's `N` numbers each distinct value: the same value has the same number wherever it appears, and one of 8 characters or more is replaced in bodies and paths too. Playback matches credential headers on presence, not value.

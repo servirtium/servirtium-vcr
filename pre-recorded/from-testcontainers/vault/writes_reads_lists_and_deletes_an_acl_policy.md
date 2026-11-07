@@ -47,12 +47,24 @@ X-Vault-Token: X_VAULT_TOKEN_1
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 251
+Content-Length: 299
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"request_id":"00000000-0000-0000-0000-000000000000","lease_id":"","renewable":false,"lease_duration":0,"data":{"name":"tcae-test","policy":"path \"secret/data/tcae/*\" {\n  capabilities = [\"read\"]\n}"},"wrap_info":null,"warnings":null,"auth":null}
+{
+  "auth": null,
+  "data": {
+    "name": "tcae-test",
+    "policy": "path \"secret/data/tcae/*\" {\n  capabilities = [\"read\"]\n}"
+  },
+  "lease_duration": 0,
+  "lease_id": "",
+  "renewable": false,
+  "request_id": "00000000-0000-0000-0000-000000000000",
+  "warnings": null,
+  "wrap_info": null
+}
 
 ```
 
@@ -105,12 +117,29 @@ X-Vault-Token: X_VAULT_TOKEN_1
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 224
+Content-Length: 306
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"request_id":"00000000-0000-0000-0000-000000000000","lease_id":"","renewable":false,"lease_duration":0,"data":{"keys":["default","tcae-admin","tcae-reader","tcae-test","root"]},"wrap_info":null,"warnings":null,"auth":null}
+{
+  "auth": null,
+  "data": {
+    "keys": [
+      "default",
+      "tcae-admin",
+      "tcae-reader",
+      "tcae-test",
+      "root"
+    ]
+  },
+  "lease_duration": 0,
+  "lease_id": "",
+  "renewable": false,
+  "request_id": "00000000-0000-0000-0000-000000000000",
+  "warnings": null,
+  "wrap_info": null
+}
 
 ```
 
@@ -137,12 +166,58 @@ X-Vault-Token: X_VAULT_TOKEN_1
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 459
+Content-Length: 699
 ```
 ### Response body recorded for playback (200: application/json):
 
 ```
-{"secret/data/tcae/x":["create","delete","list","patch","read","sudo","update"],"sys/mounts":["create","delete","list","patch","read","sudo","update"],"request_id":"00000000-0000-0000-0000-000000000000","lease_id":"","renewable":false,"lease_duration":0,"data":{"secret/data/tcae/x":["create","delete","list","patch","read","sudo","update"],"sys/mounts":["create","delete","list","patch","read","sudo","update"]},"wrap_info":null,"warnings":null,"auth":null}
+{
+  "auth": null,
+  "data": {
+    "secret/data/tcae/x": [
+      "create",
+      "delete",
+      "list",
+      "patch",
+      "read",
+      "sudo",
+      "update"
+    ],
+    "sys/mounts": [
+      "create",
+      "delete",
+      "list",
+      "patch",
+      "read",
+      "sudo",
+      "update"
+    ]
+  },
+  "lease_duration": 0,
+  "lease_id": "",
+  "renewable": false,
+  "request_id": "00000000-0000-0000-0000-000000000000",
+  "secret/data/tcae/x": [
+    "create",
+    "delete",
+    "list",
+    "patch",
+    "read",
+    "sudo",
+    "update"
+  ],
+  "sys/mounts": [
+    "create",
+    "delete",
+    "list",
+    "patch",
+    "read",
+    "sudo",
+    "update"
+  ],
+  "warnings": null,
+  "wrap_info": null
+}
 
 ```
 
@@ -192,12 +267,14 @@ X-Vault-Token: X_VAULT_TOKEN_1
 Cache-Control: no-store
 Content-Type: application/json
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Content-Length: 14
+Content-Length: 19
 ```
 ### Response body recorded for playback (404: application/json):
 
 ```
-{"errors":[]}
+{
+  "errors": []
+}
 
 ```
 
@@ -227,5 +304,6 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | collapsed | whole recording | `(?<="server_time_utc":\|"creation_time":)1[0-9]{9}` | `946684800` | none |
 | collapsed | whole recording | `(?<="[0-9]":)1[0-9]{9}` | `946684800` | none |
 | collapsed | whole recording | `(?<="ttl":)(?:35[0-9]{2}\|3600\|276[0-9]{4})(?=[,}])` | `3600` | none |
+| ordered | response body | JSON object keys | sorted, at every depth | 1, 3, 4, 6 |
 
 A credential's `N` numbers each distinct value: the same value has the same number wherever it appears, and one of 8 characters or more is replaced in bodies and paths too. Playback matches credential headers on presence, not value.
