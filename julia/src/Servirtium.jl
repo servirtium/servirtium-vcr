@@ -36,6 +36,10 @@ export Vcr, VcrError, Field, Outcome,
     strict_ignore_common_headers, ignore_volatile_headers, set_strict_headers,
     set_match_json_body, set_match_xml_body, set_match_multiple,
     indent_code_blocks, emphasize_http_verbs, set_pretty_xml,
+    set_pretty_json, get_pretty_json,
+    remove_transport_headers, remove_cloud_headers,
+    redact_credentials, redact_credential_header,
+    set_upstream_cafile, add_license_notice,
     close!, flush!, flush_fail_if_changed!, flush_or_check!, discard!,
     har_import, har_export
 
@@ -399,6 +403,56 @@ Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodie
 """
 set_pretty_xml(vcr::Vcr, indent::Integer=2) =
     ccall((:aether_vcr_embed_set_pretty_xml, LIB), Cvoid, (Ptr{Cvoid}, Cint), vcr.handle, indent)
+
+"""
+    set_pretty_json(vcr::Vcr, indent::Integer=2)
+
+Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+"""
+set_pretty_json(vcr::Vcr, indent::Integer=2) =
+    ccall((:aether_vcr_embed_set_pretty_json, LIB), Cvoid, (Ptr{Cvoid}, Cint), vcr.handle, indent)
+
+"""Current pretty-JSON indent (0 = off)."""
+get_pretty_json(vcr::Vcr) =
+    Int(ccall((:aether_vcr_embed_get_pretty_json, LIB), Cint, (Ptr{Cvoid},), vcr.handle))
+
+# Opt-in header presets: each registers ordinary rules, listed under the
+# preset's name in the recording-rules footer. Each throws on failure.
+
+"""Leave the connection-describing headers (Host, Connection, Content-Length
+and the other hop-by-hop headers, Accept-Encoding) out of the recording."""
+remove_transport_headers(vcr::Vcr) =
+    check(ccall((:aether_vcr_embed_remove_transport_headers, LIB), Ptr{Cchar},
+                (Ptr{Cvoid},), vcr.handle), "remove_transport_headers")
+
+"""Drop a cloud vendor's per-request headers; `vendor` is one of "aws",
+"azure", "cloudflare", "fastly", "gcp"."""
+remove_cloud_headers(vcr::Vcr, vendor) =
+    check(ccall((:aether_vcr_embed_remove_cloud_headers, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring), vcr.handle, vendor), "remove_cloud_headers")
+
+"""Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the playback
+handle too, as with every rule."""
+redact_credentials(vcr::Vcr) =
+    check(ccall((:aether_vcr_embed_redact_credentials, LIB), Ptr{Cchar},
+                (Ptr{Cvoid},), vcr.handle), "redact_credentials")
+
+"""One more credential header with the same treatment as `redact_credentials`."""
+redact_credential_header(vcr::Vcr, name) =
+    check(ccall((:aether_vcr_embed_redact_credential_header, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring), vcr.handle, name), "redact_credential_header")
+
+"""Record mode: verify an https upstream against this PEM CA file."""
+set_upstream_cafile(vcr::Vcr, path) =
+    check(ccall((:aether_vcr_embed_set_upstream_cafile, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring), vcr.handle, path), "set_upstream_cafile")
+
+"""Record mode: put `text` under "## LICENSE NOTICE" at the top of each tape;
+playback ignores it."""
+add_license_notice(vcr::Vcr, text) =
+    check(ccall((:aether_vcr_embed_add_license_notice, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring), vcr.handle, text), "add_license_notice")
 
 for (fn, sym) in ((:clear_redactions, :aether_vcr_embed_clear_redactions),
                   (:clear_unredactions, :aether_vcr_embed_clear_unredactions),

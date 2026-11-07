@@ -37,6 +37,10 @@ http_status(url) =
     @testset "exposes the tape length and a bound port" begin
         playback(TAPE) do vcr
             @test tape_length(vcr) == 1
+            add_license_notice(vcr, "test notice")  # throws on error; playback ignores it
+            set_pretty_json(vcr, 2)
+            @test get_pretty_json(vcr) == 2
+            set_pretty_json(vcr, 0)
             @test port(vcr) > 0
             @test startswith(base_url(vcr), "http://127.0.0.1:")
         end
