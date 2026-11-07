@@ -230,7 +230,7 @@ Per suite (registered at the top of its `main`):
 | questdb | | | | |
 | ravendb | | RFC 3339 times | | |
 | surrealdb | | per-statement `"time"` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
-| tidb | | the DDL owner's UUID (`{{uuid-N}}`) | the container IP, `start_timestamp`, `max_procs`, `connections`, `update_timestamp`, the case tables' ids (1001, 1002, in bodies and `table_id(s)=`), and `GET /schema`'s database list whole (Go map order) | |
+| tidb | | the DDL owner's UUID (`{{uuid-N}}`) | the container IP, `start_timestamp`, `max_procs`, `connections`, `update_timestamp`, the case tables' ids (1001, 1002, in bodies and `table_id(s)=`) and the case database's (110) | |
 | dind | | container, network, endpoint and sandbox ids (`{{docker-id-N}}`; image ids and layer digests are content hashes and stay) | the daemon's clock fields (`Created`, `StartedAt`, `FinishedAt`, `CreatedAt`, `LastTagTime`, `SystemTime`), `/info`'s `ID`, `Name`, `NFd`, `NGoroutines`, container and image counts, `NCPU`, `MemTotal`, `KernelVersion`, a running container's `Pid`, `/netns/<hex>`, `top`'s process table, the 12-hex short container id, endpoints' random MAC addresses, a container list's Unix `Created` | | |
 | lowkeyvault | | 32-hex version ids (`{{version-N}}`), signature / wrapped-key / ciphertext blobs (`{{blob-N}}`), the identity endpoint's JWTs (`{{jwt-N}}`) | attribute times (`created`, `updated`, `deletedDate`, `scheduledPurgeDate`, a certificate's `exp`/`nbf`), a generated key's `n`, `x`, `y`, a certificate's `cer`, `csr`, `x5t`, the identity `expires_on`, Spring's error `timestamp` | `Authorization: Bearer` (credential preset, `AUTHORIZATION_N`) and `X-IDENTITY-HEADER` (`X_IDENTITY_HEADER_1`) | `Allow` |
 | trino | | `uptime`, the query id, the `nextUri` token | | |
@@ -256,6 +256,7 @@ a client, a sorted array is a deliberate change of the recorded response):
 | meilisearch | yes | | | |
 | qdrant | yes | | | |
 | vearch | | yes | | |
+| tidb | | | `GET /schema`'s databases, by `/db_name/L` | |
 
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
@@ -347,9 +348,9 @@ it is on the tape, and playback is plain HTTP.
   (unistore: no PD, no TiKV), so `/regions/meta` and table regions are 404s
   (taped as such), and the status port needs no login. Tables are created
   with SQL (testcontainers-ae's `sql.mysql`) before each tape, never on it.
-  `GET /schema` lists databases in Go map order, different each run, so its
-  body is collapsed to the list in id order (a case table's ids are
-  collapsed to constants in bodies and in `table_id(s)=`).
+  `GET /schema` lists databases in Go map order, different each run; the
+  tape has them sorted by name (a case table's and the case database's ids
+  are collapsed to constants in bodies and in `table_id(s)=`).
 - **ScyllaDB:** the REST management API (port 10000) listens on loopback
   inside the container, so the module's `rest_api()` option publishes it
   (`--api-address=0.0.0.0`). Keyspaces are made with `cqlsh` in the

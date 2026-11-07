@@ -52,9 +52,10 @@
 //     constant id (tcae_orders 1001, tcae_customers 1002), in the body and in
 //     a ?table_id= / ?table_ids= query, so a client that reads an id and
 //     sends it back still works on replay.
-//   - collapsed whole: GET /schema's list of databases. TiDB writes it in Go
-//     map order, which is different run to run, so a re-record would differ;
-//     the tape holds the list in id order (see sees_the_databases below).
+//     The case database's id is collapsed too (110).
+//   - sorted: GET /schema's list of databases. TiDB writes it in Go map
+//     order, which is different run to run; the tape holds it sorted by
+//     db_name.L (Servirtium's stable order), so replay serves that order.
 //
 // PORTING: a collapsed table id is a valid JSON number on the tape (1001),
 // not a token, so replayed bodies parse as JSON. Only the one case table's id
@@ -276,19 +277,16 @@ fn api_rules() {
     // must stay as it is (playback does not rewrite requests).
     servirtium.collapse("(?<=table_id=)[0-9]{3,4}(?![0-9])", "1001")
     servirtium.collapse("(?<=table_ids=)[0-9]{3,4}(?![0-9])", "1001")
-    // GET /schema writes its databases in Go map order: a different order
-    // every run, which no rewrite of values can fix, so the whole list is
-    // collapsed to the one a fresh container gives, in id order (the
-    // user database's id, 110 there, is collapsed with it). The whole-tape
-    // pattern runs from the opening "[" of the first database, whose
-    // "id" and "db_name" lead the object, to the first "]" at the start of
-    // a line; the replacement is that list exactly as TiDB prints it.
-    servirtium.collapse("\\[\\n \\{\\n  \"id\": [0-9]+,\\n  \"db_name\": \\{[\\s\\S]*?\\n\\]", SCHEMA_LIST)
+    // GET /schema writes its databases in Go map order, a different order
+    // every run: the tape has them sorted by lower-case name (Servirtium's
+    // stable order; only an array whose every element has db_name.L is
+    // sorted, so a table list is left as TiDB sends it). The user
+    // database's id grows with every DDL the container has run, so it is
+    // collapsed, as the case tables' ids are, to the one a fresh container
+    // gives (110).
+    servirtium.sort_json_array("", "/db_name/L")
+    servirtium.collapse("(?<=\\n  \"id\": )[0-9]+(?=,\\n  \"db_name\": \\{\\n   \"O\": \"tcae_shop\")", "110")
 }
-
-// GET /schema, canonical: test(2), mysql(1), sys(102), tcae_shop(110) and the
-// three virtual databases, in id order, as TiDB pretty-prints them.
-const SCHEMA_LIST = "[\n {\n  \"id\": 1,\n  \"db_name\": {\n   \"O\": \"mysql\",\n   \"L\": \"mysql\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 5,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 2,\n  \"db_name\": {\n   \"O\": \"test\",\n   \"L\": \"test\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 5,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 102,\n  \"db_name\": {\n   \"O\": \"sys\",\n   \"L\": \"sys\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 5,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 110,\n  \"db_name\": {\n   \"O\": \"tcae_shop\",\n   \"L\": \"tcae_shop\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 5,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 4611686018427387905,\n  \"db_name\": {\n   \"O\": \"INFORMATION_SCHEMA\",\n   \"L\": \"information_schema\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 0,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 4611686018427397904,\n  \"db_name\": {\n   \"O\": \"PERFORMANCE_SCHEMA\",\n   \"L\": \"performance_schema\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 0,\n  \"policy_ref_info\": null\n },\n {\n  \"id\": 4611686018427407904,\n  \"db_name\": {\n   \"O\": \"METRICS_SCHEMA\",\n   \"L\": \"metrics_schema\"\n  },\n  \"charset\": \"utf8mb4\",\n  \"collate\": \"utf8mb4_bin\",\n  \"Deprecated\": {},\n  \"state\": 0,\n  \"policy_ref_info\": null\n }\n]"
 
 // ---------------------------------------------------------------------------
 
@@ -346,11 +344,12 @@ main() {
 
         // PORTING: tcae_shop exists (created before the tape).
         //   GET /schema -> 200 a JSON array of 7 databases (mysql 1, test 2,
-        //                  sys 102, tcae_shop, and the virtual INFORMATION_SCHEMA,
-        //                  PERFORMANCE_SCHEMA, METRICS_SCHEMA), each
-        //                  {"id","db_name":{"O","L"},"charset","collate",
-        //                  "Deprecated","state","policy_ref_info"}; the tape
-        //                  has them in id order, see api_rules
+        //                  sys 102, tcae_shop 110, and the virtual
+        //                  INFORMATION_SCHEMA, PERFORMANCE_SCHEMA,
+        //                  METRICS_SCHEMA), each {"id","db_name":{"O","L"},
+        //                  "charset","collate","Deprecated","state",
+        //                  "policy_ref_info"}; the tape has them sorted by
+        //                  db_name.L (TiDB's own order varies), see api_rules
         //   GET /schema/tcae_shop -> 200 a JSON array of its two tables,
         //                  tcae_orders (id 1001) then tcae_customers (1002),
         //                  each a full table description (see the next case)

@@ -22,6 +22,30 @@ Content-Length: 1413
 ```
 [
  {
+  "id": 4611686018427387905,
+  "db_name": {
+   "O": "INFORMATION_SCHEMA",
+   "L": "information_schema"
+  },
+  "charset": "utf8mb4",
+  "collate": "utf8mb4_bin",
+  "Deprecated": {},
+  "state": 0,
+  "policy_ref_info": null
+ },
+ {
+  "id": 4611686018427407904,
+  "db_name": {
+   "O": "METRICS_SCHEMA",
+   "L": "metrics_schema"
+  },
+  "charset": "utf8mb4",
+  "collate": "utf8mb4_bin",
+  "Deprecated": {},
+  "state": 0,
+  "policy_ref_info": null
+ },
+ {
   "id": 1,
   "db_name": {
    "O": "mysql",
@@ -34,15 +58,15 @@ Content-Length: 1413
   "policy_ref_info": null
  },
  {
-  "id": 2,
+  "id": 4611686018427397904,
   "db_name": {
-   "O": "test",
-   "L": "test"
+   "O": "PERFORMANCE_SCHEMA",
+   "L": "performance_schema"
   },
   "charset": "utf8mb4",
   "collate": "utf8mb4_bin",
   "Deprecated": {},
-  "state": 5,
+  "state": 0,
   "policy_ref_info": null
  },
  {
@@ -70,39 +94,15 @@ Content-Length: 1413
   "policy_ref_info": null
  },
  {
-  "id": 4611686018427387905,
+  "id": 2,
   "db_name": {
-   "O": "INFORMATION_SCHEMA",
-   "L": "information_schema"
+   "O": "test",
+   "L": "test"
   },
   "charset": "utf8mb4",
   "collate": "utf8mb4_bin",
   "Deprecated": {},
-  "state": 0,
-  "policy_ref_info": null
- },
- {
-  "id": 4611686018427397904,
-  "db_name": {
-   "O": "PERFORMANCE_SCHEMA",
-   "L": "performance_schema"
-  },
-  "charset": "utf8mb4",
-  "collate": "utf8mb4_bin",
-  "Deprecated": {},
-  "state": 0,
-  "policy_ref_info": null
- },
- {
-  "id": 4611686018427407904,
-  "db_name": {
-   "O": "METRICS_SCHEMA",
-   "L": "metrics_schema"
-  },
-  "charset": "utf8mb4",
-  "collate": "utf8mb4_bin",
-  "Deprecated": {},
-  "state": 0,
+  "state": 5,
   "policy_ref_info": null
  }
 ]
@@ -507,89 +507,5 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | collapsed | whole recording | `(?<=\n "id": )[0-9]+(?=,\n "name": \{\n  "O": "tcae_customers")` | `1002` | 1 |
 | collapsed | whole recording | `(?<=table_id=)[0-9]{3,4}(?![0-9])` | `1001` | none |
 | collapsed | whole recording | `(?<=table_ids=)[0-9]{3,4}(?![0-9])` | `1001` | none |
-| collapsed | whole recording | `\[\n \{\n  "id": [0-9]+,\n  "db_name": \{[\s\S]*?\n\]` | `[
- {
-  "id": 1,
-  "db_name": {
-   "O": "mysql",
-   "L": "mysql"
-  },
-  "charset": "utf8mb4",
-  "collate": "utf8mb4_bin",
-  "Deprecated": {},
-  "state": 5,
-  "policy_ref_info": null
- },
- {
-  "id": 2,
-  "db_name": {
-   "O": "test",
-   "L": "test"
-  },
-  "charset": "utf8mb4",
-  "collate": "utf8mb4_bin",
-  "Deprecated": {},
-  "state": 5,
-  "policy_ref_info": null
- },
- {
-  "id": 102,
-  "db_name": {
-   "O": "sys",
-   "L": "sys"
-  },
-  "charset": "utf8mb4",
-  "collate": "utf8mb4_bin",
-  "Deprecated": {},
-  "state": 5,
-  "policy_ref_info": null
- },
- {
-  "id": 110,
-  "db_name": {
-   "O": "tcae_shop",
-   "L": "tcae_shop"
-  },
-  "charset": "utf8mb4",
-  "collate": "utf8mb4_bin",
-  "Deprecated": {},
-  "state": 5,
-  "policy_ref_info": null
- },
- {
-  "id": 4611686018427387905,
-  "db_name": {
-   "O": "INFORMATION_SCHEMA",
-   "L": "information_schema"
-  },
-  "charset": "utf8mb4",
-  "collate": "utf8mb4_bin",
-  "Deprecated": {},
-  "state": 0,
-  "policy_ref_info": null
- },
- {
-  "id": 4611686018427397904,
-  "db_name": {
-   "O": "PERFORMANCE_SCHEMA",
-   "L": "performance_schema"
-  },
-  "charset": "utf8mb4",
-  "collate": "utf8mb4_bin",
-  "Deprecated": {},
-  "state": 0,
-  "policy_ref_info": null
- },
- {
-  "id": 4611686018427407904,
-  "db_name": {
-   "O": "METRICS_SCHEMA",
-   "L": "metrics_schema"
-  },
-  "charset": "utf8mb4",
-  "collate": "utf8mb4_bin",
-  "Deprecated": {},
-  "state": 0,
-  "policy_ref_info": null
- }
-]` | 0 |
+| collapsed | whole recording | `(?<=\n  "id": )[0-9]+(?=,\n  "db_name": \{\n   "O": "tcae_shop")` | `110` | 0 |
+| ordered | response body | the root array | sorted by `/db_name/L` | 0 |
