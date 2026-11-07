@@ -18,7 +18,7 @@
 set -eu
 
 DEST="${1:?usage: build-nif-app.sh DEST_DIR}"
-RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
+RAW="${RAW:-https://raw.githubusercontent.com/servirtium/servirtium-vcr}"
 VER="${VER:-$(curl -fsSL $RAW/main/SERVIRTIUM_VCR_VERSION)}"
 SRC="${SRC:-$VER}"
 
