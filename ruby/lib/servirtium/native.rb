@@ -131,6 +131,13 @@ module Servirtium
       [:indent_code_blocks,  'aether_vcr_embed_indent_code_blocks',  VOID, [VOIDP]],
       [:emphasize_http_verbs, 'aether_vcr_embed_emphasize_http_verbs', VOID, [VOIDP]],
       [:set_pretty_xml, 'aether_vcr_embed_set_pretty_xml', VOID, [VOIDP, INT]],
+      [:set_pretty_json, 'aether_vcr_embed_set_pretty_json', VOID, [VOIDP, INT]],
+      [:remove_transport_headers, 'aether_vcr_embed_remove_transport_headers', VOIDP, [VOIDP]],
+      [:remove_cloud_headers, 'aether_vcr_embed_remove_cloud_headers', VOIDP, [VOIDP, VOIDP]],
+      [:redact_credentials, 'aether_vcr_embed_redact_credentials', VOIDP, [VOIDP]],
+      [:redact_credential_header, 'aether_vcr_embed_redact_credential_header', VOIDP, [VOIDP, VOIDP]],
+      [:set_upstream_cafile, 'aether_vcr_embed_set_upstream_cafile', VOIDP, [VOIDP, VOIDP]],
+      [:add_license_notice, 'aether_vcr_embed_add_license_notice', VOIDP, [VOIDP, VOIDP]],
 
       [:clear_redactions,      'aether_vcr_embed_clear_redactions',      VOID, [VOIDP]],
       [:clear_unredactions,    'aether_vcr_embed_clear_unredactions',    VOID, [VOIDP]],

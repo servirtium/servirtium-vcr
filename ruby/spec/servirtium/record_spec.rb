@@ -40,6 +40,18 @@ RSpec.describe 'Servirtium record' do
     end
   end
 
+  it 'accepts a license notice, pretty JSON and the header presets' do
+    Servirtium.record(@tape, @upstream.base_url)
+              .add_license_notice('test notice').pretty_json(2).remove_transport_headers
+              .remove_cloud_headers('aws').redact_credentials.redact_credential_header('X-Vault-Token')
+              .port(0).start { |_server| nil }
+
+    expect(File.read(@tape)).to include('## LICENSE NOTICE')
+    expect do
+      Servirtium.record(@tape, @upstream.base_url).remove_cloud_headers('nosuchvendor').port(0).start { |_s| nil }
+    end.to raise_error(Servirtium::Error)
+  end
+
   it 'redacts a value out of the response body before it lands on the tape' do
     @upstream = FakeUpstream.new(body: 'token=SECRET123 rest', chunked: false)
     Servirtium.record(@tape, @upstream.base_url)

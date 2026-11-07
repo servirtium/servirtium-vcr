@@ -20,6 +20,10 @@ module Servirtium
       @native_lib = nil
       @header_removals = []
       @ignore_volatile_headers = false
+      @remove_transport_headers = false
+      @cloud_vendors = []
+      @redact_credentials = false
+      @credential_headers = []
       @static_content = []
       @untaped = []
       @tls = nil
@@ -70,6 +74,37 @@ module Servirtium
       self
     end
 
+    # Leave the connection-describing headers (+Host+, +Connection+,
+    # +Content-Length+ and the other hop-by-hop headers, +Accept-Encoding+) out
+    # of the recording. Works in both playback and record mode.
+    def remove_transport_headers(on: true)
+      @remove_transport_headers = on
+      self
+    end
+
+    # Drop a cloud vendor's per-request headers. +vendor+ is one of +'aws'+,
+    # +'azure'+, +'cloudflare'+, +'fastly'+, +'gcp'+; call again for more
+    # vendors. Works in both playback and record mode.
+    def remove_cloud_headers(vendor)
+      @cloud_vendors << vendor
+      self
+    end
+
+    # Redact the common credential headers (+Authorization+, +Cookie+,
+    # +Set-Cookie+, +X-Api-Key+, +X-Auth-Token+, ...) as numbered tokens.
+    # Register on the playback builder too, as with every rule.
+    def redact_credentials(on: true)
+      @redact_credentials = on
+      self
+    end
+
+    # One more credential header with the same treatment as
+    # {#redact_credentials}.
+    def redact_credential_header(name)
+      @credential_headers << name
+      self
+    end
+
     # Serve a path prefix from an on-disk directory instead of the tape
     # (Servirtium step 11). On the shared base so record mode can also serve
     # content same-origin (e.g. a browser test suite) while it records.
@@ -108,6 +143,14 @@ module Servirtium
         check(Native.call(:remove_header, handle, field, name), 'remove_header')
       end
       check(Native.call(:ignore_volatile_headers, handle), 'ignore_volatile_headers') if @ignore_volatile_headers
+      check(Native.call(:remove_transport_headers, handle), 'remove_transport_headers') if @remove_transport_headers
+      @cloud_vendors.each do |vendor|
+        check(Native.call(:remove_cloud_headers, handle, vendor), 'remove_cloud_headers')
+      end
+      check(Native.call(:redact_credentials, handle), 'redact_credentials') if @redact_credentials
+      @credential_headers.each do |name|
+        check(Native.call(:redact_credential_header, handle, name), 'redact_credential_header')
+      end
       @static_content.each do |mount, dir|
         check(Native.call(:static_content, handle, mount, dir), 'static_content')
       end
@@ -238,6 +281,25 @@ module Servirtium
 
     private
 
+    # Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    def pretty_json(indent = 2)
+      @pretty_json = indent
+      self
+    end
+
+    # Verify an +https://+ upstream against this PEM CA file.
+    def upstream_cafile(path)
+      @upstream_cafile = path
+      self
+    end
+
+    # Put +text+ under "## LICENSE NOTICE" at the top of each tape; playback
+    # ignores it.
+    def add_license_notice(text)
+      @license_notice = text
+      self
+    end
+
     def apply_config(handle)
       super
       Native.call(:set_strict_headers, handle, 1) if @strict_headers
@@ -268,6 +330,9 @@ module Servirtium
       @indent_code_blocks = false
       @emphasize_http_verbs = false
       @pretty_xml = 0
+      @pretty_json = 0
+      @upstream_cafile = nil
+      @license_notice = nil
       @fail_if_changed = false
     end
 
@@ -379,6 +444,9 @@ module Servirtium
       Native.call(:indent_code_blocks, handle) if @indent_code_blocks
       Native.call(:emphasize_http_verbs, handle) if @emphasize_http_verbs
       Native.call(:set_pretty_xml, handle, @pretty_xml) if @pretty_xml > 0
+      Native.call(:set_pretty_json, handle, @pretty_json) if @pretty_json > 0
+      check(Native.call(:set_upstream_cafile, handle, @upstream_cafile), 'set_upstream_cafile') if @upstream_cafile
+      check(Native.call(:add_license_notice, handle, @license_notice), 'add_license_notice') if @license_notice
       @redactions.each do |operation, field, pattern, replacement|
         check(Native.call(operation, handle, field, pattern, replacement), 'redact')
       end

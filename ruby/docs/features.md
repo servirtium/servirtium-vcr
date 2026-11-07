@@ -25,6 +25,9 @@ library.
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.match_header(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.static_content(mount, dir)` | — |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.fail_if_changed` | — |
+| Header presets (transport / cloud vendor) | ✅ | ✅ | `.remove_transport_headers` / `.remove_cloud_headers(vendor)` | ✅ |
+| Credential redaction preset | ✅ | ✅ | `.redact_credentials` / `.redact_credential_header(name)` | ✅ |
+| License notice / upstream CA file / pretty JSON | ✅ | ✅ | `.add_license_notice(text)` / `.upstream_cafile(path)` / `.pretty_json` | ✅ notice + presets |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indent_code_blocks` / `.emphasize_http_verbs` / `.pretty_xml` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `last_error` / `last_kind` / `last_index` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
