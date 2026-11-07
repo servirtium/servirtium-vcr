@@ -11,3 +11,11 @@ testcontainers-ae.
 
 The tapes (*.md beside each test) are recordings of the named container
 images' responses.
+
+The tapes record interactions with third-party software: each is subject to
+that software's licence and its vendor's terms, as listed in
+UPSTREAM-TERMS.md, and a tape whose service has restrictive terms starts with
+a "## LICENSE NOTICE" naming them. Anyone using the tapes is bound by those
+terms, including any restriction on reverse engineering. For dynamodb/,
+pinecone/ and timeplus/, whose terms plausibly forbid publishing recordings,
+no tapes are shipped (see LICENCE-NOTE.md in each).

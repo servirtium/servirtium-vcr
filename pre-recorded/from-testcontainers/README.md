@@ -21,6 +21,12 @@ reference for what each case does.
 `<case>` is the snake_case name the test passes to
 `servirtium.recording(...)`, near the spec `it` title.
 
+Each recorded service is under its own licence and terms, which bind anyone
+using its tapes, including any no-reverse-engineering clause: see
+[UPSTREAM-TERMS.md](UPSTREAM-TERMS.md) (and `NOTICE`). Tapes of a service
+with restrictive terms start with a `## LICENSE NOTICE`
+(`servirtium.license_notice(...)` in the test).
+
 | Suite | Cases | Container |
 |---|---|---|
 | `vault` | 2 | `hashicorp/vault:1.13.0` |
@@ -33,7 +39,7 @@ reference for what each case does.
 | `opensearch` | 1 | `opensearchproject/opensearch:2.11.1` |
 | `elasticsearch` | 1 | `docker.elastic.co/elasticsearch/elasticsearch:8.9.0` |
 | `localstack` | 1 | `localstack/localstack:3.4` |
-| `dynamodb` | 1 | `amazon/dynamodb-local:2.2.1` |
+| `dynamodb` | test + recorder only, tapes not shipped ([why](dynamodb/LICENCE-NOTE.md)) | `amazon/dynamodb-local:2.2.1` |
 | `s3mock` | 1 | `adobe/s3mock:3.9.1` |
 | `garage` | 2 | `dxflrs/garage:v2.4.1` |
 | `azurite` | 2 (3 tapes) | `mcr.microsoft.com/azure-storage/azurite:3.28.0` |
@@ -49,7 +55,7 @@ reference for what each case does.
 | `chroma` | 1 | `chromadb/chroma:1.4.0` |
 | `weaviate` | 1 | `semitechnologies/weaviate:1.29.0` |
 | `milvus` | 1 | `milvusdb/milvus:v2.3.9` |
-| `pinecone` | 1 | `ghcr.io/pinecone-io/pinecone-local:v0.7.0` |
+| `pinecone` | test + recorder only, tapes not shipped ([why](pinecone/LICENCE-NOTE.md)) | `ghcr.io/pinecone-io/pinecone-local:v0.7.0` |
 | `vearch` | 1 | `vearch/vearch:3.5.1` |
 | `mailpit` | 2 | `axllent/mailpit:v1.20` |
 | `inbucket` | 1 | `inbucket/inbucket:sha-2d409bb` |
@@ -73,7 +79,7 @@ reference for what each case does.
 | `surrealdb` | 3 (+1 live only) | `surrealdb/surrealdb:v1.1.1` |
 | `trino` | 1 | `trinodb/trino:435` |
 | `presto` | 1 | `prestodb/presto:0.286` |
-| `timeplus` | 1 | `timeplus/timeplusd:2.3.37` |
+| `timeplus` | test + recorder only, tapes not shipped ([why](timeplus/LICENCE-NOTE.md)) | `timeplus/timeplusd:2.3.37` |
 | `kurrentdb` | 1 | `kurrentplatform/kurrentdb:26.1.1` |
 | `etcd` | 4 (6 tapes; +1 live only) | `gcr.io/etcd-development/etcd:v3.5.14` |
 | `rabbitmq` | 2 (+2 live only) | `rabbitmq:3.12.11-management-alpine` |
@@ -361,6 +367,10 @@ spec.it("reads a secret") callback {
 `suite` and `case` are snake-cased (`case_name`). Rules (`normalize`,
 `collapse`, `redact`, `remove_header` and the presets) apply to every
 recording after them in the process; `clear_rules` empties them.
+`license_notice(text)` is one more such rule: the text goes at the top of
+each tape, under `## LICENSE NOTICE`, and playback ignores it.
+`skip_if_no_tape(fw, suite, case)` skips the whole suite in playback when
+that tape is absent (the suites whose tapes are not shipped call it).
 
 What does not go over HTTP (`tc.exec`, inspecting the container, a container
 that must fail to start) stays in the `live()` part of a case, or in a case

@@ -9,6 +9,9 @@ test against it, with no container and no service.
 |---|---|
 | [`from-testcontainers/`](from-testcontainers/README.md) | Aether tests that start each service with [testcontainers-ae](https://github.com/servirtium/testcontainers-ae) and put Servirtium in the middle |
 
+The recorded services' licences and terms bind anyone using their tapes: see
+[`from-testcontainers/UPSTREAM-TERMS.md`](from-testcontainers/UPSTREAM-TERMS.md).
+
 Only services with an HTTP API can be here: Servirtium records HTTP
 messages, so a binary protocol (Mongo, Postgres, Redis, Kafka) cannot be
 recorded this way.
