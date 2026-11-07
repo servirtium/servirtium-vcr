@@ -17,6 +17,28 @@ def _tape_path():
     return path
 
 
+def test_record_accepts_license_notice_pretty_json_and_presets(upstream):
+    path = _tape_path()
+    try:
+        with (
+            servirtium.record(path, upstream.base_url)
+            .add_license_notice("test notice")
+            .pretty_json(2)
+            .remove_transport_headers()
+            .remove_cloud_headers("aws")
+            .redact_credentials()
+            .redact_credential_header("X-Vault-Token")
+            .port(0)
+            .start()
+        ):
+            pass
+        with open(path, encoding="utf-8") as tape:
+            assert "## LICENSE NOTICE" in tape.read()
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
 def test_records_then_replays_the_same_interaction(upstream):
     upstream.response_body = "hello-from-upstream"
     path = _tape_path()

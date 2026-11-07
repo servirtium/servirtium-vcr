@@ -75,6 +75,10 @@ class _BuilderBase:
         self._native_lib: str | None = None
         self._header_removals: list[tuple[Field, str]] = []
         self._ignore_volatile_headers = False
+        self._remove_transport_headers = False
+        self._cloud_vendors: list[str] = []
+        self._redact_credentials = False
+        self._credential_headers: list[str] = []
         self._static_content: list[tuple[str, str]] = []
         self._untaped: list[str] = []
         self._tls: tuple[str, str] | None = None
@@ -121,6 +125,33 @@ class _BuilderBase:
         self._ignore_volatile_headers = on
         return self
 
+    def remove_transport_headers(self, on: bool = True):
+        """Leave the connection-describing headers (Host, Connection,
+        Content-Length and the other hop-by-hop headers, Accept-Encoding) out of
+        the recording. Works in both playback and record mode."""
+        self._remove_transport_headers = on
+        return self
+
+    def remove_cloud_headers(self, vendor: str):
+        """Drop a cloud vendor's per-request headers. ``vendor`` is one of
+        ``"aws"``, ``"azure"``, ``"cloudflare"``, ``"fastly"``, ``"gcp"``; call
+        again for more vendors. Works in both playback and record mode."""
+        self._cloud_vendors.append(vendor)
+        return self
+
+    def redact_credentials(self, on: bool = True):
+        """Redact the common credential headers (Authorization, Cookie,
+        Set-Cookie, X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on
+        the playback builder too, as with every rule."""
+        self._redact_credentials = on
+        return self
+
+    def redact_credential_header(self, name: str):
+        """One more credential header with the same treatment as
+        :meth:`redact_credentials`."""
+        self._credential_headers.append(name)
+        return self
+
     def static_content(self, mount_path: str, fs_dir: str):
         """Serve a path prefix from an on-disk directory instead of the tape.
 
@@ -155,6 +186,14 @@ class _BuilderBase:
             _check(N.remove_header(handle, int(field), N.encode(name)), "remove_header")
         if self._ignore_volatile_headers:
             _check(N.ignore_volatile_headers(handle), "ignore_volatile_headers")
+        if self._remove_transport_headers:
+            _check(N.remove_transport_headers(handle), "remove_transport_headers")
+        for vendor in self._cloud_vendors:
+            _check(N.remove_cloud_headers(handle, N.encode(vendor)), "remove_cloud_headers")
+        if self._redact_credentials:
+            _check(N.redact_credentials(handle), "redact_credentials")
+        for name in self._credential_headers:
+            _check(N.redact_credential_header(handle, N.encode(name)), "redact_credential_header")
         for mount, fs_dir in self._static_content:
             _check(N.static_content(handle, N.encode(mount), N.encode(fs_dir)), "static_content")
         for path in self._untaped:
@@ -338,6 +377,9 @@ class RecordBuilder(_BuilderBase):
         self._indent_code_blocks = False
         self._emphasize_http_verbs = False
         self._pretty_xml = 0
+        self._pretty_json = 0
+        self._upstream_cafile: str | None = None
+        self._license_notice: str | None = None
         self._fail_if_changed = False
 
     def secret_redactor(self, callback):
@@ -400,6 +442,22 @@ class RecordBuilder(_BuilderBase):
         self._pretty_xml = indent
         return self
 
+    def pretty_json(self, indent: int = 2):
+        """Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed."""
+        self._pretty_json = indent
+        return self
+
+    def upstream_cafile(self, path: str):
+        """Verify an ``https://`` upstream against this PEM CA file."""
+        self._upstream_cafile = path
+        return self
+
+    def add_license_notice(self, text: str):
+        """Put ``text`` under ``## LICENSE NOTICE`` at the top of each tape;
+        playback ignores it."""
+        self._license_notice = text
+        return self
+
     def fail_if_changed(self, on: bool = True):
         """On close, still write the freshly recorded tape but raise if it
         differs from the on-disk one (the drift contract)."""
@@ -414,6 +472,12 @@ class RecordBuilder(_BuilderBase):
             N.emphasize_http_verbs(handle)
         if self._pretty_xml > 0:
             N.set_pretty_xml(handle, self._pretty_xml)
+        if self._pretty_json > 0:
+            N.set_pretty_json(handle, self._pretty_json)
+        if self._upstream_cafile is not None:
+            _check(N.set_upstream_cafile(handle, N.encode(self._upstream_cafile)), "set_upstream_cafile")
+        if self._license_notice is not None:
+            _check(N.add_license_notice(handle, N.encode(self._license_notice)), "add_license_notice")
         for operation, field, pattern, replacement in self._redactions:
             _check(
                 getattr(N, operation)(handle, int(field), N.encode(pattern), N.encode(replacement)),
