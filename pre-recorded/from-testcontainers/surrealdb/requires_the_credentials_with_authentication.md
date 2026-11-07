@@ -1,3 +1,11 @@
+## LICENSE NOTICE
+
+Recorded against surrealdb/surrealdb:v1.1.1, licensed under the Business
+Source License 1.1 by SurrealDB Ltd. Its Additional Use Grant does not
+allow using it for a Database Service (it becomes Apache-2.0 on
+2027-04-01). Use of this tape is subject to those terms; see UPSTREAM-
+TERMS.md in servirtium-vcr's pre-recorded/from-testcontainers.
+
 ## Interaction 0: POST /sql
 
 ### Request headers recorded for playback:

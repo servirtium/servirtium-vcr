@@ -61,6 +61,9 @@ fn get(url: string, user: string, pw: string, ca_file: string) -> (int, string, 
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against docker.elastic.co/elasticsearch/elasticsearch:8.9.0,\nlicensed under the Elastic License 2.0. It forbids providing the\nsoftware to third parties as a hosted or managed service, circumventing\nits licence-key functionality, and removing its licensing or copyright\nnotices. Use of this tape is subject to those terms; see UPSTREAM-\nTERMS.md in servirtium-vcr's pre-recorded/from-testcontainers.")
     // Basic credentials: labelled literal redactions, not the credential
     // preset (which matches on presence), so playback still tells the right
     // password from the wrong one.

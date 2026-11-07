@@ -1,3 +1,14 @@
+## LICENSE NOTICE
+
+Recorded against the Cloud Firestore emulator in
+gcr.io/google.com/cloudsdktool/cloud-sdk:emulators (Google Cloud CLI
+592.0.0). The emulator is Google-owned and ships no licence of its own;
+the CLI's LICENSE says use with Google Cloud products is also governed
+by Google's terms, and the Google Cloud Terms of Service (3.3) forbid
+reverse engineering the Services. Use of this tape is subject to those
+terms; see UPSTREAM-TERMS.md in servirtium-vcr's pre-recorded/from-
+testcontainers.
+
 ## Interaction 0: POST /v1/projects/firestore-project:lookup
 
 ### Request headers recorded for playback:

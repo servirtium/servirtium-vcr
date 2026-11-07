@@ -50,6 +50,9 @@ fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, s
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against ravendb/ravendb:6.0-ubuntu-latest with its EULA\naccepted (RAVEN_License_Eula_Accepted=true) and no licence key, so the\nserver is under AGPL-3.0 per EULA section 1. The EULA (section 3)\nforbids reverse engineering, decompiling or disassembling the software.\nUse of this tape is subject to those terms; see UPSTREAM-TERMS.md in\nservirtium-vcr's pre-recorded/from-testcontainers.")
     // What differs run to run, never sent back: the Server-Startup-Time
     // response header.
     servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")

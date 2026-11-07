@@ -55,6 +55,9 @@ fn http_do(method: string, url: string, body: string) -> (int, string, string) {
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against the Cloud Firestore emulator in\ngcr.io/google.com/cloudsdktool/cloud-sdk:emulators (Google Cloud CLI\n592.0.0). The emulator is Google-owned and ships no licence of its own;\nthe CLI's LICENSE says use with Google Cloud products is also governed\nby Google's terms, and the Google Cloud Terms of Service (3.3) forbid\nreverse engineering the Services. Use of this tape is subject to those\nterms; see UPSTREAM-TERMS.md in servirtium-vcr's pre-recorded/from-\ntestcontainers.")
     // What differs run to run: the document's createTime and updateTime and
     // the datastore-mode lookup's readTime (RFC 3339 times).
     servirtium.collapse(servirtium.RFC3339, "2026-01-01T00:00:00.000000Z")

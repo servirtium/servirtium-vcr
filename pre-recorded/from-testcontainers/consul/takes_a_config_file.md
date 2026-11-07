@@ -1,3 +1,12 @@
+## LICENSE NOTICE
+
+Recorded against hashicorp/consul:1.15 (Consul 1.15.10), licensed under
+the Business Source License 1.1 by HashiCorp. Its Additional Use Grant
+does not cover offering Consul to third parties in a hosted or embedded
+product that competes with HashiCorp's paid versions. Use of this tape
+is subject to those terms; see UPSTREAM-TERMS.md in servirtium-vcr's
+pre-recorded/from-testcontainers.
+
 ## Interaction 0: GET /v1/status/leader
 
 ### Request headers recorded for playback:

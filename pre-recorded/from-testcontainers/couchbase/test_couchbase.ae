@@ -52,6 +52,9 @@ fn get(url: string, user: string, pw: string) -> (int, string, string) {
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against couchbase:community-7.1.1, under the Couchbase\nCommunity Edition License Agreement (CCELA/Apr2021/v3). It allows\ninternal business use and products that interact with the software, and\nforbids reverse engineering, decompiling or disassembling it. Use of\nthis tape is subject to those terms; see UPSTREAM-TERMS.md in\nservirtium-vcr's pre-recorded/from-testcontainers.")
     // The admin credential the case sends is kept off the tape; no wrong
     // credential is tried, so a labelled literal is enough.
     servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${encoding.base64_encode_padded(string.bytes("admin:secret1"))}", "Basic REDACTED[admin]")

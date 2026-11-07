@@ -1,3 +1,12 @@
+## LICENSE NOTICE
+
+Recorded against datafuselabs/databend:v1.2.615. Databend is Apache-2.0,
+except its enterprise code, which is in the same binary under the
+Elastic License 2.0: no hosted or managed service for third parties, no
+circumventing licence keys, no removing notices. Use of this tape is
+subject to those terms; see UPSTREAM-TERMS.md in servirtium-vcr's pre-
+recorded/from-testcontainers.
+
 ## Interaction 0: POST /v1/query
 
 ### Request headers recorded for playback:

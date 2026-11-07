@@ -44,6 +44,10 @@ fn http_do(method: string, url: string, body: string) -> (int, string, string) {
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    if servirtium.skip_if_no_tape(fw, "pinecone", "serves_the_control_plane") == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against ghcr.io/pinecone-io/pinecone-local:v0.7.0, under the\nPinecone Local License Agreement (last updated 2024-09-23). It is for\nPinecone-authorized current or prospective customers only, and forbids\nreverse engineering, building a competitive product, and reproducing or\ntransmitting any part of the software, including by recording. Tapes of\nthis service are not published: this one was recorded locally and stays\nsubject to those terms. See LICENCE-NOTE.md and UPSTREAM-TERMS.md in\nservirtium-vcr's pre-recorded/from-testcontainers.")
 
     spec.describe(fw, "modules/pinecone") {
         spec.after_each() callback { testing.cleanup_all() }

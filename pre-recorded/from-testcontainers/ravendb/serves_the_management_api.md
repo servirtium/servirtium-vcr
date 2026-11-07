@@ -1,3 +1,12 @@
+## LICENSE NOTICE
+
+Recorded against ravendb/ravendb:6.0-ubuntu-latest with its EULA
+accepted (RAVEN_License_Eula_Accepted=true) and no licence key, so the
+server is under AGPL-3.0 per EULA section 1. The EULA (section 3)
+forbids reverse engineering, decompiling or disassembling the software.
+Use of this tape is subject to those terms; see UPSTREAM-TERMS.md in
+servirtium-vcr's pre-recorded/from-testcontainers.
+
 ## Interaction 0: GET /build/version
 
 ### Request headers recorded for playback:

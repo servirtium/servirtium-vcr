@@ -50,6 +50,10 @@ fn http_do(method: string, url: string, hdrs: string[], body: string, ctype: str
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    if servirtium.skip_if_no_tape(fw, "timeplus", "serves_http") == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against timeplus/timeplusd:2.3.37, a closed-source Timeplus\nEnterprise binary that ships no licence file. Timeplus's End User\nSubscription Agreement is the likely governing terms: internal use or a\n30-day internal evaluation, the products are confidential, and no\nreverse engineering. Tapes of this service are not published: this one\nwas recorded locally and stays subject to those terms. See LICENCE-\nNOTE.md and UPSTREAM-TERMS.md in servirtium-vcr's pre-recorded/from-\ntestcontainers.")
     // What differs run to run, never sent back: each query's id (the
     // x-timeplus-query-id response header).
     servirtium.collapse("x-timeplus-query-id: ${servirtium.UUID}", "x-timeplus-query-id: 00000000-0000-0000-0000-000000000000")

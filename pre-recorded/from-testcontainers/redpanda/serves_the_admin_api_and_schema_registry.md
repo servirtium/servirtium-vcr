@@ -1,3 +1,13 @@
+## LICENSE NOTICE
+
+Recorded against docker.io/redpandadata/redpanda:v25.2.4. Redpanda
+Community Edition is licensed under the Business Source License 1.1,
+which does not allow using it for a Streaming or Queuing Service; its
+Enterprise features are under the Redpanda Community License (paid, or a
+one-time internal-evaluation trial). Use of this tape is subject to
+those terms; see UPSTREAM-TERMS.md in servirtium-vcr's pre-
+recorded/from-testcontainers.
+
 ## Interaction 0: GET /v1/status/ready
 
 ### Request headers recorded for playback:

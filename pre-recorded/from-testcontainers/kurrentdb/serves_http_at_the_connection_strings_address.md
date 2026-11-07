@@ -1,3 +1,12 @@
+## LICENSE NOTICE
+
+Recorded against kurrentplatform/kurrentdb:26.1.1, licensed under the
+Kurrent License v1. It forbids providing the software to third parties
+as a hosted or managed service and circumventing its licence mechanisms,
+and requires its terms to go with every copy. Use of this tape is
+subject to those terms; see UPSTREAM-TERMS.md in servirtium-vcr's pre-
+recorded/from-testcontainers.
+
 ## Interaction 0: GET /health/live
 
 ### Request headers recorded for playback:

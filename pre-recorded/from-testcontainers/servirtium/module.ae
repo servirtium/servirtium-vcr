@@ -42,7 +42,8 @@
 //         servirtium.end_recording(rec)
 //     }
 //
-// The rules a suite registers (normalize, collapse, redact, remove_header)
+// The rules a suite registers (normalize, collapse, redact, remove_header,
+// license_notice)
 // apply to every recording after them in the process; together with the
 // defaults below they make two record runs write the same bytes. Defaults:
 // the response headers Date, X-Request-Id and X-Correlation-Id are dropped,
@@ -58,12 +59,14 @@ import std.spec
 import std.string
 import std.os
 import std.http
+import std.fs
 import servirtium_vcr.vcr
 import testcontainers.testing
 
 exports(
     mode, live, playback, recording, end_recording, tape_path, case_name,
-    skip_if_no_engine, normalize, collapse, redact, remove_header, clear_rules,
+    skip_if_no_engine, skip_if_no_tape, normalize, collapse, redact,
+    remove_header, clear_rules, license_notice,
     redact_credentials, redact_credential_header, remove_cloud_headers,
     remove_transport_headers, pretty_json, trust_upstream_ca,
     UUID, RFC3339, EPOCH_TIMESTAMP,
@@ -100,6 +103,7 @@ const RULE_CREDENTIAL_HEADER = 6
 const RULE_CLOUD = 7
 const RULE_TRANSPORT = 8
 const RULE_PRETTY_JSON = 9
+const RULE_LICENSE_NOTICE = 10
 
 struct Recording {
     server: ptr
@@ -144,6 +148,22 @@ playback() -> int {
 skip_if_no_engine(fw: ptr) -> int {
     if mode() == MODE_PLAYBACK { return 0 }
     return testing.skip_if_no_engine(fw)
+}
+
+// For a suite whose tapes are not shipped (UPSTREAM-TERMS.md, DECISION): in
+// playback, when the named case's tape is absent, skip the whole suite with a
+// notice instead of failing. Returns 1 when the caller should stop:
+//
+//     if servirtium.skip_if_no_tape(fw, "pinecone", "serves_the_control_plane") == 1 {
+//         return spec.run_summary(fw)
+//     }
+//
+// Every other mode records, so it never skips.
+skip_if_no_tape(fw: ptr, suite: string, case_: string) -> int {
+    if mode() != MODE_PLAYBACK { return 0 }
+    tape = tape_path(suite, case_)
+    if fs.exists(tape) == 1 { return 0 }
+    return spec.skip_all_if(fw, 1, "no shipped tape (${tape}): record it locally with TCAE_VCR=record, see ${case_name(suite)}/LICENCE-NOTE.md")
 }
 
 // "Reads and writes secrets (TestVault)" -> "reads_and_writes_secrets_testvault".
@@ -245,6 +265,16 @@ trust_upstream_ca(path: string) {
     upstream_ca = path
 }
 
+// Plain text written at the top of every tape recorded after this call, under
+// a "## LICENSE NOTICE" heading before "## Interaction 0": the licence and
+// terms the recorded service is under (see UPSTREAM-TERMS.md), so whoever
+// reads or replays the tape sees them. Several calls make several
+// paragraphs. Playback ignores it; a line starting "## Interaction " or
+// "## [Recording rules]" is refused (playback reads those as tape structure).
+license_notice(text: string) {
+    add_rule(RULE_LICENSE_NOTICE, 0, text, "")
+}
+
 clear_rules() {
     rule_kind = []
     rule_field = []
@@ -321,6 +351,7 @@ fn apply_rules(h: ptr, m: int, upstream_url: string, own_host: string) -> string
             if k == RULE_NORMALIZE { errs = "${errs}${vcr.normalize_whole_tape_h(h, rule_a[i], rule_b[i])}" }
             if k == RULE_COLLAPSE { errs = "${errs}${vcr.redact_whole_tape_h(h, rule_a[i], rule_b[i])}" }
             if k == RULE_REDACT { errs = "${errs}${vcr.redact_h(h, rule_field[i], rule_a[i], rule_b[i])}" }
+            if k == RULE_LICENSE_NOTICE { errs = "${errs}${vcr.add_license_notice_h(h, rule_a[i])}" }
         } else {
             if k == RULE_REDACT { errs = "${errs}${vcr.unredact_h(h, rule_field[i], rule_b[i], rule_a[i])}" }
         }

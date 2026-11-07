@@ -114,6 +114,9 @@ fn assert_consul_works(base: string, name: string) {
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against hashicorp/consul:1.15 (Consul 1.15.10), licensed under\nthe Business Source License 1.1 by HashiCorp. Its Additional Use Grant\ndoes not cover offering Consul to third parties in a hosted or embedded\nproduct that competes with HashiCorp's paid versions. Use of this tape\nis subject to those terms; see UPSTREAM-TERMS.md in servirtium-vcr's\npre-recorded/from-testcontainers.")
     // What differs run to run (and machine to machine): the Raft index
     // header, the node id, and the counters and host facts in
     // /v1/agent/self's Stats. X-Consul-Index stays on the tape (it is

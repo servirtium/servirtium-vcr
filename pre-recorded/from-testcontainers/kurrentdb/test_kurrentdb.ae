@@ -67,6 +67,9 @@ fn await_leader(base: string) {
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against kurrentplatform/kurrentdb:26.1.1, licensed under the\nKurrent License v1. It forbids providing the software to third parties\nas a hosted or managed service and circumventing its licence mechanisms,\nand requires its terms to go with every copy. Use of this tape is\nsubject to those terms; see UPSTREAM-TERMS.md in servirtium-vcr's pre-\nrecorded/from-testcontainers.")
 
     spec.describe(fw, "modules/kurrentdb") {
         spec.after_each() callback { testing.cleanup_all() }

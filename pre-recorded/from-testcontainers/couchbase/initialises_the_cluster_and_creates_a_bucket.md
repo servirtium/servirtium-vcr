@@ -1,3 +1,12 @@
+## LICENSE NOTICE
+
+Recorded against couchbase:community-7.1.1, under the Couchbase
+Community Edition License Agreement (CCELA/Apr2021/v3). It allows
+internal business use and products that interact with the software, and
+forbids reverse engineering, decompiling or disassembling it. Use of
+this tape is subject to those terms; see UPSTREAM-TERMS.md in
+servirtium-vcr's pre-recorded/from-testcontainers.
+
 ## Interaction 0: GET /pools
 
 ### Request headers recorded for playback:

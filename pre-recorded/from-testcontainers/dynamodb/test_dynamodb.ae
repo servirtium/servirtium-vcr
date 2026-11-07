@@ -58,6 +58,10 @@ fn ddb(url: string, target: string, body: string) -> (int, string, string) {
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    if servirtium.skip_if_no_tape(fw, "dynamodb", "creates_a_table_stores_and_reads_an_item") == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against amazon/dynamodb-local:2.2.1, under the DynamoDB Local\nlicence agreement (/home/dynamodblocal/LICENSE.txt in the image) and the\nAWS Customer Agreement. It limits use to your internal business\npurposes, with an AWS account in good standing, and forbids\ndistributing, publicly communicating or reverse engineering the\nsoftware. Tapes of this service are not published: this one was recorded\nlocally and stays subject to those terms. See LICENCE-NOTE.md and\nUPSTREAM-TERMS.md in servirtium-vcr's pre-recorded/from-testcontainers.")
     // The request id DynamoDB Local mints, and the CRC32 of a response body
     // that carries timestamps.
     servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amzn-RequestId")

@@ -52,6 +52,9 @@ fn call_api(method: string, url: string, headers: string[], body: string, ctype:
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against datafuselabs/databend:v1.2.615. Databend is Apache-2.0,\nexcept its enterprise code, which is in the same binary under the\nElastic License 2.0: no hosted or managed service for third parties, no\ncircumventing licence keys, no removing notices. Use of this tape is\nsubject to those terms; see UPSTREAM-TERMS.md in servirtium-vcr's pre-\nrecorded/from-testcontainers.")
     // Both Basic credentials (base64 of tcuser:tcpass and tcuser:wrong) stay
     // off the tape as labelled literals, so playback still tells them apart.
     servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic dGN1c2VyOnRjcGFzcw==", "Basic REDACTED[tcuser]")

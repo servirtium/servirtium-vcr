@@ -116,6 +116,9 @@ fn assert_http_document(base: string, user: string, pw: string, authenticated: b
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against surrealdb/surrealdb:v1.1.1, licensed under the Business\nSource License 1.1 by SurrealDB Ltd. Its Additional Use Grant does not\nallow using it for a Database Service (it becomes Apache-2.0 on\n2027-04-01). Use of this tape is subject to those terms; see UPSTREAM-\nTERMS.md in servirtium-vcr's pre-recorded/from-testcontainers.")
     // The Basic credentials the cases send are kept off the tapes.
     redact_basic("root", "root", "root")
     redact_basic("tcae", "s3cret", "tcae")

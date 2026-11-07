@@ -50,6 +50,9 @@ fn http(method: string, url: string, body: string, ctype: string) -> (int, strin
 main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The licence terms of the recorded service, written at the top of each
+    // tape (UPSTREAM-TERMS.md).
+    servirtium.license_notice("Recorded against docker.io/redpandadata/redpanda:v25.2.4. Redpanda\nCommunity Edition is licensed under the Business Source License 1.1,\nwhich does not allow using it for a Streaming or Queuing Service; its\nEnterprise features are under the Redpanda Community License (paid, or a\none-time internal-evaluation trial). Use of this tape is subject to\nthose terms; see UPSTREAM-TERMS.md in servirtium-vcr's pre-\nrecorded/from-testcontainers.")
 
     spec.describe(fw, "modules/redpanda") {
         spec.after_each() callback { testing.cleanup_all() }

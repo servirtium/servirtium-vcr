@@ -1,3 +1,12 @@
+## LICENSE NOTICE
+
+Recorded against docker.elastic.co/elasticsearch/elasticsearch:8.9.0,
+licensed under the Elastic License 2.0. It forbids providing the
+software to third parties as a hosted or managed service, circumventing
+its licence-key functionality, and removing its licensing or copyright
+notices. Use of this tape is subject to those terms; see UPSTREAM-
+TERMS.md in servirtium-vcr's pre-recorded/from-testcontainers.
+
 ## Interaction 0: GET /
 
 ### Request headers recorded for playback:
