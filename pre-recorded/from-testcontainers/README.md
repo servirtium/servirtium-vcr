@@ -80,6 +80,7 @@ with restrictive terms start with a `## LICENSE NOTICE`
 | `surrealdb` | 3 (+1 live only) | `surrealdb/surrealdb:v1.1.1` |
 | `tidb` | 8 (comprehensive: status and schema API on 10080, standalone, no login) | `pingcap/tidb:v8.4.0` |
 | `dind` | 7 (comprehensive: Engine API on 2375, version/info, images, containers, networks, volumes, errors; no login) | `docker:28.0.1-dind` (runs `busybox:1.36.1` inside) |
+| `lowkeyvault` | 8 tapes, 7 cases (comprehensive: Azure Key Vault REST API over HTTPS, secrets, keys, certificates, errors; login on its own two tapes) | `nagyesta/lowkey-vault:7.3.48-ubi10-minimal` |
 | `scylladb` | 16 (comprehensive: REST management API on 10000, identity and ring, keyspaces, table metrics, flush/compact, snapshots, schema version, log levels, tracing, gossip, errors; no login) | `scylladb/scylla:6.2` |
 | `trino` | 1 | `trinodb/trino:435` |
 | `presto` | 1 | `prestodb/presto:0.286` |
@@ -211,6 +212,7 @@ Per suite (registered at the top of its `main`):
 | surrealdb | | per-statement `"time"` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | tidb | | the DDL owner's UUID (`{{uuid-N}}`) | the container IP, `start_timestamp`, `max_procs`, `connections`, `update_timestamp`, the case tables' ids (1001, 1002, in bodies and `table_id(s)=`), and `GET /schema`'s database list whole (Go map order) | |
 | dind | | container, network, endpoint and sandbox ids (`{{docker-id-N}}`; image ids and layer digests are content hashes and stay) | the daemon's clock fields (`Created`, `StartedAt`, `FinishedAt`, `CreatedAt`, `LastTagTime`, `SystemTime`), `/info`'s `ID`, `Name`, `NFd`, `NGoroutines`, container and image counts, `NCPU`, `MemTotal`, `KernelVersion`, a running container's `Pid`, `/netns/<hex>`, `top`'s process table, the 12-hex short container id, endpoints' random MAC addresses, a container list's Unix `Created` | | |
+| lowkeyvault | | 32-hex version ids (`{{version-N}}`), signature / wrapped-key / ciphertext blobs (`{{blob-N}}`), the identity endpoint's JWTs (`{{jwt-N}}`) | attribute times (`created`, `updated`, `deletedDate`, `scheduledPurgeDate`, a certificate's `exp`/`nbf`), a generated key's `n`, `x`, `y`, a certificate's `cer`, `csr`, `x5t`, the identity `expires_on`, Spring's error `timestamp` | `Authorization: Bearer` (credential preset, `AUTHORIZATION_N`) and `X-IDENTITY-HEADER` (`X_IDENTITY_HEADER_1`) | `Allow` |
 | trino | | `uptime`, the query id, the `nextUri` token | | |
 | presto | | `uptime` | | |
 | timeplus | | `x-timeplus-query-id` | | |
@@ -353,6 +355,27 @@ it is on the tape, and playback is plain HTTP.
   to date" pull.
 - **Host-specific:** the tapes were recorded on arm64 (image id and digest,
   `Architecture`).
+
+**Lowkey Vault (the Azure Key Vault REST API):**
+- **HTTPS with its own certificate.** The recorder verifies the container's
+  self-signed certificate (`servirtium.trust_upstream_ca`; the test reads the
+  PEM with the `openssl` command-line tool, which recording needs); the test
+  talks plain HTTP to the recorder and playback is plain HTTP. An Azure SDK has
+  to be allowed a non-TLS endpoint for replay.
+- **Login:** the emulator accepts any bearer token and answers a request
+  without one with a 401 challenge; the token comes from its managed-identity
+  endpoint on a second port. The login case therefore has two tapes, the
+  challenge on the vault port and `..._identity` for the token; every other
+  case is already logged in (`Authorization: Bearer AUTHORIZATION_1`).
+- **One emulator per case.** A vault cannot drop its entries (a deleted secret
+  keeps its name; the default vault is `Recoverable`, so a purge is refused
+  with a 500), so each case starts its own container and any one tape replays
+  alone.
+- **Order that changes run to run, again:** the versions of one name are
+  listed in version-id order, which is random, so the cases list versions only
+  while a name has one. A certificate policy without explicit key usages gets
+  them from a set in varying order, so the cases name one of each; `Allow` on a
+  405 is left out for the same reason.
 
 Checks with no HTTP in them (a module's defaults, `tc.exec`, inspecting the
 container, a refused option) run only live, and are skipped in playback.

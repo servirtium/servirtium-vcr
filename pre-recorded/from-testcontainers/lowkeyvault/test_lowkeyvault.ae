@@ -1,0 +1,938 @@
+// Azure Lowkey Vault, comprehensively: re-usable recordings of the Azure Key
+// Vault REST API (secrets, keys, certificates) as emulated by Lowkey Vault,
+// for any language's tests to replay with no emulator. A "comprehensive"
+// suite of servirtium-vcr's pre-recorded/from-testcontainers (the README's
+// "Pattern for comprehensive suites"; CouchDB is the pilot). Written for
+// servirtium-vcr, not ported from testcontainers-go (whose module test only
+// builds a client).
+//
+// PORTING: this file is the reference for what each tape holds; the tapes
+// are the re-usable part. A port is a test in your language and test
+// framework that makes the same requests, in the same order, against a
+// Servirtium replay server loaded with the tape, and checks the same things.
+// Any Servirtium implementation replays them. Every request here is plain
+// HTTP/1.1 with these headers and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+//   Authorization: Bearer ...     (every case but the first request of the
+//                                  login case, see below)
+//   Content-Type: application/json (only when there is a body)
+// Playback is strict about method, path (query string included, exactly as
+// encoded here: ?api-version=7.4 comes first, then any other parameter), the
+// recorded request headers and the body (byte for byte: send the JSON bodies
+// exactly as written in this file, no spaces), and fails a case whose
+// recorded requests are not all made. Host, Connection and Content-Length
+// are on the tapes but are transport headers, not compared.
+//
+// PORTING, the tape for each case: <case>.md beside this file, where <case>
+// is the second argument of servirtium.recording(...) in that case. The
+// cases are independent: each starts its OWN Lowkey Vault (live) with an
+// empty vault, so a list shows exactly what the case made, and any one tape
+// replays alone and in any order. (Why not one shared emulator, as CouchDB's
+// cases have? A vault has no way to drop its entries: a deleted secret stays
+// "deleted but recoverable" and its name cannot be reused or purged, see
+// below, so a shared one would make each list depend on the cases that ran
+// before.)
+//
+// HTTPS and the transport
+// -----------------------
+// Lowkey Vault serves HTTPS on 8443 with a self-signed certificate
+// (CN=lowkey-vault.local, SAN includes localhost and 127.0.0.1). When
+// recording, the test talks plain HTTP to the recorder, which talks HTTPS to
+// the container and verifies it against that certificate
+// (servirtium.trust_upstream_ca; the PEM is read from the container with
+// `openssl s_client`, so recording needs the openssl command-line tool). TLS
+// is the connection's business, so nothing about it is on the tape, and
+// playback is plain HTTP. A port replays over HTTP: an Azure SDK client has
+// to be told to allow a non-TLS endpoint and to skip its challenge-based
+// authentication's HTTPS requirement (azure-sdk "disable challenge resource
+// verification" / "allow insecure"), or the port tests with raw HTTP as here.
+// The `id`, `kid`, `recoveryId` and `nextLink` URLs in a response name the
+// vault as https://<host:port>; the tapes carry {{request.host}} there, which
+// playback fills with the replay server's own host and port (still with
+// an https scheme: build follow-up requests from the PATH of such a URL, as
+// these cases do, not from the URL).
+//
+// Login, and "already logged in"
+// ------------------------------
+// Lowkey Vault does not check tokens. Any `Authorization: Bearer <anything>`
+// is accepted, and a request with no Authorization is answered 401 with
+//   WWW-Authenticate: Bearer resource="https://<host>", authorization_uri="https://<host>/<path>"
+// which is the Key Vault challenge an Azure client reads to learn what token
+// to ask for. The token source is the managed-identity simulation on the
+// metadata port (8080): GET /metadata/identity/oauth2/token?api-version=
+// 2019-08-01&resource=<resource> with an X-IDENTITY-HEADER: header answers a
+// JWT-shaped access_token (and refresh_token) with a one-hour expiry.
+//
+// Logging in gets its own tapes, two because the token comes from a second
+// port of the container (as Azurite's first case does for blob and queue):
+//   challenges_and_gets_a_token_from_the_identity_endpoint          the vault port: the 401 challenge, then
+//                                                                   a request with the token, then one with
+//                                                                   an invented token (accepted too)
+//   challenges_and_gets_a_token_from_the_identity_endpoint_identity the metadata port: the token request
+// Every other case is ALREADY LOGGED IN: each request carries
+//   Authorization: Bearer <token>
+// (when recording, the token is fetched live from the identity endpoint,
+// outside the recorder, before the case starts) and the tapes hold it as
+// `Authorization: Bearer AUTHORIZATION_1` (Servirtium's redact_credentials
+// preset), which playback matches on PRESENCE, not value.
+//
+// PORTING, getting into the logged-in state without the login tapes: send
+// any `Authorization: Bearer <anything>` header on every request. A
+// consequence of presence matching: a replay cannot tell a valid token from
+// an invented one (and neither can Lowkey Vault), so the unauthorized case
+// sends no Authorization header at all. The identity request's
+// X-IDENTITY-HEADER (the emulator's fixed "header") is redacted the same
+// way, as X_IDENTITY_HEADER_1 (redact_credential_header).
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below, with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them all and
+// the interactions each touched ("none" where it did not). In short:
+//   - normalized (each distinct value a stable {{name-N}} token, the same
+//     token wherever it recurs, because a client sends it back): the
+//     32-hex version ids ({{version-N}}: in every `id`/`kid`, in the paths
+//     of the version-specific requests, in error messages, and a pending
+//     certificate's request_id), and the signature, wrapped key and
+//     ciphertext blobs ({{blob-N}}: a client sends each back to verify,
+//     unwrap or decrypt), and the access and refresh JWTs ({{jwt-N}}).
+//   - collapsed (one constant; nobody sends them back): attribute times
+//     (created, updated, deletedDate, scheduledPurgeDate, and a
+//     certificate's own exp and nbf), the RSA modulus and EC coordinates of
+//     a generated key, a certificate's DER (cer), signing request (csr) and
+//     thumbprint (x5t), the identity token's expires_on, and the
+//     timestamp in Spring's generic error bodies.
+//   - redacted: the Authorization bearer token and X-IDENTITY-HEADER
+//     (credential presets, matched on presence).
+//   - left out: the Date response header, as everywhere, and Allow (the
+//     methods of a 405 in a varying order).
+//   Deterministic values are left alone, on purpose: a secret's value,
+//   contentType and tags, `recoverableDays` (90) and `recoveryLevel`
+//   ("Recoverable"), a client-chosen `exp` on a secret, a key's public
+//   exponent (AQAB) and `key_ops`, a certificate's policy.
+//   (Time fields on certificates are collapsed with a pattern that needs
+//   exp and nbf together; the secrets here set only `exp`, never both.)
+//
+// PORTING: in playback, a normalized or redacted value comes back as its
+// token, verbatim: a version is "{{version-1}}", a signature "{{blob-1}}",
+// the bearer AUTHORIZATION_1. Treat every id and blob as an opaque string
+// (never assert its length or shape) and send it back exactly as received;
+// the tape expects the token in the later request, e.g. `GET
+// /secrets/tcae-secret/{{version-1}}?api-version=7.4`. Send the braces as
+// they are. A response's JSON key order and the order of lists are what
+// Lowkey Vault produces: keys alphabetical, lists of entities by name. A
+// list of the VERSIONS of one name is NOT in creation order: it is ordered by
+// the version id, which is random, so two or more versions would come back in
+// a different order on every run and the tape would differ between records.
+// The cases therefore list the versions of a name only while it has ONE, and
+// read the later versions by id or as "latest" (which is the newest by
+// creation time, in whole seconds: the cases wait a second between writes to
+// one name so that cannot be a clock tie). Servirtium writing a stable order
+// would lift this (servirtium-vcr TODO.md).
+//
+// In and out of scope
+// -------------------
+// In: secrets (set, get latest and by version, versions, list, paging with
+// maxresults and the $skiptoken of nextLink, update of attributes and tags
+// on one version, delete, deleted list/get, recover, a refused purge); keys
+// (create RSA and EC, a second version, get latest and by version, versions,
+// list, update key_ops, sign / verify, wrapKey / unwrapKey, encrypt /
+// decrypt, delete, recover, rotate); certificates (create with a self-signed policy,
+// the pending operation, get latest and by version, versions, list, policy,
+// delete, recover); the challenge and the token; and the representative
+// errors 400, 401, 404, 405, 409 and 500 (Lowkey Vault answers several
+// client mistakes with 500 or a bare 404, and the tapes keep what it does).
+// Out: purge that succeeds (a purgeable vault has to be created through the
+// management API under a different host name, and the recorder forwards one
+// Host; this default vault is Recoverable and refuses), backup / restore
+// (the blob is a gzip of times and keys), certificate import and issuers and
+// contacts and operations other than the pending read, managed HSM, key
+// import, vaults other than the
+// default and the management API, and the Azure SDKs' own flows (these are
+// the raw REST calls they make). Each could be a later case.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test lowkeyvault/test_lowkeyvault.ae                     container, no Servirtium
+//   TCAE_VCR=record   ae test lowkeyvault/test_lowkeyvault.ae   write the tapes
+//   TCAE_VCR=check    ae test lowkeyvault/test_lowkeyvault.ae   fail if a tape changed
+//   TCAE_VCR=playback ae test lowkeyvault/test_lowkeyvault.ae   no container: the tapes
+// Recording needs the openssl command-line tool on the PATH.
+
+import std.spec
+import std.string
+import std.fs
+import std.os
+import std.json
+import std.list
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.azure.lowkeyvault
+
+const IMAGE = "nagyesta/lowkey-vault:7.3.48-ubi10-minimal"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would (Aether's std.http.client adds none). Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// The query every request carries.
+const V = "api-version=7.4"
+
+// The bearer token the logged-in cases send in playback, where there is no
+// emulator to ask. Any value does: the tapes match the header on presence.
+const PLAYBACK_TOKEN = "any-value-replay-matches-on-presence"
+
+// The resource a token is asked for, as an Azure client does for Key Vault.
+const RESOURCE = "https%3A%2F%2Fvault.azure.net"
+
+// SHA-256 of "hello", base64url without padding: the digest the key cases
+// sign, and (32 bytes) the key material they wrap.
+const DIGEST = "LPJNul-wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ"
+
+// SHA-256 of "world": another 32-byte digest, which the signature made over
+// DIGEST does not fit.
+const OTHER_DIGEST = "SG6kYiTRu0-2gPNPfJrZao8k7Ii-c-qOWmxlJg6cuKc"
+
+// "hello", base64url: the plaintext the encrypt cases use.
+const PLAINTEXT = "aGVsbG8"
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
+
+// The WWW-Authenticate header of the last response (the challenge).
+var last_www_authenticate: string = ""
+
+// One second between two writes to the same name, live only, so their
+// created times (seconds) differ and a version list's order cannot depend on
+// a clock tie.
+fn pause() {
+    if servirtium.live() == 1 { sleep(1100) }
+}
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines;
+// ctype is the body's Content-Type (none when the body is empty). An https
+// URL is verified against `cafile` when it is set.
+fn http_send(method: string, url: string, hdrs: string[], ctype: string, body: string, cafile: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 60s)
+    if string.length(cafile) > 0 && string.starts_with(url, "https:") == 1 {
+        cerr = client.set_cafile(req, cafile)
+        if cerr != "" { return 0, "", cerr }
+    }
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    last_www_authenticate = client.response_header(r, "WWW-Authenticate")
+    client.response_free(r)
+    return st, b, ""
+}
+
+
+// The current case's vault: the base URL of the recording, the PEM the https
+// container is verified against (only when a recording is off, i.e. direct),
+// and the bearer token every logged-in request carries.
+var api: string = ""
+var cafile: string = ""
+var token: string = ""
+
+// A logged-in request with a JSON body (or none): (status, body). A
+// transport error fails the case.
+fn kv(method: string, path: string, body: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}${path}", ["Authorization: Bearer ${token}"], "application/json", body, cafile)
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// A request with no credentials at all: (status, body).
+fn anonymous(method: string, path: string, body: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}${path}", [], "application/json", body, cafile)
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// String equality (Aether's == on strings compares identity).
+fn same(a: string, b: string) -> bool {
+    return string.equals(a, b) == 1
+}
+
+// A string in a JSON body by a dotted path ("id", "key.kid", "value.0.id");
+// "" when absent or not a string.
+fn jstr(body: string, path: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    let v: ptr = doc
+    rest = path
+    while string.length(rest) > 0 && v != null {
+        p = rest
+        dot = string.index_of(rest, ".")
+        if dot >= 0 {
+            p = string.substring(rest, 0, dot)
+            rest = string.substring(rest, dot + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        if json.json_type(v) == json.JSON_ARRAY {
+            idx, _ = string.to_int(p)
+            a, _ = json.array_get(v, idx)
+            v = a
+        } else {
+            o, _ = json.object_get(v, p)
+            v = o
+        }
+    }
+    out = ""
+    if v != null {
+        s, serr = json.get_string(v)
+        if serr == "" { out = string.copy(s) }
+    }
+    json.free(doc)
+    return out
+}
+
+// The version (last path segment) of an id URL such as
+// https://host/secrets/name/<version>: "{{version-1}}" on replay.
+fn version_of(id_url: string) -> string {
+    i = string.length(id_url) - 1
+    while i >= 0 {
+        if same(string.substring(id_url, i, i + 1), "/") { return string.substring(id_url, i + 1, string.length(id_url)) }
+        i = i - 1
+    }
+    return ""
+}
+
+// The path (from the first / after the authority) of an id URL.
+fn path_of(url: string) -> string {
+    start = string.index_of(url, "://")
+    if start < 0 { return url }
+    rest = string.substring(url, start + 3, string.length(url))
+    slash = string.index_of(rest, "/")
+    if slash < 0 { return "/" }
+    return string.substring(rest, slash, string.length(rest))
+}
+
+// ---------------------------------------------------------------------------
+// The live emulator of the current case (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+// The PEM of the certificate `authority` (host:port) serves, read with the
+// openssl command-line tool: "" and an error when it cannot.
+fn server_cert_pem(authority: string) -> (string, string) {
+    argv = list.new()
+    for a in ["s_client", "-connect", authority, "-servername", "localhost"] { list.add(argv, a) }
+    out, _e, rc, err = os.run_full("openssl", argv, null, "")
+    list.free(argv)
+    if err != "" { return "", "openssl: ${err}" }
+    begin_at = string.index_of(out, "-----BEGIN CERTIFICATE-----")
+    end_marker = "-----END CERTIFICATE-----"
+    end_at = string.index_of(out, end_marker)
+    if begin_at < 0 || end_at < 0 { return "", "openssl s_client printed no certificate (rc ${rc})" }
+    return string.concat(string.substring(out, begin_at, end_at + string.length(end_marker)), "\n"), ""
+}
+
+// Start a vault for the case, and ask it for a token. Live modes only.
+// Returns the vault's base URL ("" on failure); sets `token`, and
+// `cafile_live` to a PEM file of its certificate. `meta` is the metadata
+// port's base URL.
+var cafile_live: string = ""
+var meta_live: string = ""
+
+fn start_vault() -> string {
+    c, err = lowkeyvault.run(IMAGE)
+    if c == null {
+        spec.fail("lowkey vault starts: ${err}")
+        return ""
+    }
+    testing.cleanup_container(c)
+    spec.assert_ok(err, "lowkey vault starts")
+    if err != "" { return "" }
+    auth, aerr = lowkeyvault.host_authority(c, lowkeyvault.API_PORT, lowkeyvault.LOCAL)
+    spec.assert_ok(aerr, "the vault's host:port")
+    mauth, merr = lowkeyvault.host_authority(c, lowkeyvault.METADATA_PORT, lowkeyvault.LOCAL)
+    spec.assert_ok(merr, "the metadata port's host:port")
+    if aerr != "" || merr != "" { return "" }
+    pem, perr = server_cert_pem(auth)
+    spec.assert_ok(perr, "read the vault's certificate")
+    if perr != "" { return "" }
+    dir, derr = fs.make_temp_dir("", "tcae-lowkey-")
+    spec.assert_ok(derr, "temp dir")
+    cafile_live = "${dir}/lowkey-vault.pem"
+    fs.write(cafile_live, pem)
+    servirtium.trust_upstream_ca(cafile_live)
+    meta_live = "http://${mauth}"
+    return "https://${auth}"
+}
+
+// An access token from the identity endpoint, outside any recording.
+fn token_live() -> string {
+    st, b, err = http_send("GET", "${meta_live}/metadata/identity/oauth2/token?api-version=2019-08-01&resource=${RESOURCE}", ["X-IDENTITY-HEADER: ${lowkeyvault.identity_header()}"], "", "", "")
+    spec.assert_ok(err, "get a token (not recorded)")
+    spec.assert_eq(st, 200, "get a token (not recorded): ${b}")
+    return jstr(b, "access_token")
+}
+
+// Remove the temporary PEM and forget the trust.
+fn end_vault() {
+    servirtium.trust_upstream_ca("")
+    if string.length(cafile_live) > 0 {
+        fs.delete(cafile_live)
+        cafile_live = ""
+    }
+}
+
+// Start a logged-in case: in a live mode, a fresh vault and a token (neither
+// recorded); then the recording. Sets `api`, `cafile` and `token`; returns
+// the recording handle, and ok = 0 when the case cannot run.
+fn begin(case_: string) -> (ptr, int) {
+    addr = ""
+    token = PLAYBACK_TOKEN
+    cafile = ""
+    if servirtium.live() == 1 {
+        addr = start_vault()
+        if addr == "" { return null, 0 }
+        token = token_live()
+        // Off mode talks to the container directly over https; a recording's
+        // base is plain http, to which the PEM does not apply.
+        cafile = cafile_live
+    }
+    base, rec = servirtium.recording("lowkeyvault", case_, addr)
+    api = base
+    return rec, 1
+}
+
+// Finish a case: end the recording and drop the certificate file.
+fn finish(rec: ptr) {
+    servirtium.end_recording(rec)
+    end_vault()
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules
+// ---------------------------------------------------------------------------
+
+fn api_rules() {
+    servirtium.clear_rules()
+    // Lowkey Vault is MIT-licensed: no licence notice is needed.
+
+    // The bearer token on every logged-in request: Servirtium's credential
+    // preset writes it as AUTHORIZATION_N and replays the header on presence.
+    servirtium.redact_credentials()
+    // The managed-identity request's own header (the emulator's fixed
+    // "header"): the same treatment, so no credential is on any tape.
+    servirtium.redact_credential_header("X-IDENTITY-HEADER")
+
+    // Version ids: 32 lower-case hex after a "/" or a quote and before a "/",
+    // a quote or a "?": in `id`/`kid` URLs, in the path of a version-specific
+    // request, in error messages, and a pending certificate's request_id.
+    // Normalized, not collapsed: a client sends a version back in a path.
+    servirtium.normalize("(?<=[/\"])[0-9a-f]{32}(?=[/\"?])", "version")
+    // The blobs a client sends back: a signature (to verify), a wrapped key
+    // (to unwrap) and a ciphertext (to decrypt), each one `"value":"<base64url>"`
+    // of 80+ characters (a 2048-bit RSA result is 342, an ES256 signature
+    // 86). Secret values and the digests the cases send (43) are shorter and
+    // stay. RSA padding and ECDSA's nonce are random, so the same input gives
+    // a different blob every run.
+    servirtium.normalize("(?<=\"value\":\")[A-Za-z0-9_-]{80,}(?=\")", "blob")
+    // A 405's Allow header lists the methods in a Java set's order, which
+    // differs between runs ("PUT, DELETE, GET" or "PUT, GET, DELETE").
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "Allow")
+    // The identity endpoint's JWTs (access_token and refresh_token are the
+    // same string): header.payload.signature, the payload carrying issue and
+    // expiry times and the signature a fresh value. A client sends the access
+    // token back as the bearer, so it is normalized rather than collapsed.
+    servirtium.normalize("eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "jwt")
+    // The token's absolute expiry.
+    servirtium.collapse("\"expires_on\":[0-9]+", "\"expires_on\":946684800")
+
+    // Attribute times (Unix seconds): when an entity was created, updated and
+    // deleted, and when a deleted one would be purged (deleted + 90 days).
+    // Nobody sends them back.
+    servirtium.collapse("\"created\":[0-9]{10}", "\"created\":946684800")
+    servirtium.collapse("\"updated\":[0-9]{10}", "\"updated\":946684800")
+    servirtium.collapse("\"deletedDate\":[0-9]{10}", "\"deletedDate\":946684800")
+    servirtium.collapse("\"scheduledPurgeDate\":[0-9]{10}", "\"scheduledPurgeDate\":954460800")
+    // A certificate's validity window starts when it was made and lasts
+    // validity_months, so both ends move. They are the only attributes with
+    // exp AND nbf side by side (the secrets in this suite set `exp` alone).
+    servirtium.collapse("\"exp\":[0-9]{10},\"nbf\":[0-9]{10}", "\"exp\":978307200,\"nbf\":946684800")
+    // A generated key's public parts: the RSA modulus and an EC point.
+    // Different on every run, never sent back (a client verifies with the key
+    // id). The exponent "AQAB" and the curve are stable and stay.
+    servirtium.collapse("\"n\":\"[A-Za-z0-9_-]{300,}\"", "\"n\":\"RSA-MODULUS\"")
+    servirtium.collapse("\"x\":\"[A-Za-z0-9_-]{40,}\"", "\"x\":\"EC-X\"")
+    servirtium.collapse("\"y\":\"[A-Za-z0-9_-]{40,}\"", "\"y\":\"EC-Y\"")
+    // A certificate's DER, its signing request and its SHA-1 thumbprint,
+    // all derived from a generated key.
+    servirtium.collapse("\"cer\":\"[A-Za-z0-9+/=]+\"", "\"cer\":\"CERTIFICATE-DER\"")
+    servirtium.collapse("\"csr\":\"[A-Za-z0-9+/=]+\"", "\"csr\":\"CERTIFICATE-REQUEST\"")
+    servirtium.collapse("\"x5t\":\"[A-Za-z0-9_-]+\"", "\"x5t\":\"THUMBPRINT\"")
+    // Spring's generic error body (a 400, 405 or 500 the application did not
+    // shape) carries the time of the failure.
+    servirtium.collapse("\"timestamp\":\"[^\"]+\"", "\"timestamp\":\"2000-01-01T00:00:00.000Z\"")
+}
+
+// ---------------------------------------------------------------------------
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    api_rules()
+    spec.describe(fw, "Azure Key Vault API (Lowkey Vault)") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        // ---- the login tapes -----------------------------------------------
+
+        // PORTING: two tapes. The metadata port first (the token):
+        //   challenges_and_gets_a_token_from_the_identity_endpoint_identity.md
+        //   GET /metadata/identity/oauth2/token?api-version=2019-08-01&resource=https%3A%2F%2Fvault.azure.net
+        //       X-IDENTITY-HEADER: X_IDENTITY_HEADER_1   (the emulator's "header", on presence)
+        //       -> 200 {"resource":"https://vault.azure.net","access_token":"{{jwt-1}}","refresh_token":"{{jwt-1}}",
+        //               "expires_in":3600,"expires_on":946684800,"token_type":"Bearer"}
+        //          (and a WWW-Authenticate: Basic realm=assumed-identity header)
+        // then the vault port:
+        //   challenges_and_gets_a_token_from_the_identity_endpoint.md
+        //   GET /secrets/tcae-login?api-version=7.4        no Authorization
+        //       -> 401, an empty body, WWW-Authenticate: Bearer resource="https://{{request.host}}", authorization_uri="https://{{request.host}}/secrets/tcae-login"
+        //   GET /secrets?api-version=7.4   Authorization: Bearer <the access_token>
+        //       -> 200 {"value":[]}   (an empty vault)
+        //   GET /secrets?api-version=7.4   Authorization: Bearer an-invented-token
+        //       -> 200, the same: the emulator does not check a token
+        // The bearer is on the tape as AUTHORIZATION_1 and AUTHORIZATION_2:
+        // playback matches the header on presence, so any value passes.
+        spec.it("answers a request without a token with a challenge, and takes a token from the identity endpoint") callback {
+            addr = ""
+            maddr = ""
+            cafile = ""
+            if servirtium.live() == 1 {
+                addr = start_vault()
+                if addr == "" { return }
+                maddr = meta_live
+                cafile = cafile_live
+            }
+            // 1. the token, from the metadata port
+            mbase, mrec = servirtium.recording("lowkeyvault", "challenges_and_gets_a_token_from_the_identity_endpoint_identity", maddr)
+            st, b, err = http_send("GET", "${mbase}/metadata/identity/oauth2/token?api-version=2019-08-01&resource=${RESOURCE}", ["X-IDENTITY-HEADER: ${lowkeyvault.identity_header()}"], "", "", "")
+            spec.assert_ok(err, "GET the identity token")
+            spec.assert_eq(st, 200, "a token: ${b}")
+            spec.assert_contains(b, "\"token_type\":\"Bearer\"", "a bearer token")
+            spec.assert_contains(b, "\"expires_in\":3600", "valid for an hour")
+            got = jstr(b, "access_token")
+            spec.assert_true(string.length(got) > 0, "an access_token")
+            servirtium.end_recording(mrec)
+
+            // 2. the vault port: the challenge, then the token, then any token
+            base, rec = servirtium.recording("lowkeyvault", "challenges_and_gets_a_token_from_the_identity_endpoint", addr)
+            api = base
+            st, b = anonymous("GET", "/secrets/tcae-login?${V}", "")
+            spec.assert_eq(st, 401, "no token: ${b}")
+            spec.assert_contains(last_www_authenticate, "Bearer resource=\"https://", "the challenge names the resource")
+            spec.assert_contains(last_www_authenticate, "authorization_uri=", "and where to get a token")
+            token = got
+            st, b = kv("GET", "/secrets?${V}", "")
+            spec.assert_eq(st, 200, "the token is accepted: ${b}")
+            spec.assert_str_eq(b, "{\"value\":[]}", "an empty vault")
+            token = "an-invented-token"
+            st, b = kv("GET", "/secrets?${V}", "")
+            spec.assert_eq(st, 200, "any token is accepted: ${b}")
+            finish(rec)
+        }
+
+        // ---- already logged in from here on: every request carries the token
+
+        // PORTING (name tcae-secret; 1 s pause between the writes):
+        //   PUT   /secrets/tcae-secret?api-version=7.4 {"value":"first"} -> 200, id https://{{request.host}}/secrets/tcae-secret/{{version-1}}, value "first"
+        //   PUT   /secrets/tcae-secret?api-version=7.4 {"value":"second","contentType":"text/plain","tags":{"purpose":"test"},"attributes":{"exp":1900000000}}
+        //         -> 200, a new version ({{version-2}}), contentType, tags, attributes.exp 1900000000
+        //   GET   /secrets/tcae-secret?api-version=7.4                -> 200, the latest: value "second"
+        //   GET   /secrets/tcae-secret/{{version-1}}?api-version=7.4  -> 200, value "first"
+        //   PATCH /secrets/tcae-secret/{{version-2}}?api-version=7.4 {"tags":{"purpose":"patched"},"attributes":{"enabled":false}} -> 200 (no value)
+        //   GET   /secrets/tcae-secret?api-version=7.4                -> 404 "Operation get is not allowed on a disabled entity." (the latest version is disabled)
+        //   GET   /secrets/tcae-secret/{{version-1}}?api-version=7.4  -> 200, still readable
+        //   PUT   /secrets/tcae-secret-b?api-version=7.4 {"value":"b"} -> 200
+        //   GET   /secrets/tcae-secret-b/versions?api-version=7.4     -> 200, {"value":[{..one entry..}]} (a list never carries values; see the header on why one version only)
+        //   GET   /secrets?api-version=7.4&maxresults=1               -> 200, one entry (tcae-secret) and a nextLink
+        //         https://{{request.host}}/secrets?api-version=7.4&$skiptoken=1&maxresults=1
+        //   GET   /secrets?api-version=7.4&$skiptoken=1&maxresults=1  -> 200, tcae-secret-b, no nextLink (the path and query of the nextLink)
+        // Attribute times, value-less lists: see the header.
+        spec.it("sets, reads, versions, updates and lists secrets") callback {
+            rec, ok = begin("sets_reads_versions_updates_and_lists_secrets")
+            if ok == 0 { return }
+            st, b = kv("PUT", "/secrets/tcae-secret?${V}", "{\"value\":\"first\"}")
+            spec.assert_eq(st, 200, "set: ${b}")
+            spec.assert_contains(b, "\"value\":\"first\"", "the value")
+            v1 = version_of(jstr(b, "id"))
+            spec.assert_true(string.length(v1) > 0, "a version id")
+            pause()
+            st, b = kv("PUT", "/secrets/tcae-secret?${V}", "{\"value\":\"second\",\"contentType\":\"text/plain\",\"tags\":{\"purpose\":\"test\"},\"attributes\":{\"exp\":1900000000}}")
+            spec.assert_eq(st, 200, "set a new version: ${b}")
+            v2 = version_of(jstr(b, "id"))
+            spec.assert_true(!same(v2, v1), "a different version")
+            spec.assert_contains(b, "\"contentType\":\"text/plain\"", "content type")
+            spec.assert_contains(b, "\"exp\":1900000000", "expiry")
+            spec.assert_contains(b, "\"tags\":{\"purpose\":\"test\"}", "tags")
+            st, b = kv("GET", "/secrets/tcae-secret?${V}", "")
+            spec.assert_eq(st, 200, "get the latest: ${b}")
+            spec.assert_contains(b, "\"value\":\"second\"", "the latest value")
+            st, b = kv("GET", "/secrets/tcae-secret/${v1}?${V}", "")
+            spec.assert_eq(st, 200, "get the first version: ${b}")
+            spec.assert_contains(b, "\"value\":\"first\"", "the first value")
+            st, b = kv("PATCH", "/secrets/tcae-secret/${v2}?${V}", "{\"tags\":{\"purpose\":\"patched\"},\"attributes\":{\"enabled\":false}}")
+            spec.assert_eq(st, 200, "update the second version: ${b}")
+            spec.assert_contains(b, "\"enabled\":false", "disabled")
+            spec.assert_contains(b, "\"purpose\":\"patched\"", "retagged")
+            st, b = kv("GET", "/secrets/tcae-secret?${V}", "")
+            spec.assert_eq(st, 404, "the disabled latest version is not readable: ${b}")
+            spec.assert_contains(b, "Operation get is not allowed on a disabled entity.", "disabled")
+            st, b = kv("GET", "/secrets/tcae-secret/${v1}?${V}", "")
+            spec.assert_eq(st, 200, "the first version still is: ${b}")
+            st, b = kv("PUT", "/secrets/tcae-secret-b?${V}", "{\"value\":\"b\"}")
+            spec.assert_eq(st, 200, "a second secret: ${b}")
+            st, b = kv("GET", "/secrets/tcae-secret-b/versions?${V}", "")
+            spec.assert_eq(st, 200, "versions of a one-version secret: ${b}")
+            spec.assert_true(string.length(jstr(b, "value.0.id")) > 0, "one entry")
+            spec.assert_str_eq(jstr(b, "value.1.id"), "", "and no second")
+            spec.assert_true(string.index_of(b, "\"value\":\"b\"") < 0, "a list carries no secret value")
+            st, b = kv("GET", "/secrets?${V}&maxresults=1", "")
+            spec.assert_eq(st, 200, "the first page: ${b}")
+            spec.assert_contains(b, "/secrets/tcae-secret\"", "tcae-secret first, by name")
+            next = jstr(b, "nextLink")
+            spec.assert_true(string.length(next) > 0, "a nextLink")
+            st, b = kv("GET", path_of(next), "")
+            spec.assert_eq(st, 200, "the second page: ${b}")
+            spec.assert_contains(b, "/secrets/tcae-secret-b\"", "tcae-secret-b")
+            spec.assert_str_eq(jstr(b, "nextLink"), "", "no third page")
+            finish(rec)
+        }
+
+        // PORTING (name tcae-del):
+        //   PUT    /secrets/tcae-del?api-version=7.4 {"value":"gone soon"} -> 200
+        //   DELETE /secrets/tcae-del?api-version=7.4  -> 200, the secret with deletedDate, recoveryId https://{{request.host}}/deletedsecrets/tcae-del, scheduledPurgeDate
+        //   GET    /secrets/tcae-del?api-version=7.4  -> 404 NotFoundException
+        //   GET    /deletedsecrets?api-version=7.4    -> 200, one entry (no value)
+        //   GET    /deletedsecrets/tcae-del?api-version=7.4 -> 200, with the value
+        //   PUT    /secrets/tcae-del?api-version=7.4 {"value":"again"} -> 409 AlreadyExistsException: a deleted entity already exists with this name
+        //   POST   /deletedsecrets/tcae-del/recover?api-version=7.4 -> 200, the secret again
+        //   GET    /secrets/tcae-del?api-version=7.4  -> 200 "gone soon"
+        //   DELETE /secrets/tcae-del?api-version=7.4  -> 200
+        //   DELETE /deletedsecrets/tcae-del?api-version=7.4 -> 500 IllegalStateException "The selected elements cannot be purged." (this vault is Recoverable)
+        //   POST   /deletedsecrets/tcae-del/recover?api-version=7.4 -> 200
+        //   DELETE /secrets/tcae-missing?api-version=7.4 -> 404
+        //   POST   /deletedsecrets/tcae-missing/recover?api-version=7.4 -> 404
+        spec.it("deletes, lists the deleted, recovers and fails to purge a secret") callback {
+            rec, ok = begin("deletes_recovers_and_fails_to_purge_a_secret")
+            if ok == 0 { return }
+            st, b = kv("PUT", "/secrets/tcae-del?${V}", "{\"value\":\"gone soon\"}")
+            spec.assert_eq(st, 200, "set: ${b}")
+            st, b = kv("DELETE", "/secrets/tcae-del?${V}", "")
+            spec.assert_eq(st, 200, "delete: ${b}")
+            spec.assert_contains(b, "\"deletedDate\":", "deletedDate")
+            spec.assert_contains(b, "/deletedsecrets/tcae-del\"", "recoveryId")
+            st, b = kv("GET", "/secrets/tcae-del?${V}", "")
+            spec.assert_eq(st, 404, "a deleted secret is not found: ${b}")
+            spec.assert_contains(b, "NotFoundException", "not found")
+            st, b = kv("GET", "/deletedsecrets?${V}", "")
+            spec.assert_eq(st, 200, "deleted list: ${b}")
+            spec.assert_contains(b, "/secrets/tcae-del\"", "listed as deleted")
+            st, b = kv("GET", "/deletedsecrets/tcae-del?${V}", "")
+            spec.assert_eq(st, 200, "get a deleted secret: ${b}")
+            spec.assert_contains(b, "\"value\":\"gone soon\"", "its value is still there")
+            st, b = kv("PUT", "/secrets/tcae-del?${V}", "{\"value\":\"again\"}")
+            spec.assert_eq(st, 409, "the name is taken by the deleted one: ${b}")
+            spec.assert_contains(b, "A deleted entity already exists with this name", "already exists")
+            st, b = kv("POST", "/deletedsecrets/tcae-del/recover?${V}", "")
+            spec.assert_eq(st, 200, "recover: ${b}")
+            st, b = kv("GET", "/secrets/tcae-del?${V}", "")
+            spec.assert_eq(st, 200, "it is back: ${b}")
+            spec.assert_contains(b, "\"value\":\"gone soon\"", "with its value")
+            st, b = kv("DELETE", "/secrets/tcae-del?${V}", "")
+            spec.assert_eq(st, 200, "delete again: ${b}")
+            st, b = kv("DELETE", "/deletedsecrets/tcae-del?${V}", "")
+            spec.assert_eq(st, 500, "purge is refused: ${b}")
+            spec.assert_contains(b, "The selected elements cannot be purged.", "cannot be purged")
+            st, b = kv("POST", "/deletedsecrets/tcae-del/recover?${V}", "")
+            spec.assert_eq(st, 200, "recover again: ${b}")
+            st, b = kv("DELETE", "/secrets/tcae-missing?${V}", "")
+            spec.assert_eq(st, 404, "delete a missing secret: ${b}")
+            st, b = kv("POST", "/deletedsecrets/tcae-missing/recover?${V}", "")
+            spec.assert_eq(st, 404, "recover a missing secret: ${b}")
+            finish(rec)
+        }
+
+        // PORTING (names tcae-rsa, tcae-ec; 1 s pause between the two creates of tcae-rsa):
+        //   POST  /keys/tcae-rsa/create?api-version=7.4 {"kty":"RSA","key_size":2048,"key_ops":["sign","verify","wrapKey","unwrapKey","encrypt","decrypt"],"tags":{"purpose":"test"}}
+        //         -> 200 {"attributes":{..},"key":{"e":"AQAB","key_ops":[..],"kid":"https://{{request.host}}/keys/tcae-rsa/{{version-1}}","kty":"RSA","n":"RSA-MODULUS"},"tags":{"purpose":"test"}}
+        //   POST  /keys/tcae-rsa/create?api-version=7.4 (same body) -> 200, a second version
+        //   GET   /keys/tcae-rsa?api-version=7.4                    -> 200, the latest ({{version-2}})
+        //   GET   /keys/tcae-rsa/{{version-1}}?api-version=7.4      -> 200
+        //   GET   /keys?api-version=7.4                             -> 200, tcae-ec and tcae-rsa by name
+        //   GET   /keys/tcae-ec/versions?api-version=7.4            -> 200, one entry, no key material
+        //   POST  /keys/tcae-rsa/{{version-1}}/sign?api-version=7.4   {"alg":"RS256","value":"<DIGEST>"} -> 200 {"kid":..,"value":"{{blob-1}}"}
+        //   POST  /keys/tcae-rsa/{{version-1}}/verify?api-version=7.4 {"alg":"RS256","digest":"<DIGEST>","value":"{{blob-1}}"} -> 200 {"value":true}
+        //   POST  /keys/tcae-rsa/{{version-1}}/verify?api-version=7.4 {"alg":"RS256","digest":"SG6kYiTRu0-2gPNPfJrZao8k7Ii-c-qOWmxlJg6cuKc","value":"{{blob-1}}"} -> 200 {"value":false}  (the digest of "world")
+        //   POST  /keys/tcae-rsa/{{version-1}}/wrapkey?api-version=7.4   {"alg":"RSA-OAEP","value":"<DIGEST>"} -> 200 {"kid":..,"value":"{{blob-2}}"}
+        //   POST  /keys/tcae-rsa/{{version-1}}/unwrapkey?api-version=7.4 {"alg":"RSA-OAEP","value":"{{blob-2}}"} -> 200 {"kid":..,"value":"<DIGEST>"}
+        //   POST  /keys/tcae-rsa/{{version-1}}/encrypt?api-version=7.4   {"alg":"RSA-OAEP-256","value":"aGVsbG8"} -> 200 {"kid":..,"value":"{{blob-3}}"}
+        //   POST  /keys/tcae-rsa/{{version-1}}/decrypt?api-version=7.4   {"alg":"RSA-OAEP-256","value":"{{blob-3}}"} -> 200 {"kid":..,"value":"aGVsbG8"}
+        //   POST  /keys/tcae-ec/create?api-version=7.4 {"kty":"EC","crv":"P-256","key_ops":["sign","verify"]} -> 200, "x":"EC-X","y":"EC-Y"
+        //   POST  /keys/tcae-ec/{{version-3}}/sign?api-version=7.4   {"alg":"ES256","value":"<DIGEST>"} -> 200 {"value":"{{blob-4}}"}
+        //   POST  /keys/tcae-ec/{{version-3}}/verify?api-version=7.4 {"alg":"ES256","digest":"<DIGEST>","value":"{{blob-4}}"} -> 200 {"value":true}
+        // The version a request names is the version of the key in the response
+        // that made it; the tokens are numbered in order of first appearance.
+        spec.it("creates RSA and EC keys, signs, verifies, wraps, encrypts and lists versions") callback {
+            rec, ok = begin("creates_keys_and_signs_verifies_wraps_and_encrypts")
+            if ok == 0 { return }
+            rsa = "{\"kty\":\"RSA\",\"key_size\":2048,\"key_ops\":[\"sign\",\"verify\",\"wrapKey\",\"unwrapKey\",\"encrypt\",\"decrypt\"],\"tags\":{\"purpose\":\"test\"}}"
+            st, b = kv("POST", "/keys/tcae-rsa/create?${V}", rsa)
+            spec.assert_eq(st, 200, "create an RSA key: ${b}")
+            spec.assert_contains(b, "\"kty\":\"RSA\"", "RSA")
+            spec.assert_contains(b, "\"e\":\"AQAB\"", "the public exponent")
+            v1 = version_of(jstr(b, "key.kid"))
+            spec.assert_true(string.length(v1) > 0, "a key version")
+            pause()
+            st, b = kv("POST", "/keys/tcae-rsa/create?${V}", rsa)
+            spec.assert_eq(st, 200, "create it again: ${b}")
+            v2 = version_of(jstr(b, "key.kid"))
+            spec.assert_true(!same(v2, v1), "a second version")
+            st, b = kv("GET", "/keys/tcae-rsa?${V}", "")
+            spec.assert_eq(st, 200, "get the latest: ${b}")
+            spec.assert_true(same(version_of(jstr(b, "key.kid")), v2), "the second version")
+            st, b = kv("GET", "/keys/tcae-rsa/${v1}?${V}", "")
+            spec.assert_eq(st, 200, "get the first version: ${b}")
+            spec.assert_true(same(version_of(jstr(b, "key.kid")), v1), "the first version")
+
+            st, b = kv("POST", "/keys/tcae-rsa/${v1}/sign?${V}", "{\"alg\":\"RS256\",\"value\":\"${DIGEST}\"}")
+            spec.assert_eq(st, 200, "sign: ${b}")
+            sig = jstr(b, "value")
+            spec.assert_true(string.length(sig) > 0, "a signature")
+            st, b = kv("POST", "/keys/tcae-rsa/${v1}/verify?${V}", "{\"alg\":\"RS256\",\"digest\":\"${DIGEST}\",\"value\":\"${sig}\"}")
+            spec.assert_eq(st, 200, "verify: ${b}")
+            spec.assert_str_eq(b, "{\"value\":true}", "the signature is good")
+            st, b = kv("POST", "/keys/tcae-rsa/${v1}/verify?${V}", "{\"alg\":\"RS256\",\"digest\":\"${OTHER_DIGEST}\",\"value\":\"${sig}\"}")
+            spec.assert_eq(st, 200, "verify against another digest: ${b}")
+            spec.assert_str_eq(b, "{\"value\":false}", "the signature does not fit it")
+
+            st, b = kv("POST", "/keys/tcae-rsa/${v1}/wrapkey?${V}", "{\"alg\":\"RSA-OAEP\",\"value\":\"${DIGEST}\"}")
+            spec.assert_eq(st, 200, "wrap a key: ${b}")
+            wrapped = jstr(b, "value")
+            st, b = kv("POST", "/keys/tcae-rsa/${v1}/unwrapkey?${V}", "{\"alg\":\"RSA-OAEP\",\"value\":\"${wrapped}\"}")
+            spec.assert_eq(st, 200, "unwrap it: ${b}")
+            spec.assert_str_eq(jstr(b, "value"), DIGEST, "the key that went in comes out")
+            st, b = kv("POST", "/keys/tcae-rsa/${v1}/encrypt?${V}", "{\"alg\":\"RSA-OAEP-256\",\"value\":\"${PLAINTEXT}\"}")
+            spec.assert_eq(st, 200, "encrypt: ${b}")
+            cipher = jstr(b, "value")
+            st, b = kv("POST", "/keys/tcae-rsa/${v1}/decrypt?${V}", "{\"alg\":\"RSA-OAEP-256\",\"value\":\"${cipher}\"}")
+            spec.assert_eq(st, 200, "decrypt: ${b}")
+            spec.assert_str_eq(jstr(b, "value"), PLAINTEXT, "the plaintext comes back")
+
+            st, b = kv("POST", "/keys/tcae-ec/create?${V}", "{\"kty\":\"EC\",\"crv\":\"P-256\",\"key_ops\":[\"sign\",\"verify\"]}")
+            spec.assert_eq(st, 200, "create an EC key: ${b}")
+            spec.assert_contains(b, "\"crv\":\"P-256\"", "P-256")
+            ev = version_of(jstr(b, "key.kid"))
+            st, b = kv("POST", "/keys/tcae-ec/${ev}/sign?${V}", "{\"alg\":\"ES256\",\"value\":\"${DIGEST}\"}")
+            spec.assert_eq(st, 200, "sign with EC: ${b}")
+            esig = jstr(b, "value")
+            st, b = kv("POST", "/keys/tcae-ec/${ev}/verify?${V}", "{\"alg\":\"ES256\",\"digest\":\"${DIGEST}\",\"value\":\"${esig}\"}")
+            spec.assert_eq(st, 200, "verify with EC: ${b}")
+            spec.assert_str_eq(b, "{\"value\":true}", "the EC signature is good")
+            st, b = kv("GET", "/keys?${V}", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "/keys/tcae-ec\"", "tcae-ec")
+            spec.assert_contains(b, "/keys/tcae-rsa\"", "tcae-rsa")
+            st, b = kv("GET", "/keys/tcae-ec/versions?${V}", "")
+            spec.assert_eq(st, 200, "versions of a one-version key: ${b}")
+            spec.assert_true(same(version_of(jstr(b, "value.0.kid")), ev), "its only version")
+            spec.assert_true(string.index_of(b, "\"kty\"") < 0, "no key material in a list")
+            finish(rec)
+        }
+
+        // PORTING (name tcae-key; 1 s pause before the rotate):
+        //   POST   /keys/tcae-key/create?api-version=7.4 {"kty":"RSA","key_size":2048,"key_ops":["sign","verify","encrypt","decrypt","wrapKey","unwrapKey"]} -> 200
+        //   PATCH  /keys/tcae-key/{{version-1}}?api-version=7.4 {"key_ops":["sign"],"tags":{"purpose":"signing only"}} -> 200, key_ops ["sign"], the tag
+        //   POST   /keys/tcae-key/{{version-1}}/wrapkey?api-version=7.4 {"alg":"RSA-OAEP","value":"aGVsbG8"} -> 500 IllegalStateException "... does not have ENCRYPT operation assigned." (a key operation its key_ops no longer allows)
+        //   POST   /keys/tcae-key/{{version-1}}/sign?api-version=7.4 {"alg":"BOGUS","value":"<DIGEST>"} -> 400 (Spring's generic body: an algorithm Key Vault does not know)
+        //   DELETE /keys/tcae-key?api-version=7.4 -> 200, with deletedDate and recoveryId https://{{request.host}}/deletedkeys/tcae-key
+        //   GET    /keys/tcae-key?api-version=7.4 -> 404
+        //   GET    /deletedkeys?api-version=7.4 -> 200, one entry
+        //   GET    /deletedkeys/tcae-key?api-version=7.4 -> 200, with the key
+        //   POST   /deletedkeys/tcae-key/recover?api-version=7.4 -> 200
+        //   GET    /keys/tcae-key?api-version=7.4 -> 200
+        //   POST   /keys/tcae-key/rotate?api-version=7.4 -> 200, a NEW version of the key ({{version-2}}), same parameters
+        //   GET    /keys/tcae-key?api-version=7.4 -> 200, the rotated version is now the latest
+        spec.it("updates a key's operations, refuses what they no longer allow, and deletes and recovers it") callback {
+            rec, ok = begin("restricts_deletes_and_recovers_a_key")
+            if ok == 0 { return }
+            st, b = kv("POST", "/keys/tcae-key/create?${V}", "{\"kty\":\"RSA\",\"key_size\":2048,\"key_ops\":[\"sign\",\"verify\",\"encrypt\",\"decrypt\",\"wrapKey\",\"unwrapKey\"]}")
+            spec.assert_eq(st, 200, "create: ${b}")
+            v1 = version_of(jstr(b, "key.kid"))
+            st, b = kv("PATCH", "/keys/tcae-key/${v1}?${V}", "{\"key_ops\":[\"sign\"],\"tags\":{\"purpose\":\"signing only\"}}")
+            spec.assert_eq(st, 200, "update: ${b}")
+            spec.assert_contains(b, "\"key_ops\":[\"sign\"]", "only sign is left")
+            spec.assert_contains(b, "\"purpose\":\"signing only\"", "the tag")
+            st, b = kv("POST", "/keys/tcae-key/${v1}/wrapkey?${V}", "{\"alg\":\"RSA-OAEP\",\"value\":\"${PLAINTEXT}\"}")
+            spec.assert_eq(st, 500, "wrap with a key that may only sign: ${b}")
+            spec.assert_contains(b, "does not have ENCRYPT operation assigned.", "not allowed")
+            st, b = kv("POST", "/keys/tcae-key/${v1}/sign?${V}", "{\"alg\":\"BOGUS\",\"value\":\"${DIGEST}\"}")
+            spec.assert_eq(st, 400, "an unknown algorithm: ${b}")
+            st, b = kv("DELETE", "/keys/tcae-key?${V}", "")
+            spec.assert_eq(st, 200, "delete: ${b}")
+            spec.assert_contains(b, "/deletedkeys/tcae-key\"", "recoveryId")
+            st, b = kv("GET", "/keys/tcae-key?${V}", "")
+            spec.assert_eq(st, 404, "a deleted key is not found: ${b}")
+            st, b = kv("GET", "/deletedkeys?${V}", "")
+            spec.assert_eq(st, 200, "deleted list: ${b}")
+            spec.assert_contains(b, "/keys/tcae-key\"", "listed as deleted")
+            st, b = kv("GET", "/deletedkeys/tcae-key?${V}", "")
+            spec.assert_eq(st, 200, "get a deleted key: ${b}")
+            st, b = kv("POST", "/deletedkeys/tcae-key/recover?${V}", "")
+            spec.assert_eq(st, 200, "recover: ${b}")
+            st, b = kv("GET", "/keys/tcae-key?${V}", "")
+            spec.assert_eq(st, 200, "it is back: ${b}")
+            pause()
+            st, b = kv("POST", "/keys/tcae-key/rotate?${V}", "")
+            spec.assert_eq(st, 200, "rotate: ${b}")
+            v2 = version_of(jstr(b, "key.kid"))
+            spec.assert_true(!same(v2, v1), "a new version")
+            st, b = kv("GET", "/keys/tcae-key?${V}", "")
+            spec.assert_eq(st, 200, "get the latest: ${b}")
+            spec.assert_true(same(version_of(jstr(b, "key.kid")), v2), "the rotated version is the latest")
+            finish(rec)
+        }
+
+        // PORTING (name tcae-cert; 1 s pause between the two creates):
+        //   POST   /certificates/tcae-cert/create?api-version=7.4
+        //          {"policy":{"issuer":{"name":"Self"},"key_props":{"exportable":true,"kty":"RSA","key_size":2048,"reuse_key":false},"secret_props":{"contentType":"application/x-pkcs12"},"x509_props":{"subject":"CN=example.com","validity_months":12,"ekus":["1.3.6.1.5.5.7.3.1"],"key_usage":["digitalSignature"]}}}
+        //          -> 202 {"cancellation_requested":false,"csr":"CERTIFICATE-REQUEST","id":"https://{{request.host}}/certificates/tcae-cert/pending","issuer":{..,"name":"Self"},"request_id":"{{version-1}}","status":"completed",..,"target":"https://{{request.host}}/certificates/tcae-cert"}
+        //   GET    /certificates/tcae-cert/pending?api-version=7.4 -> 200, status "completed" (Lowkey issues at once)
+        //   GET    /certificates/tcae-cert?api-version=7.4 -> 200, "cer":"CERTIFICATE-DER", "id":".../tcae-cert/{{version-1}}", "kid":"https://{{request.host}}/keys/tcae-cert/{{version-1}}", "sid":".../secrets/tcae-cert/{{version-1}}", "x5t", policy
+        //   GET    /certificates/tcae-cert/versions?api-version=7.4 -> 200, one entry
+        //   POST   /certificates/tcae-cert/create?api-version=7.4 (same body) -> 202, a second version ({{version-2}})
+        //   GET    /certificates/tcae-cert/{{version-1}}?api-version=7.4 -> 200
+        //   GET    /certificates/tcae-cert?api-version=7.4 -> 200, the second version is now the latest
+        //   GET    /certificates?api-version=7.4 -> 200, tcae-cert
+        //   GET    /certificates/tcae-cert/policy?api-version=7.4 -> 200, the policy: subject CN=example.com, validity_months 12, key_props, key_usage ["digitalSignature"], ekus ["1.3.6.1.5.5.7.3.1"], a default AutoRenew action at 80%
+        //   DELETE /certificates/tcae-cert?api-version=7.4 -> 200, the bundle with deletedDate and recoveryId https://{{request.host}}/deletedcertificates/tcae-cert
+        //   GET    /certificates/tcae-cert?api-version=7.4 -> 404
+        //   GET    /deletedcertificates?api-version=7.4 -> 200, one entry
+        //   POST   /deletedcertificates/tcae-cert/recover?api-version=7.4 -> 200
+        //   GET    /certificates/tcae-cert?api-version=7.4 -> 200
+        //   DELETE /deletedcertificates/tcae-cert?api-version=7.4 -> 500 "cannot be purged" (after another delete)
+        // The policy names ONE key usage and ONE extended key usage on purpose:
+        // when a policy leaves them out, Lowkey Vault fills in two of each from
+        // a set and returns them in a different order every run, which would
+        // make the tape differ between records.
+        // (A managed certificate also appears in /keys and /secrets as "managed":true
+        // entries: the case does not read them, their private key material varies.)
+        spec.it("creates a self-signed certificate, versions it, deletes and recovers it") callback {
+            rec, ok = begin("creates_versions_deletes_and_recovers_a_certificate")
+            if ok == 0 { return }
+            body = "{\"policy\":{\"issuer\":{\"name\":\"Self\"},\"key_props\":{\"exportable\":true,\"kty\":\"RSA\",\"key_size\":2048,\"reuse_key\":false},\"secret_props\":{\"contentType\":\"application/x-pkcs12\"},\"x509_props\":{\"subject\":\"CN=example.com\",\"validity_months\":12,\"ekus\":[\"1.3.6.1.5.5.7.3.1\"],\"key_usage\":[\"digitalSignature\"]}}}"
+            st, b = kv("POST", "/certificates/tcae-cert/create?${V}", body)
+            spec.assert_eq(st, 202, "create: ${b}")
+            spec.assert_contains(b, "\"status\":\"completed\"", "issued at once")
+            st, b = kv("GET", "/certificates/tcae-cert/pending?${V}", "")
+            spec.assert_eq(st, 200, "the pending operation: ${b}")
+            spec.assert_contains(b, "\"status\":\"completed\"", "completed")
+            spec.assert_contains(b, "\"name\":\"Self\"", "the self issuer")
+            st, b = kv("GET", "/certificates/tcae-cert?${V}", "")
+            spec.assert_eq(st, 200, "get: ${b}")
+            v1 = version_of(jstr(b, "id"))
+            spec.assert_true(string.length(v1) > 0, "a version")
+            spec.assert_contains(b, "\"subject\":\"CN=example.com\"", "the subject")
+            st, b = kv("GET", "/certificates/tcae-cert/versions?${V}", "")
+            spec.assert_eq(st, 200, "versions of a one-version certificate: ${b}")
+            spec.assert_true(same(version_of(jstr(b, "value.0.id")), v1), "its only version")
+            pause()
+            st, b = kv("POST", "/certificates/tcae-cert/create?${V}", body)
+            spec.assert_eq(st, 202, "create a second version: ${b}")
+            st, b = kv("GET", "/certificates/tcae-cert/${v1}?${V}", "")
+            spec.assert_eq(st, 200, "get the first version: ${b}")
+            spec.assert_true(same(version_of(jstr(b, "id")), v1), "the first version")
+            st, b = kv("GET", "/certificates/tcae-cert?${V}", "")
+            spec.assert_eq(st, 200, "get the latest: ${b}")
+            spec.assert_true(!same(version_of(jstr(b, "id")), v1), "the second version is the latest")
+            st, b = kv("GET", "/certificates?${V}", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_contains(b, "/certificates/tcae-cert\"", "tcae-cert")
+            st, b = kv("GET", "/certificates/tcae-cert/policy?${V}", "")
+            spec.assert_eq(st, 200, "policy: ${b}")
+            spec.assert_contains(b, "\"validity_months\":12", "12 months")
+            spec.assert_contains(b, "\"key_size\":2048", "a 2048-bit key")
+            st, b = kv("DELETE", "/certificates/tcae-cert?${V}", "")
+            spec.assert_eq(st, 200, "delete: ${b}")
+            spec.assert_contains(b, "/deletedcertificates/tcae-cert\"", "recoveryId")
+            st, b = kv("GET", "/certificates/tcae-cert?${V}", "")
+            spec.assert_eq(st, 404, "a deleted certificate is not found: ${b}")
+            st, b = kv("GET", "/deletedcertificates?${V}", "")
+            spec.assert_eq(st, 200, "deleted list: ${b}")
+            spec.assert_contains(b, "/certificates/tcae-cert\"", "listed as deleted")
+            st, b = kv("POST", "/deletedcertificates/tcae-cert/recover?${V}", "")
+            spec.assert_eq(st, 200, "recover: ${b}")
+            st, b = kv("GET", "/certificates/tcae-cert?${V}", "")
+            spec.assert_eq(st, 200, "it is back: ${b}")
+            st, b = kv("DELETE", "/certificates/tcae-cert?${V}", "")
+            spec.assert_eq(st, 200, "delete again: ${b}")
+            st, b = kv("DELETE", "/deletedcertificates/tcae-cert?${V}", "")
+            spec.assert_eq(st, 500, "purge is refused: ${b}")
+            spec.assert_contains(b, "The selected elements cannot be purged.", "cannot be purged")
+            finish(rec)
+        }
+
+        // PORTING: the representative errors (all logged in; the 401 is in
+        // the login case).
+        //   GET   /secrets/tcae-nope?api-version=7.4      -> 404 {"error":{"code":"com.github.nagyesta.lowkeyvault.service.exception.NotFoundException","message":"Key not found: secret:https://{{request.host}}/tcae-nope/--"}}
+        //   GET   /keys/tcae-nope?api-version=7.4         -> 404 (... key:...)
+        //   GET   /certificates/tcae-nope?api-version=7.4 -> 404 (... certificate:...)
+        //   PATCH /secrets/tcae-nope/tcae-no-such-version?api-version=7.4 {"tags":{}} -> 500, generic (a version that is not a 32-hex id; a well-formed unknown one gives 404, but it cannot be taped: a hex version in a path is normalized to a token)
+        //   PUT   /secrets/tcae-bad?api-version=7.4 {}    -> 400, Spring's generic body {"timestamp":"2000-01-01T00:00:00.000Z","status":400,"error":"Bad Request","path":"/secrets/tcae-bad"}
+        //   POST  /keys/tcae-bad/create?api-version=7.4 {"kty":"BOGUS"} -> 400, generic
+        //   GET   /secrets/tcae-x?api-version=1.0         -> 400, generic (an api-version the emulator does not serve)
+        //   GET   /secrets/tcae-x                         -> 400, generic (no api-version)
+        //   POST  /secrets/tcae-x?api-version=7.4         -> 405, generic; the Allow header (a set, in varying order) is left out
+        //   PUT   /secrets/tcae_bad_name?api-version=7.4 {"value":"x"} -> 500, generic (a name Key Vault does not allow: only letters, digits and dashes)
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses")
+            if ok == 0 { return }
+            st, b = kv("GET", "/secrets/tcae-nope?${V}", "")
+            spec.assert_eq(st, 404, "a missing secret: ${b}")
+            spec.assert_contains(b, "NotFoundException", "not found")
+            spec.assert_contains(b, "Key not found: secret:", "a secret")
+            st, b = kv("GET", "/keys/tcae-nope?${V}", "")
+            spec.assert_eq(st, 404, "a missing key: ${b}")
+            spec.assert_contains(b, "Key not found: key:", "a key")
+            st, b = kv("GET", "/certificates/tcae-nope?${V}", "")
+            spec.assert_eq(st, 404, "a missing certificate: ${b}")
+            spec.assert_contains(b, "Key not found: certificate:", "a certificate")
+            st, b = kv("PATCH", "/secrets/tcae-nope/tcae-no-such-version?${V}", "{\"tags\":{}}")
+            spec.assert_eq(st, 500, "update a malformed version: ${b}")
+            st, b = kv("PUT", "/secrets/tcae-bad?${V}", "{}")
+            spec.assert_eq(st, 400, "a secret without a value: ${b}")
+            spec.assert_contains(b, "\"error\":\"Bad Request\"", "a generic bad request")
+            st, b = kv("POST", "/keys/tcae-bad/create?${V}", "{\"kty\":\"BOGUS\"}")
+            spec.assert_eq(st, 400, "an unknown key type: ${b}")
+            st, b = kv("GET", "/secrets/tcae-x?api-version=1.0", "")
+            spec.assert_eq(st, 400, "an api-version it does not serve: ${b}")
+            st, b = kv("GET", "/secrets/tcae-x", "")
+            spec.assert_eq(st, 400, "no api-version: ${b}")
+            st, b = kv("POST", "/secrets/tcae-x?${V}", "")
+            spec.assert_eq(st, 405, "a method the endpoint does not take: ${b}")
+            spec.assert_contains(b, "\"error\":\"Method Not Allowed\"", "method not allowed")
+            st, b = kv("PUT", "/secrets/tcae_bad_name?${V}", "{\"value\":\"x\"}")
+            spec.assert_eq(st, 500, "a name Key Vault does not allow: ${b}")
+            finish(rec)
+        }
+    }
+
+    return spec.run_summary(fw)
+}

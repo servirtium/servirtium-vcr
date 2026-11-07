@@ -27,7 +27,7 @@ Classes:
   **tapes are not**: record your own locally (the suite's `LICENCE-NOTE.md`
   says how), and in playback with no tape the suite skips with a notice.
 
-Counts: 47 CLEAR, 12 BOUND, 3 DECISION (62 suites).
+Counts: 48 CLEAR, 12 BOUND, 3 DECISION (63 suites).
 
 Product names are their owners' trademarks, used here only to say which
 software a tape was recorded against.
@@ -70,6 +70,7 @@ licence file at the tag the image was built from.
 | influxdb | `influxdb:2.7.11` | MIT | influxdata/influxdb `LICENSE` (2.x) | none | CLEAR |
 | kurrentdb | `kurrentplatform/kurrentdb:26.1.1` | Kurrent License v1 (source-available, ELv2-shaped) | kurrent-io/KurrentDB `LICENSE.md`, linked from the image's Docker Hub page | no hosted/managed service for third parties; no circumventing "the license mechanisms"; recipients get "these terms" | BOUND |
 | localstack | `localstack/localstack:3.4` | Apache-2.0 | localstack/localstack `v3.4.0/LICENSE.txt` | none for what is taped (S3 only, `SERVICES=s3`). The image also bundles DynamoDB Local (`/usr/lib/localstack/dynamodb-local/latest/LICENSE.txt`, the same AWS licence as `dynamodb`), which these tapes do not exercise | CLEAR |
+| lowkeyvault | `nagyesta/lowkey-vault:7.3.48-ubi10-minimal` (app 7.3.48, Spring Boot 4.1.0) | MIT | `META-INF/LICENSE` inside `/lowkey-vault.jar` in the image ("MIT License, Copyright (c) 2021-present Istvan Zoltan Nagy"), read from the container. The image is built on Red Hat UBI 10 minimal (label `com.redhat.license_terms`: the UBI EULA, "freely redistributable") with an OpenJDK runtime (GPL-2.0 with the Classpath Exception, `/opt/java/openjdk/legal`); neither is recorded. A third-party emulator of the Azure Key Vault REST API, not Microsoft software | none | CLEAR |
 | mailpit | `axllent/mailpit:v1.20` | MIT | axllent/mailpit `LICENSE` | none | CLEAR |
 | meilisearch | `getmeili/meilisearch:v1.10.3` | MIT | meilisearch/meilisearch `v1.10.3/LICENSE` (the BUSL enterprise edition came later) | none | CLEAR |
 | milvus | `milvusdb/milvus:v2.3.9` | Apache-2.0 | milvus-io/milvus `v2.3.9/LICENSE` | none | CLEAR |
