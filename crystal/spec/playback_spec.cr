@@ -30,6 +30,14 @@ describe Servirtium do
     end
   end
 
+  it "accepts a license notice and round-trips the pretty-JSON indent" do
+    Servirtium.playback(TAPE) do |vcr|
+      vcr.add_license_notice("test notice")
+      vcr.pretty_json(2)
+      vcr.get_pretty_json.should eq(2)
+    end
+  end
+
   it "exposes the tape length and a bound port" do
     Servirtium.playback(TAPE) do |vcr|
       vcr.tape_length.should eq(1)

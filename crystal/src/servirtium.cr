@@ -80,6 +80,14 @@ lib LibVcr
   fun indent_code_blocks = aether_vcr_embed_indent_code_blocks(h : Void*) : Void
   fun emphasize_http_verbs = aether_vcr_embed_emphasize_http_verbs(h : Void*) : Void
   fun set_pretty_xml = aether_vcr_embed_set_pretty_xml(h : Void*, indent : LibC::Int) : Void
+  fun set_pretty_json = aether_vcr_embed_set_pretty_json(h : Void*, indent : LibC::Int) : Void
+  fun get_pretty_json = aether_vcr_embed_get_pretty_json(h : Void*) : LibC::Int
+  fun remove_transport_headers = aether_vcr_embed_remove_transport_headers(h : Void*) : LibC::Char*
+  fun remove_cloud_headers = aether_vcr_embed_remove_cloud_headers(h : Void*, vendor : LibC::Char*) : LibC::Char*
+  fun redact_credentials = aether_vcr_embed_redact_credentials(h : Void*) : LibC::Char*
+  fun redact_credential_header = aether_vcr_embed_redact_credential_header(h : Void*, name : LibC::Char*) : LibC::Char*
+  fun set_upstream_cafile = aether_vcr_embed_set_upstream_cafile(h : Void*, path : LibC::Char*) : LibC::Char*
+  fun add_license_notice = aether_vcr_embed_add_license_notice(h : Void*, text : LibC::Char*) : LibC::Char*
   fun clear_redactions = aether_vcr_embed_clear_redactions(h : Void*) : Void
   fun clear_unredactions = aether_vcr_embed_clear_unredactions(h : Void*) : Void
   fun clear_normalizations = aether_vcr_embed_clear_normalizations(h : Void*) : Void
@@ -381,6 +389,44 @@ module Servirtium
       LibVcr.ignore_volatile_headers(@handle)
     end
 
+    # Opt-in header presets: each registers ordinary rules, listed under the
+    # preset's name in the recording-rules footer. Raise Error on failure.
+
+    # Leave the connection-describing headers (Host, Connection, Content-Length
+    # and the other hop-by-hop headers, Accept-Encoding) out of the recording.
+    def remove_transport_headers : Nil
+      check LibVcr.remove_transport_headers(@handle), "remove_transport_headers"
+    end
+
+    # Drop a cloud vendor's per-request headers; vendor is one of "aws",
+    # "azure", "cloudflare", "fastly", "gcp".
+    def remove_cloud_headers(vendor : String) : Nil
+      check LibVcr.remove_cloud_headers(@handle, vendor), "remove_cloud_headers"
+    end
+
+    # Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+    # X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the
+    # playback handle too, as with every rule.
+    def redact_credentials : Nil
+      check LibVcr.redact_credentials(@handle), "redact_credentials"
+    end
+
+    # One more credential header with the same treatment.
+    def redact_credential_header(name : String) : Nil
+      check LibVcr.redact_credential_header(@handle, name), "redact_credential_header"
+    end
+
+    # Record mode: verify an https upstream against this PEM CA file.
+    def set_upstream_cafile(path : String) : Nil
+      check LibVcr.set_upstream_cafile(@handle, path), "set_upstream_cafile"
+    end
+
+    # Record mode: put text under "## LICENSE NOTICE" at the top of each tape;
+    # playback ignores it.
+    def add_license_notice(text : String) : Nil
+      check LibVcr.add_license_notice(@handle, text), "add_license_notice"
+    end
+
     def strict_headers=(on : Bool)
       LibVcr.set_strict_headers(@handle, on ? 1 : 0)
     end
@@ -417,6 +463,16 @@ module Servirtium
     # Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
     def pretty_xml(indent : Int32 = 2) : Nil
       LibVcr.set_pretty_xml(@handle, indent)
+    end
+
+    # Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    def pretty_json(indent : Int32 = 2) : Nil
+      LibVcr.set_pretty_json(@handle, indent)
+    end
+
+    # Current pretty-JSON indent (0 = off).
+    def get_pretty_json : Int32
+      LibVcr.get_pretty_json(@handle)
     end
 
     def clear_redactions : Nil
