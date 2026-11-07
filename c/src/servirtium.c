@@ -68,6 +68,14 @@ extern void  aether_vcr_embed_set_match_multiple(sv_handle h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(sv_handle h);
 extern void  aether_vcr_embed_emphasize_http_verbs(sv_handle h);
 extern void  aether_vcr_embed_set_pretty_xml(sv_handle h, int indent);
+extern void  aether_vcr_embed_set_pretty_json(sv_handle h, int indent);
+extern int   aether_vcr_embed_get_pretty_json(sv_handle h);
+extern char *aether_vcr_embed_remove_transport_headers(sv_handle h);
+extern char *aether_vcr_embed_remove_cloud_headers(sv_handle h, const char *vendor);
+extern char *aether_vcr_embed_redact_credentials(sv_handle h);
+extern char *aether_vcr_embed_redact_credential_header(sv_handle h, const char *name);
+extern char *aether_vcr_embed_set_upstream_cafile(sv_handle h, const char *path);
+extern char *aether_vcr_embed_add_license_notice(sv_handle h, const char *text);
 extern void  aether_vcr_embed_clear_redactions(sv_handle h);
 extern void  aether_vcr_embed_clear_unredactions(sv_handle h);
 extern void  aether_vcr_embed_clear_normalizations(sv_handle h);
@@ -424,6 +432,44 @@ void sv_emphasize_http_verbs(sv_vcr *vcr) {
 
 void sv_set_pretty_xml(sv_vcr *vcr, int indent) {
     if (vcr != NULL) aether_vcr_embed_set_pretty_xml(vcr->h, indent);
+}
+
+void sv_set_pretty_json(sv_vcr *vcr, int indent) {
+    if (vcr != NULL) aether_vcr_embed_set_pretty_json(vcr->h, indent);
+}
+
+int sv_get_pretty_json(sv_vcr *vcr) {
+    return vcr != NULL ? aether_vcr_embed_get_pretty_json(vcr->h) : 0;
+}
+
+sv_str sv_remove_transport_headers(sv_vcr *vcr) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_remove_transport_headers(vcr->h));
+}
+
+sv_str sv_remove_cloud_headers(sv_vcr *vcr, const char *vendor) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_remove_cloud_headers(vcr->h, vendor));
+}
+
+sv_str sv_redact_credentials(sv_vcr *vcr) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_redact_credentials(vcr->h));
+}
+
+sv_str sv_redact_credential_header(sv_vcr *vcr, const char *name) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_redact_credential_header(vcr->h, name));
+}
+
+sv_str sv_set_upstream_cafile(sv_vcr *vcr, const char *path) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_set_upstream_cafile(vcr->h, path));
+}
+
+sv_str sv_add_license_notice(sv_vcr *vcr, const char *text) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_add_license_notice(vcr->h, text));
 }
 
 void sv_clear_redactions(sv_vcr *vcr) {

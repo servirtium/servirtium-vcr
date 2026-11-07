@@ -140,6 +140,19 @@ int main(int argc, char **argv) {
     ck("port is bound", sv_port(vcr) > 0);
     ck("tape_length is 1", sv_tape_length(vcr) == 1);
 
+    /* ---- header presets / notices: accepted pre-traffic, "" on success ---- */
+    {
+        sv_str e = sv_add_license_notice(vcr, "test notice");
+        ck("add_license_notice returns empty on success", e.ptr == NULL || e.len == 0);
+        sv_free(e);
+        e = sv_remove_cloud_headers(vcr, "nosuchvendor");
+        ck("remove_cloud_headers rejects an unknown vendor", e.ptr != NULL && e.len > 0);
+        sv_free(e);
+        sv_set_pretty_json(vcr, 2);
+        ck("get_pretty_json reads back the indent", sv_get_pretty_json(vcr) == 2);
+        sv_set_pretty_json(vcr, 0);
+    }
+
     url = malloc(base.len + 8);
     sprintf(url, "%s/ok", base.ptr);
 

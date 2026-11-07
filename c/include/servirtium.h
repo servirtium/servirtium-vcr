@@ -187,6 +187,26 @@ void sv_strict_ignore_common_headers(sv_vcr *vcr);
  * baggage) from both sides before matching — the companion to
  * sv_strict_ignore_common_headers for tracing / correlation noise. */
 void sv_ignore_volatile_headers(sv_vcr *vcr);
+/* Opt-in header presets: each registers ordinary rules listed under the
+ * preset's name in the recording-rules footer. Strings return "" on success,
+ * else the error. */
+/* Leave the connection-describing headers (Host, Connection, Content-Length
+ * and the other hop-by-hop headers, Accept-Encoding) out of the recording. */
+sv_str sv_remove_transport_headers(sv_vcr *vcr);
+/* Drop a cloud vendor's per-request headers; vendor is one of "aws", "azure",
+ * "cloudflare", "fastly", "gcp". */
+sv_str sv_remove_cloud_headers(sv_vcr *vcr, const char *vendor);
+/* Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+ * X-Api-Key, X-Auth-Token, ...) as numbered tokens on the tape. Register on
+ * the playback handle too, as with every rule. */
+sv_str sv_redact_credentials(sv_vcr *vcr);
+/* One more credential header with the same treatment. */
+sv_str sv_redact_credential_header(sv_vcr *vcr, const char *name);
+/* Record mode: verify an https upstream against this PEM CA file. */
+sv_str sv_set_upstream_cafile(sv_vcr *vcr, const char *path);
+/* Record mode: put text under "## LICENSE NOTICE" at the top of each tape;
+ * playback ignores it. */
+sv_str sv_add_license_notice(sv_vcr *vcr, const char *text);
 void sv_set_strict_headers(sv_vcr *vcr, int on);
 /* Opt-in: a request body that differs byte-for-byte gets a second chance at
  * semantic JSON equality (key order + whitespace ignored, array order
@@ -204,6 +224,10 @@ void sv_indent_code_blocks(sv_vcr *vcr);
 void sv_emphasize_http_verbs(sv_vcr *vcr);
 /* Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. */
 void sv_set_pretty_xml(sv_vcr *vcr, int indent);
+/* Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed. */
+void sv_set_pretty_json(sv_vcr *vcr, int indent);
+/* Current pretty-JSON indent (0 = off). */
+int sv_get_pretty_json(sv_vcr *vcr);
 void sv_clear_redactions(sv_vcr *vcr);
 void sv_clear_unredactions(sv_vcr *vcr);
 void sv_clear_normalizations(sv_vcr *vcr);
