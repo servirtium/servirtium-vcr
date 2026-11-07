@@ -55,6 +55,36 @@ test "record redacts the response body before it lands on the tape" {
     try std.testing.expect(std.mem.indexOf(u8, text, "secret-token") == null);
 }
 
+test "record accepts a license notice, pretty JSON and the header presets" {
+    const allocator = std.testing.allocator;
+
+    var up = try testutil.FakeUpstream.init(allocator);
+    defer up.deinit();
+    const upstream = try up.baseUrl(allocator);
+    defer allocator.free(upstream);
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tape = try tapePathZ(allocator, &tmp, "rec.md");
+    defer allocator.free(tape);
+
+    var rec = try servirtium.Record.init(allocator, tape, upstream)
+        .addLicenseNotice("test notice")
+        .prettyJson(2)
+        .removeTransportHeaders()
+        .removeCloudHeaders("aws")
+        .redactCredentials()
+        .redactCredentialHeader("X-Vault-Token")
+        .port(0)
+        .start();
+    try poke(allocator, &rec);
+    try rec.close();
+
+    const text = try readTape(allocator, tape);
+    defer allocator.free(text);
+    try std.testing.expect(std.mem.indexOf(u8, text, "## LICENSE NOTICE") != null);
+}
+
 test "record attaches a note" {
     const allocator = std.testing.allocator;
 

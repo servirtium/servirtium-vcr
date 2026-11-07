@@ -172,7 +172,9 @@ _ = servirtium.Playback.init(allocator, tape).staticContent("/assets", "build/st
 _ = servirtium.Record.init(allocator, tape, upstream)
     .indentCodeBlocks()     // 4-space-indented blocks instead of ``` fences
     .emphasizeHttpVerbs()   // *GET* instead of bare GET in headings
-    .prettyXml(2);          // pretty-print recorded XML bodies (indent 1..16)
+    .prettyXml(2)           // pretty-print recorded XML bodies (indent 1..16)
+    .prettyJson(2)          // pretty-print recorded JSON bodies (indent 1..16)
+    .addLicenseNotice("Licence terms of the recorded service"); // under ## LICENSE NOTICE
 ```
 
 Playback tolerates either form regardless, so cross-implementation tapes load

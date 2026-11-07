@@ -24,6 +24,9 @@ noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Static-content bypass | ✅ | ✅ | `.staticContent(mount, dir)` | ✅ |
 | Untaped (incidental paths, no cursor consume) | ✅ | ✅ | `.untaped(path)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.failIfChanged()` | ✅ |
+| Header presets (transport / cloud vendor) | ✅ | ✅ | `.removeTransportHeaders()` / `.removeCloudHeaders(vendor)` | ✅ |
+| Credential redaction preset | ✅ | ✅ | `.redactCredentials()` / `.redactCredentialHeader(name)` | ✅ |
+| License notice / upstream CA file / pretty JSON | ✅ | ✅ | `.addLicenseNotice(text)` / `.upstreamCafile(path)` / `.prettyJson(n)` | ✅ notice + presets |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` / `.prettyXml(n)` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `.lastError()` / `.lastKind()` / `.lastIndex()` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |

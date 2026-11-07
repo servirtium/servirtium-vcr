@@ -81,6 +81,14 @@ pub extern "c" fn aether_vcr_embed_match_header(handle: Handle, name: [*c]const 
 pub extern "c" fn aether_vcr_embed_indent_code_blocks(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_emphasize_http_verbs(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_set_pretty_xml(handle: Handle, indent: c_int) void;
+pub extern "c" fn aether_vcr_embed_set_pretty_json(handle: Handle, indent: c_int) void;
+pub extern "c" fn aether_vcr_embed_get_pretty_json(handle: Handle) c_int;
+pub extern "c" fn aether_vcr_embed_remove_transport_headers(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_remove_cloud_headers(handle: Handle, vendor: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_redact_credentials(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_redact_credential_header(handle: Handle, name: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_set_upstream_cafile(handle: Handle, path: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_add_license_notice(handle: Handle, text: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_clear_redactions(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_normalizations(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_unredactions(handle: Handle) void;
@@ -311,6 +319,41 @@ pub const Vcr = struct {
         return takeString(self.allocator, aether_vcr_embed_static_content(self.handle, mount.ptr, dir.ptr));
     }
 
+    /// Leave the connection-describing headers (Host, Connection,
+    /// Content-Length and the other hop-by-hop headers, Accept-Encoding) out of
+    /// the recording. Returns "" on success, else the error.
+    pub fn removeTransportHeaders(self: *Vcr) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_remove_transport_headers(self.handle));
+    }
+
+    /// Drop a cloud vendor's per-request headers; `vendor` is one of "aws",
+    /// "azure", "cloudflare", "fastly", "gcp".
+    pub fn removeCloudHeaders(self: *Vcr, vendor: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_remove_cloud_headers(self.handle, vendor.ptr));
+    }
+
+    /// Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+    /// X-Api-Key, X-Auth-Token, ...) as numbered tokens.
+    pub fn redactCredentials(self: *Vcr) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_redact_credentials(self.handle));
+    }
+
+    /// One more credential header with the same treatment as `redactCredentials`.
+    pub fn redactCredentialHeader(self: *Vcr, name: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_redact_credential_header(self.handle, name.ptr));
+    }
+
+    /// Record mode: verify an https upstream against this PEM CA file.
+    pub fn setUpstreamCafile(self: *Vcr, path: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_set_upstream_cafile(self.handle, path.ptr));
+    }
+
+    /// Record mode: put `text` under "## LICENSE NOTICE" at the top of each
+    /// tape; playback ignores it.
+    pub fn addLicenseNotice(self: *Vcr, text: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_add_license_notice(self.handle, text.ptr));
+    }
+
     /// Allow live pass-through for requests matching `path` (record mode).
     pub fn untaped(self: *Vcr, path: [:0]const u8) ![]u8 {
         return takeString(self.allocator, aether_vcr_embed_untaped(self.handle, path.ptr));
@@ -371,6 +414,26 @@ fn applyBase(
     if (tls_pem) |t| try checkErr(allocator, aether_vcr_embed_set_tls_pem(handle, t.cert.ptr, t.key.ptr));
 }
 
+/// Opt-in header presets shared by both builders: each registers ordinary
+/// rules, listed under the preset's name in the recording-rules footer.
+fn applyPresets(
+    allocator: std.mem.Allocator,
+    handle: Handle,
+    remove_transport_headers: bool,
+    cloud_vendors: []const [:0]const u8,
+    redact_credentials: bool,
+    credential_headers: []const [:0]const u8,
+) !void {
+    if (remove_transport_headers) try checkErr(allocator, aether_vcr_embed_remove_transport_headers(handle));
+    for (cloud_vendors) |v| {
+        try checkErr(allocator, aether_vcr_embed_remove_cloud_headers(handle, v.ptr));
+    }
+    if (redact_credentials) try checkErr(allocator, aether_vcr_embed_redact_credentials(handle));
+    for (credential_headers) |n| {
+        try checkErr(allocator, aether_vcr_embed_redact_credential_header(handle, n.ptr));
+    }
+}
+
 /// A builder that replays a Servirtium markdown tape from disk.
 pub const Playback = struct {
     secret_resolver: ?SecretResolver = null,
@@ -385,6 +448,10 @@ pub const Playback = struct {
     match_xml_body: bool = false,
     match_multiple: bool = false,
     ignore_volatile_headers: bool = false,
+    remove_transport_headers: bool = false,
+    cloud_vendors: std.ArrayList([:0]const u8) = .empty,
+    redact_credentials: bool = false,
+    credential_headers: std.ArrayList([:0]const u8) = .empty,
     header_removals: std.ArrayList(HeaderRemoval) = .empty,
     static_content: std.ArrayList(Mount) = .empty,
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
@@ -461,6 +528,35 @@ pub const Playback = struct {
         b.substitutions.append(b.allocator, .{ .field = field, .pattern = pattern, .repl = repl, .required = false }) catch {};
         return b;
     }
+    /// Leave the connection-describing headers (Host, Connection,
+    /// Content-Length and the other hop-by-hop headers, Accept-Encoding) out
+    /// of the recording. Works in playback and record mode.
+    pub fn removeTransportHeaders(self: Playback) Playback {
+        var b = self;
+        b.remove_transport_headers = true;
+        return b;
+    }
+    /// Drop a cloud vendor's per-request headers; `vendor` is one of "aws",
+    /// "azure", "cloudflare", "fastly", "gcp". Call again for more vendors.
+    pub fn removeCloudHeaders(self: Playback, vendor: [:0]const u8) Playback {
+        var b = self;
+        b.cloud_vendors.append(b.allocator, vendor) catch {};
+        return b;
+    }
+    /// Redact the common credential headers (Authorization, Cookie,
+    /// Set-Cookie, X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register
+    /// on the playback builder too, as with every rule.
+    pub fn redactCredentials(self: Playback) Playback {
+        var b = self;
+        b.redact_credentials = true;
+        return b;
+    }
+    /// One more credential header with the same treatment as `redactCredentials`.
+    pub fn redactCredentialHeader(self: Playback, name: [:0]const u8) Playback {
+        var b = self;
+        b.credential_headers.append(b.allocator, name) catch {};
+        return b;
+    }
     /// Mark an incidental request path the VCR 404s without consuming the
     /// cursor (e.g. "/favicon.ico").
     pub fn untaped(self: Playback, path: [:0]const u8) Playback {
@@ -473,6 +569,8 @@ pub const Playback = struct {
         self.header_removals.deinit(self.allocator);
         self.static_content.deinit(self.allocator);
         self.untaped_paths.deinit(self.allocator);
+        self.cloud_vendors.deinit(self.allocator);
+        self.credential_headers.deinit(self.allocator);
         self.unredactions.deinit(self.allocator);
         self.substitutions.deinit(self.allocator);
         self.match_headers.deinit(self.allocator);
@@ -555,6 +653,7 @@ pub const Playback = struct {
         errdefer aether_vcr_embed_stop(handle);
 
         try applyBase(self.allocator, handle, self.header_removals.items, self.ignore_volatile_headers, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
+        try applyPresets(self.allocator, handle, self.remove_transport_headers, self.cloud_vendors.items, self.redact_credentials, self.credential_headers.items);
         if (self.strict_headers) aether_vcr_embed_set_strict_headers(handle, 1);
         if (self.match_json_body) aether_vcr_embed_set_match_json_body(handle, 1);
         if (self.match_xml_body) aether_vcr_embed_set_match_xml_body(handle, 1);
@@ -596,6 +695,10 @@ pub const Record = struct {
     label_str: [:0]const u8 = "",
     header_removals: std.ArrayList(HeaderRemoval) = .empty,
     ignore_volatile_headers: bool = false,
+    remove_transport_headers: bool = false,
+    cloud_vendors: std.ArrayList([:0]const u8) = .empty,
+    redact_credentials: bool = false,
+    credential_headers: std.ArrayList([:0]const u8) = .empty,
     static_content: std.ArrayList(Mount) = .empty,
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
     redactions: std.ArrayList(Replacement) = .empty,
@@ -607,6 +710,9 @@ pub const Record = struct {
     indent_code_blocks: bool = false,
     emphasize_http_verbs: bool = false,
     pretty_xml: c_int = 0,
+    pretty_json: c_int = 0,
+    upstream_cafile: ?[:0]const u8 = null,
+    license_notice: ?[:0]const u8 = null,
     fail_if_changed: bool = false,
 
     /// Begin a record fixture that forwards to `upstream_base` and writes
@@ -671,6 +777,35 @@ pub const Record = struct {
         b.tls_pem = .{ .cert = cert_pem, .key = key_pem };
         return b;
     }
+    /// Leave the connection-describing headers (Host, Connection,
+    /// Content-Length and the other hop-by-hop headers, Accept-Encoding) out
+    /// of the recording. Works in playback and record mode.
+    pub fn removeTransportHeaders(self: Record) Record {
+        var b = self;
+        b.remove_transport_headers = true;
+        return b;
+    }
+    /// Drop a cloud vendor's per-request headers; `vendor` is one of "aws",
+    /// "azure", "cloudflare", "fastly", "gcp". Call again for more vendors.
+    pub fn removeCloudHeaders(self: Record, vendor: [:0]const u8) Record {
+        var b = self;
+        b.cloud_vendors.append(b.allocator, vendor) catch {};
+        return b;
+    }
+    /// Redact the common credential headers (Authorization, Cookie,
+    /// Set-Cookie, X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register
+    /// on the playback builder too, as with every rule.
+    pub fn redactCredentials(self: Record) Record {
+        var b = self;
+        b.redact_credentials = true;
+        return b;
+    }
+    /// One more credential header with the same treatment as `redactCredentials`.
+    pub fn redactCredentialHeader(self: Record, name: [:0]const u8) Record {
+        var b = self;
+        b.credential_headers.append(b.allocator, name) catch {};
+        return b;
+    }
     /// Mark an incidental request path the VCR 404s without forwarding or
     /// recording it (e.g. "/favicon.ico").
     pub fn untaped(self: Record, path: [:0]const u8) Record {
@@ -683,6 +818,8 @@ pub const Record = struct {
         self.header_removals.deinit(self.allocator);
         self.static_content.deinit(self.allocator);
         self.untaped_paths.deinit(self.allocator);
+        self.cloud_vendors.deinit(self.allocator);
+        self.credential_headers.deinit(self.allocator);
         self.redactions.deinit(self.allocator);
         self.normalizations.deinit(self.allocator);
         self.whole_tape_redactions.deinit(self.allocator);
@@ -766,6 +903,28 @@ pub const Record = struct {
         return b;
     }
 
+    /// Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    pub fn prettyJson(self: Record, indent: c_int) Record {
+        var b = self;
+        b.pretty_json = indent;
+        return b;
+    }
+
+    /// Verify an https upstream against this PEM CA file.
+    pub fn upstreamCafile(self: Record, path: [:0]const u8) Record {
+        var b = self;
+        b.upstream_cafile = path;
+        return b;
+    }
+
+    /// Put `text` under "## LICENSE NOTICE" at the top of each tape; playback
+    /// ignores it.
+    pub fn addLicenseNotice(self: Record, text: [:0]const u8) Record {
+        var b = self;
+        b.license_notice = text;
+        return b;
+    }
+
     /// Make `close` still write the freshly recorded tape but return an error
     /// if it differs from the on-disk one (Servirtium drift contract).
     pub fn failIfChanged(self: Record) Record {
@@ -791,9 +950,13 @@ pub const Record = struct {
         errdefer aether_vcr_embed_stop(handle);
 
         try applyBase(self.allocator, handle, self.header_removals.items, self.ignore_volatile_headers, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
+        try applyPresets(self.allocator, handle, self.remove_transport_headers, self.cloud_vendors.items, self.redact_credentials, self.credential_headers.items);
         if (self.indent_code_blocks) aether_vcr_embed_indent_code_blocks(handle);
         if (self.emphasize_http_verbs) aether_vcr_embed_emphasize_http_verbs(handle);
         if (self.pretty_xml > 0) aether_vcr_embed_set_pretty_xml(handle, self.pretty_xml);
+        if (self.pretty_json > 0) aether_vcr_embed_set_pretty_json(handle, self.pretty_json);
+        if (self.upstream_cafile) |path| try checkErr(self.allocator, aether_vcr_embed_set_upstream_cafile(handle, path.ptr));
+        if (self.license_notice) |text| try checkErr(self.allocator, aether_vcr_embed_add_license_notice(handle, text.ptr));
         for (self.redactions.items) |r| {
             try checkErr(self.allocator, switch (r.operation) {
                 .literal => aether_vcr_embed_redact(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr),
