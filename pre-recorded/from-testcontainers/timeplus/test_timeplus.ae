@@ -1,0 +1,84 @@
+// Ported from testcontainers-go modules/timeplus/timeplus_test.go, by way of
+// testcontainers-ae's tests/test_timeplus.ae (moved here 2026-11-07).
+//
+// A real timeplusd: GET /timeplusd/ping at http_endpoint answers 200, and a
+// SELECT 1 posted to the ClickHouse-style HTTP interface returns 1.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start and the endpoint's shape are checked only when live, since
+// playback starts no container. The query is the POST body (plain SQL, with
+// default_format=TabSeparated in the URL).
+
+import std.spec
+import std.string
+import std.http.client
+import std.tcp
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.timeplus
+
+const IMAGE = "timeplus/timeplusd:2.3.37"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_do(method: string, url: string, hdrs: string[], body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run, never sent back: each query's id (the
+    // x-timeplus-query-id response header).
+    servirtium.collapse("x-timeplus-query-id: ${servirtium.UUID}", "x-timeplus-query-id: 00000000-0000-0000-0000-000000000000")
+
+    spec.describe(fw, "modules/timeplus") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves HTTP (TestTimeplus/http endpoint)") callback {
+            url = ""
+            if servirtium.live() == 1 {
+                c, err = timeplus.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "timeplusd starts")
+                if err != "" { return }
+                u, uerr = timeplus.http_endpoint(c)
+                spec.assert_ok(uerr, "http endpoint")
+                spec.assert_true(string.starts_with(u, "http://") == 1, "an http:// URL: ${u}")
+                url = u
+            }
+            base, rec = servirtium.recording("timeplus", "serves_http", url)
+            st, _b, herr = http_do("GET", "${base}/timeplusd/ping", [], "", "")
+            spec.assert_ok(herr, "GET ping")
+            spec.assert_eq(st, 200, "ping status")
+            qs, qb, qerr = http_do("POST", "${base}/?default_format=TabSeparated", [], "SELECT 1", "application/json")
+            spec.assert_ok(qerr, "POST SELECT 1")
+            spec.assert_eq(qs, 200, "query status: ${qb}")
+            spec.assert_str_eq(string.trim(qb), "1", "SELECT 1 is 1")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

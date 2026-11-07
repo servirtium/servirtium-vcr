@@ -1,0 +1,101 @@
+// Ported from testcontainers-go modules/redpanda/redpanda_test.go (TestRedpanda,
+// TestRedpandaWithAuthentication's service account, TestRedpandaWithAutoCreateTopics),
+// by way of testcontainers-ae's tests/test_redpanda.ae (moved here 2026-11-07).
+//
+// A real Redpanda, started through the wrapper entrypoint and the node config
+// copied in once the Kafka port is mapped. Checked over HTTP: the Admin API
+// says it is ready, the Schema Registry registers a schema and lists its
+// subject, and a service account created by new_service_account shows up in
+// the Admin API's user list. The Kafka seed broker is host:port.
+//
+// PORTING: the HTTP conversations are in the tapes beside this file: the
+// Admin API's (`<case>`: ready, then the user list) and the Schema Registry's
+// (`<case>_schema_registry`: it is a different port of the same container).
+// The container start and the Kafka seed broker (the binary protocol, never
+// exercised here) are checked only when live, since playback starts no
+// container. The service account's password never goes over HTTP.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.redpanda
+
+const IMAGE = "docker.io/redpandadata/redpanda:v25.2.4"   // the Hub name of Go's docker.redpanda.com image (same image; that registry rate-limits)
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn http(method: string, url: string, body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return st, out, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/redpanda") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the Admin API and Schema Registry (TestRedpanda)") callback {
+            admin = ""
+            sr = ""
+            if servirtium.live() == 1 {
+                rp, err = redpanda.run(IMAGE) {
+                    new_service_account("tcae-user", "tcae-pass")
+                    superusers(["tcae-user"])
+                }
+                if rp != null { testing.cleanup_container(rp.container) }
+                spec.assert_ok(err, "redpanda starts")
+                if err != "" { return }
+                broker, berr = redpanda.kafka_seed_broker(rp)
+                spec.assert_ok(berr, "seed broker")
+                spec.assert_contains(broker, "localhost:", "host:port: ${broker}")
+                a, aerr = redpanda.admin_api_address(rp)
+                spec.assert_ok(aerr, "admin address")
+                admin = a
+                s, srerr = redpanda.schema_registry_address(rp)
+                spec.assert_ok(srerr, "schema registry address")
+                sr = s
+            }
+            abase, arec = servirtium.recording("redpanda", "serves_the_admin_api_and_schema_registry", admin)
+            st, body, gerr = http("GET", "${abase}/v1/status/ready", "", "")
+            spec.assert_ok(gerr, "GET /v1/status/ready")
+            spec.assert_eq(st, 200, "the Admin API answers")
+            spec.assert_contains(body, "ready", "the node is ready")
+            st1, users, uerr = http("GET", "${abase}/v1/security/users", "", "")
+            spec.assert_ok(uerr, "GET /v1/security/users")
+            spec.assert_eq(st1, 200, "users listed")
+            spec.assert_contains(users, "tcae-user", "the service account was created")
+            servirtium.end_recording(arec)
+
+            sbase, srec = servirtium.recording("redpanda", "serves_the_admin_api_and_schema_registry_schema_registry", sr)
+            schema = "{\"schema\": \"{\\\"type\\\": \\\"string\\\"}\"}"
+            st2, rbody, perr = http("POST", "${sbase}/subjects/tcae-value/versions", schema, "application/vnd.schemaregistry.v1+json")
+            spec.assert_ok(perr, "register a schema")
+            spec.assert_eq(st2, 200, "schema registered: ${rbody}")
+            _st3, subjects, lerr = http("GET", "${sbase}/subjects", "", "")
+            spec.assert_ok(lerr, "GET /subjects")
+            spec.assert_contains(subjects, "tcae-value", "the subject is listed")
+            servirtium.end_recording(srec)
+        }
+    }
+    return spec.run_summary(fw)
+}

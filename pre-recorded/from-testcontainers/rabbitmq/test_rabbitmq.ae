@@ -1,0 +1,261 @@
+// Ported from testcontainers-go modules/rabbitmq/rabbitmq_test.go, by way of
+// testcontainers-ae's tests/test_rabbitmq.ae (moved here 2026-11-07).
+//
+// A real RabbitMQ: the AMQP 0-9-1 protocol header is sent to the mapped AMQP
+// port and the broker's Connection.Start frame is read back, and the
+// management HTTP API is called with the module's credentials (the
+// right ones answer 200, guest/guest on a custom-credentials broker 401).
+// Not ported: the Go tests that need a client library (amqp091-go) to
+// publish and consume, and the TLS connection (needs generated certificates);
+// ssl() is checked on a created, not started, container (config and files).
+//
+// PORTING: only the management HTTP API (port 15672) is on the tapes beside
+// this file. The AMQP handshake is a raw TCP exchange, and the URL shapes, the
+// rendered node config and the copied TLS files are container inspection:
+// all of those run only live and a port that replays the tapes skips them.
+// The management API starts a moment after the broker, so the test polls
+// live, before recording, until it answers with the right credentials; the
+// tapes hold only the real requests. Credentials are HTTP Basic: guest:guest
+// is on the tapes as REDACTED[guest], guest:wrong as
+// REDACTED[guest-wrong-password], tcae-user:tcae-s3cret as
+// REDACTED[tcae-user]; replay matches them literally, which is how the 401s
+// stay distinct from the 200s.
+
+import std.spec
+import std.string
+import std.tcp
+import std.bytes
+import std.encoding
+import std.json
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.rabbitmq
+
+const IMAGE = "rabbitmq:3.12.11-management-alpine"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// GET url with basic auth: (status, body, error).
+fn http_get(url: string, user: string, password: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 10s)
+    cred = encoding.base64_encode_padded(string.bytes("${user}:${password}"))
+    client.set_header(req, "Authorization", "Basic ${cred}")
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return status, body, ""
+}
+
+// A recording shows "Authorization: Basic REDACTED[<label>]"; playback still
+// matches the real header, so a wrong password stays distinct from a right one.
+fn redact_basic(user: string, pw: string, label: string) {
+    secret = encoding.base64_encode_padded(string.bytes("${user}:${pw}"))
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${secret}", "Basic REDACTED[${label}]")
+}
+
+// The management API starts a moment after the broker: poll it live, directly
+// (not through a recorder), until it answers 200 for these credentials.
+fn await_management(base: string, user: string, password: string) {
+    status = 0
+    tries = 0
+    while tries < 300 {
+        status, _b, err = http_get("${base}/api/whoami", user, password)
+        if err == "" && status == 200 { return }
+        tries = tries + 1
+        sleep(100)
+    }
+    spec.assert_true(false, "the management API answers 200 (last status ${status})")
+}
+
+// Send the AMQP 0-9-1 protocol header and read Connection.Start: returns the
+// frame's (type, channel, class, method, version major, minor) as text.
+fn amqp_handshake(rc: *rabbitmq.RabbitMQContainer) -> (string, string) {
+    h, _ = tc.host(rc.container)
+    port, perr = tc.mapped_port(rc.container, rabbitmq.AMQP_PORT)
+    if perr != "" { return "", perr }
+    sock, cerr = tcp.connect(h, port)
+    if cerr != "" { return "", cerr }
+    hdr = bytes.new(8)
+    bytes.set(hdr, 0, 65)
+    bytes.set(hdr, 1, 77)
+    bytes.set(hdr, 2, 81)
+    bytes.set(hdr, 3, 80)
+    bytes.set(hdr, 4, 0)
+    bytes.set(hdr, 5, 0)
+    bytes.set(hdr, 6, 9)
+    bytes.set(hdr, 7, 1)
+    _, werr = tcp.write_all(sock, bytes.view(hdr))
+    bytes.free(hdr)
+    if werr != "" { tcp.tcp_close(sock); return "", werr }
+    buf = bytes.new(512)
+    got = 0
+    tries = 0
+    while got < 13 && tries < 100 {
+        n, rerr = tcp.read_into(sock, bytes.capacity_view(buf))
+        if rerr != "" && rerr != "timeout" { break }
+        if n > 0 {
+            // keep what the first read gave (Connection.Start fits in one segment)
+            got = got + n
+            bytes.set_length(buf, got)
+            break
+        }
+        tries = tries + 1
+    }
+    tcp.tcp_close(sock)
+    if got < 13 { bytes.free(buf); return "", "short reply: ${got} bytes" }
+    v = bytes.view(buf)
+    out = "${v[0]},${v[1] * 256 + v[2]},${v[7] * 256 + v[8]},${v[9] * 256 + v[10]},${v[11]}.${v[12]}"
+    bytes.free(buf)
+    return out, ""
+}
+
+fn assert_broker_speaks_amqp(rc: *rabbitmq.RabbitMQContainer) {
+    frame, err = amqp_handshake(rc)
+    spec.assert_ok(err, "AMQP handshake")
+    // method frame (1) on channel 0, class 10 (connection) method 10 (start), AMQP 0.9
+    spec.assert_str_eq(frame, "1,0,10,10,0.9", "the broker answers the protocol header with Connection.Start")
+}
+
+fn queue_free(rc: *rabbitmq.RabbitMQContainer) {
+    testing.cleanup_container(rc.container)
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The Basic credentials the cases send are kept off the tapes.
+    redact_basic("guest", "guest", "guest")
+    redact_basic("guest", "wrong", "guest-wrong-password")
+    redact_basic("tcae-user", "tcae-s3cret", "tcae-user")
+    // What differs run to run in /api/overview, never sent back: the node and
+    // cluster name (rabbit@<container hostname>), the scheduler counts in the
+    // Erlang banner (the host's CPUs), and the live object totals and event
+    // queue (the AMQP handshake's connection may or may not have been counted
+    // yet).
+    servirtium.collapse("rabbit@[0-9a-f]{12}", "rabbit@node")
+    servirtium.collapse("\\[smp:[0-9:]+\\] \\[ds:[0-9:]+\\]", "[smp:1:1] [ds:1:1:10]")
+    servirtium.collapse("\"object_totals\":\\{[^}]*\\}", "\"object_totals\":{}")
+    servirtium.collapse("\"statistics_db_event_queue\":[0-9]+", "\"statistics_db_event_queue\":0")
+
+    spec.describe(fw, "modules/rabbitmq") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("speaks AMQP and answers the management API as guest (TestRunContainer_connectUsingAmqp)") callback {
+            mgmt = ""
+            if servirtium.live() == 1 {
+                rc, err = rabbitmq.run(IMAGE)
+                if rc != null { queue_free(rc) }
+                spec.assert_ok(err, "rabbitmq starts")
+                if err != "" { return }
+                url, uerr = rabbitmq.amqp_url(rc)
+                spec.assert_ok(uerr, "amqp url")
+                spec.assert_true(string.starts_with(url, "amqp://guest:guest@") == 1, "amqp URL carries the default credentials: ${url}")
+                assert_broker_speaks_amqp(rc)
+                m, merr = rabbitmq.http_url(rc)
+                spec.assert_ok(merr, "management url")
+                await_management(m, "guest", "guest")
+                mgmt = m
+            }
+            base, rec = servirtium.recording("rabbitmq", "speaks_amqp_and_answers_the_management_api_as_guest", mgmt)
+            status, body, herr = http_get("${base}/api/overview", "guest", "guest")
+            spec.assert_ok(herr, "management API")
+            spec.assert_eq(status, 200, "management API with guest/guest")
+            spec.assert_contains(body, "rabbitmq_version", "an overview document")
+            bad, _, _ = http_get("${base}/api/overview", "guest", "wrong")
+            spec.assert_eq(bad, 401, "management API with a wrong password")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("applies custom credentials (TestRunContainer_withCustomCredentials)") callback {
+            mgmt = ""
+            if servirtium.live() == 1 {
+                rc, err = rabbitmq.run(IMAGE) {
+                    admin_username("tcae-user")
+                    admin_password("tcae-s3cret")
+                }
+                if rc != null { queue_free(rc) }
+                spec.assert_ok(err, "rabbitmq starts")
+                if err != "" { return }
+                spec.assert_str_eq(rc.admin_username, "tcae-user", "the struct carries the user")
+                url, _ = rabbitmq.amqp_url(rc)
+                spec.assert_true(string.starts_with(url, "amqp://tcae-user:tcae-s3cret@") == 1, "amqp URL: ${url}")
+                assert_broker_speaks_amqp(rc)
+                m, merr = rabbitmq.http_url(rc)
+                spec.assert_ok(merr, "management url")
+                await_management(m, "tcae-user", "tcae-s3cret")
+                mgmt = m
+            }
+            base, rec = servirtium.recording("rabbitmq", "applies_custom_credentials", mgmt)
+            ok, body, herr = http_get("${base}/api/whoami", "tcae-user", "tcae-s3cret")
+            spec.assert_ok(herr, "management API")
+            spec.assert_eq(ok, 200, "the custom user is accepted")
+            spec.assert_contains(body, "tcae-user", "whoami names the custom user")
+            guest, _, _ = http_get("${base}/api/whoami", "guest", "guest")
+            spec.assert_eq(guest, 401, "guest is gone")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "shapes the URLs (AmqpURL, AmqpsURL, HttpURL, HttpsURL)", "no container in playback") callback {
+            rc, err = rabbitmq.run(IMAGE)
+            if rc != null { queue_free(rc) }
+            spec.assert_ok(err, "rabbitmq starts")
+            if err == "" {
+                a, _ = rabbitmq.amqps_url(rc)
+                spec.assert_true(string.starts_with(a, "amqps://guest:guest@localhost:") == 1, "amqps URL: ${a}")
+                h, _ = rabbitmq.http_url(rc)
+                spec.assert_true(string.starts_with(h, "http://localhost:") == 1, "http URL: ${h}")
+                hs, _ = rabbitmq.https_url(rc)
+                spec.assert_true(string.starts_with(hs, "https://localhost:") == 1, "https URL: ${hs}")
+                p, _ = tc.mapped_port(rc.container, rabbitmq.HTTP_PORT)
+                spec.assert_true(string.ends_with(h, ":${p}") == 1, "the http URL uses the mapped management port")
+            }
+        }
+
+        spec.it_when(servirtium.live(), "renders the node config and copies the TLS files (TestRunContainer_connectUsingAmqps)", "no container in playback") callback {
+            pem = "rabbitmq/testdata/placeholder.pem"
+            rc, err = rabbitmq.run(IMAGE) {
+                admin_username("alice")
+                admin_password("pw")
+                ssl(pem, pem, pem, rabbitmq.SSL_VERIFY_PEER, true, 8)
+                tc.no_start()
+            }
+            if rc != null { queue_free(rc) }
+            spec.assert_ok(err, "rabbitmq is created")
+            if err == "" {
+                conf, cerr = tc.copy_file_from_container(rc.container, rabbitmq.CUSTOM_CONF_PATH)
+                spec.assert_ok(cerr, "the config file is in the container")
+                spec.assert_contains(conf, "default_user = alice", "credentials rendered")
+                spec.assert_contains(conf, "default_pass = pw", "credentials rendered")
+                spec.assert_contains(conf, "listeners.ssl.default = 5671", "SSL listener")
+                spec.assert_contains(conf, "ssl_options.verify = verify_peer", "verification mode")
+                spec.assert_contains(conf, "ssl_options.fail_if_no_peer_cert = true", "fail if no cert")
+                spec.assert_contains(conf, "ssl_options.depth = 8", "depth")
+                cert, kerr = tc.copy_file_from_container(rc.container, "/etc/rabbitmq/rabbitmq_key.pem")
+                spec.assert_ok(kerr, "the key file is in the container")
+                spec.assert_contains(cert, "placeholder", "it is the file we gave")
+                doc, ierr = tc.inspect(rc.container)
+                spec.assert_ok(ierr, "inspect")
+                cfg, _ = json.object_get(doc, "Config")
+                ev, _ = json.object_get(cfg, "Env")
+                envs, _ = json.encode(ev)
+                spec.assert_false(string.contains(envs, "TCAE_") == 1, "no module setting in the container's env: ${envs}")
+                spec.assert_false(string.contains(envs, "ssl_options") == 1, "the SSL fragment is only in the config file")
+                json.free(doc)
+            }
+        }
+    }
+    return spec.run_summary(fw)
+}

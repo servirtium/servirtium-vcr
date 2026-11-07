@@ -1,0 +1,149 @@
+// Ported from testcontainers-go modules/activemq/activemq_test.go, by way of
+// testcontainers-ae's tests/test_activemq.ae (moved here 2026-11-07).
+//
+// A real ActiveMQ Classic: the broker URL speaks OpenWire (the broker's
+// WireFormatInfo, "ActiveMQ" magic, is read back over std.tcp), and the web
+// console URL's Jolokia REST API answers with the default admin credentials and is
+// refused without. Not ported: the Go test's JMS/STOMP send and receive.
+//
+// PORTING: only the web console's Jolokia REST API is on the tape beside this
+// file. The OpenWire greeting is a raw TCP exchange, and the module's fields
+// and URL shapes are container inspection: those run only live and a port that
+// replays the tape skips them. The console (Jetty) comes up a moment after
+// the broker, so the test polls live, before recording, until Jolokia answers
+// 200; the tape holds the two real requests. The Origin header is required by
+// Jolokia (it checks it), so a replaying client must send it. The admin
+// credential is HTTP Basic admin:admin, on the tape as REDACTED[admin]; the
+// second request sends none and is refused with 401.
+
+import std.spec
+import std.string
+import std.tcp
+import std.bytes
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.activemq
+
+const IMAGE = "apache/activemq-classic:5.18.7"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// (status, body, error); headers are "Name: value" strings.
+fn call_api(method: string, url: string, headers: string[], body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in headers {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+// The first bytes the broker sends: 4-byte size, command type 1
+// (WireFormatInfo), then the magic "ActiveMQ". Returns the magic, or an error.
+fn openwire_magic(hostport: string) -> (string, string) {
+    colon = string.index_of(hostport, ":")
+    port, _ = string.to_int(string.substring(hostport, colon + 1, string.length(hostport)))
+    sock, cerr = tcp.connect(string.substring(hostport, 0, colon), port)
+    if cerr != "" { return "", cerr }
+    buf = bytes.new(256)
+    got = 0
+    tries = 0
+    while got < 13 && tries < 100 {
+        n, rerr = tcp.read_into(sock, bytes.capacity_view(buf))
+        if rerr != "" && rerr != "timeout" { break }
+        if n > 0 { got = got + n; bytes.set_length(buf, got); break }
+        tries = tries + 1
+    }
+    tcp.tcp_close(sock)
+    if got < 13 { bytes.free(buf); return "", "short reply: ${got} bytes" }
+    v = bytes.view(buf)
+    out = ""
+    if v[4] == 1 && v[5] == 65 && v[6] == 99 && v[7] == 116 && v[8] == 105 && v[9] == 118 && v[10] == 101 && v[11] == 77 && v[12] == 81 { out = "ActiveMQ" }
+    bytes.free(buf)
+    return out, ""
+}
+
+// The console (Jetty) comes up a moment after the broker the module waits for:
+// poll Jolokia live, directly (not through a recorder), until it answers 200.
+fn await_console(url: string, headers: string[]) {
+    status = 0
+    tries = 0
+    while tries < 120 {
+        status, _b, err = call_api("GET", "${url}/api/jolokia/version", headers, "", "")
+        if err == "" && status == 200 { return }
+        tries = tries + 1
+        sleep(500)
+    }
+    spec.assert_true(false, "the console answers 200 (last status ${status})")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The admin credential (base64 of admin:admin) stays off the tape; no wrong
+    // credential is tried, so a labelled literal is enough.
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic YWRtaW46YWRtaW4=", "Basic REDACTED[admin]")
+    // What differs run to run, never sent back: the response's Expires date,
+    // Jolokia's timestamp, and the agent id and multicast group/port it
+    // derives from the container's IP address.
+    servirtium.collapse("Expires: [A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9:]{8} GMT", "Expires: Sat, 01 Jan 2000 00:00:00 GMT")
+    servirtium.collapse("\"timestamp\":[0-9]+", "\"timestamp\":946684800")
+    servirtium.collapse("\"agentId\":\"[^\"]*\"", "\"agentId\":\"AGENT-ID\"")
+    servirtium.collapse("\"multicastGroup\":\"[^\"]*\"", "\"multicastGroup\":\"239.192.0.1\"")
+    servirtium.collapse("\"multicastPort\":\"[0-9]+\"", "\"multicastPort\":\"24884\"")
+
+    spec.describe(fw, "modules/activemq") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves OpenWire and the web console (TestActiveMQ)") callback {
+            console = ""
+            // "admin:admin" in base64
+            auth = ["Authorization: Basic YWRtaW46YWRtaW4=", "Origin: http://localhost"]
+            if servirtium.live() == 1 {
+                a, err = activemq.run(IMAGE)
+                if a != null { testing.cleanup_container(a.container) }
+                spec.assert_ok(err, "activemq starts")
+                if err != "" { return }
+                spec.assert_str_eq(activemq.admin_user(a), "admin", "admin user")
+                burl, berr = activemq.broker_url(a)
+                spec.assert_ok(berr, "broker url")
+                spec.assert_true(string.starts_with(burl, "tcp://localhost:") == 1, "tcp:// URL: ${burl}")
+                magic, merr = openwire_magic(string.substring(burl, 6, string.length(burl)))
+                spec.assert_ok(merr, "OpenWire greeting")
+                spec.assert_str_eq(magic, "ActiveMQ", "the broker's WireFormatInfo")
+                curl, cerr = activemq.web_console_url(a)
+                spec.assert_ok(cerr, "console url")
+                spec.assert_true(string.starts_with(curl, "http://localhost:") == 1, "http:// URL: ${curl}")
+                await_console(curl, auth)
+                console = curl
+            }
+            base, rec = servirtium.recording("activemq", "serves_openwire_and_the_web_console", console)
+            s, b, e = call_api("GET", "${base}/api/jolokia/version", auth, "", "")
+            spec.assert_ok(e, "GET jolokia version")
+            spec.assert_eq(s, 200, "admin credentials accepted")
+            spec.assert_contains(b, "\"status\":200", "Jolokia status")
+            ns, _, ne = call_api("GET", "${base}/api/jolokia/version", ["Origin: http://localhost"], "", "")
+            spec.assert_ok(ne, "unauthenticated call")
+            spec.assert_eq(ns, 401, "no credentials: refused")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

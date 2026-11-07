@@ -59,6 +59,27 @@ reference for what each case does.
 | `toxiproxy` | 1 (2 tapes) | `ghcr.io/shopify/toxiproxy:2.12.0` |
 | `grafana_lgtm` | 1 (5 tapes) | `grafana/otel-lgtm:0.6.0` |
 | `nginx` | 4 (5 tapes) | `nginx:1.25` |
+| `arangodb` | 1 | `arangodb:3.11.5` |
+| `couchbase` | 1 (+1 live only) | `couchbase:community-7.1.1` |
+| `clickhouse` | 1 | `clickhouse/clickhouse-server:23.3.8.21-alpine` |
+| `cratedb` | 1 | `crate:5.7` |
+| `databend` | 1 | `datafuselabs/databend:v1.2.615` |
+| `influxdb` | 1 (+1 live only) | `influxdb:2.7.11` |
+| `neo4j` | 2 | `neo4j:4.4` |
+| `orientdb` | 1 | `orientdb:3.2` |
+| `questdb` | 1 | `questdb/questdb:9.0.0` |
+| `ravendb` | 1 | `ravendb/ravendb:6.0-ubuntu-latest` |
+| `surrealdb` | 3 (+1 live only) | `surrealdb/surrealdb:v1.1.1` |
+| `trino` | 1 | `trinodb/trino:435` |
+| `presto` | 1 | `prestodb/presto:0.286` |
+| `timeplus` | 1 | `timeplus/timeplusd:2.3.37` |
+| `kurrentdb` | 1 | `kurrentplatform/kurrentdb:26.1.1` |
+| `etcd` | 4 (6 tapes; +1 live only) | `gcr.io/etcd-development/etcd:v3.5.14` |
+| `rabbitmq` | 2 (+2 live only) | `rabbitmq:3.12.11-management-alpine` |
+| `activemq` | 1 | `apache/activemq-classic:5.18.7` |
+| `artemis` | 1 | `apache/activemq-artemis:2.30.0-alpine` |
+| `pulsar` | 1 | `apachepulsar/pulsar:4.0.9` |
+| `redpanda` | 1 (2 tapes) | `docker.io/redpandadata/redpanda:v25.2.4` |
 
 ## A tape is a test scenario you can keep
 
@@ -164,6 +185,27 @@ Per suite (registered at the top of its `main`):
 | toxiproxy | | | | `X-Toxiproxy-Request-Id` |
 | grafana_lgtm | | `createdAt` / `updatedAt` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | nginx | | | | `Last-Modified`, `ETag` |
+| arangodb | | | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| couchbase | | 32-hex ids, the container IP, node ports, memory figures, `uptime`, `nodeHash`, the `componentsVersion` object, `interestingStats` / `basicStats` | `Authorization: Basic`, as `REDACTED[admin]` | |
+| clickhouse | | the server's display name, `X-ClickHouse-Query-Id` | each `X-ClickHouse-Key`, as `REDACTED[<label>]` | |
+| cratedb | | the node's `name`, `duration` | | |
+| databend | | query and session UUIDs, the node id, RFC 3339 times, `running_time_ms` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| influxdb | | 16-hex ids, RFC 3339 times | `Authorization: Token`, as `REDACTED[admin-token]` | |
+| neo4j | | | | |
+| orientdb | | the whole `/server` status body | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| questdb | | | | |
+| ravendb | | RFC 3339 times | | |
+| surrealdb | | per-statement `"time"` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| trino | | `uptime`, the query id, the `nextUri` token | | |
+| presto | | `uptime` | | |
+| timeplus | | `x-timeplus-query-id` | | |
+| kurrentdb | | | | |
+| etcd | | the cluster id, member ids, the Raft term | | |
+| rabbitmq | | `rabbit@<hostname>`, scheduler counts, `object_totals`, `statistics_db_event_queue` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| activemq | | `Expires`, Jolokia's `timestamp`, `agentId`, `multicastGroup` / `multicastPort` | `Authorization: Basic`, as `REDACTED[admin]` | |
+| artemis | | | `Authorization: Basic`, as `REDACTED[me]` | |
+| pulsar | | | | |
+| redpanda | | | | |
 
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
@@ -232,6 +274,23 @@ it is on the tape, and playback is plain HTTP.
   image.
 - **Floating tags:** `solr:9` and `papercut-smtp:latest` can change under a
   re-record.
+
+**Databases and brokers:**
+- **HTTP beside a binary protocol.** Neo4j (Bolt), RabbitMQ (AMQP),
+  ActiveMQ (OpenWire), Artemis (STOMP) and Pulsar (pulsar://) are checked
+  over their binary protocol live only; the tapes hold their HTTP side:
+  Cypher over HTTP, the management and admin APIs, Jolokia, and Artemis's
+  console (a single redirect).
+- **Polled live until ready, then recorded:** KurrentDB (until the node is
+  `leader`), etcd, RabbitMQ's management API, ActiveMQ's Jolokia.
+- **etcd:** a case reading through several nodes records a tape per node,
+  `<case>`, `<case>_node2`, `<case>_node3`.
+- **Order that changes run to run, again:** Couchbase's `componentsVersion`
+  object and OrientDB's whole `/server` report are collapsed (see the
+  ordering note above).
+- **Solace is not here:** its image needs `ulimit nofile=1048576`, which a
+  rootless Podman machine refuses; it can be recorded on Docker or a
+  rootful Podman machine.
 
 Checks with no HTTP in them (a module's defaults, `tc.exec`, inspecting the
 container, a refused option) run only live, and are skipped in playback.

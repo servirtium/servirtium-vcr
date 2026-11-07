@@ -1,0 +1,115 @@
+// Ported from testcontainers-go modules/couchbase/couchbase_test.go
+// (TestCouchbaseWithCommunityContainer, TestWithCredentials,
+// TestWithCredentials_Password_LessThan_6), by way of testcontainers-ae's
+// tests/test_couchbase.ae (moved here 2026-11-07).
+//
+// A real Couchbase community edition with a bucket: the cluster REST API
+// (/pools, with the admin credentials the block set) answers, and the bucket
+// the module created is listed by /pools/default/buckets. A password shorter
+// than six characters is refused before anything starts.
+//
+// Image: amd64 only, run under emulation (slow, a couple of minutes).
+//
+// PORTING: the HTTP conversation is in the tape beside this file (the
+// cluster management API on port 8091); the container start, the module's
+// own fields and the refused short password are checked only when live,
+// since playback starts no container. The admin credential is sent as HTTP
+// Basic and appears on the tape as REDACTED[admin].
+
+import std.spec
+import std.string
+import std.http.client
+import std.encoding
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.couchbase
+
+const IMAGE = "couchbase:community-7.1.1"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn get(url: string, user: string, pw: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_header(req, "Authorization", "Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}")
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return st, body, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The admin credential the case sends is kept off the tape; no wrong
+    // credential is tried, so a labelled literal is enough.
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${encoding.base64_encode_padded(string.bytes("admin:secret1"))}", "Basic REDACTED[admin]")
+    // What differs run to run, none of it sent back: the cluster's and
+    // bucket's 32-hex ids, the container's IP, the node's randomised ports,
+    // its memory figures, uptime and hash, and the Erlang component versions
+    // (a map whose key order changes from one run to the next).
+    servirtium.collapse("[0-9a-f]{32}", "00000000000000000000000000000000")
+    servirtium.collapse("10\\.[0-9]+\\.[0-9]+\\.[0-9]+", "10.0.0.1")
+    servirtium.collapse("\"componentsVersion\":\\{[^}]*\\}", "\"componentsVersion\":{}")
+    servirtium.collapse("\"ports\":\\{\"kv\":[0-9]+,\"capiSSL\":[0-9]+,\"capi\":[0-9]+,\"mgmtSSL\":[0-9]+,\"mgmt\":[0-9]+\\}", "\"ports\":{}")
+    for key in ["nodeHash", "mem_free", "memoryFree", "memoryTotal", "mem_total", "mem_limit"] {
+        servirtium.collapse("\"${key}\":[0-9]+", "\"${key}\":0")
+    }
+    // The bucket's statistics fill in as it warms up (an empty object on one
+    // run, figures on the next).
+    servirtium.collapse("\"interestingStats\":\\{[^}]*\\}", "\"interestingStats\":{}")
+    servirtium.collapse("\"basicStats\":\\{[^}]*\\}", "\"basicStats\":{}")
+    servirtium.collapse("\"uptime\":\"[0-9]+\"", "\"uptime\":\"0\"")
+
+    spec.describe(fw, "modules/couchbase") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it_when(servirtium.live(), "refuses a short admin password (TestWithCredentials_Password_LessThan_6)", "no container in playback") callback {
+            c, err = couchbase.run(IMAGE) { admin_credentials("admin", "12345") }
+            spec.assert_true(c == null, "no container")
+            spec.assert_contains(err, "admin password must be at least 6 characters long", "the error says why")
+        }
+
+        spec.it("initialises the cluster and creates a bucket (TestCouchbaseWithCommunityContainer)") callback {
+            mgmt = ""
+            if servirtium.live() == 1 {
+                c, err = couchbase.run(IMAGE) {
+                    bucket("tcae")
+                    admin_credentials("admin", "secret1")
+                }
+                if c != null { testing.cleanup_container(c.container) }
+                spec.assert_ok(err, "couchbase starts and initialises")
+                if err != "" { return }
+                url, uerr = couchbase.connection_string(c)
+                spec.assert_ok(uerr, "connection string")
+                spec.assert_true(string.starts_with(url, "couchbase://") == 1, "a couchbase:// URL: ${url}")
+                spec.assert_str_eq(couchbase.username(c), "admin", "username")
+                m, merr = tc.endpoint(c.container, "8091/tcp", "http")
+                spec.assert_ok(merr, "management endpoint")
+                mgmt = m
+            }
+            base, rec = servirtium.recording("couchbase", "initialises_the_cluster_and_creates_a_bucket", mgmt)
+            st, body, gerr = get("${base}/pools", "admin", "secret1")
+            spec.assert_ok(gerr, "GET /pools")
+            spec.assert_eq(st, 200, "the REST API accepts the credentials")
+            spec.assert_contains(body, "\"isEnterprise\":false", "the community edition")
+            st2, buckets, berr = get("${base}/pools/default/buckets", "admin", "secret1")
+            spec.assert_ok(berr, "GET buckets")
+            spec.assert_eq(st2, 200, "buckets listed")
+            spec.assert_contains(buckets, "\"name\":\"tcae\"", "the bucket exists")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

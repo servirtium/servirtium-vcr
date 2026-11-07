@@ -1,0 +1,101 @@
+// Ported from testcontainers-go modules/questdb/questdb_test.go, by way of
+// testcontainers-ae's tests/test_questdb.ae (moved here 2026-11-07).
+//
+// A real QuestDB: http_endpoint() runs SQL over the REST /exec API (create a
+// table, insert, select), and the PG and InfluxDB endpoints have the right
+// shape (the default admin credentials and database; host:port).
+// Not ported: the pgx and influxdb client calls.
+//
+// PORTING: the HTTP conversation is in the tape beside this file (SQL goes
+// in the `query` URL parameter, percent-encoded by hand: spaces and single
+// quotes); the container start and the PostgreSQL and InfluxDB endpoint
+// shapes are checked only when live, since playback starts no container.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.questdb
+
+const IMAGE = "questdb/questdb:9.0.0"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// (status, body, error); headers are "Name: value" strings.
+fn call_api(method: string, url: string, headers: string[], body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in headers {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+fn enc(sql: string) -> string {
+    a = string.replace_all(sql, " ", "%20")
+    return string.replace_all(a, "'", "%27")
+}
+
+fn exec_sql(url: string, sql: string) -> (int, string, string) {
+    return call_api("GET", "${url}/exec?query=${enc(sql)}", [], "", "")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/questdb") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("runs SQL over REST at the HTTP endpoint (TestQuestDB)") callback {
+            url = ""
+            if servirtium.live() == 1 {
+                c, err = questdb.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "questdb starts")
+                if err != "" { return }
+                u, uerr = questdb.http_endpoint(c)
+                spec.assert_ok(uerr, "http endpoint")
+                spec.assert_true(string.starts_with(u, "http://localhost:") == 1, "http:// URL: ${u}")
+                pg, perr = questdb.pg_endpoint(c)
+                spec.assert_ok(perr, "pg endpoint")
+                spec.assert_true(string.starts_with(pg, "postgres://admin:quest@localhost:") == 1, "pg URL: ${pg}")
+                spec.assert_true(string.ends_with(pg, "/qdb") == 1, "database qdb: ${pg}")
+                ilp, ierr = questdb.influxdb_endpoint(c)
+                spec.assert_ok(ierr, "influxdb endpoint")
+                spec.assert_true(string.starts_with(ilp, "localhost:") == 1, "host:port: ${ilp}")
+                url = u
+            }
+            base, rec = servirtium.recording("questdb", "runs_sql_over_rest_at_the_http_endpoint", url)
+            s1, _, e1 = exec_sql(base, "create table tc_t (id int, name string)")
+            spec.assert_ok(e1, "create table")
+            spec.assert_eq(s1, 200, "create is 200")
+            s2, _, e2 = exec_sql(base, "insert into tc_t values (7, 'seven')")
+            spec.assert_ok(e2, "insert")
+            spec.assert_eq(s2, 200, "insert is 200")
+            s3, b3, e3 = exec_sql(base, "select id, name from tc_t")
+            spec.assert_ok(e3, "select")
+            spec.assert_eq(s3, 200, "select is 200")
+            spec.assert_contains(b3, "[7,\"seven\"]", "the row reads back")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

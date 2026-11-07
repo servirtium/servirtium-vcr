@@ -1,0 +1,124 @@
+// Ported from testcontainers-go modules/artemis/artemis_test.go, by way of
+// testcontainers-ae's tests/test_artemis.ae (moved here 2026-11-07).
+//
+// A real ActiveMQ Artemis: the broker endpoint speaks STOMP (Artemis serves
+// every protocol on 61616): a CONNECT with the module's credentials is
+// answered CONNECTED, with wrong ones ERROR; and the console URL (with the
+// credentials in it) answers over HTTP. Go's test uses a Go Core/AMQP client.
+//
+// PORTING: only the console's HTTP GET is on the tape beside this file (one
+// request, `GET /console` with HTTP Basic me:secret, shown as REDACTED[me]).
+// The substance of the test is the STOMP exchange (right and wrong
+// credentials over a raw TCP connection) and the module's fields: those never
+// go over HTTP, run only live, and a port that replays the tape skips them.
+// The console answers /console with a 302 to /console/ (the Location is
+// recorded as {{request.host}}); the test asserts only 200 or 302, and does
+// not follow it.
+
+import std.spec
+import std.string
+import std.tcp
+import std.bytes
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.artemis
+
+const IMAGE = "apache/activemq-artemis:2.30.0-alpine"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// A STOMP CONNECT (frames end with a NUL byte): the reply's first line.
+fn stomp_connect(hostport: string, user: string, pw: string) -> (string, string) {
+    colon = string.index_of(hostport, ":")
+    host = string.substring(hostport, 0, colon)
+    port, _ = string.to_int(string.substring(hostport, colon + 1, string.length(hostport)))
+    sock, cerr = tcp.connect(host, port)
+    if cerr != "" { return "", cerr }
+    frame = "CONNECT\naccept-version:1.2\nhost:localhost\nlogin:${user}\npasscode:${pw}\n\n"
+    n = string.length(frame)
+    msg = bytes.new(n + 1)
+    bytes.copy_from_string(msg, 0, frame, n)
+    bytes.set(msg, n, 0)
+    _, werr = tcp.write_all(sock, bytes.view(msg))
+    bytes.free(msg)
+    if werr != "" { tcp.tcp_close(sock); return "", werr }
+    buf = ""
+    tries = 0
+    while tries < 100 && string.contains(buf, "\n") == 0 {
+        chunk, rerr = tcp.read(sock, 4096)
+        if rerr != "" && rerr != "timeout" { break }
+        buf = string.concat(buf, chunk)
+        tries = tries + 1
+    }
+    tcp.tcp_close(sock)
+    nl = string.index_of(buf, "\n")
+    if nl < 0 { return "", "no reply" }
+    return string.substring(buf, 0, nl), ""
+}
+
+fn console_status(url: string, user: string, pw: string) -> (int, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_header(req, "Authorization", "Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}")
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, err }
+    st = client.response_status(r)
+    client.response_free(r)
+    return st, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The console's Basic credential stays off the tape; the wrong credential
+    // of the case goes over STOMP, not HTTP, so a labelled literal is enough.
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${encoding.base64_encode_padded(string.bytes("me:secret"))}", "Basic REDACTED[me]")
+
+    spec.describe(fw, "modules/artemis") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("accepts the module's credentials on the broker and the console (TestArtemis)") callback {
+            console = ""
+            if servirtium.live() == 1 {
+                a, err = artemis.run(IMAGE) { credentials("me", "secret") }
+                if a != null { testing.cleanup_container(a.container) }
+                spec.assert_ok(err, "artemis starts")
+                if err != "" { return }
+                spec.assert_str_eq(a.user, "me", "user")
+                spec.assert_str_eq(a.password, "secret", "password")
+                ep, eerr = artemis.broker_endpoint(a)
+                spec.assert_ok(eerr, "broker endpoint")
+                good, gerr = stomp_connect(ep, "me", "secret")
+                spec.assert_ok(gerr, "STOMP CONNECT")
+                spec.assert_str_eq(good, "CONNECTED", "the broker accepts the credentials")
+                bad, berr = stomp_connect(ep, "artemis", "artemis")
+                spec.assert_ok(berr, "STOMP CONNECT with the default credentials")
+                spec.assert_str_eq(bad, "ERROR", "the defaults no longer work")
+                url, uerr = artemis.console_url(a)
+                spec.assert_ok(uerr, "console url")
+                spec.assert_true(string.starts_with(url, "http://me:secret@localhost:") == 1, "credentials in the URL: ${url}")
+                spec.assert_true(string.ends_with(url, "/console") == 1, "the /console path")
+                at = string.index_of(url, "@")
+                // scheme, host and port: the console's /console path is requested below
+                console = "http://${string.substring(url, at + 1, string.length(url) - 8)}"
+            }
+            base, rec = servirtium.recording("artemis", "accepts_the_modules_credentials_on_the_broker_and_the_console", console)
+            st, serr = console_status("${base}/console", "me", "secret")
+            spec.assert_ok(serr, "GET /console")
+            spec.assert_true(st == 200 || st == 302, "the console answers (${st})")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

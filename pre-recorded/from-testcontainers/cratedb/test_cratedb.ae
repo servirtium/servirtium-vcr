@@ -1,0 +1,97 @@
+// Ported from testcontainers-go modules/cratedb/cratedb_test.go, by way of
+// testcontainers-ae's tests/test_cratedb.ae (moved here 2026-11-07).
+//
+// A real CrateDB: the HTTP endpoint answers / and runs SQL over /_sql, and
+// pg_connection_string() names the mapped PostgreSQL-wire port with the
+// extra arguments joined by &.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start, the heap_size check (tc.exec) and the PostgreSQL
+// connection strings are checked only when live, since playback starts no
+// container. The root banner's node name is random per start and the /_sql
+// response carries the query's duration; both are collapsed to constants.
+
+import std.spec
+import std.string
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.cratedb
+
+const IMAGE = "crate:5.7"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run, never sent back: the node's random name and
+    // the query's duration in milliseconds.
+    servirtium.collapse("\"name\" : \"[^\"]*\"", "\"name\" : \"node\"")
+    servirtium.collapse("\"duration\":[0-9.]+", "\"duration\":0.0")
+
+    spec.describe(fw, "modules/cratedb") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("runs SQL over HTTP (TestCrateDB)") callback {
+            url = ""
+            if servirtium.live() == 1 {
+                c, err = cratedb.run(IMAGE) { heap_size("256m") }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "cratedb starts")
+                if err != "" { return }
+                u, uerr = cratedb.http_endpoint(c)
+                spec.assert_ok(uerr, "http endpoint")
+                spec.assert_true(string.starts_with(u, "http://localhost:") == 1, "an http URL: ${u}")
+                url = u
+                code, out, eerr = tc.exec(c, ["sh", "-c", "echo $CRATE_HEAP_SIZE"])
+                spec.assert_ok(eerr, "exec")
+                spec.assert_eq(code, 0, "exec exits 0")
+                spec.assert_str_eq(string.trim(out), "256m", "heap_size reached the container")
+                dsn, derr = cratedb.pg_connection_string(c, ["sslmode=disable", "application_name=tcae"])
+                spec.assert_ok(derr, "pg connection string")
+                spec.assert_true(string.starts_with(dsn, "postgres://crate@localhost:") == 1, "the pg URL: ${dsn}")
+                spec.assert_true(string.ends_with(dsn, "/doc?sslmode=disable&application_name=tcae") == 1, "args joined with &")
+                plain, _ = cratedb.pg_connection_string(c, [])
+                spec.assert_true(string.ends_with(plain, "/doc") == 1, "no args, no ?")
+            }
+            base, rec = servirtium.recording("cratedb", "runs_sql_over_http", url)
+            rs, _rb, rerr = http_do("GET", "${base}/", [], "")
+            spec.assert_ok(rerr, "GET /")
+            spec.assert_eq(rs, 200, "root")
+            qs, qb, qerr = http_do("POST", "${base}/_sql", [], "{\"stmt\":\"SELECT 1 + 1 AS two\"}")
+            spec.assert_ok(qerr, "POST /_sql")
+            spec.assert_eq(qs, 200, "sql")
+            spec.assert_contains(qb, "\"rows\":[[2]]", "the query result: ${qb}")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

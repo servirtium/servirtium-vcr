@@ -1,0 +1,107 @@
+// Ported from testcontainers-go modules/influxdb/influxdb_test.go, by way of
+// testcontainers-ae's tests/test_influxdb.ae (moved here 2026-11-07).
+//
+// TestRun_V2WithOptions against a real InfluxDB 2: v2_auth + v2_admin_token
+// set the bucket up, the connection URL answers /api/v2/buckets with the
+// token and finds the bucket, and creating a bucket without a token is
+// refused. The option-validation rules (TestV2Options error cases) are
+// checked through run, which fails before creating anything.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// option-validation case, the container start and the connection URL shape
+// are checked only when live, since playback starts no container. The admin
+// token ("influxdbv2token") travels as `Authorization: Token ...` and is on
+// the tape as REDACTED[admin-token]; the bucket's and organisation's ids are
+// minted by the server (collapsed to constants, never sent back).
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.influxdb
+
+const IMAGE = "influxdb:2.7.11"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn call_api(method: string, url: string, token: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(token) > 0 { client.set_header(req, "Authorization", "Token ${token}") }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The admin token stays off the tape (no wrong token is tried, so a
+    // labelled literal is enough).
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Token influxdbv2token", "Token REDACTED[admin-token]")
+    // What differs run to run, never sent back: the bucket's and
+    // organisation's 16-hex ids (in the body and in its links) and the
+    // creation and update times.
+    servirtium.collapse("[0-9a-f]{16}", "0000000000000000")
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+
+    spec.describe(fw, "modules/influxdb") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it_when(servirtium.live(), "rejects bad v2 options before creating anything (TestV2Options)", "no container in playback") callback {
+            c, err = influxdb.run(IMAGE) { v2_auth("org", "bucket", "", "") }
+            spec.assert_true(c == null, "no container")
+            spec.assert_contains(err, "username is required", "empty username")
+            c2, err2 = influxdb.run(IMAGE) { v2("", "bucket") }
+            spec.assert_true(c2 == null, "no container")
+            spec.assert_contains(err2, "organization name is required", "empty org")
+            c3, err3 = influxdb.run(IMAGE) {
+                v2_admin_token("t")
+                v2_secrets_admin_token("tokfile")
+            }
+            spec.assert_true(c3 == null, "no container")
+            spec.assert_contains(err3, "admin token already set", "both token forms")
+        }
+
+        spec.it("sets up the bucket and token (TestRun_V2WithOptions)") callback {
+            url = ""
+            if servirtium.live() == 1 {
+                c, err = influxdb.run(IMAGE) {
+                    v2_auth("org", "bucket", "username", "password")
+                    v2_admin_token("influxdbv2token")
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "influxdb starts")
+                if err != "" { return }
+                u, uerr = influxdb.connection_url(c)
+                spec.assert_ok(uerr, "connection url")
+                spec.assert_true(string.starts_with(u, "http://localhost:") == 1, "http URL: ${u}")
+                url = u
+            }
+            base, rec = servirtium.recording("influxdb", "sets_up_the_bucket_and_token", url)
+            s1, b1, e1 = call_api("GET", "${base}/api/v2/buckets?name=bucket", "influxdbv2token", "")
+            spec.assert_ok(e1, "GET buckets")
+            spec.assert_eq(s1, 200, "authenticated GET is 200")
+            spec.assert_contains(b1, "\"name\": \"bucket\"", "the bucket exists")
+            s2, _, e2 = call_api("POST", "${base}/api/v2/buckets", "", "{\"orgID\":\"x\",\"name\":\"example\",\"retentionRules\":[]}")
+            spec.assert_ok(e2, "POST without a token")
+            spec.assert_true(s2 >= 400, "refused without authentication: ${s2}")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

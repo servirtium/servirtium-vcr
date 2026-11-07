@@ -1,0 +1,199 @@
+// Ported from testcontainers-go modules/surrealdb/surrealdb_test.go, by way
+// of testcontainers-ae's tests/test_surrealdb.ae (moved here 2026-11-07).
+//
+// A real SurrealDB: the ws:// URL's shape, GET /health, and a POST to /sql
+// (CREATE then SELECT) with and without authentication, as Go's
+// assertHTTPDocument does.
+//
+// PORTING: the HTTP conversation is in the tapes beside this file; the
+// container starts, the module's URL shapes (ws:// and /sql) and the
+// capability environment case (container inspection) are checked only when
+// live, since playback starts no container. The Basic credentials are
+// root:root (authentication's default) and tcae:s3cret; they are on the
+// tapes as REDACTED[root] and REDACTED[tcae], matched literally on replay.
+// The CREATE statement is not idempotent: each case has its own container.
+
+import std.spec
+import std.string
+import std.encoding
+import std.json
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.surrealdb
+
+const IMAGE = "surrealdb/surrealdb:v1.1.1"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error).
+fn http_do(method: string, url: string, hdrs: string[], ctype: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 15s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+fn basic(user: string, pw: string) -> string {
+    return "Authorization: Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}"
+}
+
+// A recording shows "Authorization: Basic REDACTED[<label>]"; playback still
+// matches the real header. No wrong credential is tried, so a labelled
+// literal is enough.
+fn redact_basic(user: string, pw: string, label: string) {
+    secret = encoding.base64_encode_padded(string.bytes("${user}:${pw}"))
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${secret}", "Basic REDACTED[${label}]")
+}
+
+// A variable of the container's Config.Env (the image has no printenv),
+// as Go's test reads it from Inspect.
+fn env_of(c: *docker.Container, key: string) -> string {
+    doc, err = tc.inspect(c)
+    if err != "" { return "" }
+    cfg, _ = json.object_get(doc, "Config")
+    envv, _ = json.object_get(cfg, "Env")
+    out = ""
+    n = json.json_array_size(envv)
+    i = 0
+    while i < n {
+        v, _ = json.array_get(envv, i)
+        e, _ = json.get_string(v)
+        if string.starts_with(e, "${key}=") == 1 { out = string.substring(e, string.length(key) + 1, string.length(e)) }
+        i = i + 1
+    }
+    json.free(doc)
+    return out
+}
+
+const QUERY = "CREATE person:tobie CONTENT {title: \"Founder & CEO\", name: {first: \"Tobie\", last: \"Morgan Hitchcock\"}, marketing: true}; SELECT * FROM person:tobie;"
+
+// Go's assertHTTPDocument, the live-only part: the ws:// and /sql URL shapes.
+fn check_urls(c: *docker.Container) {
+    ws, werr = surrealdb.url(c)
+    spec.assert_ok(werr, "url")
+    port, _ = tc.mapped_port(c, surrealdb.PORT)
+    spec.assert_str_eq(ws, "ws://localhost:${port}/rpc", "Go's URL: ws, host, port, /rpc")
+    sql, serr = surrealdb.sql_url(c)
+    spec.assert_ok(serr, "sql url")
+    spec.assert_str_eq(sql, "http://localhost:${port}/sql", "the /sql endpoint")
+}
+
+// Go's assertHTTPDocument, the HTTP part: POST /sql, CREATE + SELECT.
+fn assert_http_document(base: string, user: string, pw: string, authenticated: bool) {
+    string[] hdrs = []
+    hdrs.push("Accept: application/json")
+    hdrs.push("NS: test")
+    hdrs.push("DB: test")
+    if authenticated { hdrs.push(basic(user, pw)) }
+    st, body, herr = http_do("POST", "${base}/sql", hdrs, "text/plain", QUERY)
+    spec.assert_ok(herr, "POST /sql")
+    spec.assert_eq(st, 200, "status: ${body}")
+    spec.assert_contains(body, "\"status\":\"OK\"", "statements OK: ${body}")
+    spec.assert_contains(body, "\"title\":\"Founder & CEO\"", "the selected record: ${body}")
+    spec.assert_contains(body, "\"first\":\"Tobie\"", "nested field")
+    spec.assert_contains(body, "\"marketing\":true", "bool field")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The Basic credentials the cases send are kept off the tapes.
+    redact_basic("root", "root", "root")
+    redact_basic("tcae", "s3cret", "tcae")
+    // What differs run to run, never sent back: each statement's execution
+    // time ("208.46µs", "13.958µs", ...).
+    servirtium.collapse("\"time\":\"[0-9.]+[^\"]*\"", "\"time\":\"0µs\"")
+
+    spec.describe(fw, "modules/surrealdb") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("creates and selects a record (TestSurrealDBSelect)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = surrealdb.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "surrealdb starts")
+                if err != "" { return }
+                check_urls(c)
+                port, _ = tc.mapped_port(c, surrealdb.PORT)
+                addr = "http://localhost:${port}"
+            }
+            base, rec = servirtium.recording("surrealdb", "creates_and_selects_a_record", addr)
+            hst, hbody, herr = http_do("GET", "${base}/health", [], "", "")
+            spec.assert_ok(herr, "GET /health")
+            spec.assert_eq(hst, 200, "health: ${hbody}")
+            assert_http_document(base, "root", "root", false)
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("requires the credentials with authentication (TestSurrealDBWithAuth)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = surrealdb.run(IMAGE) { authentication() }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "surrealdb starts")
+                if err != "" { return }
+                check_urls(c)
+                port, _ = tc.mapped_port(c, surrealdb.PORT)
+                addr = "http://localhost:${port}"
+            }
+            base, rec = servirtium.recording("surrealdb", "requires_the_credentials_with_authentication", addr)
+            // without credentials the query is refused
+            ust, ubody, uerr = http_do("POST", "${base}/sql", ["Accept: application/json", "NS: test", "DB: test"], "text/plain", QUERY)
+            spec.assert_ok(uerr, "POST without credentials")
+            spec.assert_true(ust != 200 || string.contains(ubody, "\"status\":\"OK\"") == 0, "an unauthenticated query is not served (${ust}): ${ubody}")
+            assert_http_document(base, "root", "root", true)
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("takes the username and password given (WithUsername, WithPassword)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = surrealdb.run(IMAGE) {
+                    authentication()
+                    username("tcae")
+                    password("s3cret")
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "surrealdb starts")
+                if err != "" { return }
+                check_urls(c)
+                port, _ = tc.mapped_port(c, surrealdb.PORT)
+                addr = "http://localhost:${port}"
+            }
+            base, rec = servirtium.recording("surrealdb", "takes_the_username_and_password_given", addr)
+            assert_http_document(base, "tcae", "s3cret", true)
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "sets the capability env (TestSurrealDBWithAllowAllCaps)", "no container in playback") callback {
+            c, err = surrealdb.run(IMAGE) { allow_all_caps(); strict_mode() }
+            testing.cleanup_container(c)
+            spec.assert_ok(err, "surrealdb starts")
+            if err != "" { return }
+            spec.assert_str_eq(env_of(c, "SURREAL_CAPS_ALLOW_ALL"), "true", "SURREAL_CAPS_ALLOW_ALL")
+            spec.assert_str_eq(env_of(c, "SURREAL_STRICT"), "true", "SURREAL_STRICT")
+            spec.assert_str_eq(env_of(c, "SURREAL_AUTH"), "false", "the default stays")
+        }
+    }
+    return spec.run_summary(fw)
+}

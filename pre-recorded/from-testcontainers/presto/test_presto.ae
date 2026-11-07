@@ -1,0 +1,84 @@
+// Ported from testcontainers-go modules/presto/presto_test.go, by way of
+// testcontainers-ae's tests/test_presto.ae (moved here 2026-11-07).
+//
+// A real Presto: GET /v1/info at connection_string says it has started, and
+// /v1/cluster reports an active worker.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start and the connection string's shape are checked only when
+// live, since playback starts no container. /v1/info's uptime varies per run
+// and is collapsed to a constant.
+
+import std.spec
+import std.string
+import std.http.client
+import std.tcp
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.presto
+
+const IMAGE = "prestodb/presto:0.286"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_do(method: string, url: string, hdrs: string[], body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run, never sent back: the server's uptime.
+    servirtium.collapse("\"uptime\":\"[^\"]*\"", "\"uptime\":\"0s\"")
+
+    spec.describe(fw, "modules/presto") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves its info and cluster (TestPresto/ConnectionString)") callback {
+            url = ""
+            if servirtium.live() == 1 {
+                c, err = presto.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "presto starts")
+                if err != "" { return }
+                u, uerr = presto.connection_string(c)
+                spec.assert_ok(uerr, "connection string")
+                spec.assert_true(string.starts_with(u, "http://") == 1, "an http:// URL: ${u}")
+                url = u
+            }
+            base, rec = servirtium.recording("presto", "serves_its_info_and_cluster", url)
+            st, body, herr = http_do("GET", "${base}/v1/info", [], "", "")
+            spec.assert_ok(herr, "GET /v1/info")
+            spec.assert_eq(st, 200, "info status")
+            spec.assert_contains(body, "\"starting\":false", "the server finished starting")
+            cs, cb, cerr = http_do("GET", "${base}/v1/cluster", [], "", "")
+            spec.assert_ok(cerr, "GET /v1/cluster")
+            spec.assert_eq(cs, 200, "cluster status")
+            spec.assert_contains(cb, "activeWorkers", "cluster stats")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

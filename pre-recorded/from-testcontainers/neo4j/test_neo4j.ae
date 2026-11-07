@@ -1,0 +1,166 @@
+// Ported from testcontainers-go modules/neo4j/neo4j_test.go, by way of
+// testcontainers-ae's tests/test_neo4j.ae (moved here 2026-11-07).
+//
+// A real Neo4j: the Bolt URL is checked by the Bolt handshake itself (the
+// magic preamble and a version proposal, the server answers the version it
+// picked), and the HTTP API on 7474 runs a Cypher statement. Go's tests use
+// the neo4j-go-driver, which has no Aether counterpart.
+//
+// PORTING: only the HTTP API's conversation is on the tapes beside this file
+// (a Cypher statement POSTed to /db/neo4j/tx/commit). The Bolt handshake (a
+// raw TCP exchange), the container's environment (tc.exec) and the refused
+// AUTH setting never go over HTTP: they run only live, and a port that
+// replays the tapes skips them. The first case runs without authentication;
+// the second sets an admin password, so the same unauthenticated statement
+// is refused with a 401 (its tape shows that, no credentials involved).
+
+import std.spec
+import std.string
+import std.tcp
+import std.bytes
+import std.json
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.neo4j
+
+const IMAGE = "neo4j:4.4"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// POST one Cypher statement to the transactional HTTP endpoint (no
+// credentials); (status, body, error).
+fn cypher(base: string, statement: string) -> (int, string, string) {
+    req = client.request("POST", "${base}/db/neo4j/tx/commit")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_body(req, string.bytes("{\"statements\":[{\"statement\":\"${statement}\"}]}"), "application/json")
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+// Bolt handshake: 60 60 B0 17, then four version proposals (4.4, 4.3, 4.2 as
+// 00 minor-range major, and 0). Returns the 4 bytes the server picked as text.
+fn bolt_handshake(url: string) -> (string, string) {
+    rest = string.substring(url, 8, string.length(url))
+    colon = string.index_of(rest, ":")
+    host = string.substring(rest, 0, colon)
+    port, _ = string.to_int(string.substring(rest, colon + 1, string.length(rest)))
+    sock, cerr = tcp.connect(host, port)
+    if cerr != "" { return "", cerr }
+    msg = bytes.new(20)
+    // preamble
+    bytes.set(msg, 0, 96)
+    bytes.set(msg, 1, 96)
+    bytes.set(msg, 2, 176)
+    bytes.set(msg, 3, 23)
+    // proposals: 4.4 with range 2 (4.4 down to 4.2), then three zeros
+    bytes.set(msg, 4, 0)
+    bytes.set(msg, 5, 2)
+    bytes.set(msg, 6, 4)
+    bytes.set(msg, 7, 4)
+    i = 8
+    while i < 20 {
+        bytes.set(msg, i, 0)
+        i = i + 1
+    }
+    _, werr = tcp.write_all(sock, bytes.view(msg))
+    bytes.free(msg)
+    if werr != "" { tcp.tcp_close(sock); return "", werr }
+    buf = bytes.new(16)
+    got = 0
+    tries = 0
+    while got < 4 && tries < 100 {
+        n, rerr = tcp.read_into(sock, bytes.capacity_view(buf))
+        if rerr != "" && rerr != "timeout" { break }
+        if n > 0 { got = got + n; bytes.set_length(buf, got) }
+        tries = tries + 1
+    }
+    tcp.tcp_close(sock)
+    if got < 4 { bytes.free(buf); return "", "short reply: ${got} bytes" }
+    v = bytes.view(buf)
+    out = "${v[0]}.${v[1]}.${v[2]}.${v[3]}"
+    bytes.free(buf)
+    return out, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/neo4j") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("provides a Bolt URL that speaks Bolt, and runs Cypher over HTTP (TestNeo4j)") callback {
+            http = ""
+            if servirtium.live() == 1 {
+                c, err = neo4j.run(IMAGE) {
+                    neo4j_setting("dbms.tx_log.rotation.size", "42M")
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "neo4j starts")
+                if err != "" { return }
+                bolt, berr = neo4j.bolt_url(c)
+                spec.assert_ok(berr, "bolt url")
+                spec.assert_true(string.starts_with(bolt, "neo4j://localhost:") == 1, "a neo4j:// URL: ${bolt}")
+                picked, herr = bolt_handshake(bolt)
+                spec.assert_ok(herr, "Bolt handshake")
+                // the server picks a version in 4.2..4.4: 0.0.<minor>.4
+                spec.assert_true(string.starts_with(picked, "0.0.") == 1 && string.ends_with(picked, ".4") == 1, "the server picked a Bolt 4.x version: ${picked}")
+                // the setting reached the container (TestNeo4j "is configured with custom Neo4j settings")
+                _, out, eerr = tc.exec(c, ["sh", "-c", "env | grep ^NEO4J_dbms_tx"])
+                spec.assert_ok(eerr, "exec")
+                spec.assert_contains(out, "NEO4J_dbms_tx__log_rotation_size=42M", "the formatted setting is in the environment")
+                h, perr = tc.endpoint(c, neo4j.HTTP_PORT, "http")
+                spec.assert_ok(perr, "http endpoint")
+                http = h
+            }
+            base, rec = servirtium.recording("neo4j", "provides_a_bolt_url_that_speaks_bolt_and_runs_cypher_over_http", http)
+            s, b, qerr = cypher(base, "RETURN 40 + 2 AS answer")
+            spec.assert_ok(qerr, "Cypher over HTTP")
+            spec.assert_eq(s, 200, "no authentication: the statement is accepted")
+            spec.assert_contains(b, "[42]", "RETURN 40 + 2 is 42")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("takes an admin password and refuses an AUTH setting (TestNeo4jWithWrongSettings)") callback {
+            http = ""
+            if servirtium.live() == 1 {
+                c, err = neo4j.run(IMAGE) {
+                    admin_password("letmein!")
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "neo4j starts with a password")
+                if err != "" { return }
+                h, _ = tc.endpoint(c, neo4j.HTTP_PORT, "http")
+                http = h
+            }
+            base, rec = servirtium.recording("neo4j", "takes_an_admin_password_and_refuses_an_auth_setting", http)
+            s, _, qerr = cypher(base, "RETURN 1")
+            spec.assert_ok(qerr, "request")
+            spec.assert_eq(s, 401, "an unauthenticated statement is now refused")
+            servirtium.end_recording(rec)
+            if servirtium.live() == 1 {
+                c2, err2 = neo4j.run(IMAGE) {
+                    admin_password("letmein!")
+                    neo4j_setting("AUTH", "neo4j/thisisgonnafail")
+                }
+                spec.assert_true(err2 != "", "the conflicting AUTH setting is an error")
+                spec.assert_true(c2 == null, "no container is created")
+            }
+        }
+    }
+    return spec.run_summary(fw)
+}

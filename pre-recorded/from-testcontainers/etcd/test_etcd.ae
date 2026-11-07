@@ -1,0 +1,287 @@
+// Ported from testcontainers-go modules/etcd/etcd_test.go, etcd_unit_test.go,
+// by way of testcontainers-ae's tests/test_etcd.ae (moved here 2026-11-07).
+//
+// A real etcd (v3 JSON gateway): POST /v3/kv/put then /v3/kv/range with
+// base64 keys, on one node and on a three-node cluster (each node read
+// through its own published client port), plus etcdctl member list through
+// exec, the data dir option, and the command line options in the container.
+//
+// PORTING: the HTTP conversation is in the tapes beside this file; starting
+// the containers, etcdctl (tc.exec), the container's command line and
+// environment, and the endpoint shapes are checked only when live, since
+// playback starts no container. A case that reads through several nodes
+// records one tape per node: `<case>` (put, then range through node 1), then
+// `<case>_node2`, `<case>_node3` (a range each). etcd's Run returns before
+// the gateway is ready, so the test polls a probe key live, before recording,
+// until it answers 200; the tapes hold only the real put and range requests.
+// Keys and values are base64 in the JSON bodies ("sample_key", "sample_value").
+// The response header carries the cluster's and member's ids, minted at
+// start-up and collapsed to constants (the test never sends them back).
+
+import std.spec
+import std.string
+import std.encoding
+import std.json
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.etcd
+
+const IMAGE = "gcr.io/etcd-development/etcd:v3.5.14"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 15s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+fn b64(s: string) -> string { return encoding.base64_encode_padded(string.bytes(s)) }
+
+// Run returns before the gateway is ready (as in Go): poll a probe key, live
+// and directly (not through a recorder), for up to 15s. Nothing is recorded.
+fn await_ready(endpoint: string) {
+    last = ""
+    tries = 0
+    while tries < 150 {
+        st, resp, err = http_do("POST", "${endpoint}/v3/kv/range", [], "{\"key\":\"${b64("probe")}\"}")
+        if err == "" && st == 200 { return }
+        last = "status ${st}, error '${err}': ${resp}"
+        tries = tries + 1
+        sleep(100)
+    }
+    spec.assert_true(false, "the gateway answers: ${last}")
+}
+
+// The client endpoints to record against: the container's, when live (after
+// waiting until each answers), else n empty strings (playback has none).
+fn endpoints_for(e: *etcd.EtcdContainer, n: int) -> string[] {
+    string[] out = []
+    if e == null {
+        i = 0
+        while i < n { out.push(""); i = i + 1 }
+        return out
+    }
+    eps, err = etcd.client_endpoints(e)
+    spec.assert_ok(err, "client endpoints")
+    spec.assert_eq(eps.len, n, "endpoint count")
+    for ep in eps {
+        await_ready(ep)
+        out.push(ep)
+    }
+    return out
+}
+
+// Go's testPutGet: put through the first endpoint, read through every one.
+// Each endpoint gets its own tape (see PORTING above).
+fn put_get(case_: string, eps: string[]) {
+    key = b64("sample_key")
+    value = b64("sample_value")
+    i = 0
+    while i < eps.len {
+        name = case_
+        if i > 0 { name = "${case_}_node${i + 1}" }
+        base, rec = servirtium.recording("etcd", name, eps[i])
+        if i == 0 {
+            ps, pb, perr = http_do("POST", "${base}/v3/kv/put", [], "{\"key\":\"${key}\",\"value\":\"${value}\"}")
+            spec.assert_ok(perr, "put")
+            spec.assert_eq(ps, 200, "put status: ${pb}")
+        }
+        rs, resp, rerr = http_do("POST", "${base}/v3/kv/range", [], "{\"key\":\"${key}\"}")
+        spec.assert_ok(rerr, "range through node ${i + 1}")
+        spec.assert_eq(rs, 200, "range status: ${resp}")
+        spec.assert_contains(resp, "\"count\":\"1\"", "one key through node ${i + 1}: ${resp}")
+        spec.assert_contains(resp, "\"key\":\"${key}\"", "the key")
+        spec.assert_contains(resp, "\"value\":\"${value}\"", "the value we put")
+        servirtium.end_recording(rec)
+        i = i + 1
+    }
+}
+
+// The container's Config.Cmd, joined with spaces.
+fn container_cmd(c: *docker.Container) -> string {
+    doc, err = tc.inspect(c)
+    if err != "" { return "" }
+    cfg, _ = json.object_get(doc, "Config")
+    cmdv, _ = json.object_get(cfg, "Cmd")
+    out = ""
+    n = json.json_array_size(cmdv)
+    i = 0
+    while i < n {
+        v, _ = json.array_get(cmdv, i)
+        s, _ = json.get_string(v)
+        if string.length(out) > 0 { out = "${out} " }
+        out = "${out}${s}"
+        i = i + 1
+    }
+    json.free(doc)
+    return out
+}
+
+// The container's Config.Env, as JSON text.
+fn container_env(c: *docker.Container) -> string {
+    doc, err = tc.inspect(c)
+    if err != "" { return "" }
+    cfg, _ = json.object_get(doc, "Config")
+    ev, _ = json.object_get(cfg, "Env")
+    envs, _ = json.encode(ev)
+    json.free(doc)
+    return envs
+}
+
+// Register every container of the cluster, then its network, for cleanup.
+fn cleanup_etcd(e: *etcd.EtcdContainer) {
+    if e == null { return }
+    for ch in e.children { testing.cleanup_container((ch as *etcd.EtcdContainer).container) }
+    testing.cleanup_container(e.container)
+    testing.cleanup_network(e.net)
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run, never sent back: the cluster's and member's
+    // ids (random uint64s, in the response header) and the Raft term.
+    servirtium.collapse("\"cluster_id\":\"[0-9]+\"", "\"cluster_id\":\"1\"")
+    servirtium.collapse("\"member_id\":\"[0-9]+\"", "\"member_id\":\"1\"")
+    servirtium.collapse("\"raft_term\":\"[0-9]+\"", "\"raft_term\":\"2\"")
+
+    spec.describe(fw, "modules/etcd") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it_when(servirtium.live(), "lists itself as a member (TestRun)", "no container in playback") callback {
+            e, err = etcd.run(IMAGE)
+            cleanup_etcd(e)
+            spec.assert_ok(err, "etcd starts")
+            if err != "" { return }
+            // retry: the server is not ready when run returns
+            out = ""
+            code = 1
+            tries = 0
+            while tries < 100 && code != 0 {
+                code, out, _ = tc.exec(e.container, ["etcdctl", "member", "list"])
+                tries = tries + 1
+                if code != 0 { sleep(150) }
+            }
+            spec.assert_eq(code, 0, "etcdctl member list: ${out}")
+            spec.assert_contains(out, "default", "the member's name")
+        }
+
+        spec.it("runs with the data dir (TestRunWithDataDir)") callback {
+            let e: *etcd.EtcdContainer = null
+            if servirtium.live() == 1 {
+                e2, err = etcd.run(IMAGE) { data_dir() }
+                cleanup_etcd(e2)
+                spec.assert_ok(err, "etcd starts")
+                if err != "" { return }
+                e = e2
+                spec.assert_contains(container_cmd(e.container), "--data-dir=/data.etcd", "the flag")
+            }
+            put_get("runs_with_the_data_dir", endpoints_for(e, 1))
+            if servirtium.live() == 1 {
+                // the official image has no ls or chmod, so the data dir is checked
+                // by etcd's own state: the member list works with it
+                code, out, eerr = tc.exec(e.container, ["etcdctl", "member", "list"])
+                spec.assert_ok(eerr, "etcdctl")
+                spec.assert_eq(code, 0, "member list exit: ${out}")
+            }
+        }
+
+        spec.it("puts and gets on a single node (TestPutGet/single_node)") callback {
+            let e: *etcd.EtcdContainer = null
+            if servirtium.live() == 1 {
+                e2, err = etcd.run(IMAGE)
+                cleanup_etcd(e2)
+                spec.assert_ok(err, "etcd starts")
+                if err != "" { return }
+                e = e2
+            }
+            put_get("puts_and_gets_on_a_single_node", endpoints_for(e, 1))
+            if servirtium.live() == 1 {
+                cep, _ = etcd.client_endpoint(e)
+                pep, _ = etcd.peer_endpoint(e)
+                cp, _ = tc.mapped_port(e.container, etcd.CLIENT_PORT)
+                pp, _ = tc.mapped_port(e.container, etcd.PEER_PORT)
+                spec.assert_str_eq(cep, "http://localhost:${cp}", "client endpoint shape")
+                spec.assert_str_eq(pep, "http://localhost:${pp}", "peer endpoint shape")
+            }
+        }
+
+        spec.it("puts and gets on three nodes (TestPutGet/multiple_nodes)") callback {
+            let e: *etcd.EtcdContainer = null
+            if servirtium.live() == 1 {
+                e2, err = etcd.run(IMAGE) {
+                    nodes(["etcd-1", "etcd-2", "etcd-3"])
+                    cluster_token("tcae-token")
+                    tc.env("TCAE_CALLER", "node-2-too")
+                }
+                cleanup_etcd(e2)
+                spec.assert_ok(err, "etcd cluster starts")
+                if err != "" { return }
+                e = e2
+                spec.assert_eq(e.children.len, 2, "two child nodes")
+                spec.assert_true(e.net != null, "a cluster network")
+                cmd = container_cmd(e.container)
+                spec.assert_contains(cmd, "--name=etcd-1", "node name")
+                spec.assert_contains(cmd, "--initial-cluster=etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380", "initial cluster")
+                spec.assert_contains(cmd, "--initial-cluster-token=tcae-token", "the token")
+            }
+            put_get("puts_and_gets_on_three_nodes", endpoints_for(e, 3))
+            if servirtium.live() == 1 {
+                peers, perr = etcd.peer_endpoints(e)
+                spec.assert_ok(perr, "peer endpoints")
+                spec.assert_eq(peers.len, 3, "three peer endpoints")
+                // all three are members
+                code, out, eerr = tc.exec(e.container, ["etcdctl", "member", "list"])
+                spec.assert_ok(eerr, "etcdctl")
+                spec.assert_eq(code, 0, "member list exit: ${out}")
+                spec.assert_contains(out, "etcd-2", "member 2")
+                spec.assert_contains(out, "etcd-3", "member 3")
+                // the caller's options reach node 2 (Go re-applies them to every
+                // node); the module's own options are no node's environment
+                node2 = e.children[0] as *etcd.EtcdContainer
+                spec.assert_contains(container_env(node2.container), "\"TCAE_CALLER=node-2-too\"", "the caller's env on node 2")
+                spec.assert_false(string.contains(container_env(e.container), "tcae-token") == 1, "no module setting in the env")
+            }
+        }
+
+        spec.it("appends additional args last (WithAdditionalArgs)") callback {
+            let e: *etcd.EtcdContainer = null
+            if servirtium.live() == 1 {
+                e2, err = etcd.run(IMAGE) {
+                    additional_args("--log-level=warn")
+                    additional_args("--max-txn-ops=64")
+                }
+                cleanup_etcd(e2)
+                spec.assert_ok(err, "etcd starts")
+                if err != "" { return }
+                e = e2
+                cmd = container_cmd(e.container)
+                spec.assert_true(string.ends_with(cmd, "--log-level=warn --max-txn-ops=64") == 1, "last on the command: ${cmd}")
+            }
+            put_get("appends_additional_args_last", endpoints_for(e, 1))
+        }
+    }
+    return spec.run_summary(fw)
+}

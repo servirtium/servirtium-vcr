@@ -1,0 +1,110 @@
+// Ported from testcontainers-go modules/orientdb/orientdb_test.go, by way of
+// testcontainers-ae's tests/test_orientdb.ae (moved here 2026-11-07).
+//
+// A real OrientDB: Studio (server_url/studio_url helpers) answers on the HTTP
+// port, and the server API accepts the root password set by root_password()
+// and refuses a wrong one.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start and the module's own URL helpers are checked only when
+// live, since playback starts no container. The root password ("s3cret") is
+// on the tape as REDACTED[root], the default ("rootpwd") the refused request
+// sends as REDACTED[root-default]; replay matches them literally. The
+// tape's /server body is an empty stand-in for the real 56 KB status report
+// (see the collapse in main), so check the status, not the body.
+
+import std.spec
+import std.string
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.orientdb
+
+const IMAGE = "orientdb:3.2"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+fn basic(user: string, pw: string) -> string {
+    return "Authorization: Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}"
+}
+
+// A recording shows "Authorization: Basic REDACTED[<label>]"; playback still
+// matches the real header. Not the credential preset: this case tells the
+// right password from a wrong one, which playback should keep checking.
+fn redact_basic(user: string, pw: string, label: string) {
+    secret = encoding.base64_encode_padded(string.bytes("${user}:${pw}"))
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${secret}", "Basic REDACTED[${label}]")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // Both Basic credentials the case sends are kept off the tape.
+    redact_basic("root", "s3cret", "root")
+    redact_basic("root", "rootpwd", "root-default")
+    // What differs run to run: GET /server answers a 56 KB status report (JVM
+    // and memory figures, live connections with the client's address and
+    // times, thread dumps); the case checks only its 200, so the whole body
+    // is collapsed to an empty report.
+    servirtium.collapse("\\{\"connections\":[^\n]*", "{\"connections\":[],\"dbs\":[]}")
+
+    spec.describe(fw, "modules/orientdb") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves Studio and authenticates the root password (TestOrientDB)") callback {
+            studio = ""
+            if servirtium.live() == 1 {
+                c, err = orientdb.run(IMAGE) { root_password("s3cret") }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "orientdb starts")
+                if err != "" { return }
+                srv, serr = orientdb.server_url(c)
+                spec.assert_ok(serr, "server url")
+                spec.assert_true(string.starts_with(srv, "remote:localhost:") == 1, "a remote: URL: ${srv}")
+                s, terr = orientdb.studio_url(c)
+                spec.assert_ok(terr, "studio url")
+                spec.assert_true(string.starts_with(s, "http://localhost:") == 1, "an http URL: ${s}")
+                studio = s
+            }
+            base, rec = servirtium.recording("orientdb", "serves_studio_and_authenticates_the_root_password", studio)
+            st, _b, herr = http_do("GET", "${base}/", [], "")
+            spec.assert_ok(herr, "GET /")
+            spec.assert_eq(st, 200, "Studio answers 200")
+            ok, body, aerr = http_do("GET", "${base}/server", [basic("root", "s3cret")], "")
+            spec.assert_ok(aerr, "GET /server as root")
+            spec.assert_eq(ok, 200, "the chosen root password is accepted: ${body}")
+            bad, _bb, berr = http_do("GET", "${base}/server", [basic("root", "rootpwd")], "")
+            spec.assert_ok(berr, "GET /server with the default password")
+            spec.assert_eq(bad, 401, "the default password is refused")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

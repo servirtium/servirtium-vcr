@@ -1,0 +1,104 @@
+// Ported from testcontainers-go modules/clickhouse/clickhouse_test.go, by way
+// of testcontainers-ae's tests/test_clickhouse.ae (moved here 2026-11-07).
+//
+// A real ClickHouse: TestClickHouseDefaultConfig / TestClickHouseConnectionHost
+// (the module's user, password and database are the ones the server accepts)
+// and TestClickHouseWithInitScripts (the init script's table is there), all
+// over the HTTP interface instead of the clickhouse-go native client. The
+// native connection_host / connection_string have the right shape.
+// Not ported: the config file, YAML config, ZooKeeper and cluster tests.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start and the module's own fields (connection host, DSN) are
+// checked only when live, since playback starts no container. The init
+// script (testdata/init-db.sh, a host file the container runs at start-up)
+// is what creates test_table with its one row; a port that replays the tape
+// needs neither. The password travels in the X-ClickHouse-Key header: the
+// tape shows the right one as REDACTED[key] and the wrong one the last case
+// sends as REDACTED[wrong-key].
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.clickhouse
+
+const IMAGE = "clickhouse/clickhouse-server:23.3.8.21-alpine"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// POST the query as the body; (status, body, error).
+fn query(base: string, user: string, pw: string, db: string, sql: string) -> (int, string, string) {
+    req = client.request("POST", "${base}/?database=${db}")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_header(req, "X-ClickHouse-User", user)
+    client.set_header(req, "X-ClickHouse-Key", pw)
+    client.set_body(req, string.bytes(sql), "text/plain")
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The right and the wrong password stay off the tape, as labelled
+    // literals: playback keeps telling them apart (a credential preset would
+    // match on presence only).
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "X-ClickHouse-Key: password", "X-ClickHouse-Key: REDACTED[key]")
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "X-ClickHouse-Key: wrong", "X-ClickHouse-Key: REDACTED[wrong-key]")
+    // What differs run to run, never sent back: the server's display name (the
+    // container's hostname) and each query's id.
+    servirtium.collapse("X-ClickHouse-Server-Display-Name: [0-9a-f]{12}", "X-ClickHouse-Server-Display-Name: clickhouse-server")
+    servirtium.collapse("X-ClickHouse-Query-Id: ${servirtium.UUID}", "X-ClickHouse-Query-Id: 00000000-0000-0000-0000-000000000000")
+
+    spec.describe(fw, "modules/clickhouse") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("runs the init script and takes the credentials (TestClickHouseWithInitScripts)") callback {
+            http = ""
+            if servirtium.live() == 1 {
+                ch, err = clickhouse.run(IMAGE) {
+                    username("clickhouse")
+                    password("password")
+                    database("testdb")
+                    init_script("clickhouse/testdata/init-db.sh")
+                }
+                if ch != null { testing.cleanup_container(ch.container) }
+                spec.assert_ok(err, "clickhouse starts")
+                if err != "" { return }
+                host, herr = clickhouse.connection_host(ch)
+                spec.assert_ok(herr, "connection host")
+                spec.assert_true(string.starts_with(host, "localhost:") == 1, "host:port: ${host}")
+                dsn, derr = clickhouse.connection_string(ch, ["dial_timeout=300ms"])
+                spec.assert_ok(derr, "connection string")
+                spec.assert_str_eq(dsn, "clickhouse://clickhouse:password@${host}/testdb?dial_timeout=300ms", "dsn")
+                h, perr = clickhouse.http_endpoint(ch)
+                spec.assert_ok(perr, "http endpoint")
+                http = h
+            }
+            base, rec = servirtium.recording("clickhouse", "runs_the_init_script_and_takes_the_credentials", http)
+            s1, b1, e1 = query(base, "clickhouse", "password", "testdb", "SELECT id FROM test_table")
+            spec.assert_ok(e1, "select")
+            spec.assert_eq(s1, 200, "select is 200")
+            spec.assert_str_eq(string.trim(b1), "1", "the init script's row")
+            s2, _, _ = query(base, "clickhouse", "wrong", "testdb", "SELECT 1")
+            spec.assert_eq(s2, 403, "a wrong password is refused")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

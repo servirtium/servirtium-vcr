@@ -1,0 +1,100 @@
+// Ported from testcontainers-go modules/kurrentdb/kurrentdb_test.go, by way
+// of testcontainers-ae's tests/test_kurrentdb.ae (moved here 2026-11-07).
+//
+// A real KurrentDB: the connection string says tls=false and its host:port
+// answers the HTTP health endpoint (204) and /info (200, JSON).
+// Not ported: the Go test's EventStore gRPC client append/read.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start and the connection string's shape are checked only when
+// live, since playback starts no container. The node's state is polled until
+// "leader" before recording starts (it says "preleader" for a moment), so
+// the tape's /info always shows "leader". The gRPC client the Go test
+// uses is not part of any tape.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.kurrentdb
+
+const IMAGE = "kurrentplatform/kurrentdb:26.1.1"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// (status, body, error); headers are "Name: value" strings.
+fn call_api(method: string, url: string, headers: string[], body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in headers {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+// The node reports "preleader" for a moment after it starts, then "leader".
+// Poll live (before recording starts) until it is the leader, so the tape
+// holds one /info request that always says "leader", not a number of polls
+// that varies run to run.
+fn await_leader(base: string) {
+    tries = 0
+    while tries < 120 {
+        st, body, err = call_api("GET", "${base}/info", [], "", "")
+        if err == "" && st == 200 && string.contains(body, "\"state\": \"leader\"") == 1 { return }
+        sleep(500)
+        tries = tries + 1
+    }
+    spec.assert_true(false, "the node became the leader")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/kurrentdb") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves HTTP at the connection string's address (TestKurrentDB)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                k, err = kurrentdb.run(IMAGE)
+                if k != null { testing.cleanup_container(k.container) }
+                spec.assert_ok(err, "kurrentdb starts")
+                if err != "" { return }
+                cs, cerr = kurrentdb.connection_string(k)
+                spec.assert_ok(cerr, "connection string")
+                spec.assert_true(string.starts_with(cs, "kurrentdb://localhost:") == 1, "kurrentdb:// URL: ${cs}")
+                spec.assert_true(string.ends_with(cs, "?tls=false") == 1, "insecure: ${cs}")
+                addr = "http://${string.substring(cs, 12, string.length(cs) - 10)}"
+                await_leader(addr)
+            }
+            base, rec = servirtium.recording("kurrentdb", "serves_http_at_the_connection_strings_address", addr)
+            hs, _, herr = call_api("GET", "${base}/health/live", [], "", "")
+            spec.assert_ok(herr, "GET /health/live")
+            spec.assert_eq(hs, 204, "live is 204")
+            is, ib, ierr = call_api("GET", "${base}/info", [], "", "")
+            spec.assert_ok(ierr, "GET /info")
+            spec.assert_eq(is, 200, "info is 200")
+            spec.assert_contains(ib, "\"state\"", "info reports the node state")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

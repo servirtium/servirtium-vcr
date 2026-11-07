@@ -47,7 +47,10 @@ Candidate options, opt-in like pretty_json:
 - write JSON bodies with object keys sorted (with pretty_json or alone);
   playback serves the sorted form, which is the same JSON value.
 
-Then drop the workarounds and re-record those three suites.
+Couchbase's `/pools` (an Erlang map) and OrientDB's `/server` report do the
+same, and are collapsed whole for now.
+
+Then drop the workarounds and re-record those suites.
 
 ## Additional language bindings
 

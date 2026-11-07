@@ -1,0 +1,106 @@
+// Ported from testcontainers-go modules/arangodb/arangodb_test.go, by way of
+// testcontainers-ae's tests/test_arangodb.ae (moved here 2026-11-07).
+//
+// A real ArangoDB: with root_password() set, credentials() returns it, the
+// HTTP endpoint answers /_api/version to those credentials and refuses an
+// anonymous or wrong-password request.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start and the module's own fields (credentials, endpoint shape)
+// are checked only when live, since playback starts no container. The root
+// password is "s3cret": the tape shows it as REDACTED[root], the default
+// "root" password the refused request sends as REDACTED[root-default].
+// Replay matches the headers literally, so a port must send the same two
+// credentials (or its replay must not compare Authorization).
+
+import std.spec
+import std.string
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.arangodb
+
+const IMAGE = "arangodb:3.11.5"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+fn basic(user: string, pw: string) -> string {
+    return "Authorization: Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}"
+}
+
+// A recording shows "Authorization: Basic REDACTED[<label>]"; playback still
+// matches the real header. Not the credential preset: this case tells the
+// right password from a wrong one, which playback should keep checking.
+fn redact_basic(user: string, pw: string, label: string) {
+    secret = encoding.base64_encode_padded(string.bytes("${user}:${pw}"))
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${secret}", "Basic REDACTED[${label}]")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // Both Basic credentials the case sends are kept off the tape.
+    redact_basic("root", "s3cret", "root")
+    redact_basic("root", "root", "root-default")
+
+    spec.describe(fw, "modules/arangodb") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("authenticates the root password (TestArangoDB)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                a, err = arangodb.run(IMAGE) { root_password("s3cret") }
+                if a != null { testing.cleanup_container(a.container) }
+                spec.assert_ok(err, "arangodb starts")
+                if err != "" { return }
+                cu, cp = arangodb.credentials(a)
+                spec.assert_str_eq(cu, "root", "user")
+                spec.assert_str_eq(cp, "s3cret", "password")
+                url, uerr = arangodb.http_endpoint(a)
+                spec.assert_ok(uerr, "http endpoint")
+                spec.assert_true(string.starts_with(url, "http://localhost:") == 1, "an http URL: ${url}")
+                addr = url
+            }
+            base, rec = servirtium.recording("arangodb", "authenticates_the_root_password", addr)
+            st, body, herr = http_do("GET", "${base}/_api/version", [basic("root", "s3cret")], "")
+            spec.assert_ok(herr, "GET /_api/version")
+            spec.assert_eq(st, 200, "authenticated")
+            spec.assert_contains(body, "arango", "the server answers: ${body}")
+            an, _ab, aerr = http_do("GET", "${base}/_api/version", [], "")
+            spec.assert_ok(aerr, "anonymous request")
+            spec.assert_eq(an, 401, "anonymous is refused")
+            wr, _wb, werr = http_do("GET", "${base}/_api/version", [basic("root", "root")], "")
+            spec.assert_ok(werr, "wrong password")
+            spec.assert_eq(wr, 401, "the default password is refused")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

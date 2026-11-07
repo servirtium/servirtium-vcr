@@ -1,0 +1,81 @@
+// Ported from testcontainers-go modules/pulsar/pulsar_test.go (TestPulsar),
+// by way of testcontainers-ae's tests/test_pulsar.ae (moved here 2026-11-07).
+//
+// A real Pulsar standalone: the broker URL is pulsar://, and the admin REST
+// API (/admin/v2/clusters, the module's own wait) lists "standalone", and
+// creates a namespace
+// that shows up in the namespaces list.
+//
+// PORTING: the admin REST conversation is in the tape beside this file; the
+// container start and the pulsar:// broker URL (the binary protocol, never
+// exercised here) are checked only when live, since playback starts no
+// container. The PUT carries no body.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.pulsar
+
+const IMAGE = "apachepulsar/pulsar:4.0.9"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn api(method: string, url: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return st, body, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/pulsar") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("answers on the admin API (TestPulsar)") callback {
+            admin = ""
+            if servirtium.live() == 1 {
+                c, err = pulsar.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "pulsar starts")
+                if err != "" { return }
+                broker, berr = pulsar.broker_url(c)
+                spec.assert_ok(berr, "broker url")
+                spec.assert_true(string.starts_with(broker, "pulsar://") == 1, "a pulsar:// URL: ${broker}")
+                a, aerr = pulsar.http_service_url(c)
+                spec.assert_ok(aerr, "admin url")
+                admin = a
+            }
+            base, rec = servirtium.recording("pulsar", "answers_on_the_admin_api", admin)
+            st, body, gerr = api("GET", "${base}/admin/v2/clusters")
+            spec.assert_ok(gerr, "GET /admin/v2/clusters")
+            spec.assert_eq(st, 200, "clusters answers")
+            spec.assert_str_eq(body, "[\"standalone\"]", "the standalone cluster")
+            st2, _b2, perr = api("PUT", "${base}/admin/v2/namespaces/public/tcae")
+            spec.assert_ok(perr, "PUT namespace")
+            spec.assert_true(st2 == 204 || st2 == 200, "namespace created: ${st2}")
+            _st3, body3, lerr = api("GET", "${base}/admin/v2/namespaces/public")
+            spec.assert_ok(lerr, "GET namespaces")
+            spec.assert_contains(body3, "public/tcae", "the new namespace is listed")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

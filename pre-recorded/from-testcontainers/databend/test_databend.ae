@@ -1,0 +1,103 @@
+// Ported from testcontainers-go modules/databend/databend_test.go, by way of
+// testcontainers-ae's tests/test_databend.ae (moved here 2026-11-07).
+//
+// A real Databend: the connection string has the module's user, password and
+// database, and its host:port answers a SQL statement over the HTTP query API
+// ("select 1 + 41") with the credentials as basic auth; a wrong password is
+// refused. Not ported: the databend-go database/sql driver.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start and the module's connection string are checked only when
+// live, since playback starts no container. The right credential
+// (tcuser:tcpass) is on the tape as REDACTED[tcuser] and the wrong one as
+// REDACTED[tcuser-wrong-password]; replay matches them literally.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.databend
+
+const IMAGE = "datafuselabs/databend:v1.2.615"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// (status, body, error); headers are "Name: value" strings.
+fn call_api(method: string, url: string, headers: string[], body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in headers {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // Both Basic credentials (base64 of tcuser:tcpass and tcuser:wrong) stay
+    // off the tape as labelled literals, so playback still tells them apart.
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic dGN1c2VyOnRjcGFzcw==", "Basic REDACTED[tcuser]")
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic dGN1c2VyOndyb25n", "Basic REDACTED[tcuser-wrong-password]")
+    // What differs run to run, never sent back: the query and session ids
+    // (UUIDs, in a header and the body), the node's id and start time, and
+    // the query's running time.
+    servirtium.collapse(servirtium.UUID, "00000000-0000-0000-0000-000000000000")
+    servirtium.collapse("\"node_id\":\"[A-Za-z0-9]{16,24}\"", "\"node_id\":\"NODE-ID\"")
+    servirtium.collapse("\"id\":\"[A-Za-z0-9]{16,24}\"", "\"id\":\"NODE-ID\"")
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+    servirtium.collapse("\"running_time_ms\":[0-9.]+", "\"running_time_ms\":0")
+
+    spec.describe(fw, "modules/databend") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("runs SQL at the connection string's address (TestDatabend)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                d, err = databend.run(IMAGE) {
+                    username("tcuser")
+                    password("tcpass")
+                }
+                if d != null { testing.cleanup_container(d.container) }
+                spec.assert_ok(err, "databend starts")
+                if err != "" { return }
+                dsn, derr = databend.connection_string(d, ["sslmode=disable"])
+                spec.assert_ok(derr, "connection string")
+                spec.assert_true(string.starts_with(dsn, "databend://tcuser:tcpass@localhost:") == 1, "DSN: ${dsn}")
+                spec.assert_true(string.ends_with(dsn, "/default?sslmode=disable") == 1, "database and args: ${dsn}")
+                at = string.index_of(dsn, "@")
+                rest = string.substring(dsn, at + 1, string.length(dsn))
+                addr = "http://${string.substring(rest, 0, string.index_of(rest, "/"))}"
+            }
+            base, rec = servirtium.recording("databend", "runs_sql_at_the_connection_strings_address", addr)
+            q = "{\"sql\":\"select 1 + 41\"}"
+            // "tcuser:tcpass" in base64
+            s, b, e = call_api("POST", "${base}/v1/query", ["Authorization: Basic dGN1c2VyOnRjcGFzcw=="], q, "application/json")
+            spec.assert_ok(e, "POST /v1/query")
+            spec.assert_eq(s, 200, "query is 200")
+            spec.assert_contains(b, "[[\"42\"]]", "1 + 41 = 42")
+            bs, _, be = call_api("POST", "${base}/v1/query", ["Authorization: Basic dGN1c2VyOndyb25n"], q, "application/json")
+            spec.assert_ok(be, "wrong password call")
+            spec.assert_eq(bs, 401, "wrong password: refused")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}
