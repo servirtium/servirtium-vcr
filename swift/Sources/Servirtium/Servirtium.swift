@@ -299,6 +299,44 @@ public final class Vcr {
         aether_vcr_embed_ignore_volatile_headers(handle)
     }
 
+    // Opt-in header presets: each registers ordinary rules, listed under the
+    // preset's name in the recording-rules footer. Each throws on failure.
+
+    /// Leave the connection-describing headers (Host, Connection, Content-Length
+    /// and the other hop-by-hop headers, Accept-Encoding) out of the recording.
+    public func removeTransportHeaders() throws {
+        try check(aether_vcr_embed_remove_transport_headers(handle), "removeTransportHeaders")
+    }
+
+    /// Drop a cloud vendor's per-request headers; vendor is one of "aws",
+    /// "azure", "cloudflare", "fastly", "gcp".
+    public func removeCloudHeaders(_ vendor: String) throws {
+        try check(aether_vcr_embed_remove_cloud_headers(handle, vendor), "removeCloudHeaders")
+    }
+
+    /// Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+    /// X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the
+    /// playback handle too, as with every rule.
+    public func redactCredentials() throws {
+        try check(aether_vcr_embed_redact_credentials(handle), "redactCredentials")
+    }
+
+    /// One more credential header with the same treatment as redactCredentials.
+    public func redactCredentialHeader(_ name: String) throws {
+        try check(aether_vcr_embed_redact_credential_header(handle, name), "redactCredentialHeader")
+    }
+
+    /// Record mode: verify an https upstream against this PEM CA file.
+    public func setUpstreamCafile(_ path: String) throws {
+        try check(aether_vcr_embed_set_upstream_cafile(handle, path), "setUpstreamCafile")
+    }
+
+    /// Record mode: put text under "## LICENSE NOTICE" at the top of each tape;
+    /// playback ignores it.
+    public func addLicenseNotice(_ text: String) throws {
+        try check(aether_vcr_embed_add_license_notice(handle, text), "addLicenseNotice")
+    }
+
     public func setStrictHeaders(_ on: Bool = true) {
         aether_vcr_embed_set_strict_headers(handle, on ? 1 : 0)
     }
@@ -328,6 +366,10 @@ public final class Vcr {
     public func emphasizeHttpVerbs() { aether_vcr_embed_emphasize_http_verbs(handle) }
     /// Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
     public func prettyXml(_ indent: Int32 = 2) { aether_vcr_embed_set_pretty_xml(handle, indent) }
+    /// Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    public func prettyJson(_ indent: Int32 = 2) { aether_vcr_embed_set_pretty_json(handle, indent) }
+    /// Current pretty-JSON indent (0 = off).
+    public var prettyJsonIndent: Int32 { aether_vcr_embed_get_pretty_json(handle) }
     public func clearRedactions() { aether_vcr_embed_clear_redactions(handle) }
     public func clearUnredactions() { aether_vcr_embed_clear_unredactions(handle) }
     public func clearNormalizations() { aether_vcr_embed_clear_normalizations(handle) }

@@ -121,6 +121,10 @@ final class PlaybackTests: XCTestCase {
     func testExposesTapeLengthAndABoundPort() throws {
         try Vcr.withPlayback(tape) { vcr in
             XCTAssertEqual(vcr.tapeLength, 1)
+            try vcr.addLicenseNotice("test notice")  // playback ignores it
+            vcr.prettyJson(2)
+            XCTAssertEqual(vcr.prettyJsonIndent, 2)
+            vcr.prettyJson(0)
             XCTAssertGreaterThan(vcr.port, 0)
             XCTAssertTrue(vcr.baseUrl.hasPrefix("http://127.0.0.1:"))
         }
