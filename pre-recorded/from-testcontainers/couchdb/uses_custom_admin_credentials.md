@@ -76,5 +76,5 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | collapsed | whole recording | *the container's mapped host:port* | `{{request.host}}` | 0 |
 | collapsed | whole recording | *the recorder's own host:port* | `{{request.host}}` | 0, 1 |
 | normalized | whole recording | `[0-9a-f]{32}` | `{{couchdb-uuid-N}}` | none |
-| collapsed | whole recording | `1[0-9]{9}` | `946684800` | none |
+| collapsed | whole recording | `"instance_start_time":"[0-9]+"` | `"instance_start_time":"946684800"` | none |
 | collapsed | whole recording | `_seq":"[0-9]+-[A-Za-z0-9_-]+"` | `_seq":"0-SEQ"` | none |

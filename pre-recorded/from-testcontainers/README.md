@@ -30,7 +30,7 @@ with restrictive terms start with a `## LICENSE NOTICE`
 | Suite | Cases | Container |
 |---|---|---|
 | `vault` | 2 | `hashicorp/vault:1.13.0` |
-| `couchdb` | 3 | `couchdb:3` |
+| `couchdb` | 18 (comprehensive: 15 API, 3 module) | `couchdb:3` |
 | `consul` | 4 | `hashicorp/consul:1.15` |
 | `openfga` | 1 | `openfga/openfga:v1.18.0` |
 | `typesense` | 3 | `typesense/typesense:26.0` |
@@ -157,7 +157,7 @@ Per suite (registered at the top of its `main`):
 | Suite | Normalized (stable `{{name-N}}` tokens) | Collapsed to a constant | Redacted (put back on playback) | Headers dropped |
 |---|---|---|---|---|
 | vault | UUIDs (request and cluster ids) | `vault-cluster-<hex>`, RFC 3339 times, Unix times | the root token in `X-Vault-Token`, as `X_VAULT_TOKEN_1` (credential preset) | |
-| couchdb | the 32-hex server uuid | Unix start times, `*_seq` tokens | each `Authorization: Basic` credential, as `REDACTED[<label>]` | `X-Couch-Request-ID`, `X-CouchDB-Body-Time` |
+| couchdb | API cases: sequence ids, quoted 32-hex uuids (server, `/_uuids`, generated doc ids), base-36 ETags; module cases: the 32-hex server uuid | `instance_start_time`; API cases: the session cookie's `Expires`; module cases: `*_seq` tokens | API cases: the session cookie (credential preset, `COOKIE_N`) and the login body's password as `REDACTED[<label>]`; module cases: each `Authorization: Basic` credential, as `REDACTED[<label>]` | `X-Couch-Request-ID`, `X-CouchDB-Body-Time` |
 | consul | the node id | Raft indexes (the `X-Consul-Index` header's value too), runtime counters, `cpu_count`, `arch` in `/v1/agent/self` | | |
 | openfga | the store's ULID (it comes back in a later request path, and the token round-trips) | RFC 3339 times | | |
 | typesense | | `created_at` | each `X-TYPESENSE-API-KEY`, as `REDACTED[<key>]` | |
@@ -218,9 +218,11 @@ Per suite (registered at the top of its `main`):
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
 written as a numbered token, and playback matches the header on presence,
-not value, so it needs no secret. CouchDB and Typesense keep labelled literal
-redactions instead, because their cases send a wrong credential on purpose
-and playback should keep telling it from the right one. The module also
+not value, so it needs no secret. CouchDB's module cases and Typesense keep
+labelled literal redactions instead, because their cases send a wrong
+credential on purpose and playback should keep telling it from the right
+one. CouchDB's API cases do both: the session cookie through the preset, the
+login body's password as labelled redactions (see the pattern below). The module also
 offers `redact_credentials()`, `remove_cloud_headers(vendor)`,
 `remove_transport_headers()` and `pretty_json(indent)`; see servirtium-vcr's
 AGENTS.md, "Header presets".
@@ -313,6 +315,72 @@ and on playback the placeholder in the tape is swapped back before the
 request is compared. Placeholders must not contain one another, hence
 `REDACTED[admin]` rather than `REDACTED-admin` beside
 `REDACTED-admin-wrong-password`.
+
+## Pattern for comprehensive suites
+
+Most suites here are ports of testcontainers-go's module tests: a case or
+two that prove the container starts and answers. A *comprehensive* suite
+goes further: re-usable recordings of the service's API, broad enough that
+another project's tests (any language) can replay them instead of running
+the service. CouchDB is the pilot (`couchdb/test_couchdb.ae`, its "CouchDB
+HTTP API" block); later suites follow the same shape:
+
+1. **Scope written down.** The test file's header lists what the suite
+   covers and what it leaves out, and why (continuous feeds and other
+   connection- or timing-level behaviour, asynchronous jobs, node-specific
+   numbers, features the image lacks). Cover the API a client actually uses,
+   plus the representative error statuses (400, 401, 404, 409, 412, ...).
+2. **One tape per scenario.** Each `spec.it` records one tape, named for what
+   it shows (`refuses_a_stale_revision_with_a_409`), and is independent:
+   it creates its own resources under a fixed name, works in them and
+   deletes them on the tape, so any tape replays alone. Whatever a live run
+   needs that is not part of the scenario (starting the container, clearing
+   leftovers of a failed run, logging in) happens outside the recording,
+   in the `live()` branch.
+3. **Login gets its own tape; everything else is already logged in.** The
+   login scenario (right and wrong password, who-am-I, logout) is one tape.
+   Every other case carries the session credential the login mints, obtained
+   live outside the recorder before the case starts, and written to the tape
+   through Servirtium's credential preset (`redact_credentials()`: `Cookie:
+   AuthSession=COOKIE_1`, `Authorization: Bearer AUTHORIZATION_1`, or
+   `redact_credential_header` for a custom header), so playback matches it on
+   presence. A port's "already logged in" fixture is then just "send the
+   header with any value"; no login tape needed. Passwords in a login body
+   are labelled literal redactions (`REDACTED[admin]`), put back on replay,
+   so the right and wrong password stay distinct. The case that shows what
+   happens unauthenticated sends no credential at all: presence matching
+   cannot tell a forged credential from a good one. These are component-level
+   tests of the service's API, never called end-to-end.
+4. **Every rewrite chosen and explained.** Each rule gets a comment saying
+   why. *Normalize* (stable `{{name-N}}` tokens) what a client sends back:
+   ids, sequence tokens, ETags. *Collapse* (one constant) what nobody sends
+   back: timestamps, start times, expiry dates. Scope a pattern by its
+   context (a field name, a lookaround such as `(?<=")[0-9a-f]{32}(?=")`;
+   the patterns are PCRE2) so it does not swallow values that are stable.
+   Leave deterministic values alone and say so: CouchDB's revs are content
+   hashes, the same every run, which is a feature for a reader.
+5. **Rules per block.** Rules apply to every recording after them in the
+   process, so a file with a ported block and a comprehensive block calls
+   `clear_rules()` and registers its own set before each.
+6. **Comments for someone else's LLM.** The file header: what the suite
+   covers, how to run it, how tapes map to cases, how to authenticate, what
+   varies and how it is rewritten. Each case: a `// PORTING:` block with
+   every request (method, path, body shape) and what the assertions check.
+   Assertions treat normalized values as opaque: on replay an id is
+   literally `{{uuid-2}}`, so never assert its length or shape.
+7. **Proven stable.** `TCAE_VCR=record`, then `check` at least twice with no
+   `.md.actual` left, then `playback`. Things that bit the pilot:
+   - Servirtium's playback reads a tape with CRLF folded to LF, so a body
+     the service streamed with CRLF (CouchDB's view, `_find` and `_changes`
+     rows) replays with LF. Assert on parsed JSON or with CRs removed.
+   - A normalized token sent back in a URL path (`/db/{{uuid-2}}`,
+     `?since={{seq-2}}`) must go out with its braces unencoded: playback
+     compares paths byte for byte, and `%7B` does not match `{`.
+   - A service that orders output differently each run (several shards,
+     concurrent writers) needs a deterministic setup (CouchDB databases
+     are created with `?q=1`) or, failing that, the TODO.md ordering work.
+   - The recorded request `Content-Length` of a redacted body is the
+     redacted body's; playback does not compare it (a transport header).
 
 ## Where the code comes from
 

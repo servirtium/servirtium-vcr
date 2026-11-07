@@ -52,6 +52,24 @@ same, and are collapsed whole for now.
 
 Then drop the workarounds and re-record those suites.
 
+## Bodies with CRLF replay with LF (found 2026-11-07)
+
+CouchDB streams view, `_find` and `_changes` rows separated by CRLF. The
+recorder writes those CRs into the tape's body as they came, but
+`normalize_tape_bytes` folds every CRLF in a tape to LF when it is read (for
+tapes checked out with autocrlf), so playback serves the rows LF-separated:
+the replayed body is not the recorded one. The CouchDB suite asserts with
+CRs removed. Options: write a body holding a CR as base64 (as binary bodies
+already are), or fold CRLF only outside fenced bodies. Either way, a raw CR
+in a markdown tape is fragile under git's line-ending handling.
+
+## Normalized tokens in a request path and percent-encoding (found 2026-11-07)
+
+A normalized id sent back in a path is on the tape as `/db/{{uuid-2}}`, and
+playback compares paths byte for byte, so a port whose HTTP client encodes
+`{` as `%7B` (Java's `URI`, many others) cannot match. Consider comparing
+paths percent-decoded, or with `%7B%7B`/`%7D%7D` read as the braces.
+
 ## Additional language bindings
 
 Candidates retained for future work (2026-10-03). Keep bindings thin: all

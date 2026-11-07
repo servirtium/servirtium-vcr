@@ -7,7 +7,9 @@ contributors), by way of testcontainers-ae
 consul/, meilisearch/, nginx/ and registry/testdata/ and
 clickhouse/testdata/init-db.sh come from the same modules' testdata/ in
 testcontainers-go; rabbitmq/testdata/placeholder.pem was written for
-testcontainers-ae.
+testcontainers-ae. Some cases were written for servirtium-vcr rather than
+ported, and say so at the top of their file: gcloud_spanner's, and the
+"CouchDB HTTP API" block of couchdb/test_couchdb.ae.
 
 The tapes (*.md beside each test) are recordings of the named container
 images' responses.

@@ -1,12 +1,152 @@
-// Ported from testcontainers-go modules/couchdb/couchdb_test.go
+// CouchDB, comprehensively: the pilot "comprehensive" suite of
+// servirtium-vcr's pre-recorded/from-testcontainers (the README's "Pattern
+// for comprehensive suites" says what later suites copy from it).
 //
-// A real CouchDB: GET / answers the welcome document, and a database is
-// created over HTTP with the module's admin credentials (and refused with
-// wrong ones).
+// Two describe blocks, two sets of tapes:
+//
+// 1. "modules/couchdb": ported from testcontainers-go
+//    modules/couchdb/couchdb_test.go, by way of testcontainers-ae. It tests
+//    the MODULE (default and custom admin credentials, the connection
+//    string), one container per case, Basic auth.
+//
+// 2. "CouchDB HTTP API": written for servirtium-vcr. Re-usable recordings
+//    of CouchDB's HTTP API, one tape per scenario, for any language's tests
+//    to replay with no CouchDB. This is the comprehensive part.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes
+// are the re-usable part. A port is a test in your language and test
+// framework that makes the same requests, in the same order, against a
+// Servirtium replay server loaded with the tape, and checks the same things.
+// Any Servirtium implementation replays them. Every request here is plain
+// HTTP/1.1 with these headers and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+//   Content-Type: application/json   (only when there is a body; text/plain
+//                                     for the attachment upload)
+//   Cookie: AuthSession=...          (the logged-in cases only, see below)
+//   Accept: application/json         (one request, ?attachments=true)
+// Playback is strict about method, path (query string included, exactly as
+// encoded here), the recorded request headers and the body (byte for byte:
+// send the JSON bodies exactly as written in this file, no spaces), and fails
+// a case whose recorded requests are not all made. Host, Connection and
+// Content-Length are on the tapes but are transport headers, not compared.
+//
+// PORTING, the tape for each case: <case>.md beside this file, where <case>
+// is the second argument of servirtium.recording(...) in that case. The
+// cases are independent: each makes its own database (a fixed name, created
+// with ?q=1, below), works in it, and deletes it on the tape, so any one tape
+// replays alone and in any order.
+//
+// Login, and "already logged in"
+// ------------------------------
+// Logging in gets ONE tape of its own, logs_in_and_out_with_a_session_cookie
+// (POST /_session with a right and a wrong password, GET /_session before and
+// after, DELETE /_session). Every other API case is ALREADY LOGGED IN: each
+// request carries the session cookie CouchDB issues at POST /_session,
+//   Cookie: AuthSession=<opaque value>
+// and the login itself is not on that case's tape. When recording, the test
+// logs in directly against the container, outside the recorder (login_live
+// below), so the cookie is real; one case refuses_a_client_that_has_not_
+// logged_in shows what happens without it. These are component-level tests
+// of CouchDB's API, not full-stack ones: the tapes stand in for CouchDB.
+//
+// PORTING, getting into the logged-in state without the login tape: send
+// any `Cookie: AuthSession=<anything>` header on every request. The tapes
+// hold the cookie as `Cookie: AuthSession=COOKIE_1` (Servirtium's
+// redact_credentials preset), and playback matches a credential header on
+// PRESENCE, not value: present, it matches; missing, it does not. Against a
+// live CouchDB, log in first (POST /_session {"name":..,"password":..}, take
+// AuthSession=<value> from the Set-Cookie response header) or send
+// `Authorization: Basic ...` instead (CouchDB accepts both, but the tapes
+// recorded a Cookie, so replay wants a Cookie). A port's
+// "is-already-logged-in" fixture is just that header; to test the login
+// itself, replay the login tape, or both tapes one after the other. A
+// consequence of presence matching: a replay cannot tell a valid cookie
+// from a forged one, so the unauthorized case sends no cookie at all.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below, with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them all and
+// the interactions each touched ("none" where it did not). In short:
+//   - normalized (each distinct value a stable {{name-N}} token, the same
+//     token wherever it recurs, because a client sends it back): sequence
+//     ids ({{seq-N}}: update_seq, last_seq, a change's seq, since=... in a
+//     later request) and bare 32-hex uuids ({{uuid-N}}: the server uuid,
+//     /_uuids, server-generated document ids, in later paths too), and the
+//     ETags computed over those ({{etag-N}}: a client may send one back as
+//     If-None-Match).
+//   - collapsed (one constant; nobody sends them back): a database's
+//     instance_start_time, and the session cookie's Expires date.
+//   - redacted: the session cookie (COOKIE_N, matched on presence), and the
+//     password in the login body ("password":"REDACTED[admin]" and
+//     "REDACTED[admin-wrong-password]", put back on replay, so the wrong
+//     password stays told apart from the right one).
+//   - left out: X-Couch-Request-ID and X-CouchDB-Body-Time response headers
+//     (and Date, as everywhere).
+//
+// PORTING: in playback, a normalized or redacted value comes back as its
+// token, verbatim: the server uuid is "{{uuid-1}}", a last_seq is
+// "{{seq-2}}", the cookie is AuthSession=COOKIE_1. Treat every id, seq and
+// ETag as an opaque string (never assert its length or shape) and send it
+// back exactly as received; the tape expects the token in the later request,
+// e.g. `GET /tcae_ids/{{uuid-2}}` and `GET .../_changes?since={{seq-2}}`.
+// Send the braces as they are: playback compares paths byte for byte, so a
+// client that percent-encodes `{` as %7B will not match. Also: CouchDB
+// separates the rows of view, _find and _changes results with CRLF; the
+// tapes keep the CRs, but Servirtium's playback folds a tape's CRLF to LF
+// when it reads it, so replayed rows are LF-separated. Parse the JSON, or
+// ignore CRs, rather than comparing those bodies byte for byte.
+//
+// Revisions are NOT rewritten. A _rev is "<generation>-<md5 of the body,
+// the previous rev and the deleted flag>", so the same writes give the same
+// revs on every run: {"v":1} written fresh is always
+// "1-7a7e4b29f3af401e69b6f86e4c26b727", whatever the document's id (the id
+// is not hashed: a, b and c in follows_the_changes_feed_with_since share
+// it). Use them in assertions if you like; a document's ETag is its rev.
+// Attachment digests and ETags (base64 MD5 of the bytes) and Mango bookmarks
+// are deterministic too. The ETags that are not (computed over sequence ids
+// or uuids) are normalized, below.
+//
+// Every database is created with ?q=1 (one shard; CouchDB 3's default is
+// 2). With two shards, _changes interleaves the shards' feeds in an order
+// that can differ run to run; with one, the order is the order of the writes.
+// A port replaying the tapes need not care: the requests are on the tape.
+//
+// In and out of scope
+// -------------------
+// In: server info (/, /_up, /_all_dbs, /_uuids, /_session); database
+// create / info / _security / delete; document CRUD with revisions, old
+// revisions and revs_info; 409 on a stale revision; replication-style
+// conflicts (new_edits=false, ?conflicts=true, resolving); _bulk_docs
+// (create, update with a per-document conflict, delete); _all_docs with
+// include_docs, key, keys, startkey/endkey, limit/skip and descending;
+// attachments standalone (PUT/GET/DELETE) and inline (base64 in the
+// document, ?attachments=true); design documents with map and map/reduce
+// views (_count, _sum, group, reduce=false, key, range, include_docs, keys);
+// Mango (_index create/list/delete, _find with and without an index, sort,
+// fields, limit, the bookmark); _changes (normal feed, since=, limit,
+// include_docs, a deletion); server-generated ids; login and logout; and the
+// representative errors 400, 401, 404, 409 and 412 (405 too).
+// Out: continuous / longpoll / eventsource feeds (connection- and
+// timing-level: Servirtium records messages, not connections); replication
+// and the scheduler (asynchronous, timing-dependent); compaction,
+// _active_tasks, _node stats and config (node-specific, varying numbers);
+// users other than the admin, and roles; partitioned databases; _purge;
+// show/list/update functions (deprecated in CouchDB 3, gone in 4); full-text
+// search (needs Clouseau, not in the image). Each could be a later case.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test couchdb/test_couchdb.ae                    container, no Servirtium
+//   TCAE_VCR=record   ae test couchdb/test_couchdb.ae  write the tapes
+//   TCAE_VCR=check    ae test couchdb/test_couchdb.ae  fail if a tape changed
+//   TCAE_VCR=playback ae test couchdb/test_couchdb.ae  no container: the tapes
+// The API cases share one container (started on the first one and removed at
+// the end); the module cases each start their own.
 
 import std.spec
 import std.string
 import std.encoding
+import std.json
 import std.http.client
 import testcontainers as tc
 import testcontainers.docker
@@ -16,7 +156,6 @@ import modules.couchdb
 
 const IMAGE = "couchdb:3"
 
-// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
 // The User-Agent this test's HTTP client sends, as an app's client library
 // would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
 // std.http.client adds none. Set here, in the test's own client, so the
@@ -24,22 +163,46 @@ const IMAGE = "couchdb:3"
 // client sends and adds nothing of its own.
 const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
 
-fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+// The cookie the logged-in cases send in playback, where there is no CouchDB
+// to log in to. Any value does: the tapes match the Cookie header on
+// presence (see "already logged in" above).
+const PLAYBACK_COOKIE = "AuthSession=any-value-replay-matches-on-presence"
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
+
+// Response headers of the last request that some cases look at.
+var last_set_cookie: string = ""
+var last_etag: string = ""
+var last_content_type: string = ""
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines;
+// ctype is the body's Content-Type (none when the body is empty).
+fn http_send(method: string, url: string, hdrs: string[], ctype: string, body: string) -> (int, string, string) {
     req = client.request(method, url)
     client.set_header(req, "User-Agent", USER_AGENT)
-    client.set_timeout(req, 15s)
+    client.set_timeout(req, 30s)
     for h in hdrs {
         colon = string.index_of(h, ":")
         client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
     }
-    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
     r, err = client.send_request(req)
     client.request_free(req)
     if err != "" { return 0, "", err }
     st = client.response_status(r)
     b = client.response_body(r)
+    last_set_cookie = client.response_header(r, "Set-Cookie")
+    last_etag = client.response_header(r, "ETag")
+    last_content_type = client.response_header(r, "Content-Type")
     client.response_free(r)
     return st, b, ""
+}
+
+// The module cases' requests (Basic auth or none).
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    return http_send(method, url, hdrs, "application/json", body)
 }
 
 fn basic(user: string, pw: string) -> string {
@@ -55,9 +218,180 @@ fn redact_basic(user: string, pw: string, label: string) {
     servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${secret}", "Basic REDACTED[${label}]")
 }
 
-main() {
-    fw = spec.init()
-    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+// The API cases: the base URL of the current recording and the session
+// cookie ("AuthSession=...") every logged-in request carries.
+var api: string = ""
+var cookie: string = ""
+
+// A logged-in request with a JSON body (or none): (status, body). A transport
+// error fails the case.
+fn couch(method: string, path: string, body: string) -> (int, string) {
+    return couch_typed(method, path, "application/json", body)
+}
+
+fn couch_typed(method: string, path: string, ctype: string, body: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}${path}", ["Cookie: ${cookie}"], ctype, body)
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// A logged-in GET that asks for JSON (Accept: application/json), where
+// CouchDB would otherwise choose another representation.
+fn couch_json(path: string) -> (int, string) {
+    st, b, err = http_send("GET", "${api}${path}", ["Cookie: ${cookie}", "Accept: application/json"], "", "")
+    spec.assert_ok(err, "GET ${path}")
+    return st, b
+}
+
+// A request with no credentials at all: (status, body).
+fn anonymous(method: string, path: string, body: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}${path}", [], "application/json", body)
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// Percent-encode a query-string value (a JSON key such as "apple" goes on
+// the wire as %22apple%22): RFC 3986 unreserved bytes stay, the rest %XX.
+fn q(s: string) -> string {
+    hex = "0123456789ABCDEF"
+    out = ""
+    b = string.bytes(s)
+    i = 0
+    while i < b.len {
+        ch = b[i]
+        keep = (ch >= 48 && ch <= 57) || (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch == 45 || ch == 46 || ch == 95 || ch == 126
+        if keep {
+            out = string.concat(out, string.substring(s, i, i + 1))
+        } else {
+            hi = string.substring(hex, (ch >> 4) & 15, ((ch >> 4) & 15) + 1)
+            lo = string.substring(hex, ch & 15, (ch & 15) + 1)
+            out = "${out}%${hi}${lo}"
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// The body with its carriage returns removed. CouchDB streams view, _find
+// and _changes results with CRLF between rows; the tape keeps the CRs, but
+// Servirtium's playback reads a tape with CRLF folded to LF (so a tape
+// checked out with autocrlf still parses), so on replay the rows are
+// LF-separated. Assert on lf(body) and both pass.
+fn lf(body: string) -> string {
+    return string.replace_all(body, "\r", "")
+}
+
+// A JSON string key for the query string: qk("b") is "b" encoded, %22b%22.
+fn qk(s: string) -> string {
+    return q("\"${s}\"")
+}
+
+// A string in a JSON body by a dotted path ("rev", "uuids.0", "docs.1._id");
+// "" when absent or not a string.
+fn jstr(body: string, path: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    let v: ptr = doc
+    rest = path
+    while string.length(rest) > 0 && v != null {
+        p = rest
+        dot = string.index_of(rest, ".")
+        if dot >= 0 {
+            p = string.substring(rest, 0, dot)
+            rest = string.substring(rest, dot + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        if json.json_type(v) == json.JSON_ARRAY {
+            idx, _ = string.to_int(p)
+            a, _ = json.array_get(v, idx)
+            v = a
+        } else {
+            o, _ = json.object_get(v, p)
+            v = o
+        }
+    }
+    out = ""
+    if v != null {
+        s, serr = json.get_string(v)
+        if serr == "" { out = string.copy(s) }
+    }
+    json.free(doc)
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// The live container the API cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_addr: string = ""
+var shared_container: ptr = null
+
+// The shared container's base URL, starting it on first use ("" on failure).
+fn shared() -> string {
+    if string.length(shared_addr) > 0 { return shared_addr }
+    db, err = couchdb.run(IMAGE)
+    if db == null {
+        spec.fail("couchdb starts: ${err}")
+        return ""
+    }
+    shared_container = db.container as ptr
+    spec.assert_ok(err, "couchdb starts")
+    if err != "" { return "" }
+    port, _ = tc.mapped_port(db.container, couchdb.PORT)
+    shared_addr = "http://localhost:${port}"
+    return shared_addr
+}
+
+// Log in directly against the container, outside any recording: the
+// "AuthSession=..." cookie the logged-in cases carry.
+fn login_live(addr: string) -> string {
+    st, b, err = http_send("POST", "${addr}/_session", [], "application/json", "{\"name\":\"${couchdb.DEFAULT_USER}\",\"password\":\"${couchdb.DEFAULT_PASSWORD}\"}")
+    spec.assert_ok(err, "log in (not recorded)")
+    spec.assert_eq(st, 200, "log in (not recorded): ${b}")
+    semi = string.index_of(last_set_cookie, ";")
+    if semi < 0 { return last_set_cookie }
+    return string.substring(last_set_cookie, 0, semi)
+}
+
+// Start a logged-in API case: in a live mode, the shared container, a fresh
+// session cookie and, should an earlier failed run have left it, the case's
+// database removed (none of that is recorded); then the recording. Sets
+// `api` and `cookie`; returns the recording handle, and ok = 0 when the case
+// cannot run.
+fn begin(case_: string, db: string) -> (ptr, int) {
+    addr = ""
+    cookie = PLAYBACK_COOKIE
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+        cookie = login_live(addr)
+        if string.length(db) > 0 { http_send("DELETE", "${addr}/${db}", ["Cookie: ${cookie}"], "", "") }
+    }
+    base, rec = servirtium.recording("couchdb", case_, addr)
+    api = base
+    return rec, 1
+}
+
+// Create the case's database (one shard, see the header) and assert it.
+fn create_db(db: string) {
+    st, b = couch("PUT", "/${db}?q=1", "")
+    spec.assert_eq(st, 201, "PUT /${db} creates it: ${b}")
+    spec.assert_str_eq(b, "{\"ok\":true}\n", "the body is {\"ok\":true}")
+}
+
+fn delete_db(db: string) {
+    st, b = couch("DELETE", "/${db}", "")
+    spec.assert_eq(st, 200, "DELETE /${db}: ${b}")
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules
+// ---------------------------------------------------------------------------
+
+// The module cases' rules.
+fn module_rules() {
+    servirtium.clear_rules()
     // Every Basic credential the cases send is kept off the tapes.
     redact_basic("admin", "password", "admin")
     redact_basic("admin", "nope", "admin-wrong-password")
@@ -68,9 +402,66 @@ main() {
     servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "X-Couch-Request-ID")
     servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "X-CouchDB-Body-Time")
     servirtium.normalize("[0-9a-f]{32}", "couchdb-uuid")
-    servirtium.collapse(servirtium.EPOCH_TIMESTAMP, "946684800")
+    // (instance_start_time only: a bare 10-digit pattern also hit the
+    // X-Couch-Request-ID header when its ten hex digits happened to be all
+    // decimal, so the rules footer differed between runs.)
+    servirtium.collapse("\"instance_start_time\":\"[0-9]+\"", "\"instance_start_time\":\"946684800\"")
     servirtium.collapse("_seq\":\"[0-9]+-[A-Za-z0-9_-]+\"", "_seq\":\"0-SEQ\"")
+}
 
+// The API cases' rules. Rules apply to every recording after them, so the
+// two blocks each clear and register their own.
+fn api_rules() {
+    servirtium.clear_rules()
+    // A request id and a body timing on every response: noise.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "X-Couch-Request-ID")
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "X-CouchDB-Body-Time")
+    // The session cookie, in Set-Cookie (login tape) and Cookie (every
+    // logged-in request): Servirtium's credential preset writes each
+    // distinct value as COOKIE_N and replays the header on presence. (It
+    // covers Authorization too; these cases send none.)
+    servirtium.redact_credentials()
+    // The password in the login body. Labelled literal redactions, not a
+    // collapse: playback puts the real text back before comparing, so the
+    // replay still tells the right password from the wrong one. (A
+    // placeholder must not contain another, hence the brackets.)
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "\"password\":\"${couchdb.DEFAULT_PASSWORD}\"", "\"password\":\"REDACTED[admin]\"")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "\"password\":\"not-the-password\"", "\"password\":\"REDACTED[admin-wrong-password]\"")
+    // Set-Cookie's Expires is the login time plus ten minutes. Collapsed:
+    // a client never sends it back.
+    servirtium.collapse("Expires=[A-Z][a-z]{2}, [0-9]{2}-[A-Z][a-z]{2}-[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT", "Expires=Sat, 01-Jan-2000 00:00:00 GMT")
+    // When the database file was opened (Unix seconds, as a string). Only
+    // in this field: a bare 10-digit pattern would also hit sizes and the
+    // like.
+    servirtium.collapse("\"instance_start_time\":\"[0-9]+\"", "\"instance_start_time\":\"946684800\"")
+    // Sequence ids: "<number>-g1AAAA...", opaque, and different every run
+    // (they embed the shard file's uuid). Normalized, not collapsed: a
+    // client sends last_seq back as ?since=..., so the same value must be
+    // the same token in the response and in the later request path. Revs
+    // ("1-<hex>") never match: hex has no "g".
+    servirtium.normalize("[0-9]+-g[A-Za-z0-9_-]{20,}", "seq")
+    // Bare 32-hex uuids, in quotes: the server's uuid (GET /), /_uuids, and
+    // the ids CouchDB gives documents POSTed without one, which come back
+    // in a later request path (the token replaces the value there too).
+    // The quotes keep revs out ("1-<32 hex>" has "1-" after the quote);
+    // they are lookarounds, so the token replaces just the hex.
+    servirtium.normalize("(?<=\")[0-9a-f]{32}(?=\")", "uuid")
+    // The ETag of a response built from those (_changes, /_uuids,
+    // _all_dbs, the views after a write): an upper-case base-36 hash of
+    // them, different every run. Normalized, since a client may send it
+    // back as If-None-Match. A document's ETag is its rev ("1-<hex>") and
+    // an attachment's the base64 MD5 of its bytes: both stable, neither
+    // matches.
+    servirtium.normalize("(?<=ETag: \")[0-9A-Z]{20,30}(?=\")", "etag")
+}
+
+// ---------------------------------------------------------------------------
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    module_rules()
     spec.describe(fw, "modules/couchdb") {
         spec.after_each() callback { testing.cleanup_all() }
 
@@ -164,6 +555,628 @@ main() {
             spec.assert_eq(st, 201, "the credentials the URL encodes authenticate: ${body}")
             servirtium.end_recording(rec)
         }
+    }
+
+    api_rules()
+    spec.describe(fw, "CouchDB HTTP API") {
+
+        // ---- the login tape ----------------------------------------------
+
+        // PORTING: the one tape with the login on it. No cookie on the first
+        // request.
+        //   GET    /_session                        -> 200, userCtx.name null (anonymous)
+        //   POST   /_session {"name":"admin","password":<wrong>} -> 401
+        //          {"error":"unauthorized","reason":"Name or password is incorrect."},
+        //          and an EMPTY Set-Cookie: AuthSession=
+        //   POST   /_session {"name":"admin","password":<right>} -> 200
+        //          {"ok":true,"name":"admin","roles":["_admin"]},
+        //          Set-Cookie: AuthSession=COOKIE_1; Version=1; Expires=...; Max-Age=600; Path=/; HttpOnly
+        //   GET    /_session  Cookie: AuthSession=<from Set-Cookie> -> 200,
+        //          userCtx admin, "authenticated":"cookie"
+        //   DELETE /_session  Cookie: ... -> 200 {"ok":true}, Set-Cookie: AuthSession= (cleared)
+        // The passwords are on the tape as REDACTED[admin] and
+        // REDACTED[admin-wrong-password]; playback puts them back before
+        // comparing, so a port sends the real test passwords ("password",
+        // the module's default, and "not-the-password"). The cookie value is
+        // COOKIE_1: take it from the replayed Set-Cookie, as a client would.
+        // CouchDB's cookie is a signed timestamp, not a server-side session:
+        // DELETE /_session tells the client to drop it, it does not revoke it.
+        spec.it("logs in and out with a session cookie") callback {
+            rec, ok = begin("logs_in_and_out_with_a_session_cookie", "")
+            if ok == 0 { return }
+            st, b = anonymous("GET", "/_session", "")
+            spec.assert_eq(st, 200, "GET /_session: ${b}")
+            spec.assert_contains(b, "\"userCtx\":{\"name\":null,\"roles\":[]}", "nobody is logged in")
+
+            st, b = anonymous("POST", "/_session", "{\"name\":\"admin\",\"password\":\"not-the-password\"}")
+            spec.assert_eq(st, 401, "a wrong password is refused: ${b}")
+            spec.assert_contains(b, "\"error\":\"unauthorized\"", "unauthorized")
+
+            st, b = anonymous("POST", "/_session", "{\"name\":\"admin\",\"password\":\"${couchdb.DEFAULT_PASSWORD}\"}")
+            spec.assert_eq(st, 200, "the right password logs in: ${b}")
+            spec.assert_str_eq(b, "{\"ok\":true,\"name\":\"admin\",\"roles\":[\"_admin\"]}\n", "the user and roles")
+            spec.assert_true(string.starts_with(last_set_cookie, "AuthSession=") == 1, "a session cookie: ${last_set_cookie}")
+            spec.assert_contains(last_set_cookie, "HttpOnly", "HttpOnly")
+            semi = string.index_of(last_set_cookie, ";")
+            cookie = string.substring(last_set_cookie, 0, semi)
+
+            st, b = couch("GET", "/_session", "")
+            spec.assert_eq(st, 200, "GET /_session with the cookie: ${b}")
+            spec.assert_contains(b, "\"userCtx\":{\"name\":\"admin\",\"roles\":[\"_admin\"]}", "logged in as admin")
+            spec.assert_contains(b, "\"authenticated\":\"cookie\"", "by the cookie")
+
+            st, b = couch("DELETE", "/_session", "")
+            spec.assert_eq(st, 200, "DELETE /_session logs out: ${b}")
+            spec.assert_true(string.starts_with(last_set_cookie, "AuthSession=;") == 1, "the cookie is cleared: ${last_set_cookie}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: no credentials at all (no Cookie, no Authorization).
+        //   GET /               -> 200 (the welcome document is public)
+        //   GET /_all_dbs       -> 401 {"error":"unauthorized","reason":"You are not a server admin."}
+        //   PUT /tcae_unauth?q=1 -> 401, same body
+        //   GET /_session       -> 200, userCtx.name null
+        // Not "a wrong cookie": replay matches a cookie on presence, so it
+        // could not tell a forged cookie from a good one.
+        spec.it("refuses a client that has not logged in") callback {
+            rec, ok = begin("refuses_a_client_that_has_not_logged_in", "")
+            if ok == 0 { return }
+            st, b = anonymous("GET", "/", "")
+            spec.assert_eq(st, 200, "GET / needs no login: ${b}")
+            st, b = anonymous("GET", "/_all_dbs", "")
+            spec.assert_eq(st, 401, "GET /_all_dbs needs a server admin: ${b}")
+            spec.assert_contains(b, "\"error\":\"unauthorized\"", "unauthorized")
+            st, b = anonymous("PUT", "/tcae_unauth?q=1", "")
+            spec.assert_eq(st, 401, "creating a database needs a server admin: ${b}")
+            st, b = anonymous("GET", "/_session", "")
+            spec.assert_eq(st, 200, "GET /_session: ${b}")
+            spec.assert_contains(b, "\"name\":null", "anonymous")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- already logged in from here on: every request carries the cookie
+
+        // PORTING:
+        //   GET /           -> 200 {"couchdb":"Welcome","version":..,"uuid":"{{uuid-1}}",..}
+        //   GET /_up        -> 200 {"seeds":{},"status":"ok"}
+        //   GET /_session   -> 200, userCtx admin, authenticated by cookie
+        //                      (the check a port's logged-in fixture can make)
+        //   GET /_uuids?count=3 -> 200 {"uuids":[3 x 32 hex]} ({{uuid-N}})
+        spec.it("reports the server info") callback {
+            rec, ok = begin("reports_the_server_info", "")
+            if ok == 0 { return }
+            st, b = couch("GET", "/", "")
+            spec.assert_eq(st, 200, "GET /: ${b}")
+            spec.assert_contains(b, "\"couchdb\":\"Welcome\"", "the welcome document")
+            spec.assert_contains(b, "\"vendor\":{\"name\":\"The Apache Software Foundation\"}", "the vendor")
+            st, b = couch("GET", "/_up", "")
+            spec.assert_eq(st, 200, "GET /_up: ${b}")
+            spec.assert_contains(b, "\"status\":\"ok\"", "up")
+            st, b = couch("GET", "/_session", "")
+            spec.assert_eq(st, 200, "GET /_session: ${b}")
+            spec.assert_contains(b, "\"userCtx\":{\"name\":\"admin\",\"roles\":[\"_admin\"]}", "already logged in as admin")
+            st, b = couch("GET", "/_uuids?count=3", "")
+            spec.assert_eq(st, 200, "GET /_uuids: ${b}")
+            // Not their length: on replay a normalized value comes back as its
+            // token, "{{uuid-3}}". Treat ids as opaque strings.
+            spec.assert_true(string.length(jstr(b, "uuids.2")) > 0, "three uuids")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: database lifecycle, in tcae_dbs.
+        //   PUT    /tcae_dbs?q=1 -> 201 {"ok":true}, Location header
+        //   PUT    /tcae_dbs?q=1 -> 412 {"error":"file_exists",..} (it exists)
+        //   GET    /tcae_dbs     -> 200 info: db_name, doc_count 0, update_seq {{seq-N}},
+        //                         instance_start_time collapsed, cluster.q 1
+        //   GET    /_all_dbs     -> 200 ["tcae_dbs"]
+        //   PUT    /tcae_dbs/_security {"admins":{..},"members":{"roles":["readers"]}} -> 200 {"ok":true}
+        //   GET    /tcae_dbs/_security -> 200, the same object
+        //   DELETE /tcae_dbs     -> 200 {"ok":true}
+        //   GET    /tcae_dbs     -> 404 {"error":"not_found","reason":"Database does not exist."}
+        //   DELETE /tcae_dbs     -> 404
+        spec.it("creates, inspects and deletes a database") callback {
+            rec, ok = begin("creates_inspects_and_deletes_a_database", "tcae_dbs")
+            if ok == 0 { return }
+            create_db("tcae_dbs")
+            st, b = couch("PUT", "/tcae_dbs?q=1", "")
+            spec.assert_eq(st, 412, "creating it again is 412: ${b}")
+            spec.assert_contains(b, "\"error\":\"file_exists\"", "file_exists")
+            st, b = couch("GET", "/tcae_dbs", "")
+            spec.assert_eq(st, 200, "GET /tcae_dbs: ${b}")
+            spec.assert_contains(b, "\"db_name\":\"tcae_dbs\"", "its name")
+            spec.assert_contains(b, "\"doc_count\":0", "empty")
+            spec.assert_contains(b, "\"cluster\":{\"q\":1", "one shard")
+            st, b = couch("GET", "/_all_dbs", "")
+            spec.assert_eq(st, 200, "GET /_all_dbs: ${b}")
+            spec.assert_contains(b, "\"tcae_dbs\"", "listed")
+            sec = "{\"admins\":{\"names\":[],\"roles\":[]},\"members\":{\"names\":[],\"roles\":[\"readers\"]}}"
+            st, b = couch("PUT", "/tcae_dbs/_security", sec)
+            spec.assert_eq(st, 200, "PUT _security: ${b}")
+            st, b = couch("GET", "/tcae_dbs/_security", "")
+            spec.assert_eq(st, 200, "GET _security: ${b}")
+            spec.assert_contains(b, "\"roles\":[\"readers\"]", "the members' role")
+            delete_db("tcae_dbs")
+            st, b = couch("GET", "/tcae_dbs", "")
+            spec.assert_eq(st, 404, "gone: ${b}")
+            spec.assert_contains(b, "\"reason\":\"Database does not exist.\"", "does not exist")
+            st, b = couch("DELETE", "/tcae_dbs", "")
+            spec.assert_eq(st, 404, "deleting it again is 404: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: one document's life, in tcae_crud.
+        //   PUT    /tcae_crud/apple {"type":"fruit","name":"apple","price":3} -> 201 {"ok":true,"id":"apple","rev":"1-..."}
+        //   GET    /tcae_crud/apple -> 200 the document with _id and _rev
+        //   PUT    /tcae_crud/apple {"_rev":<rev 1>,...,"price":4} -> 201 rev "2-..."
+        //   GET    /tcae_crud/apple?revs_info=true -> 200, _revs_info: both revs "available"
+        //   GET    /tcae_crud/apple?rev=<rev 1> -> 200 the old revision (price 3), until compaction
+        //   DELETE /tcae_crud/apple?rev=<rev 2> -> 200 {"ok":true,..,"rev":"3-..."}
+        //   GET    /tcae_crud/apple -> 404 {"error":"not_found","reason":"deleted"}
+        //   GET    /tcae_crud/pear  -> 404 {"error":"not_found","reason":"missing"}
+        // The revs are deterministic (see the header), so the tape's revs
+        // are what a port's CouchDB would answer too; the test still takes
+        // each rev from the previous response, as a client must.
+        spec.it("creates, reads, updates and deletes a document") callback {
+            rec, ok = begin("creates_reads_updates_and_deletes_a_document", "tcae_crud")
+            if ok == 0 { return }
+            create_db("tcae_crud")
+            st, b = couch("PUT", "/tcae_crud/apple", "{\"type\":\"fruit\",\"name\":\"apple\",\"price\":3}")
+            spec.assert_eq(st, 201, "PUT a new document: ${b}")
+            rev1 = jstr(b, "rev")
+            spec.assert_true(string.starts_with(rev1, "1-") == 1, "its first rev: ${rev1}")
+            st, b = couch("GET", "/tcae_crud/apple", "")
+            spec.assert_eq(st, 200, "GET it: ${b}")
+            spec.assert_contains(b, "\"_id\":\"apple\",\"_rev\":\"${rev1}\",\"type\":\"fruit\"", "id, rev, then its fields")
+            st, b = couch("PUT", "/tcae_crud/apple", "{\"_rev\":\"${rev1}\",\"type\":\"fruit\",\"name\":\"apple\",\"price\":4}")
+            spec.assert_eq(st, 201, "update with the current rev: ${b}")
+            rev2 = jstr(b, "rev")
+            spec.assert_true(string.starts_with(rev2, "2-") == 1, "a second rev: ${rev2}")
+            st, b = couch("GET", "/tcae_crud/apple?revs_info=true", "")
+            spec.assert_eq(st, 200, "GET ?revs_info=true: ${b}")
+            spec.assert_contains(b, "\"_revs_info\":[{\"rev\":\"${rev2}\",\"status\":\"available\"},{\"rev\":\"${rev1}\",\"status\":\"available\"}]", "both revs")
+            st, b = couch("GET", "/tcae_crud/apple?rev=${rev1}", "")
+            spec.assert_eq(st, 200, "GET the old rev: ${b}")
+            spec.assert_contains(b, "\"price\":3", "the old content")
+            st, b = couch("DELETE", "/tcae_crud/apple?rev=${rev2}", "")
+            spec.assert_eq(st, 200, "DELETE with the current rev: ${b}")
+            spec.assert_true(string.starts_with(jstr(b, "rev"), "3-") == 1, "a deletion is a third rev")
+            st, b = couch("GET", "/tcae_crud/apple", "")
+            spec.assert_eq(st, 404, "a deleted document: ${b}")
+            spec.assert_contains(b, "\"reason\":\"deleted\"", "reason deleted")
+            st, b = couch("GET", "/tcae_crud/pear", "")
+            spec.assert_eq(st, 404, "a document never written: ${b}")
+            spec.assert_contains(b, "\"reason\":\"missing\"", "reason missing")
+            delete_db("tcae_crud")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: optimistic concurrency, in tcae_conflict409.
+        //   PUT    /tcae_conflict409/doc {"v":1}            -> 201 rev 1
+        //   PUT    /tcae_conflict409/doc {"v":1}            -> 409 {"error":"conflict","reason":"Document update conflict."}  (no _rev)
+        //   PUT    /tcae_conflict409/doc {"_rev":<1>,"v":2} -> 201 rev 2
+        //   PUT    /tcae_conflict409/doc {"_rev":<1>,"v":3} -> 409 (stale rev)
+        //   DELETE /tcae_conflict409/doc?rev=<1>            -> 409 (stale rev)
+        //   GET    /tcae_conflict409/doc                    -> 200, still v 2
+        spec.it("refuses a stale revision with a 409") callback {
+            rec, ok = begin("refuses_a_stale_revision_with_a_409", "tcae_conflict409")
+            if ok == 0 { return }
+            create_db("tcae_conflict409")
+            st, b = couch("PUT", "/tcae_conflict409/doc", "{\"v\":1}")
+            spec.assert_eq(st, 201, "created: ${b}")
+            rev1 = jstr(b, "rev")
+            st, b = couch("PUT", "/tcae_conflict409/doc", "{\"v\":1}")
+            spec.assert_eq(st, 409, "a write without the rev: ${b}")
+            spec.assert_contains(b, "{\"error\":\"conflict\",\"reason\":\"Document update conflict.\"}", "conflict")
+            st, b = couch("PUT", "/tcae_conflict409/doc", "{\"_rev\":\"${rev1}\",\"v\":2}")
+            spec.assert_eq(st, 201, "with the current rev: ${b}")
+            st, b = couch("PUT", "/tcae_conflict409/doc", "{\"_rev\":\"${rev1}\",\"v\":3}")
+            spec.assert_eq(st, 409, "with a stale rev: ${b}")
+            st, b = couch("DELETE", "/tcae_conflict409/doc?rev=${rev1}", "")
+            spec.assert_eq(st, 409, "delete with a stale rev: ${b}")
+            st, b = couch("GET", "/tcae_conflict409/doc", "")
+            spec.assert_eq(st, 200, "GET: ${b}")
+            spec.assert_contains(b, "\"v\":2", "the second write stands")
+            delete_db("tcae_conflict409")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: a replication-style conflict, in tcae_conflicts. Two
+        // first revisions of one document written as a replicator would,
+        // with their revs given and new_edits=false (no 409: both are kept).
+        //   POST   /tcae_conflicts/_bulk_docs {"new_edits":false,"docs":[
+        //            {"_id":"doc","_rev":"1-aaaa...","side":"a"},
+        //            {"_id":"doc","_rev":"1-bbbb...","side":"b"}]} -> 201 []
+        //   GET    /tcae_conflicts/doc?conflicts=true -> 200: the winner
+        //          (the higher rev, 1-bbbb..., side b) and "_conflicts":["1-aaaa..."]
+        //   DELETE /tcae_conflicts/doc?rev=1-aaaa... -> 200 (resolve: delete the loser)
+        //   GET    /tcae_conflicts/doc?conflicts=true -> 200, no _conflicts
+        spec.it("keeps both sides of a replication conflict until resolved") callback {
+            rec, ok = begin("keeps_both_sides_of_a_replication_conflict_until_resolved", "tcae_conflicts")
+            if ok == 0 { return }
+            create_db("tcae_conflicts")
+            ra = "1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            rb = "1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            st, b = couch("POST", "/tcae_conflicts/_bulk_docs", "{\"new_edits\":false,\"docs\":[{\"_id\":\"doc\",\"_rev\":\"${ra}\",\"side\":\"a\"},{\"_id\":\"doc\",\"_rev\":\"${rb}\",\"side\":\"b\"}]}")
+            spec.assert_eq(st, 201, "both written: ${b}")
+            st, b = couch("GET", "/tcae_conflicts/doc?conflicts=true", "")
+            spec.assert_eq(st, 200, "GET ?conflicts=true: ${b}")
+            spec.assert_contains(b, "\"_rev\":\"${rb}\",\"side\":\"b\"", "the higher rev wins")
+            spec.assert_contains(b, "\"_conflicts\":[\"${ra}\"]", "the other is a conflict")
+            st, b = couch("DELETE", "/tcae_conflicts/doc?rev=${ra}", "")
+            spec.assert_eq(st, 200, "delete the losing rev: ${b}")
+            st, b = couch("GET", "/tcae_conflicts/doc?conflicts=true", "")
+            spec.assert_eq(st, 200, "GET again: ${b}")
+            spec.assert_true(string.index_of(b, "_conflicts") < 0, "resolved: ${b}")
+            delete_db("tcae_conflicts")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: _bulk_docs, in tcae_bulk. Always 201; each document's
+        // outcome is in the array, in request order.
+        //   POST /tcae_bulk/_bulk_docs {"docs":[{"_id":"a","n":1},{"_id":"b","n":2},{"_id":"c","n":3}]}
+        //        -> 201 [{"ok":true,"id":"a","rev":"1-.."},..]
+        //   POST /tcae_bulk/_bulk_docs {"docs":[{"_id":"a","_rev":<a's>,"n":10},{"_id":"b","n":20}]}
+        //        -> 201 [{"ok":true,"id":"a","rev":"2-.."},{"id":"b","error":"conflict","reason":"Document update conflict."}]
+        //   POST /tcae_bulk/_bulk_docs {"docs":[{"_id":"c","_rev":<c's>,"_deleted":true}]} -> 201, c deleted
+        //   GET  /tcae_bulk -> 200, doc_count 2, doc_del_count 1
+        spec.it("writes documents in bulk") callback {
+            rec, ok = begin("writes_documents_in_bulk", "tcae_bulk")
+            if ok == 0 { return }
+            create_db("tcae_bulk")
+            st, b = couch("POST", "/tcae_bulk/_bulk_docs", "{\"docs\":[{\"_id\":\"a\",\"n\":1},{\"_id\":\"b\",\"n\":2},{\"_id\":\"c\",\"n\":3}]}")
+            spec.assert_eq(st, 201, "three created: ${b}")
+            ra = jstr(b, "0.rev")
+            rc = jstr(b, "2.rev")
+            spec.assert_true(string.starts_with(ra, "1-") == 1, "a's rev")
+            st, b = couch("POST", "/tcae_bulk/_bulk_docs", "{\"docs\":[{\"_id\":\"a\",\"_rev\":\"${ra}\",\"n\":10},{\"_id\":\"b\",\"n\":20}]}")
+            spec.assert_eq(st, 201, "a mixed batch is still 201: ${b}")
+            spec.assert_true(string.starts_with(jstr(b, "0.rev"), "2-") == 1, "a updated")
+            spec.assert_contains(b, "{\"id\":\"b\",\"error\":\"conflict\",\"reason\":\"Document update conflict.\"}", "b refused, alone")
+            st, b = couch("POST", "/tcae_bulk/_bulk_docs", "{\"docs\":[{\"_id\":\"c\",\"_rev\":\"${rc}\",\"_deleted\":true}]}")
+            spec.assert_eq(st, 201, "c deleted: ${b}")
+            st, b = couch("GET", "/tcae_bulk", "")
+            spec.assert_contains(b, "\"doc_del_count\":1,\"doc_count\":2", "two left, one deleted")
+            delete_db("tcae_bulk")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: _all_docs, in tcae_alldocs, over five documents a..e
+        // written with _bulk_docs. Keys are JSON in the query string,
+        // percent-encoded ("b" is %22b%22). Rows are sorted by _id.
+        //   GET  /tcae_alldocs/_all_docs                          -> total_rows 5, rows a..e (id, key, value.rev)
+        //   GET  /tcae_alldocs/_all_docs?include_docs=true&limit=2 -> a, b with "doc"
+        //   GET  /tcae_alldocs/_all_docs?startkey=%22b%22&endkey=%22d%22 -> b, c, d (endkey inclusive)
+        //   GET  /tcae_alldocs/_all_docs?descending=true&limit=2&skip=1 -> d, c
+        //   GET  /tcae_alldocs/_all_docs?key=%22c%22               -> c
+        //   POST /tcae_alldocs/_all_docs {"keys":["e","nope","a"]} -> e, {"key":"nope","error":"not_found"}, a
+        spec.it("lists documents with _all_docs and its parameters") callback {
+            rec, ok = begin("lists_documents_with_all_docs_and_its_parameters", "tcae_alldocs")
+            if ok == 0 { return }
+            create_db("tcae_alldocs")
+            st, b = couch("POST", "/tcae_alldocs/_bulk_docs", "{\"docs\":[{\"_id\":\"a\",\"n\":1},{\"_id\":\"b\",\"n\":2},{\"_id\":\"c\",\"n\":3},{\"_id\":\"d\",\"n\":4},{\"_id\":\"e\",\"n\":5}]}")
+            spec.assert_eq(st, 201, "five documents: ${b}")
+            st, b = couch("GET", "/tcae_alldocs/_all_docs", "")
+            spec.assert_eq(st, 200, "_all_docs: ${b}")
+            spec.assert_contains(b, "\"total_rows\":5", "five rows")
+            spec.assert_str_eq(jstr(b, "rows.4.id"), "e", "sorted by id")
+            st, b = couch("GET", "/tcae_alldocs/_all_docs?include_docs=true&limit=2", "")
+            spec.assert_eq(st, 200, "include_docs, limit: ${b}")
+            spec.assert_contains(b, "\"doc\":{\"_id\":\"b\"", "the documents themselves")
+            spec.assert_str_eq(jstr(b, "rows.2.id"), "", "two rows")
+            st, b = couch("GET", "/tcae_alldocs/_all_docs?startkey=${qk("b")}&endkey=${qk("d")}", "")
+            spec.assert_eq(st, 200, "a key range: ${b}")
+            spec.assert_str_eq("${jstr(b, "rows.0.id")}${jstr(b, "rows.1.id")}${jstr(b, "rows.2.id")}${jstr(b, "rows.3.id")}", "bcd", "b to d, inclusive")
+            st, b = couch("GET", "/tcae_alldocs/_all_docs?descending=true&limit=2&skip=1", "")
+            spec.assert_eq(st, 200, "descending, skip, limit: ${b}")
+            spec.assert_str_eq("${jstr(b, "rows.0.id")}${jstr(b, "rows.1.id")}", "dc", "d then c")
+            st, b = couch("GET", "/tcae_alldocs/_all_docs?key=${qk("c")}", "")
+            spec.assert_eq(st, 200, "one key: ${b}")
+            spec.assert_str_eq("${jstr(b, "rows.0.id")}${jstr(b, "rows.1.id")}", "c", "just c")
+            st, b = couch("POST", "/tcae_alldocs/_all_docs", "{\"keys\":[\"e\",\"nope\",\"a\"]}")
+            spec.assert_eq(st, 200, "POST keys: ${b}")
+            spec.assert_contains(b, "{\"key\":\"nope\",\"error\":\"not_found\"}", "a missing key is a row with an error")
+            spec.assert_str_eq("${jstr(b, "rows.0.id")}|${jstr(b, "rows.2.id")}", "e|a", "in the order asked")
+            delete_db("tcae_alldocs")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: a standalone attachment, in tcae_att. The upload's body is
+        // the raw bytes with their own Content-Type, not JSON.
+        //   PUT    /tcae_att/doc {"title":"with a note"}                -> 201 rev 1
+        //   PUT    /tcae_att/doc/note.txt?rev=<1>  (text/plain) hello attachments -> 201 rev 2
+        //   GET    /tcae_att/doc/note.txt -> 200 text/plain, the bytes, ETag "<base64 md5>"
+        //   GET    /tcae_att/doc          -> 200, _attachments.note.txt stub: content_type,
+        //                                    revpos 2, digest "md5-...", length 17, "stub":true
+        //   DELETE /tcae_att/doc/note.txt?rev=<2> -> 200 rev 3
+        //   GET    /tcae_att/doc/note.txt -> 404 {"error":"not_found",..}
+        spec.it("stores and serves a standalone attachment") callback {
+            rec, ok = begin("stores_and_serves_a_standalone_attachment", "tcae_att")
+            if ok == 0 { return }
+            create_db("tcae_att")
+            st, b = couch("PUT", "/tcae_att/doc", "{\"title\":\"with a note\"}")
+            spec.assert_eq(st, 201, "the document: ${b}")
+            rev1 = jstr(b, "rev")
+            st, b = couch_typed("PUT", "/tcae_att/doc/note.txt?rev=${rev1}", "text/plain", "hello attachments")
+            spec.assert_eq(st, 201, "the attachment: ${b}")
+            rev2 = jstr(b, "rev")
+            spec.assert_true(string.starts_with(rev2, "2-") == 1, "an attachment makes a new rev")
+            st, b = couch("GET", "/tcae_att/doc/note.txt", "")
+            spec.assert_eq(st, 200, "GET the attachment: ${b}")
+            spec.assert_str_eq(b, "hello attachments", "its bytes")
+            spec.assert_str_eq(last_content_type, "text/plain", "its content type")
+            spec.assert_true(string.length(last_etag) > 0, "an ETag: ${last_etag}")
+            st, b = couch("GET", "/tcae_att/doc", "")
+            spec.assert_eq(st, 200, "GET the document: ${b}")
+            spec.assert_contains(b, "\"note.txt\":{\"content_type\":\"text/plain\",\"revpos\":2,\"digest\":\"md5-", "a stub")
+            spec.assert_contains(b, "\"length\":17,\"stub\":true", "its length")
+            st, b = couch("DELETE", "/tcae_att/doc/note.txt?rev=${rev2}", "")
+            spec.assert_eq(st, 200, "DELETE the attachment: ${b}")
+            st, b = couch("GET", "/tcae_att/doc/note.txt", "")
+            spec.assert_eq(st, 404, "gone: ${b}")
+            delete_db("tcae_att")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: an inline attachment, in tcae_inline: base64 in the
+        // document's _attachments, in the same PUT.
+        //   PUT /tcae_inline/doc {"title":"inline","_attachments":{"hello.txt":
+        //        {"content_type":"text/plain","data":"aGVsbG8gd29ybGQ="}}} -> 201
+        //   GET /tcae_inline/doc                    -> 200, a stub (length 11, no data)
+        //   GET /tcae_inline/doc?attachments=true   -> 200, "data":"aGVsbG8gd29ybGQ=" inline
+        //       (sent with `Accept: application/json`: without it CouchDB
+        //       answers multipart/related with the attachment gzipped)
+        //   GET /tcae_inline/doc/hello.txt          -> 200 text/plain "hello world"
+        spec.it("stores an inline attachment and reads it back with the document") callback {
+            rec, ok = begin("stores_an_inline_attachment_and_reads_it_back_with_the_document", "tcae_inline")
+            if ok == 0 { return }
+            create_db("tcae_inline")
+            st, b = couch("PUT", "/tcae_inline/doc", "{\"title\":\"inline\",\"_attachments\":{\"hello.txt\":{\"content_type\":\"text/plain\",\"data\":\"aGVsbG8gd29ybGQ=\"}}}")
+            spec.assert_eq(st, 201, "document and attachment in one PUT: ${b}")
+            st, b = couch("GET", "/tcae_inline/doc", "")
+            spec.assert_eq(st, 200, "GET: ${b}")
+            spec.assert_contains(b, "\"length\":11,\"stub\":true", "a stub by default")
+            st, b = couch_json("/tcae_inline/doc?attachments=true")
+            spec.assert_eq(st, 200, "GET ?attachments=true: ${b}")
+            spec.assert_contains(b, "\"data\":\"aGVsbG8gd29ybGQ=\"", "the bytes inline, base64")
+            st, b = couch("GET", "/tcae_inline/doc/hello.txt", "")
+            spec.assert_eq(st, 200, "GET the attachment: ${b}")
+            spec.assert_str_eq(b, "hello world", "decoded")
+            delete_db("tcae_inline")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: a design document and its views, in tcae_views. Five
+        // products (type, name, price) by _bulk_docs, then
+        //   PUT /tcae_views/_design/shop {"language":"javascript","views":{
+        //        "by_type":{"map":"function (doc) { if (doc.type) emit(doc.type, doc.price); }","reduce":"_sum"},
+        //        "by_name":{"map":"function (doc) { emit(doc.name, null); }","reduce":"_count"}}} -> 201
+        //   GET /tcae_views/_design/shop                                -> 200, the design document
+        //   GET .../_view/by_type                                      -> reduced: one row, key null, the total
+        //   GET .../_view/by_type?group=true                           -> a row per type with its sum
+        //   GET .../_view/by_type?reduce=false                         -> the map rows, sorted by key then id
+        //   GET .../_view/by_type?reduce=false&key=%22fruit%22&include_docs=true -> the fruit, with docs
+        //   GET .../_view/by_name?reduce=false&startkey=%22b%22&endkey=%22d%22   -> a key range
+        //   GET .../_view/by_name?reduce=false&descending=true&limit=2           -> the last two names
+        //   POST .../_view/by_type {"keys":["veg"],"reduce":false}      -> rows for those keys
+        // The first query builds the index; the answer still comes back in
+        // the one response, so nothing is polled.
+        spec.it("queries a map reduce view") callback {
+            rec, ok = begin("queries_a_map_reduce_view", "tcae_views")
+            if ok == 0 { return }
+            create_db("tcae_views")
+            st, b = couch("POST", "/tcae_views/_bulk_docs", "{\"docs\":[{\"_id\":\"p1\",\"type\":\"fruit\",\"name\":\"apple\",\"price\":3},{\"_id\":\"p2\",\"type\":\"fruit\",\"name\":\"banana\",\"price\":2},{\"_id\":\"p3\",\"type\":\"veg\",\"name\":\"carrot\",\"price\":1},{\"_id\":\"p4\",\"type\":\"veg\",\"name\":\"daikon\",\"price\":4},{\"_id\":\"p5\",\"type\":\"fruit\",\"name\":\"elderberry\",\"price\":5}]}")
+            spec.assert_eq(st, 201, "five products: ${b}")
+            ddoc = "{\"language\":\"javascript\",\"views\":{\"by_type\":{\"map\":\"function (doc) { if (doc.type) emit(doc.type, doc.price); }\",\"reduce\":\"_sum\"},\"by_name\":{\"map\":\"function (doc) { emit(doc.name, null); }\",\"reduce\":\"_count\"}}}"
+            st, b = couch("PUT", "/tcae_views/_design/shop", ddoc)
+            spec.assert_eq(st, 201, "the design document: ${b}")
+            spec.assert_contains(b, "\"id\":\"_design/shop\"", "its id")
+            st, b = couch("GET", "/tcae_views/_design/shop", "")
+            spec.assert_eq(st, 200, "GET it back: ${b}")
+            spec.assert_contains(b, "\"reduce\":\"_sum\"", "the views")
+            v = "/tcae_views/_design/shop/_view"
+            st, b = couch("GET", "${v}/by_type", "")
+            spec.assert_eq(st, 200, "reduced: ${b}")
+            spec.assert_contains(lf(b), "{\"rows\":[\n{\"key\":null,\"value\":15}\n]}", "the sum of all prices")
+            st, b = couch("GET", "${v}/by_type?group=true", "")
+            spec.assert_eq(st, 200, "grouped: ${b}")
+            spec.assert_contains(lf(b), "{\"key\":\"fruit\",\"value\":10},\n{\"key\":\"veg\",\"value\":5}", "per type")
+            st, b = couch("GET", "${v}/by_type?reduce=false", "")
+            spec.assert_eq(st, 200, "map rows: ${b}")
+            spec.assert_contains(b, "\"total_rows\":5", "five rows")
+            spec.assert_contains(b, "{\"id\":\"p1\",\"key\":\"fruit\",\"value\":3}", "id, key and value")
+            st, b = couch("GET", "${v}/by_type?reduce=false&key=${qk("fruit")}&include_docs=true", "")
+            spec.assert_eq(st, 200, "one key with docs: ${b}")
+            spec.assert_str_eq("${jstr(b, "rows.0.id")}${jstr(b, "rows.1.id")}${jstr(b, "rows.2.id")}${jstr(b, "rows.3.id")}", "p1p2p5", "the three fruit")
+            spec.assert_contains(b, "\"doc\":{\"_id\":\"p5\"", "with their documents")
+            st, b = couch("GET", "${v}/by_name?reduce=false&startkey=${qk("b")}&endkey=${qk("d")}", "")
+            spec.assert_eq(st, 200, "a key range: ${b}")
+            spec.assert_str_eq("${jstr(b, "rows.0.key")}${jstr(b, "rows.1.key")}${jstr(b, "rows.2.key")}", "bananacarrot", "names from b up to d (daikon > d)")
+            st, b = couch("GET", "${v}/by_name?reduce=false&descending=true&limit=2", "")
+            spec.assert_eq(st, 200, "descending, limit: ${b}")
+            spec.assert_str_eq("${jstr(b, "rows.0.key")},${jstr(b, "rows.1.key")}", "elderberry,daikon", "the last two")
+            st, b = couch("POST", "${v}/by_type", "{\"keys\":[\"veg\"],\"reduce\":false}")
+            spec.assert_eq(st, 200, "POST keys: ${b}")
+            spec.assert_str_eq("${jstr(b, "rows.0.id")}${jstr(b, "rows.1.id")}${jstr(b, "rows.2.id")}", "p3p4", "the veg")
+            delete_db("tcae_views")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: Mango, in tcae_mango, over the same five products.
+        //   POST /tcae_mango/_find {"selector":{"price":{"$gt":2}},"fields":["_id","name"]}
+        //        -> 200 docs p1, p4, p5, a "bookmark", and a "warning" (no index)
+        //   POST /tcae_mango/_index {"index":{"fields":["type","price"]},"name":"type-price","ddoc":"mango-type-price","type":"json"}
+        //        -> 200 {"result":"created","id":"_design/mango-type-price","name":"type-price"}
+        //   POST /tcae_mango/_index (the same) -> 200 "result":"exists"
+        //   GET  /tcae_mango/_index -> 200: _all_docs (special) and type-price
+        //   POST /tcae_mango/_find {"selector":{"type":"fruit","price":{"$gte":2}},
+        //        "sort":[{"type":"asc"},{"price":"asc"}],"fields":["name","price"],"limit":2}
+        //        -> 200 banana 2, apple 3; no warning (the index serves it)
+        //   POST /tcae_mango/_find {"selector":{"type":"fruit","price":{"$gte":2}},
+        //        "sort":[{"type":"asc"},{"price":"asc"}],"fields":["name","price"],"limit":2,"bookmark":<from before>}
+        //        -> 200 the next page: elderberry 5
+        //   DELETE /tcae_mango/_index/_design/mango-type-price/json/type-price -> 200 {"ok":true}
+        // Bookmarks are opaque but deterministic: the same on every run.
+        spec.it("finds documents with mango and an index") callback {
+            rec, ok = begin("finds_documents_with_mango_and_an_index", "tcae_mango")
+            if ok == 0 { return }
+            create_db("tcae_mango")
+            st, b = couch("POST", "/tcae_mango/_bulk_docs", "{\"docs\":[{\"_id\":\"p1\",\"type\":\"fruit\",\"name\":\"apple\",\"price\":3},{\"_id\":\"p2\",\"type\":\"fruit\",\"name\":\"banana\",\"price\":2},{\"_id\":\"p3\",\"type\":\"veg\",\"name\":\"carrot\",\"price\":1},{\"_id\":\"p4\",\"type\":\"veg\",\"name\":\"daikon\",\"price\":4},{\"_id\":\"p5\",\"type\":\"fruit\",\"name\":\"elderberry\",\"price\":5}]}")
+            spec.assert_eq(st, 201, "five products: ${b}")
+            st, b = couch("POST", "/tcae_mango/_find", "{\"selector\":{\"price\":{\"$gt\":2}},\"fields\":[\"_id\",\"name\"]}")
+            spec.assert_eq(st, 200, "_find with no index: ${b}")
+            spec.assert_str_eq("${jstr(b, "docs.0._id")}${jstr(b, "docs.1._id")}${jstr(b, "docs.2._id")}", "p1p4p5", "price > 2")
+            spec.assert_contains(b, "\"warning\":", "a warning that no index matched")
+            idx = "{\"index\":{\"fields\":[\"type\",\"price\"]},\"name\":\"type-price\",\"ddoc\":\"mango-type-price\",\"type\":\"json\"}"
+            st, b = couch("POST", "/tcae_mango/_index", idx)
+            spec.assert_eq(st, 200, "create an index: ${b}")
+            spec.assert_contains(b, "\"result\":\"created\"", "created")
+            st, b = couch("POST", "/tcae_mango/_index", idx)
+            spec.assert_eq(st, 200, "the same again: ${b}")
+            spec.assert_contains(b, "\"result\":\"exists\"", "exists")
+            st, b = couch("GET", "/tcae_mango/_index", "")
+            spec.assert_eq(st, 200, "list indexes: ${b}")
+            spec.assert_contains(b, "\"total_rows\":2", "_all_docs and ours")
+            spec.assert_contains(b, "\"ddoc\":\"_design/mango-type-price\",\"name\":\"type-price\"", "ours")
+            query = "\"selector\":{\"type\":\"fruit\",\"price\":{\"$gte\":2}},\"sort\":[{\"type\":\"asc\"},{\"price\":\"asc\"}],\"fields\":[\"name\",\"price\"],\"limit\":2"
+            st, b = couch("POST", "/tcae_mango/_find", "{${query}}")
+            spec.assert_eq(st, 200, "_find, sorted by the index: ${b}")
+            spec.assert_contains(lf(b), "{\"name\":\"banana\",\"price\":2},\n{\"name\":\"apple\",\"price\":3}", "cheapest fruit first, two of them")
+            spec.assert_true(string.index_of(b, "warning") < 0, "no warning: the index served it")
+            bookmark = jstr(b, "bookmark")
+            spec.assert_true(string.length(bookmark) > 0, "a bookmark")
+            st, b = couch("POST", "/tcae_mango/_find", "{${query},\"bookmark\":\"${bookmark}\"}")
+            spec.assert_eq(st, 200, "the next page: ${b}")
+            spec.assert_contains(b, "{\"name\":\"elderberry\",\"price\":5}", "the rest")
+            st, b = couch("DELETE", "/tcae_mango/_index/_design/mango-type-price/json/type-price", "")
+            spec.assert_eq(st, 200, "delete the index: ${b}")
+            delete_db("tcae_mango")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the changes feed (feed=normal, the default: one response,
+        // then done), in tcae_changes. Sequence ids are opaque strings, on
+        // the tape as {{seq-N}}; a client stores last_seq and sends it back.
+        //   POST /tcae_changes/_bulk_docs {"docs":[{"_id":"a","v":1},{"_id":"b","v":1}]}
+        //   GET  /tcae_changes/_changes -> 200 results a, b (seq, id, changes[{rev}]), last_seq, pending 0
+        //   PUT  /tcae_changes/c {"v":1}; PUT /tcae_changes/a {"_rev":..,"v":2}
+        //   GET  /tcae_changes/_changes?since=<last_seq> -> only c and a
+        //   DELETE /tcae_changes/b?rev=..
+        //   GET  /tcae_changes/_changes?since=<last_seq 2>&include_docs=true -> b, "deleted":true, with its doc
+        //   GET  /tcae_changes/_changes?limit=1 -> one result, "pending":2
+        spec.it("follows the changes feed with since") callback {
+            rec, ok = begin("follows_the_changes_feed_with_since", "tcae_changes")
+            if ok == 0 { return }
+            create_db("tcae_changes")
+            st, b = couch("POST", "/tcae_changes/_bulk_docs", "{\"docs\":[{\"_id\":\"a\",\"v\":1},{\"_id\":\"b\",\"v\":1}]}")
+            spec.assert_eq(st, 201, "two documents: ${b}")
+            ra = jstr(b, "0.rev")
+            rb = jstr(b, "1.rev")
+            st, b = couch("GET", "/tcae_changes/_changes", "")
+            spec.assert_eq(st, 200, "_changes: ${b}")
+            spec.assert_str_eq("${jstr(b, "results.0.id")}${jstr(b, "results.1.id")}", "ab", "both, in write order")
+            spec.assert_contains(b, "\"pending\":0", "nothing pending")
+            since1 = jstr(b, "last_seq")
+            spec.assert_true(string.length(since1) > 0, "a last_seq")
+            st, b = couch("PUT", "/tcae_changes/c", "{\"v\":1}")
+            spec.assert_eq(st, 201, "c: ${b}")
+            st, b = couch("PUT", "/tcae_changes/a", "{\"_rev\":\"${ra}\",\"v\":2}")
+            spec.assert_eq(st, 201, "a again: ${b}")
+            st, b = couch("GET", "/tcae_changes/_changes?since=${since1}", "")
+            spec.assert_eq(st, 200, "_changes since: ${b}")
+            spec.assert_str_eq("${jstr(b, "results.0.id")}${jstr(b, "results.1.id")}${jstr(b, "results.2.id")}", "ca", "only what changed since, c then a")
+            since2 = jstr(b, "last_seq")
+            st, b = couch("DELETE", "/tcae_changes/b?rev=${rb}", "")
+            spec.assert_eq(st, 200, "b deleted: ${b}")
+            st, b = couch("GET", "/tcae_changes/_changes?since=${since2}&include_docs=true", "")
+            spec.assert_eq(st, 200, "_changes since, with docs: ${b}")
+            spec.assert_contains(b, "\"id\":\"b\"", "b")
+            spec.assert_contains(b, "\"deleted\":true", "as a deletion")
+            spec.assert_contains(b, "\"doc\":{\"_id\":\"b\"", "with its (tombstone) doc")
+            st, b = couch("GET", "/tcae_changes/_changes?limit=1", "")
+            spec.assert_eq(st, 200, "_changes limit: ${b}")
+            spec.assert_contains(b, "\"pending\":2", "two more to come")
+            delete_db("tcae_changes")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: ids minted by the server, in tcae_ids. The 32-hex ids are
+        // {{uuid-N}} on the tape, the same token in the later request paths,
+        // so a port reads them from the response as a client would.
+        //   GET  /_uuids?count=1   -> 200 {"uuids":["{{uuid-1}}"]}
+        //   PUT  /tcae_ids/{{uuid-1}} {"from":"_uuids"} -> 201
+        //   POST /tcae_ids {"from":"post"} -> 201 {"ok":true,"id":"{{uuid-2}}","rev":..}, Location header
+        //   GET  /tcae_ids/{{uuid-2}} -> 200
+        //   GET  /tcae_ids/_all_docs -> 200, both ids
+        spec.it("creates documents under server generated ids") callback {
+            rec, ok = begin("creates_documents_under_server_generated_ids", "tcae_ids")
+            if ok == 0 { return }
+            create_db("tcae_ids")
+            st, b = couch("GET", "/_uuids?count=1", "")
+            spec.assert_eq(st, 200, "a uuid: ${b}")
+            u = jstr(b, "uuids.0")
+            spec.assert_true(string.length(u) > 0, "a uuid: ${u}")
+            st, b = couch("PUT", "/tcae_ids/${u}", "{\"from\":\"_uuids\"}")
+            spec.assert_eq(st, 201, "PUT under it: ${b}")
+            st, b = couch("POST", "/tcae_ids", "{\"from\":\"post\"}")
+            spec.assert_eq(st, 201, "POST without an id: ${b}")
+            id = jstr(b, "id")
+            spec.assert_true(string.length(id) > 0, "the server picked an id: ${id}")
+            st, b = couch("GET", "/tcae_ids/${id}", "")
+            spec.assert_eq(st, 200, "GET it: ${b}")
+            spec.assert_contains(b, "\"from\":\"post\"", "the document")
+            st, b = couch("GET", "/tcae_ids/_all_docs", "")
+            spec.assert_eq(st, 200, "_all_docs: ${b}")
+            spec.assert_contains(b, "\"total_rows\":2", "both")
+            delete_db("tcae_ids")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the error statuses a client must handle (401 is in
+        // refuses_a_client_that_has_not_logged_in, 409 in the two conflict
+        // tapes). Every error body is {"error":<kind>,"reason":<text>}.
+        //   GET    /tcae_nosuch          -> 404 not_found "Database does not exist."
+        //   PUT    /Bad_Name             -> 400 illegal_database_name (lower case first)
+        //   PUT    /tcae_errors?q=1      -> 201;  again -> 412 file_exists
+        //   GET    /tcae_errors/nope     -> 404 not_found "missing"
+        //   PUT    /tcae_errors/_nope {} -> 400 illegal_docid (ids starting "_" are reserved)
+        //   POST   /tcae_errors {not json -> 400 bad_request
+        //   DELETE /tcae_errors/nope?rev=1-0123... -> 404 not_found
+        //   DELETE /_all_dbs             -> 405 method_not_allowed
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses", "tcae_errors")
+            if ok == 0 { return }
+            st, b = couch("GET", "/tcae_nosuch", "")
+            spec.assert_eq(st, 404, "a missing database: ${b}")
+            spec.assert_contains(b, "{\"error\":\"not_found\",\"reason\":\"Database does not exist.\"}", "not_found")
+            st, b = couch("PUT", "/Bad_Name", "")
+            spec.assert_eq(st, 400, "an illegal database name: ${b}")
+            spec.assert_contains(b, "\"error\":\"illegal_database_name\"", "illegal_database_name")
+            create_db("tcae_errors")
+            st, b = couch("PUT", "/tcae_errors?q=1", "")
+            spec.assert_eq(st, 412, "an existing database: ${b}")
+            spec.assert_contains(b, "\"error\":\"file_exists\"", "file_exists")
+            st, b = couch("GET", "/tcae_errors/nope", "")
+            spec.assert_eq(st, 404, "a missing document: ${b}")
+            spec.assert_contains(b, "{\"error\":\"not_found\",\"reason\":\"missing\"}", "missing")
+            st, b = couch("PUT", "/tcae_errors/_nope", "{}")
+            spec.assert_eq(st, 400, "a reserved id: ${b}")
+            spec.assert_contains(b, "\"error\":\"illegal_docid\"", "illegal_docid")
+            st, b = couch("POST", "/tcae_errors", "{not json")
+            spec.assert_eq(st, 400, "a body that is not JSON: ${b}")
+            spec.assert_contains(b, "\"error\":\"bad_request\"", "bad_request")
+            st, b = couch("DELETE", "/tcae_errors/nope?rev=1-0123456789abcdef0123456789abcdef", "")
+            spec.assert_eq(st, 404, "deleting a missing document: ${b}")
+            st, b = couch("DELETE", "/_all_dbs", "")
+            spec.assert_eq(st, 405, "a method the endpoint does not take: ${b}")
+            spec.assert_contains(b, "\"error\":\"method_not_allowed\"", "method_not_allowed")
+            delete_db("tcae_errors")
+            servirtium.end_recording(rec)
+        }
+    }
+
+    if shared_container != null {
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("couchdb: removing the shared container: ${e}") }
     }
     return spec.run_summary(fw)
 }
