@@ -404,12 +404,8 @@ vcr_embed_redact_credential_header(s: ptr, name: string) -> ptr {
     return vcr_embed_dup(vcr.redact_credential_header_h(s, name))
 }
 
-vcr_embed_add_license_condition(s: ptr, text: string) -> ptr {
-    return vcr_embed_dup(vcr.add_license_condition_h(s, text))
-}
-
-vcr_embed_clear_license_conditions(s: ptr) {
-    vcr.clear_license_conditions_h(s)
+vcr_embed_add_license_notice(s: ptr, text: string) -> ptr {
+    return vcr_embed_dup(vcr.add_license_notice_h(s, text))
 }
 
 vcr_embed_note(s: ptr, title: string, body: string) -> ptr {
