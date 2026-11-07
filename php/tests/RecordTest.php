@@ -49,6 +49,15 @@ final class RecordTest extends TestCase
         }
     }
 
+    public function testAcceptsALicenseNoticePrettyJsonAndHeaderPresets(): void
+    {
+        $rec = Vcr::record($this->tape, $this->upstreamBase)
+            ->addLicenseNotice('test notice')->prettyJson(2)->removeTransportHeaders()
+            ->removeCloudHeaders('aws')->redactCredentials()->redactCredentialHeader('X-Vault-Token')->port(0)->start();
+        $rec->stop();
+        $this->assertFileExists($this->tape);
+    }
+
     public function testRetainedReplayDiagnostics(): void
     {
         $root = dirname(__DIR__, 2);

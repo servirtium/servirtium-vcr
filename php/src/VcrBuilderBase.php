@@ -23,6 +23,15 @@ abstract class VcrBuilderBase
     private array $headerRemovals = [];
 
     private bool $ignoreVolatileHeadersOn = false;
+    private bool $removeTransportHeadersOn = false;
+
+    /** @var list<string> */
+    private array $cloudVendors = [];
+
+    private bool $redactCredentialsOn = false;
+
+    /** @var list<string> */
+    private array $credentialHeaders = [];
 
     /** @var list<array{0: string, 1: string}> */
     private array $staticContent = [];
@@ -100,6 +109,50 @@ abstract class VcrBuilderBase
     }
 
     /**
+     * Leave the connection-describing headers (Host, Connection,
+     * Content-Length and the other hop-by-hop headers, Accept-Encoding) out of
+     * the recording. Works in playback and record mode.
+     */
+    public function removeTransportHeaders(bool $on = true): static
+    {
+        $this->removeTransportHeadersOn = $on;
+
+        return $this;
+    }
+
+    /**
+     * Drop a cloud vendor's per-request headers. $vendor is one of aws, azure,
+     * cloudflare, fastly, gcp; call again for more vendors. Works in playback
+     * and record mode.
+     */
+    public function removeCloudHeaders(string $vendor): static
+    {
+        $this->cloudVendors[] = $vendor;
+
+        return $this;
+    }
+
+    /**
+     * Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+     * X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the
+     * playback builder too, as with every rule.
+     */
+    public function redactCredentials(bool $on = true): static
+    {
+        $this->redactCredentialsOn = $on;
+
+        return $this;
+    }
+
+    /** One more credential header with the same treatment as redactCredentials(). */
+    public function redactCredentialHeader(string $name): static
+    {
+        $this->credentialHeaders[] = $name;
+
+        return $this;
+    }
+
+    /**
      * Serve a path prefix from an on-disk directory instead of the tape
      * (Servirtium step 11).
      *
@@ -153,6 +206,18 @@ abstract class VcrBuilderBase
         }
         if ($this->ignoreVolatileHeadersOn) {
             self::check($lib->aether_vcr_embed_ignore_volatile_headers($handle), 'ignoreVolatileHeaders');
+        }
+        if ($this->removeTransportHeadersOn) {
+            self::check($lib->aether_vcr_embed_remove_transport_headers($handle), 'removeTransportHeaders');
+        }
+        foreach ($this->cloudVendors as $vendor) {
+            self::check($lib->aether_vcr_embed_remove_cloud_headers($handle, $vendor), 'removeCloudHeaders');
+        }
+        if ($this->redactCredentialsOn) {
+            self::check($lib->aether_vcr_embed_redact_credentials($handle), 'redactCredentials');
+        }
+        foreach ($this->credentialHeaders as $name) {
+            self::check($lib->aether_vcr_embed_redact_credential_header($handle, $name), 'redactCredentialHeader');
         }
         foreach ($this->staticContent as [$mount, $dir]) {
             self::check($lib->aether_vcr_embed_static_content($handle, $mount, $dir), 'staticContent');

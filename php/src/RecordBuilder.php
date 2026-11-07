@@ -35,6 +35,9 @@ final class RecordBuilder extends VcrBuilderBase
     private bool $indentCodeBlocksOn = false;
     private bool $emphasizeHttpVerbsOn = false;
     private int $prettyXmlIndent = 0;
+    private int $prettyJsonIndent = 0;
+    private ?string $upstreamCafilePath = null;
+    private ?string $licenseNoticeText = null;
     private bool $failIfChangedOn = false;
 
     public function __construct(string $tapePath, string $upstreamBase)
@@ -131,6 +134,30 @@ final class RecordBuilder extends VcrBuilderBase
         return $this;
     }
 
+    /** Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed. */
+    public function prettyJson(int $indent = 2): static
+    {
+        $this->prettyJsonIndent = $indent;
+
+        return $this;
+    }
+
+    /** Verify an https upstream against this PEM CA file. */
+    public function upstreamCafile(string $path): static
+    {
+        $this->upstreamCafilePath = $path;
+
+        return $this;
+    }
+
+    /** Put $text under "## LICENSE NOTICE" at the top of each tape; playback ignores it. */
+    public function addLicenseNotice(string $text): static
+    {
+        $this->licenseNoticeText = $text;
+
+        return $this;
+    }
+
     /**
      * On stop, still write the freshly recorded tape but throw if it differs
      * from the on-disk one — the Servirtium step-4 drift contract, so a
@@ -155,6 +182,15 @@ final class RecordBuilder extends VcrBuilderBase
         }
         if ($this->prettyXmlIndent > 0) {
             $lib->aether_vcr_embed_set_pretty_xml($handle, $this->prettyXmlIndent);
+        }
+        if ($this->prettyJsonIndent > 0) {
+            $lib->aether_vcr_embed_set_pretty_json($handle, $this->prettyJsonIndent);
+        }
+        if ($this->upstreamCafilePath !== null) {
+            self::check($lib->aether_vcr_embed_set_upstream_cafile($handle, $this->upstreamCafilePath), 'upstreamCafile');
+        }
+        if ($this->licenseNoticeText !== null) {
+            self::check($lib->aether_vcr_embed_add_license_notice($handle, $this->licenseNoticeText), 'addLicenseNotice');
         }
         foreach ($this->redactions as [$operation, $field, $pattern, $replacement]) {
             self::check($lib->$operation($handle, $field->value, $pattern, $replacement), 'redact');
