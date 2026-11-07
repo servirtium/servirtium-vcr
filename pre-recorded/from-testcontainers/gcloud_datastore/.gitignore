@@ -1,0 +1,5 @@
+# Tapes of this service are not published (LICENCE-NOTE.md): ones you
+# record locally stay here, out of git.
+*.md
+!LICENCE-NOTE.md
+!README.md

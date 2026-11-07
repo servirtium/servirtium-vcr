@@ -27,7 +27,7 @@ Classes:
   **tapes are not**: record your own locally (the suite's `LICENCE-NOTE.md`
   says how), and in playback with no tape the suite skips with a notice.
 
-Counts: 49 CLEAR, 12 BOUND, 3 DECISION (64 suites).
+Counts: 49 CLEAR, 9 BOUND, 6 DECISION (64 suites).
 
 Product names are their owners' trademarks, used here only to say which
 software a tape was recorded against.
@@ -61,9 +61,9 @@ licence file at the tag the image was built from.
 | forgejo | `codeberg.org/forgejo/forgejo:11` | GPL-3.0-or-later | forgejo `LICENSE` | none | CLEAR |
 | garage | `dxflrs/garage:v2.4.1` | AGPL-3.0 | deuxfleurs/garage `LICENSE` | none | CLEAR |
 | gcloud_bigquery | `ghcr.io/goccy/bigquery-emulator:0.6.1` | MIT | goccy/bigquery-emulator `LICENSE` | none (a third-party emulator, not Google's) | CLEAR |
-| gcloud_datastore | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` (CLI 592.0.0, cloud-datastore-emulator 2.3.1) | none stated; Google-owned | image: `google-cloud-sdk/LICENSE` (CLI is Apache-2.0 "unless otherwise specified"; use with Google Cloud products "additionally ... governed by" their terms); `CloudDatastore.jar` bundles only third-party licences and says "All code ... under com/google/** is Google owned" | Google Cloud Terms of Service §3.3(b): no reverse engineering the Services; §1.5 Software under the Service Specific Terms | BOUND (uncertain) |
-| gcloud_firestore | same image (cloud-firestore-emulator 1.23.0) | none stated; Google-owned | as above; `cloud-firestore-emulator.jar!/com/google/cloud/datastore/emulator/cli/FIRESTORE_EMULATOR_LICENSES` | as above | BOUND (uncertain) |
-| gcloud_pubsub | same image (pubsub-emulator 0.8.37) | none stated; Google-owned | as above; `cloud-pubsub-emulator-0.8.37-all.jar` carries only bundled libraries' `LICENSE`/`NOTICE` | as above | BOUND (uncertain) |
+| gcloud_datastore | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` (CLI 592.0.0, cloud-datastore-emulator 2.3.1) | none stated; Google-owned | image: `google-cloud-sdk/LICENSE` (CLI is Apache-2.0 "unless otherwise specified"; use with Google Cloud products "additionally ... governed by" their terms); `CloudDatastore.jar` bundles only third-party licences and says "All code ... under com/google/** is Google owned" | Google Cloud Terms of Service §3.3(b): no reverse engineering the Services; §1.5 Software under the Service Specific Terms | **DECISION** (tapes not shipped) |
+| gcloud_firestore | same image (cloud-firestore-emulator 1.23.0) | none stated; Google-owned | as above; `cloud-firestore-emulator.jar!/com/google/cloud/datastore/emulator/cli/FIRESTORE_EMULATOR_LICENSES` | as above | **DECISION** (tapes not shipped) |
+| gcloud_pubsub | same image (pubsub-emulator 0.8.37) | none stated; Google-owned | as above; `cloud-pubsub-emulator-0.8.37-all.jar` carries only bundled libraries' `LICENSE`/`NOTICE` | as above | **DECISION** (tapes not shipped) |
 | gcloud_spanner | `gcr.io/cloud-spanner-emulator/emulator:1.5.40` | Apache-2.0 | GoogleCloudPlatform/cloud-spanner-emulator `LICENSE`; `/licenses.txt.gz` in the image (third-party) | none | CLEAR |
 | grafana_lgtm | `grafana/otel-lgtm:0.6.0` | Apache-2.0 (the image), bundling Grafana, Loki, Tempo (AGPL-3.0), Prometheus and the OpenTelemetry Collector (Apache-2.0) | grafana/docker-otel-lgtm `v0.6.0/LICENSE` | none | CLEAR |
 | inbucket | `inbucket/inbucket:sha-2d409bb` | MIT | inbucket/inbucket `LICENSE` | none | CLEAR |
@@ -175,23 +175,6 @@ stand in for it in a competing hosted service).
   evaluation; no trademark rights).
 - **surrealdb**: BUSL-1.1, "you may not use the Licensed Work for a Database
   Service"; Apache-2.0 from 2027-04-01.
-- **gcloud_datastore, gcloud_firestore, gcloud_pubsub** (uncertain): the
-  emulators in Google's `cloud-sdk:emulators` image are Google-owned,
-  closed-source jars that state no licence of their own. The Cloud CLI's
-  `LICENSE` is Apache-2.0 "unless otherwise specified by an alternate
-  license file" and says use with Google Cloud products is additionally
-  governed by those products' terms. The Google Cloud Terms of Service
-  forbid reverse engineering the Services (§3.3(b)) and put downloadable
-  Software under the Service Specific Terms (§1.5), whose General Software
-  Terms license it for use on your own systems. Nothing found forbids
-  recording the emulators or publishing what they answer, and the APIs they
-  answer are Google's published, documented REST APIs. They are BOUND
-  because the terms that apply are unclear: treat Google's Cloud terms as
-  applying to these tapes. If you would rather not ship tapes whose terms
-  can't be pinned down, these three are the next candidates for DECISION.
-  (`gcloud_spanner`'s emulator is Apache-2.0 and `gcloud_bigquery`'s is a
-  third party's MIT project: both CLEAR.)
-
 **Cloud vendors' own terms and API imitations.** AWS's Customer Agreement
 (§6.4) and Google Cloud's Terms of Service (§3.3) forbid their customers to
 reverse engineer the *Services*. LocalStack, S3Mock, MinIO, Garage, Azurite,
@@ -212,6 +195,17 @@ and gives the record command, and the test writes the terms into the
 `## LICENSE NOTICE` of any tape it records. In playback with no tape the
 suite skips (`servirtium.skip_if_no_tape`).
 
+- **gcloud_datastore, gcloud_firestore, gcloud_pubsub**
+  (`gcr.io/google.com/cloudsdktool/cloud-sdk:emulators`). Moved from BOUND
+  on 2026-11-07, Paul's decision: these are Google's own emulators of Google
+  Cloud services, and the Google Cloud Terms of Service forbid reverse
+  engineering the Services (§3.3(b)). Publishing recordings of the
+  emulators' answers for others to replay in their place is treated as
+  too close to that. The emulator jars stating no licence of their own is
+  not the reason; Google's Cloud terms are. Users run the tests and record
+  their own tapes. (`gcloud_spanner`'s emulator is Google's open-source
+  Apache-2.0 project and `gcloud_bigquery`'s a third party's MIT one: both
+  stay CLEAR and ship tapes.)
 - **dynamodb** (`amazon/dynamodb-local:2.2.1`). Its licence agreement
   (`/home/dynamodblocal/LICENSE.txt` in the image) grants a "personal,
   limited, nonexclusive" licence to use the software "solely (i) for your

@@ -44,9 +44,9 @@ with restrictive terms start with a `## LICENSE NOTICE`
 | `garage` | 2 | `dxflrs/garage:v2.4.1` |
 | `azurite` | 2 (3 tapes) | `mcr.microsoft.com/azure-storage/azurite:3.28.0` |
 | `fakegcsserver` | 1 | `fsouza/fake-gcs-server:1.56.1` |
-| `gcloud_firestore` | 2 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
-| `gcloud_datastore` | 1 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
-| `gcloud_pubsub` | 1 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| `gcloud_firestore` | test + recorder only, tapes not shipped ([why](gcloud_firestore/LICENCE-NOTE.md)) | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| `gcloud_datastore` | test + recorder only, tapes not shipped ([why](gcloud_datastore/LICENCE-NOTE.md)) | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| `gcloud_pubsub` | test + recorder only, tapes not shipped ([why](gcloud_pubsub/LICENCE-NOTE.md)) | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
 | `gcloud_spanner` | 4 | `gcr.io/cloud-spanner-emulator/emulator:1.5.40` (REST, port 9020) |
 | `gcloud_bigquery` | 1 | `ghcr.io/goccy/bigquery-emulator:0.6.1` (linux/amd64 only) |
 | `meilisearch` | 2 | `getmeili/meilisearch:v1.10.3` |
