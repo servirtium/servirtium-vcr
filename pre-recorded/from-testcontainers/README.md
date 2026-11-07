@@ -79,7 +79,7 @@ them. Each suite's `LICENCE-NOTE.md` gives the clause and the commands.
 | `mailpit` | 10 (comprehensive: 8 API, 2 module; the REST API and health endpoints, Send API, paging, search, read state, tags, deletes, an SMTP-received mail, errors; no login: Mailpit's API is open) | `axllent/mailpit:v1.20` |
 | `inbucket` | 1 | `inbucket/inbucket:sha-2d409bb` |
 | `papercutsmtp` | 1 | `changemakerstudiosus/papercut-smtp:latest` |
-| `dex` | 1 | `dexidp/dex:v2.45.0` |
+| `dex` | 10 (comprehensive: 8 API, 2 module, 9 tapes since the config-rendering module case has no HTTP; the password grant is the login tape; discovery and keys, userinfo, introspection, authorization-code flow, refresh rotation, bad requests, error statuses) | `dexidp/dex:v2.45.0` |
 | `forgejo` | 2 | `codeberg.org/forgejo/forgejo:11` |
 | `registry` | 4 | `registry:2.8.3` |
 | `toxiproxy` | 1 (2 tapes) | `ghcr.io/shopify/toxiproxy:2.12.0` |
@@ -212,7 +212,7 @@ Per suite (registered at the top of its `main`):
 | mailpit | API cases: the message `ID` (`{{id-N}}`) | `MessageID` (generated), the Send API's MIME boundaries, times (JSON and RFC 5322 `Date`), the SMTP `Received` header (it names the recording machine), `Size`, the CSP `nonce-`; module cases: message `ID`, `MessageID`, `Created`, `Size`, the nonce | | |
 | inbucket | | message `id`, `date`, `posix-millis` | | |
 | papercutsmtp | | | | |
-| dex | | the signing key's `kid` and RSA modulus `n` | | |
+| dex | access and id JWTs (`{{jwt-N}}`), refresh tokens (`{{refresh-N}}`, 40+ characters), authorization-request ids and codes (`{{authid-N}}`), the consent `hmac` | the signing key's `kid` and RSA modulus `n`; claim times (`exp`, `iat`, `nbf`), `expires_in`, `at_hash` | login tape: labelled redactions (`REDACTED[my-app]`, `REDACTED[alice]`, wrong-secret and wrong-password variants); API cases: the credential preset (`AUTHORIZATION_N`, presence matching) and the password as `REDACTED[alice]` | |
 | forgejo | | RFC 3339 times | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | registry | | | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | toxiproxy | | | | `X-Toxiproxy-Request-Id` |
@@ -339,6 +339,15 @@ it is on the tape, and playback is plain HTTP.
 - **Dex:** the discovery document names the issuer, the container's own
   host:port; the test compares it with the live issuer, or with
   `<base>/dex` on playback. The JWKS key is collapsed to constants.
+- **Dex (comprehensive):** the password grant is the login tape (the
+  confidential client's Basic header and secret, the user's password, right
+  and wrong, all labelled redactions). The other tapes are "already logged
+  in": tokens obtained live before recording and left off the tape. A token
+  sent in a request BODY (introspection, refresh) is on the tape as
+  `{{jwt-N}}` / `{{refresh-N}}`; send those placeholders literally. A token
+  sent as `Authorization: Bearer` matches on presence. A made-up short token
+  (`not-a-token`, `garbage`) stays literal. Redirects are not followed, so
+  each hop shows.
 - **Registry:** pull, tag and push go from the container engine to the
   registry, not through the recorder; only the test's own HTTP calls are
   taped.

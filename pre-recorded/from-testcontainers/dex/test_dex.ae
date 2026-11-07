@@ -23,6 +23,7 @@
 import std.spec
 import std.string
 import std.json
+import std.encoding
 import std.http.client
 import testcontainers as tc
 import testcontainers.docker
@@ -52,6 +53,286 @@ fn get(url: string) -> (int, string, string) {
     body = client.response_body(r)
     client.response_free(r)
     return st, body, ""
+}
+
+// ===========================================================================
+// The "Dex OIDC provider API" block: helpers
+// ===========================================================================
+
+// The client and the user the API cases' shared Dex is configured with.
+const CLIENT_ID = "my-app"
+const CLIENT_SECRET = "secret"
+const REDIRECT = "http://localhost:3000/callback"
+const REDIRECT_Q = "http%3A%2F%2Flocalhost%3A3000%2Fcallback"
+const USER_EMAIL = "alice@example.com"
+const USER_PASSWORD = "password"
+const USER_ID = "alice-id"
+
+// The base URL of the current recording ("<host:port>" of the recorder or
+// replay server, no path) and the headers of the last response.
+var api: string = ""
+var last_headers: string = ""
+
+fn rh(name: string) -> string {
+    block = "\n${string.to_lower(last_headers)}"
+    key = "\n${string.to_lower(name)}:"
+    at = string.index_of(block, key)
+    if at < 0 { return "" }
+    from = at + string.length(key)
+    rest = string.substring(block, from, string.length(block))
+    end = string.index_of(rest, "\n")
+    if end < 0 { end = string.length(rest) }
+    orig = string.substring(last_headers, from - 1, from - 1 + end)
+    return string.trim(string.replace_all(orig, "\r", ""))
+}
+
+// A string in a JSON body by a dotted path; "" when absent.
+fn jstr(body: string, path: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    let v: ptr = doc
+    rest = path
+    while string.length(rest) > 0 && v != null {
+        p = rest
+        dot = string.index_of(rest, ".")
+        if dot >= 0 {
+            p = string.substring(rest, 0, dot)
+            rest = string.substring(rest, dot + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        if json.json_type(v) == json.JSON_ARRAY {
+            idx, _ = string.to_int(p)
+            a, _ = json.array_get(v, idx)
+            v = a
+        } else {
+            o, _ = json.object_get(v, p)
+            v = o
+        }
+    }
+    out = ""
+    if v != null {
+        s, serr = json.get_string(v)
+        if serr == "" { out = string.copy(s) }
+    }
+    json.free(doc)
+    return out
+}
+
+// One request: hdrs are "Name: value" lines; a non-empty body is sent as
+// application/x-www-form-urlencoded. Redirects are not followed (the cases
+// show each hop). Returns (status, body); response headers in last_headers.
+fn dexcall(method: string, path: string, hdrs: string[], body: string) -> (int, string) {
+    req = client.request(method, "${api}${path}")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    client.set_follow_redirects(req, 0)
+    i = 0
+    while i < hdrs.len {
+        colon = string.index_of(hdrs[i], ":")
+        client.set_header(req, string.substring(hdrs[i], 0, colon), string.trim(string.substring(hdrs[i], colon + 1, string.length(hdrs[i]))))
+        i = i + 1
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/x-www-form-urlencoded") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    spec.assert_ok(err, "${method} ${path}")
+    if err != "" { return 0, "" }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    last_headers = client.response_headers(r)
+    client.response_free(r)
+    return st, b
+}
+
+fn nohdrs() -> string[] {
+    string[] n = []
+    return n
+}
+
+fn one(h: string) -> string[] {
+    string[] n = []
+    n.push(h)
+    return n
+}
+
+// "Authorization: Basic base64(id:secret)".
+fn client_basic(id: string, secret: string) -> string {
+    return "Authorization: Basic ${encoding.base64_encode_padded(string.bytes("${id}:${secret}"))}"
+}
+
+fn bearer(token: string) -> string {
+    return "Authorization: Bearer ${token}"
+}
+
+// A confidential-client request (HTTP Basic with the right secret).
+fn as_client(method: string, path: string, body: string) -> (int, string) {
+    return dexcall(method, path, one(client_basic(CLIENT_ID, CLIENT_SECRET)), body)
+}
+
+fn assert_error(st: int, b: string, want_status: int, want_error: string, what: string) {
+    spec.assert_eq(st, want_status, "${what}: status (${b})")
+    spec.assert_contains(b, "\"error\":\"${want_error}\"", "${what}: ${want_error}")
+}
+
+// The password-grant form for a user.
+fn password_grant(user: string, pw: string, scope: string) -> string {
+    return "grant_type=password&username=${user}&password=${pw}&scope=${scope}"
+}
+
+// ---------------------------------------------------------------------------
+// The live container the API cases share (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_addr: string = ""
+var shared_dex: ptr = null
+
+fn shared() -> string {
+    if string.length(shared_addr) > 0 { return shared_addr }
+    d, err = dex.run(IMAGE) {
+        client(CLIENT_ID, CLIENT_SECRET, "My App", [REDIRECT], [], false)
+        user(USER_EMAIL, "alice", HASH, USER_ID)
+        storage("memory")
+        skip_approval_screen(false)
+        enable_client_credentials()
+    }
+    if d == null {
+        spec.fail("dex starts: ${err}")
+        return ""
+    }
+    shared_dex = d as ptr
+    spec.assert_ok(err, "dex starts")
+    if err != "" { return "" }
+    iss = dex.issuer_url(d)
+    // "http://localhost:PORT/dex" -> "http://localhost:PORT"
+    shared_addr = string.substring(iss, 0, string.length(iss) - 4)
+    return shared_addr
+}
+
+// Tokens for alice, obtained directly from the container, outside any
+// recording: (access token, id token, refresh token).
+fn login_live(addr: string) -> (string, string, string) {
+    req = client.request("POST", "${addr}/dex/token")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_header(req, "Authorization", "Basic ${encoding.base64_encode_padded(string.bytes("${CLIENT_ID}:${CLIENT_SECRET}"))}")
+    client.set_timeout(req, 30s)
+    body = password_grant("alice%40example.com", USER_PASSWORD, "openid+email+profile+offline_access")
+    client.set_body(req, string.bytes(body), "application/x-www-form-urlencoded")
+    r, err = client.send_request(req)
+    client.request_free(req)
+    spec.assert_ok(err, "log in (not recorded)")
+    if err != "" { return "", "", "" }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    spec.assert_eq(st, 200, "log in (not recorded): ${b}")
+    return jstr(b, "access_token"), jstr(b, "id_token"), jstr(b, "refresh_token")
+}
+
+// Tokens of the current case: live ones, or the placeholders playback uses.
+var access_token: string = ""
+var id_token: string = ""
+var refresh_token: string = ""
+
+// Start an API case: in a live mode the shared Dex and (when `logged_in`) a
+// fresh set of tokens, none of it recorded; then the recording. Which rules
+// apply depends on whether it is the login tape.
+fn begin(case_: string, login: int, logged_in: int) -> (ptr, int) {
+    if login == 1 { login_rules() } else { api_rules() }
+    addr = ""
+    // In playback a token sent in a header can be anything (presence is
+    // matched); one sent in a body (introspection) must be the tape's
+    // placeholder, so these are the placeholders, which also pass as headers.
+    access_token = "{{jwt-1}}"
+    id_token = "{{jwt-2}}"
+    refresh_token = "{{refresh-1}}"
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+        if logged_in == 1 {
+            a, i, r = login_live(addr)
+            access_token = a
+            id_token = i
+            refresh_token = r
+        }
+    }
+    base, rec = servirtium.recording("dex", case_, addr)
+    api = base
+    last_headers = ""
+    return rec, 1
+}
+
+fn redact_basic(id: string, secret: string, label: string) {
+    b = encoding.base64_encode_padded(string.bytes("${id}:${secret}"))
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${b}", "Basic REDACTED[${label}]")
+}
+
+// Rules both kinds of case share, each with its reason.
+fn common_rules() {
+    servirtium.clear_rules()
+    // The signing key Dex generates at startup (its id and RSA modulus),
+    // which nobody sends back.
+    servirtium.collapse("\"kid\": \"[0-9a-f]{40}\"", "\"kid\": \"KEY-ID\"")
+    servirtium.collapse("\"n\": \"[A-Za-z0-9_-]{300,}\"", "\"n\": \"MODULUS\"")
+    // A JWT (access token or id token): header.payload.signature, base64url.
+    // It carries the issuer with the container's own host:port, the issue and
+    // expiry times and a signature, so it differs every run and every second.
+    // NORMALIZED, not collapsed: a client sends one back (Authorization:
+    // Bearer, token=... to introspection), so the same value is the same
+    // {{jwt-N}} wherever it recurs.
+    servirtium.normalize("eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "jwt")
+    // A refresh token (random base64url, 70-odd characters), in the token
+    // response and when the client sends it back as refresh_token= or as
+    // token= to introspection. Normalized for the same reason. The length
+    // bound keeps a short made-up value a case sends ("not-a-token") literal,
+    // so a port sends it as written. A JWT (eyJ...) is left to the rule above.
+    servirtium.normalize("(?<=\"refresh_token\":\"|refresh_token=|[&?]token=|^token=)(?!eyJ)[A-Za-z0-9_-]{40,}", "refresh")
+    // The ids of an authorization request in flight (state=..., req=..., the
+    // hidden field of the consent form) and of an authorization code
+    // (code=...): 25 lowercase base32 characters on their own, the same value
+    // coming back in later requests. The bounds keep them out of longer
+    // tokens and words.
+    servirtium.normalize("(?<![A-Za-z0-9])[a-z0-9]{25}(?![A-Za-z0-9])", "authid")
+    // The HMAC that protects the consent page's URL (hmac=...): per request.
+    servirtium.normalize("(?<=hmac=)[A-Za-z0-9_-]+", "hmac")
+    // Times in the claims and the token response, which nobody sends back:
+    // issued-at, not-before, expiry (an absolute time, and the seconds left,
+    // which depends on the second the token was issued in) and the access
+    // token hash (it hashes the JWT above).
+    servirtium.collapse("\"exp\":[0-9]{10}", "\"exp\":946684800")
+    servirtium.collapse("\"iat\":[0-9]{10}", "\"iat\":946684800")
+    servirtium.collapse("\"nbf\":[0-9]{10}", "\"nbf\":946684800")
+    servirtium.collapse("\"expires_in\":[0-9]+", "\"expires_in\":86400")
+    servirtium.collapse("\"at_hash\":\"[A-Za-z0-9_-]+\"", "\"at_hash\":\"AT-HASH\"")
+}
+
+fn login_rules() {
+    common_rules()
+    // The login tape's credentials as LABELLED redactions, put back on
+    // playback, so a right and a wrong secret or password stay distinct on
+    // replay: the confidential client's Basic header, its secret when sent in
+    // the body (client_secret_post), and the user's password.
+    redact_basic(CLIENT_ID, CLIENT_SECRET, "my-app")
+    redact_basic(CLIENT_ID, "wrong-secret", "my-app-wrong-secret")
+    redact_basic("nobody", "wrong-secret", "unknown-client")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "client_secret=${CLIENT_SECRET}", "client_secret=REDACTED[my-app]")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "client_secret=wrong-secret", "client_secret=REDACTED[my-app-wrong-secret]")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "password=${USER_PASSWORD}&", "password=REDACTED[alice]&")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "password=wrong-password&", "password=REDACTED[alice-wrong-password]&")
+}
+
+fn api_rules() {
+    common_rules()
+    // Every Authorization header (a bearer token, or the confidential
+    // client's Basic credentials): the credential preset writes each
+    // distinct value as `<scheme> AUTHORIZATION_N` and playback matches the
+    // header on PRESENCE. A port's "already logged in" is "send any
+    // Authorization: Bearer ...".
+    servirtium.redact_credentials()
+    // The user's password in a login form or a password grant: labelled, put
+    // back on replay.
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "password=${USER_PASSWORD}", "password=REDACTED[alice]")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, "password=wrong-password", "password=REDACTED[alice-wrong-password]")
 }
 
 main() {
@@ -130,6 +411,373 @@ main() {
             spec.assert_contains(kb, "\"keys\"", "jwks document")
             servirtium.end_recording(rec)
         }
+    }
+
+    spec.describe(fw, "Dex OIDC provider API") {
+
+        // ---- the login tape -----------------------------------------------
+
+        // PORTING: the one tape with the sign-in on it. For an OAuth2/OIDC
+        // provider the sign-in IS the token request: the password grant
+        // (grant_type=password) is the test-friendly way to get tokens. The
+        // client authenticates with HTTP Basic (client id and secret) and the
+        // user with the form fields. Every request is POST /dex/token,
+        // Content-Type: application/x-www-form-urlencoded, and the grant's
+        // body is written here with its fields in this order:
+        //   grant_type=password&username=alice%40example.com&password=<pw>&scope=openid+email+profile+offline_access
+        // Requests (Basic is `Authorization: Basic base64(id:secret)`):
+        //   Basic my-app:secret, alice's right password -> 200 {"access_token":"{{jwt-1}}","token_type":"bearer",
+        //        "expires_in":86400,"refresh_token":"{{refresh-1}}","id_token":"{{jwt-2}}"}
+        //        (Cache-Control: no-store, Pragma: no-cache)
+        //   same, wrong password        -> 401 {"error":"access_denied","error_description":"Invalid username or password"}
+        //   same, unknown user          -> 401, the same body (not told from a wrong password)
+        //   Basic my-app:wrong-secret   -> 401 {"error":"invalid_client","error_description":"Invalid client credentials."}
+        //   Basic nobody:wrong-secret   -> 401, same
+        //   no client credentials at all -> 401 invalid_client
+        //   client_id and client_secret in the BODY (client_secret_post) instead of Basic,
+        //        right secret -> 200 tokens ({{jwt-3}}, ...), wrong secret -> 401 invalid_client
+        // The credentials are on the tape as labelled redactions, put back on
+        // playback so a right and a wrong one stay distinct on replay:
+        // `Authorization: Basic REDACTED[my-app]` / `REDACTED[my-app-wrong-secret]`
+        // / `REDACTED[unknown-client]`, `password=REDACTED[alice]` / `REDACTED[alice-wrong-password]`
+        // / `REDACTED[unknown-user]`, `client_secret=REDACTED[my-app]` / `REDACTED[my-app-wrong-secret]`.
+        // A port sends the real values: client my-app / secret, user
+        // alice@example.com / password (wrong ones: wrong-secret, wrong-password).
+        // The tokens come back as {{jwt-N}} and {{refresh-N}}: opaque, see "What varies".
+        spec.it("signs in with the password grant, and refuses what is not valid") callback {
+            rec, ok = begin("signs_in_with_the_password_grant", 1, 0)
+            if ok == 0 { return }
+            scope = "openid+email+profile+offline_access"
+            st, b = as_client("POST", "/dex/token", password_grant("alice%40example.com", USER_PASSWORD, scope))
+            spec.assert_eq(st, 200, "the right password: ${b}")
+            spec.assert_str_eq(rh("Cache-Control"), "no-store", "tokens are not cacheable")
+            spec.assert_str_eq(jstr(b, "token_type"), "bearer", "a bearer token")
+            spec.assert_true(string.length(jstr(b, "access_token")) > 0, "an access token")
+            spec.assert_true(string.length(jstr(b, "id_token")) > 0, "an id token")
+            spec.assert_true(string.length(jstr(b, "refresh_token")) > 0, "a refresh token (offline_access)")
+            st, b = as_client("POST", "/dex/token", password_grant("alice%40example.com", "wrong-password", scope))
+            assert_error(st, b, 401, "access_denied", "a wrong password")
+            spec.assert_contains(b, "Invalid username or password", "says so")
+            st, b = as_client("POST", "/dex/token", password_grant("nobody%40example.com", "wrong-password", scope))
+            assert_error(st, b, 401, "access_denied", "an unknown user")
+            spec.assert_contains(b, "Invalid username or password", "the same message")
+            st, b = dexcall("POST", "/dex/token", one(client_basic(CLIENT_ID, "wrong-secret")), password_grant("alice%40example.com", USER_PASSWORD, scope))
+            assert_error(st, b, 401, "invalid_client", "a wrong client secret")
+            st, b = dexcall("POST", "/dex/token", one(client_basic("nobody", "wrong-secret")), password_grant("alice%40example.com", USER_PASSWORD, scope))
+            assert_error(st, b, 401, "invalid_client", "an unknown client")
+            st, b = dexcall("POST", "/dex/token", nohdrs(), password_grant("alice%40example.com", USER_PASSWORD, scope))
+            assert_error(st, b, 401, "invalid_client", "no client credentials")
+            st, b = dexcall("POST", "/dex/token", nohdrs(), "${password_grant("alice%40example.com", USER_PASSWORD, scope)}&client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}")
+            spec.assert_eq(st, 200, "client_secret_post, right secret: ${b}")
+            st, b = dexcall("POST", "/dex/token", nohdrs(), "${password_grant("alice%40example.com", USER_PASSWORD, scope)}&client_id=${CLIENT_ID}&client_secret=wrong-secret")
+            assert_error(st, b, 401, "invalid_client", "client_secret_post, wrong secret")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- already logged in from here on: the access token is sent as
+        // ---- `Authorization: Bearer AUTHORIZATION_1`; the cases that send a
+        // ---- token in a body send the {{jwt-1}} / {{refresh-1}} the tape expects
+
+        // PORTING (no credentials needed: discovery is public):
+        //   GET /dex/.well-known/openid-configuration -> 200 JSON, pretty-printed:
+        //        issuer http://{{request.host}}/dex, authorization_endpoint .../dex/auth,
+        //        token_endpoint .../dex/token, jwks_uri .../dex/keys, userinfo_endpoint
+        //        .../dex/userinfo, introspection_endpoint .../dex/token/introspect,
+        //        device_authorization_endpoint .../dex/device/code,
+        //        grant_types_supported [authorization_code, password, refresh_token]
+        //        (NOT client_credentials: see the header), response_types_supported [code],
+        //        id_token_signing_alg_values_supported [RS256], scopes_supported
+        //        [openid, email, groups, profile, offline_access],
+        //        token_endpoint_auth_methods_supported [client_secret_basic, client_secret_post],
+        //        code_challenge_methods_supported [S256, plain], claims_supported [...].
+        //        The endpoint URLs carry {{request.host}}, the replay server's own address.
+        //   GET /dex/keys        -> 200 {"keys":[{"use":"sig","kty":"RSA","kid":"KEY-ID","alg":"RS256","n":"MODULUS","e":"AQAB"}]}
+        //        (one signing key; kid and n are collapsed, see "What varies"), Cache-Control: max-age=600, must-revalidate
+        //   GET /dex/healthz     -> 200 text/plain "Health check passed"
+        //   GET /.well-known/openid-configuration (no /dex) -> 404 text/plain "404 page not found"
+        //        (Dex serves everything under its issuer path)
+        //   GET /dex/nosuch      -> 404 text/plain "404 page not found"
+        spec.it("serves discovery, the signing keys and a health check") callback {
+            rec, ok = begin("serves_discovery_the_signing_keys_and_a_health_check", 0, 0)
+            if ok == 0 { return }
+            st, b = dexcall("GET", "/dex/.well-known/openid-configuration", nohdrs(), "")
+            spec.assert_eq(st, 200, "discovery: ${b}")
+            spec.assert_str_eq(jstr(b, "response_types_supported.0"), "code", "authorization code flow")
+            spec.assert_str_eq(jstr(b, "id_token_signing_alg_values_supported.0"), "RS256", "RS256")
+            spec.assert_contains(b, "/dex/token/introspect\"", "introspection")
+            spec.assert_contains(b, "\"client_secret_post\"", "client_secret_post")
+            spec.assert_contains(b, "\"offline_access\"", "offline_access scope")
+            spec.assert_false(string.contains(b, "client_credentials") == 1, "no client_credentials grant in Dex v2.45.0")
+            st, b = dexcall("GET", "/dex/keys", nohdrs(), "")
+            spec.assert_eq(st, 200, "keys: ${b}")
+            spec.assert_contains(rh("Cache-Control"), "max-age=", "cacheable")
+            spec.assert_str_eq(jstr(b, "keys.0.kty"), "RSA", "an RSA key")
+            spec.assert_str_eq(jstr(b, "keys.0.use"), "sig", "for signing")
+            spec.assert_str_eq(jstr(b, "keys.0.alg"), "RS256", "RS256")
+            st, b = dexcall("GET", "/dex/healthz", nohdrs(), "")
+            spec.assert_eq(st, 200, "healthz: ${b}")
+            spec.assert_str_eq(b, "Health check passed", "healthy")
+            st, b = dexcall("GET", "/.well-known/openid-configuration", nohdrs(), "")
+            spec.assert_eq(st, 404, "discovery is under the issuer path only: ${b}")
+            st, b = dexcall("GET", "/dex/nosuch", nohdrs(), "")
+            spec.assert_eq(st, 404, "an unknown path: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (logged in: the access token and the id token come from a
+        // password grant made outside the recording; on the tape the header is
+        // `Authorization: Bearer AUTHORIZATION_1`, so send any Bearer value):
+        //   GET  /dex/userinfo  Bearer <access token> -> 200 {"iss":"http://{{request.host}}/dex",
+        //        "sub":"CghhbGljZS1pZBIFbG9jYWw","aud":"my-app","exp":946684800,"iat":946684800,
+        //        "at_hash":"AT-HASH","email":"alice@example.com","email_verified":true,"name":"alice"}
+        //        (sub is the protobuf-encoded user id "alice-id" and connector "local", base64url)
+        //   GET  /dex/userinfo  Bearer <id token>     -> 200, the same claims
+        //   POST /dex/userinfo  Bearer <access token> -> 200 (POST is accepted too)
+        //   GET  /dex/userinfo  (no Authorization)    -> 401 {"error":"access_denied","error_description":"Invalid bearer token."},
+        //        WWW-Authenticate: Bearer
+        //   GET  /dex/userinfo  Bearer not-a-token    -> 403, the same body
+        // exp, iat and at_hash are collapsed (see "What varies"); the token
+        // itself is {{jwt-N}} wherever the tape shows it, never sent as a body here.
+        spec.it("reads userinfo with a bearer token") callback {
+            rec, ok = begin("reads_userinfo_with_a_bearer_token", 0, 1)
+            if ok == 0 { return }
+            st, b = dexcall("GET", "/dex/userinfo", one(bearer(access_token)), "")
+            spec.assert_eq(st, 200, "userinfo: ${b}")
+            spec.assert_str_eq(jstr(b, "email"), USER_EMAIL, "the email")
+            spec.assert_str_eq(jstr(b, "name"), "alice", "the name")
+            spec.assert_str_eq(jstr(b, "sub"), "CghhbGljZS1pZBIFbG9jYWw", "the subject")
+            spec.assert_str_eq(jstr(b, "aud"), CLIENT_ID, "the audience")
+            spec.assert_contains(b, "\"email_verified\":true", "verified")
+            st, b = dexcall("GET", "/dex/userinfo", one(bearer(id_token)), "")
+            spec.assert_eq(st, 200, "userinfo with the id token: ${b}")
+            spec.assert_str_eq(jstr(b, "email"), USER_EMAIL, "the same user")
+            st, b = dexcall("POST", "/dex/userinfo", one(bearer(access_token)), "")
+            spec.assert_eq(st, 200, "POST userinfo: ${b}")
+            st, b = dexcall("GET", "/dex/userinfo", nohdrs(), "")
+            assert_error(st, b, 401, "access_denied", "no bearer token")
+            spec.assert_str_eq(rh("WWW-Authenticate"), "Bearer", "a Bearer challenge")
+            st, b = dexcall("GET", "/dex/userinfo", one(bearer("not-a-token")), "")
+            assert_error(st, b, 403, "access_denied", "a bearer token that is not one")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (the token is in the REQUEST BODY here, so the tape holds
+        // the normalized token the live run sent: send token={{jwt-1}} for the
+        // access token, token={{jwt-2}} for the id token and
+        // token={{refresh-1}} for the refresh token, literally.
+        // Introspection needs no client credentials in Dex):
+        //   POST /dex/token/introspect token={{jwt-1}} -> 200 {"active":true,"client_id":"my-app",
+        //        "sub":"CghhbGljZS1pZBIFbG9jYWw","exp":946684800,"iat":946684800,"nbf":946684800,
+        //        "aud":"my-app","iss":"http://{{request.host}}/dex","token_type":"Bearer",
+        //        "token_use":"access_token","ext":{"email":"alice@example.com","email_verified":true,"name":"alice"}}
+        //   POST ... token={{jwt-2}} (the id token)    -> 200, active, token_use "access_token" too
+        //   POST ... token={{refresh-1}}&token_type_hint=refresh_token -> 200, active, token_use "refresh_token"
+        //   POST ... token=garbage                     -> 200 {"active":false} (Cache-Control: no-store)
+        //   POST ... (no token field)                  -> 400 {"error":"invalid_request","error_description":"The POST body doesn't contain 'token' parameter."}
+        //   GET  /dex/token/introspect                 -> 400 invalid_request, "HTTP method is \"GET\", expected \"POST\"."
+        spec.it("introspects access, id and refresh tokens") callback {
+            rec, ok = begin("introspects_access_id_and_refresh_tokens", 0, 1)
+            if ok == 0 { return }
+            st, b = dexcall("POST", "/dex/token/introspect", nohdrs(), "token=${access_token}")
+            spec.assert_eq(st, 200, "an access token: ${b}")
+            spec.assert_contains(b, "\"active\":true", "active")
+            spec.assert_str_eq(jstr(b, "client_id"), CLIENT_ID, "its client")
+            spec.assert_str_eq(jstr(b, "token_use"), "access_token", "an access token")
+            spec.assert_str_eq(jstr(b, "ext.email"), USER_EMAIL, "its user")
+            st, b = dexcall("POST", "/dex/token/introspect", nohdrs(), "token=${id_token}")
+            spec.assert_eq(st, 200, "an id token: ${b}")
+            spec.assert_contains(b, "\"active\":true", "active")
+            st, b = dexcall("POST", "/dex/token/introspect", nohdrs(), "token=${refresh_token}&token_type_hint=refresh_token")
+            spec.assert_eq(st, 200, "a refresh token: ${b}")
+            spec.assert_contains(b, "\"active\":true", "active")
+            spec.assert_str_eq(jstr(b, "token_use"), "refresh_token", "a refresh token")
+            st, b = dexcall("POST", "/dex/token/introspect", nohdrs(), "token=garbage")
+            spec.assert_eq(st, 200, "garbage: ${b}")
+            spec.assert_contains(b, "{\"active\":false}", "not active")
+            st, b = dexcall("POST", "/dex/token/introspect", nohdrs(), "foo=bar")
+            assert_error(st, b, 400, "invalid_request", "no token field")
+            st, b = dexcall("GET", "/dex/token/introspect", nohdrs(), "")
+            assert_error(st, b, 400, "invalid_request", "the wrong method")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (the refresh token the case starts with came from a
+        // password grant made outside the recording: the tape expects
+        // refresh_token={{refresh-1}} in the first request's body, literally):
+        //   POST /dex/token  Basic <my-app:secret> (preset: any Basic value)
+        //        grant_type=refresh_token&refresh_token={{refresh-1}}
+        //        -> 200 {"access_token":"{{jwt-1}}","token_type":"bearer","expires_in":86400,
+        //                "refresh_token":"{{refresh-2}}","id_token":"{{jwt-2}}"}
+        //        (refresh tokens ROTATE: a new one comes back)
+        //   same body again (the old token)  -> 400 {"error":"invalid_request","error_description":
+        //        "Refresh token is invalid or has already been claimed by another client."}
+        //   grant_type=refresh_token&refresh_token={{refresh-2}}&scope=openid  -> 200 (narrowed scope)
+        //   grant_type=refresh_token&refresh_token=not-a-token -> 400, the same error
+        //   grant_type=refresh_token (no refresh_token) -> 400 invalid_request, "No refresh token is found in request."
+        spec.it("refreshes tokens and rotates the refresh token") callback {
+            rec, ok = begin("refreshes_tokens_and_rotates_the_refresh_token", 0, 1)
+            if ok == 0 { return }
+            st, b = as_client("POST", "/dex/token", "grant_type=refresh_token&refresh_token=${refresh_token}")
+            spec.assert_eq(st, 200, "refresh: ${b}")
+            next = jstr(b, "refresh_token")
+            spec.assert_true(string.length(next) > 0 && next != refresh_token, "a new refresh token: ${next}")
+            spec.assert_true(string.length(jstr(b, "access_token")) > 0, "a new access token")
+            st, b = as_client("POST", "/dex/token", "grant_type=refresh_token&refresh_token=${refresh_token}")
+            assert_error(st, b, 400, "invalid_request", "the old refresh token")
+            spec.assert_contains(b, "already been claimed", "says why")
+            st, b = as_client("POST", "/dex/token", "grant_type=refresh_token&refresh_token=${next}&scope=openid")
+            spec.assert_eq(st, 200, "refresh with a narrower scope: ${b}")
+            st, b = as_client("POST", "/dex/token", "grant_type=refresh_token&refresh_token=not-a-token")
+            assert_error(st, b, 400, "invalid_request", "a refresh token that is not one")
+            st, b = as_client("POST", "/dex/token", "grant_type=refresh_token")
+            assert_error(st, b, 400, "invalid_request", "no refresh token")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: the authorization code flow, hop by hop, with a client
+        // that follows no redirects (each hop is a request here). The ids are
+        // normalized: the authorization request's id is {{authid-1}} (it is
+        // the `state` of the login URL and the `req` of the consent URL), the
+        // consent URL's `hmac` is {{hmac-1}}, the code is {{authid-2}}. Take
+        // each from the response that has it and send it back as it is.
+        //   GET  /dex/auth?client_id=my-app&redirect_uri=<REDIRECT_Q>&response_type=code&scope=openid+email&state=xyz
+        //        -> 302 Location: /dex/auth/local?client_id=my-app&redirect_uri=...&response_type=code&scope=openid+email&state=xyz
+        //           (one connector, so the connector chooser is skipped; the body is a link)
+        //   GET  that Location -> 302 Location: /dex/auth/local/login?back=&state={{authid-1}}
+        //   GET  that Location -> 200 text/html, the login form (action .../login?back=&state={{authid-1}},
+        //        fields login and password, a "Log in to Your Account" heading)
+        //   POST /dex/auth/local/login?back=&state={{authid-1}}  login=alice%40example.com&password=wrong-password
+        //        -> 401 text/html, the form again with "Invalid Email Address and password."
+        //   POST the same URL  login=alice%40example.com&password=password (the password is on the tape as
+        //        REDACTED[alice] and put back on replay) -> 303 Location: /dex/approval?req={{authid-1}}&hmac={{hmac-1}}
+        //   GET  that Location -> 200 text/html, the consent page ("Grant Access", the scopes asked for)
+        //   POST that Location  req={{authid-1}}&approval=approve -> 303
+        //        Location: http://localhost:3000/callback?code={{authid-2}}&state=xyz
+        //   POST /dex/token  Basic <my-app:secret> (preset)
+        //        grant_type=authorization_code&code={{authid-2}}&redirect_uri=<REDIRECT_Q> -> 200 tokens
+        //   POST the same again (a code is single use) -> 400 {"error":"invalid_grant","error_description":"Invalid or expired code parameter."}
+        spec.it("walks the authorization code flow") callback {
+            rec, ok = begin("walks_the_authorization_code_flow", 0, 0)
+            if ok == 0 { return }
+            st, b = dexcall("GET", "/dex/auth?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_Q}&response_type=code&scope=openid+email&state=xyz", nohdrs(), "")
+            spec.assert_eq(st, 302, "start: ${b}")
+            hop = rh("Location")
+            spec.assert_true(string.starts_with(hop, "/dex/auth/local?client_id=my-app") == 1, "on to the password connector: ${hop}")
+            st, b = dexcall("GET", hop, nohdrs(), "")
+            spec.assert_eq(st, 302, "the connector: ${b}")
+            login = rh("Location")
+            spec.assert_true(string.starts_with(login, "/dex/auth/local/login?back=&state=") == 1, "on to the login form: ${login}")
+            st, b = dexcall("GET", login, nohdrs(), "")
+            spec.assert_eq(st, 200, "the login form")
+            spec.assert_contains(b, "Log in to Your Account", "a login page")
+            spec.assert_contains(b, "name=\"login\"", "a login field")
+            spec.assert_contains(b, "name=\"password\"", "a password field")
+            st, b = dexcall("POST", login, nohdrs(), "login=alice%40example.com&password=wrong-password")
+            spec.assert_eq(st, 401, "a wrong password")
+            spec.assert_contains(b, "Invalid Email Address and password.", "the form says so")
+            st, b = dexcall("POST", login, nohdrs(), "login=alice%40example.com&password=${USER_PASSWORD}")
+            spec.assert_eq(st, 303, "the right password: ${b}")
+            approval = rh("Location")
+            spec.assert_true(string.starts_with(approval, "/dex/approval?req=") == 1, "on to the consent page: ${approval}")
+            st, b = dexcall("GET", approval, nohdrs(), "")
+            spec.assert_eq(st, 200, "the consent page")
+            spec.assert_contains(b, "Grant Access", "a consent page")
+            ar = approval
+            req_at = string.index_of(ar, "req=")
+            amp = string.index_of(ar, "&hmac=")
+            req_id = string.substring(ar, req_at + 4, amp)
+            st, b = dexcall("POST", approval, nohdrs(), "req=${req_id}&approval=approve")
+            spec.assert_eq(st, 303, "approve: ${b}")
+            cb = rh("Location")
+            spec.assert_true(string.starts_with(cb, "${REDIRECT}?code=") == 1, "back to the client with a code: ${cb}")
+            spec.assert_true(string.ends_with(cb, "&state=xyz") == 1, "and the client's state: ${cb}")
+            code = string.substring(cb, string.length("${REDIRECT}?code="), string.length(cb) - string.length("&state=xyz"))
+            st, b = as_client("POST", "/dex/token", "grant_type=authorization_code&code=${code}&redirect_uri=${REDIRECT_Q}")
+            spec.assert_eq(st, 200, "exchange the code: ${b}")
+            spec.assert_true(string.length(jstr(b, "id_token")) > 0, "an id token")
+            st, b = as_client("POST", "/dex/token", "grant_type=authorization_code&code=${code}&redirect_uri=${REDIRECT_Q}")
+            assert_error(st, b, 400, "invalid_grant", "the same code again")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: authorization requests Dex refuses. An unknown client or a
+        // redirect URI that is not registered is shown to the USER (an HTML
+        // error page: redirecting to an unregistered URI would be unsafe);
+        // anything else is sent back to the client's redirect URI as
+        // `?error=...&error_description=...&state=...`.
+        //   GET /dex/auth/local?client_id=nope&redirect_uri=<REDIRECT_Q>&response_type=code&scope=openid
+        //        -> 404 text/html, "Unregistered client id"... (the page's text)
+        //   GET /dex/auth/local?client_id=my-app&redirect_uri=http%3A%2F%2Fevil.example%2Fcb&response_type=code&scope=openid
+        //        -> 400 text/html, "Unregistered redirect_uri"
+        //   GET .../auth/local?client_id=my-app&redirect_uri=<REDIRECT_Q>&response_type=token&scope=openid&state=s
+        //        -> 303 Location: http://localhost:3000/callback?error=unsupported_response_type&error_description=Unsupported+response+type+%22token%22&state=s
+        //   ...&response_type=code&scope=email&state=s
+        //        -> 303 ...?error=invalid_scope&error_description=Missing+required+scope%28s%29+%5B%22openid%22%5D.&state=s
+        //   (no response_type) ...&scope=openid&state=s
+        //        -> 303 ...?error=invalid_request&error_description=No+response_type+provided&state=s
+        spec.it("refuses bad authorization requests") callback {
+            rec, ok = begin("refuses_bad_authorization_requests", 0, 0)
+            if ok == 0 { return }
+            st, b = dexcall("GET", "/dex/auth/local?client_id=nope&redirect_uri=${REDIRECT_Q}&response_type=code&scope=openid", nohdrs(), "")
+            spec.assert_eq(st, 404, "an unknown client: ${b}")
+            spec.assert_contains(rh("Content-Type"), "text/html", "an HTML error page")
+            st, b = dexcall("GET", "/dex/auth/local?client_id=${CLIENT_ID}&redirect_uri=http%3A%2F%2Fevil.example%2Fcb&response_type=code&scope=openid", nohdrs(), "")
+            spec.assert_eq(st, 400, "a redirect URI that is not registered: ${b}")
+            st, b = dexcall("GET", "/dex/auth/local?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_Q}&response_type=token&scope=openid&state=s", nohdrs(), "")
+            spec.assert_eq(st, 303, "an unsupported response type: ${b}")
+            spec.assert_contains(rh("Location"), "error=unsupported_response_type", "sent back to the client")
+            spec.assert_true(string.ends_with(rh("Location"), "&state=s") == 1, "with its state")
+            st, b = dexcall("GET", "/dex/auth/local?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_Q}&response_type=code&scope=email&state=s", nohdrs(), "")
+            spec.assert_eq(st, 303, "no openid scope: ${b}")
+            spec.assert_contains(rh("Location"), "error=invalid_scope", "invalid_scope")
+            st, b = dexcall("GET", "/dex/auth/local?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_Q}&scope=openid&state=s", nohdrs(), "")
+            spec.assert_eq(st, 303, "no response type: ${b}")
+            spec.assert_contains(rh("Location"), "error=invalid_request", "invalid_request")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- the representative errors ------------------------------------
+
+        // PORTING: the token endpoint's refusals the login tape did not
+        // show. Client authentication is HTTP Basic my-app:secret (any Basic
+        // value on replay); every error is JSON {"error":..,"error_description":..}.
+        //   grant_type=client_credentials&scope=openid  -> 400 {"error":"unsupported_grant_type"}
+        //        (Dex v2.45.0 does not support it, though the module's
+        //        enable_client_credentials() asks for it; see the header)
+        //   grant_type=bogus                            -> 400 unsupported_grant_type
+        //   foo=bar (no grant_type)                     -> 400 unsupported_grant_type
+        //   grant_type=password&username=alice%40example.com&password=<pw>   (no scope)
+        //        -> 400 invalid_request, "Missing required scope(s) [\"openid\"]."
+        //   grant_type=password&...&scope=openid+audience%3Aserver%3Aclient_id%3Aother
+        //        -> 400 invalid_request, "Client can't request scope(s) [...]"
+        //   grant_type=authorization_code&code=not-a-code&redirect_uri=<REDIRECT_Q>
+        //        -> 400 invalid_grant, "Invalid or expired code parameter."
+        //   GET /dex/token                              -> 400 invalid_request, "method not allowed"
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses", 0, 0)
+            if ok == 0 { return }
+            st, b = as_client("POST", "/dex/token", "grant_type=client_credentials&scope=openid")
+            assert_error(st, b, 400, "unsupported_grant_type", "client credentials")
+            st, b = as_client("POST", "/dex/token", "grant_type=bogus")
+            assert_error(st, b, 400, "unsupported_grant_type", "an unknown grant type")
+            st, b = as_client("POST", "/dex/token", "foo=bar")
+            assert_error(st, b, 400, "unsupported_grant_type", "no grant type")
+            st, b = as_client("POST", "/dex/token", "grant_type=password&username=alice%40example.com&password=${USER_PASSWORD}")
+            assert_error(st, b, 400, "invalid_request", "no scope")
+            spec.assert_contains(b, "Missing required scope(s)", "says what is missing")
+            st, b = as_client("POST", "/dex/token", "grant_type=password&username=alice%40example.com&password=${USER_PASSWORD}&scope=openid+audience%3Aserver%3Aclient_id%3Aother")
+            assert_error(st, b, 400, "invalid_request", "a scope the client may not ask for")
+            st, b = as_client("POST", "/dex/token", "grant_type=authorization_code&code=not-a-code&redirect_uri=${REDIRECT_Q}")
+            assert_error(st, b, 400, "invalid_grant", "a code that was never issued")
+            st, b = as_client("GET", "/dex/token", "")
+            assert_error(st, b, 400, "invalid_request", "the wrong method")
+            servirtium.end_recording(rec)
+        }
+    }
+
+    if shared_dex != null {
+        e = dex.terminate(shared_dex as *dex.DexContainer)
+        if e != "" { println("dex: removing the shared container: ${e}") }
     }
     return spec.run_summary(fw)
 }
