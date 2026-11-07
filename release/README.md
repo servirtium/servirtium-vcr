@@ -36,6 +36,44 @@ with that directory (`go get github.com/servirtium/servirtium-vcr/go/v2@v2.0.0-a
 looks up `go/v2.0.0-alpha.13`). `publish.sh` does the same when used instead of the
 workflow. Never create the `go/` tag at a different commit than the release tag.
 
+### The Swift package: a second, bare tag (2.0.0-alpha.14 beside v2.0.0-alpha.14)
+
+The root `Package.swift` declares the core as `binaryTarget(url:checksum:)` on
+this release's `servirtium-vcr-swift-<tag>.artifactbundle.zip` (static
+libraries for macOS arm64/x86_64 and Linux glibc x86_64/arm64, built by
+`release/swift-bundle.sh` inside `build.sh`'s binding-package block). The
+manifest must carry the bundle's checksum, but the bundle is built by this
+workflow after the tag exists, and is not bit-reproducible (its archives carry
+build paths), so the checksum cannot be computed while preparing the release.
+The flow, with no tag ever moved:
+
+1. `SVCR_RELEASE_SET=<tag> aeb release/.version.ae` sets `let binaryTag` in
+   `Package.swift` to the new tag (an ordinary pin) and empties
+   `let binaryChecksum`. With an empty checksum the manifest uses its source
+   form, so the `v<version>` commit never points at another release's binary.
+2. The workflow builds and publishes the bundle like every other asset.
+3. "Tag the Swift package" downloads the published bundle, hashes it, runs
+   `SVCR_RELEASE_TAG=<tag> SVCR_SWIFT_CHECKSUM=<sha256> aeb release/.version.ae`
+   in a worktree of the release commit, commits that one-line change on top of
+   it and pushes the bare semver tag (`<tag>` without the `v`) at that commit.
+   SwiftPM reads both tags as one version and prefers the tag without the `v`
+   (by design, in SwiftPM's `SourceControlPackageContainer`), so `from:` /
+   `exact:` resolve to the commit carrying the checksum. The bare tag does not
+   match the `v*` trigger.
+4. "Carry the Swift bundle checksum to main" makes the same change on `main`
+   (only while main's `binaryTag` still names this release; retried if main
+   moves), so `branch: "main"` uses the released binary afterwards.
+5. "Consume the Swift package by version from GitHub" resolves
+   `exact: "<version>"` from github.com, builds and runs `swift/example/`
+   against the downloaded bundle, and checks that `Package.resolved` pinned the
+   bare tag's commit (skipped with a warning if the runner's Swift is older
+   than 6.2).
+
+Never create the bare tag by hand at the `v` tag's commit: its manifest has
+no checksum. If step 3 or 4 fails after publishing, rerun just that step's
+commands (the workflow cannot be re-run once the release exists); step 3 is
+idempotent when the bare tag already carries the published checksum.
+
 Use a new unused version; pushing `main` alone does not publish a release.
 Prerelease tags (`-alpha`, `-beta`, `-rc`, etc.) are marked as prereleases on
 GitHub. A manual workflow run can release an existing tag containing this
@@ -69,10 +107,12 @@ release, then run consumer packaging against the downloaded libraries. Do not
 change ecosystem-specific package versions by blindly copying the engine tag;
 the version-spelling notes below still apply.
 
-**libservirtium_vcr only, on purpose.** These scripts ship the one thing that is hard for a
-user to produce — the native shared library, one per OS/CPU. They deliberately do
-**not** build or publish the per-language packages (wheel / gem / jar / nupkg /
-…) or push to any registry (PyPI / npm / Maven / …). Those are the `.package.ae`
+**libservirtium_vcr first, on purpose.** These scripts ship the one thing that is hard for a
+user to produce — the native shared library, one per OS/CPU. Beyond it, only
+the four multi-platform packages a consumer cannot easily assemble (the fat
+jar, the multi-RID nupkg, the npm tarball and the Swift artifact bundle,
+`RELEASE_BINDING_PACKAGES=1`) are built here; other per-language packages
+(wheel / gem / …) are not, and nothing is pushed to any registry (PyPI / npm / Maven / …). Those are the `.package.ae`
 nodes' job (build them from the tagged source with `aeb <lang>/.package.ae`) and a
 credentialed, per-registry concern out of scope here.
 
@@ -103,6 +143,9 @@ first-class. FreeBSD needs `AETHER_SYSROOT` and skips loudly without it.
 Disable the automatic release workflow before using the local publisher for a
 tag, so the two publishers do not race. The script still builds and uploads raw
 libraries and the matching `ae add` assets, without publishing language packages.
+That includes the Swift artifact bundle: a release published this way has no
+bare semver tag, so SwiftPM resolves its `v` tag, whose manifest is the source
+form (`branch:`/`revision:` consumers only).
 
 ```sh
 release/publish.sh v2.0.0-alpha.13              # build the matrix + create the release, assets attached

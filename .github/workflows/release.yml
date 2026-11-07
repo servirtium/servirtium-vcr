@@ -114,7 +114,7 @@ jobs:
       - name: Verify release version and toolchain pins
         run: SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_MODE=version aeb release/.artifacts.ae
 
-      - name: Build all nine libraries, nine ae-add packages, and the three binding packages
+      - name: Build all nine libraries, nine ae-add packages, and the four binding packages
         env:
           TARGETS: x86_64-linux aarch64-linux x86_64-linux-musl aarch64-linux-musl x86_64-macos aarch64-macos x86_64-windows aarch64-windows x86_64-freebsd
           # Widen the release for exactly the fat Java jar (6 natives) and the
@@ -123,13 +123,14 @@ jobs:
           RELEASE_BINDING_PACKAGES: '1'
         run: release/build.sh
 
-      - name: Require the three multi-platform binding packages
+      - name: Require the four multi-platform binding packages
         shell: bash
         run: |
           set -euo pipefail
           compgen -G 'release/dist/servirtium-vcr-*.jar' >/dev/null
           compgen -G 'release/dist/Servirtium.Vcr.*.nupkg' >/dev/null
           compgen -G 'release/dist/servirtium-vcr-*.tgz' >/dev/null
+          test -s "release/dist/servirtium-vcr-swift-$RELEASE_TAG.artifactbundle.zip"
 
       - name: Verify release artifacts and Linux ABI
         run: SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_MODE=bindings aeb release/.artifacts.ae
@@ -156,6 +157,11 @@ jobs:
           and a multi-platform npm tarball (servirtium-vcr-*.tgz) bundling the same
           eight under native/<platform>-<arch>[-musl]/; install it with
           `npm install <this tarball's download URL>`.
+          A SwiftPM artifact bundle (servirtium-vcr-swift-*.artifactbundle.zip) holds
+          the core as static libraries for macOS arm64/x86_64 and Linux glibc
+          x86_64/arm64; the repository's Package.swift downloads it, so
+          `.package(url: "https://github.com/servirtium/servirtium-vcr", from: ...)`
+          resolves this version (Swift 6.2 or newer) with no other step.
           Other language packages and registry publishing remain separate.
 
           All nine libraries built successfully. The Linux x86_64 library was
@@ -168,6 +174,7 @@ jobs:
             --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" \
             release/dist/*.so release/dist/*.dylib release/dist/*.dll \
             release/dist/*.dll.lib release/dist/*.jar release/dist/*.nupkg release/dist/*.tgz \
+            release/dist/*.artifactbundle.zip \
             release/dist/*.sha256 release/dist/SHA256SUMS.txt \
             release/dist/ae-add/servirtium_vcr-* release/dist/ae-add/aether.toml
 
@@ -188,6 +195,75 @@ jobs:
             git push origin "refs/tags/$gotag"
           fi
 
+      # SwiftPM: the root Package.swift downloads this release's Swift artifact
+      # bundle as a binaryTarget(url:checksum:), so the manifest must carry the
+      # bundle's checksum, and the bundle (not bit-reproducible) exists only
+      # now. The checksum goes on a commit ON TOP of the release commit, tagged
+      # with the bare semver tag (2.0.0-alpha.14, no "v"). SwiftPM reads
+      # v2.0.0-alpha.14 and 2.0.0-alpha.14 as the same version and prefers the
+      # tag without the "v", so `from:`/`exact:` resolve to this commit. No tag
+      # is moved, nothing is force-pushed; the v<version> commit keeps an empty
+      # checksum (its manifest falls back to the source form). The bare tag does
+      # not match the `v*` trigger, and a GITHUB_TOKEN push starts no workflow.
+      # The checksum is taken from the PUBLISHED asset, the bytes SwiftPM fetches.
+      - name: Tag the Swift package (bare semver tag carrying the bundle checksum)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          swifttag="${RELEASE_TAG#v}"
+          bundle="servirtium-vcr-swift-$RELEASE_TAG.artifactbundle.zip"
+          published="$RUNNER_TEMP/swift-published"
+          gh release download "$RELEASE_TAG" --pattern "$bundle" --dir "$published" --clobber
+          sum="$(sha256sum "$published/$bundle" | cut -d' ' -f1)"
+          echo "SWIFT_BUNDLE_SHA256=$sum" >> "$GITHUB_ENV"
+          git fetch --tags --force --quiet
+          if git rev-parse -q --verify "refs/tags/$swifttag" >/dev/null; then
+            test "$(git rev-parse "refs/tags/$swifttag^{commit}^")" = "$commit"
+            git show "refs/tags/$swifttag:Package.swift" | grep -qx "let binaryChecksum = \"$sum\""
+            echo "$swifttag already carries the published bundle checksum."
+            exit 0
+          fi
+          wt="$RUNNER_TEMP/swift-tag"
+          git worktree add --detach "$wt" "$commit"
+          cd "$wt"
+          SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_SWIFT_CHECKSUM="$sum" aeb release/.version.ae
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "Swift: artifact bundle checksum for $RELEASE_TAG" \
+            -m "SwiftPM resolves $swifttag (this commit) in preference to $RELEASE_TAG (its parent)." \
+            -- Package.swift
+          test "$(git diff --name-only HEAD^ HEAD)" = "Package.swift"
+          git tag "$swifttag"
+          git push origin "refs/tags/$swifttag"
+
+      # Carry the same checksum to main, so `branch: "main"` gets the released
+      # binary too. Only while main's manifest still names this release (a later
+      # release preparation wins), and retried if main moves under us.
+      - name: Carry the Swift bundle checksum to main
+        run: |
+          set -euo pipefail
+          wt="$RUNNER_TEMP/swift-main"
+          for attempt in 1 2 3; do
+            git fetch --quiet origin main
+            rm -rf "$wt"; git worktree prune
+            git worktree add --detach "$wt" origin/main
+            cd "$wt"
+            if ! grep -qx "let binaryTag = \"$RELEASE_TAG\"" Package.swift; then
+              echo "::notice::main's Package.swift no longer names $RELEASE_TAG; left as is."
+              exit 0
+            fi
+            if grep -qx "let binaryChecksum = \"$SWIFT_BUNDLE_SHA256\"" Package.swift; then exit 0; fi
+            SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_SWIFT_CHECKSUM="$SWIFT_BUNDLE_SHA256" aeb release/.version.ae
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit --quiet -m "Swift: artifact bundle checksum for $RELEASE_TAG" -- Package.swift
+            if git push origin HEAD:main; then exit 0; fi
+            cd "$GITHUB_WORKSPACE"
+          done
+          echo "::error::could not push the Swift checksum to main; apply it with SVCR_RELEASE_TAG=$RELEASE_TAG SVCR_SWIFT_CHECKSUM=$SWIFT_BUNDLE_SHA256 aeb release/.version.ae"
+          exit 1
+
       - name: Verify published downloads
         env:
           GH_TOKEN: ${{ github.token }}
@@ -197,4 +273,34 @@ jobs:
           downloaded="$RUNNER_TEMP/published-core"
           gh release download "$RELEASE_TAG" --dir "$downloaded"
           SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_DIST="$downloaded" SVCR_ARTIFACTS_MODE=bindings aeb release/.artifacts.ae
-          echo "Downloaded and verified all nine libraries, nine ae-add packages, the fat Java jar, the multi-RID .NET nupkg, the npm tarball, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
+          echo "Downloaded and verified all nine libraries, nine ae-add packages, the fat Java jar, the multi-RID .NET nupkg, the npm tarball, the Swift artifact bundle, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
+
+      # The whole point of the bare tag: a stranger's SwiftPM resolves this
+      # version from GitHub, downloads the bundle, checks its checksum, links the
+      # static core and replays the canonical tape. Needs Swift >= 6.2 (SE-0482
+      # static-library artifact bundles); skipped with a warning without it.
+      - name: Consume the Swift package by version from GitHub
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if ! command -v swift >/dev/null; then
+            echo "::warning::no swift on the runner; SwiftPM consumption of ${RELEASE_TAG#v} not checked"; exit 0
+          fi
+          v="$(swift --version 2>&1 | sed -n 's/.*Swift version \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -1)"
+          case "$v" in 6.[2-9]*|[7-9].*) ;; *)
+            echo "::warning::swift $v is older than 6.2; SwiftPM consumption of ${RELEASE_TAG#v} not checked"; exit 0 ;;
+          esac
+          c="$RUNNER_TEMP/swift-consumer"
+          mkdir -p "$c/Sources/ConsumerExample" "$c/tapes"
+          cp swift/example/Sources/ConsumerExample/main.swift "$c/Sources/ConsumerExample/"
+          cp swift/example/tapes/single_get.md "$c/tapes/"
+          printf '%s\n' '// swift-tools-version:5.9' 'import PackageDescription' 'let package = Package(' \
+            '    name: "ConsumerExample",' \
+            "    dependencies: [.package(url: \"https://github.com/$GH_REPO\", exact: \"${RELEASE_TAG#v}\")]," \
+            '    targets: [.executableTarget(name: "ConsumerExample", dependencies: [' \
+            '        .product(name: "Servirtium", package: "servirtium-vcr")])]' ')' > "$c/Package.swift"
+          cd "$c"
+          env -u SERVIRTIUM_VCR_LIB_DIR swift run ConsumerExample
+          grep -q "\"revision\" : \"$(git -C "$GITHUB_WORKSPACE" rev-parse "refs/tags/${RELEASE_TAG#v}^{commit}")\"" Package.resolved
+          echo "SwiftPM resolved ${RELEASE_TAG#v} from GitHub and replayed the canonical tape." >> "$GITHUB_STEP_SUMMARY"

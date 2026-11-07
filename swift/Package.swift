@@ -6,7 +6,11 @@
 //
 // There is a second manifest at the REPOSITORY ROOT (../Package.swift) that makes
 // the package consumable by git URL; it declares the same package with `path:`
-// into this directory. KEEP THE TWO IN STEP (name, products, targets, flags).
+// into this directory. KEEP THE TWO IN STEP (name, platforms, products,
+// targets). They differ only in where the core comes from: this one always
+// links the locally built shared library in native/; the root one downloads
+// the release's static-library artifact bundle as a binaryTarget (see its
+// comments for why), falling back to the same -L/-rpath form as here.
 import Foundation
 import PackageDescription
 
@@ -25,6 +29,7 @@ let nativeDir = URL(fileURLWithPath: #filePath)
 
 let package = Package(
     name: "Servirtium",
+    platforms: [.macOS(.v13)],
     products: [
         .library(name: "Servirtium", targets: ["Servirtium"])
     ],

@@ -4,6 +4,10 @@
 //   aeb release/.version.ae                                      check every pin against SERVIRTIUM_VCR_VERSION
 //   SVCR_RELEASE_TAG=v2.0.0-alpha.4 aeb release/.version.ae      check every pin against v2.0.0-alpha.4
 //   SVCR_RELEASE_SET=v2.0.0-alpha.4 aeb release/.version.ae      prepare a release: rewrite every pin
+//   SVCR_RELEASE_TAG=v2.0.0-alpha.4 SVCR_SWIFT_CHECKSUM=<sha256> aeb release/.version.ae
+//                                                                 the release workflow, after publishing
+//                                                                 the Swift artifact bundle: write its
+//                                                                 checksum into the root Package.swift
 //
 // aeb nodes take no arguments, so the mode comes from the environment. The node
 // prints to target/.aeb/logs/version_release.log; a failure's reason is also in
@@ -24,6 +28,17 @@
 // Setting is all-or-nothing: every pin is found and counted before any file is
 // written. Never add this node to a target set in set mode: it rewrites tracked
 // source files.
+//
+// The root Package.swift carries two release lines: `let binaryTag = "<tag>"`
+// (an ordinary @V@ pin) and `let binaryChecksum = "<sha256>"`, the checksum of
+// that tag's servirtium-vcr-swift-<tag>.artifactbundle.zip. The bundle is built
+// by the release workflow and is not reproducible, so its checksum cannot be
+// known when the release is prepared: set mode EMPTIES the checksum (the
+// manifest then falls back to its source form, never pointing at another
+// release's binary), and the workflow writes it later with SVCR_SWIFT_CHECKSUM,
+// on the commit it tags with the bare semver tag SwiftPM prefers (see the
+// comments in Package.swift and release/README.md). Check mode accepts an empty
+// checksum or 64 hex digits.
 //
 // Docs are different from selenium's: ~29 READMEs quote the tag in download
 // URLs and the dependency lines, so instead of one row per line, every *.md
@@ -48,6 +63,8 @@ const PINS[] = [
     "SERVIRTIUM_VCR_VERSION", "^@V@\\s*$",
     // root manifests that exist so `dub add` / `shards` can consume the monorepo
     "dub.sdl", "^version \"@S@\"",
+    // the release whose Swift artifact bundle the root Package.swift downloads
+    "Package.swift", "^let binaryTag = \"@V@\"$",
     "shard.yml", "^version: @S@$",
     "crystal/src/servirtium.cr", "VERSION = \"@S@\"",
     "python/servirtium/__init__.py", "__version__ = \"@P@\"",
@@ -279,6 +296,52 @@ swap_doc(content: string, old: string, tag: string) -> string {
     return out
 }
 
+// The root Package.swift's Swift artifact-bundle checksum line.
+const SWIFT_MANIFEST = "Package.swift"
+const SWIFT_CHECKSUM = "^let binaryChecksum = \"\\K[0-9a-f]*(?=\"$)"
+
+// `content` with the checksum set to `sum` ("" to empty it), or an error.
+// Exactly one checksum line, holding "" or 64 hex digits, is required.
+swift_checksum(content: string, sum: string) -> (string, string) {
+    re, re_err = regex.compile_flags(SWIFT_CHECKSUM, regex.FLAG_MULTILINE)
+    if re_err != "" { return "", "${SWIFT_MANIFEST}: bad checksum pattern: ${re_err}" }
+    defer regex.free(re)
+    fa, _fe = regex.find_all(re, content)
+    found = if fa == null { 0 } else { regex.find_all_count(fa) }
+    if found != 1 {
+        if fa != null { regex.find_all_free(fa) }
+        return "", "${SWIFT_MANIFEST}: expected one 'let binaryChecksum = \"...\"' line, found ${found}"
+    }
+    ms = regex.find_all_start(fa, 0)
+    me = regex.find_all_end(fa, 0)
+    regex.find_all_free(fa)
+    have = string.substring(content, ms, me)
+    if have != "" && regex.matches_lit("^[0-9a-f]{64}$", have)! == 0 {
+        return "", "${SWIFT_MANIFEST}: binaryChecksum '${have}' is neither empty nor a sha256"
+    }
+    return "${string.substring(content, 0, ms)}${sum}${string.substring(content, me, string.length(content))}", ""
+}
+
+// The release workflow's step: write the published bundle's checksum. The
+// manifest's binaryTag must already name `tag` (it was set when the release
+// was prepared). Only that is checked, not every pin: the workflow applies
+// this both at the release commit and on main, which may have moved on.
+swift_release(root: string, tag: string, sum: string) -> string {
+    if regex.matches_lit("^${TAG}$", tag)! == 0 { return "expected a release tag like v2.0.0-alpha.3, got '${tag}'" }
+    if regex.matches_lit("^[0-9a-f]{64}$", sum)! == 0 { return "SVCR_SWIFT_CHECKSUM must be 64 lowercase hex digits" }
+    content, err = fs.read("${root}/${SWIFT_MANIFEST}")
+    if err != "" { return "${SWIFT_MANIFEST}: cannot read" }
+    if regex.matches_lit("(?m)^let binaryTag = \"\\Q${tag}\\E\"$", content)! == 0 {
+        return "${SWIFT_MANIFEST}: binaryTag is not ${tag}; prepare the release with SVCR_RELEASE_SET first"
+    }
+    out, cerr = swift_checksum(content, sum)
+    if cerr != "" { return cerr }
+    werr = fs.write("${root}/${SWIFT_MANIFEST}", out)
+    if werr != "" { return "${SWIFT_MANIFEST}: ${werr}" }
+    println("Wrote the ${tag} Swift artifact bundle checksum into ${SWIFT_MANIFEST}; commit it and tag it ${string.substring(tag, 1, string.length(tag))}.")
+    return ""
+}
+
 // The release run: every pin read and retagged in memory, then either written
 // (set mode) or compared. "" when it passes, else why not.
 release(root: string, tag: string, old: string, setting: bool) -> string {
@@ -304,6 +367,12 @@ release(root: string, tag: string, old: string, setting: bool) -> string {
         detail = "${detail}${d}"
         wrong += w
     }
+    // The Swift bundle checksum: checked always, emptied when setting.
+    swift, _serr = map.get_string(bodies, SWIFT_MANIFEST)
+    if map.map_has(bodies, SWIFT_MANIFEST) == 0 { return "${SWIFT_MANIFEST}: not among the pins" }
+    emptied, cerr = swift_checksum(swift, "")
+    if cerr != "" { return cerr }
+    if setting { map.map_put(bodies, SWIFT_MANIFEST, emptied) }
     // Docs: the plain old -> new tag replace.
     docs = string.split(doc_files(root), "\n")
     defer string.array_free(docs)
@@ -354,6 +423,7 @@ aeb(cap) {
         root = _get("root")
         set_tag = env("SVCR_RELEASE_SET")
         check_tag = env("SVCR_RELEASE_TAG")
+        swift_sum = env("SVCR_SWIFT_CHECKSUM")
         old_raw, old_err = fs.read("${root}/SERVIRTIUM_VCR_VERSION")
         old = string.trim(old_raw)
         tag = old
@@ -362,6 +432,8 @@ aeb(cap) {
         bad = ""
         if old_err != "" { bad = "cannot read SERVIRTIUM_VCR_VERSION" }
         else if set_tag != "" && check_tag != "" { bad = "set SVCR_RELEASE_SET or SVCR_RELEASE_TAG, not both" }
+        else if swift_sum != "" && check_tag == "" { bad = "SVCR_SWIFT_CHECKSUM needs SVCR_RELEASE_TAG" }
+        else if swift_sum != "" { bad = swift_release(root, tag, swift_sum) }
         else { bad = release(root, tag, old, set_tag != "") }
         if bad != "" { bldr.fail(bad); return 1 }
     }

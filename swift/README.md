@@ -75,13 +75,15 @@ marshalling rules to drift from `core/embed.ae`.
 
 ## Getting it
 
-Add the package (SwiftPM needs the manifest at the repo root, so the root
-`Package.swift` forwards into `swift/`):
+Depend on a release by version. SwiftPM downloads the native core for you as a
+binary target (a static library, checksum-verified), so there is nothing else
+to fetch, set or copy:
 
 ```swift
-// Package.swift of your project
+// Package.swift of your project (swift-tools-version 5.9 or later; Swift 6.2+ to build)
+platforms: [.macOS(.v13)],
 dependencies: [
-    .package(url: "https://github.com/servirtium/servirtium-vcr", branch: "main"),
+    .package(url: "https://github.com/servirtium/servirtium-vcr", from: "2.0.0-alpha.14"),
 ],
 targets: [
     .target(name: "YourTarget", dependencies: [
@@ -90,7 +92,35 @@ targets: [
 ],
 ```
 
-Fetch the native library and build:
+```sh
+# check: resolves, downloads the bundle, links, loads, and reports the missing
+# tape (prints "servirtium linked and loaded: ...")
+mkdir -p Sources/check && cat > Sources/check/main.swift <<'EOF2'
+import Servirtium
+do { try Vcr.withPlayback("/nonexistent.md") { _ in } } catch { print("servirtium linked and loaded: \(error)") }
+EOF2
+# (needs a `check` executableTarget depending on the Servirtium product)
+swift run check
+```
+
+Covered by the binary: **macOS** arm64 and x86_64 (13 or later) and **Linux
+glibc** x86_64 and arm64. Each release publishes
+`servirtium-vcr-swift-<tag>.artifactbundle.zip`, a SwiftPM artifact bundle
+holding `libservirtium_vcr.a` per platform plus the C header and module map;
+the repository-root `Package.swift` names it with
+`binaryTarget(url:checksum:)`. The core is linked statically into your test
+binary, so nothing needs to be found at run time.
+
+### The source form (other platforms, or main between releases)
+
+Windows, FreeBSD and Linux musl (the Swift Static Linux SDK) are not in the
+bundle. There, and for a release that predates the bundle (no
+`servirtium-vcr-swift-<tag>.artifactbundle.zip` on its release page), depend on
+a branch or revision and link a downloaded shared library yourself:
+
+```swift
+.package(url: "https://github.com/servirtium/servirtium-vcr", branch: "main"),
+```
 
 ```sh
 set -eu
@@ -107,46 +137,67 @@ mkdir -p "$SERVIRTIUM_VCR_LIB_DIR"
 curl -fsSL -o "$SERVIRTIUM_VCR_LIB_DIR/libservirtium_vcr.$EXT" \
   "https://github.com/servirtium/servirtium-vcr/releases/download/$TAG/libservirtium_vcr-$TAG-$OS-$ARCH${LIBC}.$EXT"
 swift build            # SERVIRTIUM_VCR_LIB_DIR must be exported for this and for run/test
-
-# check: links, loads, and reports the missing tape (prints "servirtium linked and loaded: ...")
-mkdir -p Sources/check && cat > Sources/check/main.swift <<'EOF'
-import Servirtium
-do { try Vcr.withPlayback("/nonexistent.md") { _ in } } catch { print("servirtium linked and loaded: \(error)") }
-EOF
-# (needs a `check` executableTarget depending on the Servirtium product)
-swift run check
 ```
+
+Setting `SERVIRTIUM_VCR_LIB_DIR` always selects the source form, which links
+with `unsafeFlags` (`-L`, `-rpath`); SwiftPM accepts those only for a
+`branch:` / `revision:` / path dependency, never for `from:` / `exact:`.
+
+### How a release gets its checksum into Package.swift
+
+`binaryTarget(url:checksum:)` needs the bundle's checksum in the manifest, but
+the bundle is built by the release workflow after the release commit is
+tagged, and it is not bit-reproducible. So:
+
+1. `SVCR_RELEASE_SET=<tag> aeb release/.version.ae` (preparing the release)
+   sets `binaryTag` in the root `Package.swift` to the new tag and empties
+   `binaryChecksum`. The `v<version>` tag lands on that commit: its manifest is
+   the source form.
+2. The release workflow publishes the bundle, writes its checksum on a commit
+   on top of the `v<version>` commit, tags that commit with the **bare** semver
+   tag (`2.0.0-alpha.14`, no `v`) and pushes the tag. SwiftPM reads both tags as
+   the same version and prefers the one without the `v`, so `from:` /
+   `exact:` resolve to the commit carrying the checksum. No tag is moved.
+3. It applies the same one-line change on `main`, so `branch: "main"` uses the
+   released binary from then on.
+
+A consumer resolving the new version in the minutes between the `v` tag and
+the bare tag gets SwiftPM's "unsafe build flags" error (step 1's source form),
+never a binary from a different release; resolving again after the release
+workflow finishes picks up the bare tag.
 
 ### Notes for coding agents
 
-- `SERVIRTIUM_VCR_LIB_DIR` must be the directory holding a file named exactly
-  `libservirtium_vcr.<so|dylib>`. Release assets carry the tag/os/arch in the
-  name, so the download is saved under the plain name (the linker looks for
-  `-lservirtium_vcr`).
-- Pick the asset for the machine that RUNS the tests: `-musl` on Alpine/musl,
-  plain `linux-*` on glibc. A wrong-libc or wrong-arch file fails at load with
-  `invalid ELF header` / `wrong ELF class` / `no such file`.
-- The library must be at least as new as the binding source you depend on. The
-  binding calls symbols a newer core added; an older library fails to link with
-  `undefined reference to 'aether_vcr_embed_...'`. Match the tag to the binding.
-- Do not vendor the `.so`/`.dylib` into git (it is git-ignored in this repo for
-  that reason) and do not copy it into the dependency's checkout directory.
-- Windows: use the `.dll` asset (plus its `.dll.lib`) by hand; this recipe is
-  for Linux, macOS and FreeBSD.
-- Use `branch:` or `revision:`, NOT `from:`/`exact:`. The manifest links with
-  `unsafeFlags` (`-L`, `-rpath`), which SwiftPM refuses for a dependency
-  resolved by version: `error: the target 'Servirtium' in product 'Servirtium'
-  contains unsafe build flags`. Local `.package(path:)` and branch/revision
-  dependencies are accepted.
-- The env var is read when SwiftPM evaluates the manifest, so it must be set
-  at build time, and again if SwiftPM re-resolves (`swift package resolve`,
-  `swift test`, `swift run`). The directory is baked in as an rpath, so the
-  built binary does not need it at run time (verified).
-- Failure `ld: cannot find -lservirtium_vcr` means the variable was unset or
-  the directory has no `libservirtium_vcr.<ext>`. Changing the variable
-  afterwards needs `rm -rf .build`.
-- Open point: a `binaryTarget` / artifactbundle would remove both the env var
-  and the `unsafeFlags` restriction (and allow `from:`); not done yet.
+- Use `from:` / `exact:` with a release that has the artifact bundle. Do not
+  set `SERVIRTIUM_VCR_LIB_DIR` for it: the variable switches the manifest to
+  the source form and SwiftPM then refuses the dependency with
+  `error: the target 'Servirtium' in product 'Servirtium' contains unsafe build flags`.
+  Setting it after a build needs `rm -rf .build` (the manifest is cached).
+- The binary form needs Swift 6.2 or newer (static-library artifact bundles,
+  SE-0482), on macOS 13+ or Linux glibc. An older toolchain fails to read the
+  bundle; there, use the source form.
+- Resolution of a version tag pins the commit with the BARE semver tag
+  (`2.0.0-alpha.14`). If `Package.resolved` shows the commit of `v2.0.0-alpha.14`
+  instead, the bare tag did not exist yet when you resolved:
+  `swift package update` (or delete the pin) once the release workflow has
+  finished.
+- `error: checksum of downloaded artifact ... does not match` means the
+  bundle on the release page is not the one the manifest names; report it,
+  do not work around it.
+- Linux musl, Windows and FreeBSD are not in the bundle: use the source form
+  above. In it, `SERVIRTIUM_VCR_LIB_DIR` must hold a file named exactly
+  `libservirtium_vcr.<so|dylib>` (release assets carry tag/os/arch in the
+  name, so save the download under the plain name); pick the asset for the
+  machine that RUNS the tests (`-musl` on Alpine; a wrong-libc or wrong-arch
+  file fails at load with `invalid ELF header` / `wrong ELF class`); the
+  library must be at least as new as the binding source (else
+  `undefined reference to 'aether_vcr_embed_...'`); `ld: cannot find
+  -lservirtium_vcr` means the variable was unset or the directory has no
+  `libservirtium_vcr.<ext>`. The directory is baked in as an rpath, so the
+  built binary does not need the variable at run time.
+- Do not vendor the `.so`/`.dylib`/`.a` into git (natives are git-ignored in
+  this repo for that reason) and do not copy anything into the dependency's
+  checkout directory.
 
 ## Building and testing
 

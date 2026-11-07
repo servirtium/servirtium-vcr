@@ -181,8 +181,8 @@ if [ "$built" -gt 0 ] && [ -f "$AEADD/aether.toml" ]; then
 fi
 
 # ---- official multi-platform binding packages (opt-in) ----------------------
-# SCOPE: ONLY the fat Java jar, the multi-RID .NET nupkg and the multi-platform
-# npm tarball. svcr deliberately
+# SCOPE: ONLY the fat Java jar, the multi-RID .NET nupkg, the multi-platform
+# npm tarball and the Swift artifact bundle. svcr deliberately
 # does NOT ship ruby/python/js/crystal/julia binding packages from here (core +
 # ae-add only — see release/README.md); this widens the release for exactly the
 # two multi-platform packages a consumer cannot easily assemble themselves.
@@ -328,12 +328,20 @@ if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
     tail -80 "$DIST/.npm.log" >&2
     die "multi-platform npm tarball build failed — see $DIST/.npm.log"
   fi
+
+  # -- the Swift artifact bundle (SwiftPM binaryTarget) --
+  # Static libraries for macOS arm64/x86_64 and Linux glibc x86_64/arm64 in one
+  # .artifactbundle.zip (SE-0482). The root Package.swift downloads it by URL;
+  # its checksum is written into Package.swift by the release workflow after
+  # publishing (see release/swift-bundle.sh and release/README.md).
+  say "building the Swift artifact bundle (4 static libraries) …"
+  "$HERE/swift-bundle.sh" "$TAG" "$DIST" || die "Swift artifact bundle build failed"
 fi
 
 # Regenerate the combined manifest so the jar + nupkg ride it too (a no-op
 # re-list of the engine libs when RELEASE_BINDING_PACKAGES is unset — the glob
 # simply finds no .jar/.nupkg). SHA256SUMS.txt is thus always complete.
-( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib ./*.jar ./*.nupkg ./*.tgz 2>/dev/null > SHA256SUMS.txt || true )
+( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib ./*.jar ./*.nupkg ./*.tgz ./*.artifactbundle.zip 2>/dev/null > SHA256SUMS.txt || true )
 
 say "built $built libservirtium_vcr artifact(s) into release/dist/ ($failed failed)"
 [ "$built" -gt 0 ] || die "no artifacts built"

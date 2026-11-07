@@ -76,7 +76,13 @@ main() {
     asset("${dist}/Servirtium.Vcr.1.nupkg", "fixture NuGet package")
     check(artifacts.check_packages(dist) != "", "missing npm tarball")
     asset("${dist}/servirtium-vcr-1.tgz", "fixture npm tarball")
+    check(artifacts.check_packages(dist) != "", "missing Swift artifact bundle")
+    bundle = "${dist}/servirtium-vcr-swift-${TAG}.artifactbundle.zip"
+    asset(bundle, "fixture Swift artifact bundle")
     check(artifacts.check_packages(dist) == "", "binding packages")
+    write_fixture("${bundle}.sha256", "wrong")
+    check(string.contains(artifacts.check_packages(dist), "checksum mismatch") == 1, "Swift bundle checksum")
+    asset(bundle, "fixture Swift artifact bundle")
     raw = "${dist}/libservirtium_vcr-${TAG}-linux-x86_64.so"
     sidecar = fs.read("${raw}.sha256")!
     write_fixture("${raw}.sha256", "wrong")

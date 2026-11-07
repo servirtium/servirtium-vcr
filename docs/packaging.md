@@ -1,9 +1,12 @@
 # Packaging — getting the gem (wheel, nupkg, shard, …) you actually want
 
 Nothing in this repo is published to a registry yet. Each GitHub release does
-attach three ready-made multi-platform packages: the fat Java jar, the
-multi-RID .NET nupkg, and an npm tarball with all eight native libraries under
-`native/<platform>-<arch>[-musl]/` (`npm install <its release download URL>`).
+attach four ready-made multi-platform packages: the fat Java jar, the
+multi-RID .NET nupkg, an npm tarball with all eight native libraries under
+`native/<platform>-<arch>[-musl]/` (`npm install <its release download URL>`),
+and a SwiftPM artifact bundle that the root `Package.swift` downloads, so
+`.package(url: "https://github.com/servirtium/servirtium-vcr", from: "2.0.0-alpha.14")`
+needs nothing else.
 Beyond those, there is no
 `gem push`, no `npm publish`, no NuGet upload — and there may never be. What
 there *is*: **one aeb target per language that builds the distributable
@@ -85,7 +88,7 @@ links or loads it from there.
 | Crystal | `servirtium: {path: "…/crystal"}` in `shard.yml`; from git: `github: servirtium/servirtium-vcr` (root `shard.yml` + `servirtium.cr`, see below) |
 | Julia | `Pkg.develop(path="…/julia")` |
 | Janet | `jpm --tree=… install` from `janet/` (or `jpm install` of the repo URL, root `project.janet`, see below); the library sits in `servirtium/native/` |
-| Swift | `.package(path: "…/swift")`; from git: `.package(url: "https://github.com/servirtium/servirtium-vcr", branch: "main")` (root `Package.swift`, see below) |
+| Swift | from git by version: `.package(url: "https://github.com/servirtium/servirtium-vcr", from: "2.0.0-alpha.14")` (root `Package.swift` + the release's artifact bundle, see below); local: `.package(path: "…/swift")` |
 | D | `dub add-local …/d 2.0.0`; from a clone or the registry: `dub add-local <clone-root> 2.0.0-alpha.13` / `dub add servirtium` (root `dub.sdl`, see below) |
 | PHP | `composer.json` is in `php/` (not the repo root), so no `vcs`/Packagist route yet: `composer config repositories.servirtium path …/php && composer require servirtium/vcr:@dev` |
 | Dart | `dependency_overrides: servirtium: {path: …/dart}` |
@@ -111,19 +114,34 @@ step, `release/.version.ae` pins both). `jpm install` of the repo URL, or a
 and the library comes from `SERVIRTIUM_VCR_LIB` (a git install has no bundled
 `native/`).
 
-In a git-sourced install `native/` is empty (natives are git-ignored and staged
-by aeb), so all three take the library directory from **`SERVIRTIUM_VCR_LIB_DIR`**
+Swift, from a release: the root `Package.swift` declares the core as
+`binaryTarget(url:checksum:)` on the release asset
+`servirtium-vcr-swift-<tag>.artifactbundle.zip` (built by
+`release/swift-bundle.sh`): a SwiftPM artifact bundle of type `staticLibrary`
+(SE-0482, Swift 6.2+) with `libservirtium_vcr.a` for macOS arm64/x86_64 and
+Linux glibc x86_64/arm64. An XCFramework would cover Apple only, and artifact
+bundles cannot hold dynamic libraries, hence static archives; SwiftPM honours
+the bundle on macOS as well, so one bundle and one manifest serve both. No
+`unsafeFlags`, so `from:` / `exact:` work. Its checksum is written by the
+release workflow after publishing, on a commit tagged with the bare semver tag
+SwiftPM prefers over the `v` tag; see swift/README.md "How a release gets its
+checksum into Package.swift" and release/README.md.
+
+Otherwise (Crystal and D always; Swift with `SERVIRTIUM_VCR_LIB_DIR` set, on a
+platform the bundle lacks, or on main before a release has published the
+bundle), in a git-sourced install `native/` is empty (natives are git-ignored
+and staged by aeb), so the manifests take the library directory from **`SERVIRTIUM_VCR_LIB_DIR`**
 (the directory holding `libservirtium_vcr.<so|dylib>`, renamed from the
 release asset `libservirtium_vcr-<tag>-<os>-<arch>.<ext>`), falling back to the
 binding's own `native/` where the manifest can default: Swift and Crystal can;
 dub cannot default an unset variable, so for the root `dub.sdl` it is required.
 Each binding's README has a "Getting it" section with the runnable recipe.
 
-Open points: SwiftPM refuses `unsafeFlags` (the `-L`/`-rpath`) in a dependency
-resolved by version, so the Swift root package must be consumed by `branch:` /
-`revision:` / path, not `from:`; a `binaryTarget` or artifactbundle would remove
-that and the env-var step. The dub root package and the registry listing are
-untested with dub itself so far.
+Open points: Swift's source form (the `SERVIRTIUM_VCR_LIB_DIR` route) uses
+`unsafeFlags`, which SwiftPM refuses in a dependency resolved by version, so on
+Windows, FreeBSD and Linux musl the Swift package is still consumed by
+`branch:` / `revision:` / path. The dub root package and the registry listing
+are untested with dub itself so far.
 
 ### A relocatable OTP app (the BEAM four)
 

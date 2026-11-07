@@ -687,6 +687,18 @@ process launchers; the shared fixture itself stays language-neutral.
   `nativeDir` from `#filePath` at manifest-evaluation time, so every copy of
   the package (in-tree, staged, installed) locates its own `native/`. Check any
   new binding's manifest for the same shape before trusting a green test leaf.
+- **Swift by version = a binaryTarget + a second, bare git tag.** The root
+  `Package.swift` downloads `servirtium-vcr-swift-<tag>.artifactbundle.zip`
+  (static libs, SE-0482; built by `release/swift-bundle.sh`) via
+  `binaryTarget(url:checksum:)`, because SwiftPM refuses `unsafeFlags` in a
+  version-resolved dependency. The checksum only exists after the release
+  workflow builds the bundle, so `SVCR_RELEASE_SET` empties
+  `binaryChecksum` and the workflow commits the checksum on top of the `v`
+  tag's commit and tags that with the bare `2.0.0-...` tag, which SwiftPM
+  prefers over `v2.0.0-...`. Never hand-edit the two `let binary...` lines and
+  never move a tag; see release/README.md. `ae build --emit=staticlib` (0.897)
+  drops `--extra` C files and zig picks a host-dependent macOS minimum, so the
+  script adds `_embed_strdup.c` itself and pins macOS 13 with a zig shim.
 - **`dub.json` is strict JSON: no comments, and unknown keys warn.** Adding a
   `"comment-native"` key to document the link line made dub print a bare
   `Warning` with an EMPTY message — a minute to trace to its source. Explanations
