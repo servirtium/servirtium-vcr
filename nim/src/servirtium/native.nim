@@ -125,6 +125,22 @@ proc emphasize_http_verbs*(h: Handle)
   {.importc: "aether_vcr_embed_emphasize_http_verbs", cdecl.}
 proc set_pretty_xml*(h: Handle, indent: cint)
   {.importc: "aether_vcr_embed_set_pretty_xml", cdecl.}
+proc set_pretty_json*(h: Handle, indent: cint)
+  {.importc: "aether_vcr_embed_set_pretty_json", cdecl.}
+proc get_pretty_json*(h: Handle): cint
+  {.importc: "aether_vcr_embed_get_pretty_json", cdecl.}
+proc remove_transport_headers*(h: Handle): cstring
+  {.importc: "aether_vcr_embed_remove_transport_headers", cdecl.}
+proc remove_cloud_headers*(h: Handle, vendor: cstring): cstring
+  {.importc: "aether_vcr_embed_remove_cloud_headers", cdecl.}
+proc redact_credentials*(h: Handle): cstring
+  {.importc: "aether_vcr_embed_redact_credentials", cdecl.}
+proc redact_credential_header*(h: Handle, name: cstring): cstring
+  {.importc: "aether_vcr_embed_redact_credential_header", cdecl.}
+proc set_upstream_cafile*(h: Handle, path: cstring): cstring
+  {.importc: "aether_vcr_embed_set_upstream_cafile", cdecl.}
+proc add_license_notice*(h: Handle, text: cstring): cstring
+  {.importc: "aether_vcr_embed_add_license_notice", cdecl.}
 proc clear_redactions*(h: Handle)
   {.importc: "aether_vcr_embed_clear_redactions", cdecl.}
 proc clear_unredactions*(h: Handle)

@@ -46,6 +46,11 @@ proc getWithHeader(base, path, header: string): tuple[status: int, body: string]
 suite "servirtium playback":
   test "replays a recorded GET":
     let vcr = playback(tapePath("single_get.md"))
+    check vcr.addLicenseNotice("test notice") == ""  # playback ignores it
+    vcr.prettyJson(2)
+    check vcr.getPrettyJson() == 2
+    vcr.prettyJson(0)
+    check vcr.removeCloudHeaders("nosuchvendor") != ""
     check vcr.start()
     defer: vcr.close()
 

@@ -187,6 +187,8 @@ let srv = record(tape, upstream)
 srv.indentCodeBlocks()     # 4-space-indented blocks instead of ``` fences
 srv.emphasizeHttpVerbs()   # *GET* instead of bare GET in headings
 srv.prettyXml(2)           # pretty-print recorded XML bodies (indent 1..16)
+srv.prettyJson(2)          # pretty-print recorded JSON bodies (indent 1..16)
+srv.addLicenseNotice("Licence terms of the recorded service")  # under ## LICENSE NOTICE
 doAssert srv.start()
 ```
 

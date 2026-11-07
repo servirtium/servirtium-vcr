@@ -274,6 +274,37 @@ proc ignoreVolatileHeaders*(s: VcrServer): string {.discardable.} =
   ## strictIgnoreCommonHeaders for distributed-tracing / correlation noise.
   takeString(native.ignore_volatile_headers(s.handle))
 
+proc removeTransportHeaders*(s: VcrServer): string {.discardable.} =
+  ## Opt-in header preset: leave the connection-describing headers (Host,
+  ## Connection, Content-Length and the other hop-by-hop headers,
+  ## Accept-Encoding) out of the recording. Returns "" on success, else the error.
+  takeString(native.remove_transport_headers(s.handle))
+
+proc removeCloudHeaders*(s: VcrServer; vendor: string): string {.discardable.} =
+  ## Opt-in header preset: drop a cloud vendor's per-request headers; vendor is
+  ## one of "aws", "azure", "cloudflare", "fastly", "gcp". Returns "" on
+  ## success, else the error.
+  takeString(native.remove_cloud_headers(s.handle, cstring(vendor)))
+
+proc redactCredentials*(s: VcrServer): string {.discardable.} =
+  ## Opt-in header preset: redact the common credential headers (Authorization,
+  ## Cookie, Set-Cookie, X-Api-Key, X-Auth-Token, ...) as numbered tokens.
+  ## Register on the playback server too, as with every rule.
+  takeString(native.redact_credentials(s.handle))
+
+proc redactCredentialHeader*(s: VcrServer; name: string): string {.discardable.} =
+  ## One more credential header with the same treatment as redactCredentials.
+  takeString(native.redact_credential_header(s.handle, cstring(name)))
+
+proc setUpstreamCafile*(s: VcrServer; path: string): string {.discardable.} =
+  ## Record mode: verify an https upstream against this PEM CA file.
+  takeString(native.set_upstream_cafile(s.handle, cstring(path)))
+
+proc addLicenseNotice*(s: VcrServer; text: string): string {.discardable.} =
+  ## Record mode: put text under "## LICENSE NOTICE" at the top of each tape;
+  ## playback ignores it.
+  takeString(native.add_license_notice(s.handle, cstring(text)))
+
 proc setStrictHeaders*(s: VcrServer; on: bool) =
   native.set_strict_headers(s.handle, cint(if on: 1 else: 0))
 
@@ -310,6 +341,14 @@ proc emphasizeHttpVerbs*(s: VcrServer) =
 proc prettyXml*(s: VcrServer, indent: int = 2) =
   ## Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
   native.set_pretty_xml(s.handle, cint(indent))
+
+proc prettyJson*(s: VcrServer, indent: int = 2) =
+  ## Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+  native.set_pretty_json(s.handle, cint(indent))
+
+proc getPrettyJson*(s: VcrServer): int =
+  ## Current pretty-JSON indent (0 = off).
+  int(native.get_pretty_json(s.handle))
 
 proc close*(s: VcrServer) =
   if s.handle != nil and s.recording and s.secretRedactorCallback != nil: s.secretStage(false)
