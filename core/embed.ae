@@ -490,6 +490,13 @@ vcr_embed_sort_json_array(s: ptr, path: string, by: string) -> ptr {
     return vcr_embed_dup(vcr.sort_json_array_h(s, path, by))
 }
 
+// The same, only for interactions whose request path (query included, as
+// sent) matches the regex `request` (one endpoint's list). Returns "" or the
+// reason the rule was refused (caller frees).
+vcr_embed_sort_json_array_at(s: ptr, request: string, path: string, by: string) -> ptr {
+    return vcr_embed_dup(vcr.sort_json_array_at_h(s, request, path, by))
+}
+
 // Response header lines sorted by name (case-insensitive); a repeated
 // header's lines keep their order.
 vcr_embed_set_sort_response_headers(s: ptr, on: int) {

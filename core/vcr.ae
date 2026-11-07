@@ -187,7 +187,7 @@ exports (
     set_rules_footer_h, get_rules_footer_h, RULES_FOOTER_HEADING,
     set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
     set_pretty_json_h, get_pretty_json_h,
-    sort_json_keys_h, get_sort_json_keys_h, sort_json_array_h,
+    sort_json_keys_h, get_sort_json_keys_h, sort_json_array_h, sort_json_array_at_h, sort_json_array_at,
     sort_response_headers_h, get_sort_response_headers_h, sort_header_value_h, clear_stable_order_h,
     sort_json_keys, sort_json_array, sort_response_headers, sort_header_value, clear_stable_order,
     json_canonical,
@@ -3526,6 +3526,7 @@ get_pretty_json_h(server: ptr) -> int { return vcr_get_pretty_json_k(key_for(ser
 sort_json_keys_h(server: ptr, on: int) { vcr_set_sort_json_keys_k(key_for(server), on) }
 get_sort_json_keys_h(server: ptr) -> int { return vcr_get_sort_json_keys_k(key_for(server)) }
 sort_json_array_h(server: ptr, path: string, by: string) -> string { return vcr_sort_json_array_k(key_for(server), path, by) }
+sort_json_array_at_h(server: ptr, request: string, path: string, by: string) -> string { return vcr_sort_json_array_at_k(key_for(server), request, path, by) }
 sort_response_headers_h(server: ptr, on: int) { vcr_set_sort_response_headers_k(key_for(server), on) }
 get_sort_response_headers_h(server: ptr) -> int { return vcr_get_sort_response_headers_k(key_for(server)) }
 sort_header_value_h(server: ptr, name: string) -> string { return vcr_sort_header_value_k(key_for(server), name) }
@@ -3533,6 +3534,7 @@ clear_stable_order_h(server: ptr) { vcr_clear_stable_order_k(key_for(server)) }
 // Bare (current-key) forms, for record()/flush() without a handle.
 sort_json_keys(on: int) { vcr_set_sort_json_keys_k(cur_key(), on) }
 sort_json_array(path: string, by: string) -> string { return vcr_sort_json_array_k(cur_key(), path, by) }
+sort_json_array_at(request: string, path: string, by: string) -> string { return vcr_sort_json_array_at_k(cur_key(), request, path, by) }
 sort_response_headers(on: int) { vcr_set_sort_response_headers_k(cur_key(), on) }
 sort_header_value(name: string) -> string { return vcr_sort_header_value_k(cur_key(), name) }
 clear_stable_order() { vcr_clear_stable_order_k(cur_key()) }
@@ -5201,7 +5203,10 @@ pretty_json_body_k(key: string, ctype: string, body: string) -> string {
 // If any element lacks `by` (or is not an object), that array is left as
 // sent. The sort is stable, so equal keys keep the order they came in; pick
 // a `by` that is unique. The first registered rule that selects an array
-// sorts it.
+// sorts it. sort_json_array_at_h(h, request, path, by) is the same rule for
+// the interactions whose request path (query included, as sent) matches the
+// regex `request` only: one endpoint's list ("/versions\\?") sorted, another
+// endpoint's list with the same shape left in the service's own order.
 //
 // Where it runs: first, on the values as sent, before redactions,
 // credentials, normalizations, collapses and pretty_json. So
@@ -5232,6 +5237,9 @@ pretty_json_body_k(key: string, ctype: string, body: string) -> string {
 struct ArraySort {
     path: string
     by: string
+    request: string          // "" every interaction, else a regex the
+                              // request path (query included, as sent) must
+                              // match (sort_json_array_at_h)
 }
 
 struct HeaderValueSort {
@@ -5252,6 +5260,18 @@ vcr_get_sort_response_headers_k(key: string) -> int { return cfg_get_int(slot(ke
 
 // "" or why the rule was refused.
 vcr_sort_json_array_k(key: string, path: string, by: string) -> string {
+    return vcr_sort_json_array_at_k(key, "", path, by)
+}
+
+// The same, only for interactions whose request path (query included, as
+// sent, before any redaction or normalization) matches the regex `request`:
+// one endpoint's list ("/versions\\?") without touching the others.
+vcr_sort_json_array_at_k(key: string, request: string, path: string, by: string) -> string {
+    if string.length(request) > 0 {
+        re, err = regex.compile(request)
+        if err != "" { return "sort_json_array_at: invalid request-path pattern: ${err}" }
+        regex.free(re)
+    }
     if string.length(path) > 0 && string.char_at(path, 0) != 47 && string.index_of(path, "/") >= 0 {
         return "sort_json_array: a path is a JSON pointer starting with '/', or one member name without '/' (got '${path}')"
     }
@@ -5261,6 +5281,7 @@ vcr_sort_json_array_k(key: string, path: string, by: string) -> string {
     r = malloc(sizeof(ArraySort)) as *ArraySort
     r.path = string.copy(path)
     r.by = string.copy(by)
+    r.request = string.copy(request)
     list_add_raw(array_sorts_k(key), r)
     return ""
 }
@@ -5321,14 +5342,19 @@ array_path_matches(rp: string, p: string) -> int {
     return 0
 }
 
-// The first array rule that selects pointer `p`, or -1.
+// The first array rule that selects pointer `p` in the body being ordered,
+// or -1. A rule scoped to request paths counts only when this interaction's
+// matched (the "so_mask" stable_order_body_k set: '1' per rule that applies).
 array_rule_for_k(key: string, p: string) -> int {
     l = array_sorts_k(key)
     n = list_size(l)
+    mask = cfg_get_str(slot(key, "so_mask"))
     i = 0
     while i < n {
         r = list_get_raw(l, i) as *ArraySort
-        if array_path_matches(r.path, p) == 1 { return i }
+        on = 1
+        if i < string.length(mask) && string.char_at(mask, i) != 49 { on = 0 }
+        if on == 1 && array_path_matches(r.path, p) == 1 { return i }
         i = i + 1
     }
     return -1
@@ -5615,15 +5641,35 @@ stable_order_on_k(key: string) -> int {
 }
 
 // A response body in stable order, or byte-exact when no JSON rule is on,
-// the content type is not JSON, or the body does not parse.
-stable_order_body_k(key: string, ctype: string, body: string) -> string {
+// the content type is not JSON, or the body does not parse. `req_path` is
+// the interaction's request path, for rules scoped to some requests.
+stable_order_body_k(key: string, req_path: string, ctype: string, body: string) -> string {
     sk = vcr_get_sort_json_keys_k(key)
-    if sk == 0 && list_size(array_sorts_k(key)) == 0 { return body }
+    l = array_sorts_k(key)
+    na = list_size(l)
+    if sk == 0 && na == 0 { return body }
     if string.length(body) == 0 { return body }
     if content_type_is_json(ctype) == 0 { return body }
     tree, err = json.parse(body)
     if err != "" || tree == null { return body }
     json.json_free(tree)
+    mask = ""
+    i = 0
+    while i < na {
+        r = list_get_raw(l, i) as *ArraySort
+        bit = "1"
+        if string.length(r.request) > 0 {
+            bit = "0"
+            re, cerr = regex.compile(r.request)
+            if cerr == "" {
+                if regex.matches(re, req_path) == 1 { bit = "1" }
+                regex.free(re)
+            }
+        }
+        mask = string_concat(mask, bit)
+        i = i + 1
+    }
+    cfg_set_str(slot(key, "so_mask"), mask)
     st = json_skip_space(body, 0)
     v, end = so_value(key, body, st, "", sk, 0, 1)
     out = string_concat(string.substring(body, 0, st), v)
@@ -5745,7 +5791,7 @@ ordered_field_k(key: string, e: *Interaction, field: int) -> string {
     if field == FIELD_RESPONSE_BODY {
         ct = e.content_type
         if string.length(ct) == 0 { ct = header_value_in_block(e.resp_headers, "Content-Type") }
-        return stable_order_body_k(key, ct, e.body)
+        return stable_order_body_k(key, e.path, ct, e.body)
     }
     return ""
 }
@@ -5803,7 +5849,7 @@ stable_order_footer_rows_k(key: string) -> string {
                 json.json_free(tree)
             }
         }
-        if is_json == 1 && na > 0 { stable_order_body_k(key, ct, e.body) }
+        if is_json == 1 && na > 0 { stable_order_body_k(key, e.path, ct, e.body) }
         if is_json == 1 { khits = string_concat(khits, "1") } else { khits = string_concat(khits, "0") }
         ai = 0
         while ai < na {
@@ -5825,6 +5871,7 @@ stable_order_footer_rows_k(key: string) -> string {
         where = "the root array"
         if string.length(ar.path) > 0 && string.char_at(ar.path, 0) == 47 { where = "JSON arrays at ${md_cell_code(ar.path)}" }
         if string.length(ar.path) > 0 && string.char_at(ar.path, 0) != 47 { where = "JSON arrays named ${md_cell_code(ar.path)}" }
+        if string.length(ar.request) > 0 { where = "${where}, requests matching ${md_cell_code(ar.request)}" }
         how = "sorted by their elements' canonical JSON"
         if string.length(ar.by) > 0 { how = "sorted by ${md_cell_code(ar.by)}" }
         rows = string_concat(rows, "| ordered | response body | ${where} | ${how} | ${interaction_ranges(ahits[ai])} |\n")

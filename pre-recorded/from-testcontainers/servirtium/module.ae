@@ -69,7 +69,7 @@ exports(
     remove_header, clear_rules, license_notice,
     redact_credentials, redact_credential_header, remove_cloud_headers,
     remove_transport_headers, pretty_json, trust_upstream_ca,
-    sort_json_keys, sort_json_array, sort_response_headers, sort_header_value,
+    sort_json_keys, sort_json_array, sort_json_array_at, sort_response_headers, sort_header_value,
     UUID, RFC3339, EPOCH_TIMESTAMP,
     MODE_OFF, MODE_RECORD, MODE_PLAYBACK, MODE_CHECK,
     FIELD_PATH, FIELD_REQUEST_HEADERS, FIELD_REQUEST_BODY,
@@ -109,6 +109,7 @@ const RULE_SORT_JSON_KEYS = 11
 const RULE_SORT_JSON_ARRAY = 12
 const RULE_SORT_HEADERS = 13
 const RULE_SORT_HEADER_VALUE = 14
+const RULE_SORT_JSON_ARRAY_AT = 15
 
 struct Recording {
     server: ptr
@@ -120,6 +121,7 @@ var rule_kind: int[] = []
 var rule_field: int[] = []
 var rule_a: string[] = []
 var rule_b: string[] = []
+var rule_c: string[] = []
 var upstream_ca: string = ""
 
 fn env_or(name: string, dflt: string) -> string {
@@ -281,6 +283,16 @@ sort_json_array(path: string, by: string) {
     add_rule(RULE_SORT_JSON_ARRAY, 0, path, by)
 }
 
+// The same for the interactions whose request path (query included, as sent)
+// matches the regex `request` only: one endpoint's list.
+sort_json_array_at(request: string, path: string, by: string) {
+    rule_kind.push(RULE_SORT_JSON_ARRAY_AT)
+    rule_field.push(0)
+    rule_a.push(path)
+    rule_b.push(by)
+    rule_c.push(request)
+}
+
 // Response header lines by name; a repeated header's lines keep their order.
 sort_response_headers() {
     add_rule(RULE_SORT_HEADERS, 0, "", "")
@@ -314,6 +326,7 @@ clear_rules() {
     rule_field = []
     rule_a = []
     rule_b = []
+    rule_c = []
 }
 
 fn add_rule(kind: int, field: int, a: string, b: string) {
@@ -321,6 +334,7 @@ fn add_rule(kind: int, field: int, a: string, b: string) {
     rule_field.push(field)
     rule_a.push(a)
     rule_b.push(b)
+    rule_c.push("")
 }
 
 // "http://localhost:32771/x" -> "localhost:32771"
@@ -388,6 +402,7 @@ fn apply_rules(h: ptr, m: int, upstream_url: string, own_host: string) -> string
             if k == RULE_LICENSE_NOTICE { errs = "${errs}${vcr.add_license_notice_h(h, rule_a[i])}" }
             if k == RULE_SORT_JSON_KEYS { vcr.sort_json_keys_h(h, 1) }
             if k == RULE_SORT_JSON_ARRAY { errs = "${errs}${vcr.sort_json_array_h(h, rule_a[i], rule_b[i])}" }
+            if k == RULE_SORT_JSON_ARRAY_AT { errs = "${errs}${vcr.sort_json_array_at_h(h, rule_c[i], rule_a[i], rule_b[i])}" }
             if k == RULE_SORT_HEADERS { vcr.sort_response_headers_h(h, 1) }
             if k == RULE_SORT_HEADER_VALUE { errs = "${errs}${vcr.sort_header_value_h(h, rule_a[i])}" }
         } else {

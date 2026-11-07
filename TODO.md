@@ -38,7 +38,8 @@ Core, the C ABI and the pre-recorded recorder have opt-in stable order
 (AGENTS.md, "Stable order"), and the from-testcontainers suites that worked
 round varying order use it. The bindings do not wrap its ABI calls yet:
 `aether_vcr_embed_set_sort_json_keys` / `_get_sort_json_keys`,
-`_sort_json_array(h, path, by)` (error string, caller frees),
+`_sort_json_array(h, path, by)` and `_sort_json_array_at(h, request, path,
+by)` (error string, caller frees),
 `_set_sort_response_headers` / `_get_sort_response_headers`,
 `_sort_header_value(h, name)` (error string, caller frees),
 `_clear_stable_order`.

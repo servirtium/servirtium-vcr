@@ -126,6 +126,7 @@ playback ignores it, so no line may start `## Interaction ` or
 `note(h, k, v)`; `static_content(h, mount, dir)`; `untaped(h, path)`;
 `indent_code_blocks(h)` / `emphasize_http_verbs(h)`;
 `set_sort_json_keys(h, int)`, `sort_json_array(h, path, by)`,
+`sort_json_array_at(h, request, path, by)`,
 `set_sort_response_headers(h, int)`, `sort_header_value(h, name)`,
 `clear_stable_order(h)` (opt-in stable order, below); plus `clear_*` resets.
 
@@ -309,6 +310,7 @@ what is written, and playback serves it as it is.
 |---|---|---|
 | `sort_json_keys_h(h, on)` | `set_sort_json_keys` / `get_sort_json_keys` | JSON response bodies' object keys sorted by their bytes, at every depth; duplicates keep their order |
 | `sort_json_array_h(h, path, by)` → error | `sort_json_array` (caller frees) | the arrays `path` selects, elements sorted (stably) by member `by` |
+| `sort_json_array_at_h(h, request, path, by)` → error | `sort_json_array_at` (caller frees) | the same, only where the request path (query included, as sent) matches the regex `request` |
 | `sort_response_headers_h(h, on)` | `set_sort_response_headers` / `get_…` | response header lines by name, case-insensitive; a repeated header's lines (Set-Cookie, Vary) keep their order |
 | `sort_header_value_h(h, name)` → error | `sort_header_value` (caller frees) | that response header's comma-separated items sorted, written `a, b, c` (Allow) |
 | `clear_stable_order_h(h)` | `clear_stable_order` | all off (`clear_format_options` does it too) |
@@ -327,7 +329,10 @@ Decisions, and why:
   canonical JSON (keys sorted, no whitespace). Two integers compare by value
   (any size), anything else by canonical bytes. If any element lacks `by`,
   that array is written as sent. The first rule that selects an array sorts
-  it. **This deliberately changes the recorded response**: replay serves the
+  it. `sort_json_array_at` adds a request-path regex, for when one
+  endpoint's list must be sorted and another's of the same shape must not
+  (Lowkey Vault: the versions of a secret by creation time, but the secrets
+  themselves left in the service's name order). **This deliberately changes the recorded response**: replay serves the
   sorted order, so a test must not assert the order it sorted away.
 - **Headers.** Sorting header lines loses nothing (RFC 9110: only a repeated
   header's lines are ordered, and those keep theirs). Value items are sorted
