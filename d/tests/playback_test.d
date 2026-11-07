@@ -141,6 +141,11 @@ int main() {
         ck("port is bound", vcr.port() > 0);
         ck("tape_length is 1", vcr.tapeLength() == 1);
 
+        vcr.addLicenseNotice("test notice");  // throws on error; playback ignores it
+        vcr.prettyJson(2);
+        ck("getPrettyJson reads back the indent", vcr.getPrettyJson() == 2);
+        vcr.prettyJson(0);
+
         ck("body is ok-body", httpGet(base ~ "/ok") == "ok-body");
         ck("last_kind is ok", vcr.lastKind() == Outcome.ok);
         ck("matchedCleanly agrees", vcr.matchedCleanly());

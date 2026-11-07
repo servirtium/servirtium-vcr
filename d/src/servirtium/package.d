@@ -101,6 +101,14 @@ private extern (C) nothrow @nogc {
     void  aether_vcr_embed_indent_code_blocks(void* h);
     void  aether_vcr_embed_emphasize_http_verbs(void* h);
     void  aether_vcr_embed_set_pretty_xml(void* h, int indent);
+    void  aether_vcr_embed_set_pretty_json(void* h, int indent);
+    int   aether_vcr_embed_get_pretty_json(void* h);
+    char* aether_vcr_embed_remove_transport_headers(void* h);
+    char* aether_vcr_embed_remove_cloud_headers(void* h, const(char)* vendor);
+    char* aether_vcr_embed_redact_credentials(void* h);
+    char* aether_vcr_embed_redact_credential_header(void* h, const(char)* name);
+    char* aether_vcr_embed_set_upstream_cafile(void* h, const(char)* path);
+    char* aether_vcr_embed_add_license_notice(void* h, const(char)* text);
     void  aether_vcr_embed_clear_redactions(void* h);
     void  aether_vcr_embed_clear_unredactions(void* h);
     void  aether_vcr_embed_clear_normalizations(void* h);
@@ -372,6 +380,48 @@ struct Vcr {
         aether_vcr_embed_ignore_volatile_headers(handle);
     }
 
+    /// Opt-in header presets: each registers ordinary rules, listed under the
+    /// preset's name in the recording-rules footer. Throw on failure.
+
+    /// Leave the connection-describing headers (Host, Connection, Content-Length
+    /// and the other hop-by-hop headers, Accept-Encoding) out of the recording.
+    void removeTransportHeaders() {
+        check(aether_vcr_embed_remove_transport_headers(handle), "removeTransportHeaders");
+    }
+
+    /// Drop a cloud vendor's per-request headers; vendor is one of "aws",
+    /// "azure", "cloudflare", "fastly", "gcp".
+    void removeCloudHeaders(string vendor) {
+        check(aether_vcr_embed_remove_cloud_headers(handle, vendor.toStringz),
+              "removeCloudHeaders");
+    }
+
+    /// Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+    /// X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the
+    /// playback handle too, as with every rule.
+    void redactCredentials() {
+        check(aether_vcr_embed_redact_credentials(handle), "redactCredentials");
+    }
+
+    /// One more credential header with the same treatment.
+    void redactCredentialHeader(string name) {
+        check(aether_vcr_embed_redact_credential_header(handle, name.toStringz),
+              "redactCredentialHeader");
+    }
+
+    /// Record mode: verify an https upstream against this PEM CA file.
+    void setUpstreamCafile(string path) {
+        check(aether_vcr_embed_set_upstream_cafile(handle, path.toStringz),
+              "setUpstreamCafile");
+    }
+
+    /// Record mode: put text under "## LICENSE NOTICE" at the top of each tape;
+    /// playback ignores it.
+    void addLicenseNotice(string text) {
+        check(aether_vcr_embed_add_license_notice(handle, text.toStringz),
+              "addLicenseNotice");
+    }
+
     void setStrictHeaders(bool on = true) {
         aether_vcr_embed_set_strict_headers(handle, on ? 1 : 0);
     }
@@ -401,6 +451,10 @@ struct Vcr {
     void emphasizeHttpVerbs() { aether_vcr_embed_emphasize_http_verbs(handle); }
     /// Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
     void prettyXml(int indent = 2) { aether_vcr_embed_set_pretty_xml(handle, indent); }
+    /// Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    void prettyJson(int indent = 2) { aether_vcr_embed_set_pretty_json(handle, indent); }
+    /// Current pretty-JSON indent (0 = off).
+    int getPrettyJson() { return aether_vcr_embed_get_pretty_json(handle); }
     void clearRedactions() { aether_vcr_embed_clear_redactions(handle); }
     void clearUnredactions() { aether_vcr_embed_clear_unredactions(handle); }
     void clearNormalizations() { aether_vcr_embed_clear_normalizations(handle); }
