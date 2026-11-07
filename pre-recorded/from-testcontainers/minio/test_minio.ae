@@ -51,8 +51,8 @@
 //                                                       (the cases that use them)
 //   Range, If-Match, If-None-Match, Content-MD5         (the cases that use them)
 // (x-amz-date is signed and sent, but left out of the tapes, see below.)
-// Playback is strict about method, path (query string included, exactly as
-// written in this file: each parameter's value percent-encoded as AWS SDKs
+// Playback is strict about method, path (query string included; send it as
+// written in this file, since encoded delimiters such as %2F differ: each parameter's value percent-encoded as AWS SDKs
 // do, the parameters in sorted order, a valueless one as `?versioning`), the
 // recorded request headers and the body (byte for byte: send the XML and
 // JSON bodies exactly as written here). Host, Connection and Content-Length
@@ -139,7 +139,7 @@
 // PORTING: in playback a normalized value comes back as its token verbatim: a
 // version id is "{{uuid-1}}", an upload id "{{uploadid-1}}". Treat every id
 // and token as an opaque string (never assert its length or shape) and send
-// it back exactly as received, braces unencoded, in the request the tape
+// it back exactly as received in the request the tape
 // expects: `?versionId={{uuid-1}}`, `?uploadId={{uploadid-1}}`,
 // `continuation-token={{token-1}}%3D` (the continuation token's trailing
 // base64 padding is part of the value MinIO sent, "=" in the XML, and the
@@ -330,9 +330,10 @@ var last_headers: string = ""
 var seen_sigs: string = ""
 
 // Percent-encode as AWS SigV4 does (RFC 3986 unreserved bytes stay, the rest
-// %XX), except that `{` and `}` stay: no real value has them, and a
-// normalized token ({{uuid-2}}) sent back in a URL must go out unencoded for
-// playback to match its path byte for byte.
+// %XX), except that `{` and `}` stay: no real value has them, and leaving a
+// normalized token ({{uuid-2}}) as it is keeps the tapes readable (playback
+// normalizes paths per RFC 3986, so %7B%7B..%7D%7D would match too; encoded
+// delimiters such as %2F, %26 or %3D still differ and must be as recorded).
 fn q(s: string) -> string {
     hex = "0123456789ABCDEF"
     out = ""
