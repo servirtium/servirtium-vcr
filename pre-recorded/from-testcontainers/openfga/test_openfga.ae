@@ -1,0 +1,113 @@
+// Ported from testcontainers-go modules/openfga/openfga_test.go
+//
+// A real OpenFGA: /healthz reports SERVING on the HTTP endpoint, a store can
+// be created and listed, and the gRPC and playground helpers are the right
+// shape.
+
+import std.spec
+import std.string
+import std.encoding
+import std.http.client
+import std.json
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.openfga
+
+const IMAGE = "openfga/openfga:v1.18.0"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+fn basic(user: string, pw: string) -> string {
+    return "Authorization: Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}"
+}
+
+// A top-level string field of a JSON object, "" when absent.
+fn json_string_field(body: string, key: string) -> string {
+    doc, perr = json.parse(body)
+    if perr != "" { return "" }
+    v, _ = json.object_get(doc, key)
+    s, _ = json.get_string(v)
+    out = string.concat(s, "")
+    json.free(doc)
+    return out
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: the store's ULID (normalized, so the GET by id
+    // still matches on playback) and its timestamps.
+    servirtium.normalize("[0-9A-HJKMNP-TV-Z]{26}", "store-id")
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+
+    spec.describe(fw, "modules/openfga") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the HTTP API (TestOpenFGA)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = openfga.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "openfga starts")
+                if err != "" { return }
+                http, herr = openfga.http_endpoint(c)
+                spec.assert_ok(herr, "http endpoint")
+                spec.assert_true(string.starts_with(http, "http://localhost:") == 1, "an http URL: ${http}")
+                addr = http
+                grpc, gerr = openfga.grpc_endpoint(c)
+                spec.assert_ok(gerr, "grpc endpoint")
+                spec.assert_true(string.starts_with(grpc, "http://localhost:") == 1, "grpc: ${grpc}")
+                play, perr = openfga.playground_endpoint(c)
+                spec.assert_ok(perr, "playground endpoint")
+                spec.assert_true(string.ends_with(play, "/playground") == 1, "playground: ${play}")
+            }
+            base, rec = servirtium.recording("openfga", "serves_the_http_api", addr)
+            hs, hb, e1 = http_do("GET", "${base}/healthz", [], "")
+            spec.assert_ok(e1, "GET /healthz")
+            spec.assert_eq(hs, 200, "healthz")
+            spec.assert_contains(hb, "SERVING", "serving")
+            ss, sb, e2 = http_do("POST", "${base}/stores", [], "{\"name\":\"tcae\"}")
+            spec.assert_ok(e2, "POST /stores")
+            spec.assert_eq(ss, 201, "store created: ${sb}")
+            ls, lb, e3 = http_do("GET", "${base}/stores", [], "")
+            spec.assert_ok(e3, "GET /stores")
+            spec.assert_eq(ls, 200, "list")
+            spec.assert_contains(lb, "\"name\":\"tcae\"", "the store is listed: ${lb}")
+            // the id the server minted, sent back: a normalized id round-trips
+            id = json_string_field(sb, "id")
+            spec.assert_true(string.length(id) > 0, "the new store's id: ${sb}")
+            gs, gb, e4 = http_do("GET", "${base}/stores/${id}", [], "")
+            spec.assert_ok(e4, "GET /stores/<id>")
+            spec.assert_eq(gs, 200, "the store by id: ${gb}")
+            spec.assert_contains(gb, "\"name\":\"tcae\"", "the store by id is ours: ${gb}")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

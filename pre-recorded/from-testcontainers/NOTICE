@@ -1,0 +1,10 @@
+The */test_<service>.ae files here are ported from testcontainers-go's module
+tests (https://github.com/testcontainers/testcontainers-go, MIT, portions
+copyright (c) 2017-2019 Gianluca Arbezzano and the testcontainers-go
+contributors), by way of testcontainers-ae
+(https://github.com/servirtium/testcontainers-ae, MIT), where they lived until
+2026-11-07. testcontainers-go's licence is in LICENSE.testcontainers-go.
+consul/testdata/ comes from testcontainers-go's modules/consul/testdata/.
+
+The tapes (*.md beside each test) are recordings of the named container
+images' responses.

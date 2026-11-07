@@ -1,0 +1,124 @@
+// Ported from testcontainers-go modules/mockserver/examples_test.go
+//
+// A real MockServer: an expectation is created over its REST API
+// (PUT /mockserver/expectation), then the mocked path is requested and must
+// answer with the mocked status and body, while an unmocked path gives 404.
+// Go's example does this through mock-server-client-go, which is not ported.
+
+import std.spec
+import std.string
+import std.json
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.mockserver
+
+const IMAGE = "mockserver/mockserver:5.15.0"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn http_call(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 10s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+// The container's Config.Env joined with spaces (the image has no shell to exec).
+fn container_env(c: *docker.Container) -> string {
+    doc, err = tc.inspect(c)
+    if err != "" { return "" }
+    cfg, _ = json.object_get(doc, "Config")
+    ev, _ = json.object_get(cfg, "Env")
+    out = ""
+    n = json.json_array_size(ev)
+    i = 0
+    while i < n {
+        v, _ = json.array_get(ev, i)
+        s, _ = json.get_string(v)
+        out = "${out} ${s}"
+        i = i + 1
+    }
+    json.free(doc)
+    return out
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The id MockServer gives an expectation differs run to run.
+    servirtium.normalize(servirtium.UUID, "expectation-id")
+
+    spec.describe(fw, "modules/mockserver") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves a created expectation (ExampleRun)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = mockserver.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "mockserver starts")
+                if err != "" { return }
+                u, uerr = mockserver.url(c)
+                spec.assert_ok(uerr, "url")
+                spec.assert_true(string.starts_with(u, "http://") == 1, "an http:// URL: ${u}")
+                addr = u
+            }
+            base, rec = servirtium.recording("mockserver", "serves_a_created_expectation", addr)
+
+            before, _, e0 = http_call("GET", "${base}/hello", "")
+            spec.assert_ok(e0, "GET before the expectation")
+            spec.assert_eq(before, 404, "an unmocked path is 404")
+
+            exp = "{\"httpRequest\":{\"method\":\"GET\",\"path\":\"/hello\"},\"httpResponse\":{\"statusCode\":200,\"body\":\"Hello from tcae\"}}"
+            cs, _, e1 = http_call("PUT", "${base}/mockserver/expectation", exp)
+            spec.assert_ok(e1, "PUT expectation")
+            spec.assert_eq(cs, 201, "expectation created")
+
+            st, body, e2 = http_call("GET", "${base}/hello", "")
+            spec.assert_ok(e2, "GET the mocked path")
+            spec.assert_eq(st, 200, "the mocked status")
+            spec.assert_str_eq(body, "Hello from tcae", "the mocked body")
+
+            other, _, e3 = http_call("GET", "${base}/other", "")
+            spec.assert_ok(e3, "GET another path")
+            spec.assert_eq(other, 404, "other paths stay 404")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("mixes core options into the block, and the default image tag runs") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = mockserver.run(mockserver.DEFAULT_IMAGE) {
+                    tc.env("TCAE_MARK", "from-the-block")
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "mockserver starts")
+                if err != "" { return }
+                spec.assert_contains(container_env(c), "TCAE_MARK=from-the-block", "the core env setter reached the request")
+                u, _ = mockserver.url(c)
+                addr = u
+            }
+            base, rec = servirtium.recording("mockserver", "mixes_core_options_into_the_block_and_the_default_image_tag_runs", addr)
+            st, _, e = http_call("PUT", "${base}/mockserver/status", "")
+            spec.assert_ok(e, "status")
+            spec.assert_eq(st, 200, "the status endpoint answers")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

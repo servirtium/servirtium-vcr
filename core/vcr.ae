@@ -187,7 +187,7 @@ exports (
     set_rules_footer_h, get_rules_footer_h, RULES_FOOTER_HEADING,
     set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
     set_pretty_json_h, get_pretty_json_h,
-    set_tls_h, set_tls_pem_h, tls_enabled_h, last_tls_protocol_h,
+    set_tls_h, set_tls_pem_h, tls_enabled_h, last_tls_protocol_h, set_upstream_cafile_h,
     substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h,
     indent_code_blocks_h, emphasize_http_verbs_h,
@@ -361,6 +361,7 @@ extern http_request_raw(method: string, url: string) -> ptr
 extern http_request_set_header_raw(req: ptr, name: string, value: string) -> int
 extern http_request_set_body_raw(req: ptr, body: ptr, length: int, content_type: string) -> int   // body: string.bytes(s), as above
 extern http_request_set_timeout_raw(req: ptr, seconds: int) -> int
+extern http_request_set_cafile_raw(req: ptr, path: string) -> int
 extern http_request_free_raw(req: ptr)
 extern http_send_raw(req: ptr) -> ptr
 extern http_response_status(response: ptr) -> int
@@ -2136,6 +2137,8 @@ do_record(srvkey: string, req: ptr, res: ptr) {
         http_request_set_body_raw(creq, string.bytes(live_body), body_len, ctype)
     }
     http_request_set_timeout_raw(creq, 30)
+    upstream_ca = cfg_get_str(slot(srvkey, "upstream_cafile"))
+    if string.length(upstream_ca) > 0 { http_request_set_cafile_raw(creq, upstream_ca) }
 
     cresp = http_send_raw(creq)
     http_request_free_raw(creq)
@@ -3329,6 +3332,16 @@ untaped_h(server: ptr, path: string) -> string {
 // not yet bound. Both paths must be PEM files and must match; the cert+key
 // validation and OpenSSL-availability check are std.http's, surfaced as the
 // returned error string. Passing one path without the other is an error.
+// Record mode: verify an https upstream against this CA (a PEM file) rather
+// than the system store, for a service with its own CA (Elasticsearch 8
+// generates one). Verification and hostname checks stay on. Connection-level
+// only: nothing about it reaches the recording.
+set_upstream_cafile_h(server: ptr, path: string) -> string {
+    if string.length(path) == 0 { return "set_upstream_cafile: path is empty (need a PEM CA file)" }
+    cfg_set_str(slot(key_for(server), "upstream_cafile"), path)
+    return ""
+}
+
 set_tls_h(server: ptr, cert_path: string, key_path: string) -> string {
     if string.length(cert_path) == 0 {
         return "cert_path is empty (need a PEM certificate file)"

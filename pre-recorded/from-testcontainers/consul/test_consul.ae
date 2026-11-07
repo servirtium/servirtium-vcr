@@ -1,0 +1,204 @@
+// Ported from testcontainers-go modules/consul/consul_test.go
+//
+// A real Consul agent: /v1/status/leader names a leader, a key put through
+// the KV API reads back, a service registers and deregisters (Go's test),
+// and each config option is shown to be in force through /v1/agent/self.
+
+import std.spec
+import std.string
+import std.http.client
+import std.json
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.consul
+
+const IMAGE = "hashicorp/consul:1.15"
+
+// (status, body, error) for a request with an optional JSON/plain body.
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn call_api(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 10s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+// Wait for a leader election, which follows "agent running" by a moment
+// (up to 10 s, a try every 100 ms).
+fn leader(base: string) -> (string, string) {
+    tries = 0
+    last = ""
+    while tries < 100 {
+        st, body, err = call_api("GET", "${base}/v1/status/leader", "")
+        last = err
+        if err == "" && st == 200 && string.length(body) > 4 { return body, "" }
+        tries = tries + 1
+        sleep(100)
+    }
+    return "", "no leader: ${last}"
+}
+
+// In a live run, wait for the leader against the container itself, before
+// the recording starts: how many polls the election takes is timing, and a
+// tape that recorded them would differ run to run. The case's own leader
+// check then finds one at once, and the tape holds just that request.
+fn await_leader(c: *docker.Container) {
+    _ld, lerr = leader(agent_url(c))
+    spec.assert_ok(lerr, "leader elected before recording")
+}
+
+fn node_name(base: string) -> string {
+    st, body, err = call_api("GET", "${base}/v1/agent/self", "")
+    if err != "" || st != 200 { return "" }
+    doc, perr = json.parse(body)
+    if perr != "" { return "" }
+    cfg, _ = json.object_get(doc, "Config")
+    nn, _ = json.object_get(cfg, "NodeName")
+    s, _ = json.get_string(nn)
+    json.free(doc)
+    return s
+}
+
+// The agent's base URL ("" in playback, where there is no container).
+fn agent_url(c: *docker.Container) -> string {
+    if c == null { return "" }
+    hp, err = consul.api_endpoint(c)
+    spec.assert_ok(err, "api endpoint")
+    spec.assert_true(string.starts_with(hp, "localhost:") == 1, "host:port, no scheme: ${hp}")
+    return "http://${hp}"
+}
+
+// Go's TestConsul body: API up, register / list / deregister a service; plus a leader and KV.
+fn assert_consul_works(base: string, name: string) {
+    ld, lerr = leader(base)
+    spec.assert_ok(lerr, "leader elected")
+    spec.assert_contains(ld, ":8300", "the leader is a server RPC address: ${ld}")
+
+    st, _, perr = call_api("PUT", "${base}/v1/kv/tcae/greeting", "hello consul")
+    spec.assert_ok(perr, "KV put")
+    spec.assert_eq(st, 200, "KV put is 200")
+    st2, raw, gerr = call_api("GET", "${base}/v1/kv/tcae/greeting?raw", "")
+    spec.assert_ok(gerr, "KV get")
+    spec.assert_eq(st2, 200, "KV get is 200")
+    spec.assert_str_eq(raw, "hello consul", "the value read back is the value put")
+
+    reg = "{\"ID\":\"abcd\",\"Name\":\"${name}\"}"
+    st3, _, rerr = call_api("PUT", "${base}/v1/agent/service/register", reg)
+    spec.assert_ok(rerr, "register")
+    spec.assert_eq(st3, 200, "register is 200")
+    _, svcs, _ = call_api("GET", "${base}/v1/agent/services", "")
+    spec.assert_contains(svcs, "\"ID\": \"abcd\"", "the service is listed")
+    spec.assert_contains(svcs, "\"Service\": \"${name}\"", "under the name we gave")
+    st4, _, derr = call_api("PUT", "${base}/v1/agent/service/deregister/abcd", "")
+    spec.assert_ok(derr, "deregister")
+    spec.assert_eq(st4, 200, "deregister is 200")
+    _, after, _ = call_api("GET", "${base}/v1/agent/services", "")
+    spec.assert_true(string.contains(after, "\"abcd\"") == 0, "the service is gone")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run (and machine to machine): the Raft index
+    // header, the node id, and the counters and host facts in
+    // /v1/agent/self's Stats. X-Consul-Index stays on the tape (it is
+    // Consul's own, part of its API), with its value collapsed: a number
+    // still, since a client parses it as one.
+    servirtium.collapse("X-Consul-Index: [0-9]+", "X-Consul-Index: 1")
+    servirtium.normalize(servirtium.UUID, "node-id")
+    for stat in ["applied_index", "commit_index", "last_log_index", "last_log_term", "term",
+                 "last_contact", "fsm_pending", "goroutines", "cpu_count", "max_procs",
+                 "event_queue", "event_time", "member_time", "query_time", "intent_queue",
+                 "query_queue", "health_score", "coordinate_resets"] {
+        servirtium.collapse("\"${stat}\": \"[0-9]+\"", "\"${stat}\": \"0\"")
+    }
+    servirtium.collapse("\"arch\": \"[a-z0-9_]+\"", "\"arch\": \"ARCH\"")
+
+    spec.describe(fw, "modules/consul") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the HTTP API (TestConsul/Default)") callback {
+            let c: *docker.Container = null
+            if servirtium.live() == 1 {
+                c2, err = consul.run(IMAGE)
+                testing.cleanup_container(c2)
+                spec.assert_ok(err, "consul starts")
+                if err != "" { return }
+                c = c2
+                await_leader(c)
+            }
+            base, rec = servirtium.recording("consul", "serves_the_http_api", agent_url(c))
+            assert_consul_works(base, "Default")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("takes a config string (TestConsul/WithConfigString)") callback {
+            let c: *docker.Container = null
+            if servirtium.live() == 1 {
+                c2, err = consul.run(IMAGE) {
+                    config_string("{ \"server\":true, \"node_name\":\"tcae-string-node\" }")
+                }
+                testing.cleanup_container(c2)
+                spec.assert_ok(err, "consul starts")
+                if err != "" { return }
+                c = c2
+                await_leader(c)
+            }
+            base, rec = servirtium.recording("consul", "takes_a_config_string", agent_url(c))
+            assert_consul_works(base, "WithConfigString")
+            spec.assert_str_eq(node_name(base), "tcae-string-node", "CONSUL_LOCAL_CONFIG reached the agent")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("takes a config file (TestConsul/WithConfigFile)") callback {
+            let c: *docker.Container = null
+            if servirtium.live() == 1 {
+                c2, err = consul.run(IMAGE) {
+                    config_file("consul/testdata/node-name.json")
+                }
+                testing.cleanup_container(c2)
+                spec.assert_ok(err, "consul starts")
+                if err != "" { return }
+                c = c2
+                await_leader(c)
+            }
+            base, rec = servirtium.recording("consul", "takes_a_config_file", agent_url(c))
+            assert_consul_works(base, "WithConfigFile")
+            spec.assert_str_eq(node_name(base), "tcae-file-node", "the config file reached the agent")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("starts with Go's testdata/config.json") callback {
+            let c: *docker.Container = null
+            if servirtium.live() == 1 {
+                c2, err = consul.run(IMAGE) {
+                    config_file("consul/testdata/config.json")
+                }
+                testing.cleanup_container(c2)
+                spec.assert_ok(err, "consul starts")
+                if err != "" { return }
+                c = c2
+                await_leader(c)
+            }
+            base, rec = servirtium.recording("consul", "starts_with_gos_testdata_config_json", agent_url(c))
+            assert_consul_works(base, "GoConfig")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

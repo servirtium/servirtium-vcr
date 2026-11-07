@@ -1,0 +1,162 @@
+// Ported from testcontainers-go modules/vault/vault_test.go
+//
+// A real Vault dev server: /v1/sys/health answers 200, the root token chosen
+// by token() reads the secrets the init commands wrote (through the vault CLI
+// in the container and through the KV-v2 HTTP API), writes a new one, and a
+// request without the token is refused.
+
+import std.spec
+import std.string
+import std.http.client
+import std.json
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.vault
+
+const IMAGE = "hashicorp/vault:1.13.0"
+const TOKEN = "root-token"
+
+// (status, body, error); token "" sends no X-Vault-Token.
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn call_api(method: string, url: string, tok: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(tok) > 0 { client.set_header(req, "X-Vault-Token", tok) }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+// data.data.<key> of a KV-v2 read response.
+fn kv_field(body: string, key: string) -> string {
+    doc, perr = json.parse(body)
+    if perr != "" { return "" }
+    d1, _ = json.object_get(doc, "data")
+    d2, _ = json.object_get(d1, "data")
+    v, _ = json.object_get(d2, key)
+    s, _ = json.get_string(v)
+    json.free(doc)
+    return s
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // Servirtium's credential preset: the token is written as
+    // X_VAULT_TOKEN_1, and playback matches X-Vault-Token on presence, so it
+    // needs no secret.
+    servirtium.redact_credential_header("X-Vault-Token")
+    // What differs run to run: request and cluster ids, the cluster's name,
+    // created_time, and the Unix times of server_time_utc and the transit
+    // key's versions.
+    servirtium.normalize(servirtium.UUID, "uuid")
+    servirtium.collapse("vault-cluster-[0-9a-f]+", "vault-cluster-0")
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+    servirtium.collapse(servirtium.EPOCH_TIMESTAMP, "946684800")
+
+    spec.describe(fw, "modules/vault") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("reads and writes secrets with the chosen token (TestVault)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = vault.run(IMAGE) {
+                    token(TOKEN)
+                    init_command(["secrets enable transit", "write -f transit/keys/my-key"])
+                    init_command(["kv put secret/test1 foo1=bar1"])
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "vault starts and the init commands succeed")
+                if err != "" { return }
+                a, aerr = vault.http_host_address(c)
+                spec.assert_ok(aerr, "http host address")
+                spec.assert_true(string.starts_with(a, "http://localhost:") == 1, "an http:// URL: ${a}")
+                addr = a
+
+                // Get secret path / From vault CLI
+                code, out, eerr = tc.exec(c, ["vault", "kv", "get", "-format=json", "secret/test1"])
+                spec.assert_ok(eerr, "exec vault kv get")
+                spec.assert_eq(code, 0, "vault kv get exits 0")
+                spec.assert_str_eq(kv_field(out, "foo1"), "bar1", "the CLI reads what the init command wrote")
+            }
+            base, rec = servirtium.recording("vault", "reads_and_writes_secrets_with_the_chosen_token", addr)
+
+            hs, hb, herr = call_api("GET", "${base}/v1/sys/health", "", "")
+            spec.assert_ok(herr, "GET /v1/sys/health")
+            spec.assert_eq(hs, 200, "health is 200 (initialized, unsealed, active)")
+            spec.assert_contains(hb, "\"initialized\":true", "initialized")
+
+            // Get secret path / From HTTP request (KV-v2)
+            st, body, rerr = call_api("GET", "${base}/v1/secret/data/test1", TOKEN, "")
+            spec.assert_ok(rerr, "KV-v2 read")
+            spec.assert_eq(st, 200, "KV-v2 read is 200")
+            spec.assert_str_eq(kv_field(body, "foo1"), "bar1", "the HTTP API reads the same secret")
+
+            // The transit key made by the first init command
+            tk, _, terr = call_api("GET", "${base}/v1/transit/keys/my-key", TOKEN, "")
+            spec.assert_ok(terr, "transit key read")
+            spec.assert_eq(tk, 200, "the transit key exists")
+
+            // Write secret / From KV-v2 HTTP request
+            ws, _, werr = call_api("POST", "${base}/v1/secret/data/test3", TOKEN, "{\"data\":{\"foo\":\"bar\"}}")
+            spec.assert_ok(werr, "KV-v2 write")
+            spec.assert_eq(ws, 200, "KV-v2 write is 200")
+            _, wb, _ = call_api("GET", "${base}/v1/secret/data/test3", TOKEN, "")
+            spec.assert_str_eq(kv_field(wb, "foo"), "bar", "the written secret reads back")
+
+            // The token is really required, and only the chosen one works
+            no, _, _ = call_api("GET", "${base}/v1/secret/data/test1", "", "")
+            spec.assert_eq(no, 403, "no token: refused")
+            wrong, _, _ = call_api("GET", "${base}/v1/secret/data/test1", "not-the-token", "")
+            spec.assert_eq(wrong, 403, "wrong token: refused")
+
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("runs with no options (dev-mode defaults)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = vault.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "vault starts")
+                if err != "" { return }
+                a, _ = vault.http_host_address(c)
+                addr = a
+                code, out, _ = tc.exec(c, ["sh", "-c", "echo $VAULT_ADDR"])
+                spec.assert_eq(code, 0, "exec")
+                spec.assert_str_eq(string.trim(out), "http://0.0.0.0:8200", "the module's VAULT_ADDR")
+            }
+            base, rec = servirtium.recording("vault", "runs_with_no_options", addr)
+            hs, _, herr = call_api("GET", "${base}/v1/sys/health", "", "")
+            spec.assert_ok(herr, "health")
+            spec.assert_eq(hs, 200, "health is 200")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "fails the run when an init command fails", "no container in playback") callback {
+            c, err = vault.run(IMAGE) {
+                token(TOKEN)
+                tc.wait_deadline(20s)
+                init_command(["kv put nosuch-mount/x a=b"])
+            }
+            testing.cleanup_container(c)
+            spec.assert_true(err != "", "the failing init command is an error")
+            spec.assert_contains(err, "run vault:", "wrapped like Go's")
+        }
+    }
+    return spec.run_summary(fw)
+}

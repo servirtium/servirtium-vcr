@@ -1,0 +1,118 @@
+// Ported from testcontainers-go modules/elasticsearch/elasticsearch_test.go,
+// by way of testcontainers-ae's tests/test_elasticsearch.ae (moved here
+// 2026-11-07).
+//
+// A real Elasticsearch 8 (secure by default: HTTPS with a CA it generates,
+// the default password "changeme"): GET / authenticated as the module's user
+// returns the cluster banner (TestElasticsearch, "Elasticsearch 8 without
+// password"), and the same request with a wrong password is refused. The
+// other versions of Go's table are not run; their rules are checked in
+// is_at_least_version.
+//
+// PORTING: the tapes hold the HTTP conversation only. When recording, the
+// test talks plain HTTP to the Servirtium recorder, which talks HTTPS to the
+// container, verifying it against the container's own CA
+// (servirtium.trust_upstream_ca); playback is plain HTTP. A port's test
+// pinning the CA itself only matters when it runs against a live container.
+
+import std.spec
+import std.string
+import std.fs
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.elasticsearch
+
+const IMAGE = "docker.elastic.co/elasticsearch/elasticsearch:8.9.0"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn basic(user: string, pw: string) -> string {
+    return "Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}"
+}
+
+// GET `url` with Basic credentials, verifying an https URL against `ca_file`
+// when it is set: (status, body, error).
+fn get(url: string, user: string, pw: string, ca_file: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(ca_file) > 0 && string.starts_with(url, "https:") == 1 {
+        cerr = client.set_cafile(req, ca_file)
+        if cerr != "" { return 0, "", cerr }
+    }
+    client.set_header(req, "Authorization", basic(user, pw))
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return status, body, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // Basic credentials: labelled literal redactions, not the credential
+    // preset (which matches on presence), so playback still tells the right
+    // password from the wrong one.
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, basic("elastic", "changeme"), "Basic REDACTED[elastic]")
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, basic("elastic", "not-the-password"), "Basic REDACTED[elastic-wrong-password]")
+    // What differs run to run, in the root banner: the node's name (the
+    // container's hostname) and the cluster's uuid.
+    servirtium.collapse("\"name\" : \"[0-9a-f]{12}\"", "\"name\" : \"elasticsearch-node\"")
+    servirtium.collapse("\"cluster_uuid\" : \"[A-Za-z0-9_-]{22}\"", "\"cluster_uuid\" : \"CLUSTER-UUID\"")
+
+    spec.describe(fw, "modules/elasticsearch") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("versions are read from the image tag (version_test.go)") callback {
+            spec.assert_true(elasticsearch.is_at_least_version("elasticsearch:8.9.0", 8), "8.9.0 >= 8")
+            spec.assert_true(!elasticsearch.is_at_least_version("elasticsearch:7.9.2", 8), "7.9.2 < 8")
+            spec.assert_true(elasticsearch.is_at_least_version("elasticsearch:latest", 8), "latest")
+            spec.assert_true(elasticsearch.is_at_least_version("a/b:v8.1.0", 7), "v-prefixed")
+        }
+
+        spec.it("answers authenticated HTTPS requests (TestElasticsearch, 8)") callback {
+            addr = ""
+            ca_file = ""
+            if servirtium.live() == 1 {
+                es, err = elasticsearch.run(IMAGE)
+                if es != null { testing.cleanup_container(es.container) }
+                spec.assert_ok(err, "elasticsearch starts")
+                if err != "" { return }
+                spec.assert_true(string.starts_with(es.address, "https://localhost:") == 1, "https address: ${es.address}")
+                spec.assert_str_eq(es.username, "elastic", "default user")
+                spec.assert_str_eq(es.password, "changeme", "ES 8 gets the default password")
+                spec.assert_contains(es.ca_cert, "BEGIN CERTIFICATE", "the CA was read from the container")
+                dir, derr = fs.make_temp_dir("", "tcae-es-")
+                spec.assert_ok(derr, "temp dir")
+                ca_file = "${dir}/http_ca.crt"
+                fs.write(ca_file, es.ca_cert)
+                servirtium.trust_upstream_ca(ca_file)
+                addr = es.address
+            }
+            base, rec = servirtium.recording("elasticsearch", "answers_authenticated_requests", addr)
+            st, body, rerr = get("${base}/", "elastic", "changeme", ca_file)
+            spec.assert_ok(rerr, "GET /")
+            spec.assert_eq(st, 200, "authenticated GET / is 200")
+            spec.assert_contains(body, "You Know, for Search", "the Elasticsearch tagline")
+            spec.assert_contains(body, "8.9.0", "the version")
+            bad, _, berr = get("${base}/", "elastic", "not-the-password", ca_file)
+            spec.assert_ok(berr, "GET / with a wrong password")
+            spec.assert_eq(bad, 401, "a wrong password is refused")
+            servirtium.end_recording(rec)
+            servirtium.trust_upstream_ca("")
+            if string.length(ca_file) > 0 { fs.delete(ca_file) }
+        }
+    }
+    return spec.run_summary(fw)
+}

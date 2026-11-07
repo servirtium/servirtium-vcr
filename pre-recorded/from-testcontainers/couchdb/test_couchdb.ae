@@ -1,0 +1,169 @@
+// Ported from testcontainers-go modules/couchdb/couchdb_test.go
+//
+// A real CouchDB: GET / answers the welcome document, and a database is
+// created over HTTP with the module's admin credentials (and refused with
+// wrong ones).
+
+import std.spec
+import std.string
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.couchdb
+
+const IMAGE = "couchdb:3"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 15s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+fn basic(user: string, pw: string) -> string {
+    return "Authorization: Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}"
+}
+
+// A recording shows "Authorization: Basic REDACTED[<label>]"; playback still
+// matches the real header. Not Servirtium's redact_credentials preset: that
+// matches Authorization on presence, and these cases tell a right password
+// from a wrong one, which playback should keep checking.
+fn redact_basic(user: string, pw: string, label: string) {
+    secret = encoding.base64_encode_padded(string.bytes("${user}:${pw}"))
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${secret}", "Basic REDACTED[${label}]")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // Every Basic credential the cases send is kept off the tapes.
+    redact_basic("admin", "password", "admin")
+    redact_basic("admin", "nope", "admin-wrong-password")
+    redact_basic("testuser", "testpassword", "testuser")
+    redact_basic("us er", "p@ss/w:rd", "percent-encoded-user")
+    // What differs run to run: the per-request id and timing headers, the
+    // server's uuid, a database's start time and its opaque sequence tokens.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "X-Couch-Request-ID")
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "X-CouchDB-Body-Time")
+    servirtium.normalize("[0-9a-f]{32}", "couchdb-uuid")
+    servirtium.collapse(servirtium.EPOCH_TIMESTAMP, "946684800")
+    servirtium.collapse("_seq\":\"[0-9]+-[A-Za-z0-9_-]+\"", "_seq\":\"0-SEQ\"")
+
+    spec.describe(fw, "modules/couchdb") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the welcome document and creates a database (TestCouchDB)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                db, err = couchdb.run(IMAGE)
+                if db != null { testing.cleanup_container(db.container) }
+                spec.assert_ok(err, "couchdb starts")
+                if err != "" { return }
+                conn, cerr = couchdb.connection_string(db)
+                spec.assert_ok(cerr, "connection string")
+                spec.assert_contains(conn, "http://admin:password@", "default credentials in the URL")
+                port, _ = tc.mapped_port(db.container, couchdb.PORT)
+                spec.assert_str_eq(conn, "http://admin:password@localhost:${port}", "Go's format")
+                addr = "http://localhost:${port}"
+            }
+            base, rec = servirtium.recording("couchdb", "serves_the_welcome_document_and_creates_a_database", addr)
+            auth = basic("admin", "password")
+            st, body, herr = http_do("GET", "${base}/", [], "")
+            spec.assert_ok(herr, "GET /")
+            spec.assert_eq(st, 200, "welcome status")
+            spec.assert_contains(body, "\"couchdb\":\"Welcome\"", "welcome document: ${body}")
+            ust, _ub, uerr = http_do("GET", "${base}/_up", [], "")
+            spec.assert_ok(uerr, "GET /_up")
+            spec.assert_eq(ust, 200, "_up status")
+            // no credentials: refused
+            nst, _nb, nerr = http_do("PUT", "${base}/tcae_db", [], "")
+            spec.assert_ok(nerr, "PUT without credentials")
+            spec.assert_eq(nst, 401, "unauthenticated create is refused")
+            // wrong credentials: refused
+            wst, _wb, werr = http_do("PUT", "${base}/tcae_db", [basic("admin", "nope")], "")
+            spec.assert_ok(werr, "PUT with wrong credentials")
+            spec.assert_eq(wst, 401, "wrong password is refused")
+            // the module's credentials: created
+            pst, pbody, perr = http_do("PUT", "${base}/tcae_db", [auth], "")
+            spec.assert_ok(perr, "PUT with the module's credentials")
+            spec.assert_eq(pst, 201, "database created: ${pbody}")
+            gst, gbody, gerr = http_do("GET", "${base}/tcae_db", [auth], "")
+            spec.assert_ok(gerr, "GET database")
+            spec.assert_eq(gst, 200, "database exists")
+            spec.assert_contains(gbody, "\"db_name\":\"tcae_db\"", "its info: ${gbody}")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("uses custom admin credentials (TestCouchDB_WithAdminCredentials)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                db, err = couchdb.run(IMAGE) {
+                    admin_credentials("testuser", "testpassword")
+                }
+                if db != null { testing.cleanup_container(db.container) }
+                spec.assert_ok(err, "couchdb starts")
+                if err != "" { return }
+                conn, cerr = couchdb.connection_string(db)
+                spec.assert_ok(cerr, "connection string")
+                spec.assert_contains(conn, "http://testuser:testpassword@", "custom credentials in the URL")
+                port, _ = tc.mapped_port(db.container, couchdb.PORT)
+                addr = "http://localhost:${port}"
+            }
+            base, rec = servirtium.recording("couchdb", "uses_custom_admin_credentials", addr)
+            st, body, herr = http_do("PUT", "${base}/custom_db", [basic("testuser", "testpassword")], "")
+            spec.assert_ok(herr, "PUT")
+            spec.assert_eq(st, 201, "created with the custom credentials: ${body}")
+            ost, _ob, oerr = http_do("PUT", "${base}/other_db", [basic("admin", "password")], "")
+            spec.assert_ok(oerr, "PUT as the default admin")
+            spec.assert_eq(ost, 401, "the default credentials no longer work")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("percent-encodes credentials in the connection string") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                db, err = couchdb.run(IMAGE) {
+                    admin_credentials("us er", "p@ss/w:rd")
+                }
+                if db != null { testing.cleanup_container(db.container) }
+                spec.assert_ok(err, "couchdb starts")
+                if err != "" { return }
+                conn, cerr = couchdb.connection_string(db)
+                spec.assert_ok(cerr, "connection string")
+                spec.assert_contains(conn, "http://us%20er:p%40ss%2Fw%3Ard@localhost:", "userinfo escaped")
+                port, _ = tc.mapped_port(db.container, couchdb.PORT)
+                addr = "http://localhost:${port}"
+            }
+            // (std.http.client refuses userinfo in a URL, so authenticate
+            // with the same credentials in a header)
+            base, rec = servirtium.recording("couchdb", "percent_encodes_credentials_in_the_connection_string", addr)
+            st, body, herr = http_do("PUT", "${base}/enc_db", [basic("us er", "p@ss/w:rd")], "")
+            spec.assert_ok(herr, "PUT")
+            spec.assert_eq(st, 201, "the credentials the URL encodes authenticate: ${body}")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

@@ -1,0 +1,156 @@
+// Ported from testcontainers-go modules/typesense/typesense_test.go
+//
+// A real Typesense: GET /health, and an API-key-authenticated collection
+// create (refused with a wrong key), for the default and a custom key.
+
+import std.spec
+import std.string
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.typesense
+
+const IMAGE = "typesense/typesense:26.0"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 15s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+fn basic(user: string, pw: string) -> string {
+    return "Authorization: Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}"
+}
+fn key_header(key: string) -> string { return "X-TYPESENSE-API-KEY: ${key}" }
+
+fn schema(name: string) -> string {
+    return "{\"name\":\"${name}\",\"fields\":[{\"name\":\"company_name\",\"type\":\"string\"},{\"name\":\"num_employees\",\"type\":\"int32\"}],\"default_sorting_field\":\"num_employees\"}"
+}
+
+// Create a collection with the key, check a wrong key is refused, read it
+// back, all through addr (the container, or Servirtium in front of it).
+fn exercise(addr: string, key: string) {
+    st, _b, herr = http_do("GET", "${addr}/health", [], "")
+    spec.assert_ok(herr, "GET /health")
+    spec.assert_eq(st, 200, "health")
+    bst, _bb, berr = http_do("POST", "${addr}/collections", [key_header("wrong-key")], schema("companies"))
+    spec.assert_ok(berr, "POST with a wrong key")
+    spec.assert_eq(bst, 401, "a wrong key is refused")
+    pst, pbody, perr = http_do("POST", "${addr}/collections", [key_header(key)], schema("companies"))
+    spec.assert_ok(perr, "POST /collections")
+    spec.assert_eq(pst, 201, "collection created: ${pbody}")
+    gst, gbody, gerr = http_do("GET", "${addr}/collections/companies", [key_header(key)], "")
+    spec.assert_ok(gerr, "GET collection")
+    spec.assert_eq(gst, 200, "collection exists")
+    spec.assert_contains(gbody, "\"name\":\"companies\"", "its schema: ${gbody}")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The API keys are kept off the tapes; created_at differs run to run.
+    // Labelled literal redactions, not Servirtium's credential preset (which
+    // matches on presence): the wrong-key case must still send the wrong key.
+    for key in ["test-api-key", "custom-key", "env-key", "wrong-key"] {
+        servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "X-TYPESENSE-API-KEY: ${key}", "X-TYPESENSE-API-KEY: REDACTED[${key}]")
+    }
+    servirtium.collapse("\"created_at\":[0-9]+", "\"created_at\":946684800")
+
+    spec.describe(fw, "modules/typesense") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves with the default key (TestTypesense)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                t, err = typesense.run(IMAGE)
+                if t != null { testing.cleanup_container(t.container) }
+                spec.assert_ok(err, "typesense starts")
+                if err != "" { return }
+                port, _ = tc.mapped_port(t.container, typesense.PORT)
+                a, aerr = typesense.address(t)
+                spec.assert_ok(aerr, "address")
+                spec.assert_str_eq(a, "http://localhost:${port}", "Address shape")
+                spec.assert_str_eq(typesense.api_key_of(t), "test-api-key", "APIKey")
+                addr = a
+            }
+            base, rec = servirtium.recording("typesense", "serves_with_the_default_key", addr)
+            exercise(base, "test-api-key")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("uses a custom key (TestTypesense_WithAPIKey)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                t, err = typesense.run(IMAGE) { api_key("custom-key") }
+                if t != null { testing.cleanup_container(t.container) }
+                spec.assert_ok(err, "typesense starts")
+                if err != "" { return }
+                spec.assert_str_eq(typesense.api_key_of(t), "custom-key", "APIKey")
+                a, _ = typesense.address(t)
+                addr = a
+            }
+            base, rec = servirtium.recording("typesense", "uses_a_custom_key", addr)
+            exercise(base, "custom-key")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("reports a key set through tc.env (TestTypesense_WithEnvOverride)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                t, err = typesense.run(IMAGE) {
+                    api_key("custom-key")
+                    tc.env("TYPESENSE_API_KEY", "env-key")
+                }
+                if t != null { testing.cleanup_container(t.container) }
+                spec.assert_ok(err, "typesense starts")
+                if err != "" { return }
+                spec.assert_str_eq(typesense.api_key_of(t), "env-key", "APIKey follows the effective env")
+                a, _ = typesense.address(t)
+                addr = a
+            }
+            base, rec = servirtium.recording("typesense", "reports_a_key_set_through_tc_env", addr)
+            exercise(base, "env-key")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "sets the data dir (WithDataDir)", "no container in playback") callback {
+            t, err = typesense.run(IMAGE) {
+                tc.tmpfs("/ts-data", "")
+                data_dir("/ts-data")
+            }
+            if t != null { testing.cleanup_container(t.container) }
+            spec.assert_ok(err, "typesense starts")
+            if err != "" { return }
+            _c, out, eerr = tc.exec(t.container, ["printenv", "TYPESENSE_DATA_DIR"])
+            spec.assert_ok(eerr, "exec")
+            spec.assert_str_eq(string.trim(out), "/ts-data", "the data dir env")
+            _c2, ls, lerr = tc.exec(t.container, ["ls", "/ts-data"])
+            spec.assert_ok(lerr, "ls")
+            spec.assert_contains(ls, "state", "typesense wrote its state there")
+        }
+    }
+    return spec.run_summary(fw)
+}

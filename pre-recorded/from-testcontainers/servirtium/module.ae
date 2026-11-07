@@ -1,0 +1,412 @@
+// servirtium (pre-recorded/from-testcontainers): Servirtium in the middle of
+// a testcontainers-ae module's HTTP tests, recording the conversation as
+// re-usable tapes any Servirtium implementation can replay.
+//
+// Moved here from testcontainers-ae (2026-11-07), which no longer knows about
+// Servirtium; these suites depend on it instead. A test that
+// talks plain HTTP to a container asks for its base URL through recording();
+// what happens then depends on TCAE_VCR:
+//
+//   TCAE_VCR unset or "off"  the container's URL comes straight back; the
+//                            test runs exactly as it always did.
+//   TCAE_VCR=record          a Servirtium recorder on a free loopback port
+//                            forwards to the container; end_recording writes
+//                            every request and response, in order, to
+//                            <suite>/<case>.md (Servirtium
+//                            markdown, https://servirtium.dev).
+//   TCAE_VCR=check           record, but fail the case when the new tape is
+//                            not byte-identical to the committed one (it is
+//                            left beside it as <case>.md.actual): drift
+//                            detection.
+//   TCAE_VCR=playback        no container and no engine: a Servirtium replay
+//                            server on a free loopback port answers from the
+//                            tape, and end_recording fails the case if a
+//                            request did not match or a recorded one was
+//                            never made.
+//
+//     import servirtium
+//
+//     fw = spec.init()
+//     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+//     servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, TOKEN, "REDACTED-TOKEN")
+//     spec.it("reads a secret") callback {
+//         addr = ""
+//         if servirtium.live() == 1 {            // 0 in playback: no container
+//             c, err = vault.run(IMAGE) { token(TOKEN) }
+//             testing.cleanup_container(c)
+//             ...
+//             addr, _ = vault.http_host_address(c)
+//         }
+//         base, rec = servirtium.recording("vault", "reads_a_secret", addr)
+//         ... HTTP requests to base ...
+//         servirtium.end_recording(rec)
+//     }
+//
+// The rules a suite registers (normalize, collapse, redact, remove_header)
+// apply to every recording after them in the process; together with the
+// defaults below they make two record runs write the same bytes. Defaults:
+// the response headers Date, X-Request-Id and X-Correlation-Id are dropped,
+// and the container's mapped host:port, and the recorder's own, become
+// {{request.host}} wherever they appear (a Location header, a URL in a body),
+// which playback fills with the replay server's own host:port.
+//
+// servirtium-vcr is imported from lib/servirtium_vcr, a symlink to this
+// repository's own core/ (../../../core), so the suites record with the
+// Servirtium they sit beside. testcontainers-ae comes from aether.toml.
+
+import std.spec
+import std.string
+import std.os
+import std.http
+import servirtium_vcr.vcr
+import testcontainers.testing
+
+exports(
+    mode, live, playback, recording, end_recording, tape_path, case_name,
+    skip_if_no_engine, normalize, collapse, redact, remove_header, clear_rules,
+    redact_credentials, redact_credential_header, remove_cloud_headers,
+    remove_transport_headers, pretty_json, trust_upstream_ca,
+    UUID, RFC3339, EPOCH_TIMESTAMP,
+    MODE_OFF, MODE_RECORD, MODE_PLAYBACK, MODE_CHECK,
+    FIELD_PATH, FIELD_REQUEST_HEADERS, FIELD_REQUEST_BODY,
+    FIELD_RESPONSE_HEADERS, FIELD_RESPONSE_BODY
+)
+
+const MODE_OFF = 0
+const MODE_RECORD = 1
+const MODE_PLAYBACK = 2
+const MODE_CHECK = 3
+
+// Servirtium's field selectors (the same numbers as vcr.FIELD_*).
+const FIELD_PATH = 1
+const FIELD_RESPONSE_BODY = 2
+const FIELD_REQUEST_HEADERS = 3
+const FIELD_REQUEST_BODY = 4
+const FIELD_RESPONSE_HEADERS = 5
+
+// Patterns most suites need: a UUID (normalize it, ids often come back in
+// later requests), an RFC 3339 timestamp and a 10-digit Unix time (collapse
+// those to a constant).
+const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+const RFC3339 = "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})"
+const EPOCH_TIMESTAMP = "1[0-9]{9}"
+
+const RULE_NORMALIZE = 1
+const RULE_COLLAPSE = 2
+const RULE_REDACT = 3
+const RULE_REMOVE_HEADER = 4
+const RULE_CREDENTIALS = 5
+const RULE_CREDENTIAL_HEADER = 6
+const RULE_CLOUD = 7
+const RULE_TRANSPORT = 8
+const RULE_PRETTY_JSON = 9
+
+struct Recording {
+    server: ptr
+    tape: string
+    mode: int
+}
+
+var rule_kind: int[] = []
+var rule_field: int[] = []
+var rule_a: string[] = []
+var rule_b: string[] = []
+var upstream_ca: string = ""
+
+fn env_or(name: string, dflt: string) -> string {
+    v = os.os_getenv(name)
+    if v == null { return dflt }
+    if string.length(v) == 0 { return dflt }
+    return v
+}
+
+// MODE_OFF, MODE_RECORD, MODE_PLAYBACK or MODE_CHECK, from TCAE_VCR.
+mode() -> int {
+    m = string.to_lower(env_or("TCAE_VCR", "off"))
+    if m == "record" { return MODE_RECORD }
+    if m == "playback" || m == "replay" { return MODE_PLAYBACK }
+    if m == "check" { return MODE_CHECK }
+    return MODE_OFF
+}
+
+// 1 when the test needs its container (every mode but playback).
+live() -> int {
+    if mode() == MODE_PLAYBACK { return 0 }
+    return 1
+}
+
+playback() -> int {
+    if mode() == MODE_PLAYBACK { return 1 }
+    return 0
+}
+
+// testing.skip_if_no_engine, except that playback needs no engine.
+skip_if_no_engine(fw: ptr) -> int {
+    if mode() == MODE_PLAYBACK { return 0 }
+    return testing.skip_if_no_engine(fw)
+}
+
+// "Reads and writes secrets (TestVault)" -> "reads_and_writes_secrets_testvault".
+case_name(title: string) -> string {
+    out = ""
+    pending = 0
+    n = string.length(title)
+    i = 0
+    while i < n {
+        ch = string.char_at(title, i)
+        if ch >= 65 && ch <= 90 { ch = ch + 32 }
+        keep = 0
+        if ch >= 97 && ch <= 122 { keep = 1 }
+        if ch >= 48 && ch <= 57 { keep = 1 }
+        if keep == 1 {
+            if pending == 1 && string.length(out) > 0 { out = "${out}_" }
+            pending = 0
+            out = string.concat(out, string.from_char(ch))
+        } else {
+            pending = 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// <suite>/<case>.md, relative to the directory the test runs from
+// (pre-recorded/from-testcontainers), or under TCAE_VCR_DIR when set.
+tape_path(suite: string, case_: string) -> string {
+    dir = env_or("TCAE_VCR_DIR", ".")
+    return "${dir}/${case_name(suite)}/${case_name(case_)}.md"
+}
+
+// Every distinct match of the regex becomes a stable {{name-N}} token, the
+// same token wherever the value recurs (ids a server mints and the test sends
+// back), so it round-trips on playback.
+normalize(pattern: string, name: string) {
+    add_rule(RULE_NORMALIZE, 0, pattern, name)
+}
+
+// Every match of the regex becomes the constant replacement (timestamps,
+// versions, counts: values the test never sends back).
+collapse(pattern: string, replacement: string) {
+    add_rule(RULE_COLLAPSE, 0, pattern, replacement)
+}
+
+// The secret is written as placeholder in field (FIELD_*), and on playback a
+// live request carrying the secret still matches the tape. Playback swaps
+// placeholders back literally, in registration order, so no placeholder may
+// be a prefix or substring of another ("REDACTED[admin]", not "REDACTED-admin"
+// beside "REDACTED-admin-2").
+redact(field: int, secret: string, placeholder: string) {
+    add_rule(RULE_REDACT, field, secret, placeholder)
+}
+
+// Leave a header out of the tape (FIELD_REQUEST_HEADERS or
+// FIELD_RESPONSE_HEADERS); for request headers, also out of playback matching.
+remove_header(field: int, name: string) {
+    add_rule(RULE_REMOVE_HEADER, field, name, "")
+}
+
+// Servirtium's header presets: each is one call registering ordinary rules,
+// listed under the preset's name in the recording's rules footer.
+//
+// The usual credential headers' values (Authorization, Cookie, Set-Cookie,
+// X-Api-Key, ...) written as tokens numbered per distinct value
+// (AUTHORIZATION_1, COOKIE_1); playback matches them on presence, so it
+// needs no secret.
+redact_credentials() {
+    add_rule(RULE_CREDENTIALS, 0, "", "")
+}
+
+// One more credential header the same way (X-Vault-Token: X_VAULT_TOKEN_1).
+redact_credential_header(name: string) {
+    add_rule(RULE_CREDENTIAL_HEADER, 0, name, "")
+}
+
+// A cloud vendor's CDN / load-balancer headers ("aws", "azure",
+// "cloudflare", "fastly", "gcp").
+remove_cloud_headers(vendor: string) {
+    add_rule(RULE_CLOUD, 0, vendor, "")
+}
+
+// Host, Connection, Content-Length and the other transport headers.
+remove_transport_headers() {
+    add_rule(RULE_TRANSPORT, 0, "", "")
+}
+
+// JSON response bodies indented by `indent` in the recording (0 is off).
+pretty_json(indent: int) {
+    add_rule(RULE_PRETTY_JSON, indent, "", "")
+}
+
+// The PEM CA a recording verifies an https container against (Elasticsearch
+// 8 generates its own), for the recordings after this call; "" for the
+// system store. The test talks plain HTTP to the recorder, and the recorder
+// HTTPS to the container: TLS is the connection's business, never the tape's.
+trust_upstream_ca(path: string) {
+    upstream_ca = path
+}
+
+clear_rules() {
+    rule_kind = []
+    rule_field = []
+    rule_a = []
+    rule_b = []
+}
+
+fn add_rule(kind: int, field: int, a: string, b: string) {
+    rule_kind.push(kind)
+    rule_field.push(field)
+    rule_a.push(a)
+    rule_b.push(b)
+}
+
+// "http://localhost:32771/x" -> "localhost:32771"
+fn host_port_of(url: string) -> string {
+    rest = url
+    i = string.index_of(rest, "://")
+    if i >= 0 { rest = string.substring(rest, i + 3, string.length(rest)) }
+    j = string.index_of(rest, "/")
+    if j >= 0 { rest = string.substring(rest, 0, j) }
+    return rest
+}
+
+// The literal as a regex.
+fn regex_quote(lit: string) -> string {
+    out = ""
+    n = string.length(lit)
+    i = 0
+    while i < n {
+        ch = string.char_at(lit, i)
+        if ch == 46 || ch == 91 || ch == 93 || ch == 40 || ch == 41 || ch == 42 || ch == 43 || ch == 63 || ch == 92 || ch == 94 || ch == 36 || ch == 124 || ch == 123 || ch == 125 {
+            out = "${out}\\"
+        }
+        out = string.concat(out, string.from_char(ch))
+        i = i + 1
+    }
+    return out
+}
+
+fn apply_rules(h: ptr, m: int, upstream_url: string, own_host: string) -> string {
+    errs = ""
+    // Each recording ends with a "## [Recording rules]" table: what these
+    // rules left out or rewrote, and where. Playback does not read it.
+    vcr.set_rules_footer_h(h, 1)
+    e = vcr.remove_header_h(h, FIELD_RESPONSE_HEADERS, "Date")
+    errs = "${errs}${e}"
+    e = vcr.remove_header_h(h, FIELD_RESPONSE_HEADERS, "X-Request-Id")
+    errs = "${errs}${e}"
+    e = vcr.remove_header_h(h, FIELD_RESPONSE_HEADERS, "X-Correlation-Id")
+    errs = "${errs}${e}"
+    if m != MODE_PLAYBACK {
+        // Described, so the rules footer names them instead of printing
+        // patterns that hold this run's ports.
+        e = vcr.redact_whole_tape_described_h(h, regex_quote(host_port_of(upstream_url)), "{{request.host}}", "the container's mapped host:port")
+        errs = "${errs}${e}"
+        e = vcr.redact_whole_tape_described_h(h, regex_quote(own_host), "{{request.host}}", "the recorder's own host:port")
+        errs = "${errs}${e}"
+    }
+    i = 0
+    while i < rule_kind.len {
+        k = rule_kind[i]
+        if k == RULE_REMOVE_HEADER {
+            e = vcr.remove_header_h(h, rule_field[i], rule_a[i])
+            errs = "${errs}${e}"
+        }
+        // Presets apply to recording and playback alike.
+        if k == RULE_CREDENTIALS { errs = "${errs}${vcr.redact_credentials_h(h)}" }
+        if k == RULE_CREDENTIAL_HEADER { errs = "${errs}${vcr.redact_credential_header_h(h, rule_a[i])}" }
+        if k == RULE_CLOUD { errs = "${errs}${vcr.remove_cloud_headers_h(h, rule_a[i])}" }
+        if k == RULE_TRANSPORT { errs = "${errs}${vcr.remove_transport_headers_h(h)}" }
+        if k == RULE_PRETTY_JSON { vcr.set_pretty_json_h(h, rule_field[i]) }
+        if m != MODE_PLAYBACK {
+            if k == RULE_NORMALIZE { errs = "${errs}${vcr.normalize_whole_tape_h(h, rule_a[i], rule_b[i])}" }
+            if k == RULE_COLLAPSE { errs = "${errs}${vcr.redact_whole_tape_h(h, rule_a[i], rule_b[i])}" }
+            if k == RULE_REDACT { errs = "${errs}${vcr.redact_h(h, rule_field[i], rule_a[i], rule_b[i])}" }
+        } else {
+            if k == RULE_REDACT { errs = "${errs}${vcr.unredact_h(h, rule_field[i], rule_b[i], rule_a[i])}" }
+        }
+        i = i + 1
+    }
+    return errs
+}
+
+// A loopback port nothing listens on just now.
+fn free_port() -> int {
+    s = http.server_create(0)
+    if s == null { return 0 }
+    err = http.server_bind(s, "127.0.0.1", 0)
+    port = 0
+    if err == "" { port = http.server_port(s) }
+    http.server_free(s)
+    return port
+}
+
+// (base URL for the test, handle for end_recording). Off: (upstream_url,
+// null). A failure to start fails the current case and hands back the
+// upstream URL, so the test still runs against the container.
+recording(suite: string, case_: string, upstream_url: string) -> (string, ptr) {
+    m = mode()
+    if m == MODE_OFF { return upstream_url, null }
+    tape = tape_path(suite, case_)
+    port = free_port()
+    if port == 0 {
+        spec.fail("servirtium: no free loopback port")
+        return upstream_url, null
+    }
+    let h: ptr = null
+    if m == MODE_PLAYBACK {
+        vcr.set_quiet(1)
+        h = vcr.load(tape, port)
+        if h == null {
+            spec.fail("servirtium: cannot replay ${tape}: ${vcr.load_error()}")
+            return upstream_url, null
+        }
+    } else {
+        if string.length(upstream_url) == 0 {
+            spec.fail("servirtium: nothing to record (no upstream URL) for ${tape}")
+            return upstream_url, null
+        }
+        h = vcr.load_record(tape, upstream_url, port)
+        if h == null {
+            spec.fail("servirtium: cannot record ${tape}: ${vcr.load_error()}")
+            return upstream_url, null
+        }
+        if string.length(upstream_ca) > 0 {
+            cerr = vcr.set_upstream_cafile_h(h, upstream_ca)
+            if cerr != "" { spec.fail("servirtium: ${cerr}") }
+        }
+    }
+    rerr = apply_rules(h, m, upstream_url, "127.0.0.1:${port}")
+    if rerr != "" { spec.fail("servirtium: a rule was refused: ${rerr}") }
+    if vcr.start_background_h(h, 5000) != 0 {
+        spec.fail("servirtium: the server on port ${port} did not start: ${vcr.last_error_h(h)}")
+        return upstream_url, null
+    }
+    r = heap.new(Recording)
+    r.server = h
+    r.tape = tape
+    r.mode = m
+    return "http://127.0.0.1:${port}", r as ptr
+}
+
+// Stop the server: write the tape (record), compare it (check), or fail the
+// case on a mismatch or an unplayed interaction (playback). Null-safe.
+end_recording(handle: ptr) {
+    if handle == null { return }
+    r = handle as *Recording
+    h = r.server
+    mm = vcr.assert_no_mismatches_h(h)
+    if r.mode == MODE_PLAYBACK {
+        unplayed = vcr.assert_all_consumed_h(h)
+        vcr.eject(h)
+        spec.assert_ok(mm, "servirtium replay of ${r.tape}")
+        spec.assert_ok(unplayed, "servirtium: every interaction of ${r.tape} was requested")
+    } else {
+        spec.assert_ok(mm, "servirtium recording of ${r.tape}")
+        if r.mode == MODE_CHECK {
+            spec.assert_ok(vcr.stop_and_flush_or_check_h(h, r.tape), "servirtium: ${r.tape} unchanged")
+        } else {
+            spec.assert_ok(vcr.stop_and_flush_h(h, r.tape), "servirtium: write ${r.tape}")
+        }
+    }
+    heap.free(r)
+}

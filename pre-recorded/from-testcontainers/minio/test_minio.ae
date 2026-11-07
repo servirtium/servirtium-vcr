@@ -1,0 +1,226 @@
+// Ported from testcontainers-go modules/minio/minio_test.go, by way of
+// testcontainers-ae's tests/test_minio.ae (moved here 2026-11-07).
+//
+// A real MinIO: /minio/health/live answers 200, and the S3 API is called with
+// AWS Signature V4 (signed here with std.cryptography's HMAC-SHA256): a
+// ListBuckets and a CreateBucket / ListBuckets / DeleteBucket round trip are
+// accepted with the module's credentials and refused (403) with the default
+// ones or a wrong secret, which shows the credentials took effect.
+// Go's test uses the minio-go client, which has no Aether counterpart.
+//
+// PORTING: each S3 request is signed with AWS Signature V4 over the time it
+// is sent, so no two runs send the same Authorization or x-amz-date. The
+// tapes write Authorization through Servirtium's credential preset
+// (AWS4-HMAC-SHA256 AUTHORIZATION_N) and leave x-amz-date out; playback
+// // matches Authorization on presence and cannot check a signature (it was
+// made for another time), so the right-secret / wrong-secret distinction is
+// in the recorded responses (200 vs 403), not enforced on replay. A port
+// signs with its own S3 client; the headers it adds beyond these are its own.
+//
+// PORTING: SigV4 signs the Host header. Servirtium's recorder forwards with
+// the container's Host, so when recording, sign for the container's
+// host:port while sending to the recorder (sign_host below); an S3 client
+// with a configurable endpoint does that by pointing its endpoint at the
+// recorder and its signing host at the container. On playback any host
+// will do.
+
+import std.spec
+import std.string
+import std.http.client
+import std.cryptography
+import std.time
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.minio
+
+// Go's quay.io/minio/minio image is no longer pullable (MinIO stopped publishing
+// community images); Chainguard's build of upstream MinIO is.
+const IMAGE = "cgr.dev/chainguard/minio:latest"
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+const EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+fn hmac_raw(key: string, msg: string) -> string {
+    d, _, _ = cryptography.hmac_sha256_bytes(string.bytes(key), string.bytes(msg))
+    return d
+}
+
+fn hmac_hex(key: string, msg: string) -> string {
+    h, _ = cryptography.hmac_sha256_hex(string.bytes(key), string.bytes(msg))
+    return h
+}
+
+// A signed S3 request with an empty body, sent to `hostport` and signed for
+// `sign_host` (the Host the service will see): (status, body, error).
+// `query` is the canonical query string ("" for none).
+fn s3q(method: string, hostport: string, sign_host: string, path: string, query: string, access: string, secret: string) -> (int, string, string) {
+    now = time.now()
+    amz_date = time.strftime(now, "%Y%m%dT%H%M%SZ")
+    day = time.strftime(now, "%Y%m%d")
+    scope = "${day}/us-east-1/s3/aws4_request"
+    signed = "host;x-amz-content-sha256;x-amz-date"
+    canon = "${method}\n${path}\n${query}\nhost:${sign_host}\nx-amz-content-sha256:${EMPTY_SHA256}\nx-amz-date:${amz_date}\n\n${signed}\n${EMPTY_SHA256}"
+    ch, _ = cryptography.sha256_hex(string.bytes(canon))
+    to_sign = "AWS4-HMAC-SHA256\n${amz_date}\n${scope}\n${ch}"
+    k1 = hmac_raw("AWS4${secret}", day)
+    k2 = hmac_raw(k1, "us-east-1")
+    k3 = hmac_raw(k2, "s3")
+    k4 = hmac_raw(k3, "aws4_request")
+    sig = hmac_hex(k4, to_sign)
+    url = "http://${hostport}${path}"
+    if string.length(query) > 0 { url = "${url}?${query}" }
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 10s)
+    client.set_header(req, "x-amz-date", amz_date)
+    client.set_header(req, "x-amz-content-sha256", EMPTY_SHA256)
+    client.set_header(req, "Authorization", "AWS4-HMAC-SHA256 Credential=${access}/${scope}, SignedHeaders=${signed}, Signature=${sig}")
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return status, body, ""
+}
+
+fn s3(method: string, hostport: string, sign_host: string, path: string, access: string, secret: string) -> (int, string, string) {
+    return s3q(method, hostport, sign_host, path, "", access, secret)
+}
+
+// Both the module's credentials and wrong ones against one MinIO, through
+// `base` (the container, or Servirtium in front of it), signing for
+// `sign_host`.
+fn exercise(base: string, sign_host: string, user: string, password: string) {
+    hp = string.substring(base, 7, string.length(base))   // drop "http://"
+    live, _, lerr = s3("GET", hp, sign_host, "/minio/health/live", "x", "y")
+    spec.assert_ok(lerr, "GET /minio/health/live")
+    spec.assert_eq(live, 200, "the health endpoint is live")
+
+    anon = client.request("GET", "${base}/")
+    client.set_header(anon, "User-Agent", USER_AGENT)
+    r, aerr = client.send_request(anon)
+    client.request_free(anon)
+    spec.assert_ok(aerr, "anonymous GET /")
+    if aerr == "" {
+        spec.assert_eq(client.response_status(r), 403, "anonymous listing is refused")
+        client.response_free(r)
+    }
+
+    ok, body, e1 = s3("GET", hp, sign_host, "/", user, password)
+    spec.assert_ok(e1, "signed GET /")
+    spec.assert_eq(ok, 200, "the module's credentials are accepted")
+    spec.assert_contains(body, "ListAllMyBucketsResult", "a bucket listing")
+
+    bad, _, e2 = s3("GET", hp, sign_host, "/", user, "not-the-password")
+    spec.assert_ok(e2, "wrong secret")
+    spec.assert_eq(bad, 403, "a wrong secret is refused")
+    dflt, _, e3 = s3("GET", hp, sign_host, "/", minio.DEFAULT_USER, minio.DEFAULT_PASSWORD)
+    spec.assert_ok(e3, "default credentials")
+    spec.assert_eq(dflt, 403, "the default credentials no longer work")
+
+    mk, _, e4 = s3("PUT", hp, sign_host, "/tcae-bucket", user, password)
+    spec.assert_ok(e4, "create bucket")
+    spec.assert_eq(mk, 200, "CreateBucket")
+    // x-id=ListBuckets (which AWS SDKs send too, and S3 ignores) keeps this
+    // listing's signature from equalling the first one's when both fall in
+    // the same second, so the recording's AUTHORIZATION_N numbering does not
+    // depend on timing.
+    s5, list, e5 = s3q("GET", hp, sign_host, "/", "x-id=ListBuckets", user, password)
+    spec.assert_ok(e5, "list buckets")
+    spec.assert_eq(s5, 200, "ListBuckets")
+    spec.assert_contains(list, "<Name>tcae-bucket</Name>", "the new bucket is listed")
+    rm, _, e6 = s3("DELETE", hp, sign_host, "/tcae-bucket", user, password)
+    spec.assert_ok(e6, "delete bucket")
+    spec.assert_eq(rm, 204, "DeleteBucket")
+}
+
+// The Host to sign for: the container's when one is running, else the
+// replay server's (playback checks no signature).
+fn signing_host(container_hp: string, base: string) -> string {
+    if string.length(container_hp) > 0 { return container_hp }
+    return string.substring(base, 7, string.length(base))
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // AWS SigV4: Authorization carries a signature over this second's time,
+    // so the credential preset writes it as a numbered token and playback
+    // matches it on presence; x-amz-date, the time itself, is left out.
+    servirtium.redact_credentials()
+    servirtium.remove_header(servirtium.FIELD_REQUEST_HEADERS, "x-amz-date")
+    // Per-request ids MinIO mints, in headers and in error bodies, and the
+    // bucket's creation time.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amz-request-id")
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "x-amz-id-2")
+    servirtium.collapse("<RequestId>[^<]*</RequestId>", "<RequestId>REQUEST-ID</RequestId>")
+    servirtium.collapse("<HostId>[^<]*</HostId>", "<HostId>HOST-ID</HostId>")
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00.000Z")
+    // MinIO works its rate limits out from the machine's memory.
+    servirtium.collapse("X-Ratelimit-Limit: [0-9]+", "X-Ratelimit-Limit: 1000")
+    servirtium.collapse("X-Ratelimit-Remaining: [0-9]+", "X-Ratelimit-Remaining: 1000")
+
+    spec.describe(fw, "modules/minio") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("runs with the given credentials (TestMinio)") callback {
+            addr = ""
+            hp = ""
+            if servirtium.live() == 1 {
+                m, err = minio.run(IMAGE) {
+                    username("thisismyuser")
+                    password("thisismypassword")
+                }
+                if m != null { testing.cleanup_container(m.container) }
+                spec.assert_ok(err, "minio starts")
+                if err != "" { return }
+                spec.assert_str_eq(m.username, "thisismyuser", "the struct carries the user")
+                spec.assert_str_eq(m.password, "thisismypassword", "the struct carries the password")
+                h, cerr = minio.connection_string(m)
+                spec.assert_ok(cerr, "connection string")
+                spec.assert_true(string.starts_with(h, "localhost:") == 1, "host:port, no scheme: ${h}")
+                hp = h
+                addr = "http://${h}"
+            }
+            base, rec = servirtium.recording("minio", "runs_with_the_given_credentials", addr)
+            exercise(base, signing_host(hp, base), "thisismyuser", "thisismypassword")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("defaults to minioadmin/minioadmin") callback {
+            addr = ""
+            hp = ""
+            if servirtium.live() == 1 {
+                m, err = minio.run(IMAGE)
+                if m != null { testing.cleanup_container(m.container) }
+                spec.assert_ok(err, "minio starts")
+                if err != "" { return }
+                spec.assert_str_eq(m.username, "minioadmin", "default user")
+                spec.assert_str_eq(m.password, "minioadmin", "default password")
+                h, _ = minio.connection_string(m)
+                hp = h
+                addr = "http://${h}"
+            }
+            base, rec = servirtium.recording("minio", "defaults_to_minioadmin", addr)
+            ok, _, e1 = s3("GET", string.substring(base, 7, string.length(base)), signing_host(hp, base), "/", "minioadmin", "minioadmin")
+            spec.assert_ok(e1, "signed GET /")
+            spec.assert_eq(ok, 200, "the defaults are accepted")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "refuses an empty password before creating anything", "no container in playback") callback {
+            m, err = minio.run(IMAGE) {
+                password("")
+            }
+            spec.assert_true(m == null, "no container")
+            spec.assert_contains(err, "username or password has not been set", "Go's validateCreds message")
+        }
+    }
+    return spec.run_summary(fw)
+}

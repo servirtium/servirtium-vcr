@@ -1,0 +1,92 @@
+// Ported from testcontainers-go modules/opensearch/opensearch_test.go, by way
+// of testcontainers-ae's tests/test_opensearch.ae (moved here 2026-11-07).
+//
+// A real OpenSearch (security plugin off, so plain HTTP with no credentials):
+// the root banner (tagline), then a document indexed with refresh and read
+// back over the REST API. Not ported: the opensearch-go client.
+//
+// PORTING: the HTTP conversation is in the tapes beside this file; the
+// container start and the module's own fields (user, password, address
+// shape) are checked only when live, since playback starts no container.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.opensearch
+
+const IMAGE = "opensearchproject/opensearch:2.11.1"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Aether's std.http.client adds none. Set here, in the test's own
+// client, so the recordings show a representative request; Servirtium
+// records what the client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// (status, body, error); headers are "Name: value" strings.
+fn call_api(method: string, url: string, headers: string[], body: string, ctype: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in headers {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run, in the root banner: the node's name (the
+    // container's hostname) and the cluster's uuid.
+    servirtium.collapse("\"name\" : \"[0-9a-f]{12}\"", "\"name\" : \"opensearch-node\"")
+    servirtium.collapse("\"cluster_uuid\" : \"[A-Za-z0-9_-]{22}\"", "\"cluster_uuid\" : \"CLUSTER-UUID\"")
+
+    spec.describe(fw, "modules/opensearch") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the REST API (TestOpenSearch)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                o, err = opensearch.run(IMAGE) {
+                    username("tc-user")
+                    password("tc-pass")
+                }
+                if o != null { testing.cleanup_container(o.container) }
+                spec.assert_ok(err, "opensearch starts")
+                if err != "" { return }
+                spec.assert_str_eq(o.user, "tc-user", "username option")
+                spec.assert_str_eq(o.password, "tc-pass", "password option")
+                a, aerr = opensearch.address(o)
+                spec.assert_ok(aerr, "address")
+                spec.assert_true(string.starts_with(a, "http://localhost:") == 1, "an http:// URL: ${a}")
+                addr = a
+            }
+            base, rec = servirtium.recording("opensearch", "serves_the_rest_api", addr)
+            s, b, e = call_api("GET", "${base}/", [], "", "")
+            spec.assert_ok(e, "GET /")
+            spec.assert_eq(s, 200, "root is 200")
+            spec.assert_contains(b, "The OpenSearch Project", "the tagline")
+            ps, _, pe = call_api("PUT", "${base}/tc/_doc/1?refresh=true", ["Content-Type: application/json"], "{\"hello\":\"world\"}", "application/json")
+            spec.assert_ok(pe, "index a document")
+            spec.assert_true(ps == 200 || ps == 201, "indexed: ${ps}")
+            gs, gb, ge = call_api("GET", "${base}/tc/_doc/1", [], "", "")
+            spec.assert_ok(ge, "get the document")
+            spec.assert_eq(gs, 200, "found")
+            spec.assert_contains(gb, "world", "the document reads back")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

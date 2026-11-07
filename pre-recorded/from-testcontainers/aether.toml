@@ -1,0 +1,9 @@
+[package]
+name = "servirtium-from-testcontainers"
+version = "0.1.0"
+
+[dependencies]
+"github.com/servirtium/testcontainers-ae" = "latest"
+
+[dependency-hashes]
+"github.com/servirtium/testcontainers-ae" = "sha256-99fb23ae00a2ed342674df5b0a8ce7c0e1a4ecfa177a703e8711579bbc5c0227"

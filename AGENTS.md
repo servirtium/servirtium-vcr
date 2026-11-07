@@ -111,7 +111,9 @@ Config: `redact(h, field, pat, repl)` / `unredact(...)`;
 `strict_ignore_common_headers(h)`, `ignore_volatile_headers(h)`,
 `remove_transport_headers(h)`, `remove_cloud_headers(h, vendor)`,
 `redact_credentials(h)`, `redact_credential_header(h, name)` (the opt-in
-header presets, below); `set_strict_headers(h, int)`;
+header presets, below); `set_upstream_cafile(h, path)` (record mode: verify
+an https upstream against this PEM CA, e.g. Elasticsearch 8's own; guarded by
+`core_tests/tls_probe.ae`); `set_strict_headers(h, int)`;
 `set_match_json_body(h, int)` (opt-in JSON-semantic request-body matching, below);
 `set_match_multiple(h, int)` (reusable/order-independent playback) and
 `match_header(h, name)` / `clear_match_headers(h)` (ByHeader — match a specific
@@ -737,8 +739,12 @@ process launchers; the shared fixture itself stays language-neutral.
 `core/` libservirtium_vcr + ABI. `<lang>/` one binding each (its own README is the
 per-language source of truth). `core_tests/` pure-Aether libservirtium_vcr probes.
 `integration/` end-to-end demos (subversion checkout, climate API, the
-Vue+Storybook+Selenium component-test demo). Root `README.md` has the Bindings
-table (the registry) and the layout block.
+Vue+Storybook+Selenium component-test demo). `pre-recorded/` re-usable tapes
+of real services' HTTP APIs: `from-testcontainers/` holds, per service, the
+Aether test that records them through testcontainers-ae (an `ae add`
+dependency in its own `aether.toml`; `lib/servirtium_vcr` links back to
+`core/`), moved here from testcontainers-ae on 2026-11-07. Root `README.md`
+has the Bindings table (the registry) and the layout block.
 
 **Packaging is complete; the consumer-example layer is not.** Every one of the
 29 languages now has a `<lang>/.package.ae` (dotnet's wraps its own

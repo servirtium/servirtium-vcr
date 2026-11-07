@@ -393,6 +393,10 @@ vcr_embed_remove_transport_headers(s: ptr) -> ptr {
 vcr_embed_remove_cloud_headers(s: ptr, vendor: string) -> ptr {
     return vcr_embed_dup(vcr.remove_cloud_headers_h(s, vendor))
 }
+// Record mode: verify an https upstream against this PEM CA file.
+vcr_embed_set_upstream_cafile(s: ptr, path: string) -> ptr {
+    return vcr_embed_dup(vcr.set_upstream_cafile_h(s, path))
+}
 vcr_embed_redact_credentials(s: ptr) -> ptr {
     return vcr_embed_dup(vcr.redact_credentials_h(s))
 }
