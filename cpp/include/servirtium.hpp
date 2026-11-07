@@ -281,6 +281,44 @@ public:
     // strict_ignore_common_headers for tracing / correlation noise.
     void ignore_volatile_headers() { sv_ignore_volatile_headers(vcr_); }
 
+    // Opt-in header presets: each registers ordinary rules, listed under the
+    // preset's name in the recording-rules footer. Throw Error on failure.
+
+    // Leave the connection-describing headers (Host, Connection, Content-Length
+    // and the other hop-by-hop headers, Accept-Encoding) out of the recording.
+    void remove_transport_headers() {
+        detail::check(sv_remove_transport_headers(vcr_), "remove_transport_headers");
+    }
+
+    // Drop a cloud vendor's per-request headers; vendor is one of "aws",
+    // "azure", "cloudflare", "fastly", "gcp".
+    void remove_cloud_headers(const std::string& vendor) {
+        detail::check(sv_remove_cloud_headers(vcr_, vendor.c_str()), "remove_cloud_headers");
+    }
+
+    // Redact the common credential headers (Authorization, Cookie, Set-Cookie,
+    // X-Api-Key, X-Auth-Token, ...) as numbered tokens. Register on the
+    // playback handle too, as with every rule.
+    void redact_credentials() {
+        detail::check(sv_redact_credentials(vcr_), "redact_credentials");
+    }
+
+    // One more credential header with the same treatment.
+    void redact_credential_header(const std::string& name) {
+        detail::check(sv_redact_credential_header(vcr_, name.c_str()), "redact_credential_header");
+    }
+
+    // Record mode: verify an https upstream against this PEM CA file.
+    void set_upstream_cafile(const std::string& path) {
+        detail::check(sv_set_upstream_cafile(vcr_, path.c_str()), "set_upstream_cafile");
+    }
+
+    // Record mode: put text under "## LICENSE NOTICE" at the top of each tape;
+    // playback ignores it.
+    void add_license_notice(const std::string& text) {
+        detail::check(sv_add_license_notice(vcr_, text.c_str()), "add_license_notice");
+    }
+
     void set_strict_headers(bool on = true) { sv_set_strict_headers(vcr_, on ? 1 : 0); }
 
     // Opt-in: a request body that differs byte-for-byte gets a second chance at
@@ -302,6 +340,10 @@ public:
     void emphasize_http_verbs() { sv_emphasize_http_verbs(vcr_); }
     // Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
     void pretty_xml(int indent = 2) { sv_set_pretty_xml(vcr_, indent); }
+    // Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    void pretty_json(int indent = 2) { sv_set_pretty_json(vcr_, indent); }
+    // Current pretty-JSON indent (0 = off).
+    int get_pretty_json() const { return sv_get_pretty_json(vcr_); }
     void clear_redactions() { sv_clear_redactions(vcr_); }
     void clear_unredactions() { sv_clear_unredactions(vcr_); }
     void clear_normalizations() { sv_clear_normalizations(vcr_); }

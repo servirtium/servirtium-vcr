@@ -85,6 +85,11 @@ int main(int argc, char** argv) {
         ck("port is bound", vcr.port() > 0);
         ck("tape_length is 1", vcr.tape_length() == 1);
 
+        vcr.add_license_notice("test notice");  // throws on error; playback ignores it
+        vcr.pretty_json(2);
+        ck("get_pretty_json reads back the indent", vcr.get_pretty_json() == 2);
+        vcr.pretty_json(0);
+
         ck("body is ok-body", http_get(base + "/ok") == "ok-body");
         ck("last_kind is Ok", vcr.last_kind() == servirtium::Outcome::Ok);
         ck("matched_cleanly agrees", vcr.matched_cleanly());
