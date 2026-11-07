@@ -41,7 +41,8 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          # libfyaml: Aether's runtime links it since 0.897.0 (std.yaml).
+          # libfyaml: Aether releases after 0.889.0 build their runtime with it
+          # (a working std.yaml, aether CHANGELOG), so linking against it needs it.
           sudo apt-get install -y --no-install-recommends libssl-dev zlib1g-dev libnghttp2-dev libpcre2-dev libfyaml-dev
 
       # The fat Java jar needs a JDK >= 22 (FFM / Project Panama) + Maven, and the
