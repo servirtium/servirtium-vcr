@@ -349,7 +349,7 @@ Decisions, and why:
   written sorted by name.
 - **Footer.** Each rule is a row, `ordered`, with the interactions it
   *applies to* (response headers present, the header present, a JSON body,
-  a JSON body with a selected array), never the ones whose order it happened
+  a JSON body with a selected array whose every element has `by`), never the ones whose order it happened
   to change, which would make the footer itself differ run to run.
 - **Check mode** compares the emitted tape, so it sees the sorted form.
 

@@ -5494,7 +5494,6 @@ so_array(key: string, s: string, i: int, p: string, sort_keys: int, compact: int
     if rules == 1 {
         ri = array_rule_for_k(key, p)
         if ri >= 0 {
-            so_mark_hit_k(key, p)
             r = list_get_raw(array_sorts_k(key), ri) as *ArraySort
             by = r.by
             string[] sk = []
@@ -5507,6 +5506,7 @@ so_array(key: string, s: string, i: int, p: string, sort_keys: int, compact: int
                 k = k + 1
             }
             if all == 1 {
+                so_mark_hit_k(key, p)
                 a = 1
                 while a < m {
                     cur = order[a]
@@ -5537,7 +5537,8 @@ so_array(key: string, s: string, i: int, p: string, sort_keys: int, compact: int
     return out, end
 }
 
-// Record that some array rule selected an array (for the rules footer).
+// Record that an array rule sorted an array: it selected the array and every
+// element has its `by` (for the rules footer; content, not order, decides).
 so_mark_hit_k(key: string, p: string) {
     ri = array_rule_for_k(key, p)
     if ri >= 0 { cfg_set_int(slot(key, "so_hit.${ri}"), 1) }
@@ -5751,7 +5752,8 @@ ordered_field_k(key: string, e: *Interaction, field: int) -> string {
 
 // Rules-footer rows for the ordering rules: each with the interactions it
 // applies to (response headers present; the named header present; a JSON
-// body that parses; a JSON body with an array the rule selects).
+// body that parses; a JSON body with an array the rule selects and every
+// element of which has its `by`).
 stable_order_footer_rows_k(key: string) -> string {
     n = list_size(tape_list_k(key))
     rows = ""
