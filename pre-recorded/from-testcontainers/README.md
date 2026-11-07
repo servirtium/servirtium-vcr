@@ -50,7 +50,7 @@ them. Each suite's `LICENCE-NOTE.md` gives the clause and the commands.
 |---|---|---|
 | `vault` | 21 (comprehensive: 19 API, 2 module; userpass and approle logins on their own tapes, health and seal status, mounts, ACL policies and their enforcement, KV v2 and v1, transit, tokens, response wrapping and the cubbyhole, errors) | `hashicorp/vault:1.13.0` |
 | `couchdb` | 18 (comprehensive: 15 API, 3 module) | `couchdb:3` |
-| `consul` | 4 | `hashicorp/consul:1.15` |
+| `consul` | 15 (comprehensive: 11 API, 4 module; ACLs on, the ACL bootstrap is the login tape; status, catalog and members, KV with cas, transactions, sessions and locks, services and TTL checks, ACL policies and tokens with enforcement, errors) | `hashicorp/consul:1.15` |
 | `openfga` | 1 | `openfga/openfga:v1.18.0` |
 | `typesense` | 3 | `typesense/typesense:26.0` |
 | `mockserver` | 2 | `mockserver/mockserver:5.15.0` |
@@ -183,7 +183,7 @@ Per suite (registered at the top of its `main`):
 |---|---|---|---|---|
 | vault | module cases: UUIDs; API cases: uuids (entity, mount, approle role and secret ids), token accessors, mount accessors, transit ciphertexts, signatures and HMACs (`{{blob-N}}`), tokens never sent as a header (`{{token-N}}`) | `vault-cluster-<hex>`, request ids, RFC 3339 and Unix times, a token's remaining ttl | the token in `X-Vault-Token` as `X_VAULT_TOKEN_N` (credential preset: the same value is tokenized in bodies too); API cases: the login password as `REDACTED[<label>]` | |
 | couchdb | API cases: sequence ids, quoted 32-hex uuids (server, `/_uuids`, generated doc ids), base-36 ETags; module cases: the 32-hex server uuid | `instance_start_time`; API cases: the session cookie's `Expires`; module cases: `*_seq` tokens | API cases: the session cookie (credential preset, `COOKIE_N`) and the login body's password as `REDACTED[<label>]`; module cases: each `Authorization: Basic` credential, as `REDACTED[<label>]` | `X-Couch-Request-ID`, `X-CouchDB-Body-Time` |
-| consul | the node id | Raft indexes (the `X-Consul-Index` header's value too), runtime counters, `cpu_count`, `arch` in `/v1/agent/self` | | |
+| consul | module cases: the node id; API cases: every uuid except Consul's built-in `00000000-0000-0000-0000-00000000000N` ids (node, session, policy and token-accessor ids) | Raft indexes (`CreateIndex`, `ModifyIndex`, `X-Consul-Index`, a `cas=` or txn `Index` sent back, the bootstrap's reset index: all become 1; `cas=0` is kept), token and policy `Hash`es, times (API cases); module cases: runtime counters, `cpu_count`, `arch` in `/v1/agent/self` | API cases: the ACL token in `X-Consul-Token` as `X_CONSUL_TOKEN_N` (credential preset; the SecretID is tokenized in bodies too) | |
 | openfga | the store's ULID (it comes back in a later request path, and the token round-trips) | RFC 3339 times | | |
 | typesense | | `created_at` | each `X-TYPESENSE-API-KEY`, as `REDACTED[<key>]` | |
 | mockserver | the expectation's UUID | | | |

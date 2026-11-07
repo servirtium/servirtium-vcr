@@ -1,8 +1,121 @@
-// Ported from testcontainers-go modules/consul/consul_test.go
+// Consul, comprehensively: servirtium-vcr's pre-recorded/from-testcontainers
+// "Pattern for comprehensive suites" (README) applied to HashiCorp Consul
+// 1.15 (1.15.10, BSL 1.1: BOUND, so every tape starts with its
+// LICENSE NOTICE), after the CouchDB pilot.
 //
-// A real Consul agent: /v1/status/leader names a leader, a key put through
-// the KV API reads back, a service registers and deregisters (Go's test),
-// and each config option is shown to be in force through /v1/agent/self.
+// Two describe blocks, two sets of tapes:
+//
+// 1. "modules/consul": ported from testcontainers-go modules/consul/consul_test.go
+//    (by way of testcontainers-ae). It tests the MODULE (default start, the
+//    config string and config file options): four tapes, one container each,
+//    ACLs off, the original representative cases.
+//
+// 2. "Consul HTTP API": written for servirtium-vcr. Re-usable recordings of
+//    Consul's HTTP API, one tape per scenario, for any language's tests to
+//    replay with no Consul. This is the comprehensive part. Component-level
+//    tests of Consul's API, never "end-to-end": the tapes stand in for Consul.
+//    Its agent runs with ACLs ENABLED and default policy "deny", so that
+//    there is a login.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes are
+// the re-usable part. A port is a test in your language and test framework
+// that makes the same requests in the same order against a Servirtium replay
+// server loaded with the tape, and checks the same things. Every request is
+// plain HTTP/1.1 with these headers and no others:
+//   User-Agent: testcontainers-ae-tests (Aether std.http.client)
+//   Content-Type: application/json   (a JSON body; text/plain for a KV value)
+//   X-Consul-Token: ...              (every logged-in request, see below)
+// Playback is strict about method, path (query string included, exactly as
+// written here, parameters in this order), the recorded request headers and
+// the body (byte for byte: send the JSON bodies exactly as written in this
+// file, no spaces), and fails a case whose recorded requests are not all
+// made. Host, Connection and Content-Length are on the tapes but are
+// transport headers, not compared. Consul's JSON is indented four spaces and
+// its errors are plain text, not JSON: don't parse an error body.
+//
+// Login, and "already logged in"
+// ------------------------------
+// Consul's credential is an ACL token (X-Consul-Token). The agent starts with
+// ACLs on and no token: nothing but the public status endpoints works, and
+// "logging in" is the one-time ACL BOOTSTRAP, PUT /v1/acl/bootstrap, which
+// mints the global-management token (a second bootstrap is refused). That is
+// the login tape, bootstraps_the_acl_system: anonymous 403s, the bootstrap,
+// the refused second bootstrap, and who-am-I with the new token. It runs on
+// its own container (a container can be bootstrapped once). Every other case
+// is ALREADY LOGGED IN: each request carries a management token the live test
+// obtained by bootstrapping the shared container outside the recorder
+// (login_live below), and the bootstrap is not on that case's tape. Two cases
+// also use a second, limited token they create on the tape (the policy and
+// token cases). Consul's other login, PUT /v1/acl/login against an auth
+// method (JWT, OIDC, Kubernetes), needs an identity provider: out of scope.
+//
+// PORTING, getting into the logged-in state without the login tape: send any
+// `X-Consul-Token: <anything>` header on every request. The tapes hold the
+// token as X_CONSUL_TOKEN_N (Servirtium's redact_credential_header preset)
+// and playback matches a credential header on PRESENCE, not value. A
+// consequence: a replay cannot tell a good token from a forged one, so the
+// cases that show a refusal for a missing token send no header at all, and
+// the one that shows an unknown token (refuses_an_anonymous_or_unknown_token)
+// records Consul's 403 for it but replays against any header. The token's
+// SecretID is tokenized wherever it appears (the bootstrap response, the
+// token/self response), as the same X_CONSUL_TOKEN_N.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+// Every rule is registered in api_rules() below, with its reason; the
+// "## [Recording rules]" table at the end of each tape lists them and the
+// interactions each touched. In short:
+//   - normalized ({{uuid-N}}, the same token wherever the value recurs,
+//     because a client sends it back): every uuid (node id, session ids, ACL
+//     policy ids and token accessors) except Consul's built-in
+//     00000000-0000-0000-0000-00000000000N ids, which are stable.
+//   - collapsed (one constant): Raft indexes (CreateIndex and ModifyIndex in
+//     every body, the X-Consul-Index header, a cas or Index a client sends
+//     back, the "reset index" of a refused bootstrap) all become 1, and
+//     times. PORTING: an index is opaque. Read the one you are given and send
+//     it back; never assert that one is larger than another, or its value
+//     (on a replay each is 1). cas=0, "create only if absent", is a different
+//     thing and is left as 0.
+//   - redacted: the token header and the secrets it holds, X_CONSUL_TOKEN_N.
+//   - left out: Date.
+//   - a "Hash" (base64 SHA-256 Consul puts on tokens and policies, to detect
+//     change: a token's covers its random ids and times) is collapsed too.
+// Deterministic values are left alone: the node's name (the config sets
+// "tcae-node"), keys, values, flags, LockIndex.
+//
+// Awkward points
+// --------------
+// Consul orders the members of a list that is not sorted by name (sessions,
+// say) in no stable way across runs, so the cases that list hold at most one
+// of them, or have a stable sort (keys, services, checks by id). An opt-in
+// stable-ordering feature in Servirtium's core would let a case list more.
+// The node name, agent/self and the metrics endpoints are not in the API
+// cases: agent/self is a dump of the host's configuration (cpu counts,
+// paths) and the module cases above already record it.
+//
+// In and out of scope
+// -------------------
+// In: the ACL bootstrap and token/policy lifecycle and their enforcement; the
+// public status endpoints and the datacenter, node and member lists; KV
+// (put, get, raw, flags, keys, separator, recurse, cas, delete, cas delete)
+// and transactions; sessions and locks (acquire, release, renew, destroy,
+// delete behaviour); agent services and TTL checks (register, pass, warn,
+// fail, deregister), the health and catalog views of them, and external-node
+// registration through the catalog; the representative errors 400, 403, 404,
+// 405 and 500 (Consul answers a few bad inputs with 500).
+// Out: blocking queries and watches (?index=&wait=: timing), the event API,
+// prepared queries, config entries and Connect (service mesh), DNS (UDP/TCP
+// 8600), snapshots (binary), the operator/raft and autopilot endpoints
+// (node specific), gossip and WAN federation (one node), coordinates, the ACL
+// auth-method login and replication, and the UI. Each could be a later case.
+//
+// Running it (from pre-recorded/from-testcontainers):
+//   ae test consul/test_consul.ae                         container, no Servirtium
+//   TCAE_VCR=record   ae test consul/test_consul.ae       write the tapes
+//   TCAE_VCR=check    ae test consul/test_consul.ae       fail if a tape changed
+//   TCAE_VCR=playback ae test consul/test_consul.ae       no container: the tapes
+// The API cases share one container (started on the first one and removed at
+// the end); the login case and the module cases each start their own.
 
 import std.spec
 import std.string
@@ -16,7 +129,6 @@ import modules.consul
 
 const IMAGE = "hashicorp/consul:1.15"
 
-// (status, body, error) for a request with an optional JSON/plain body.
 // The User-Agent this test's HTTP client sends, as an app's client library
 // would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
 // std.http.client adds none. Set here, in the test's own client, so the
@@ -24,6 +136,15 @@ const IMAGE = "hashicorp/consul:1.15"
 // client sends and adds nothing of its own.
 const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
 
+// The token the logged-in cases send in playback, where there is no Consul to
+// bootstrap. Any value does: the tapes match X-Consul-Token on presence.
+const PLAYBACK_TOKEN = "any-value-replay-matches-on-presence"
+
+// The agent the API cases run: a named node (so the name is the same every
+// run) with ACLs on and everything denied until a token says otherwise.
+const API_CONFIG = "{ \"server\":true, \"node_name\":\"tcae-node\", \"acl\":{ \"enabled\":true, \"default_policy\":\"deny\" } }"
+
+// (status, body, error) for a request with an optional JSON/plain body.
 fn call_api(method: string, url: string, body: string) -> (int, string, string) {
     req = client.request(method, url)
     client.set_header(req, "User-Agent", USER_AGENT)
@@ -111,9 +232,183 @@ fn assert_consul_works(base: string, name: string) {
     spec.assert_true(string.contains(after, "\"abcd\"") == 0, "the service is gone")
 }
 
-main() {
-    fw = spec.init()
-    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+// ---------------------------------------------------------------------------
+// The API cases: HTTP helpers
+// ---------------------------------------------------------------------------
+
+var api: string = ""
+var tok: string = ""
+
+// A string in a JSON body by a dotted path ("0.Key", "ID", "Results.1.KV.Key");
+// "" when absent or not a string.
+fn jstr(body: string, path: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    let v: ptr = doc
+    rest = path
+    while string.length(rest) > 0 && v != null {
+        p = rest
+        dot = string.index_of(rest, ".")
+        if dot >= 0 {
+            p = string.substring(rest, 0, dot)
+            rest = string.substring(rest, dot + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        if json.json_type(v) == json.JSON_ARRAY {
+            idx, _ = string.to_int(p)
+            a, _ = json.array_get(v, idx)
+            v = a
+        } else {
+            o, _ = json.object_get(v, p)
+            v = o
+        }
+    }
+    out = ""
+    if v != null {
+        s, serr = json.get_string(v)
+        if serr == "" { out = string.copy(s) }
+    }
+    json.free(doc)
+    return out
+}
+
+
+// HCL for a policy, as the JSON string Consul takes: write ' for the double
+// quotes HCL needs and this puts \" there, so the test source stays readable.
+fn hcl(s: string) -> string {
+    return string.replace_all(string.replace_all(s, "\n", "\\n"), "'", "\\\"")
+}
+
+// The digits that follow marker in body ("" when it is absent): a Raft index
+// read out of a response, to send back as ?cas=.
+fn num_after(body: string, marker: string) -> string {
+    i = string.index_of(body, marker)
+    if i < 0 { return "" }
+    j = i + string.length(marker)
+    out = ""
+    while j < string.length(body) {
+        ch = string.char_at(body, j)
+        if ch < 48 || ch > 57 { return out }
+        out = string.concat(out, string.from_char(ch))
+        j = j + 1
+    }
+    return out
+}
+
+// A request: (status, body). ctype is the body's Content-Type (ignored when
+// the body is empty); t "" sends no X-Consul-Token. A transport error fails
+// the case.
+fn http_send(method: string, url: string, t: string, ctype: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(t) > 0 { client.set_header(req, "X-Consul-Token", t) }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+// A logged-in request with a JSON body (or none).
+fn cv(method: string, path: string, body: string) -> (int, string) {
+    return cv_as(tok, method, path, body)
+}
+
+// The same with the given token ("" sends none).
+fn cv_as(t: string, method: string, path: string, body: string) -> (int, string) {
+    st, b, err = http_send(method, "${api}/v1/${path}", t, "application/json", body)
+    spec.assert_ok(err, "${method} ${path}")
+    return st, b
+}
+
+// A KV value: plain text.
+fn kv_put(path: string, value: string) -> (int, string) {
+    st, b, err = http_send("PUT", "${api}/v1/${path}", tok, "text/plain", value)
+    spec.assert_ok(err, "PUT ${path}")
+    return st, b
+}
+
+fn anonymous(method: string, path: string, body: string) -> (int, string) {
+    return cv_as("", method, path, body)
+}
+
+// ---------------------------------------------------------------------------
+// The live containers (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+var shared_addr: string = ""
+var shared_container: ptr = null
+var shared_token: string = ""
+
+// PUT /v1/acl/bootstrap until it answers (ACL setup follows the leader
+// election by a moment): (status, body).
+fn bootstrap_live(addr: string) -> (int, string) {
+    tries = 0
+    st = 0
+    b = ""
+    while tries < 100 {
+        s2, b2, err = http_send("PUT", "${addr}/v1/acl/bootstrap", "", "application/json", "")
+        if err == "" { st = s2; b = b2 }
+        if err == "" && s2 == 200 { return s2, b2 }
+        tries = tries + 1
+        sleep(100)
+    }
+    return st, b
+}
+
+// The shared container's base URL, starting and bootstrapping it on first use
+// ("" on failure). Sets shared_token to the management token.
+fn shared() -> string {
+    if string.length(shared_addr) > 0 { return shared_addr }
+    c, err = consul.run(IMAGE) { config_string(API_CONFIG) }
+    spec.assert_ok(err, "consul starts")
+    if err != "" { return "" }
+    shared_container = c as ptr
+    a = agent_url(c)
+    _ld, lerr = leader(a)
+    spec.assert_ok(lerr, "leader elected")
+    st, b = bootstrap_live(a)
+    spec.assert_eq(st, 200, "bootstrap (not recorded): ${b}")
+    if st != 200 { return "" }
+    shared_token = jstr(b, "SecretID")
+    shared_addr = a
+    return shared_addr
+}
+
+// Start a logged-in API case: in a live mode, the shared container and, should
+// an earlier failed run have left things, the case's keys, services and
+// objects removed (cleanup lists "METHOD path" strings; none of it is
+// recorded); then the recording. Sets `api` and `tok`; returns the recording
+// handle, and ok = 0 when the case cannot run.
+fn begin(case_: string, cleanup: string[]) -> (ptr, int) {
+    addr = ""
+    tok = PLAYBACK_TOKEN
+    if servirtium.live() == 1 {
+        addr = shared()
+        if addr == "" { return null, 0 }
+        tok = shared_token
+        for step in cleanup {
+            sp = string.index_of(step, " ")
+            http_send(string.substring(step, 0, sp), "${addr}/v1/${string.substring(step, sp + 1, string.length(step))}", tok, "application/json", "")
+        }
+    }
+    base, rec = servirtium.recording("consul", case_, addr)
+    api = base
+    return rec, 1
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules
+// ---------------------------------------------------------------------------
+
+// The module cases' rules.
+fn module_rules() {
+    servirtium.clear_rules()
     // The licence terms of the recorded service, written at the top of each
     // tape (UPSTREAM-TERMS.md).
     servirtium.license_notice("Recorded against hashicorp/consul:1.15 (Consul 1.15.10), licensed under\nthe Business Source License 1.1 by HashiCorp. Its Additional Use Grant\ndoes not cover offering Consul to third parties in a hosted or embedded\nproduct that competes with HashiCorp's paid versions. Use of this tape\nis subject to those terms; see UPSTREAM-TERMS.md in servirtium-vcr's\npre-recorded/from-testcontainers.")
@@ -132,6 +427,56 @@ main() {
     }
     servirtium.collapse("\"arch\": \"[a-z0-9_]+\"", "\"arch\": \"ARCH\"")
 
+}
+
+// The API cases' rules. Rules apply to every recording after them, so the two
+// blocks each clear and register their own.
+fn api_rules() {
+    servirtium.clear_rules()
+    // The licence terms of the recorded service (UPSTREAM-TERMS.md), again,
+    // since clear_rules() dropped the module cases' notice.
+    servirtium.license_notice("Recorded against hashicorp/consul:1.15 (Consul 1.15.10), licensed under\nthe Business Source License 1.1 by HashiCorp. Its Additional Use Grant\ndoes not cover offering Consul to third parties in a hosted or embedded\nproduct that competes with HashiCorp's paid versions. Use of this tape\nis subject to those terms; see UPSTREAM-TERMS.md in servirtium-vcr's\npre-recorded/from-testcontainers.")
+    // The session credential. Registered FIRST: the preset writes each
+    // distinct token as X_CONSUL_TOKEN_N in the header and, because a token
+    // is 8+ characters, wherever else the same value appears (a bootstrap's
+    // SecretID and ID, token/self's SecretID). Later rules only see the rest.
+    servirtium.redact_credential_header("X-Consul-Token")
+    // Raft indexes. Consul stamps every object with CreateIndex and
+    // ModifyIndex and every response with X-Consul-Index; they count writes
+    // since the container started, so they differ with any change to the
+    // setup. A client sends one back as ?cas=N (and as "Index" in a txn), but
+    // takes it from a response, so a constant works both ways: collapsed to 1
+    // everywhere, replay returns 1 and the client sends 1. (Not LockIndex,
+    // which counts a key's lock acquisitions: stable. Not cas=0, which means
+    // "only if absent".)
+    servirtium.collapse("X-Consul-Index: [0-9]+", "X-Consul-Index: 1")
+    servirtium.collapse("(?<=\"CreateIndex\": |\"ModifyIndex\": )[0-9]+", "1")
+    servirtium.collapse("(?<=cas=)[1-9][0-9]*", "1")
+    servirtium.collapse("(?<=\"Index\":)[1-9][0-9]*", "1")
+    servirtium.collapse("(?<=reset index: )[0-9]+", "1")
+    // Every uuid: the node's id, session ids, ACL policy ids and token
+    // accessors. A client sends them back (a session id in ?acquire=, a
+    // policy id in a path), hence normalized, not collapsed. Consul's
+    // built-in policies are 00000000-0000-0000-0000-00000000000N: stable, and
+    // clearer left as they are.
+    servirtium.normalize(string.concat("(?!00000000-0000-0000-0000-00000000000[0-9])", servirtium.UUID), "uuid")
+    // The Hash of a token or policy: a token's covers its accessor, secret
+    // and times, so it differs every run; nobody sends it back (a client's
+    // change detection would use ModifyIndex or the Hash only as an opaque
+    // ETag-like value). Collapsed for every object, the stable policy hashes
+    // too, since a pattern cannot tell them apart.
+    servirtium.collapse("(?<=\"Hash\": \")[A-Za-z0-9+/=]{44}(?=\")", "HASH")
+    // Times: a token's or policy's CreateTime.
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+}
+
+// ---------------------------------------------------------------------------
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    module_rules()
     spec.describe(fw, "modules/consul") {
         spec.after_each() callback { testing.cleanup_all() }
 
@@ -202,6 +547,590 @@ main() {
             assert_consul_works(base, "GoConfig")
             servirtium.end_recording(rec)
         }
+    }
+
+    api_rules()
+    spec.describe(fw, "Consul HTTP API") {
+        spec.after_each() callback { api = "" }
+
+        // ---- the login tape ----------------------------------------------
+
+        // PORTING: ACLs are on and nothing has a token yet, so "logging in" is
+        // the one-time bootstrap. On its own container; no token on the first
+        // requests.
+        //   GET  /v1/status/leader              -> 200 "127.0.0.1:8300" (public)
+        //   GET  /v1/acl/token/self             -> 403 "token does not exist: ACL not found" (plain text)
+        //   GET  /v1/kv/tcae/hello              -> 403 "Permission denied: anonymous token lacks permission
+        //                                          'key:read' on "tcae/hello". The anonymous token is ..."
+        //   PUT  /v1/acl/bootstrap              -> 200 {"ID":..,"AccessorID":{{uuid-1}},"SecretID":..,
+        //        "Description":"Bootstrap Token (Global Management)","Policies":[{"ID":"00000000-0000-0000-0000-000000000001",
+        //        "Name":"global-management"}],...}; the SecretID (also in ID) is X_CONSUL_TOKEN_1
+        //   PUT  /v1/acl/bootstrap              -> 403 "Permission denied: ACL bootstrap no longer allowed (reset index: 1)"
+        //   GET  /v1/acl/token/self  X-Consul-Token: <SecretID> -> 200, the same AccessorID
+        //   PUT  /v1/kv/tcae/hello "logged in" (text/plain), then GET ...?raw, then DELETE -> true, the value, true
+        // Take the SecretID from the replayed bootstrap response, as a client
+        // would, and send it as X-Consul-Token. The reset index is collapsed.
+        spec.it("bootstraps the ACL system, which is how a token is first minted") callback {
+            let c: *docker.Container = null
+            if servirtium.live() == 1 {
+                c2, err = consul.run(IMAGE) { config_string(API_CONFIG) }
+                testing.cleanup_container(c2)
+                spec.assert_ok(err, "consul starts")
+                if err != "" { return }
+                c = c2
+                await_leader(c)
+                // ACL setup follows the election by a moment: wait until the
+                // anonymous token answers "ACL not found" (not "ACL support
+                // disabled" or a 500) before recording, so no poll is on the tape.
+                tries = 0
+                ready = 0
+                while tries < 100 && ready == 0 {
+                    s0, b0, e0 = http_send("GET", "${agent_url(c)}/v1/acl/token/self", "", "application/json", "")
+                    if e0 == "" && s0 == 403 && string.contains(b0, "ACL not found") == 1 { ready = 1 }
+                    tries = tries + 1
+                    if ready == 0 { sleep(100) }
+                }
+                spec.assert_eq(ready, 1, "the ACL system is ready")
+            }
+            base, rec = servirtium.recording("consul", "bootstraps_the_acl_system", agent_url(c))
+            api = base
+            st, b = anonymous("GET", "status/leader", "")
+            spec.assert_eq(st, 200, "status/leader needs no token: ${b}")
+            spec.assert_contains(b, ":8300", "the leader is a server RPC address")
+            st, b = anonymous("GET", "acl/token/self", "")
+            spec.assert_eq(st, 403, "no token yet: ${b}")
+            spec.assert_contains(b, "ACL not found", "ACL not found")
+            st, b = anonymous("GET", "kv/tcae/hello", "")
+            spec.assert_eq(st, 403, "the anonymous token may not read: ${b}")
+            spec.assert_contains(b, "anonymous token lacks permission 'key:read'", "the anonymous token lacks key:read")
+            st, b = anonymous("PUT", "acl/bootstrap", "")
+            spec.assert_eq(st, 200, "bootstrap: ${b}")
+            secret = jstr(b, "SecretID")
+            spec.assert_true(string.length(secret) > 0, "a SecretID")
+            spec.assert_str_eq(jstr(b, "ID"), secret, "ID is the SecretID too")
+            accessor = jstr(b, "AccessorID")
+            spec.assert_true(string.length(accessor) > 0, "an AccessorID")
+            spec.assert_str_eq(jstr(b, "Policies.0.Name"), "global-management", "the global-management policy")
+            spec.assert_str_eq(jstr(b, "Description"), "Bootstrap Token (Global Management)", "its description")
+            st, b = anonymous("PUT", "acl/bootstrap", "")
+            spec.assert_eq(st, 403, "a second bootstrap is refused: ${b}")
+            spec.assert_contains(b, "ACL bootstrap no longer allowed", "no longer allowed")
+            st, b = cv_as(secret, "GET", "acl/token/self", "")
+            spec.assert_eq(st, 200, "token/self with the new token: ${b}")
+            spec.assert_str_eq(jstr(b, "AccessorID"), accessor, "the same token")
+            tok = secret
+            st, b = kv_put("kv/tcae/hello", "logged in")
+            spec.assert_eq(st, 200, "the token writes: ${b}")
+            spec.assert_str_eq(b, "true\n", "true")
+            st, b = cv("GET", "kv/tcae/hello?raw", "")
+            spec.assert_eq(st, 200, "the token reads: ${b}")
+            spec.assert_str_eq(b, "logged in", "the value")
+            st, b = cv("DELETE", "kv/tcae/hello", "")
+            spec.assert_eq(st, 200, "the token deletes: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: nobody, or somebody Consul does not know. The first six send
+        // no token.
+        //   GET /v1/status/leader      -> 200 (public)
+        //   GET /v1/catalog/datacenters -> 200 ["dc1"] (public)
+        //   GET /v1/catalog/nodes      -> 200 [] (lists are FILTERED to what the token may see, not refused)
+        //   GET /v1/kv/tcae/private    -> 403 "Permission denied: anonymous token lacks permission 'key:read' ..."
+        //   PUT /v1/kv/tcae/private    -> 403 "... 'key:write' ..."
+        //   GET /v1/acl/tokens         -> 403 "Permission denied: anonymous token lacks permission 'acl:read' ..."
+        //   GET /v1/kv/tcae/private  X-Consul-Token: not-a-token -> 403 "token does not exist: ACL not found"
+        //        (the tape's header is X_CONSUL_TOKEN_1 and replay matches on presence, so replay
+        //        cannot tell this from a good token, only Consul could)
+        spec.it("refuses an anonymous or unknown token") callback {
+            rec, ok = begin("refuses_an_anonymous_or_unknown_token", [])
+            if ok == 0 { return }
+            st, b = anonymous("GET", "status/leader", "")
+            spec.assert_eq(st, 200, "status/leader is public: ${b}")
+            st, b = anonymous("GET", "catalog/datacenters", "")
+            spec.assert_eq(st, 200, "datacenters are public: ${b}")
+            st, b = anonymous("GET", "catalog/nodes", "")
+            spec.assert_eq(st, 200, "nodes are filtered, not refused: ${b}")
+            spec.assert_contains(b, "[]", "an empty list")
+            st, b = anonymous("GET", "kv/tcae/private", "")
+            spec.assert_eq(st, 403, "reading needs a token: ${b}")
+            spec.assert_contains(b, "Permission denied", "permission denied")
+            st, b = anonymous("PUT", "kv/tcae/private", "x")
+            spec.assert_eq(st, 403, "writing needs a token: ${b}")
+            st, b = anonymous("GET", "acl/tokens", "")
+            spec.assert_eq(st, 403, "listing tokens needs a token: ${b}")
+            st, b = cv_as("not-a-token", "GET", "kv/tcae/private", "")
+            spec.assert_eq(st, 403, "a made-up token: ${b}")
+            spec.assert_contains(b, "ACL not found", "ACL not found")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- the cluster ---------------------------------------------------
+
+        // PORTING: one server node named tcae-node, datacenter dc1.
+        //   GET /v1/status/leader           -> 200 "127.0.0.1:8300"
+        //   GET /v1/status/peers            -> 200 ["127.0.0.1:8300"]
+        //   GET /v1/catalog/datacenters     -> 200 ["dc1"]
+        //   GET /v1/catalog/nodes           -> 200 [{"ID":{{uuid-1}},"Node":"tcae-node","Address":"127.0.0.1","Datacenter":"dc1",...}]
+        //   GET /v1/catalog/node/tcae-node  -> 200 {"Node":{..},"Services":{"consul":{"ID":"consul","Service":"consul","Port":8300,..}}}
+        //   GET /v1/catalog/services        -> 200 {"consul":[]}
+        //   GET /v1/agent/members           -> 200 [{"Name":"tcae-node","Addr":"127.0.0.1","Port":8301,"Status":1,
+        //        "Tags":{"role":"consul","dc":"dc1","acls":"1",..}}]
+        //   GET /v1/health/node/tcae-node   -> 200 [{"CheckID":"serfHealth","Status":"passing","Output":"Agent alive and reachable",..}]
+        spec.it("reports the leader, peers, datacenters, nodes and members") callback {
+            rec, ok = begin("reports_the_leader_peers_datacenters_nodes_and_members", [])
+            if ok == 0 { return }
+            st, b = cv("GET", "status/leader", "")
+            spec.assert_eq(st, 200, "leader: ${b}")
+            spec.assert_contains(b, ":8300", "a server RPC address")
+            st, b = cv("GET", "status/peers", "")
+            spec.assert_eq(st, 200, "peers: ${b}")
+            spec.assert_contains(b, ":8300", "one peer")
+            st, b = cv("GET", "catalog/datacenters", "")
+            spec.assert_eq(st, 200, "datacenters: ${b}")
+            spec.assert_str_eq(jstr(b, "0"), "dc1", "dc1")
+            st, b = cv("GET", "catalog/nodes", "")
+            spec.assert_eq(st, 200, "nodes: ${b}")
+            spec.assert_str_eq(jstr(b, "0.Node"), "tcae-node", "the node")
+            spec.assert_str_eq(jstr(b, "0.Datacenter"), "dc1", "its datacenter")
+            st, b = cv("GET", "catalog/node/tcae-node", "")
+            spec.assert_eq(st, 200, "node: ${b}")
+            spec.assert_str_eq(jstr(b, "Services.consul.Service"), "consul", "it runs the consul service")
+            st, b = cv("GET", "catalog/services", "")
+            spec.assert_eq(st, 200, "services: ${b}")
+            spec.assert_contains(b, "\"consul\"", "consul")
+            st, b = cv("GET", "agent/members", "")
+            spec.assert_eq(st, 200, "members: ${b}")
+            spec.assert_str_eq(jstr(b, "0.Name"), "tcae-node", "the member")
+            spec.assert_str_eq(jstr(b, "0.Tags.role"), "consul", "a server")
+            spec.assert_str_eq(jstr(b, "0.Tags.acls"), "1", "with ACLs")
+            st, b = cv("GET", "health/node/tcae-node", "")
+            spec.assert_eq(st, 200, "health of the node: ${b}")
+            spec.assert_str_eq(jstr(b, "0.CheckID"), "serfHealth", "the serf check")
+            spec.assert_str_eq(jstr(b, "0.Status"), "passing", "passing")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- KV ------------------------------------------------------------
+
+        // PORTING: keys under tcae/kv/. Values are text/plain bodies; a read
+        // returns base64 in JSON, or the raw bytes with ?raw.
+        //   PUT    /v1/kv/tcae/kv/a "hello" -> 200 "true\n"
+        //   GET    /v1/kv/tcae/kv/a -> 200 [{"LockIndex":0,"Key":"tcae/kv/a","Flags":0,"Value":"aGVsbG8=","CreateIndex":1,"ModifyIndex":1}]
+        //   GET    /v1/kv/tcae/kv/a?raw -> 200 "hello" (application/octet-stream)
+        //   PUT    /v1/kv/tcae/kv/a?flags=42 "updated" -> true; GET -> Flags 42, Value "dXBkYXRlZA=="
+        //   PUT    /v1/kv/tcae/kv/b {"j":1} and PUT /v1/kv/tcae/kv/sub/c "c" -> true
+        //   GET    /v1/kv/tcae/kv?keys -> 200 ["tcae/kv/a","tcae/kv/b","tcae/kv/sub/c"] (sorted)
+        //   GET    /v1/kv/tcae/kv/?keys&separator=/ -> 200 ["tcae/kv/a","tcae/kv/b","tcae/kv/sub/"]
+        //   GET    /v1/kv/tcae/kv?recurse -> 200 three entries, in key order
+        //   GET    /v1/kv/tcae/kv/missing -> 404 (empty body)
+        //   DELETE /v1/kv/tcae/kv/b -> true ; DELETE /v1/kv/tcae/kv?recurse -> true ; GET /v1/kv/tcae/kv/a -> 404
+        spec.it("puts, gets, lists and deletes keys") callback {
+            rec, ok = begin("kv_puts_gets_lists_and_deletes_keys", ["DELETE kv/tcae/kv?recurse"])
+            if ok == 0 { return }
+            st, b = kv_put("kv/tcae/kv/a", "hello")
+            spec.assert_eq(st, 200, "put: ${b}")
+            spec.assert_str_eq(b, "true\n", "true")
+            st, b = cv("GET", "kv/tcae/kv/a", "")
+            spec.assert_eq(st, 200, "get: ${b}")
+            spec.assert_str_eq(jstr(b, "0.Key"), "tcae/kv/a", "the key")
+            spec.assert_str_eq(jstr(b, "0.Value"), "aGVsbG8=", "the value, base64")
+            st, b = cv("GET", "kv/tcae/kv/a?raw", "")
+            spec.assert_eq(st, 200, "raw: ${b}")
+            spec.assert_str_eq(b, "hello", "the raw value")
+            st, b = kv_put("kv/tcae/kv/a?flags=42", "updated")
+            spec.assert_eq(st, 200, "put with flags: ${b}")
+            st, b = cv("GET", "kv/tcae/kv/a", "")
+            spec.assert_contains(b, "\"Flags\": 42", "the flags")
+            spec.assert_str_eq(jstr(b, "0.Value"), "dXBkYXRlZA==", "the new value")
+            kv_put("kv/tcae/kv/b", "{\"j\":1}")
+            kv_put("kv/tcae/kv/sub/c", "c")
+            st, b = cv("GET", "kv/tcae/kv?keys", "")
+            spec.assert_eq(st, 200, "keys: ${b}")
+            spec.assert_str_eq(jstr(b, "0"), "tcae/kv/a", "first key")
+            spec.assert_str_eq(jstr(b, "2"), "tcae/kv/sub/c", "third key")
+            st, b = cv("GET", "kv/tcae/kv/?keys&separator=/", "")
+            spec.assert_eq(st, 200, "keys with a separator: ${b}")
+            spec.assert_str_eq(jstr(b, "2"), "tcae/kv/sub/", "a folder")
+            st, b = cv("GET", "kv/tcae/kv?recurse", "")
+            spec.assert_eq(st, 200, "recurse: ${b}")
+            spec.assert_str_eq(jstr(b, "1.Key"), "tcae/kv/b", "second entry")
+            spec.assert_str_eq(jstr(b, "2.Key"), "tcae/kv/sub/c", "third entry")
+            st, b = cv("GET", "kv/tcae/kv/missing", "")
+            spec.assert_eq(st, 404, "a key that is not there: ${b}")
+            st, b = cv("DELETE", "kv/tcae/kv/b", "")
+            spec.assert_eq(st, 200, "delete: ${b}")
+            st, b = cv("DELETE", "kv/tcae/kv?recurse", "")
+            spec.assert_eq(st, 200, "delete recurse: ${b}")
+            st, b = cv("GET", "kv/tcae/kv/a", "")
+            spec.assert_eq(st, 404, "gone: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: check-and-set on tcae/cas. An index is opaque (see the
+        // header): read it from the key's ModifyIndex and send it back as
+        // ?cas=<it>; on the tape it is 1 throughout. cas=0 means "only if absent".
+        //   PUT    /v1/kv/tcae/cas?cas=0 "first"  -> true  (created)
+        //   PUT    /v1/kv/tcae/cas?cas=0 "again"  -> false (it exists)
+        //   GET    /v1/kv/tcae/cas                -> ModifyIndex (A)
+        //   PUT    /v1/kv/tcae/cas?cas=A "second" -> true
+        //   PUT    /v1/kv/tcae/cas?cas=A "stale"  -> false (A is now stale)
+        //   DELETE /v1/kv/tcae/cas?cas=A          -> false (stale)
+        //   GET    /v1/kv/tcae/cas                -> the new ModifyIndex (B), value "second"
+        //   DELETE /v1/kv/tcae/cas?cas=B          -> true
+        //   GET    /v1/kv/tcae/cas                -> 404
+        spec.it("updates and deletes with check-and-set") callback {
+            rec, ok = begin("kv_updates_and_deletes_with_check_and_set", ["DELETE kv/tcae/cas"])
+            if ok == 0 { return }
+            st, b = kv_put("kv/tcae/cas?cas=0", "first")
+            spec.assert_str_eq(b, "true\n", "cas=0 creates: ${st}")
+            st, b = kv_put("kv/tcae/cas?cas=0", "again")
+            spec.assert_str_eq(b, "false\n", "cas=0 on an existing key is refused: ${st}")
+            st, b = cv("GET", "kv/tcae/cas", "")
+            spec.assert_eq(st, 200, "get: ${b}")
+            idx = num_after(b, "\"ModifyIndex\": ")
+            spec.assert_true(string.length(idx) > 0, "a ModifyIndex")
+            st, b = kv_put("kv/tcae/cas?cas=${idx}", "second")
+            spec.assert_str_eq(b, "true\n", "cas with the current index: ${st}")
+            st, b = kv_put("kv/tcae/cas?cas=${idx}", "stale")
+            spec.assert_str_eq(b, "false\n", "cas with a stale index: ${st}")
+            st, b = cv("DELETE", "kv/tcae/cas?cas=${idx}", "")
+            spec.assert_str_eq(b, "false\n", "delete with a stale index: ${st}")
+            st, b = cv("GET", "kv/tcae/cas", "")
+            spec.assert_str_eq(jstr(b, "0.Value"), "c2Vjb25k", "the value is still the second one (base64)")
+            idx2 = num_after(b, "\"ModifyIndex\": ")
+            st, b = cv("DELETE", "kv/tcae/cas?cas=${idx2}", "")
+            spec.assert_str_eq(b, "true\n", "delete with the current index: ${st}")
+            st, b = cv("GET", "kv/tcae/cas", "")
+            spec.assert_eq(st, 404, "gone: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: a transaction applies all its operations or none. Values
+        // are base64 ("dmFsMQ==" is "val1"). Indexes are opaque.
+        //   PUT /v1/txn [{"KV":{"Verb":"set","Key":"tcae/txn/a","Value":"dmFsMQ=="}},
+        //                {"KV":{"Verb":"get","Key":"tcae/txn/a"}},
+        //                {"KV":{"Verb":"cas","Key":"tcae/txn/b","Value":"dmFsMg==","Index":0}}]
+        //        -> 200 {"Results":[three KV results],"Errors":null}
+        //   PUT /v1/txn [{"KV":{"Verb":"set","Key":"tcae/txn/c","Value":"eA=="}},
+        //                {"KV":{"Verb":"cas","Key":"tcae/txn/a","Value":"eQ==","Index":<stale>}}]
+        //        -> 409 {"Results":null,"Errors":[{"OpIndex":1,"What":"failed to set key \"tcae/txn/a\", index is stale"}]}
+        //   GET /v1/kv/tcae/txn/c -> 404 (the first op was rolled back)
+        //   PUT /v1/txn [{"KV":{"Verb":"delete-tree","Key":"tcae/txn/"}}] -> 200
+        //   GET /v1/kv/tcae/txn?keys -> 404
+        spec.it("applies a transaction atomically") callback {
+            rec, ok = begin("applies_a_transaction_atomically", ["DELETE kv/tcae/txn?recurse"])
+            if ok == 0 { return }
+            ops1 = "[{\"KV\":{\"Verb\":\"set\",\"Key\":\"tcae/txn/a\",\"Value\":\"dmFsMQ==\"}},{\"KV\":{\"Verb\":\"get\",\"Key\":\"tcae/txn/a\"}},{\"KV\":{\"Verb\":\"cas\",\"Key\":\"tcae/txn/b\",\"Value\":\"dmFsMg==\",\"Index\":0}}]"
+            st, b = cv("PUT", "txn", ops1)
+            spec.assert_eq(st, 200, "txn: ${b}")
+            spec.assert_str_eq(jstr(b, "Results.1.KV.Key"), "tcae/txn/a", "the get result")
+            spec.assert_str_eq(jstr(b, "Results.1.KV.Value"), "dmFsMQ==", "reads its own write")
+            idx = num_after(b, "\"ModifyIndex\": ")
+            spec.assert_true(string.length(idx) > 0, "an index")
+            // make idx stale: a is rewritten outside the transaction
+            kv_put("kv/tcae/txn/a", "changed")
+            ops2 = "[{\"KV\":{\"Verb\":\"set\",\"Key\":\"tcae/txn/c\",\"Value\":\"eA==\"}},{\"KV\":{\"Verb\":\"cas\",\"Key\":\"tcae/txn/a\",\"Value\":\"eQ==\",\"Index\":${idx}}}]"
+            st, b = cv("PUT", "txn", ops2)
+            spec.assert_eq(st, 409, "a stale cas fails the whole transaction: ${b}")
+            spec.assert_contains(b, "index is stale", "index is stale")
+            st, b = cv("GET", "kv/tcae/txn/c", "")
+            spec.assert_eq(st, 404, "the set before the failure was rolled back: ${b}")
+            st, b = cv("PUT", "txn", "[{\"KV\":{\"Verb\":\"delete-tree\",\"Key\":\"tcae/txn/\"}}]")
+            spec.assert_eq(st, 200, "delete-tree: ${b}")
+            st, b = cv("GET", "kv/tcae/txn?keys", "")
+            spec.assert_eq(st, 404, "nothing left: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- sessions and locks ----------------------------------------------
+
+        // PORTING: two sessions contend for the lock on tcae/lock. Session
+        // ids are uuids ({{uuid-N}}), sent back in ?acquire= and ?release=.
+        //   PUT /v1/session/create {"Name":"tcae-holder","TTL":"60s","Behavior":"release","LockDelay":"0s"} -> 200 {"ID":..}
+        //   PUT /v1/session/create {"Name":"tcae-waiter","TTL":"60s","Behavior":"delete","LockDelay":"0s"} -> 200 {"ID":..}
+        //   GET /v1/session/info/<holder> -> 200 [{"Name":"tcae-holder","Node":"tcae-node","Behavior":"release","TTL":"60s",
+        //        "NodeChecks":["serfHealth"],..}]
+        //   PUT /v1/kv/tcae/lock?acquire=<holder> "holder" -> true ; PUT ...?acquire=<waiter> "waiter" -> false
+        //   GET /v1/kv/tcae/lock -> [{"LockIndex":1,"Session":<holder>,..}]
+        //   PUT /v1/session/renew/<holder> -> 200 [the session]
+        //   PUT /v1/kv/tcae/lock?release=<holder> "x" -> true ; GET -> no Session, LockIndex 1
+        //   PUT /v1/kv/tcae/lock?acquire=<waiter> "waiter" -> true ; GET -> Session <waiter>, LockIndex 2
+        //   PUT /v1/session/destroy/<waiter> -> true ; GET /v1/kv/tcae/lock -> 404 (behavior "delete" removed the key)
+        //   PUT /v1/session/destroy/<holder> -> true ; GET /v1/session/info/<holder> -> 200 []
+        spec.it("holds, contends for and releases a lock with sessions") callback {
+            rec, ok = begin("sessions_hold_contend_for_and_release_a_lock", ["DELETE kv/tcae/lock"])
+            if ok == 0 { return }
+            st, b = cv("PUT", "session/create", "{\"Name\":\"tcae-holder\",\"TTL\":\"60s\",\"Behavior\":\"release\",\"LockDelay\":\"0s\"}")
+            spec.assert_eq(st, 200, "create holder: ${b}")
+            holder = jstr(b, "ID")
+            spec.assert_true(string.length(holder) > 0, "a session id")
+            st, b = cv("PUT", "session/create", "{\"Name\":\"tcae-waiter\",\"TTL\":\"60s\",\"Behavior\":\"delete\",\"LockDelay\":\"0s\"}")
+            waiter = jstr(b, "ID")
+            spec.assert_true(string.length(waiter) > 0, "another session id")
+            st, b = cv("GET", "session/info/${holder}", "")
+            spec.assert_eq(st, 200, "info: ${b}")
+            spec.assert_str_eq(jstr(b, "0.Name"), "tcae-holder", "its name")
+            spec.assert_str_eq(jstr(b, "0.Behavior"), "release", "its behavior")
+            spec.assert_str_eq(jstr(b, "0.TTL"), "60s", "its TTL")
+            st, b = kv_put("kv/tcae/lock?acquire=${holder}", "holder")
+            spec.assert_str_eq(b, "true\n", "the holder takes the lock: ${st}")
+            st, b = kv_put("kv/tcae/lock?acquire=${waiter}", "waiter")
+            spec.assert_str_eq(b, "false\n", "the waiter cannot: ${st}")
+            st, b = cv("GET", "kv/tcae/lock", "")
+            spec.assert_str_eq(jstr(b, "0.Session"), holder, "held by the holder")
+            spec.assert_contains(b, "\"LockIndex\": 1", "first acquisition")
+            st, b = cv("PUT", "session/renew/${holder}", "")
+            spec.assert_eq(st, 200, "renew: ${b}")
+            spec.assert_str_eq(jstr(b, "0.ID"), holder, "the same session")
+            st, b = kv_put("kv/tcae/lock?release=${holder}", "x")
+            spec.assert_str_eq(b, "true\n", "release: ${st}")
+            st, b = cv("GET", "kv/tcae/lock", "")
+            spec.assert_str_eq(jstr(b, "0.Session"), "", "no holder now")
+            st, b = kv_put("kv/tcae/lock?acquire=${waiter}", "waiter")
+            spec.assert_str_eq(b, "true\n", "the waiter takes it: ${st}")
+            st, b = cv("GET", "kv/tcae/lock", "")
+            spec.assert_str_eq(jstr(b, "0.Session"), waiter, "held by the waiter")
+            spec.assert_contains(b, "\"LockIndex\": 2", "second acquisition")
+            st, b = cv("PUT", "session/destroy/${waiter}", "")
+            spec.assert_str_eq(b, "true\n", "destroy the waiter: ${st}")
+            st, b = cv("GET", "kv/tcae/lock", "")
+            spec.assert_eq(st, 404, "its key went with it (behavior delete): ${b}")
+            st, b = cv("PUT", "session/destroy/${holder}", "")
+            spec.assert_str_eq(b, "true\n", "destroy the holder: ${st}")
+            st, b = cv("GET", "session/info/${holder}", "")
+            spec.assert_eq(st, 200, "info after destroy: ${b}")
+            spec.assert_contains(b, "[]", "no such session")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- services, checks and the catalog ----------------------------------
+
+        // PORTING: an agent service with a TTL check.
+        //   PUT /v1/agent/service/register {"ID":"web-1","Name":"web","Tags":["v1","tcae"],"Port":8080,"Address":"10.0.0.5",
+        //        "Meta":{"owner":"tcae"},"Check":{"CheckID":"web-1-ttl","Name":"web ttl","TTL":"60s"}} -> 200 (empty body)
+        //   GET /v1/agent/services -> 200 {"web-1":{"ID":"web-1","Service":"web","Tags":["v1","tcae"],..,"Port":8080,..}}
+        //   GET /v1/agent/checks   -> 200 {"web-1-ttl":{"Status":"critical","Type":"ttl",..}} (a TTL check starts critical)
+        //   GET /v1/agent/health/service/id/web-1 -> 503 (critical) with AggregatedStatus "critical"
+        //   PUT /v1/agent/check/pass/web-1-ttl?note=ok -> 200 ; the same GET -> 200, AggregatedStatus "passing"
+        //   GET /v1/health/service/web?passing -> 200, one entry whose Checks include web-1-ttl with Output "ok"
+        //   GET /v1/catalog/service/web -> 200 one entry: ServiceID "web-1", ServicePort 8080, Node "tcae-node"
+        //   PUT /v1/agent/check/warn/web-1-ttl?note=slow -> 200 ; GET .../agent/health/service/name/web -> 429 "warning"
+        //   GET /v1/health/service/web?passing -> 200 [] (nothing passing)
+        //   PUT /v1/agent/check/fail/web-1-ttl?note=down -> 200 ; GET /v1/health/state/critical -> includes web-1-ttl
+        //   PUT /v1/agent/service/deregister/web-1 -> 200 ; GET /v1/agent/services -> 200 {}
+        //   PUT /v1/agent/service/deregister/web-1 -> 404 "Unknown service ID \"web-1\". Ensure that the service ID is passed, not the service name."
+        spec.it("registers a service with a TTL check and follows its health") callback {
+            rec, ok = begin("registers_a_service_with_a_ttl_check_and_follows_its_health", ["PUT agent/service/deregister/web-1"])
+            if ok == 0 { return }
+            reg = "{\"ID\":\"web-1\",\"Name\":\"web\",\"Tags\":[\"v1\",\"tcae\"],\"Port\":8080,\"Address\":\"10.0.0.5\",\"Meta\":{\"owner\":\"tcae\"},\"Check\":{\"CheckID\":\"web-1-ttl\",\"Name\":\"web ttl\",\"TTL\":\"60s\"}}"
+            st, b = cv("PUT", "agent/service/register", reg)
+            spec.assert_eq(st, 200, "register: ${b}")
+            st, b = cv("GET", "agent/services", "")
+            spec.assert_eq(st, 200, "services: ${b}")
+            spec.assert_str_eq(jstr(b, "web-1.Service"), "web", "the service")
+            spec.assert_str_eq(jstr(b, "web-1.Tags.1"), "tcae", "its tags")
+            spec.assert_str_eq(jstr(b, "web-1.Meta.owner"), "tcae", "its meta")
+            st, b = cv("GET", "agent/checks", "")
+            spec.assert_eq(st, 200, "checks: ${b}")
+            spec.assert_str_eq(jstr(b, "web-1-ttl.Status"), "critical", "a TTL check starts critical")
+            spec.assert_str_eq(jstr(b, "web-1-ttl.Type"), "ttl", "a ttl check")
+            st, b = cv("GET", "agent/health/service/id/web-1", "")
+            spec.assert_eq(st, 503, "critical is 503: ${b}")
+            spec.assert_str_eq(jstr(b, "AggregatedStatus"), "critical", "critical")
+            st, b = cv("PUT", "agent/check/pass/web-1-ttl?note=ok", "")
+            spec.assert_eq(st, 200, "pass: ${b}")
+            st, b = cv("GET", "agent/health/service/id/web-1", "")
+            spec.assert_eq(st, 200, "passing is 200: ${b}")
+            spec.assert_str_eq(jstr(b, "AggregatedStatus"), "passing", "passing")
+            st, b = cv("GET", "health/service/web?passing", "")
+            spec.assert_eq(st, 200, "health/service passing: ${b}")
+            spec.assert_str_eq(jstr(b, "0.Service.ID"), "web-1", "the service")
+            spec.assert_contains(b, "\"Output\": \"ok\"", "the note is the check's output")
+            st, b = cv("GET", "catalog/service/web", "")
+            spec.assert_eq(st, 200, "catalog: ${b}")
+            spec.assert_str_eq(jstr(b, "0.ServiceID"), "web-1", "ServiceID")
+            spec.assert_str_eq(jstr(b, "0.Node"), "tcae-node", "on the node")
+            st, b = cv("PUT", "agent/check/warn/web-1-ttl?note=slow", "")
+            spec.assert_eq(st, 200, "warn: ${b}")
+            st, b = cv("GET", "agent/health/service/name/web", "")
+            spec.assert_eq(st, 429, "warning is 429: ${b}")
+            spec.assert_str_eq(jstr(b, "0.AggregatedStatus"), "warning", "warning")
+            st, b = cv("GET", "health/service/web?passing", "")
+            spec.assert_eq(st, 200, "nothing passes: ${b}")
+            spec.assert_contains(b, "[]", "an empty list")
+            st, b = cv("PUT", "agent/check/fail/web-1-ttl?note=down", "")
+            spec.assert_eq(st, 200, "fail: ${b}")
+            st, b = cv("GET", "health/state/critical", "")
+            spec.assert_eq(st, 200, "critical checks: ${b}")
+            spec.assert_contains(b, "\"CheckID\": \"web-1-ttl\"", "ours is among them")
+            st, b = cv("PUT", "agent/service/deregister/web-1", "")
+            spec.assert_eq(st, 200, "deregister: ${b}")
+            st, b = cv("GET", "agent/services", "")
+            spec.assert_str_eq(string.replace_all(string.replace_all(b, " ", ""), "\n", ""), "{}", "no services left")
+            st, b = cv("PUT", "agent/service/deregister/web-1", "")
+            spec.assert_eq(st, 404, "deregistering twice: ${b}")
+            spec.assert_contains(b, "Unknown service ID \"web-1\"", "unknown service id")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING: a service on a node that runs no agent, registered through
+        // the catalog.
+        //   PUT /v1/catalog/register {"Node":"ext-node","Address":"192.168.1.10",
+        //        "Service":{"ID":"db-1","Service":"db","Port":5432,"Tags":["primary"]}} -> 200 "true\n"
+        //   GET /v1/catalog/nodes -> 200, two nodes in name order: ext-node (ID "") and tcae-node
+        //   GET /v1/catalog/node/ext-node -> 200 {"Node":{..,"Address":"192.168.1.10"},"Services":{"db-1":{..,"Port":5432}}}
+        //   GET /v1/catalog/service/db -> 200 one entry: Node "ext-node", ServiceTags ["primary"]
+        //   PUT /v1/catalog/deregister {"Node":"ext-node"} -> 200 "true\n"
+        //   GET /v1/catalog/node/ext-node -> 200 "null"
+        spec.it("registers an external node and service in the catalog") callback {
+            rec, ok = begin("registers_an_external_node_and_service_in_the_catalog", ["PUT catalog/deregister"])
+            if ok == 0 { return }
+            st, b = cv("PUT", "catalog/register", "{\"Node\":\"ext-node\",\"Address\":\"192.168.1.10\",\"Service\":{\"ID\":\"db-1\",\"Service\":\"db\",\"Port\":5432,\"Tags\":[\"primary\"]}}")
+            spec.assert_eq(st, 200, "register: ${b}")
+            spec.assert_str_eq(b, "true\n", "true")
+            st, b = cv("GET", "catalog/nodes", "")
+            spec.assert_eq(st, 200, "nodes: ${b}")
+            spec.assert_str_eq(jstr(b, "0.Node"), "ext-node", "first in name order")
+            spec.assert_str_eq(jstr(b, "1.Node"), "tcae-node", "then the agent's node")
+            st, b = cv("GET", "catalog/node/ext-node", "")
+            spec.assert_eq(st, 200, "node: ${b}")
+            spec.assert_str_eq(jstr(b, "Node.Address"), "192.168.1.10", "its address")
+            spec.assert_str_eq(jstr(b, "Services.db-1.Service"), "db", "its service")
+            st, b = cv("GET", "catalog/service/db", "")
+            spec.assert_eq(st, 200, "service: ${b}")
+            spec.assert_str_eq(jstr(b, "0.Node"), "ext-node", "on the external node")
+            spec.assert_str_eq(jstr(b, "0.ServiceTags.0"), "primary", "tagged")
+            st, b = cv("PUT", "catalog/deregister", "{\"Node\":\"ext-node\"}")
+            spec.assert_eq(st, 200, "deregister: ${b}")
+            st, b = cv("GET", "catalog/node/ext-node", "")
+            spec.assert_eq(st, 200, "the node after: ${b}")
+            spec.assert_str_eq(string.trim(b), "null", "gone")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- ACL policies and tokens -----------------------------------------
+
+        // PORTING: a policy and a limited token made with the management token
+        // (X_CONSUL_TOKEN_1); the limited token's own requests carry its
+        // SecretID (X_CONSUL_TOKEN_2). Policy and accessor ids are {{uuid-N}}.
+        //   PUT /v1/acl/policy {"Name":"tcae-reader","Description":"read tcae keys","Rules":"key_prefix \"tcae/\" { policy = \"read\" }"}
+        //        -> 200 {"ID":{{uuid-1}},"Name":"tcae-reader",..,"Rules":..,"Hash":..}
+        //   GET /v1/acl/policy/<id> -> 200 ; GET /v1/acl/policy/name/tcae-reader -> 200, the same
+        //   PUT /v1/acl/policy/<id> {..,"Description":"read tcae keys (updated)",..} -> 200
+        //   GET /v1/acl/policies -> 200 three: builtin/global-read-only, global-management, tcae-reader (by name)
+        //   PUT /v1/acl/token {"Description":"tcae reader","Policies":[{"Name":"tcae-reader"}]}
+        //        -> 200 AccessorID {{uuid-2}}, SecretID X_CONSUL_TOKEN_2
+        //   GET /v1/acl/token/<accessor> -> 200 ; GET /v1/acl/token/self (reader) -> 200, the same AccessorID
+        //   (reader) GET /v1/kv/tcae/x -> 404 (allowed, absent); PUT /v1/kv/tcae/x -> 403 "Permission denied: token with
+        //        AccessorID '{{uuid-2}}' lacks permission 'key:write' on "tcae/x""; GET /v1/kv/other/x -> 403 ; GET /v1/acl/tokens -> 403
+        //   DELETE /v1/acl/token/<accessor> -> 200 true ; (reader) GET /v1/acl/token/self -> 403 "ACL not found"
+        //   DELETE /v1/acl/policy/<id> -> 200 true ; GET /v1/acl/policy/<id> -> 404 "Requested policy does not exist: ACL not found"
+        spec.it("manages ACL policies and tokens, and enforces them") callback {
+            rec, ok = begin("manages_acl_policies_and_tokens_and_enforces_them", [])
+            if ok == 0 { return }
+            rules = "key_prefix 'tcae/' { policy = 'read' }"
+            st, b = cv("PUT", "acl/policy", "{\"Name\":\"tcae-reader\",\"Description\":\"read tcae keys\",\"Rules\":\"${hcl(rules)}\"}")
+            spec.assert_eq(st, 200, "create the policy: ${b}")
+            pid = jstr(b, "ID")
+            spec.assert_true(string.length(pid) > 0, "a policy id")
+            st, b = cv("GET", "acl/policy/${pid}", "")
+            spec.assert_eq(st, 200, "read by id: ${b}")
+            spec.assert_str_eq(jstr(b, "Rules"), string.replace_all(rules, "'", "\""), "the rules as written")
+            st, b = cv("GET", "acl/policy/name/tcae-reader", "")
+            spec.assert_eq(st, 200, "read by name: ${b}")
+            spec.assert_str_eq(jstr(b, "ID"), pid, "the same policy")
+            st, b = cv("PUT", "acl/policy/${pid}", "{\"Name\":\"tcae-reader\",\"Description\":\"read tcae keys (updated)\",\"Rules\":\"${hcl(rules)}\"}")
+            spec.assert_eq(st, 200, "update: ${b}")
+            spec.assert_str_eq(jstr(b, "Description"), "read tcae keys (updated)", "updated")
+            st, b = cv("GET", "acl/policies", "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_str_eq(jstr(b, "0.Name"), "builtin/global-read-only", "first by name")
+            spec.assert_str_eq(jstr(b, "2.Name"), "tcae-reader", "ours last")
+            st, b = cv("PUT", "acl/token", "{\"Description\":\"tcae reader\",\"Policies\":[{\"Name\":\"tcae-reader\"}]}")
+            spec.assert_eq(st, 200, "create the token: ${b}")
+            accessor = jstr(b, "AccessorID")
+            reader = jstr(b, "SecretID")
+            spec.assert_true(string.length(accessor) > 0, "an accessor")
+            spec.assert_true(string.length(reader) > 0, "a secret")
+            st, b = cv("GET", "acl/token/${accessor}", "")
+            spec.assert_eq(st, 200, "read the token: ${b}")
+            spec.assert_str_eq(jstr(b, "Policies.0.Name"), "tcae-reader", "its policy")
+            st, b = cv_as(reader, "GET", "acl/token/self", "")
+            spec.assert_eq(st, 200, "token/self as the reader: ${b}")
+            spec.assert_str_eq(jstr(b, "AccessorID"), accessor, "the reader")
+            st, b = cv_as(reader, "GET", "kv/tcae/x", "")
+            spec.assert_eq(st, 404, "the reader may read tcae/: ${b}")
+            st, b, werr = http_send("PUT", "${api}/v1/kv/tcae/x", reader, "text/plain", "v")
+            spec.assert_ok(werr, "PUT kv/tcae/x as the reader")
+            spec.assert_eq(st, 403, "the reader may not write: ${b}")
+            spec.assert_contains(b, "lacks permission 'key:write'", "key:write")
+            st, b = cv_as(reader, "GET", "kv/other/x", "")
+            spec.assert_eq(st, 403, "nor read elsewhere: ${b}")
+            st, b = cv_as(reader, "GET", "acl/tokens", "")
+            spec.assert_eq(st, 403, "nor list tokens: ${b}")
+            st, b = cv("DELETE", "acl/token/${accessor}", "")
+            spec.assert_str_eq(b, "true\n", "delete the token: ${st}")
+            st, b = cv_as(reader, "GET", "acl/token/self", "")
+            spec.assert_eq(st, 403, "a deleted token is gone: ${b}")
+            st, b = cv("DELETE", "acl/policy/${pid}", "")
+            spec.assert_str_eq(b, "true\n", "delete the policy: ${st}")
+            st, b = cv("GET", "acl/policy/${pid}", "")
+            spec.assert_eq(st, 404, "the policy is gone: ${b}")
+            spec.assert_contains(b, "Requested policy does not exist", "does not exist")
+            servirtium.end_recording(rec)
+        }
+
+        // ---- errors -------------------------------------------------------------
+
+        // PORTING: the representative error statuses, logged in. Consul's
+        // errors are plain text. (403 is shown by the token cases.)
+        //   PUT    /v1/kv/tcae/err?flags=abc "v"      -> 500 "strconv.ParseUint: parsing \"abc\": invalid syntax"
+        //   GET    /v1/kv/tcae/err?index=abc          -> 400 "Invalid index"
+        //   PUT    /v1/catalog/register {bad          -> 400 "Request decode failed: invalid character 'b' looking for ..."
+        //   PUT    /v1/agent/check/pass/nosuch        -> 404 "Unknown check ID \"nosuch\". Ensure that the check ID is passed, not the check name."
+        //   GET    /v1/nosuch                         -> 404 "Invalid URL path: not a recognized HTTP API endpoint"
+        //   DELETE /v1/status/leader                  -> 405 "method DELETE not allowed"
+        //   PUT    /v1/session/create {"TTL":"1s"}    -> 500 "Invalid Session TTL '1000000000', must be between [10s=24h0m0s]"
+        //   PUT    /v1/acl/token {"Policies":[{"Name":"nosuch"}]} -> 500 "No such ACL policy with name \"nosuch\""
+        //   GET    /v1/acl/policy/00000000-0000-0000-0000-000000000009 -> 404 "Requested policy does not exist: ACL not found"
+        spec.it("answers the representative error statuses") callback {
+            rec, ok = begin("answers_the_representative_error_statuses", [])
+            if ok == 0 { return }
+            st, b = kv_put("kv/tcae/err?flags=abc", "v")
+            spec.assert_eq(st, 500, "flags that are not a number (Consul answers 500): ${b}")
+            spec.assert_contains(b, "invalid syntax", "invalid syntax")
+            st, b = cv("GET", "kv/tcae/err?index=abc", "")
+            spec.assert_eq(st, 400, "an index that is not a number: ${b}")
+            spec.assert_contains(b, "Invalid index", "Invalid index")
+            st, b = cv("PUT", "catalog/register", "{bad")
+            spec.assert_eq(st, 400, "a body that is not JSON: ${b}")
+            spec.assert_contains(b, "Request decode failed", "Request decode failed")
+            st, b = cv("PUT", "agent/check/pass/nosuch", "")
+            spec.assert_eq(st, 404, "a check that does not exist: ${b}")
+            spec.assert_contains(b, "Unknown check ID", "Unknown check ID")
+            st, b = cv("GET", "nosuch", "")
+            spec.assert_eq(st, 404, "a path that is no endpoint: ${b}")
+            spec.assert_contains(b, "not a recognized HTTP API endpoint", "not a recognized endpoint")
+            st, b = cv("DELETE", "status/leader", "")
+            spec.assert_eq(st, 405, "the wrong method: ${b}")
+            spec.assert_contains(b, "method DELETE not allowed", "method DELETE not allowed")
+            st, b = cv("PUT", "session/create", "{\"TTL\":\"1s\"}")
+            spec.assert_eq(st, 500, "a session TTL below the minimum (Consul answers 500): ${b}")
+            spec.assert_contains(b, "Invalid Session TTL", "Invalid Session TTL")
+            st, b = cv("PUT", "acl/token", "{\"Policies\":[{\"Name\":\"nosuch\"}]}")
+            spec.assert_eq(st, 500, "a token for a policy that does not exist (Consul answers 500): ${b}")
+            spec.assert_contains(b, "No such ACL policy", "No such ACL policy")
+            st, b = cv("GET", "acl/policy/00000000-0000-0000-0000-000000000009", "")
+            spec.assert_eq(st, 404, "a policy id that does not exist: ${b}")
+            spec.assert_contains(b, "Requested policy does not exist", "does not exist")
+            servirtium.end_recording(rec)
+        }
+
+    }
+
+    if shared_container != null {
+        e = tc.terminate(shared_container as *docker.Container)
+        if e != "" { println("consul: removing the shared container: ${e}") }
     }
     return spec.run_summary(fw)
 }
