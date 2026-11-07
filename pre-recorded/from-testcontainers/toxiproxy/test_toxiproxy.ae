@@ -1,0 +1,107 @@
+// Ported from testcontainers-go modules/toxiproxy/toxiproxy_test.go, by way
+// of testcontainers-ae's tests/test_toxiproxy.ae (moved here 2026-11-07).
+//
+// A real Toxiproxy with a proxy to an nginx container on a shared network:
+// the control API (GET /proxies) lists the proxy, and one HTTP GET through
+// the proxy's mapped port gets nginx's page.
+//
+// PORTING: the case talks to two different servers, so it has two tapes: the
+// case's name for Toxiproxy's control API (GET /proxies) and the name with
+// "_proxied" for the GET through the proxy's own port, which is nginx's
+// welcome page. The proxy ("web", listening on 8666 inside the container,
+// forwarding to the nginx container's port 80 over a shared network) is
+// configured by the module when the container starts, not by an HTTP call, so
+// it is not on a tape; a port that replays the tapes needs neither container
+// nor network. The proxy's own endpoint and the "port not found" error are
+// the module's, so they are checked live only.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.network
+import testcontainers.testing
+import servirtium
+import modules.toxiproxy
+
+const IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn get(url: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return st, body, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: Toxiproxy's per-request id header.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "X-Toxiproxy-Request-Id")
+
+    spec.describe(fw, "modules/toxiproxy") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("proxies an upstream container (TestToxiproxy)") callback {
+            api = ""
+            proxied = ""
+            if servirtium.live() == 1 {
+                n, nerr = network.new_random()
+                testing.cleanup_network(n)
+                spec.assert_ok(nerr, "network")
+                web, werr = tc.run("nginx:alpine") {
+                    expose("80/tcp")
+                    with_network(n.name)
+                    network_alias(n.name, "web")
+                }
+                testing.cleanup_container(web)
+                spec.assert_ok(werr, "nginx starts")
+
+                t, terr = toxiproxy.run(IMAGE) {
+                    proxy("web", "web:80")
+                    tc.with_network(n.name)
+                }
+                if t != null { testing.cleanup_container(t.container) }
+                spec.assert_ok(terr, "toxiproxy starts")
+                if werr != "" || terr != "" { return }
+                a, aerr = toxiproxy.uri(t)
+                spec.assert_ok(aerr, "uri")
+                host, port, perr = toxiproxy.proxied_endpoint(t, 8666)
+                spec.assert_ok(perr, "proxied endpoint of the first proxy")
+                _h, _p, missing = toxiproxy.proxied_endpoint(t, 9999)
+                spec.assert_str_eq(missing, "port not found", "an unknown port has no endpoint")
+                api = a
+                proxied = "http://${host}:${port}"
+            }
+            abase, arec = servirtium.recording("toxiproxy", "proxies_an_upstream_container", api)
+            st, body, gerr = get("${abase}/proxies")
+            spec.assert_ok(gerr, "GET /proxies")
+            spec.assert_eq(st, 200, "the control API answers")
+            spec.assert_contains(body, "\"name\":\"web\"", "the proxy is configured")
+            spec.assert_contains(body, "web:80", "with its upstream")
+            servirtium.end_recording(arec)
+
+            pbase, prec = servirtium.recording("toxiproxy", "proxies_an_upstream_container_proxied", proxied)
+            st2, body2, perr2 = get("${pbase}/")
+            spec.assert_ok(perr2, "GET through the proxy")
+            spec.assert_eq(st2, 200, "nginx answers through the proxy")
+            spec.assert_contains(body2, "Welcome to nginx", "nginx's page")
+            servirtium.end_recording(prec)
+        }
+    }
+    return spec.run_summary(fw)
+}

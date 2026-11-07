@@ -1,0 +1,78 @@
+// Ported from testcontainers-go modules/chroma/chroma_test.go, by way of
+// testcontainers-ae's tests/test_chroma.ae (moved here 2026-11-07).
+//
+// A real Chroma: GET /api/v2/heartbeat at rest_endpoint answers 200 with a
+// nanosecond heartbeat, and /api/v2/version answers.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start and the endpoint's shape are checked only when live,
+// since playback starts no container.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.chroma
+
+const IMAGE = "chromadb/chroma:1.4.0"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error).
+fn http_do(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 15s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: the heartbeat is the server's clock in nanoseconds.
+    servirtium.collapse("\"nanosecond heartbeat\":[0-9]+", "\"nanosecond heartbeat\":946684800000000000")
+
+    spec.describe(fw, "modules/chroma") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the REST API (TestChroma)") callback {
+            url = ""
+            if servirtium.live() == 1 {
+                c, err = chroma.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "chroma starts")
+                if err != "" { return }
+                u, uerr = chroma.rest_endpoint(c)
+                spec.assert_ok(uerr, "rest endpoint")
+                spec.assert_true(string.starts_with(u, "http://") == 1, "an http:// URL: ${u}")
+                url = u
+            }
+            base, rec = servirtium.recording("chroma", "serves_the_rest_api", url)
+            st, body, herr = http_do("GET", "${base}/api/v2/heartbeat", "")
+            spec.assert_ok(herr, "GET heartbeat")
+            spec.assert_eq(st, 200, "heartbeat status")
+            spec.assert_contains(body, "nanosecond heartbeat", "the heartbeat body")
+            vs, vb, verr = http_do("GET", "${base}/api/v2/version", "")
+            spec.assert_ok(verr, "GET version")
+            spec.assert_eq(vs, 200, "version status")
+            spec.assert_true(string.length(vb) > 0, "a version: ${vb}")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

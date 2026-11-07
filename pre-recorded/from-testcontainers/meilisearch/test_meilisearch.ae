@@ -1,0 +1,140 @@
+// Ported from testcontainers-go modules/meilisearch/meilisearch_test.go, by
+// way of testcontainers-ae's tests/test_meilisearch.ae (moved here 2026-11-07).
+//
+// A real Meilisearch: GET /health, an authenticated call with the master
+// key (and a refusal without it), and a dump import read back as a document.
+//
+// PORTING: the HTTP conversation is in the tapes beside this file; the
+// container start and the module's own fields (address shape, master key)
+// are checked only when live, since playback starts no container.
+//
+// PORTING: the second case's dump (testdata/movies.dump) is imported
+// asynchronously after startup. The test waits for the document live,
+// before recording, so the tape holds one GET of it, not a polling loop.
+// A port that replays the tape needs no container and no wait.
+//
+// PORTING: the master keys are on the tapes as Bearer REDACTED[<label>]
+// (a literal swap, put back on playback); the unauthenticated GET /indexes
+// carries no Authorization header at all and answers 401.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.meilisearch
+
+const IMAGE = "getmeili/meilisearch:v1.10.3"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 15s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+fn bearer(key: string) -> string { return "Authorization: Bearer ${key}" }
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The master keys the cases send, kept off the tapes (labelled, not the
+    // credential preset, so playback still tells one key from another).
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Bearer ${meilisearch.DEFAULT_MASTER_KEY}", "Bearer REDACTED[default-master-key]")
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Bearer my-master-key", "Bearer REDACTED[my-master-key]")
+    // Meilisearch sends its response headers in a different order from run to
+    // run (Vary moves relative to Content-Type); only Vary is dropped.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "vary")
+
+    spec.describe(fw, "modules/meilisearch") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("is healthy and checks the master key (TestMeilisearch)") callback {
+            addr = ""
+            key = meilisearch.DEFAULT_MASTER_KEY
+            if servirtium.live() == 1 {
+                m, err = meilisearch.run(IMAGE)
+                if m != null { testing.cleanup_container(m.container) }
+                spec.assert_ok(err, "meilisearch starts")
+                if err != "" { return }
+                a, aerr = meilisearch.address(m)
+                spec.assert_ok(aerr, "address")
+                port, _ = tc.mapped_port(m.container, meilisearch.PORT)
+                spec.assert_str_eq(a, "http://localhost:${port}", "address shape")
+                spec.assert_str_eq(meilisearch.master_key_of(m), meilisearch.DEFAULT_MASTER_KEY, "the default master key")
+                addr = a
+            }
+            base, rec = servirtium.recording("meilisearch", "is_healthy_and_checks_the_master_key", addr)
+            st, body, herr = http_do("GET", "${base}/health", [], "")
+            spec.assert_ok(herr, "GET /health")
+            spec.assert_eq(st, 200, "health status")
+            spec.assert_contains(body, "available", "health body: ${body}")
+            // protected route: refused without the key, answered with it
+            ust, _ub, uerr = http_do("GET", "${base}/indexes", [], "")
+            spec.assert_ok(uerr, "GET /indexes without a key")
+            spec.assert_eq(ust, 401, "no key is refused")
+            ast, abody, aerr2 = http_do("GET", "${base}/indexes", [bearer(key)], "")
+            spec.assert_ok(aerr2, "GET /indexes with the master key")
+            spec.assert_eq(ast, 200, "the master key is accepted: ${abody}")
+            spec.assert_contains(abody, "\"results\"", "an index listing")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("imports a dump with a custom master key (TestMeilisearch_WithDataDump)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                m, err = meilisearch.run(IMAGE) {
+                    dump_import("meilisearch/testdata/movies.dump")
+                    master_key("my-master-key")
+                }
+                if m != null { testing.cleanup_container(m.container) }
+                spec.assert_ok(err, "meilisearch starts")
+                if err != "" { return }
+                spec.assert_str_eq(meilisearch.master_key_of(m), "my-master-key", "the master key the block set")
+                a, _ = meilisearch.address(m)
+                addr = a
+                // the dump is imported asynchronously after startup: wait
+                // for it here, outside the recording
+                tries = 0
+                while tries < 120 {
+                    wst, _wb, _we = http_do("GET", "${addr}/indexes/movies/documents/1212", [bearer("my-master-key")], "")
+                    if wst == 200 { break }
+                    tries = tries + 1
+                    sleep(500)
+                }
+            }
+            base, rec = servirtium.recording("meilisearch", "imports_a_dump_with_a_custom_master_key", addr)
+            st, _b, herr = http_do("GET", base, [], "")
+            spec.assert_ok(herr, "GET /")
+            spec.assert_eq(st, 200, "root status")
+            dst, dbody, derr = http_do("GET", "${base}/indexes/movies/documents/1212", [bearer("my-master-key")], "")
+            spec.assert_ok(derr, "GET the imported document")
+            spec.assert_eq(dst, 200, "the imported document: ${dbody}")
+            spec.assert_contains(dbody, "\"movie_id\":1212", "movie 1212")
+            spec.assert_contains(dbody, "American Ninja", "its overview came from the dump")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

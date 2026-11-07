@@ -1,0 +1,105 @@
+// Ported from testcontainers-go modules/papercutsmtp/papercutsmtp_test.go, by
+// way of testcontainers-ae's tests/test_papercutsmtp.ae (moved here 2026-11-07).
+//
+// A real Papercut SMTP: the HTTP URL serves the web UI (200), and the SMTP
+// endpoint greets with a 220 banner and answers EHLO with 250 over std.tcp.
+//
+// PORTING: only the GET of the web UI is on the tape. The SMTP greeting is a
+// TCP exchange, not HTTP, so it runs live only, in the part of the case
+// before the recording starts; a port that replays the tape opens no socket.
+
+import std.spec
+import std.string
+import std.http.client
+import std.tcp
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.papercutsmtp
+
+const IMAGE = "changemakerstudiosus/papercut-smtp:latest"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error).
+fn http_do(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 15s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+// Read until a line ending in \n has arrived; returns what was read.
+fn read_reply(sock: ptr) -> (string, string) {
+    buf = ""
+    tries = 0
+    while tries < 100 {
+        chunk, rerr = tcp.read(sock, 4096)
+        if rerr != "" && rerr != "timeout" { return buf, rerr }
+        buf = string.concat(buf, chunk)
+        if string.ends_with(buf, "\n") == 1 { return buf, "" }
+        tries = tries + 1
+    }
+    return buf, "no reply: ${buf}"
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/papercutsmtp") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the UI and greets over SMTP (TestPapercut)") callback {
+            url = ""
+            if servirtium.live() == 1 {
+                c, err = papercutsmtp.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "papercut starts")
+                if err != "" { return }
+                u, uerr = papercutsmtp.http_url(c)
+                spec.assert_ok(uerr, "http url")
+                spec.assert_true(string.starts_with(u, "http://") == 1, "an http:// URL: ${u}")
+                url = u
+
+                smtp, serr = papercutsmtp.smtp_endpoint(c)
+                spec.assert_ok(serr, "smtp endpoint")
+                i = string.index_of(smtp, ":")
+                port, _ = string.to_int(string.substring(smtp, i + 1, string.length(smtp)))
+                sock, cerr = tcp.connect(string.substring(smtp, 0, i), port)
+                spec.assert_ok(cerr, "connect to SMTP")
+                if cerr == "" {
+                    banner, berr = read_reply(sock)
+                    spec.assert_ok(berr, "banner")
+                    spec.assert_true(string.starts_with(banner, "220") == 1, "a 220 banner: ${banner}")
+                    _, werr = tcp.write(sock, "EHLO tcae.test\r\n")
+                    spec.assert_ok(werr, "EHLO")
+                    ehlo, eerr = read_reply(sock)
+                    spec.assert_ok(eerr, "EHLO reply")
+                    spec.assert_true(string.starts_with(ehlo, "250") == 1, "250 to EHLO: ${ehlo}")
+                    tcp.write(sock, "QUIT\r\n")
+                    tcp.tcp_close(sock)
+                }
+            }
+            base, rec = servirtium.recording("papercutsmtp", "serves_the_ui_and_greets_over_smtp", url)
+            st, _b, herr = http_do("GET", "${base}/", "")
+            spec.assert_ok(herr, "GET /")
+            spec.assert_eq(st, 200, "UI status")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

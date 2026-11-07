@@ -1,0 +1,178 @@
+// Ported from testcontainers-go modules/grafana-lgtm/grafana_test.go, by way
+// of testcontainers-ae's tests/test_grafana_lgtm.ae (moved here 2026-11-07).
+//
+// A real grafana/otel-lgtm: Grafana's /api/health answers ok at http_endpoint,
+// the admin credentials the block set work against /api/user, Prometheus,
+// Loki and Tempo answer their readiness endpoints, and the OTLP/HTTP
+// endpoint accepts an (empty) trace export. Go's test exports traces with the
+// OpenTelemetry SDK.
+//
+// PORTING: one container, five HTTP servers, so five tapes: the case's name
+// for Grafana (health, then /api/user with the right and a wrong password),
+// and the name plus "_prometheus", "_loki", "_tempo" and "_otlp" for the
+// others. Each is one GET (the OTLP one a POST) at that service's own mapped
+// port. The gRPC OTLP endpoint is only a host:port the module hands back,
+// checked live only, as is the container start.
+//
+// PORTING: Loki and Tempo answer 503 for a while after the stack reports up.
+// The test waits for 200 on /ready live, before it starts recording, so each
+// tape holds the one 200 answer and not a polling loop. A port that replays
+// the tapes waits for nothing.
+//
+// PORTING: the Basic credentials are on the Grafana tape as
+// Basic REDACTED[<label>] (a literal swap, put back on playback); the
+// default password is a real refusal case, so they are labelled literals,
+// not the credential preset.
+
+import std.spec
+import std.string
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.grafana_lgtm
+
+const IMAGE = "grafana/otel-lgtm:0.6.0"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// A recording shows "Authorization: Basic REDACTED[<label>]"; playback still
+// matches the real header. Not Servirtium's redact_credentials preset: that
+// matches Authorization on presence, and this case tells the right password
+// from a wrong one, which playback should keep checking.
+fn redact_basic(user: string, pw: string, label: string) {
+    secret = encoding.base64_encode_padded(string.bytes("${user}:${pw}"))
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${secret}", "Basic REDACTED[${label}]")
+}
+
+// (status, body, error); user "" sends no Authorization.
+fn http_call(method: string, url: string, user: string, pw: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(user) > 0 {
+        client.set_header(req, "Authorization", "Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}")
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return st, out, ""
+}
+
+// Prometheus, Loki and Tempo answer 503 for a while after the stack reports
+// up: poll their readiness endpoint until 200 (up to 90 s). Called live,
+// before the recording starts.
+fn ready_status(url: string) -> (int, string) {
+    st = 0
+    err = ""
+    tries = 0
+    while tries < 45 {
+        st, _, err = http_call("GET", url, "", "", "")
+        if err == "" && st == 200 { return st, "" }
+        sleep(2000)
+        tries = tries + 1
+    }
+    return st, err
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The two Basic credentials Grafana is sent are kept off the tape.
+    redact_basic("lgtm-admin", "lgtm-secret", "lgtm-admin")
+    redact_basic("lgtm-admin", "admin", "lgtm-admin-default-password")
+    // What differs run to run: the admin user's createdAt / updatedAt times
+    // (the first start creates it), which the test never sends back.
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+
+    spec.describe(fw, "modules/grafana_lgtm") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves every endpoint (TestGrafanaLTGM)") callback {
+            g = ""
+            p = ""
+            l = ""
+            t = ""
+            o = ""
+            if servirtium.live() == 1 {
+                c, err = grafana_lgtm.run(IMAGE) { admin_credentials("lgtm-admin", "lgtm-secret") }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "grafana lgtm starts")
+                if err != "" { return }
+                g1, gerr = grafana_lgtm.http_endpoint(c)
+                spec.assert_ok(gerr, "grafana endpoint")
+                p1, perr = grafana_lgtm.prometheus_http_endpoint(c)
+                spec.assert_ok(perr, "prometheus endpoint")
+                l1, lerr = grafana_lgtm.loki_endpoint(c)
+                spec.assert_ok(lerr, "loki endpoint")
+                t1, terr = grafana_lgtm.tempo_endpoint(c)
+                spec.assert_ok(terr, "tempo endpoint")
+                o1, oerr = grafana_lgtm.otlp_http_endpoint(c)
+                spec.assert_ok(oerr, "otlp http endpoint")
+                _, grpc_err = grafana_lgtm.otlp_grpc_endpoint(c)
+                spec.assert_ok(grpc_err, "otlp grpc endpoint")
+                // wait for readiness here, outside the recordings
+                ps0, pw = ready_status("http://${p1}/-/ready")
+                spec.assert_eq(ps0, 200, "prometheus ready: ${pw}")
+                ls0, lw = ready_status("http://${l1}/ready")
+                spec.assert_eq(ls0, 200, "loki ready: ${lw}")
+                ts0, tw = ready_status("http://${t1}/ready")
+                spec.assert_eq(ts0, 200, "tempo ready: ${tw}")
+                g = "http://${g1}"
+                p = "http://${p1}"
+                l = "http://${l1}"
+                t = "http://${t1}"
+                o = "http://${o1}"
+            }
+
+            gbase, grec = servirtium.recording("grafana_lgtm", "serves_every_endpoint", g)
+            hs, hb, herr = http_call("GET", "${gbase}/api/health", "", "", "")
+            spec.assert_ok(herr, "GET /api/health")
+            spec.assert_eq(hs, 200, "grafana is healthy")
+            spec.assert_contains(hb, "\"database\": \"ok\"", "database ok")
+            us, ub, uerr = http_call("GET", "${gbase}/api/user", "lgtm-admin", "lgtm-secret", "")
+            spec.assert_ok(uerr, "GET /api/user")
+            spec.assert_eq(us, 200, "the admin credentials work: ${ub}")
+            bs, _, berr = http_call("GET", "${gbase}/api/user", "lgtm-admin", "admin", "")
+            spec.assert_ok(berr, "wrong password request")
+            spec.assert_eq(bs, 401, "the default password does not")
+            servirtium.end_recording(grec)
+
+            pbase, prec = servirtium.recording("grafana_lgtm", "serves_every_endpoint_prometheus", p)
+            ps, _, pherr = http_call("GET", "${pbase}/-/ready", "", "", "")
+            spec.assert_ok(pherr, "GET prometheus /-/ready")
+            spec.assert_eq(ps, 200, "prometheus ready")
+            servirtium.end_recording(prec)
+
+            lbase, lrec = servirtium.recording("grafana_lgtm", "serves_every_endpoint_loki", l)
+            ls, _, lherr = http_call("GET", "${lbase}/ready", "", "", "")
+            spec.assert_ok(lherr, "GET loki /ready")
+            spec.assert_eq(ls, 200, "loki ready")
+            servirtium.end_recording(lrec)
+
+            tbase, trec = servirtium.recording("grafana_lgtm", "serves_every_endpoint_tempo", t)
+            ts, _, therr = http_call("GET", "${tbase}/ready", "", "", "")
+            spec.assert_ok(therr, "GET tempo /ready")
+            spec.assert_eq(ts, 200, "tempo ready")
+            servirtium.end_recording(trec)
+
+            obase, orec = servirtium.recording("grafana_lgtm", "serves_every_endpoint_otlp", o)
+            os, ob, oherr = http_call("POST", "${obase}/v1/traces", "", "", "{\"resourceSpans\":[]}")
+            spec.assert_ok(oherr, "POST otlp /v1/traces")
+            spec.assert_eq(os, 200, "the collector accepts an OTLP/JSON export: ${ob}")
+            servirtium.end_recording(orec)
+        }
+    }
+    return spec.run_summary(fw)
+}

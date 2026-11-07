@@ -32,6 +32,23 @@ re-record. Test: extend `core_tests/test_vcr_header_presets.ae` (a reused
 token passes; a different value for the same number, or the same value for
 two numbers, is a mismatch).
 
+## Stable order for response headers and JSON keys (found 2026-11-07)
+
+Some servers send the same response in a different order each run:
+Meilisearch and Qdrant (Rust) reorder response headers, Vearch (Go)
+reorders the keys of a JSON object. A re-record then differs byte for byte,
+so `check` fails. The from-testcontainers suites work round it by leaving
+`vary` out, checking Qdrant's dashboard live only, and collapsing Vearch's
+whole `data` object, all of which lose content.
+
+Candidate options, opt-in like pretty_json:
+- write response headers sorted by name, keeping the relative order of
+  repeated headers (Set-Cookie, Vary), as request headers already are;
+- write JSON bodies with object keys sorted (with pretty_json or alone);
+  playback serves the sorted form, which is the same JSON value.
+
+Then drop the workarounds and re-record those three suites.
+
 ## Additional language bindings
 
 Candidates retained for future work (2026-10-03). Keep bindings thin: all

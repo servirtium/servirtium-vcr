@@ -1,0 +1,135 @@
+// Ported from testcontainers-go modules/dex (dex_test.go,
+// TestRun_DefaultPath_DiscoveryMatches), by way of testcontainers-ae's
+// tests/test_dex.ae (moved here 2026-11-07): the issuer is built from the
+// mapped port, /dex/.well-known/openid-configuration reports that issuer and
+// the module's endpoints, and the JWKS endpoint answers. The config rendering
+// is checked with no engine. Go's auth-code, ROPC, refresh, gRPC and
+// OIDC-library cases are not ported.
+//
+// PORTING: the HTTP conversation (discovery and keys) is in the tape beside
+// this file. The discovery document names the issuer, which is the
+// container's own host:port; the tape holds {{request.host}} there, so on
+// replay the issuer is the replay server's address plus /dex. The test
+// compares against the container's real issuer when live and against
+// "<base>/dex" when replaying. A port compares with its own base URL.
+//
+// PORTING: the signing keys the JWKS endpoint serves are generated at
+// startup, so they are collapsed to constants in the tape; replay serves
+// those constants, which are not valid keys for anything.
+//
+// PORTING: the config-rendering case is pure (no container, no HTTP) and
+// runs in every mode; it is the module's own YAML, not Dex's behaviour.
+
+import std.spec
+import std.string
+import std.json
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.dex
+
+const IMAGE = "dexidp/dex:v2.45.0"
+// bcrypt of "password" (dex's own example hash)
+const HASH = "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn get(url: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return st, body, ""
+}
+
+main() {
+    fw = spec.init()
+
+    // What differs run to run: the signing key Dex generates at startup (its
+    // id and RSA modulus), which the test never uses.
+    servirtium.collapse("\"kid\": \"[0-9a-f]{40}\"", "\"kid\": \"KEY-ID\"")
+    servirtium.collapse("\"n\": \"[A-Za-z0-9_-]{300,}\"", "\"n\": \"MODULUS\"")
+
+    spec.describe(fw, "modules/dex (no engine needed)") {
+        spec.it("renders the config") callback {
+            y, err = dex.render_config("http://h:1/dex", "memory", true, true, true, "debug",
+                "- id: \"a\"\n  secret: \"s\"\n  name: \"A\"\n  public: false\n", "", "")
+            spec.assert_ok(err, "rendered")
+            spec.assert_contains(y, "issuer: \"http://h:1/dex\"", "issuer")
+            spec.assert_contains(y, "type: \"memory\"", "storage")
+            spec.assert_contains(y, "\"client_credentials\"", "client credentials grant")
+            spec.assert_contains(y, "staticClients:\n- id: \"a\"", "client")
+            _, err2 = dex.render_config("http://h:1/dex", "memory", true, false, false, "info", "", "", "")
+            spec.assert_contains(err2, "no auth source", "password DB off and no connector is refused")
+        }
+    }
+
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/dex") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves OIDC discovery for the issuer (TestRun_DefaultPath_DiscoveryMatches)") callback {
+            root = ""
+            want_iss = ""
+            want_tok = ""
+            if servirtium.live() == 1 {
+                d, err = dex.run(IMAGE) {
+                    client("my-app", "secret", "My App", ["http://localhost:3000/callback"], [], false)
+                    user("alice@example.com", "alice", HASH, "")
+                }
+                if d != null { testing.cleanup_container(dex.container_of(d)) }
+                spec.assert_ok(err, "dex starts")
+                if err != "" { return }
+                iss = dex.issuer_url(d)
+                spec.assert_true(string.starts_with(iss, "http://localhost:") == 1, "issuer from the mapped port: ${iss}")
+                spec.assert_true(string.ends_with(iss, "/dex") == 1, "issuer path /dex")
+                g, gerr2 = dex.grpc_endpoint(d)
+                spec.assert_ok(gerr2, "grpc endpoint")
+                spec.assert_true(string.starts_with(g, "localhost:") == 1, "grpc host:port")
+                spec.assert_str_eq(dex.config_endpoint(d), "${iss}/.well-known/openid-configuration", "discovery URL")
+                root = string.substring(iss, 0, string.length(iss) - 4)
+                want_iss = iss
+                want_tok = dex.token_endpoint(d)
+            }
+            base, rec = servirtium.recording("dex", "serves_oidc_discovery_for_the_issuer", root)
+            if servirtium.playback() == 1 {
+                // the tape holds {{request.host}} where the container's address was
+                want_iss = "${base}/dex"
+                want_tok = "${base}/dex/token"
+            }
+            st, body, gerr = get("${base}/dex/.well-known/openid-configuration")
+            spec.assert_ok(gerr, "GET discovery")
+            spec.assert_eq(st, 200, "discovery is 200")
+            doc, perr = json.parse(body)
+            spec.assert_ok(perr, "discovery is JSON")
+            if perr == "" {
+                iv, _ = json.object_get(doc, "issuer")
+                is, _ = json.get_string(iv)
+                spec.assert_str_eq(is, want_iss, "the document's issuer is the container's")
+                tv, _ = json.object_get(doc, "token_endpoint")
+                ts, _ = json.get_string(tv)
+                spec.assert_str_eq(ts, want_tok, "token endpoint matches")
+                json.free(doc)
+            }
+            ks, kb, kerr = get("${base}/dex/keys")
+            spec.assert_ok(kerr, "GET keys")
+            spec.assert_eq(ks, 200, "jwks is 200")
+            spec.assert_contains(kb, "\"keys\"", "jwks document")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

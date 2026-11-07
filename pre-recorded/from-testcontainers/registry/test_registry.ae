@@ -1,0 +1,253 @@
+// Ported from testcontainers-go modules/registry/registry_test.go, by way of
+// testcontainers-ae's tests/test_registry.ae (moved here 2026-11-07).
+//
+// A real registry: GET /v2/ and /v2/_catalog over the mapped port; basic auth
+// through an htpasswd file and through htpasswd text (401 without or with a
+// wrong password, 200 with the right one); and the image helpers, which tag a
+// small local image with the registry's name, push it through the engine and
+// find it in /v2/_catalog, then delete it again. Go's wrong-data and
+// build-from-private-registry cases need the 9 MB testdata/data tree and a
+// Dockerfile build that authenticates; not ported (with_data is checked by
+// the file it copies and the env it sets).
+//
+// PORTING: the tapes hold only the test's own HTTP calls to the registry:
+// /v2/, /v2/_catalog, and the 401 / 401 / 200 sequence of the two auth cases.
+// What the container engine does is not on any tape: pulling, tagging and
+// pushing an image go from the engine to the registry (the push case's one
+// recorded call is the catalog GET after the push), and the data-directory
+// case, the authenticated-push case and the engine steps of the push case run
+// only live.
+//
+// PORTING: the htpasswd (testdata/auth/htpasswd, testdata/data/marker.txt)
+// files come from testcontainers-go's modules/registry/testdata. The user
+// is testuser; the password is testpassword.
+//
+// PORTING: the Basic credentials are on the tapes as Basic REDACTED[<label>]
+// (a literal swap, put back on playback); the wrong password is a real
+// refusal case, so they are labelled literals, not the credential preset.
+
+import std.spec
+import std.string
+import std.json
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.registry
+
+const IMAGE = "registry:2.8.3"
+const SMALL_IMAGE = "alpine:3"
+
+// A bcrypt hash of "testpassword" for user "testuser", from Go's test.
+const HTPASSWD = "testuser:$2y$05$tTymaYlWwJOqie.bcSUUN.I.kxmo1m5TLzYQ4/ejJ46UMXGtq78EO"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// A recording shows "Authorization: Basic REDACTED[<label>]"; playback still
+// matches the real header. Not Servirtium's redact_credentials preset: that
+// matches Authorization on presence, and these cases tell a right password
+// from a wrong one, which playback should keep checking.
+fn redact_basic(user: string, pw: string, label: string) {
+    secret = encoding.base64_encode_padded(string.bytes("${user}:${pw}"))
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${secret}", "Basic REDACTED[${label}]")
+}
+
+fn get(url: string, user: string, password: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 10s)
+    if string.length(user) > 0 {
+        client.set_header(req, "Authorization", "Basic ${encoding.base64_encode_padded(string.bytes("${user}:${password}"))}")
+    }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return st, body, ""
+}
+
+fn container_env(c: *docker.Container) -> string {
+    doc, err = tc.inspect(c)
+    if err != "" { return "" }
+    cfg, _ = json.object_get(doc, "Config")
+    ev, _ = json.object_get(cfg, "Env")
+    out = ""
+    n = json.json_array_size(ev)
+    i = 0
+    while i < n {
+        v, _ = json.array_get(ev, i)
+        s, _ = json.get_string(v)
+        out = "${out} ${s}"
+        i = i + 1
+    }
+    json.free(doc)
+    return out
+}
+
+fn check_auth(base: string) {
+    st0, _, e0 = get("${base}/v2/_catalog", "", "")
+    spec.assert_ok(e0, "GET without auth")
+    spec.assert_eq(st0, 401, "no credentials is 401")
+    st1, _, e1 = get("${base}/v2/_catalog", "testuser", "wrong")
+    spec.assert_ok(e1, "GET with a wrong password")
+    spec.assert_eq(st1, 401, "a wrong password is 401")
+    st2, _, e2 = get("${base}/v2/_catalog", "testuser", "testpassword")
+    spec.assert_ok(e2, "GET with the right password")
+    spec.assert_eq(st2, 200, "the right password is 200")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // The two Basic credentials the auth cases send are kept off the tapes.
+    redact_basic("testuser", "testpassword", "testuser")
+    redact_basic("testuser", "wrong", "testuser-wrong-password")
+
+    spec.describe(fw, "modules/registry") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("answers /v2/ and lists an empty catalog (TestRegistry_unauthenticated)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                reg, err = registry.run(IMAGE)
+                if reg != null { testing.cleanup_container(reg.container) }
+                spec.assert_ok(err, "registry starts")
+                if err != "" { return }
+                b, aerr = registry.address(reg)
+                spec.assert_ok(aerr, "address")
+                spec.assert_true(string.starts_with(b, "http://") == 1, "an http:// address: ${b}")
+                hp, _ = registry.host_address(reg)
+                spec.assert_str_eq(reg.registry_name, hp, "registry_name is the host address")
+                spec.assert_str_eq(b, "http://${hp}", "address is http:// + host address")
+                spec.assert_contains(container_env(reg.container), "REGISTRY_STORAGE_DELETE_ENABLED=true", "deletion is enabled")
+                addr = b
+            }
+            base, rec = servirtium.recording("registry", "answers_v2_and_lists_an_empty_catalog", addr)
+            st, _, e1 = get("${base}/v2/", "", "")
+            spec.assert_ok(e1, "GET /v2/")
+            spec.assert_eq(st, 200, "/v2/ is 200")
+            st2, body, e2 = get("${base}/v2/_catalog", "", "")
+            spec.assert_ok(e2, "GET /v2/_catalog")
+            spec.assert_eq(st2, 200, "/v2/_catalog is 200")
+            spec.assert_contains(body, "\"repositories\":[]", "an empty catalog: ${body}")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("requires basic auth with an htpasswd file (TestRunContainer_authenticated)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                reg, err = registry.run(IMAGE) {
+                    htpasswd_file("registry/testdata/auth/htpasswd")
+                }
+                if reg != null { testing.cleanup_container(reg.container) }
+                spec.assert_ok(err, "registry starts")
+                if err != "" { return }
+                b, _ = registry.address(reg)
+                addr = b
+            }
+            base, rec = servirtium.recording("registry", "requires_basic_auth_with_an_htpasswd_file", addr)
+            check_auth(base)
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("requires basic auth with htpasswd text (TestRunContainer_authenticated_withCredentials)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                reg, err = registry.run(IMAGE) {
+                    htpasswd(HTPASSWD)
+                }
+                if reg != null { testing.cleanup_container(reg.container) }
+                spec.assert_ok(err, "registry starts")
+                if err != "" { return }
+                b, _ = registry.address(reg)
+                addr = b
+            }
+            base, rec = servirtium.recording("registry", "requires_basic_auth_with_htpasswd_text", addr)
+            check_auth(base)
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "copies a data directory with with_data", "no container in playback") callback {
+            reg, err = registry.run(IMAGE) {
+                with_data("registry/testdata/data")
+            }
+            if reg != null { testing.cleanup_container(reg.container) }
+            spec.assert_ok(err, "registry starts")
+            if err == "" {
+                spec.assert_contains(container_env(reg.container), "REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/data", "the root directory is /data")
+                marker, cerr = tc.copy_file_from_container(reg.container, "/data/marker.txt")
+                spec.assert_ok(cerr, "the file is in the container")
+                spec.assert_contains(marker, "standing in for a registry data directory", "it is the file we gave")
+            }
+        }
+
+        spec.it("tags, pushes, finds and deletes an image (PushImage, ImageExists, DeleteImage, TagImage)") callback {
+            addr = ""
+            ref = ""
+            let reg: *registry.RegistryContainer = null
+            let cl: ptr = null
+            if servirtium.live() == 1 {
+                r, err = registry.run(IMAGE)
+                if r != null { testing.cleanup_container(r.container) }
+                spec.assert_ok(err, "registry starts")
+                if err != "" { return }
+                reg = r
+                c, _ = docker.client()
+                cl = c
+                perr = registry.pull_image(reg, SMALL_IMAGE)
+                spec.assert_ok(perr, "pull ${SMALL_IMAGE}")
+                ref = "${reg.registry_name}/tcae/alpine:pushed"
+                terr = registry.tag_image(reg, SMALL_IMAGE, ref)
+                spec.assert_ok(terr, "tag")
+                missing = registry.image_exists(reg, ref, "", "")
+                spec.assert_true(string.length(missing) > 0, "not in the registry before the push")
+                pe = registry.push_image(reg, ref, "", "")
+                spec.assert_ok(pe, "push")
+                b, _ = registry.address(reg)
+                addr = b
+            }
+            // the push itself goes from the engine to the registry, not through
+            // the recorder; the test's own HTTP call is the catalog
+            base, rec = servirtium.recording("registry", "tags_pushes_finds_and_deletes_an_image", addr)
+            st, body, ge = get("${base}/v2/_catalog", "", "")
+            spec.assert_ok(ge, "catalog")
+            spec.assert_eq(st, 200, "catalog is 200")
+            spec.assert_contains(body, "tcae/alpine", "the pushed repository is in the catalog: ${body}")
+            servirtium.end_recording(rec)
+            if servirtium.live() == 1 {
+                spec.assert_ok(registry.image_exists(reg, ref, "", ""), "image_exists after the push")
+                de = registry.delete_image(reg, ref, "", "")
+                spec.assert_ok(de, "delete")
+                gone = registry.image_exists(reg, ref, "", "")
+                spec.assert_true(string.length(gone) > 0, "gone after delete_image")
+                docker.remove_image(cl, ref, true)
+            }
+        }
+
+        spec.it_when(servirtium.live(), "pushes to a registry that requires basic auth, with credentials (TestRegistry_PushImage)", "no container in playback") callback {
+            reg, err = registry.run(IMAGE) {
+                htpasswd_file("registry/testdata/auth/htpasswd")
+            }
+            if reg != null { testing.cleanup_container(reg.container) }
+            spec.assert_ok(err, "registry starts")
+            if err == "" {
+                cl, _ = docker.client()
+                spec.assert_ok(registry.pull_image(reg, SMALL_IMAGE), "pull ${SMALL_IMAGE}")
+                ref = "${reg.registry_name}/tcae/alpine:authed"
+                spec.assert_ok(registry.tag_image(reg, SMALL_IMAGE, ref), "tag")
+                spec.assert_ok(registry.push_image(reg, ref, "testuser", "testpassword"), "an authenticated push (push_image then finds it with the same credentials)")
+                docker.remove_image(cl, ref, true)
+            }
+        }
+    }
+    return spec.run_summary(fw)
+}

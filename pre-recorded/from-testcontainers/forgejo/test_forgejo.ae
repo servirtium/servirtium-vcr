@@ -1,0 +1,140 @@
+// Ported from testcontainers-go modules/forgejo/forgejo_test.go, by way of
+// testcontainers-ae's tests/test_forgejo.ae (moved here 2026-11-07).
+//
+// A real Forgejo: /api/healthz answers 200 at the module's connection
+// string, and the admin user the module creates (default and custom
+// credentials) authenticates against /api/v1/user with HTTP Basic auth.
+//
+// PORTING: the HTTP conversation is in the tapes beside this file; the
+// module's fields (admin user and password, the SSH connection string) and
+// the refused options are checked only when live. The admin user is created
+// by the module at container start (a command in the container, not an HTTP
+// call), so it is not on the tape.
+//
+// PORTING: the Basic credentials are on the tapes as Basic REDACTED[<label>]
+// (a literal swap, put back on playback). The second case asks for the
+// DEFAULT admin after a custom one was created and expects 401, so the
+// default credentials are a real wrong-credential case.
+
+import std.spec
+import std.string
+import std.encoding
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.forgejo
+
+const IMAGE = "codeberg.org/forgejo/forgejo:11"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// A recording shows "Authorization: Basic REDACTED[<label>]"; playback still
+// matches the real header. Not Servirtium's redact_credentials preset: that
+// matches Authorization on presence, and the second case tells the default
+// admin (refused) from the custom one, which playback should keep checking.
+fn redact_basic(user: string, pw: string, label: string) {
+    secret = encoding.base64_encode_padded(string.bytes("${user}:${pw}"))
+    servirtium.redact(servirtium.FIELD_REQUEST_HEADERS, "Basic ${secret}", "Basic REDACTED[${label}]")
+}
+
+// (status, body, error); user "" sends no Authorization.
+fn get(url: string, user: string, pw: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    if string.length(user) > 0 {
+        client.set_header(req, "Authorization", "Basic ${encoding.base64_encode_padded(string.bytes("${user}:${pw}"))}")
+    }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return st, body, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // Every Basic credential the cases send is kept off the tapes.
+    redact_basic("forgejo-admin", "forgejo-admin", "default-admin")
+    redact_basic("testuser", "testpassword", "testuser")
+    // What differs run to run: the health checks' times and the admin's
+    // created / last_login times, none of them sent back.
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+
+    spec.describe(fw, "modules/forgejo") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("is healthy and has the default admin (TestForgejo)") callback {
+            url = ""
+            admin_user = "forgejo-admin"
+            admin_pw = "forgejo-admin"
+            if servirtium.live() == 1 {
+                f, err = forgejo.run(IMAGE)
+                if f != null { testing.cleanup_container(f.container) }
+                spec.assert_ok(err, "forgejo starts")
+                if err != "" { return }
+                u, uerr = forgejo.connection_string(f)
+                spec.assert_ok(uerr, "connection string")
+                spec.assert_true(string.starts_with(u, "http://localhost:") == 1, "an http:// URL: ${u}")
+                spec.assert_str_eq(f.admin_username, "forgejo-admin", "default admin user")
+                spec.assert_str_eq(f.admin_password, "forgejo-admin", "default admin password")
+                ssh, serr = forgejo.ssh_connection_string(f)
+                spec.assert_ok(serr, "ssh connection string")
+                spec.assert_contains(ssh, ":", "host:port")
+                url = u
+                admin_user = f.admin_username
+                admin_pw = f.admin_password
+            }
+            base, rec = servirtium.recording("forgejo", "is_healthy_and_has_the_default_admin", url)
+            hs, _, herr = get("${base}/api/healthz", "", "")
+            spec.assert_ok(herr, "GET /api/healthz")
+            spec.assert_eq(hs, 200, "healthz is 200")
+            us, ub, uerr2 = get("${base}/api/v1/user", admin_user, admin_pw)
+            spec.assert_ok(uerr2, "GET /api/v1/user")
+            spec.assert_eq(us, 200, "the default admin authenticates: ${ub}")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("creates the admin with custom credentials (TestForgejoWithAdminCredentials)") callback {
+            url = ""
+            if servirtium.live() == 1 {
+                f, err = forgejo.run(IMAGE) {
+                    admin_credentials("testuser", "testpassword", "test@example.com")
+                }
+                if f != null { testing.cleanup_container(f.container) }
+                spec.assert_ok(err, "forgejo starts")
+                if err != "" { return }
+                spec.assert_str_eq(f.admin_username, "testuser", "admin user")
+                u, _ = forgejo.connection_string(f)
+                url = u
+            }
+            base, rec = servirtium.recording("forgejo", "creates_the_admin_with_custom_credentials", url)
+            us, ub, uerr = get("${base}/api/v1/user", "testuser", "testpassword")
+            spec.assert_ok(uerr, "GET /api/v1/user")
+            spec.assert_eq(us, 200, "the custom admin authenticates: ${ub}")
+            spec.assert_contains(ub, "test@example.com", "with the given email")
+            ds, _, derr = get("${base}/api/v1/user", "forgejo-admin", "forgejo-admin")
+            spec.assert_ok(derr, "default admin request")
+            spec.assert_eq(ds, 401, "the default admin does not exist")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "refuses bad options (WithAdminCredentials, WithConfig)", "no container in playback") callback {
+            f, err = forgejo.run(IMAGE) { admin_credentials("u", "", "e@x") }
+            spec.assert_contains(err, "must not be empty", "empty password")
+            f2, err2 = forgejo.run(IMAGE) { config("a__b", "k", "v") }
+            spec.assert_contains(err2, "must not contain", "double underscore")
+        }
+    }
+    return spec.run_summary(fw)
+}

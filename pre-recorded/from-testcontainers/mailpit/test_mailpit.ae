@@ -1,0 +1,198 @@
+// Ported from testcontainers-go modules/mailpit/mailpit_test.go, by way of
+// testcontainers-ae's tests/test_mailpit.ae (moved here 2026-11-07).
+//
+// A real Mailpit: a mail is sent over SMTP at the mapped port (EHLO, MAIL
+// FROM, RCPT TO, DATA, by hand over std.tcp) and read back over the REST API
+// (GET /api/v1/messages) at the mapped HTTP port.
+//
+// PORTING: only the REST read-back is on the tapes. The SMTP conversation is
+// a TCP protocol, not HTTP, so it is part of the live setup: the test sends
+// the mail before it starts recording, and a port that replays the tape sends
+// nothing and needs no container. The SMTP-auth case is all SMTP plus
+// tc.exec, so it runs only live.
+
+import std.spec
+import std.string
+import std.tcp
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.mailpit
+
+const IMAGE = "axllent/mailpit:v1.20"
+
+fn last_line(text: string) -> string {
+    rest = text
+    i = string.index_of(rest, "\n")
+    while i >= 0 {
+        rest = string.substring(rest, i + 1, string.length(rest))
+        i = string.index_of(rest, "\n")
+    }
+    return string.trim(rest)
+}
+
+// Read one SMTP reply (possibly multi-line): done when a line starts with
+// three digits and a space. Returns the whole reply text.
+fn smtp_reply(sock: ptr) -> (string, string) {
+    buf = ""
+    tries = 0
+    while tries < 100 {
+        chunk, rerr = tcp.read(sock, 4096)
+        if rerr != "" && rerr != "timeout" { return buf, rerr }
+        buf = string.concat(buf, chunk)
+        if string.ends_with(buf, "\n") == 1 {
+            // the last line of the reply: "250 ..." (not "250-...")
+            last = last_line(string.trim(buf))
+            if string.length(last) >= 4 && string.substring(last, 3, 4) == " " { return buf, "" }
+        }
+        tries = tries + 1
+    }
+    return buf, "no complete SMTP reply: ${buf}"
+}
+
+fn smtp_cmd(sock: ptr, line: string, expect: string) -> string {
+    _, werr = tcp.write(sock, string.concat(line, "\r\n"))
+    if werr != "" { return werr }
+    rep, rerr = smtp_reply(sock)
+    if rerr != "" { return rerr }
+    if string.starts_with(rep, expect) == 0 { return "'${line}' expected ${expect}, got: ${rep}" }
+    return ""
+}
+
+// Send one mail: "" or the error.
+fn send_mail(endpoint: string, from: string, to: string, subject: string, body: string) -> string {
+    i = string.index_of(endpoint, ":")
+    h = string.substring(endpoint, 0, i)
+    port, _ = string.to_int(string.substring(endpoint, i + 1, string.length(endpoint)))
+    sock, cerr = tcp.connect(h, port)
+    if cerr != "" { return "connect ${endpoint}: ${cerr}" }
+    banner, berr = smtp_reply(sock)
+    if berr != "" || string.starts_with(banner, "220") == 0 { tcp.tcp_close(sock); return "banner: ${banner} ${berr}" }
+    e = smtp_cmd(sock, "EHLO tcae.test", "250")
+    if e == "" { e = smtp_cmd(sock, "MAIL FROM:<${from}>", "250") }
+    if e == "" { e = smtp_cmd(sock, "RCPT TO:<${to}>", "250") }
+    if e == "" { e = smtp_cmd(sock, "DATA", "354") }
+    if e == "" {
+        msg = "From: ${from}\r\nTo: ${to}\r\nSubject: ${subject}\r\n\r\n${body}\r\n."
+        e = smtp_cmd(sock, msg, "250")
+    }
+    if e == "" { e = smtp_cmd(sock, "QUIT", "221") }
+    tcp.tcp_close(sock)
+    return e
+}
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn http_get(url: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 5s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return status, body, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run, none of it sent back by the test: the message's
+    // ID and Message-ID, its Created time, and the nonce in the response's
+    // Content-Security-Policy header.
+    servirtium.collapse("\"ID\":\"[A-Za-z0-9]{22}\"", "\"ID\":\"MESSAGE-ID\"")
+    servirtium.collapse("\"MessageID\":\"[A-Za-z0-9]+@mailpit\"", "\"MessageID\":\"MESSAGE-ID@mailpit\"")
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+    // The message's Size in bytes, which includes the generated Message-ID
+    // header (21 or 22 characters, depending on the run).
+    servirtium.collapse("\"Size\":[0-9]+", "\"Size\":0")
+    servirtium.collapse("nonce-[A-Za-z0-9]{22}", "nonce-NONCE")
+
+    spec.describe(fw, "modules/mailpit") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("receives a mail over SMTP and serves it over HTTP (TestMailpit)") callback {
+            base = ""
+            if servirtium.live() == 1 {
+                c, err = mailpit.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "mailpit starts")
+                if err != "" { return }
+                smtp, e1 = mailpit.smtp_endpoint(c)
+                spec.assert_ok(e1, "smtp endpoint")
+                b, e2 = mailpit.http_url(c)
+                spec.assert_ok(e2, "http url")
+                spec.assert_true(string.starts_with(b, "http://") == 1, "an http:// URL: ${b}")
+                spec.assert_true(string.contains(smtp, "://") == 0, "smtp endpoint is host:port: ${smtp}")
+                se = send_mail(smtp, "sender@example.com", "rcpt@example.com", "Hello from tcae", "the body text")
+                spec.assert_ok(se, "SMTP conversation")
+                base = b
+            }
+            rbase, rec = servirtium.recording("mailpit", "receives_a_mail_over_smtp_and_serves_it_over_http", base)
+            status, body, herr = http_get("${rbase}/api/v1/messages")
+            spec.assert_ok(herr, "GET /api/v1/messages")
+            spec.assert_eq(status, 200, "messages API status")
+            spec.assert_contains(body, "Hello from tcae", "the subject is in the API's list")
+            spec.assert_contains(body, "sender@example.com", "the sender is in the API's list")
+            spec.assert_contains(body, "rcpt@example.com", "the recipient is in the API's list")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "requires authentication with smtp_auth (TestMailpitWithSMTPAuth)", "no container in playback") callback {
+            c, err = mailpit.run(IMAGE) {
+                smtp_auth("user", "secret")
+            }
+            testing.cleanup_container(c)
+            spec.assert_ok(err, "mailpit starts")
+            if err == "" {
+                smtp, _ = mailpit.smtp_endpoint(c)
+                // without credentials MAIL FROM is refused ("530 5.7.0 Authentication required")
+                se = send_mail(smtp, "a@example.com", "b@example.com", "no auth", "x")
+                spec.assert_true(string.length(se) > 0, "an unauthenticated send is refused")
+                spec.assert_contains(se, "530", "the refusal is 530 authentication required: ${se}")
+                _, out, eerr = tc.exec(c, ["sh", "-c", "env | grep ^MP_"])
+                spec.assert_ok(eerr, "exec")
+                spec.assert_contains(out, "MP_SMTP_AUTH=user:secret", "the credentials are in the env")
+                spec.assert_contains(out, "MP_SMTP_AUTH_ALLOW_INSECURE=true", "plaintext auth is allowed")
+            }
+        }
+
+        spec.it("limits the messages kept with message_limit (TestMailpitWithMessageLimit)") callback {
+            base = ""
+            if servirtium.live() == 1 {
+                c, err = mailpit.run(IMAGE) {
+                    message_limit(2)
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "mailpit starts")
+                if err != "" { return }
+                smtp, _ = mailpit.smtp_endpoint(c)
+                b, _ = mailpit.http_url(c)
+                // Mailpit prunes on a slow timer (minutes), so the effect is not
+                // observable in a test; the option is checked in the container's
+                // environment and the server must still take mail with it set.
+                _, out, eerr = tc.exec(c, ["sh", "-c", "env | grep ^MP_MAX"])
+                spec.assert_ok(eerr, "exec")
+                spec.assert_contains(out, "MP_MAX_MESSAGES=2", "the limit is in the env")
+                se = send_mail(smtp, "s@example.com", "r@example.com", "limited", "b")
+                spec.assert_ok(se, "send")
+                base = b
+            }
+            rbase, rec = servirtium.recording("mailpit", "limits_the_messages_kept_with_message_limit", base)
+            status, body, herr = http_get("${rbase}/api/v1/messages")
+            spec.assert_ok(herr, "GET messages")
+            spec.assert_contains(body, "\"total\":1", "the mail arrived")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

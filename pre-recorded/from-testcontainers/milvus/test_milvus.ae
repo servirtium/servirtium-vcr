@@ -1,0 +1,79 @@
+// Ported from testcontainers-go modules/milvus/milvus_test.go, by way of
+// testcontainers-ae's tests/test_milvus.ae (moved here 2026-11-07).
+//
+// A real Milvus standalone (TestMilvus): /healthz on the HTTP port answers OK,
+// and the gRPC port from connection_string accepts a TCP connection.
+//
+// PORTING: only the /healthz GET is on the tape. The gRPC port check is a TCP
+// connection with no HTTP in it, and the connection string is a field of the
+// module's struct, so both run only live (playback starts no container).
+
+import std.spec
+import std.string
+import std.tcp
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.milvus
+
+const IMAGE = "milvusdb/milvus:v2.3.9"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// (status, body, error) of a GET.
+fn http_get(url: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    out = client.response_body(r)
+    client.response_free(r)
+    return status, out, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/milvus") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("is healthy, and the connection string is the gRPC port (TestMilvus)") callback {
+            web = ""
+            if servirtium.live() == 1 {
+                c, err = milvus.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "milvus starts")
+                if err != "" { return }
+                addr, aerr = milvus.connection_string(c)
+                spec.assert_ok(aerr, "connection string")
+                grpc, _ = tc.endpoint(c, milvus.GRPC_PORT, "")
+                spec.assert_str_eq(addr, grpc, "host:port of 19530")
+                w, _ = tc.endpoint(c, milvus.HTTP_PORT, "http")
+                web = w
+                h, _ = tc.host(c)
+                port, _ = tc.mapped_port(c, milvus.GRPC_PORT)
+                sock, cerr = tcp.connect(h, port)
+                spec.assert_ok(cerr, "the gRPC port accepts a connection at ${addr}")
+                if cerr == "" { tcp.tcp_close(sock) }
+            }
+            base, rec = servirtium.recording("milvus", "is_healthy_and_the_connection_string_is_the_grpc_port", web)
+            st, body, herr = http_get("${base}/healthz")
+            spec.assert_ok(herr, "GET /healthz")
+            spec.assert_eq(st, 200, "healthz is 200")
+            spec.assert_contains(body, "OK", "healthz says OK: ${body}")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

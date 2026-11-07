@@ -42,6 +42,23 @@ reference for what each case does.
 | `gcloud_datastore` | 1 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
 | `gcloud_pubsub` | 1 | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
 | `gcloud_bigquery` | 1 | `ghcr.io/goccy/bigquery-emulator:0.6.1` (linux/amd64 only) |
+| `meilisearch` | 2 | `getmeili/meilisearch:v1.10.3` |
+| `solr` | 1 | `solr:9` |
+| `qdrant` | 1 | `qdrant/qdrant:v1.7.4` |
+| `chroma` | 1 | `chromadb/chroma:1.4.0` |
+| `weaviate` | 1 | `semitechnologies/weaviate:1.29.0` |
+| `milvus` | 1 | `milvusdb/milvus:v2.3.9` |
+| `pinecone` | 1 | `ghcr.io/pinecone-io/pinecone-local:v0.7.0` |
+| `vearch` | 1 | `vearch/vearch:3.5.1` |
+| `mailpit` | 2 | `axllent/mailpit:v1.20` |
+| `inbucket` | 1 | `inbucket/inbucket:sha-2d409bb` |
+| `papercutsmtp` | 1 | `changemakerstudiosus/papercut-smtp:latest` |
+| `dex` | 1 | `dexidp/dex:v2.45.0` |
+| `forgejo` | 2 | `codeberg.org/forgejo/forgejo:11` |
+| `registry` | 4 | `registry:2.8.3` |
+| `toxiproxy` | 1 (2 tapes) | `ghcr.io/shopify/toxiproxy:2.12.0` |
+| `grafana_lgtm` | 1 (5 tapes) | `grafana/otel-lgtm:0.6.0` |
+| `nginx` | 4 (5 tapes) | `nginx:1.25` |
 
 ## A tape is a test scenario you can keep
 
@@ -130,6 +147,23 @@ Per suite (registered at the top of its `main`):
 | gcloud_datastore | | | | |
 | gcloud_pubsub | | `publishTime` | | |
 | gcloud_bigquery | | the query job's `jobId` | | |
+| meilisearch | | | each `Authorization: Bearer` master key, as `REDACTED[<label>]` | `vary` |
+| solr | | `QTime`, `_version_` | | |
+| qdrant | | `"time"` seconds | | `vary` |
+| chroma | | the nanosecond heartbeat | | |
+| weaviate | | | | |
+| milvus | | | | |
+| pinecone | | | | |
+| vearch | | the root banner's whole `"data"` object | | |
+| mailpit | | message `ID`, `MessageID`, `Created`, `Size`, the CSP `nonce-` | | |
+| inbucket | | message `id`, `date`, `posix-millis` | | |
+| papercutsmtp | | | | |
+| dex | | the signing key's `kid` and RSA modulus `n` | | |
+| forgejo | | RFC 3339 times | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| registry | | | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| toxiproxy | | | | `X-Toxiproxy-Request-Id` |
+| grafana_lgtm | | `createdAt` / `updatedAt` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
+| nginx | | | | `Last-Modified`, `ETag` |
 
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
@@ -173,6 +207,31 @@ it is on the tape, and playback is plain HTTP.
   image is linux/amd64 only.
 - **Not recordable:** the Bigtable and Spanner emulators' tests only open a
   TCP connection to a gRPC port (no HTTP), so they stay in testcontainers-ae.
+
+**Search, mail, identity and the rest:**
+- **Output order that changes run to run.** Meilisearch and Qdrant send
+  their response headers in a different order each run, and Vearch its
+  JSON keys, so a re-record would differ. For now `vary` is left out
+  (Meilisearch, Qdrant), Qdrant's dashboard page is checked live only, and
+  Vearch's banner `data` object is collapsed whole. Servirtium could instead
+  write headers and JSON keys in a stable order (servirtium-vcr TODO.md).
+- **Solr:** the module creates its collection inside `run`, so that call is
+  not on the tape. The health check is `/admin/info/health`, not
+  `/admin/info/system` (memory, load and clock readings).
+- **Mailpit, Inbucket, Papercut:** the SMTP send is TCP and runs live before
+  recording; only the REST read-back (Papercut: its web page) is taped.
+- **Dex:** the discovery document names the issuer, the container's own
+  host:port; the test compares it with the live issuer, or with
+  `<base>/dex` on playback. The JWKS key is collapsed to constants.
+- **Registry:** pull, tag and push go from the container engine to the
+  registry, not through the recorder; only the test's own HTTP calls are
+  taped.
+- **Grafana LGTM:** Prometheus, Loki and Tempo are polled live until ready,
+  then each tape holds one request. OTLP gRPC is checked live only.
+- **Pinecone:** the tape names the index host `localhost:5081`, fixed by the
+  image.
+- **Floating tags:** `solr:9` and `papercut-smtp:latest` can change under a
+  re-record.
 
 Checks with no HTTP in them (a module's defaults, `tc.exec`, inspecting the
 container, a refused option) run only live, and are skipped in playback.

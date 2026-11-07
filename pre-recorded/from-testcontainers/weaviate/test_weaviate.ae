@@ -1,0 +1,90 @@
+// Ported from testcontainers-go modules/weaviate/weaviate_test.go, by way of
+// testcontainers-ae's tests/test_weaviate.ae (moved here 2026-11-07).
+//
+// A real Weaviate: the ready endpoint and /v1/meta answer on the HTTP
+// address, anonymous access lets a class be created and read back, and the
+// gRPC address is a host:port.
+//
+// PORTING: the HTTP conversation is in the tape beside this file. The gRPC
+// address check is on the module's struct, not on the wire, so it runs only
+// live.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.weaviate
+
+const IMAGE = "semitechnologies/weaviate:1.29.0"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/weaviate") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the REST API anonymously (TestWeaviate)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = weaviate.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "weaviate starts")
+                if err != "" { return }
+                scheme, hostport, aerr = weaviate.http_host_address(c)
+                spec.assert_ok(aerr, "http host address")
+                spec.assert_str_eq(scheme, "http", "scheme")
+                grpc, gerr2 = weaviate.grpc_host_address(c)
+                spec.assert_ok(gerr2, "grpc address")
+                spec.assert_true(string.starts_with(grpc, "localhost:") == 1, "host:port: ${grpc}")
+                addr = "${scheme}://${hostport}"
+            }
+            base, rec = servirtium.recording("weaviate", "serves_the_rest_api_anonymously", addr)
+            rs, _rb, rerr = http_do("GET", "${base}/v1/.well-known/ready", [], "")
+            spec.assert_ok(rerr, "GET ready")
+            spec.assert_eq(rs, 200, "ready")
+            ms, mb, merr = http_do("GET", "${base}/v1/meta", [], "")
+            spec.assert_ok(merr, "GET /v1/meta")
+            spec.assert_eq(ms, 200, "meta")
+            spec.assert_contains(mb, "\"version\":\"1.29.0\"", "the image's version: ${mb}")
+            cs, cb, cerr = http_do("POST", "${base}/v1/schema", [], "{\"class\":\"Tc\",\"vectorizer\":\"none\"}")
+            spec.assert_ok(cerr, "POST /v1/schema")
+            spec.assert_eq(cs, 200, "class created anonymously: ${cb}")
+            gs, gb, gerr = http_do("GET", "${base}/v1/schema/Tc", [], "")
+            spec.assert_ok(gerr, "GET class")
+            spec.assert_eq(gs, 200, "class exists")
+            spec.assert_contains(gb, "\"class\":\"Tc\"", "its schema: ${gb}")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

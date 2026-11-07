@@ -1,0 +1,182 @@
+// Ported from testcontainers-go modules/nginx/nginx_test.go, by way of
+// testcontainers-ae's tests/test_nginx.ae (moved here 2026-11-07).
+//
+// A real nginx: GET / answers 200 with the stock page, a file copied in
+// through the core's file_content is served, and each config option is shown
+// to be in force by a location only that config defines.
+//
+// PORTING: the tapes hold the HTTP conversation. What differs between them is
+// the configuration the container started with (a copied-in file, a replaced
+// nginx.conf, a replaced conf.d/default.conf), which is not on any tape:
+// each tape's name says which. The configs are in testdata/ beside this
+// file (from testcontainers-go's modules/nginx/testdata); a port that
+// replays a tape needs neither them nor a container. The https endpoint's
+// shape is the module's own string, checked live only.
+//
+// PORTING: the fourth case starts two containers (Go's nginx.conf, then
+// Go's default.conf), so it has two tapes: the case's name for the first
+// and the name with "_default_conf" for the second.
+//
+// PORTING: the Last-Modified and ETag response headers are left out: for the
+// copied-in file they come from the time it was copied, which differs every
+// run.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.nginx
+
+const IMAGE = "nginx:1.25"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn get(base: string, path: string) -> (int, string, string) {
+    req = client.request("GET", "${base}${path}")
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 10s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return status, body, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: the copied-in file's modification time (and so
+    // its Last-Modified and ETag headers).
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "Last-Modified")
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "ETag")
+
+    spec.describe(fw, "modules/nginx") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the stock page and a copied-in file (TestNginx)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = nginx.run(IMAGE) {
+                    tc.file_content("served by tcae\n", "/usr/share/nginx/html/tcae.txt", 420)
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "nginx starts")
+                if err != "" { return }
+                b, eerr = nginx.http_endpoint(c)
+                spec.assert_ok(eerr, "http endpoint")
+                spec.assert_true(string.starts_with(b, "http://localhost:") == 1, "an http:// URL: ${b}")
+                addr = b
+            }
+            base, rec = servirtium.recording("nginx", "serves_the_stock_page_and_a_copied_in_file", addr)
+            status, body, herr = get(base, "/")
+            spec.assert_ok(herr, "GET /")
+            spec.assert_eq(status, 200, "GET / is 200")
+            spec.assert_contains(body, "Welcome to nginx!", "the stock page")
+            s2, b2, e2 = get(base, "/tcae.txt")
+            spec.assert_ok(e2, "GET /tcae.txt")
+            spec.assert_eq(s2, 200, "the copied file is served")
+            spec.assert_str_eq(b2, "served by tcae\n", "with the content we gave")
+            s3, _, _ = get(base, "/missing")
+            spec.assert_eq(s3, 404, "a missing path is 404")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "shapes the https endpoint", "no container in playback") callback {
+            c, err = nginx.run(IMAGE)
+            testing.cleanup_container(c)
+            spec.assert_ok(err, "nginx starts")
+            if err == "" {
+                u, uerr = nginx.https_endpoint(c)
+                spec.assert_ok(uerr, "https endpoint")
+                p, _ = tc.mapped_port(c, nginx.HTTPS_PORT)
+                spec.assert_str_eq(u, "https://localhost:${p}", "https://host:mapped 443")
+            }
+        }
+
+        spec.it("replaces nginx.conf (TestNginxWithConfigFile)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = nginx.run(IMAGE) {
+                    config_file("nginx/testdata/whoami-nginx.conf")
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "nginx starts")
+                if err != "" { return }
+                b, _ = nginx.http_endpoint(c)
+                addr = b
+            }
+            base, rec = servirtium.recording("nginx", "replaces_nginx_conf", addr)
+            status, body, herr = get(base, "/whoami")
+            spec.assert_ok(herr, "GET /whoami")
+            spec.assert_eq(status, 200, "the location from the given nginx.conf")
+            spec.assert_str_eq(body, "main nginx.conf", "its body")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it("accepts Go's testdata/nginx.conf and default.conf (TestNginxWithConfigFile, TestNginxWithCustomConfig)") callback {
+            addr = ""
+            addr2 = ""
+            if servirtium.live() == 1 {
+                c, err = nginx.run(IMAGE) {
+                    config_file("nginx/testdata/nginx.conf")
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "nginx starts with Go's nginx.conf")
+                if err != "" { return }
+                b, _ = nginx.http_endpoint(c)
+                addr = b
+                c2, err2 = nginx.run(IMAGE) {
+                    custom_config("nginx/testdata/default.conf")
+                }
+                testing.cleanup_container(c2)
+                spec.assert_ok(err2, "nginx starts with Go's default.conf")
+                if err2 != "" { return }
+                b2, _ = nginx.http_endpoint(c2)
+                addr2 = b2
+            }
+            base, rec = servirtium.recording("nginx", "accepts_gos_testdata_nginx_conf_and_default_conf", addr)
+            status, _, herr = get(base, "/")
+            spec.assert_ok(herr, "GET /")
+            spec.assert_eq(status, 200, "GET / is 200")
+            servirtium.end_recording(rec)
+            base2, rec2 = servirtium.recording("nginx", "accepts_gos_testdata_nginx_conf_and_default_conf_default_conf", addr2)
+            s2, _, e2 = get(base2, "/")
+            spec.assert_ok(e2, "GET /")
+            spec.assert_eq(s2, 200, "GET / is 200")
+            servirtium.end_recording(rec2)
+        }
+
+        spec.it("replaces conf.d/default.conf (TestNginxWithCustomConfig)") callback {
+            addr = ""
+            if servirtium.live() == 1 {
+                c, err = nginx.run(IMAGE) {
+                    custom_config("nginx/testdata/ping.conf")
+                }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "nginx starts")
+                if err != "" { return }
+                b, _ = nginx.http_endpoint(c)
+                addr = b
+            }
+            base, rec = servirtium.recording("nginx", "replaces_conf_d_default_conf", addr)
+            status, body, herr = get(base, "/ping")
+            spec.assert_ok(herr, "GET /ping")
+            spec.assert_eq(status, 200, "the location from the given default.conf")
+            spec.assert_str_eq(body, "pong from default.conf", "its body")
+            s2, _, _ = get(base, "/")
+            spec.assert_eq(s2, 404, "the stock page is gone")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

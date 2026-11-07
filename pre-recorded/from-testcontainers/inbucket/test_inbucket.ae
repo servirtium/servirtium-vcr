@@ -1,0 +1,170 @@
+// Ported from testcontainers-go modules/inbucket/inbucket_test.go, by way of
+// testcontainers-ae's tests/test_inbucket.ae (moved here 2026-11-07).
+//
+// A real Inbucket: a mail is sent over SMTP at the mapped port (EHLO, MAIL
+// FROM, RCPT TO, DATA, by hand over std.tcp) and read back over the REST API
+// (GET /api/v1/mailbox/<name>) at the mapped HTTP port.
+//
+// PORTING: only the REST reads are on the tape. The SMTP conversation is a
+// TCP protocol, not HTTP, so it is part of the live setup: the test sends the
+// mail before it starts recording, and a port that replays the tape sends
+// nothing and needs no container. The POP3 case is a TCP greeting with no
+// HTTP in it, so it runs only live.
+
+import std.spec
+import std.string
+import std.tcp
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.inbucket
+
+const IMAGE = "inbucket/inbucket:sha-2d409bb"
+
+fn last_line(text: string) -> string {
+    rest = text
+    i = string.index_of(rest, "\n")
+    while i >= 0 {
+        rest = string.substring(rest, i + 1, string.length(rest))
+        i = string.index_of(rest, "\n")
+    }
+    return string.trim(rest)
+}
+
+// Read one SMTP reply (possibly multi-line): done when a line starts with
+// three digits and a space. Returns the whole reply text.
+fn smtp_reply(sock: ptr) -> (string, string) {
+    buf = ""
+    tries = 0
+    while tries < 100 {
+        chunk, rerr = tcp.read(sock, 4096)
+        if rerr != "" && rerr != "timeout" { return buf, rerr }
+        buf = string.concat(buf, chunk)
+        if string.ends_with(buf, "\n") == 1 {
+            // the last line of the reply: "250 ..." (not "250-...")
+            last = last_line(string.trim(buf))
+            if string.length(last) >= 4 && string.substring(last, 3, 4) == " " { return buf, "" }
+        }
+        tries = tries + 1
+    }
+    return buf, "no complete SMTP reply: ${buf}"
+}
+
+fn smtp_cmd(sock: ptr, line: string, expect: string) -> string {
+    _, werr = tcp.write(sock, string.concat(line, "\r\n"))
+    if werr != "" { return werr }
+    rep, rerr = smtp_reply(sock)
+    if rerr != "" { return rerr }
+    if string.starts_with(rep, expect) == 0 { return "'${line}' expected ${expect}, got: ${rep}" }
+    return ""
+}
+
+// Send one mail: "" or the error.
+fn send_mail(endpoint: string, from: string, to: string, subject: string, body: string) -> string {
+    i = string.index_of(endpoint, ":")
+    h = string.substring(endpoint, 0, i)
+    port, _ = string.to_int(string.substring(endpoint, i + 1, string.length(endpoint)))
+    sock, cerr = tcp.connect(h, port)
+    if cerr != "" { return "connect ${endpoint}: ${cerr}" }
+    banner, berr = smtp_reply(sock)
+    if berr != "" || string.starts_with(banner, "220") == 0 { tcp.tcp_close(sock); return "banner: ${banner} ${berr}" }
+    e = smtp_cmd(sock, "EHLO tcae.test", "250")
+    if e == "" { e = smtp_cmd(sock, "MAIL FROM:<${from}>", "250") }
+    if e == "" { e = smtp_cmd(sock, "RCPT TO:<${to}>", "250") }
+    if e == "" { e = smtp_cmd(sock, "DATA", "354") }
+    if e == "" {
+        msg = "From: ${from}\r\nTo: ${to}\r\nSubject: ${subject}\r\n\r\n${body}\r\n."
+        e = smtp_cmd(sock, msg, "250")
+    }
+    if e == "" { e = smtp_cmd(sock, "QUIT", "221") }
+    tcp.tcp_close(sock)
+    return e
+}
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+fn http_get(url: string) -> (int, string, string) {
+    req = client.request("GET", url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 5s)
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    status = client.response_status(r)
+    body = client.response_body(r)
+    client.response_free(r)
+    return status, body, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run, none of it sent back by the test: the message's
+    // id (its arrival time plus a counter), its date and its Unix time in
+    // milliseconds.
+    servirtium.collapse("\"id\":\"[0-9]{8}T[0-9]{6}-[0-9]{4}\"", "\"id\":\"20000101T000000-0000\"")
+    servirtium.collapse(servirtium.RFC3339, "2000-01-01T00:00:00Z")
+    servirtium.collapse("\"posix-millis\":[0-9]+", "\"posix-millis\":946684800000")
+
+    spec.describe(fw, "modules/inbucket") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("receives a mail over SMTP and serves it over HTTP (TestInbucket)") callback {
+            web = ""
+            if servirtium.live() == 1 {
+                c, err = inbucket.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "inbucket starts")
+                if err != "" { return }
+                smtp, e1 = inbucket.smtp_connection(c)
+                spec.assert_ok(e1, "smtp connection")
+                w, e2 = inbucket.web_interface(c)
+                spec.assert_ok(e2, "web interface")
+                spec.assert_true(string.starts_with(w, "http://") == 1, "an http:// URL: ${w}")
+                spec.assert_true(string.contains(smtp, "://") == 0, "smtp connection is host:port: ${smtp}")
+                se = send_mail(smtp, "sender@example.com", "rcpt@example.com", "Hello from tcae", "the body text")
+                spec.assert_ok(se, "SMTP conversation")
+                web = w
+            }
+            base, rec = servirtium.recording("inbucket", "receives_a_mail_over_smtp_and_serves_it_over_http", web)
+            // the mailbox is the local part of the recipient
+            status, body, herr = http_get("${base}/api/v1/mailbox/rcpt")
+            spec.assert_ok(herr, "GET /api/v1/mailbox/rcpt")
+            spec.assert_eq(status, 200, "mailbox API status")
+            spec.assert_contains(body, "Hello from tcae", "the subject is in the mailbox listing")
+            spec.assert_contains(body, "sender@example.com", "the sender is in the mailbox listing")
+
+            // and the other mailbox is empty
+            _, b2, e3 = http_get("${base}/api/v1/mailbox/nobody")
+            spec.assert_ok(e3, "GET another mailbox")
+            spec.assert_true(string.contains(b2, "Hello from tcae") == 0, "mail went only to its recipient's mailbox")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "listens on POP3 as well", "no container in playback") callback {
+            c, err = inbucket.run(IMAGE)
+            testing.cleanup_container(c)
+            spec.assert_ok(err, "inbucket starts")
+            if err == "" {
+                h, _ = tc.host(c)
+                port, perr = tc.mapped_port(c, inbucket.POP3_PORT)
+                spec.assert_ok(perr, "pop3 mapped port")
+                sock, cerr = tcp.connect(h, port)
+                spec.assert_ok(cerr, "connect to pop3")
+                if cerr == "" {
+                    greeting, _ = tcp.read(sock, 256)
+                    spec.assert_true(string.starts_with(greeting, "+OK") == 1, "POP3 greeting: ${greeting}")
+                    tcp.tcp_close(sock)
+                }
+            }
+        }
+    }
+    return spec.run_summary(fw)
+}

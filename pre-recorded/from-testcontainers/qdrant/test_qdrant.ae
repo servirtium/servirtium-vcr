@@ -1,0 +1,123 @@
+// Ported from testcontainers-go modules/qdrant/qdrant_test.go, by way of
+// testcontainers-ae's tests/test_qdrant.ae (moved here 2026-11-07).
+//
+// A real Qdrant: GET /healthz, then an HTTP PUT that creates a collection
+// and a GET that reads it back, over the mapped REST port.
+//
+// PORTING: only the first case is on a tape. The second case checks the
+// endpoints' shapes, opens a TCP connection to the gRPC port and GETs the web
+// UI's /dashboard (a static page whose response headers come in a different
+// order every run, so it cannot be recorded byte-stably); the third (a core
+// env option reaching the container, read with tc.exec) has no HTTP at all.
+// Both run only live.
+
+import std.spec
+import std.string
+import std.http.client
+import std.tcp
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.qdrant
+
+const IMAGE = "qdrant/qdrant:v1.7.4"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error).
+fn http_do(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 10s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: the seconds Qdrant says a request took.
+    servirtium.collapse("\"time\":[0-9.e-]+", "\"time\":0.0")
+    // Qdrant sends its response headers in a different order from run to
+    // run (Vary moves about); only Vary is dropped.
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "vary")
+
+    spec.describe(fw, "modules/qdrant") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves REST: health and a collection (TestQdrant)") callback {
+            rest = ""
+            if servirtium.live() == 1 {
+                c, err = qdrant.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "qdrant starts")
+                if err != "" { return }
+                r, rerr = qdrant.rest_endpoint(c)
+                spec.assert_ok(rerr, "rest endpoint")
+                spec.assert_true(string.starts_with(r, "http://") == 1, "an http:// URL: ${r}")
+                rest = r
+            }
+            base, rec = servirtium.recording("qdrant", "serves_rest_health_and_a_collection", rest)
+            st, _b, herr = http_do("GET", "${base}/healthz", "")
+            spec.assert_ok(herr, "GET /healthz")
+            spec.assert_eq(st, 200, "healthz status")
+            put_st, put_body, perr = http_do("PUT", "${base}/collections/tcae", "{\"vectors\":{\"size\":4,\"distance\":\"Dot\"}}")
+            spec.assert_ok(perr, "PUT /collections/tcae")
+            spec.assert_eq(put_st, 200, "create collection: ${put_body}")
+            gst, gbody, gerr = http_do("GET", "${base}/collections/tcae", "")
+            spec.assert_ok(gerr, "GET collection")
+            spec.assert_eq(gst, 200, "collection exists")
+            spec.assert_contains(gbody, "\"status\":\"green\"", "collection is green: ${gbody}")
+            servirtium.end_recording(rec)
+        }
+
+        spec.it_when(servirtium.live(), "reports REST, gRPC and web UI endpoints (TestQdrant)", "no container in playback") callback {
+            c, err = qdrant.run(IMAGE)
+            testing.cleanup_container(c)
+            spec.assert_ok(err, "qdrant starts")
+            if err != "" { return }
+            rp, _ = tc.mapped_port(c, qdrant.REST_PORT)
+            gp, _ = tc.mapped_port(c, qdrant.GRPC_PORT)
+            rest, _ = qdrant.rest_endpoint(c)
+            grpc, _ = qdrant.grpc_endpoint(c)
+            ui, _ = qdrant.web_ui(c)
+            spec.assert_str_eq(rest, "http://localhost:${rp}", "REST endpoint shape")
+            spec.assert_str_eq(grpc, "localhost:${gp}", "gRPC endpoint shape")
+            spec.assert_str_eq(ui, "http://localhost:${rp}/dashboard", "web UI shape")
+            // the gRPC port really accepts connections
+            sock, cerr = tcp.connect("localhost", gp)
+            spec.assert_ok(cerr, "gRPC port accepts a connection")
+            if cerr == "" { tcp.tcp_close(sock) }
+            st, _b, herr = http_do("GET", ui, "")
+            spec.assert_ok(herr, "GET /dashboard")
+            spec.assert_true(st == 200 || st == 404, "dashboard answers (${st})")
+        }
+
+        spec.it_when(servirtium.live(), "mixes core options into the block", "no container in playback") callback {
+            c, err = qdrant.run(IMAGE) {
+                tc.env("QDRANT__LOG_LEVEL", "WARN")
+                tc.env("TCAE_MARK", "qdrant")
+            }
+            testing.cleanup_container(c)
+            spec.assert_ok(err, "qdrant starts")
+            if err == "" {
+                _c, out, eerr = tc.exec(c, ["printenv", "TCAE_MARK"])
+                spec.assert_ok(eerr, "exec")
+                spec.assert_str_eq(string.trim(out), "qdrant", "the core env setter reached the request")
+            }
+        }
+    }
+    return spec.run_summary(fw)
+}

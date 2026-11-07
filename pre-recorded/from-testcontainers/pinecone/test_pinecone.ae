@@ -1,0 +1,78 @@
+// Ported from testcontainers-go modules/pinecone/pinecone_test.go, by way of
+// testcontainers-ae's tests/test_pinecone.ae (moved here 2026-11-07).
+//
+// A real Pinecone Local: GET /indexes at http_endpoint lists indexes (empty),
+// and POST /indexes creates one that the list then shows.
+//
+// PORTING: the HTTP conversation is in the tape beside this file; the
+// container start and the endpoint's shape are checked only when live.
+// Pinecone Local accepts requests with no API key, so none is sent.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.pinecone
+
+const IMAGE = "ghcr.io/pinecone-io/pinecone-local:v0.7.0"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error).
+fn http_do(method: string, url: string, body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 15s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+
+    spec.describe(fw, "modules/pinecone") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("serves the control plane (TestPinecone)") callback {
+            url = ""
+            if servirtium.live() == 1 {
+                c, err = pinecone.run(IMAGE)
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "pinecone starts")
+                if err != "" { return }
+                u, uerr = pinecone.http_endpoint(c)
+                spec.assert_ok(uerr, "http endpoint")
+                spec.assert_true(string.starts_with(u, "http://") == 1, "an http:// URL: ${u}")
+                url = u
+            }
+            base, rec = servirtium.recording("pinecone", "serves_the_control_plane", url)
+            st, body, herr = http_do("GET", "${base}/indexes", "")
+            spec.assert_ok(herr, "GET /indexes")
+            spec.assert_eq(st, 200, "list status")
+            spec.assert_contains(body, "\"indexes\"", "an index list: ${body}")
+            ps, pb, perr = http_do("POST", "${base}/indexes", "{\"name\":\"tcae\",\"dimension\":3,\"metric\":\"cosine\",\"spec\":{\"serverless\":{\"cloud\":\"aws\",\"region\":\"us-east-1\"}}}")
+            spec.assert_ok(perr, "POST /indexes")
+            spec.assert_true(ps == 200 || ps == 201, "index created: ${ps} ${pb}")
+            _ls, lb, lerr = http_do("GET", "${base}/indexes", "")
+            spec.assert_ok(lerr, "GET /indexes again")
+            spec.assert_contains(lb, "tcae", "the new index is listed")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

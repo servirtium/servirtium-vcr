@@ -1,0 +1,99 @@
+// Ported from testcontainers-go modules/solr/solr_test.go, by way of
+// testcontainers-ae's tests/test_solr.ae (moved here 2026-11-07).
+//
+// A real Solr: the address helper serves the admin API, and a collection
+// made by collection() (the post-ready hook) accepts a document and finds it.
+//
+// PORTING: the HTTP conversation is in the tape beside this file. The
+// collection "tcae" is created by the module's post-ready hook (collection()),
+// which calls Solr's collections API itself, so that call is NOT on the tape:
+// the tape starts with the collection already there. A port that replays the
+// tape needs no container and creates nothing.
+//
+// PORTING: the module's address ends in /solr. The test records against the
+// container's root and adds /solr itself, so the tape's paths are the full
+// /solr/... ones.
+
+import std.spec
+import std.string
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.testing
+import servirtium
+import modules.solr
+
+const IMAGE = "solr:9"
+
+// The User-Agent this test's HTTP client sends, as an app's client library
+// would: Go's net/http adds `Go-http-client/1.1` by itself, Aether's
+// std.http.client adds none. Set here, in the test's own client, so the
+// recordings show a representative request; Servirtium records what the
+// client sends and adds nothing of its own.
+const USER_AGENT = "testcontainers-ae-tests (Aether std.http.client)"
+
+// One HTTP request: (status, body, error). hdrs are "Name: value" lines.
+fn http_do(method: string, url: string, hdrs: string[], body: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_timeout(req, 30s)
+    for h in hdrs {
+        colon = string.index_of(h, ":")
+        client.set_header(req, string.substring(h, 0, colon), string.trim(string.substring(h, colon + 1, string.length(h))))
+    }
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return 0, "", err }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b, ""
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    // What differs run to run: how long Solr says a request took, and the
+    // document's _version_ (a clock-derived number the test never sends back).
+    servirtium.collapse("\"QTime\":[0-9]+", "\"QTime\":0")
+    servirtium.collapse("\"_version_\":[0-9]+", "\"_version_\":1")
+
+    spec.describe(fw, "modules/solr") {
+        spec.after_each() callback { testing.cleanup_all() }
+
+        spec.it("creates a collection and indexes into it (TestSolrWithCollection)") callback {
+            root = ""
+            if servirtium.live() == 1 {
+                c, err = solr.run(IMAGE) { collection("tcae") }
+                testing.cleanup_container(c)
+                spec.assert_ok(err, "solr starts and the collection is created")
+                if err != "" { return }
+                addr, aerr = solr.address(c)
+                spec.assert_ok(aerr, "address")
+                spec.assert_true(string.starts_with(addr, "http://localhost:") == 1, "an http URL: ${addr}")
+                spec.assert_true(string.ends_with(addr, "/solr") == 1, "ends in /solr")
+                curl, cerr = solr.collection_url(c, "tcae")
+                spec.assert_ok(cerr, "collection url")
+                spec.assert_str_eq(curl, "${addr}/tcae", "collection url shape")
+                root = string.substring(addr, 0, string.length(addr) - 5)
+            }
+            base, rec = servirtium.recording("solr", "creates_a_collection_and_indexes_into_it", root)
+            // The node health check stands in for Go's system-info call: the
+            // system info is memory, load and clock readings that differ
+            // every run, and this too shows the admin API answering.
+            st, hb, herr = http_do("GET", "${base}/solr/admin/info/health?wt=json", [], "")
+            spec.assert_ok(herr, "GET node health")
+            spec.assert_eq(st, 200, "node health: ${hb}")
+            us, ub, uerr = http_do("POST", "${base}/solr/tcae/update?commit=true", [], "[{\"id\":\"1\",\"title_s\":\"hello\"}]")
+            spec.assert_ok(uerr, "POST update")
+            spec.assert_eq(us, 200, "document indexed: ${ub}")
+            qs, qb, qerr = http_do("GET", "${base}/solr/tcae/select?q=title_s:hello&wt=json", [], "")
+            spec.assert_ok(qerr, "GET select")
+            spec.assert_eq(qs, 200, "query")
+            spec.assert_contains(qb, "\"numFound\":1", "the document is found: ${qb}")
+            servirtium.end_recording(rec)
+        }
+    }
+    return spec.run_summary(fw)
+}

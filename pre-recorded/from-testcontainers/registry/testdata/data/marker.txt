@@ -1,0 +1,1 @@
+a file copied by registry.with_data, standing in for a registry data directory
