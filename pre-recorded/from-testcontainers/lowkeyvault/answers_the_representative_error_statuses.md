@@ -252,6 +252,7 @@ User-Agent: testcontainers-ae-tests (Aether std.http.client)
 
 ```
 WWW-Authenticate: Bearer resource="https://{{request.host}}", authorization_uri="https://{{request.host}}/secrets/tcae-x"
+Allow: DELETE, GET, PUT
 Content-Type: application/json
 Transfer-Encoding: chunked
 Keep-Alive: timeout=60
@@ -304,7 +305,6 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | removed | response headers | `Date` | (left out) | 0–9 |
 | removed | response headers | `X-Request-Id` | (left out) | none |
 | removed | response headers | `X-Correlation-Id` | (left out) | none |
-| removed | response headers | `Allow` | (left out) | 8 |
 | redacted credential | request and response headers | `Authorization` | `<scheme> AUTHORIZATION_N` | 0–9 |
 | redacted credential | request and response headers | `Proxy-Authorization` | `<scheme> PROXY_AUTHORIZATION_N` | none |
 | redacted credential | request headers | `Cookie` | `<name>=COOKIE_N` | none |
@@ -330,5 +330,7 @@ What the test asked Servirtium to leave out or rewrite when it wrote this record
 | collapsed | whole recording | `"csr":"[A-Za-z0-9+/=]+"` | `"csr":"CERTIFICATE-REQUEST"` | none |
 | collapsed | whole recording | `"x5t":"[A-Za-z0-9_-]+"` | `"x5t":"THUMBPRINT"` | none |
 | collapsed | whole recording | `"timestamp":"[^"]+"` | `"timestamp":"2000-01-01T00:00:00.000Z"` | 3–9 |
+| ordered | response headers | `Allow` | its comma-separated items sorted | 8 |
+| ordered | response body | JSON arrays at `/value`, requests matching `/versions\?` | sorted by `/attributes/created` | none |
 
 A credential's `N` numbers each distinct value: the same value has the same number wherever it appears, and one of 8 characters or more is replaced in bodies and paths too. Playback matches credential headers on presence, not value.

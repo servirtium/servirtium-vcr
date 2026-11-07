@@ -232,7 +232,7 @@ Per suite (registered at the top of its `main`):
 | surrealdb | | per-statement `"time"` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | tidb | | the DDL owner's UUID (`{{uuid-N}}`) | the container IP, `start_timestamp`, `max_procs`, `connections`, `update_timestamp`, the case tables' ids (1001, 1002, in bodies and `table_id(s)=`) and the case database's (110) | |
 | dind | | container, network, endpoint and sandbox ids (`{{docker-id-N}}`; image ids and layer digests are content hashes and stay) | the daemon's clock fields (`Created`, `StartedAt`, `FinishedAt`, `CreatedAt`, `LastTagTime`, `SystemTime`), `/info`'s `ID`, `Name`, `NFd`, `NGoroutines`, container and image counts, `NCPU`, `MemTotal`, `KernelVersion`, a running container's `Pid`, `/netns/<hex>`, `top`'s process table, the 12-hex short container id, endpoints' random MAC addresses, a container list's Unix `Created` | | |
-| lowkeyvault | | 32-hex version ids (`{{version-N}}`), signature / wrapped-key / ciphertext blobs (`{{blob-N}}`), the identity endpoint's JWTs (`{{jwt-N}}`) | attribute times (`created`, `updated`, `deletedDate`, `scheduledPurgeDate`, a certificate's `exp`/`nbf`), a generated key's `n`, `x`, `y`, a certificate's `cer`, `csr`, `x5t`, the identity `expires_on`, Spring's error `timestamp` | `Authorization: Bearer` (credential preset, `AUTHORIZATION_N`) and `X-IDENTITY-HEADER` (`X_IDENTITY_HEADER_1`) | `Allow` |
+| lowkeyvault | | 32-hex version ids (`{{version-N}}`), signature / wrapped-key / ciphertext blobs (`{{blob-N}}`), the identity endpoint's JWTs (`{{jwt-N}}`) | attribute times (`created`, `updated`, `deletedDate`, `scheduledPurgeDate`, a certificate's `exp`/`nbf`), a generated key's `n`, `x`, `y`, a certificate's `cer`, `csr`, `x5t`, the identity `expires_on`, Spring's error `timestamp` | `Authorization: Bearer` (credential preset, `AUTHORIZATION_N`) and `X-IDENTITY-HEADER` (`X_IDENTITY_HEADER_1`) | |
 | trino | | `uptime`, the query id, the `nextUri` token | | |
 | presto | | `uptime` | | |
 | timeplus | | `x-timeplus-query-id` | | |
@@ -257,6 +257,7 @@ a client, a sorted array is a deliberate change of the recorded response):
 | qdrant | yes | | | |
 | vearch | | yes | | |
 | tidb | | | `GET /schema`'s databases, by `/db_name/L` | |
+| lowkeyvault | | | a `/versions` list, by `/attributes/created` (oldest first) | `Allow` |
 
 Vault uses Servirtium's credential preset
 (`servirtium.redact_credential_header("X-Vault-Token")`): the token is
@@ -416,10 +417,12 @@ it is on the tape, and playback is plain HTTP.
   with a 500), so each case starts its own container and any one tape replays
   alone.
 - **Order that changes run to run, again:** the versions of one name are
-  listed in version-id order, which is random, so the cases list versions only
-  while a name has one. A certificate policy without explicit key usages gets
-  them from a set in varying order, so the cases name one of each; `Allow` on a
-  405 is left out for the same reason.
+  listed in version-id order, which is random; the tapes have such a list
+  oldest first (stable order scoped to `/versions` requests), so the cases
+  list secrets, keys and certificates with two versions. `Allow` on a 405 is
+  a Java set, written with its items sorted. A certificate policy without
+  explicit key usages gets them from a set in varying order, so the cases
+  name one of each.
 
 Checks with no HTTP in them (a module's defaults, `tc.exec`, inspecting the
 container, a refused option) run only live, and are skipped in playback.
