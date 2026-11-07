@@ -6,7 +6,7 @@
 your test (go test)
    │   servirtium.Playback(tape).Start()  /  servirtium.Record(tape, upstream).Start()
    ▼
-servirtium-go            ── thin Go (cgo), this repo ──
+servirtium-vcr/go            ── thin Go (cgo), this repo ──
    │   • Playback / PlaybackBuilder / RecordBuilder / Server  (servirtium.go)
    │   • cgo bindings to aether_vcr_embed_*                    (the import "C" block)
    ▼   cgo

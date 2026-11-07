@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	servirtium "github.com/servirtium/servirtium-go"
+	servirtium "github.com/servirtium/servirtium-vcr/go/v2"
 )
 
 // The Aether VCR is handle-based: one server per port, each keyed by its own

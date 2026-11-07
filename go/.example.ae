@@ -1,6 +1,6 @@
 // Third-party-consumer EXAMPLE test for the Go binding.
 //
-// Publishes a standalone copy of the servirtium-go module under target/go-pkg
+// Publishes a standalone copy of the servirtium-vcr/go module under target/go-pkg
 // (carrying the bundled native/ .so, but deliberately WITHOUT the repo's core/
 // as a sibling — so cgo's ${SRCDIR}/../core/native path can't resolve and only
 // the module's own bundled ${SRCDIR}/native .so satisfies the link/rpath).

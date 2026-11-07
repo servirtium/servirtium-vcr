@@ -101,7 +101,7 @@ consume_hint() {
         pharo:*)      note "load pharo/src into your image; ServirtiumLibrary libPath: '$_dest/native/libservirtium_vcr.so'" ;;
         julia:*)      note "julia -e 'using Pkg; Pkg.develop(path=\"$_dest\")'" ;;
         rust:*)       note "servirtium = { path = \"$_dest\" }        # in Cargo.toml" ;;
-        go:*)         note "go mod edit -replace github.com/servirtium/servirtium-go=$_dest" ;;
+        go:*)         note "go mod edit -replace github.com/servirtium/servirtium-vcr/go/v2=$_dest" ;;
         nim:*)        note "nim c --path:$_dest/src your_test.nim" ;;
         zig:*)        note "point your build.zig at $_dest (libservirtium_vcr.so in $_dest/native)" ;;
         haskell:*)    note "cabal build with a path source-repository-package at $_dest" ;;

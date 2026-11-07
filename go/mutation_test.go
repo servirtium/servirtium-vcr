@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	servirtium "github.com/servirtium/servirtium-go"
+	servirtium "github.com/servirtium/servirtium-vcr/go/v2"
 )
 
 // Record-mode breadth: redaction, header removal, notes, drift detection,

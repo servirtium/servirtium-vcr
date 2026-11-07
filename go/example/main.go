@@ -1,4 +1,4 @@
-// Third-party consumer example: imports the servirtium-go module and replays
+// Third-party consumer example: imports the servirtium-vcr/go module and replays
 // the canonical tape. The libservirtium_vcr.so is resolved via the module's own bundled
 // native/ dir (cgo rpath ${SRCDIR}/native) — no SERVIRTIUM_VCR_LIB, and the
 // packaged module copy has no core/ sibling, so only the bundled .so can load.
@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	servirtium "github.com/servirtium/servirtium-go"
+	servirtium "github.com/servirtium/servirtium-vcr/go/v2"
 )
 
 func fail(msg string) {
@@ -48,5 +48,5 @@ func main() {
 		fail(fmt.Sprintf("expected Ok, got %s (%s)", srv.LastKind(), srv.LastError()))
 	}
 
-	fmt.Println("PASS[discovery]: consumer replayed the canonical tape from the servirtium-go module")
+	fmt.Println("PASS[discovery]: consumer replayed the canonical tape from the servirtium-vcr/go module")
 }

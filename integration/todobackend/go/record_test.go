@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	servirtium "github.com/servirtium/servirtium-go"
+	servirtium "github.com/servirtium/servirtium-vcr/go/v2"
 )
 
 // TodoBackend browser integration test — RECORD phase (manual, on-demand).

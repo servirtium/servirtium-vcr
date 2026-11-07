@@ -129,4 +129,14 @@ gh release create "$TAG" "${GH_FLAGS[@]}" \
   "${assets[@]}" \
   || die "gh release create failed"
 
-printf 'publish: done — %s\n' "$(gh release view "$TAG" --json url -q .url 2>/dev/null || echo "$TAG created")"
+# The Go binding lives in go/ as module github.com/servirtium/servirtium-vcr/go/v2;
+# its versions come from go/<tag> tags at the same commit as the release tag.
+# (release.yml does this itself when the tag push drives the release.)
+GOTAG="go/$TAG"
+git fetch --tags --quiet origin || true
+if ! git rev-parse -q --verify "refs/tags/$GOTAG" >/dev/null; then
+  { git tag "$GOTAG" "$COMMIT" && git push origin "refs/tags/$GOTAG"; } \
+    || die "release created, but tagging $GOTAG failed — run: git tag $GOTAG $COMMIT && git push origin $GOTAG"
+fi
+
+printf 'publish: done —%s\n' "$(gh release view "$TAG" --json url -q .url 2>/dev/null || echo "$TAG created")"

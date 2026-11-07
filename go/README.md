@@ -9,7 +9,7 @@ service, returns the live response, and writes the tape. Same tape, both
 directions.
 
 ```go
-import servirtium "github.com/servirtium/servirtium-go"
+import servirtium "github.com/servirtium/servirtium-vcr/go/v2"
 
 srv, err := servirtium.Playback("tapes/climate_api.md").Port(0).Start()
 if err != nil { t.Fatal(err) }
@@ -37,43 +37,73 @@ precompiled native build; it does **not** reimplement Servirtium in Go.
 > in [docs/usage.md](docs/usage.md). The tape *format* is unchanged, so
 > existing tapes replay as-is.
 
-## Install
+## Getting it
 
-> **Note:** nothing is published to the **Go module proxy** yet, so `go get
-> github.com/servirtium/servirtium-go` does **not** give you this library.
-> Until the module is published, vendor it locally (or use a `replace`
-> directive) and supply the prebuilt native library as below.
-
-This package uses **cgo**, so `CGO_ENABLED=1` (the default on most platforms)
-and a C toolchain are required to build.
-
-**Get the native library** (`libservirtium_vcr`) for your OS/arch from the
-[GitHub releases](https://github.com/servirtium/servirtium-vcr/releases) — one
-prebuilt shared library per platform, each with a `.sha256` — and (optionally)
-verify it:
+The module is `github.com/servirtium/servirtium-vcr/go/v2`: it lives in the
+`go/` subdirectory of this repo, with the major version in the path (`/v2`) and
+no `v2/` directory. A release `vX.Y.Z` is also tagged `go/vX.Y.Z`, which is the
+tag `go get` reads for a subdirectory module. Nothing is on a registry; the
+module proxy fetches it from GitHub, but the native library does not come with
+it, so you fetch that yourself. Run this in your own Go module:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.12/libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so.sha256   # -> OK
-```
+VER=v2.0.0-alpha.12                      # a release tag of servirtium-vcr
+REL=https://github.com/servirtium/servirtium-vcr/releases/download/$VER
 
-**Build the package locally**
+# 1. the Go module (resolves the tag go/$VER; use @main before that tag exists)
+go get github.com/servirtium/servirtium-vcr/go/v2@$VER
 
-Nothing is published to a registry yet, so you assemble the package yourself:
-drop the downloaded library at the package-relative path below, then consume it
-from source (vendored / `replace` directive — see this README's usage above).
-
-```sh
-# from the go binding directory, with libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so downloaded:
+# 2. the native library for this OS/arch, into ./native (checksum-verified)
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64)  P=linux-x86_64;  E=so ;;
+  Linux-aarch64) P=linux-arm64;   E=so ;;
+  Darwin-arm64)  P=macos-arm64;   E=dylib ;;
+  Darwin-x86_64) P=macos-x86_64;  E=dylib ;;
+  *) echo "see the release assets for your platform"; exit 1 ;;
+esac
+LIB=libservirtium_vcr-$VER-$P.$E
 mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.12-linux-x86_64.so native/libservirtium_vcr.so
-# the package now carries the native library; consume it from source (see this README's usage/examples).
+curl -fsSL -o native/$LIB $REL/$LIB
+curl -fsSL -o native/$LIB.sha256 $REL/$LIB.sha256
+( cd native && { sha256sum -c $LIB.sha256 2>/dev/null || shasum -a 256 -c $LIB.sha256; } )
+cp native/$LIB native/libservirtium_vcr.$E
+
+# 3. tell cgo where it is (link-time -L plus a baked-in rpath; no LD_LIBRARY_PATH)
+export CGO_LDFLAGS="-L$PWD/native -Wl,-rpath,$PWD/native"
+
+# 4. check it: replay a recorded tape through the library
+RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$VER/go
+mkdir -p tapes
+curl -fsSL -o tapes/single_get.md $RAW/tapes/single_get.md
+curl -fsSL -o servirtium_check.go $RAW/example/main.go   # package main; delete after
+go run servirtium_check.go                               # -> PASS[discovery]: ...
+rm servirtium_check.go
 ```
 
-Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows
-(x86_64, arm64), FreeBSD (x86_64). No Aether toolchain is needed to *use* the
-library. (For macOS use the `.dylib`, for Windows the `.dll`.)
+Windows (x86_64, arm64) and FreeBSD (x86_64) assets exist too (`windows-<arch>.dll`,
+`freebsd-x86_64.so`); musl Linux is `linux-<arch>-musl.so`. Export `CGO_LDFLAGS` in
+CI wherever `go build` / `go test` runs; the built binary itself needs nothing (rpath baked in).
+
+### Notes for coding agents
+
+- **cgo is required**: `CGO_ENABLED=1` and a C compiler. `CGO_ENABLED=0` fails with
+  `build constraints exclude all Go files` or undefined `C.` symbols.
+- **Import path must end in `/go/v2`.** `github.com/servirtium/servirtium-go` (a repo
+  that was never created) and `.../servirtium-vcr/go` without `/v2` are wrong.
+  `module ... found, but does not contain package` means the path or tag is wrong.
+- `unknown revision go/v2...` / `invalid version` means the `go/<tag>` tag has not
+  been pushed for that release; use `@main` or ask the maintainers, do not invent a tag.
+- Missing native library shows as `ld: library 'servirtium_vcr' not found` (macOS) or
+  `cannot find -lservirtium_vcr` (Linux): `CGO_LDFLAGS` is unset in this shell, or
+  `native/` lacks a file literally named `libservirtium_vcr.so` / `.dylib`. The versioned
+  release asset name is not enough; copy it to the unversioned name (step 2 does).
+- Go's build cache keys on `CGO_LDFLAGS`; changing the path rebuilds, which is fine.
+- Do not `go mod vendor` and expect the native library to follow: vendoring copies Go
+  files only. Do not write into `$GOMODCACHE` (read-only by design); `CGO_LDFLAGS` exists
+  so you do not need to.
+- Do not set `SERVIRTIUM_VCR_LIB`: it is for this repo's own tests, not for consumers.
+- In-repo development is different: `aeb go/.tests.ae` from the repo root, using
+  `core/native` and the module's `../core/native` rpath.
 
 cgo links this library at **build** time, not via a runtime `dlopen`: the
 package's `#cgo LDFLAGS` carry `-L`/`-rpath` for the directory holding the

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	servirtium "github.com/servirtium/servirtium-go"
+	servirtium "github.com/servirtium/servirtium-vcr/go/v2"
 )
 
 // fakeUpstream is a throwaway HTTP upstream for record-mode tests. It returns

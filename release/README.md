@@ -29,6 +29,13 @@ git push origin main
 git push origin v2.0.0-alpha.12
 ```
 
+The workflow also creates and pushes `go/v2.0.0-alpha.12` at the same commit. The
+Go binding is the module `github.com/servirtium/servirtium-vcr/go/v2` in the `go/`
+subdirectory, and Go resolves a subdirectory module's versions from tags prefixed
+with that directory (`go get github.com/servirtium/servirtium-vcr/go/v2@v2.0.0-alpha.12`
+looks up `go/v2.0.0-alpha.12`). `publish.sh` does the same when used instead of the
+workflow. Never create the `go/` tag at a different commit than the release tag.
+
 Use a new unused version; pushing `main` alone does not publish a release.
 Prerelease tags (`-alpha`, `-beta`, `-rc`, etc.) are marked as prereleases on
 GitHub. A manual workflow run can release an existing tag containing this

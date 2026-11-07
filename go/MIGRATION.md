@@ -29,7 +29,7 @@ backwards compatibility with the old `Impl` API.
 go test
    │  servirtium.Playback(tape).Port(0).Start()  /  servirtium.Record(tape, upstream).Start()
    ▼
-servirtium-go (this repo)            ── thin Go (cgo) ──
+servirtium-vcr/go (this repo)            ── thin Go (cgo) ──
    │  cgo  aether_vcr_embed_*()
    ▼
 libservirtium_vcr.so                 ── ae build --emit=lib --with=fs,net,extern

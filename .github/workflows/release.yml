@@ -171,6 +171,23 @@ jobs:
             release/dist/*.sha256 release/dist/SHA256SUMS.txt \
             release/dist/ae-add/servirtium_vcr-* release/dist/ae-add/aether.toml
 
+      # The Go binding is a module in the go/ subdirectory, so `go get` resolves
+      # versions from tags prefixed with the directory: go/<tag>. Point it at the
+      # same commit as the release tag. (A go/v* tag does not match the `v*`
+      # trigger above, so this cannot re-start the workflow.)
+      - name: Tag the Go module (go/<tag>)
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          gotag="go/$RELEASE_TAG"
+          git fetch --tags --force --quiet
+          if git rev-parse -q --verify "refs/tags/$gotag" >/dev/null; then
+            test "$(git rev-parse "refs/tags/$gotag^{commit}")" = "$commit"
+          else
+            git tag "$gotag" "$commit"
+            git push origin "refs/tags/$gotag"
+          fi
+
       - name: Verify published downloads
         env:
           GH_TOKEN: ${{ github.token }}

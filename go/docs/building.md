@@ -28,7 +28,7 @@ curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh |
 curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/install.sh | sh
 ```
 
-Notes for a casual servirtium-go developer:
+Notes for a casual servirtium-vcr/go developer:
 
 - **Pin in CI** with `AETHER_REF=v0.227.0` / `AEB_REF=v0.NNN` in front of the
   respective installer (reproducible builds).
@@ -36,7 +36,7 @@ Notes for a casual servirtium-go developer:
   libservirtium_vcr's whole-tape rewrites, on top of the `-fPIC` runtime + chunked
   de-chunk). The latest released tag satisfies it; `get.sh` installs that by
   default.
-- **No contrib.** servirtium-go's libservirtium_vcr imports only stdlib primitives
+- **No contrib.** servirtium-vcr/go's libservirtium_vcr imports only stdlib primitives
   (`std.http`/`std.fs`/`std.regex`/`std.zlib`/`std.cryptography`) — no
   `sqlite`/`host_*` — so there's nothing extra to install.
 - **`-fPIC` triage.** If `aeb`/`core/.build.ae` fails with a link error

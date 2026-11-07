@@ -1,7 +1,7 @@
 package servirtium_test
 
 import (
-	servirtium "github.com/servirtium/servirtium-go"
+	servirtium "github.com/servirtium/servirtium-vcr/go/v2"
 	"os/exec"
 	"path/filepath"
 	"strings"

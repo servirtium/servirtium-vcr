@@ -78,7 +78,7 @@ links or loads it from there.
 | Language | Point at it with |
 |---|---|
 | Rust | `servirtium = { path = "…/rust" }` |
-| Go | `go mod edit -replace github.com/servirtium/servirtium-go=…/go` |
+| Go | `go get github.com/servirtium/servirtium-vcr/go/v2@<tag>` (tag `go/<tag>`) + `CGO_LDFLAGS` for the native lib; local: `go mod edit -replace github.com/servirtium/servirtium-vcr/go/v2=…/go` |
 | Nim | `nim c --path:…/nim/src` |
 | Zig | `build.zig`, libservirtium_vcr in `zig/native/` |
 | Haskell | a path `source-repository-package` |
@@ -186,7 +186,7 @@ by resolving it from a separate consumer project.
 digits and dots only — so `2.0.0-alpha.2` is not a legal version there and the
 package has to call itself something numeric. It currently calls itself exactly
 what the GA release will call itself. A consumer who pins
-`servirtium-haskell == 2.0.0` today gets the alpha; after GA the same constraint
+`servirtium == 2.0.0` today gets the alpha; after GA the same constraint
 silently gets a different package, with nothing in the version to tell them
 apart. This is forced by the ecosystem, not an oversight — but it wants a
 deliberate decision before GA (a `0.x`/`1.99.x` prerelease line, or an extra PVP
