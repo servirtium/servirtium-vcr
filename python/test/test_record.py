@@ -168,3 +168,67 @@ def test_structured_redactions_are_isolated_between_live_handles(tmp_path):
     assert "header-secret" not in (left / "tape.md").read_text()
     assert "Authorization: [REDACTED]" in (left / "tape.md").read_text()
     assert "header-secret" in (right / "tape.md").read_text()
+
+
+def test_sort_json_keys_with_pretty_json_writes_sorted_pretty_json(upstream):
+    upstream.response_body = '{"b":1,"a":{"d":2,"c":3}}'
+    upstream.response_content_type = "application/json"
+    path = _tape_path()
+    try:
+        with servirtium.record(path, upstream.base_url).pretty_json(2).sort_json_keys().port(0).start() as rec:
+            http_request(rec.base_url, "GET", "/doc")
+        with open(path, encoding="utf-8") as tape:
+            text = tape.read()
+        assert '{\n  "a": {\n    "c": 3,\n    "d": 2\n  },\n  "b": 1\n}' in text
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_sort_json_keys_without_pretty_json_is_refused(upstream):
+    import pytest
+    upstream.response_body = '{"b":1,"a":2}'
+    upstream.response_content_type = "application/json"
+    path = _tape_path()
+    try:
+        rec = servirtium.record(path, upstream.base_url).sort_json_keys().port(0).start()
+        http_request(rec.base_url, "GET", "/doc")
+        with pytest.raises(servirtium.VcrError, match="sort_json_keys needs pretty_json"):
+            rec.close()
+        assert not os.path.exists(path)
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_sort_json_array_and_header_rules_are_accepted_and_applied(upstream):
+    upstream.response_body = '[{"n":"z"},{"n":"a"}]'
+    upstream.response_content_type = "application/json"
+    upstream.extra_response_headers = {"Allow": "POST, GET"}
+    path = _tape_path()
+    try:
+        with (
+            servirtium.record(path, upstream.base_url)
+            .pretty_json(2)
+            .sort_json_array("", "n")
+            .sort_json_array_at("/doc", "", "n")
+            .sort_response_headers()
+            .sort_header_value("Allow")
+            .port(0)
+            .start()
+        ) as rec:
+            http_request(rec.base_url, "GET", "/doc")
+        with open(path, encoding="utf-8") as tape:
+            text = tape.read()
+        assert text.index('"n": "a"') < text.index('"n": "z"')
+        assert "Allow: GET, POST" in text
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_refused_sort_rule_raises_at_start(upstream):
+    import pytest
+    path = _tape_path()
+    with pytest.raises(servirtium.VcrError, match="sort_header_value"):
+        servirtium.record(path, upstream.base_url).sort_header_value("").port(0).start()

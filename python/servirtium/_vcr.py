@@ -257,6 +257,7 @@ class PlaybackBuilder(_BuilderBase):
         self._match_xml_body = False
         self._match_multiple = False
         self._match_headers: list[str] = []
+        self._playback_range: tuple[int, int] | None = None
 
     def secret_resolver(self, callback):
         """Resolve designated token names before playback starts; None means unresolved."""
@@ -299,6 +300,14 @@ class PlaybackBuilder(_BuilderBase):
         self._match_headers.append(name)
         return self
 
+    def playback_range(self, from_: int, to: int = -1):
+        """Replay only interactions ``from_``..``to`` of the tape (0-based,
+        inclusive, the ``## Interaction N`` numbers; ``to`` < 0 means through
+        the last). Selection is by number only. A bad range raises
+        :class:`VcrError` at ``start()``."""
+        self._playback_range = (from_, to)
+        return self
+
     def unredact(self, field: Field, pattern: str, replacement: str):
         """Replace a redacted placeholder in the recorded expectation with the
         real value the live SUT sends, so a scrubbed tape still matches."""
@@ -328,6 +337,8 @@ class PlaybackBuilder(_BuilderBase):
             N.set_match_multiple(handle, 1)
         for name in self._match_headers:
             N.match_header(handle, N.encode(name))
+        if self._playback_range is not None:
+            _check(N.set_playback_range(handle, self._playback_range[0], self._playback_range[1]), "set_playback_range")
         for field, pattern, replacement in self._unredactions:
             _check(
                 N.unredact(handle, int(field), N.encode(pattern), N.encode(replacement)),
@@ -380,6 +391,10 @@ class RecordBuilder(_BuilderBase):
         self._pretty_json = 0
         self._upstream_cafile: str | None = None
         self._license_notice: str | None = None
+        self._sort_json_keys = False
+        self._sort_json_arrays: list[tuple[str | None, str, str]] = []
+        self._sort_response_headers = False
+        self._sort_header_values: list[str] = []
         self._fail_if_changed = False
 
     def secret_redactor(self, callback):
@@ -458,6 +473,40 @@ class RecordBuilder(_BuilderBase):
         self._license_notice = text
         return self
 
+    def sort_json_keys(self, on: bool = True):
+        """Opt-in stable order: write JSON response bodies' object keys sorted
+        at every depth. Sorted JSON is only written pretty-printed: without
+        :meth:`pretty_json` the tape is refused when it is written (``close()``
+        raises :class:`VcrError`, "sort_json_keys needs pretty_json")."""
+        self._sort_json_keys = on
+        return self
+
+    def sort_json_array(self, path: str, by: str = ""):
+        """Sort the JSON response arrays ``path`` selects (a JSON pointer from
+        the root, ``*`` for one segment, ``""`` the root array, or a bare member
+        name) by member ``by`` (a name, a pointer, or several comma-separated;
+        ``""`` sorts by each element's canonical JSON). Replay serves the sorted
+        order. Needs :meth:`pretty_json`. A refused rule raises at ``start()``."""
+        self._sort_json_arrays.append((None, path, by))
+        return self
+
+    def sort_json_array_at(self, request_regex: str, path: str, by: str = ""):
+        """Like :meth:`sort_json_array`, only for interactions whose request
+        path (query included) matches ``request_regex``."""
+        self._sort_json_arrays.append((request_regex, path, by))
+        return self
+
+    def sort_response_headers(self, on: bool = True):
+        """Write response header lines sorted by name (case-insensitive); a
+        repeated header's lines keep their order."""
+        self._sort_response_headers = on
+        return self
+
+    def sort_header_value(self, name: str):
+        """Sort one response header's comma-separated items (``Allow``)."""
+        self._sort_header_values.append(name)
+        return self
+
     def fail_if_changed(self, on: bool = True):
         """On close, still write the freshly recorded tape but raise if it
         differs from the on-disk one (the drift contract)."""
@@ -478,6 +527,20 @@ class RecordBuilder(_BuilderBase):
             _check(N.set_upstream_cafile(handle, N.encode(self._upstream_cafile)), "set_upstream_cafile")
         if self._license_notice is not None:
             _check(N.add_license_notice(handle, N.encode(self._license_notice)), "add_license_notice")
+        if self._sort_json_keys:
+            N.set_sort_json_keys(handle, 1)
+        for request_regex, path, by in self._sort_json_arrays:
+            if request_regex is None:
+                _check(N.sort_json_array(handle, N.encode(path), N.encode(by)), "sort_json_array")
+            else:
+                _check(
+                    N.sort_json_array_at(handle, N.encode(request_regex), N.encode(path), N.encode(by)),
+                    "sort_json_array_at",
+                )
+        if self._sort_response_headers:
+            N.set_sort_response_headers(handle, 1)
+        for name in self._sort_header_values:
+            _check(N.sort_header_value(handle, N.encode(name)), "sort_header_value")
         for operation, field, pattern, replacement in self._redactions:
             _check(
                 getattr(N, operation)(handle, int(field), N.encode(pattern), N.encode(replacement)),

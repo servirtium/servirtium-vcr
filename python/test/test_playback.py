@@ -64,3 +64,33 @@ def test_substitute_fills_placeholder_and_assert_all_consumed_tracks_replay():
         vcr.assert_all_consumed()
         vcr.assert_all_redactions_used()
         assert vcr.last_tls_protocol == ""
+
+
+def test_playback_range_skips_early_interactions_and_serves_a_later_one():
+    with servirtium.playback(tape("playback_range.md")).redact_credentials().playback_range(7).port(0).start() as vcr:
+        assert vcr.tape_length == 8
+        status, body = http_get(vcr.base_url, "/logout", {"Cookie": "sid=live"})
+        assert status == 200
+        assert vcr.last_index == 7
+        assert vcr.last_kind is servirtium.Outcome.OK
+    with servirtium.playback(tape("playback_range.md")).redact_credentials().playback_range(7).port(0).start() as vcr:
+        http_get(vcr.base_url, "/login", {"Cookie": "sid=live"})  # interaction 0 is outside the range
+        assert vcr.last_kind is not servirtium.Outcome.OK
+        assert "outside the playback range" in vcr.last_error
+
+
+def test_playback_range_bad_range_is_refused_at_start():
+    import pytest
+    with pytest.raises(servirtium.VcrError, match="playback_range"):
+        servirtium.playback(tape("playback_range.md")).playback_range(99).port(0).start()
+
+
+def test_playback_range_is_refused_on_a_record_handle(upstream):
+    import os
+    import tempfile
+    from servirtium import _native as N
+    path = os.path.join(tempfile.mkdtemp(), "r.md")
+    with servirtium.record(path, upstream.base_url).port(0).start() as rec:
+        err = N.take_string(N.set_playback_range(rec._require_handle(), 0, -1))
+        assert err != ""
+        assert N.get_playback_range_from(rec._require_handle()) == -1

@@ -182,6 +182,42 @@ vcr.close()  # flush the tape
 Playback tolerates either form regardless, so cross-implementation tapes load
 cleanly.
 
+## Stable order (record, opt-in)
+
+For a service that answers in a different order every run. All off by default;
+the tape is byte-exact without them.
+
+```python
+vcr = (
+    servirtium.record(tape, upstream)
+    .pretty_json(2)                        # required: sorted JSON is only written pretty-printed
+    .sort_json_keys()                      # object keys sorted at every depth
+    .sort_json_array("versions", "/created")           # arrays `versions` holds, by member
+    .sort_json_array_at("^/secrets", "", "name")       # only for matching request paths
+    .sort_response_headers()               # header lines by name
+    .sort_header_value("Allow")            # "POST, GET" -> "GET, POST"
+    .start()
+)
+```
+
+A rule the core refuses (an empty header name, a bad regex) raises `VcrError`
+at `start()`. `sort_json_keys` / `sort_json_array*` without `pretty_json` are
+refused when the tape is written: `close()` raises `VcrError` ("sort_json_keys
+needs pretty_json ...") and writes nothing.
+
+## Playback range
+
+Replay only a slice of a tape, by interaction number (the `## Interaction N`
+headings, 0-based, inclusive; `to` < 0 means through the last):
+
+```python
+servirtium.playback(tape).playback_range(4, 6).start()
+```
+
+A request outside the range is never served (kind `PATH_OR_METHOD_DIFF`,
+"... is outside the playback range 4-6"). A bad range raises `VcrError` at
+`start()`.
+
 ## `VcrServer` members
 
 | Member | Meaning |
