@@ -12,7 +12,7 @@ local files = { "playback.lua", "record.lua", "mutation.lua", "substitute.lua" }
 
 local failed = 0
 for _, f in ipairs(files) do
-    local cmd = string.format('lua5.4 %q', here .. "/" .. f)
+    local cmd = string.format('%s %q', arg[-1] or 'lua5.4', here .. "/" .. f)
     print("== running " .. f .. " ==")
     local ok = os.execute(cmd)
     -- Lua 5.4: os.execute returns true|nil, "exit"|"signal", code

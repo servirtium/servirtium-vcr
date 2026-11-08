@@ -23,7 +23,7 @@ aeb(cap) {
             env("LUA_CPATH", "./?.so;;")
             env("SERVIRTIUM_VCR_LIB", lib)
             step("./build.sh \"${core}\"")
-            step("lua5.4 tests/run_all.lua")
+            step(". ./lua-detect.sh && \"$LUA_BIN\" tests/run_all.lua")
         }
     }
 }

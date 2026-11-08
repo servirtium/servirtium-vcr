@@ -11,7 +11,9 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 CORE="${1:-$DIR/../core/native}"
 CORE="$(cd "$CORE" && pwd)"
 
-cc -O2 -shared -fPIC $(pkg-config --cflags lua5.4) \
+. "$DIR/lua-detect.sh"
+
+cc -O2 -shared -fPIC $(pkg-config --cflags "$LUA_PC") \
    "$DIR/csrc/servirtium.c" \
    -L"$CORE" -lservirtium_vcr -Wl,-rpath,"$CORE" \
    -o "$DIR/servirtium_native.so"

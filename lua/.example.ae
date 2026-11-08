@@ -23,7 +23,7 @@ aeb(cap) {
             return 1
         }
     
-        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB LUA_PATH=\"${pkg}/?.lua;;\" LUA_CPATH=\"${pkg}/?.so;;\" lua5.4 consumer_example.lua")
+        rc2 = os.system("cd \"${consumer}\" && env -u SERVIRTIUM_VCR_LIB LUA_PATH=\"${pkg}/?.lua;;\" LUA_CPATH=\"${pkg}/?.so;;\" $(. \"${root}/lua/lua-detect.sh\" && echo \"$LUA_BIN\") consumer_example.lua")
         if rc2 != 0 {
             println("lua example: consumer run against the relocated package failed")
             return 1

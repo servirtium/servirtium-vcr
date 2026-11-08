@@ -17,7 +17,7 @@ aeb(cap) {
         luadir = "${root}/lua"
         dist = "${luadir}/dist"
     
-        rc = os.system("rm -rf \"${dist}\" && mkdir -p \"${dist}\" && cp \"${luadir}/servirtium.lua\" \"${dist}/\" && cp \"${lib}\" \"${dist}/libservirtium_vcr.so\" && cc -O2 -shared -fPIC $(pkg-config --cflags lua5.4) \"${luadir}/csrc/servirtium.c\" -L\"${dist}\" -lservirtium_vcr -Wl,-rpath,'$ORIGIN' -o \"${dist}/servirtium_native.so\"")
+        rc = os.system("rm -rf \"${dist}\" && mkdir -p \"${dist}\" && cp \"${luadir}/servirtium.lua\" \"${dist}/\" && cp \"${lib}\" \"${dist}/libservirtium_vcr.so\" && . \"${luadir}/lua-detect.sh\" && cc -O2 -shared -fPIC $(pkg-config --cflags \"$LUA_PC\") \"${luadir}/csrc/servirtium.c\" -L\"${dist}\" -lservirtium_vcr -Wl,-rpath,'$ORIGIN' -o \"${dist}/servirtium_native.so\"")
         if rc != 0 {
             println("lua package: building the self-contained package failed")
             return 1
