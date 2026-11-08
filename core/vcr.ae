@@ -6741,11 +6741,13 @@ sort_lines(blob: string) -> string {
     return out
 }
 
-// Strip Host header from a "Name: Value\n..." blob, then sort.
-// Mirrors the C normalize_recorded_headers used at parse time.
+// Trim CRs and blank lines from a "Name: Value\n..." blob, then sort. Host is
+// kept: a recording writes it as sent, so a tape parsed and emitted again
+// (servirtium check --canonical) must come out byte-identical. Matching
+// skips Host on both sides (skip_in_matching), so keeping it costs nothing.
 normalize_recorded_headers(raw: string) -> string {
     if string.length(raw) == 0 { return string.copy("") }
-    // Walk lines; drop Host:; collect rest into a blob.
+    // Walk lines; collect non-blank ones into a blob.
     out = string.copy("")
     cursor = 0
     rl = string.length(raw)
@@ -6759,16 +6761,9 @@ normalize_recorded_headers(raw: string) -> string {
         if line_t_len > 0 && string.char_at(line, line_t_len - 1) == 13 {
             line = string.substring(line, 0, line_t_len - 1)
         }
-        // Drop empty lines and Host: ...
+        // Drop empty lines.
         keep = 1
         if string.length(line) == 0 { keep = 0 }
-        if keep == 1 {
-            colon_idx = string.index_of(line, ":")
-            if colon_idx > 0 {
-                name = string.substring(line, 0, colon_idx)
-                if icmp_aether(name, "Host") == 0 { keep = 0 }
-            }
-        }
         if keep == 1 {
             out = string_concat(out, line)
             out = string_concat(out, "\n")
