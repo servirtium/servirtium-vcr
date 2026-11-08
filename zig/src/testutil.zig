@@ -48,6 +48,8 @@ pub fn curl(allocator: std.mem.Allocator, io: std.Io, args: struct {
     method: ?[]const u8 = null,
     data: ?[]const u8 = null,
     content_type: ?[]const u8 = null,
+    /// Extra curl arguments (e.g. `-H`, `Cookie: sid=x`), placed before the URL.
+    extra: []const []const u8 = &.{},
 }) !HttpResult {
     // Body then a marker then the status code, so we can split cleanly even
     // when the body contains newlines.
@@ -75,6 +77,7 @@ pub fn curl(allocator: std.mem.Allocator, io: std.Io, args: struct {
         try argv.append(allocator, "--data-binary");
         try argv.append(allocator, d);
     }
+    for (args.extra) |e| try argv.append(allocator, e);
     try argv.append(allocator, args.url);
 
     const result = try std.process.run(allocator, io, .{ .argv = argv.items });

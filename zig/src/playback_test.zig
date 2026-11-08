@@ -259,3 +259,55 @@ test "playback substitute fills a placeholder and assertAllConsumed tracks repla
     defer allocator.free(proto);
     try std.testing.expectEqualStrings("", proto);
 }
+
+// The shared shop-journey tape: 0 GET /login ... 7 GET /logout. A test that
+// brings its own session cookie replays only the interaction it needs.
+const range_tape = "../core_tests/tapes/playback_range.tape";
+// Send the cookie and nothing else the tape did not record.
+const range_curl = [_][]const u8{ "-H", "Cookie: sid=live-session", "-H", "User-Agent:", "-H", "Accept:" };
+
+test "playback range replays only the chosen interactions" {
+    const allocator = std.testing.allocator;
+
+    var srv = try servirtium.Playback.init(allocator, range_tape)
+        .redactCredentials()
+        .playbackRange(7, 7)
+        .port(0)
+        .start();
+    defer srv.close() catch {};
+
+    const r = srv.playbackRange().?;
+    try std.testing.expectEqual(@as(c_int, 7), r[0]);
+    try std.testing.expectEqual(@as(c_int, 7), r[1]);
+
+    const base = try srv.baseUrl();
+    defer allocator.free(base);
+
+    // The later interaction is served first; the earlier ones are skipped.
+    const logout = try std.fmt.allocPrint(allocator, "{s}/logout", .{base});
+    defer allocator.free(logout);
+    var res = try testutil.curl(allocator, std.testing.io, .{ .url = logout, .extra = &range_curl });
+    defer res.deinit(allocator);
+    try std.testing.expectEqualStrings("bye", std.mem.trim(u8, res.body, "\r\n"));
+    try std.testing.expectEqual(@as(c_int, 7), srv.lastIndex());
+
+    const login = try std.fmt.allocPrint(allocator, "{s}/login", .{base});
+    defer allocator.free(login);
+    var skipped = try testutil.curl(allocator, std.testing.io, .{ .url = login, .extra = &range_curl });
+    defer skipped.deinit(allocator);
+    try std.testing.expect(std.mem.indexOf(u8, skipped.body, "login-form") == null);
+    const err = try srv.lastError();
+    defer allocator.free(err);
+    try std.testing.expect(std.mem.indexOf(u8, err, "outside the playback range") != null);
+
+    srv.clearPlaybackRange();
+    try std.testing.expect(srv.playbackRange() == null);
+}
+
+test "a bad playback range is refused at start" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(
+        servirtium.Error.VcrError,
+        servirtium.Playback.init(allocator, range_tape).playbackRange(9, -1).port(0).start(),
+    );
+}

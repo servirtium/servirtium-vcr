@@ -89,6 +89,18 @@ pub extern "c" fn aether_vcr_embed_redact_credentials(handle: Handle) [*c]u8;
 pub extern "c" fn aether_vcr_embed_redact_credential_header(handle: Handle, name: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_set_upstream_cafile(handle: Handle, path: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_add_license_notice(handle: Handle, text: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_set_sort_json_keys(handle: Handle, on: c_int) void;
+pub extern "c" fn aether_vcr_embed_get_sort_json_keys(handle: Handle) c_int;
+pub extern "c" fn aether_vcr_embed_sort_json_array(handle: Handle, path: [*c]const u8, by: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_sort_json_array_at(handle: Handle, request: [*c]const u8, path: [*c]const u8, by: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_set_sort_response_headers(handle: Handle, on: c_int) void;
+pub extern "c" fn aether_vcr_embed_get_sort_response_headers(handle: Handle) c_int;
+pub extern "c" fn aether_vcr_embed_sort_header_value(handle: Handle, name: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_clear_stable_order(handle: Handle) void;
+pub extern "c" fn aether_vcr_embed_set_playback_range(handle: Handle, from: c_int, to: c_int) [*c]u8;
+pub extern "c" fn aether_vcr_embed_clear_playback_range(handle: Handle) void;
+pub extern "c" fn aether_vcr_embed_get_playback_range_from(handle: Handle) c_int;
+pub extern "c" fn aether_vcr_embed_get_playback_range_to(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_clear_redactions(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_normalizations(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_unredactions(handle: Handle) void;
@@ -354,6 +366,66 @@ pub const Vcr = struct {
         return takeString(self.allocator, aether_vcr_embed_add_license_notice(self.handle, text.ptr));
     }
 
+    /// Opt-in stable order (record side; all off by default, the tape is
+    /// byte-exact without them). Sorted JSON is only written pretty-printed:
+    /// with a JSON sort rule and no `pretty_json`, `stopAndFlush` returns
+    /// "sort_json_keys needs pretty_json: ..." and writes nothing.
+    /// Sort JSON object keys at every depth in recorded JSON response bodies.
+    pub fn setSortJsonKeys(self: *Vcr, on: bool) void {
+        aether_vcr_embed_set_sort_json_keys(self.handle, @intFromBool(on));
+    }
+    pub fn sortJsonKeys(self: *Vcr) bool {
+        return aether_vcr_embed_get_sort_json_keys(self.handle) != 0;
+    }
+
+    /// Sort the JSON response arrays `path` selects (JSON pointer from the root,
+    /// "*" for one segment, "" the root array, or a bare member name) by member
+    /// `by` ("" = each element's canonical JSON). Returns "" or the refusal reason.
+    pub fn sortJsonArray(self: *Vcr, path: [:0]const u8, by: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_sort_json_array(self.handle, path.ptr, by.ptr));
+    }
+
+    /// The same, only for requests whose path (query included) matches the
+    /// regex `request`. Returns "" or the refusal reason.
+    pub fn sortJsonArrayAt(self: *Vcr, request: [:0]const u8, path: [:0]const u8, by: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_sort_json_array_at(self.handle, request.ptr, path.ptr, by.ptr));
+    }
+
+    /// Sort response header lines by name (case-insensitive).
+    pub fn setSortResponseHeaders(self: *Vcr, on: bool) void {
+        aether_vcr_embed_set_sort_response_headers(self.handle, @intFromBool(on));
+    }
+    pub fn sortResponseHeaders(self: *Vcr) bool {
+        return aether_vcr_embed_get_sort_response_headers(self.handle) != 0;
+    }
+
+    /// Sort one response header's comma-separated items ("Allow"). Returns "" or the reason.
+    pub fn sortHeaderValue(self: *Vcr, name: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_sort_header_value(self.handle, name.ptr));
+    }
+
+    /// Turn every stable-order rule off.
+    pub fn clearStableOrder(self: *Vcr) void {
+        aether_vcr_embed_clear_stable_order(self.handle);
+    }
+
+    /// Playback only: replay just interactions `from`..`to` (0-based "## Interaction N"
+    /// numbers, inclusive; `to < 0` = through the last). Returns "" or the refusal
+    /// reason (a record handle or a bad range). Call after opening, before traffic.
+    pub fn setPlaybackRange(self: *Vcr, from: c_int, to: c_int) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_set_playback_range(self.handle, from, to));
+    }
+    pub fn clearPlaybackRange(self: *Vcr) void {
+        aether_vcr_embed_clear_playback_range(self.handle);
+    }
+    /// The range's ends; -1 when none is set.
+    pub fn playbackRangeFrom(self: *Vcr) c_int {
+        return aether_vcr_embed_get_playback_range_from(self.handle);
+    }
+    pub fn playbackRangeTo(self: *Vcr) c_int {
+        return aether_vcr_embed_get_playback_range_to(self.handle);
+    }
+
     /// Allow live pass-through for requests matching `path` (record mode).
     pub fn untaped(self: *Vcr, path: [:0]const u8) ![]u8 {
         return takeString(self.allocator, aether_vcr_embed_untaped(self.handle, path.ptr));
@@ -434,6 +506,9 @@ fn applyPresets(
     }
 }
 
+/// One `sortJsonArray` / `sortJsonArrayAt` rule; an empty `request` means every request.
+const SortArray = struct { request: [:0]const u8, path: [:0]const u8, by: [:0]const u8 };
+
 /// A builder that replays a Servirtium markdown tape from disk.
 pub const Playback = struct {
     secret_resolver: ?SecretResolver = null,
@@ -460,6 +535,7 @@ pub const Playback = struct {
     tls_paths: ?TlsPaths = null,
     tls_pem: ?TlsPaths = null,
     match_headers: std.ArrayList([:0]const u8) = .empty,
+    playback_range: ?[2]c_int = null,
 
     /// Begin a playback fixture for `tape_path`. Configure fluently, then
     /// call `start`. The builder uses value semantics: each method consumes
@@ -622,6 +698,16 @@ pub const Playback = struct {
         return b;
     }
 
+    /// Replay only interactions `from`..`to` of the tape: the numbers of its
+    /// "## Interaction N" headings, 0-based and inclusive; `to < 0` means through
+    /// the last. Selection is by number only. A bad range (from < 0, to before
+    /// from, past the tape's end) makes `start` fail with `error.VcrError`.
+    pub fn playbackRange(self: Playback, from: c_int, to: c_int) Playback {
+        var b = self;
+        b.playback_range = .{ from, to };
+        return b;
+    }
+
     /// Match playback on this specific request header's value (ignoring the
     /// rest of the recorded header block); repeatable.
     pub fn matchHeader(self: Playback, name: [:0]const u8) Playback {
@@ -658,6 +744,7 @@ pub const Playback = struct {
         if (self.match_json_body) aether_vcr_embed_set_match_json_body(handle, 1);
         if (self.match_xml_body) aether_vcr_embed_set_match_xml_body(handle, 1);
         if (self.match_multiple) aether_vcr_embed_set_match_multiple(handle, 1);
+        if (self.playback_range) |r| try checkErr(self.allocator, aether_vcr_embed_set_playback_range(handle, r[0], r[1]));
         for (self.match_headers.items) |name| {
             aether_vcr_embed_match_header(handle, name.ptr);
         }
@@ -713,6 +800,10 @@ pub const Record = struct {
     pretty_json: c_int = 0,
     upstream_cafile: ?[:0]const u8 = null,
     license_notice: ?[:0]const u8 = null,
+    sort_json_keys: bool = false,
+    sort_json_arrays: std.ArrayList(SortArray) = .empty,
+    sort_response_headers: bool = false,
+    sort_header_values: std.ArrayList([:0]const u8) = .empty,
     fail_if_changed: bool = false,
 
     /// Begin a record fixture that forwards to `upstream_base` and writes
@@ -818,6 +909,8 @@ pub const Record = struct {
         self.header_removals.deinit(self.allocator);
         self.static_content.deinit(self.allocator);
         self.untaped_paths.deinit(self.allocator);
+        self.sort_json_arrays.deinit(self.allocator);
+        self.sort_header_values.deinit(self.allocator);
         self.cloud_vendors.deinit(self.allocator);
         self.credential_headers.deinit(self.allocator);
         self.redactions.deinit(self.allocator);
@@ -925,6 +1018,48 @@ pub const Record = struct {
         return b;
     }
 
+    /// Opt-in stable order: sort JSON object keys at every depth in recorded JSON
+    /// response bodies. Sorted JSON is only written pretty-printed: without
+    /// `prettyJson` the tape is refused when it is emitted (`close` returns
+    /// `error.VcrError`; the low-level `Vcr.stopAndFlush` returns the reason).
+    pub fn sortJsonKeys(self: Record) Record {
+        var b = self;
+        b.sort_json_keys = true;
+        return b;
+    }
+
+    /// Sort the JSON response arrays `path` selects (JSON pointer from the root,
+    /// "*" for one segment, "" the root array, or a bare member name) by member
+    /// `by` ("" = each element's canonical JSON). A refused rule makes `start`
+    /// fail with `error.VcrError`; needs `prettyJson` like `sortJsonKeys`.
+    pub fn sortJsonArray(self: Record, path: [:0]const u8, by: [:0]const u8) Record {
+        var b = self;
+        b.sort_json_arrays.append(b.allocator, .{ .request = "", .path = path, .by = by }) catch {};
+        return b;
+    }
+
+    /// The same, only for interactions whose request path (query included)
+    /// matches the regex `request`.
+    pub fn sortJsonArrayAt(self: Record, request: [:0]const u8, path: [:0]const u8, by: [:0]const u8) Record {
+        var b = self;
+        b.sort_json_arrays.append(b.allocator, .{ .request = request, .path = path, .by = by }) catch {};
+        return b;
+    }
+
+    /// Sort response header lines by name (case-insensitive).
+    pub fn sortResponseHeaders(self: Record) Record {
+        var b = self;
+        b.sort_response_headers = true;
+        return b;
+    }
+
+    /// Sort one response header's comma-separated items ("Allow"); repeatable.
+    pub fn sortHeaderValue(self: Record, name: [:0]const u8) Record {
+        var b = self;
+        b.sort_header_values.append(b.allocator, name) catch {};
+        return b;
+    }
+
     /// Make `close` still write the freshly recorded tape but return an error
     /// if it differs from the on-disk one (Servirtium drift contract).
     pub fn failIfChanged(self: Record) Record {
@@ -957,6 +1092,17 @@ pub const Record = struct {
         if (self.pretty_json > 0) aether_vcr_embed_set_pretty_json(handle, self.pretty_json);
         if (self.upstream_cafile) |path| try checkErr(self.allocator, aether_vcr_embed_set_upstream_cafile(handle, path.ptr));
         if (self.license_notice) |text| try checkErr(self.allocator, aether_vcr_embed_add_license_notice(handle, text.ptr));
+        if (self.sort_json_keys) aether_vcr_embed_set_sort_json_keys(handle, 1);
+        for (self.sort_json_arrays.items) |r| {
+            try checkErr(self.allocator, if (r.request.len == 0)
+                aether_vcr_embed_sort_json_array(handle, r.path.ptr, r.by.ptr)
+            else
+                aether_vcr_embed_sort_json_array_at(handle, r.request.ptr, r.path.ptr, r.by.ptr));
+        }
+        if (self.sort_response_headers) aether_vcr_embed_set_sort_response_headers(handle, 1);
+        for (self.sort_header_values.items) |n| {
+            try checkErr(self.allocator, aether_vcr_embed_sort_header_value(handle, n.ptr));
+        }
         for (self.redactions.items) |r| {
             try checkErr(self.allocator, switch (r.operation) {
                 .literal => aether_vcr_embed_redact(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr),
@@ -1075,6 +1221,41 @@ pub const Server = struct {
     /// Stage a note (record mode) for the next interaction to be captured.
     pub fn note(self: *Server, title: [:0]const u8, body: [:0]const u8) !void {
         try checkErr(self.allocator, aether_vcr_embed_note(self.handle, title.ptr, body.ptr));
+    }
+
+    /// Whether recorded JSON object keys are sorted (the `sortJsonKeys` opt-in).
+    pub fn sortJsonKeys(self: *Server) bool {
+        return aether_vcr_embed_get_sort_json_keys(self.handle) != 0;
+    }
+
+    /// Whether recorded response header lines are sorted (the `sortResponseHeaders` opt-in).
+    pub fn sortResponseHeaders(self: *Server) bool {
+        return aether_vcr_embed_get_sort_response_headers(self.handle) != 0;
+    }
+
+    /// Turn every stable-order rule off.
+    pub fn clearStableOrder(self: *Server) void {
+        aether_vcr_embed_clear_stable_order(self.handle);
+    }
+
+    /// Playback only: replay just interactions `from`..`to` (`to < 0` = through
+    /// the last). Prefer `Playback.playbackRange`; this is the same call on a
+    /// running server, before traffic. `error.VcrError` on a record server (a
+    /// recording always captures the whole conversation) or a bad range.
+    pub fn setPlaybackRange(self: *Server, from: c_int, to: c_int) !void {
+        try checkErr(self.allocator, aether_vcr_embed_set_playback_range(self.handle, from, to));
+    }
+
+    /// Replay the whole tape again.
+    pub fn clearPlaybackRange(self: *Server) void {
+        aether_vcr_embed_clear_playback_range(self.handle);
+    }
+
+    /// The playback range as `{ from, to }`, or null when the whole tape is replayed.
+    pub fn playbackRange(self: *Server) ?[2]c_int {
+        const from = aether_vcr_embed_get_playback_range_from(self.handle);
+        if (from < 0) return null;
+        return .{ from, aether_vcr_embed_get_playback_range_to(self.handle) };
     }
 
     /// Rewind the replay cursor to interaction 0 and clear the last-* slots.

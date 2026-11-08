@@ -85,6 +85,102 @@ test "record accepts a license notice, pretty JSON and the header presets" {
     try std.testing.expect(std.mem.indexOf(u8, text, "## LICENSE NOTICE") != null);
 }
 
+const unsorted_json = "{\"zebra\":1,\"apple\":{\"mango\":2,\"banana\":3}}";
+const sorted_json = "{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}";
+
+test "record with sortJsonKeys and prettyJson writes sorted, pretty JSON" {
+    const allocator = std.testing.allocator;
+
+    var up = try testutil.FakeUpstream.init(allocator);
+    defer up.deinit();
+    up.response_body = unsorted_json;
+    up.content_type = "application/json";
+    const upstream = try up.baseUrl(allocator);
+    defer allocator.free(upstream);
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tape = try tapePathZ(allocator, &tmp, "sorted.md");
+    defer allocator.free(tape);
+
+    var rec = try servirtium.Record.init(allocator, tape, upstream)
+        .prettyJson(2)
+        .sortJsonKeys()
+        .sortJsonArray("/list", "")
+        .sortJsonArrayAt("/x", "/list", "id")
+        .sortResponseHeaders()
+        .sortHeaderValue("Allow")
+        .port(0)
+        .start();
+    try std.testing.expect(rec.sortJsonKeys());
+    try std.testing.expect(rec.sortResponseHeaders());
+    try poke(allocator, &rec);
+    try rec.close();
+
+    const text = try readTape(allocator, tape);
+    defer allocator.free(text);
+    try std.testing.expect(std.mem.indexOf(u8, text, sorted_json) != null);
+}
+
+test "record with sortJsonKeys but no prettyJson is refused at emit time" {
+    const allocator = std.testing.allocator;
+
+    var up = try testutil.FakeUpstream.init(allocator);
+    defer up.deinit();
+    up.response_body = unsorted_json;
+    up.content_type = "application/json";
+    const upstream = try up.baseUrl(allocator);
+    defer allocator.free(upstream);
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tape = try tapePathZ(allocator, &tmp, "refused.md");
+    defer allocator.free(tape);
+
+    // The builder reports the refusal as error.VcrError.
+    var rec = try servirtium.Record.init(allocator, tape, upstream).sortJsonKeys().port(0).start();
+    try poke(allocator, &rec);
+    try std.testing.expectError(servirtium.Error.VcrError, rec.close());
+    try std.testing.expectError(error.FileNotFound, readTape(allocator, tape));
+
+    // The low-level wrapper returns the reason itself.
+    var vcr = try servirtium.Vcr.record(allocator, "", tape, upstream, "127.0.0.1", 0);
+    vcr.setSortJsonKeys(true);
+    try std.testing.expect(vcr.sortJsonKeys());
+    const bad = try vcr.sortJsonArray("a/b", "");
+    defer allocator.free(bad);
+    try std.testing.expect(bad.len != 0); // a bad path is refused straight away
+    try vcr.start();
+    const base = try vcr.baseUrl("127.0.0.1");
+    defer allocator.free(base);
+    const url = try std.fmt.allocPrint(allocator, "{s}/x", .{base});
+    defer allocator.free(url);
+    var res = try testutil.curl(allocator, std.testing.io, .{ .url = url });
+    res.deinit(allocator);
+    const reason = try vcr.stopAndFlush(tape);
+    defer allocator.free(reason);
+    try std.testing.expect(std.mem.indexOf(u8, reason, "sort_json_keys needs pretty_json") != null);
+}
+
+test "a record server refuses a playback range" {
+    const allocator = std.testing.allocator;
+
+    var up = try testutil.FakeUpstream.init(allocator);
+    defer up.deinit();
+    const upstream = try up.baseUrl(allocator);
+    defer allocator.free(upstream);
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tape = try tapePathZ(allocator, &tmp, "range.md");
+    defer allocator.free(tape);
+
+    var rec = try servirtium.Record.init(allocator, tape, upstream).port(0).start();
+    defer rec.discard();
+    try std.testing.expectError(servirtium.Error.VcrError, rec.setPlaybackRange(0, 1));
+    try std.testing.expect(rec.playbackRange() == null);
+}
+
 test "record attaches a note" {
     const allocator = std.testing.allocator;
 

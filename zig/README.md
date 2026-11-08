@@ -59,6 +59,19 @@ same across all bindings, so existing tapes replay as-is.
 `.staticContent`, `.untaped`, `.note(title, body)`, `.indentCodeBlocks`,
 `.emphasizeHttpVerbs`, `.failIfChanged`, `.start`.
 
+**Stable ordering and playback range** (both opt-in; a refused rule or range is `error.VcrError`):
+
+- Record builder: `.sortJsonKeys()`, `.sortJsonArray(path, by)`, `.sortJsonArrayAt(request_regex, path, by)`,
+  `.sortResponseHeaders()`, `.sortHeaderValue(name)`; `Server.sortJsonKeys()` / `sortResponseHeaders()` read
+  the state back and `clearStableOrder()` turns it off. Sorted JSON is only written pretty-printed: without
+  `.prettyJson(2)`, `close` fails with `error.VcrError` and writes nothing (the low-level
+  `Vcr.stopAndFlush` returns the reason, `sort_json_keys needs pretty_json: ...`).
+- Playback builder: `.playbackRange(from, to)` replays only the tape's `## Interaction N` headings
+  `from`..`to` (0-based, inclusive; `to < 0` = through the last); a bad range makes `.start` fail. On a
+  running server, `setPlaybackRange` (an error on a record server), `clearPlaybackRange()` and
+  `playbackRange()` (null when the whole tape plays). The low-level `Vcr` has the same calls and returns
+  the refusal reason as a string.
+
 **Server**: `.port`, `.baseUrl`, `.tapeLength`, `.lastError`, `.lastKind`,
 `.lastIndex`, `.note`, `.resetCursor`, `.clearLastError`, `.close`
 (record-mode `close` flushes the tape; `failIfChanged` returns
