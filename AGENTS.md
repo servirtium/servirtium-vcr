@@ -185,36 +185,65 @@ reference). Quick facts:
 
 `ssh ghostbsd` (FreeBSD 15.1 amd64) is a regular test host beside the Linux box
 `cachyos`. Everything lives under `~/aether-lab/` there; `~/aether`,
-`~/aether-ui`, `~/aeoenv.sh`, `~/scm` and `~/aether-lab/aether` belong to other
-sessions.
+`~/aether-ui`, `~/aeoenv.sh`, `~/scm` and `~/aether-lab/aether*` belong to other
+sessions. Last full sweep: 2026-11-08, every binding leaf, twice (released
+toolchain, then the Aether PR #3624 build).
 
 - **Sync** the committed tree, never the working tree (macOS adds `._` files):
-  `git archive HEAD | ssh ghostbsd 'mkdir -p ~/aether-lab/servirtium-vcr && tar xf - -C ~/aether-lab/servirtium-vcr'`
-- **Toolchain**: released Aether 0.897.0 + aeb v0.343 in the private prefix
-  `~/aether-lab/svcr-prefix` (aeb's `get.sh` with `PREFIX=`, `AE_PIN`, `AEB_REF`).
-  `. ~/aether-lab/svcr-env.sh` puts it first on `PATH`, sets `AE_CC=cc CC=cc`
-  (no gcc on FreeBSD; `aeb-link` honours `AE_CC`), and `LD_PRELOAD`s
-  `~/aether-lab/svcr-shim/shfix.so` (see below). `ae` still shares
-  `~/.aether/cache` (content-addressed).
-- **Run**: `. ~/aether-lab/svcr-env.sh; cd ~/aether-lab/servirtium-vcr; aeb <lang>/.tests.ae`,
-  one at a time (`core_tests/.tests.ae` first; it takes ~5 min).
-- **Present**: c, cpp (clang++), go, java (openjdk25), python (3.12; pytest only
-  in the venv `~/aether-lab/svcr-venv`, put its `bin` first on `PATH`), ruby (3.4;
-  but no `rspec`/`bundler`/`gem`), zig 0.16 (too old: `zig/` needs 0.17.x, its
-  `build.zig` fails on `b.root`). **Missing**: node, php, rust/cargo, dotnet
-  (csharp, fsharp), swift, kotlin, scala/sbt, groovy, clojure, erlang, elixir,
-  gleam, lfe, nim, d, crystal, haskell, julia, lua, janet, dart, pharo.
-- **Released-ae problems on FreeBSD** (Aether bugs, not servirtium's):
+  `git archive HEAD | ssh ghostbsd 'mkdir -p ~/aether-lab/svcr && tar xf - -C ~/aether-lab/svcr'`
+- **Toolchain** (private, none of it touches `~/.aether`): released Aether
+  0.897.0 + aeb v0.343 in `~/aether-lab/svcr-prefix` (aeb's `get.sh` with
+  `PREFIX=`, `AE_PIN`, `AEB_REF`). `. ~/aether-lab/svcr-env.sh` puts it first on
+  `PATH`, sets `AE_CC=cc CC=cc` (no gcc on FreeBSD; `aeb-link` honours `AE_CC`),
+  puts zig 0.17.1 (`~/aether-lab/zig-x86_64-freebsd-0.17.1`) and nim on `PATH`,
+  and `LD_PRELOAD`s `~/aether-lab/svcr-shim/shfix.so` (see below).
+  `. ~/aether-lab/svcr-langenv.sh` (source it second) holds the per-language
+  state, all under `~/aether-lab`: the pytest venv `svcr-venv`, `JAVA_HOME`
+  (openjdk25), `BUNDLE_PATH=svcr-gems` (run `bundle install` once in `ruby/`),
+  `CABAL_DIR=svcr-cabal` (run `cabal update` once), `KOTLIN_HOME`,
+  `GROOVY_HOME=svcr-groovy/groovy-5.1.0` (the groovy binding needs 5.1; the pkg
+  is 2.4; fetched from Maven Central `groovy-binary`), `PATH` += `svcr-bin`
+  (`dmd` -> `ldmd2`), and `svcr-stubs` (a `libexecinfo.so` symlink to
+  `/usr/lib/libexecinfo.so.1`) via `RUSTFLAGS=-L` and `LIBRARY_PATH`, because
+  FreeBSD 15 ships only the versioned lib and rustc/ldc2 link `-lexecinfo`.
+- **Pass B** (Aether PR build): `. ~/aether-lab/svcr-envB.sh` instead of
+  `svcr-env.sh`. It points at `~/aether-lab/svcr-prefixB`, a copy of
+  `svcr-prefix` with `ae`, `aetherc`, `libaether.a`, `libaether_sandbox.so` and
+  `runtime/ std/ contrib/ tools/` overlaid from another session's built tree
+  (`~/aether-lab/aether-sendfile`, read only; the dev tree is not a prefix, so
+  the overlay is what `aeb-link` needs). The shim stays: aeb's own prebuilt tools
+  still run `sh -c --`; programs compiled by the PR no longer do.
+- **Run**: `. ~/aether-lab/svcr-env.sh; . ~/aether-lab/svcr-langenv.sh; cd <tree>; aeb <lang>/.tests.ae`,
+  one at a time per tree (`core_tests/.tests.ae` first; ~6 min on the released
+  ae, ~10 min on the PR's dev build). C# is `dotnet/Servirtium.Vcr.Tests/.tests.ae`.
+  Whole sweep: `~/aether-lab/svcr-runall.sh <tree> <outdir> <leaf>...` (~1.5 h).
+- **Results with the released 0.897.0**: pass: erlang, gleam, haskell, fsharp,
+  bruno_import_demo. Fail only on the three Aether bugs below: core_tests (5),
+  c, cpp, go, java, python, ruby, zig, rust, nim, lua, javascript, php, elixir,
+  crystal, dart, janet, d, csharp, kotlin, scala, groovy, clojure, release. With
+  the PR build every one of those passes (core_tests 36/36).
+- **Cannot run here**: lfe (pkg LFE 2.2.0's `lfe_init` calls
+  `user_drv:start(#{initial_shell => noshell})`, which OTP 28 rejects with
+  `badkey input`, so every `lfe -noshell -eval ...` dies; LFE/OTP, not
+  servirtium), pharo (the pkg VM aborts at startup: "Could not allocate codeZone
+  in the expected place"), integration (needs Chrome + chromedriver; only
+  firefox is installed), julia and swift (not packaged; the leaves skip with
+  0/0, which shows as rc=0 and means nothing).
+- **Released-ae problems on FreeBSD** (Aether bugs, not servirtium's; all fixed
+  in PR aether-lang-dev/aether#3624):
   1. `std/os/aether_os.c` runs `sh -c -- <cmd>`; FreeBSD `sh` takes `--` as the
      command, so every `os.system` fails with `--: not found` (aeb cannot even
-     build its own helpers). The `LD_PRELOAD` shim drops the `--`; delete it
-     once Aether fixes this.
-  2. The FreeBSD release `libaether.a` is built without PCRE2 (not even the
-     vendored engine): `std.regex` answers "built without libpcre2-8". Fails
-     `sort_json_array_at` / `normalize` / `redact_whole_tape` tests in every
-     binding (core_tests: keeps_headers, rules_footer, stable_order).
-  3. `std.http` `serve_file` double-sends the response (known, separate PR), so
-     the static_content tests fail (core_tests, go, java, python).
+     build its own helpers). The `LD_PRELOAD` shim drops the `--`.
+  2. The FreeBSD release `libaether.a` is built without PCRE2: `std.regex`
+     answers "built without libpcre2-8". Fails `sort_json_array_at` /
+     `normalize` / `redact_whole_tape` tests in every binding (core_tests:
+     keeps_headers, rules_footer, stable_order; release/artifact_tests).
+  3. `std.http` `serve_file` double-sends the response, so the static_content
+     tests fail (core_tests, go, java, python, zig, nim, javascript, elixir, rust, c#, janet's
+     `playback-url`).
+- Portability fixes that came out of the sweep: lua finds `lua54`/`lua-5.4`
+  (`lua/lua-detect.sh`), and the release artifact check dlopens the host's own
+  slot instead of always `linux-x86_64` (its fixture was Linux-only).
 - `core_tests/tls_probe.ae` imports `std.cryptography.tls13_server` so HTTPS
   works without an OpenSSL link; that was the one servirtium-side gap.
 
