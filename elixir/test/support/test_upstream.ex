@@ -10,11 +10,11 @@ defmodule Servirtium.TestUpstream do
   defstruct [:pid, :port, :owner]
 
   @doc "Start an upstream returning `body` (text/plain). Returns the struct."
-  def start(body \\ "hello-from-upstream") do
+  def start(body \\ "hello-from-upstream", content_type \\ "text/plain") do
     owner = self()
     {:ok, listen} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true, packet: :raw])
     {:ok, port} = :inet.port(listen)
-    pid = spawn_link(fn -> accept_loop(listen, body, owner) end)
+    pid = spawn_link(fn -> accept_loop(listen, body, content_type, owner) end)
     %__MODULE__{pid: pid, port: port, owner: owner}
   end
 
@@ -37,24 +37,24 @@ defmodule Servirtium.TestUpstream do
 
   # ---- internals ----
 
-  defp accept_loop(listen, body, owner) do
+  defp accept_loop(listen, body, content_type, owner) do
     case :gen_tcp.accept(listen) do
       {:ok, sock} ->
-        serve(sock, body, owner)
-        accept_loop(listen, body, owner)
+        serve(sock, body, content_type, owner)
+        accept_loop(listen, body, content_type, owner)
 
       {:error, _} ->
         :ok
     end
   end
 
-  defp serve(sock, body, owner) do
+  defp serve(sock, body, content_type, owner) do
     raw = read_request(sock, "")
     send(owner, {:upstream_request, raw})
 
     response =
       "HTTP/1.1 200 OK\r\n" <>
-        "Content-Type: text/plain\r\n" <>
+        "Content-Type: #{content_type}\r\n" <>
         "Content-Length: #{byte_size(body)}\r\n" <>
         "Connection: close\r\n\r\n" <> body
 

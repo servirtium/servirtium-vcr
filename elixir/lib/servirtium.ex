@@ -64,6 +64,10 @@ defmodule Servirtium do
 
   Playback only:
 
+    * `:playback_range` — `{from, to}`: replay only interactions `from`..`to`
+      (0-based, inclusive, the tape's `## Interaction N` numbers; `to < 0` =
+      through the last). Selection is by number only. A record server refuses
+      it (raises)
     * `:strict_headers` — `true` to compare request headers on every interaction
     * `:match_json_body` — `true` to match request bodies by semantic JSON
       equality (key order / whitespace ignored) instead of byte-for-byte;
@@ -105,6 +109,19 @@ defmodule Servirtium do
     * `:license_notice` — text written under `## LICENSE NOTICE` at the top of
       each tape (playback ignores it)
     * `:upstream_cafile` — PEM CA file to verify an https upstream against
+    * `:sort_json_keys` — `true` to sort JSON object keys at every depth in
+      recorded JSON response bodies. Sorted JSON is only written
+      pretty-printed: without `:pretty_json` the tape is refused when it is
+      written (`stop/1` returns `{:error, "sort_json_keys needs pretty_json: ..."}`)
+    * `:sort_json_array` — list of `{path, by}`: sort the JSON response arrays
+      `path` selects (JSON pointer, `"*"` for one segment, `""` the root array,
+      or a bare member name) by member `by` (`""` = each element's canonical
+      JSON). Needs `:pretty_json` like `:sort_json_keys`
+    * `:sort_json_array_at` — list of `{request_regex, path, by}`: the same,
+      only for requests whose path (query included) matches the regex
+    * `:sort_response_headers` — `true` to sort response header lines by name
+    * `:sort_header_value` — list of response header names whose
+      comma-separated items are sorted (`"Allow"`)
     * `:fail_if_changed` — `true` to raise on drift when flushing (still writes)
 
   A `field` is one of `:path`, `:response_body`, `:request_headers`,
@@ -326,6 +343,29 @@ defmodule Servirtium do
   @spec last_index(Server.t()) :: integer()
   def last_index(%Server{handle: h}), do: Native.last_index(h)
 
+  @doc """
+  Replay only interactions `from`..`to` (0-based, inclusive; `to < 0` = through
+  the last). Playback only: raises `Servirtium.Error` on a record server or an
+  impossible range.
+  """
+  @spec set_playback_range(Server.t(), integer(), integer()) :: :ok
+  def set_playback_range(%Server{handle: h}, from, to) when is_integer(from) and is_integer(to) do
+    check!(Native.set_playback_range(h, from, to), "set_playback_range")
+  end
+
+  @doc "Replay the whole tape again."
+  @spec clear_playback_range(Server.t()) :: :ok
+  def clear_playback_range(%Server{handle: h}), do: Native.clear_playback_range(h)
+
+  @doc "The playback range in force as `{from, to}`, or `nil` when none is set."
+  @spec playback_range(Server.t()) :: {integer(), integer()} | nil
+  def playback_range(%Server{handle: h}) do
+    case Native.get_playback_range_from(h) do
+      -1 -> nil
+      from -> {from, Native.get_playback_range_to(h)}
+    end
+  end
+
   @doc "Rewind the replay cursor to interaction 0 and clear the last-* slots."
   @spec reset_cursor(Server.t()) :: :ok
   def reset_cursor(%Server{handle: h}), do: Native.reset_cursor(h)
@@ -410,6 +450,11 @@ defmodule Servirtium do
     for name <- Keyword.get(opts, :redact_credential_header, []) do
       check!(Native.redact_credential_header(handle, name), "redact_credential_header")
     end
+
+    case Keyword.get(opts, :playback_range) do
+      nil -> :ok
+      {from, to} -> check!(Native.set_playback_range(handle, from, to), "set_playback_range")
+    end
   end
 
   defp apply_playback_config(handle, opts) do
@@ -454,6 +499,22 @@ defmodule Servirtium do
     case Keyword.get(opts, :upstream_cafile) do
       nil -> :ok
       path -> check!(Native.set_upstream_cafile(handle, path), "set_upstream_cafile")
+    end
+
+    if Keyword.get(opts, :sort_json_keys, false), do: Native.set_sort_json_keys(handle, 1)
+
+    for {path, by} <- Keyword.get(opts, :sort_json_array, []) do
+      check!(Native.sort_json_array(handle, path, by), "sort_json_array")
+    end
+
+    for {request, path, by} <- Keyword.get(opts, :sort_json_array_at, []) do
+      check!(Native.sort_json_array_at(handle, request, path, by), "sort_json_array_at")
+    end
+
+    if Keyword.get(opts, :sort_response_headers, false), do: Native.set_sort_response_headers(handle, 1)
+
+    for name <- Keyword.get(opts, :sort_header_value, []) do
+      check!(Native.sort_header_value(handle, name), "sort_header_value")
     end
 
     for {field, pat, repl} <- Keyword.get(opts, :redact, []) do

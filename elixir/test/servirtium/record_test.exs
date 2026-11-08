@@ -148,4 +148,61 @@ defmodule Servirtium.RecordTest do
       TestUpstream.stop(up)
     end
   end
+
+  @json ~s({"b":1,"a":{"z":2,"y":3}})
+
+  test "sort_json_keys with pretty_json writes sorted, pretty JSON", %{tape: tape} do
+    up = TestUpstream.start(@json, "application/json")
+
+    try do
+      {:ok, srv} =
+        Servirtium.record(tape, TestUpstream.base_url(up),
+          port: 0,
+          sort_json_keys: true,
+          pretty_json: 2
+        )
+
+      assert {200, @json} = get(Servirtium.base_url(srv), "/data")
+      assert :ok = Servirtium.stop(srv)
+
+      assert File.read!(tape) =~ ~s("a": {\n    "y": 3,\n    "z": 2\n  },\n  "b": 1)
+    after
+      TestUpstream.stop(up)
+    end
+  end
+
+  test "sort_json_keys without pretty_json is refused when the tape is written", %{tape: tape} do
+    up = TestUpstream.start(@json, "application/json")
+
+    try do
+      {:ok, srv} = Servirtium.record(tape, TestUpstream.base_url(up), port: 0, sort_json_keys: true)
+      assert {200, @json} = get(Servirtium.base_url(srv), "/data")
+      assert {:error, msg} = Servirtium.stop(srv)
+      assert msg =~ "sort_json_keys needs pretty_json"
+    after
+      TestUpstream.stop(up)
+    end
+  end
+
+  test "a refused stable-order rule raises from record/3", %{tape: tape} do
+    assert_raise Servirtium.Error, ~r/sort_header_value/, fn ->
+      Servirtium.record(tape, "http://127.0.0.1:1", port: 0, sort_header_value: [""])
+    end
+  end
+
+  test "a record server refuses a playback range", %{tape: tape} do
+    {:ok, srv} = Servirtium.record(tape, "http://127.0.0.1:1", port: 0)
+
+    try do
+      assert_raise Servirtium.Error, ~r/set_playback_range/, fn ->
+        Servirtium.set_playback_range(srv, 0, -1)
+      end
+
+      assert_raise Servirtium.Error, ~r/set_playback_range/, fn ->
+        Servirtium.record(tape, "http://127.0.0.1:1", port: 0, playback_range: {0, -1})
+      end
+    after
+      Servirtium.stop(srv)
+    end
+  end
 end

@@ -99,6 +99,18 @@ defmodule Servirtium.Native do
   defdelegate redact_credential_header(handle, name), to: :servirtium_nif
   defdelegate add_license_notice(handle, text), to: :servirtium_nif
   defdelegate set_upstream_cafile(handle, path), to: :servirtium_nif
+  defdelegate set_sort_json_keys(handle, on), to: :servirtium_nif
+  defdelegate get_sort_json_keys(handle), to: :servirtium_nif
+  defdelegate sort_json_array(handle, path, by), to: :servirtium_nif
+  defdelegate sort_json_array_at(handle, request, path, by), to: :servirtium_nif
+  defdelegate set_sort_response_headers(handle, on), to: :servirtium_nif
+  defdelegate get_sort_response_headers(handle), to: :servirtium_nif
+  defdelegate sort_header_value(handle, name), to: :servirtium_nif
+  defdelegate clear_stable_order(handle), to: :servirtium_nif
+  defdelegate set_playback_range(handle, from, to), to: :servirtium_nif
+  defdelegate clear_playback_range(handle), to: :servirtium_nif
+  defdelegate get_playback_range_from(handle), to: :servirtium_nif
+  defdelegate get_playback_range_to(handle), to: :servirtium_nif
   defdelegate clear_redactions(handle), to: :servirtium_nif
   defdelegate clear_unredactions(handle), to: :servirtium_nif
   defdelegate clear_header_removals(handle), to: :servirtium_nif

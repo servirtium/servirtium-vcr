@@ -191,6 +191,45 @@ Servirtium.record(tape, upstream,
   license_notice: "...")       # text under "## LICENSE NOTICE" atop each tape
 ```
 
+## Stable ordering (record; opt-in)
+
+For a service that sends the same response in a different order every run.
+Each rule is off by default; the tape is byte-exact without them.
+
+```elixir
+Servirtium.record(tape, upstream,
+  pretty_json: 2,                              # required by the JSON rules below
+  sort_json_keys: true,                        # object keys sorted at every depth
+  sort_json_array: [{"/items", "/id"}],        # {path, by}: sort that array by member
+  sort_json_array_at: [{"^/users", "", "name"}], # {request regex, path, by}
+  sort_response_headers: true,                 # header lines sorted by name
+  sort_header_value: ["Allow"])                # one header's comma-separated items
+```
+
+Sorted JSON is only written pretty-printed: a record with `sort_json_keys` or a
+`sort_json_array*` rule but without `pretty_json` is refused when the tape is
+written: `Servirtium.stop/1` returns `{:error, "sort_json_keys needs pretty_json:
+sorted JSON is only written pretty-printed (turn pretty_json on)"}` and writes
+nothing. A rule the core refuses outright raises `Servirtium.Error` from
+`record/3`.
+
+## Playback range (playback only)
+
+Replay only interactions `from`..`to` of a tape, by the tape's `## Interaction N`
+number (0-based, inclusive; `to < 0` = through the last). Interactions outside
+the range are never served.
+
+```elixir
+Servirtium.playback(tape, playback_range: {4, 6})
+
+Servirtium.set_playback_range(srv, 4, -1)   # raises Servirtium.Error when refused
+Servirtium.playback_range(srv)              # {4, 6} | nil
+Servirtium.clear_playback_range(srv)
+```
+
+A record server refuses a range (`Servirtium.Error`), so a test cannot silently
+overwrite a journey's tape with a slice.
+
 ## Header presets (opt-in; record and playback)
 
 ```elixir

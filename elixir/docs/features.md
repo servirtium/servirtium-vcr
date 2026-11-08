@@ -25,6 +25,8 @@ in `test/` against the real native library.
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `fail_if_changed:` opt | — |
 | Format options (indent / emphasize) | ✅ | ✅ | `indent_code_blocks:` / `emphasize_http_verbs:` / `pretty_xml:` / `pretty_json:` | — |
 | Header presets / license notice / upstream CA | ✅ | ✅ | `remove_transport_headers:` / `remove_cloud_headers:` / `redact_credentials:` / `redact_credential_header:` / `license_notice:` / `upstream_cafile:` | ✅ license notice |
+| Stable ordering (record, opt-in) | ✅ | ✅ | `sort_json_keys:` / `sort_json_array:` / `sort_json_array_at:` / `sort_response_headers:` / `sort_header_value:` (JSON sorting needs `pretty_json:`) | ✅ |
+| Playback range (replay a slice of a tape) | ✅ | ✅ | `playback_range: {from, to}` opt, `set_playback_range/3` / `clear_playback_range/1` / `playback_range/1` | ✅ |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `last_error/0`/`last_kind/0`/`last_index/0` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ | ✅ | (automatic) | — |

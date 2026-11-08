@@ -120,4 +120,23 @@ defmodule Servirtium.PlaybackTest do
       assert Servirtium.last_kind(srv) == :ok
     end)
   end
+
+  test "a playback range skips early interactions and serves a later one" do
+    Servirtium.with_playback(tape("range.md"), [port: 0, playback_range: {1, -1}], fn srv ->
+      assert Servirtium.playback_range(srv) == {1, 2}
+      base = Servirtium.base_url(srv)
+      assert {200, "second-body"} = get(base, "/step/second")
+      assert Servirtium.last_index(srv) == 1
+      # Interaction 0 is outside the range: never served.
+      assert {599, _} = get(base, "/step/first")
+      assert Servirtium.last_error(srv) =~ "outside the playback range"
+
+      assert_raise Servirtium.Error, ~r/set_playback_range/, fn ->
+        Servirtium.set_playback_range(srv, 9, -1)
+      end
+
+      Servirtium.clear_playback_range(srv)
+      assert Servirtium.playback_range(srv) == nil
+    end)
+  end
 end
