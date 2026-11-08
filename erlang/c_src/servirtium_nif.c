@@ -89,6 +89,18 @@ extern void  aether_vcr_embed_indent_code_blocks(void *server);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *server);
 extern void  aether_vcr_embed_set_pretty_xml(void *server, int indent);
 extern void  aether_vcr_embed_set_pretty_json(void *server, int indent);
+extern void  aether_vcr_embed_set_sort_json_keys(void *server, int on);
+extern int   aether_vcr_embed_get_sort_json_keys(void *server);
+extern char *aether_vcr_embed_sort_json_array(void *server, const char *path, const char *by);
+extern char *aether_vcr_embed_sort_json_array_at(void *server, const char *request, const char *path, const char *by);
+extern void  aether_vcr_embed_set_sort_response_headers(void *server, int on);
+extern int   aether_vcr_embed_get_sort_response_headers(void *server);
+extern char *aether_vcr_embed_sort_header_value(void *server, const char *name);
+extern void  aether_vcr_embed_clear_stable_order(void *server);
+extern char *aether_vcr_embed_set_playback_range(void *server, int from, int to);
+extern void  aether_vcr_embed_clear_playback_range(void *server);
+extern int   aether_vcr_embed_get_playback_range_from(void *server);
+extern int   aether_vcr_embed_get_playback_range_to(void *server);
 extern void  aether_vcr_embed_clear_redactions(void *server);
 extern void  aether_vcr_embed_clear_unredactions(void *server);
 extern void  aether_vcr_embed_clear_header_removals(void *server);
@@ -759,6 +771,83 @@ static ERL_NIF_TERM nif_set_pretty_json(ErlNifEnv *env, int argc, const ERL_NIF_
     return enif_make_atom(env, "ok");
 }
 
+/* ---- stable ordering (record side, opt-in) and playback range ---------- */
+
+/* A handle + one int, void. */
+#define INT_SET_NIF(NAME, FN)                                                \
+    static ERL_NIF_TERM NAME(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) \
+    {                                                                        \
+        UNUSED(argc);                                                        \
+        void *h;                                                             \
+        int v;                                                               \
+        if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);     \
+        if (!enif_get_int(env, argv[1], &v)) return enif_make_badarg(env);   \
+        FN(h, v);                                                            \
+        return enif_make_atom(env, "ok");                                    \
+    }
+
+/* A handle-taking int getter. */
+#define INT_GET_NIF(NAME, FN)                                                \
+    static ERL_NIF_TERM NAME(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) \
+    {                                                                        \
+        UNUSED(argc);                                                        \
+        void *h;                                                             \
+        if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);     \
+        return enif_make_int(env, FN(h));                                    \
+    }
+
+INT_SET_NIF(nif_set_sort_json_keys,         aether_vcr_embed_set_sort_json_keys)
+INT_GET_NIF(nif_get_sort_json_keys,         aether_vcr_embed_get_sort_json_keys)
+INT_SET_NIF(nif_set_sort_response_headers,  aether_vcr_embed_set_sort_response_headers)
+INT_GET_NIF(nif_get_sort_response_headers,  aether_vcr_embed_get_sort_response_headers)
+INT_GET_NIF(nif_get_playback_range_from,    aether_vcr_embed_get_playback_range_from)
+INT_GET_NIF(nif_get_playback_range_to,      aether_vcr_embed_get_playback_range_to)
+STR_ARG_NIF(nif_sort_header_value,          aether_vcr_embed_sort_header_value)
+
+static ERL_NIF_TERM nif_sort_json_array(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    char *path = term_to_cstr(env, argv[1]);
+    if (!path) return enif_make_badarg(env);
+    char *by = term_to_cstr(env, argv[2]);
+    if (!by) { enif_free(path); return enif_make_badarg(env); }
+    char *res = aether_vcr_embed_sort_json_array(h, path, by);
+    enif_free(path);
+    enif_free(by);
+    return take_cstr(env, res);
+}
+
+static ERL_NIF_TERM nif_sort_json_array_at(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    char *request = term_to_cstr(env, argv[1]);
+    if (!request) return enif_make_badarg(env);
+    char *path = term_to_cstr(env, argv[2]);
+    if (!path) { enif_free(request); return enif_make_badarg(env); }
+    char *by = term_to_cstr(env, argv[3]);
+    if (!by) { enif_free(request); enif_free(path); return enif_make_badarg(env); }
+    char *res = aether_vcr_embed_sort_json_array_at(h, request, path, by);
+    enif_free(request);
+    enif_free(path);
+    enif_free(by);
+    return take_cstr(env, res);
+}
+
+static ERL_NIF_TERM nif_set_playback_range(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    int from, to;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &from)) return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[2], &to)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_set_playback_range(h, from, to));
+}
+
 /* A handle-taking void clear function. */
 #define CLEAR_NIF(NAME, FN)                                                  \
     static ERL_NIF_TERM NAME(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) \
@@ -778,6 +867,8 @@ CLEAR_NIF(nif_clear_static_content,  aether_vcr_embed_clear_static_content)
 CLEAR_NIF(nif_clear_substitutions,   aether_vcr_embed_clear_substitutions)
 CLEAR_NIF(nif_clear_untaped,         aether_vcr_embed_clear_untaped)
 CLEAR_NIF(nif_clear_format_options,  aether_vcr_embed_clear_format_options)
+CLEAR_NIF(nif_clear_stable_order,    aether_vcr_embed_clear_stable_order)
+CLEAR_NIF(nif_clear_playback_range,  aether_vcr_embed_clear_playback_range)
 
 /* ---- registration ------------------------------------------------------ */
 
@@ -841,6 +932,18 @@ static ErlNifFunc nif_funcs[] = {
     {"emphasize_http_verbs", 1, nif_emphasize_http_verbs, 0},
     {"set_pretty_xml",       2, nif_set_pretty_xml,       0},
     {"set_pretty_json",      2, nif_set_pretty_json,      0},
+    {"set_sort_json_keys",         2, nif_set_sort_json_keys,         0},
+    {"get_sort_json_keys",         1, nif_get_sort_json_keys,         0},
+    {"sort_json_array",            3, nif_sort_json_array,            0},
+    {"sort_json_array_at",         4, nif_sort_json_array_at,         0},
+    {"set_sort_response_headers",  2, nif_set_sort_response_headers,  0},
+    {"get_sort_response_headers",  1, nif_get_sort_response_headers,  0},
+    {"sort_header_value",          2, nif_sort_header_value,          0},
+    {"clear_stable_order",         1, nif_clear_stable_order,         0},
+    {"set_playback_range",         3, nif_set_playback_range,         0},
+    {"clear_playback_range",       1, nif_clear_playback_range,       0},
+    {"get_playback_range_from",    1, nif_get_playback_range_from,    0},
+    {"get_playback_range_to",      1, nif_get_playback_range_to,      0},
     {"remove_transport_headers",   1, nif_remove_transport_headers,   0},
     {"remove_cloud_headers",       2, nif_remove_cloud_headers,       0},
     {"redact_credentials",         1, nif_redact_credentials,         0},

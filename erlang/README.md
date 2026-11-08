@@ -131,6 +131,40 @@ ERL_LIBS=_build escript test/playback.escript
 The loader resolves the `.so` via `code:priv_dir(servirtium_nif)` (the app on
 the path), or a `SERVIRTIUM_NIF_DIR` override, falling back to `./priv`.
 
+## Stable ordering and playback range
+
+Opt-in, off by default. Stable ordering is record side, for a service that sends
+the same response in a different order every run; the tape is byte-exact without it.
+
+```erlang
+Rec = servirtium:record("tapes/data.md", Upstream),
+ok = servirtium:set_pretty_json(Rec, 2),            % sorted JSON is only written pretty-printed
+ok = servirtium:set_sort_json_keys(Rec, true),      % object keys sorted at every depth
+ok = servirtium:sort_json_array(Rec, "/items", "/id"),             % path, by
+ok = servirtium:sort_json_array_at(Rec, "^/users", "", "name"),    % request regex, path, by
+ok = servirtium:set_sort_response_headers(Rec, true),
+ok = servirtium:sort_header_value(Rec, "Allow"),
+%% ... drive the system under test ...
+ok = servirtium:close(Rec).
+```
+
+A rule the core refuses raises `{servirtium, Reason}`. Sorting JSON without
+`set_pretty_json` is refused when the tape is written, so `close/1` returns
+`{error, "sort_json_keys needs pretty_json: ..."}` and writes nothing.
+`get_sort_json_keys/1`, `get_sort_response_headers/1` read the switches back;
+`clear_stable_order/1` turns every rule off.
+
+Replay only a slice of a tape, by the tape's `## Interaction N` number (0-based,
+inclusive; `To < 0` = through the last):
+
+```erlang
+Vcr = servirtium:playback("tapes/journey.md"),
+ok = servirtium:set_playback_range(Vcr, 4, 6),      % raises {servirtium, Reason} if refused
+4 = servirtium:get_playback_range_from(Vcr),        % -1 when none is set
+ok = servirtium:clear_playback_range(Vcr).
+```
+
+A record server refuses a range, so a test cannot overwrite a journey's tape with a slice.
 ## Concurrency: one server per port
 
 The Aether VCR runs **one server per port**: each handle owns its own tape,

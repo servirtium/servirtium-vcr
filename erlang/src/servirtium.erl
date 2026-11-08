@@ -33,6 +33,13 @@
     redact_credentials/1,
     redact_credential_header/2,
     set_upstream_cafile/2,
+    set_sort_json_keys/2, get_sort_json_keys/1,
+    sort_json_array/3, sort_json_array_at/4,
+    set_sort_response_headers/2, get_sort_response_headers/1,
+    sort_header_value/2,
+    clear_stable_order/1,
+    set_playback_range/3, clear_playback_range/1,
+    get_playback_range_from/1, get_playback_range_to/1,
     base_url/1,
     port/1,
     tape_length/1,
@@ -240,6 +247,57 @@ redact_credential_header(#{handle := H}, Name) ->
 %% Record mode: verify an https upstream against this PEM CA file.
 set_upstream_cafile(#{handle := H}, Path) ->
     str_result(servirtium_nif:set_upstream_cafile(H, unicode:characters_to_binary(Path))).
+
+%% Stable ordering (record side, all opt-in; the tape is byte-exact without
+%% them). Sorted JSON is only written pretty-printed: a record with
+%% set_sort_json_keys/sort_json_array* but without set_pretty_json is refused
+%% when the tape is written (close/1 returns {error, "sort_json_keys needs
+%% pretty_json: ..."}).
+%% JSON object keys sorted at every depth in recorded JSON response bodies.
+set_sort_json_keys(#{handle := H}, On) when is_boolean(On) ->
+    servirtium_nif:set_sort_json_keys(H, bool_int(On)).
+get_sort_json_keys(#{handle := H}) ->
+    servirtium_nif:get_sort_json_keys(H) =/= 0.
+%% The JSON arrays Path selects (JSON pointer, "*" for one segment, "" the
+%% root array, or a bare member name) sorted by member By ("" = canonical
+%% JSON). Returns ok or raises {servirtium, Reason}.
+sort_json_array(#{handle := H}, Path, By) ->
+    str_result(servirtium_nif:sort_json_array(H, unicode:characters_to_binary(Path),
+                                              unicode:characters_to_binary(By))).
+%% The same, only for requests whose path (query included) matches Request.
+sort_json_array_at(#{handle := H}, Request, Path, By) ->
+    str_result(servirtium_nif:sort_json_array_at(H, unicode:characters_to_binary(Request),
+                                                 unicode:characters_to_binary(Path),
+                                                 unicode:characters_to_binary(By))).
+%% Response header lines sorted by name (case-insensitive).
+set_sort_response_headers(#{handle := H}, On) when is_boolean(On) ->
+    servirtium_nif:set_sort_response_headers(H, bool_int(On)).
+get_sort_response_headers(#{handle := H}) ->
+    servirtium_nif:get_sort_response_headers(H) =/= 0.
+%% One response header's comma-separated items sorted ("Allow"). Returns ok
+%% or raises {servirtium, Reason}.
+sort_header_value(#{handle := H}, Name) ->
+    str_result(servirtium_nif:sort_header_value(H, unicode:characters_to_binary(Name))).
+%% Every stable-order rule off.
+clear_stable_order(#{handle := H}) ->
+    servirtium_nif:clear_stable_order(H).
+
+%% Playback only: replay just interactions From..To (inclusive, 0-based, the
+%% tape's "## Interaction N" numbers; To < 0 = through the last). Set before
+%% requests arrive. Returns ok or raises {servirtium, Reason} (e.g. on a
+%% record server, or From past the tape).
+set_playback_range(#{handle := H}, From, To) when is_integer(From), is_integer(To) ->
+    str_result(servirtium_nif:set_playback_range(H, From, To)).
+clear_playback_range(#{handle := H}) ->
+    servirtium_nif:clear_playback_range(H).
+%% The range in force, first and last interaction; -1 when none is set.
+get_playback_range_from(#{handle := H}) ->
+    servirtium_nif:get_playback_range_from(H).
+get_playback_range_to(#{handle := H}) ->
+    servirtium_nif:get_playback_range_to(H).
+
+bool_int(true) -> 1;
+bool_int(false) -> 0.
 
 str_result(<<>>) -> ok;
 str_result(Error) -> error({servirtium, Error}).

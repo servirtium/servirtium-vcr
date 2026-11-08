@@ -82,6 +82,18 @@
     emphasize_http_verbs/1,
     set_pretty_xml/2,
     set_pretty_json/2,
+    set_sort_json_keys/2,
+    get_sort_json_keys/1,
+    sort_json_array/3,
+    sort_json_array_at/4,
+    set_sort_response_headers/2,
+    get_sort_response_headers/1,
+    sort_header_value/2,
+    clear_stable_order/1,
+    set_playback_range/3,
+    clear_playback_range/1,
+    get_playback_range_from/1,
+    get_playback_range_to/1,
     remove_transport_headers/1,
     remove_cloud_headers/2,
     redact_credentials/1,
@@ -173,6 +185,18 @@ indent_code_blocks(_Handle) -> erlang:nif_error(not_loaded).
 emphasize_http_verbs(_Handle) -> erlang:nif_error(not_loaded).
 set_pretty_xml(_Handle, _Indent) -> erlang:nif_error(not_loaded).
 set_pretty_json(_Handle, _Indent) -> erlang:nif_error(not_loaded).
+set_sort_json_keys(_A0, _A1) -> erlang:nif_error(not_loaded).
+get_sort_json_keys(_A0) -> erlang:nif_error(not_loaded).
+sort_json_array(_A0, _A1, _A2) -> erlang:nif_error(not_loaded).
+sort_json_array_at(_A0, _A1, _A2, _A3) -> erlang:nif_error(not_loaded).
+set_sort_response_headers(_A0, _A1) -> erlang:nif_error(not_loaded).
+get_sort_response_headers(_A0) -> erlang:nif_error(not_loaded).
+sort_header_value(_A0, _A1) -> erlang:nif_error(not_loaded).
+clear_stable_order(_A0) -> erlang:nif_error(not_loaded).
+set_playback_range(_A0, _A1, _A2) -> erlang:nif_error(not_loaded).
+clear_playback_range(_A0) -> erlang:nif_error(not_loaded).
+get_playback_range_from(_A0) -> erlang:nif_error(not_loaded).
+get_playback_range_to(_A0) -> erlang:nif_error(not_loaded).
 remove_transport_headers(_Handle) -> erlang:nif_error(not_loaded).
 remove_cloud_headers(_Handle, _Vendor) -> erlang:nif_error(not_loaded).
 redact_credentials(_Handle) -> erlang:nif_error(not_loaded).

@@ -50,6 +50,9 @@ main(_) ->
     "[]" = servirtium:diagnostics_json(DiagnosticServer, false),
     ok = servirtium:close(DiagnosticServer),
 
+    stable_order(),
+    playback_range(),
+
     Tape = "tapes/single_get.md",
     Vcr = servirtium:playback(Tape),
     BaseUrl = servirtium:base_url(Vcr),
@@ -101,3 +104,84 @@ named_secrets() ->
     Run("drive", servirtium:base_url(Replay)), ok = servirtium:assert_no_mismatches(Replay),
     ok = servirtium:close(Replay), Run("check", Tape),
     {ok, Files} = file:list_dir(Dir), [file:delete(Dir ++ "/" ++ F) || F <- Files], file:del_dir(Dir), ok.
+
+%% A gen_tcp upstream answering every request with a JSON body.
+json_upstream(Body) ->
+    {ok, Listen} = gen_tcp:listen(0, [binary, {active, false}, {reuseaddr, true}, {packet, raw}]),
+    {ok, Port} = inet:port(Listen),
+    Pid = spawn(fun() -> json_loop(Listen, Body) end),
+    {Pid, Listen, "http://127.0.0.1:" ++ integer_to_list(Port)}.
+
+json_loop(Listen, Body) ->
+    case gen_tcp:accept(Listen) of
+        {ok, Sock} ->
+            {ok, _} = gen_tcp:recv(Sock, 0, 2000),
+            gen_tcp:send(Sock, ["HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ",
+                                integer_to_list(byte_size(Body)), "\r\nConnection: close\r\n\r\n", Body]),
+            gen_tcp:close(Sock),
+            json_loop(Listen, Body);
+        _ -> ok
+    end.
+
+record_json(Tape, Configure) ->
+    {Pid, Listen, Upstream} = json_upstream(<<"{\"b\":1,\"a\":{\"z\":2,\"y\":3}}">>),
+    Rec = servirtium:record(Tape, Upstream),
+    try
+        Configure(Rec),
+        _ = os:cmd("curl -s " ++ servirtium:base_url(Rec) ++ "/data"),
+        servirtium:close(Rec)
+    after
+        exit(Pid, kill), gen_tcp:close(Listen)
+    end.
+
+%% Stable ordering: (a) sorted + pretty JSON is written, (b) sorted JSON
+%% without pretty_json is refused when the tape is written.
+stable_order() ->
+    Dir = "/tmp/vcr-stable-erlang-" ++ os:getpid(), ok = file:make_dir(Dir),
+    try
+        TapeA = Dir ++ "/sorted.md",
+        ok = record_json(TapeA, fun(R) ->
+            ok = servirtium:set_sort_json_keys(R, true),
+            true = servirtium:get_sort_json_keys(R),
+            ok = servirtium:set_pretty_json(R, 2)
+        end),
+        {ok, Bin} = file:read_file(TapeA),
+        Text = binary_to_list(Bin),
+        true = string:find(Text, "\"a\": {\n    \"y\": 3,\n    \"z\": 2\n  },\n  \"b\": 1") =/= nomatch,
+        TapeB = Dir ++ "/refused.md",
+        {error, Msg} = record_json(TapeB, fun(R) -> ok = servirtium:set_sort_json_keys(R, true) end),
+        true = string:find(Msg, "sort_json_keys needs pretty_json") =/= nomatch,
+        Probe = servirtium:record(Dir ++ "/probe.md", "http://127.0.0.1:1"),
+        {'EXIT', {{servirtium, _}, _}} = (catch servirtium:sort_header_value(Probe, "")),
+        ok = servirtium:set_sort_response_headers(Probe, true),
+        true = servirtium:get_sort_response_headers(Probe),
+        ok = servirtium:clear_stable_order(Probe),
+        false = servirtium:get_sort_response_headers(Probe),
+        _ = servirtium:close(Probe)
+    after
+        {ok, Names} = file:list_dir(Dir),
+        [file:delete(filename:join(Dir, N)) || N <- Names],
+        file:del_dir(Dir)
+    end.
+
+%% Playback range: a replay that skips the first interaction and serves a
+%% later one; a record server refuses a range.
+playback_range() ->
+    Vcr = servirtium:playback("tapes/range.md"),
+    try
+        -1 = servirtium:get_playback_range_from(Vcr),
+        ok = servirtium:set_playback_range(Vcr, 1, -1),
+        1 = servirtium:get_playback_range_from(Vcr),
+        2 = servirtium:get_playback_range_to(Vcr),
+        Url = servirtium:base_url(Vcr),
+        "second-body" = string:trim(os:cmd("curl -s " ++ Url ++ "/step/second"), trailing, "\n"),
+        1 = servirtium:last_index(Vcr),
+        {'EXIT', {{servirtium, _}, _}} = (catch servirtium:set_playback_range(Vcr, 9, -1)),
+        ok = servirtium:clear_playback_range(Vcr),
+        -1 = servirtium:get_playback_range_from(Vcr)
+    after ok = servirtium:close(Vcr) end,
+    Rec = servirtium:record("/tmp/vcr-range-refused-" ++ os:getpid() ++ ".md", "http://127.0.0.1:1"),
+    try
+        {'EXIT', {{servirtium, Reason}, _}} = (catch servirtium:set_playback_range(Rec, 0, -1)),
+        true = is_binary(Reason)
+    after _ = servirtium:close(Rec) end.
