@@ -22,6 +22,8 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     private boolean matchJsonBody;
     private boolean matchXmlBody;
     private boolean matchMultiple;
+    private int rangeFrom = -1;
+    private int rangeTo = -1;
 
     PlaybackBuilder(String tapePath) {
         super(tapePath);
@@ -106,6 +108,22 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
 
     /**
+     * Replay only interactions {@code from}..{@code to} of the tape (0-based,
+     * inclusive, the {@code ## Interaction N} numbers). Selection is by number
+     * only. A bad range fails {@code start()} with a {@link VcrException}.
+     */
+    public PlaybackBuilder playbackRange(int from, int to) {
+        this.rangeFrom = from;
+        this.rangeTo = to;
+        return this;
+    }
+
+    /** Replay interactions {@code from} through the last one. */
+    public PlaybackBuilder playbackRange(int from) {
+        return playbackRange(from, -1);
+    }
+
+    /**
      * Replace a redacted placeholder in the recorded expectation with the real
      * value the live SUT sends, so a committed (scrubbed) tape still matches.
      */
@@ -148,6 +166,11 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
             }
             for (String name : matchHeaders) {
                 NativeMethods.MATCH_HEADER.invokeExact(handle, NativeMethods.cString(arena, name));
+            }
+            if (rangeFrom >= 0) {
+                MemorySegment res = (MemorySegment) NativeMethods.SET_PLAYBACK_RANGE.invokeExact(
+                        handle, rangeFrom, rangeTo);
+                check(res, "playbackRange");
             }
             for (Substitution s : substitutions) {
                 MemorySegment r = (MemorySegment) NativeMethods.SUBSTITUTE.invokeExact(

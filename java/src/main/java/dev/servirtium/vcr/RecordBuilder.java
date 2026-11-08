@@ -32,6 +32,10 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     private int prettyJson;
     private String licenseNotice;
     private String upstreamCafile;
+    private boolean sortJsonKeys;
+    private boolean sortResponseHeaders;
+    private final List<String[]> sortJsonArrays = new ArrayList<>(); // {request or null, path, by}
+    private final List<String> sortHeaderValues = new ArrayList<>();
     private boolean failIfChanged;
 
     RecordBuilder(String tapePath, String upstreamBase) {
@@ -195,6 +199,60 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     }
 
     /**
+     * Opt-in stable order: write JSON response bodies' object keys sorted at
+     * every depth. Sorted JSON is only written pretty-printed: without
+     * {@link #prettyJson()} the tape is refused when it is written ({@code
+     * close()} throws a {@link VcrException}, "sort_json_keys needs
+     * pretty_json ...").
+     */
+    public RecordBuilder sortJsonKeys() {
+        return sortJsonKeys(true);
+    }
+
+    public RecordBuilder sortJsonKeys(boolean on) {
+        this.sortJsonKeys = on;
+        return this;
+    }
+
+    /**
+     * Sort the JSON response arrays {@code path} selects (a JSON pointer from
+     * the root, {@code *} for one segment, {@code ""} the root array, or a bare
+     * member name) by member {@code by} (a name, a pointer, or several
+     * comma-separated; {@code ""} sorts by each element's canonical JSON).
+     * Replay serves the sorted order. Needs {@link #prettyJson()}. A rule the
+     * core refuses fails {@code start()}.
+     */
+    public RecordBuilder sortJsonArray(String path, String by) {
+        sortJsonArrays.add(new String[] {null, path, by});
+        return this;
+    }
+
+    /**
+     * Like {@link #sortJsonArray}, only for interactions whose request path
+     * (query included) matches the regex {@code requestRegex}.
+     */
+    public RecordBuilder sortJsonArrayAt(String requestRegex, String path, String by) {
+        sortJsonArrays.add(new String[] {requestRegex, path, by});
+        return this;
+    }
+
+    /** Write response header lines sorted by name (case-insensitive); a repeated header's lines keep their order. */
+    public RecordBuilder sortResponseHeaders() {
+        return sortResponseHeaders(true);
+    }
+
+    public RecordBuilder sortResponseHeaders(boolean on) {
+        this.sortResponseHeaders = on;
+        return this;
+    }
+
+    /** Sort one response header's comma-separated items ({@code Allow}). */
+    public RecordBuilder sortHeaderValue(String name) {
+        sortHeaderValues.add(name);
+        return this;
+    }
+
+    /**
      * On close, still write the freshly recorded tape but throw if it differs
      * from the on-disk one — the Servirtium step-4 drift contract, so a normal
      * {@code git diff} shows the change and CI fails loudly.
@@ -233,6 +291,29 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
                 MemorySegment res = (MemorySegment) NativeMethods.SET_UPSTREAM_CAFILE.invokeExact(
                         handle, NativeMethods.cString(arena, upstreamCafile));
                 check(res, "upstreamCafile");
+            }
+            if (sortJsonKeys) {
+                NativeMethods.SET_SORT_JSON_KEYS.invokeExact(handle, 1);
+            }
+            for (String[] rule : sortJsonArrays) {
+                if (rule[0] == null) {
+                    MemorySegment res = (MemorySegment) NativeMethods.SORT_JSON_ARRAY.invokeExact(
+                            handle, NativeMethods.cString(arena, rule[1]), NativeMethods.cString(arena, rule[2]));
+                    check(res, "sortJsonArray");
+                } else {
+                    MemorySegment res = (MemorySegment) NativeMethods.SORT_JSON_ARRAY_AT.invokeExact(
+                            handle, NativeMethods.cString(arena, rule[0]),
+                            NativeMethods.cString(arena, rule[1]), NativeMethods.cString(arena, rule[2]));
+                    check(res, "sortJsonArrayAt");
+                }
+            }
+            if (sortResponseHeaders) {
+                NativeMethods.SET_SORT_RESPONSE_HEADERS.invokeExact(handle, 1);
+            }
+            for (String name : sortHeaderValues) {
+                MemorySegment res = (MemorySegment) NativeMethods.SORT_HEADER_VALUE.invokeExact(
+                        handle, NativeMethods.cString(arena, name));
+                check(res, "sortHeaderValue");
             }
             for (Redaction r : redactions) {
                 MemorySegment res = (MemorySegment) r.operation().invokeExact(

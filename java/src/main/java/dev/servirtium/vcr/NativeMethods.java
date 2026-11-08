@@ -240,6 +240,54 @@ final class NativeMethods {
             "aether_vcr_embed_set_pretty_json",
             FunctionDescriptor.ofVoid(C_PTR, C_INT));
 
+    static final MethodHandle SET_SORT_JSON_KEYS = down(
+            "aether_vcr_embed_set_sort_json_keys",
+            FunctionDescriptor.ofVoid(C_PTR, C_INT));
+
+    static final MethodHandle GET_SORT_JSON_KEYS = down(
+            "aether_vcr_embed_get_sort_json_keys",
+            FunctionDescriptor.of(C_INT, C_PTR));
+
+    static final MethodHandle SORT_JSON_ARRAY = down(
+            "aether_vcr_embed_sort_json_array",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
+
+    static final MethodHandle SORT_JSON_ARRAY_AT = down(
+            "aether_vcr_embed_sort_json_array_at",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR, C_PTR));
+
+    static final MethodHandle SET_SORT_RESPONSE_HEADERS = down(
+            "aether_vcr_embed_set_sort_response_headers",
+            FunctionDescriptor.ofVoid(C_PTR, C_INT));
+
+    static final MethodHandle GET_SORT_RESPONSE_HEADERS = down(
+            "aether_vcr_embed_get_sort_response_headers",
+            FunctionDescriptor.of(C_INT, C_PTR));
+
+    static final MethodHandle SORT_HEADER_VALUE = down(
+            "aether_vcr_embed_sort_header_value",
+            FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+
+    static final MethodHandle CLEAR_STABLE_ORDER = down(
+            "aether_vcr_embed_clear_stable_order",
+            FunctionDescriptor.ofVoid(C_PTR));
+
+    static final MethodHandle SET_PLAYBACK_RANGE = down(
+            "aether_vcr_embed_set_playback_range",
+            FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_INT));
+
+    static final MethodHandle CLEAR_PLAYBACK_RANGE = down(
+            "aether_vcr_embed_clear_playback_range",
+            FunctionDescriptor.ofVoid(C_PTR));
+
+    static final MethodHandle GET_PLAYBACK_RANGE_FROM = down(
+            "aether_vcr_embed_get_playback_range_from",
+            FunctionDescriptor.of(C_INT, C_PTR));
+
+    static final MethodHandle GET_PLAYBACK_RANGE_TO = down(
+            "aether_vcr_embed_get_playback_range_to",
+            FunctionDescriptor.of(C_INT, C_PTR));
+
     static final MethodHandle CLEAR_REDACTIONS = down(
             "aether_vcr_embed_clear_redactions",
             FunctionDescriptor.ofVoid(C_PTR));

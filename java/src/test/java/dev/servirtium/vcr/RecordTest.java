@@ -16,6 +16,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -82,6 +84,53 @@ class RecordTest {
             String replayed = getString(play.baseUrl() + "/greeting");
             assertEquals("hello-from-upstream", replayed);
             assertEquals(Outcome.OK, play.lastKind());
+        }
+    }
+
+    @Test
+    void sortJsonKeysWithPrettyJsonWritesSortedPrettyJson() throws Exception {
+        try (FakeUpstream up = new FakeUpstream()) {
+            up.responseBody = "{\"b\":1,\"a\":{\"d\":2,\"c\":3}}";
+            up.responseContentType = "application/json";
+            try (VcrServer rec = Vcr.record(tapePath.toString(), up.baseUrl())
+                    .port(0).prettyJson(2).sortJsonKeys().start()) {
+                getString(rec.baseUrl() + "/doc");
+            }
+        }
+        String tape = Files.readString(tapePath);
+        assertTrue(tape.contains("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}"), tape);
+    }
+
+    @Test
+    void sortJsonKeysWithoutPrettyJsonIsRefusedWhenTheTapeIsWritten() throws Exception {
+        try (FakeUpstream up = new FakeUpstream()) {
+            up.responseBody = "{\"b\":1,\"a\":2}";
+            up.responseContentType = "application/json";
+            VcrServer rec = Vcr.record(tapePath.toString(), up.baseUrl()).port(0).sortJsonKeys().start();
+            getString(rec.baseUrl() + "/doc");
+            VcrException e = assertThrows(VcrException.class, rec::close);
+            assertTrue(e.getMessage().contains("sort_json_keys needs pretty_json"), e.getMessage());
+            assertFalse(Files.exists(tapePath));
+        }
+    }
+
+    @Test
+    void arrayAndHeaderSortRulesAreAppliedAndABadOneFailsStart() throws Exception {
+        try (FakeUpstream up = new FakeUpstream()) {
+            up.responseBody = "[{\"n\":\"z\"},{\"n\":\"a\"}]";
+            up.responseContentType = "application/json";
+            up.extraResponseHeaders.put("Allow", "POST, GET");
+            try (VcrServer rec = Vcr.record(tapePath.toString(), up.baseUrl()).port(0).prettyJson(2)
+                    .sortJsonArray("", "n").sortJsonArrayAt("/doc", "", "n")
+                    .sortResponseHeaders().sortHeaderValue("Allow").start()) {
+                getString(rec.baseUrl() + "/doc");
+            }
+            String tape = Files.readString(tapePath);
+            assertTrue(tape.indexOf("\"n\": \"a\"") < tape.indexOf("\"n\": \"z\""), tape);
+            assertTrue(tape.contains("Allow: GET, POST"), tape);
+            VcrException e = assertThrows(VcrException.class,
+                    () -> Vcr.record(tapePath.toString(), up.baseUrl()).port(0).sortHeaderValue("").start());
+            assertTrue(e.getMessage().contains("sortHeaderValue"), e.getMessage());
         }
     }
 

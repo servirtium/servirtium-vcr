@@ -23,6 +23,8 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.matchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.staticContent(mount, dir)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.failIfChanged()` | ✅ |
+| Stable order (record, opt-in; needs pretty JSON for JSON) | ✅ | — | `.sortJsonKeys()` / `.sortJsonArray(path, by)` / `.sortJsonArrayAt(requestRegex, path, by)` / `.sortResponseHeaders()` / `.sortHeaderValue(name)` | ✅ |
+| Playback range (replay interactions `from`..`to` by number) | — | ✅ | `.playbackRange(from, to)` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` / `.prettyXml(n)` / `.prettyJson(n)` | — |
 | Header presets / license notice / upstream CA | ✅ | ✅ | `.removeTransportHeaders()` / `.removeCloudHeaders(v)` / `.redactCredentials()` / `.redactCredentialHeader(n)` / `.addLicenseNotice(t)` / `.upstreamCafile(p)` | ✅ license notice |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError()`/`lastKind()`/`lastIndex()` | ✅ |
