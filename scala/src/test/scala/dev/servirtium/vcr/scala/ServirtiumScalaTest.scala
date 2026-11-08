@@ -1,8 +1,8 @@
 package dev.servirtium.vcr.scala
 
-import dev.servirtium.vcr.Outcome
+import dev.servirtium.vcr.{Field, Outcome, VcrException}
 import com.sun.net.httpserver.HttpServer
-import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertNotEquals, assertThrows, assertTrue}
 import org.junit.jupiter.api.Test
 
 import java.net.{InetSocketAddress, URI}
@@ -92,3 +92,85 @@ class ServirtiumScalaTest:
       server.assertNoMismatches()
       assertEquals("[]", server.diagnosticsJson())
     }
+
+
+  private def jsonUpstream(body: String, headers: (String, String)*): HttpServer =
+    val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+    upstream.createContext("/", ex => {
+      val bytes = body.getBytes
+      ex.getResponseHeaders.add("Content-Type", "application/json")
+      headers.foreach((k, v) => ex.getResponseHeaders.add(k, v))
+      ex.sendResponseHeaders(200, bytes.length.toLong)
+      val os = ex.getResponseBody
+      try os.write(bytes) finally os.close()
+    })
+    upstream.start()
+    upstream
+
+  @Test def sortJsonKeysWithPrettyJsonWritesSortedPrettyJson(): Unit =
+    val upstream = jsonUpstream("""{"b":1,"a":{"d":2,"c":3}}""")
+    val tape = Files.createTempFile("servirtium-scala-sort", ".md")
+    try
+      using(Servirtium.record(tape.toString, s"http://127.0.0.1:${upstream.getAddress.getPort}")(
+        _.port(0).prettyJson(2).sortJsonKeys())) { vcr => get(vcr.baseUrl() + "/doc"); () }
+      assertTrue(Files.readString(tape).contains("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}"))
+    finally
+      upstream.stop(0)
+      Files.deleteIfExists(tape)
+
+  @Test def sortJsonKeysWithoutPrettyJsonIsRefusedWhenTheTapeIsWritten(): Unit =
+    val upstream = jsonUpstream("""{"b":1,"a":2}""")
+    val tape = Files.createTempFile("servirtium-scala-refuse", ".md")
+    Files.delete(tape)
+    try
+      val rec = Servirtium.record(tape.toString, s"http://127.0.0.1:${upstream.getAddress.getPort}")(_.port(0).sortJsonKeys())
+      get(rec.baseUrl() + "/doc")
+      val e = assertThrows(classOf[VcrException], () => rec.close())
+      assertTrue(e.getMessage.contains("sort_json_keys needs pretty_json"), e.getMessage)
+      assertFalse(Files.exists(tape))
+    finally
+      upstream.stop(0)
+      Files.deleteIfExists(tape)
+
+  @Test def arrayAndHeaderSortRulesApplyAndABadOneFailsStart(): Unit =
+    val upstream = jsonUpstream("""[{"n":"z"},{"n":"a"}]""", "Allow" -> "POST, GET")
+    val tape = Files.createTempFile("servirtium-scala-arrays", ".md")
+    val base = s"http://127.0.0.1:${upstream.getAddress.getPort}"
+    try
+      using(Servirtium.record(tape.toString, base)(
+        _.port(0).prettyJson(2).sortJsonArray("", "n").sortJsonArrayAt("/doc", "", "n")
+          .sortResponseHeaders().sortHeaderValue("Allow"))) { vcr => get(vcr.baseUrl() + "/doc"); () }
+      val text = Files.readString(tape)
+      assertTrue(text.indexOf("\"n\": \"a\"") < text.indexOf("\"n\": \"z\""), text)
+      assertTrue(text.contains("Allow: GET, POST"), text)
+      val e = assertThrows(classOf[VcrException], () => Servirtium.record(tape.toString, base)(_.port(0).sortHeaderValue("")))
+      assertTrue(e.getMessage.contains("sortHeaderValue"), e.getMessage)
+    finally
+      upstream.stop(0)
+      Files.deleteIfExists(tape)
+
+  private def getWithCookie(url: String) =
+    HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build().send(
+      HttpRequest.newBuilder(URI.create(url)).header("Cookie", "sid=live").build(),
+      HttpResponse.BodyHandlers.ofString())
+
+  @Test def playbackRangeSkipsEarlyInteractionsAndServesALaterOne(): Unit =
+    val rangeTape = "../core_tests/tapes/playback_range.tape"
+    using(Servirtium.playback(rangeTape)(
+      _.port(0).redactCredentials().removeHeader(Field.REQUEST_HEADERS, "User-Agent").playbackRange(7))) { vcr =>
+      assertEquals(8, vcr.tapeLength())
+      assertEquals(200, getWithCookie(vcr.baseUrl() + "/logout").statusCode())
+      assertEquals(7, vcr.lastIndex())
+      assertEquals(Outcome.OK, vcr.lastKind())
+    }
+    using(Servirtium.playback(rangeTape)(
+      _.port(0).redactCredentials().removeHeader(Field.REQUEST_HEADERS, "User-Agent").playbackRange(7))) { vcr =>
+      getWithCookie(vcr.baseUrl() + "/login") // interaction 0 is outside the range
+      assertNotEquals(Outcome.OK, vcr.lastKind())
+      assertTrue(vcr.lastError().contains("outside the playback range"), vcr.lastError())
+    }
+
+  @Test def playbackRangeWithABadRangeFailsStart(): Unit =
+    val e = assertThrows(classOf[VcrException],
+      () => Servirtium.playback("../core_tests/tapes/playback_range.tape")(_.port(0).playbackRange(99)))
+    assertTrue(e.getMessage.contains("playbackRange"), e.getMessage)

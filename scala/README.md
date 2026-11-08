@@ -39,6 +39,32 @@ the JVM's binding; **Kotlin, Scala, Clojure and Groovy all consume that one
 jar** rather than re-binding the native library. So Scala is first-class
 without a separate native FFI to maintain.
 
+## Stable order and playback range
+
+Opt-in, record side: sort what a service sends in a different order every run.
+Playback side: replay only a slice of a tape.
+
+```scala
+val vcr = Servirtium.record(tape, upstream)(
+  _.prettyJson(2)                            // required for the JSON rules
+    .sortJsonKeys()                          // object keys sorted at every depth
+    .sortJsonArray("versions", "/created")   // arrays `versions` holds, by member
+    .sortJsonArrayAt("^/secrets", "", "name") // only for matching request paths
+    .sortResponseHeaders()                   // header lines by name
+    .sortHeaderValue("Allow"))               // "POST, GET" -> "GET, POST"
+
+val slice = Servirtium.playback(tape)(_.playbackRange(4, 6))   // interactions 4..6 only
+```
+
+A rule the core refuses (an empty header name, a bad regex, a bad range) fails
+`record` / `playback` with a `VcrException`. The JSON rules are only written pretty-printed:
+without `prettyJson` the tape is refused when it is written (closing the server
+throws `VcrException`, "sort_json_keys needs pretty_json ...") and nothing is
+written. `playbackRange` selects by interaction number only (the `## Interaction N`
+headings, 0-based, inclusive; `to` < 0 means through the last); a request outside
+the range is never served. Both are the Java binding's, see
+[../java/docs/usage.md](../java/docs/usage.md).
+
 ## Getting it
 
 **Not on Maven Central yet** (Central publication is pending; the coordinates
