@@ -7,7 +7,7 @@ at **build time** via `build.zig`, then runs its `zig build test` suite.
 
 - **Zig 0.17.1** (`zig version` → `0.17.1`; minimum 0.17.0). The std build graph and several
   std modules (`std.Io.net`, `std.process.run(gpa, io, options)`,
-  `std.ArrayList` unmanaged) match this release; see "Zig 0.16 gotchas" below.
+  `std.ArrayList` unmanaged) match this release; see "Zig 0.16+ gotchas" below.
 - **`curl`** on `PATH` — the test suite shells out to `curl` for HTTP rather
   than fighting `std.http.Client`'s churning API.
 - libservirtium_vcr `libservirtium_vcr.so`, built from `core/` with the Aether
@@ -64,7 +64,7 @@ N=../core/native
 zig test src/test.zig -lc -L"$N" -lservirtium_vcr -rpath "$N"
 ```
 
-## Zig 0.16 gotchas (hit while writing this binding)
+## Zig 0.16+ gotchas (hit while writing this binding; still true on 0.17)
 
 - **No top-level `std.net`.** Sockets live in `std.Io.net`
   (`IpAddress.listen` → `Server`, `Socket.address.getPort()` for the
