@@ -141,6 +141,30 @@ proc set_upstream_cafile*(h: Handle, path: cstring): cstring
   {.importc: "aether_vcr_embed_set_upstream_cafile", cdecl.}
 proc add_license_notice*(h: Handle, text: cstring): cstring
   {.importc: "aether_vcr_embed_add_license_notice", cdecl.}
+proc set_sort_json_keys*(h: Handle, on: cint)
+  {.importc: "aether_vcr_embed_set_sort_json_keys", cdecl.}
+proc get_sort_json_keys*(h: Handle): cint
+  {.importc: "aether_vcr_embed_get_sort_json_keys", cdecl.}
+proc sort_json_array*(h: Handle, path, by: cstring): cstring
+  {.importc: "aether_vcr_embed_sort_json_array", cdecl.}
+proc sort_json_array_at*(h: Handle, request, path, by: cstring): cstring
+  {.importc: "aether_vcr_embed_sort_json_array_at", cdecl.}
+proc set_sort_response_headers*(h: Handle, on: cint)
+  {.importc: "aether_vcr_embed_set_sort_response_headers", cdecl.}
+proc get_sort_response_headers*(h: Handle): cint
+  {.importc: "aether_vcr_embed_get_sort_response_headers", cdecl.}
+proc sort_header_value*(h: Handle, name: cstring): cstring
+  {.importc: "aether_vcr_embed_sort_header_value", cdecl.}
+proc clear_stable_order*(h: Handle)
+  {.importc: "aether_vcr_embed_clear_stable_order", cdecl.}
+proc set_playback_range*(h: Handle, fromIdx, toIdx: cint): cstring
+  {.importc: "aether_vcr_embed_set_playback_range", cdecl.}
+proc clear_playback_range*(h: Handle)
+  {.importc: "aether_vcr_embed_clear_playback_range", cdecl.}
+proc get_playback_range_from*(h: Handle): cint
+  {.importc: "aether_vcr_embed_get_playback_range_from", cdecl.}
+proc get_playback_range_to*(h: Handle): cint
+  {.importc: "aether_vcr_embed_get_playback_range_to", cdecl.}
 proc clear_redactions*(h: Handle)
   {.importc: "aether_vcr_embed_clear_redactions", cdecl.}
 proc clear_unredactions*(h: Handle)

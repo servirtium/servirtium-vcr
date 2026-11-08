@@ -28,6 +28,8 @@ library, unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Header presets (transport / cloud vendor) | ✅ | ✅ | `removeTransportHeaders()` / `removeCloudHeaders(vendor)` | ✅ |
 | Credential redaction preset | ✅ | ✅ | `redactCredentials()` / `redactCredentialHeader(name)` | ✅ |
 | License notice / upstream CA file / pretty JSON | ✅ | ✅ | `addLicenseNotice(text)` / `setUpstreamCafile(path)` / `prettyJson(n)` | ✅ notice + pretty JSON |
+| Stable order (sorted JSON keys / arrays, response headers) | ✅ | ✅ | `setSortJsonKeys(on)` / `sortJsonArray(path, by)` / `sortJsonArrayAt(re, path, by)` / `setSortResponseHeaders(on)` / `sortHeaderValue(name)` | ✅ |
+| Playback range (replay interactions from..to) | ✅ | ✅ | `setPlaybackRange(from, to)` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `indentCodeBlocks()` / `emphasizeHttpVerbs()` / `prettyXml(n)` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError()` / `lastKind()` / `lastIndex()` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |

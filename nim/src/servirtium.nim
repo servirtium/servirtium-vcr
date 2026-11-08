@@ -350,6 +350,65 @@ proc getPrettyJson*(s: VcrServer): int =
   ## Current pretty-JSON indent (0 = off).
   int(native.get_pretty_json(s.handle))
 
+proc setSortJsonKeys*(s: VcrServer; on: bool) =
+  ## Opt-in stable order (record side): sort JSON object keys at every depth in
+  ## recorded JSON response bodies. Sorted JSON is only written pretty-printed:
+  ## without prettyJson, `close` raises VcrError "sort_json_keys needs
+  ## pretty_json: ..." and writes nothing.
+  native.set_sort_json_keys(s.handle, cint(if on: 1 else: 0))
+
+proc getSortJsonKeys*(s: VcrServer): bool =
+  ## Whether JSON object keys are sorted (setSortJsonKeys).
+  native.get_sort_json_keys(s.handle) != 0
+
+proc sortJsonArray*(s: VcrServer; path: string; by = ""): string {.discardable.} =
+  ## Sort the JSON response arrays `path` selects (JSON pointer from the root,
+  ## "*" for one segment, "" the root array, or a bare member name) by member
+  ## `by` ("" = each element's canonical JSON). Returns "" on success, else the
+  ## reason the rule was refused.
+  takeString(native.sort_json_array(s.handle, cstring(path), cstring(by)))
+
+proc sortJsonArrayAt*(s: VcrServer; request, path: string; by = ""): string {.discardable.} =
+  ## As sortJsonArray, only for requests whose path (query included) matches the
+  ## regex `request`. Returns "" or the reason the rule was refused.
+  takeString(native.sort_json_array_at(s.handle, cstring(request), cstring(path), cstring(by)))
+
+proc setSortResponseHeaders*(s: VcrServer; on: bool) =
+  ## Opt-in stable order: response header lines sorted by name (case-insensitive).
+  native.set_sort_response_headers(s.handle, cint(if on: 1 else: 0))
+
+proc getSortResponseHeaders*(s: VcrServer): bool =
+  ## Whether response header lines are sorted (setSortResponseHeaders).
+  native.get_sort_response_headers(s.handle) != 0
+
+proc sortHeaderValue*(s: VcrServer; name: string): string {.discardable.} =
+  ## Sort one response header's comma-separated items ("Allow"). Returns "" or
+  ## the reason the name was refused.
+  takeString(native.sort_header_value(s.handle, cstring(name)))
+
+proc clearStableOrder*(s: VcrServer) =
+  ## Turn every stable-order rule off.
+  native.clear_stable_order(s.handle)
+
+proc setPlaybackRange*(s: VcrServer; fromIdx: int; toIdx = -1): string {.discardable.} =
+  ## Playback only: replay just interactions fromIdx..toIdx of the tape (the
+  ## numbers of its "## Interaction N" headings, 0-based, inclusive; toIdx < 0 =
+  ## through the last). Returns "" or the reason it was refused (a record server,
+  ## or a bad range). Call after opening, before `start`.
+  takeString(native.set_playback_range(s.handle, cint(fromIdx), cint(toIdx)))
+
+proc clearPlaybackRange*(s: VcrServer) =
+  ## Replay the whole tape again.
+  native.clear_playback_range(s.handle)
+
+proc getPlaybackRangeFrom*(s: VcrServer): int =
+  ## The playback range's start, or -1 when none is set.
+  int(native.get_playback_range_from(s.handle))
+
+proc getPlaybackRangeTo*(s: VcrServer): int =
+  ## The playback range's end, or -1 when none is set.
+  int(native.get_playback_range_to(s.handle))
+
 proc close*(s: VcrServer) =
   if s.handle != nil and s.recording and s.secretRedactorCallback != nil: s.secretStage(false)
   ## Stop the server. For a record server, flush the tape to disk first.

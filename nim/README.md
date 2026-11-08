@@ -39,7 +39,7 @@ reimplement Servirtium in Nim.
   `clearLastError`, `close`, plus the full mutation/format set (`redact`,
   `unredact`, `removeHeader`, `normalizeWholeTape`, `redactWholeTape`,
   `staticContent`, `untaped`, `note`, `setStrictHeaders`, `setMatchJsonBody`,
-  `setMatchMultiple`, `matchHeader`,
+  `setMatchMultiple`, `matchHeader`, `setSortJsonKeys`, `sortJsonArray`, `setPlaybackRange`,
   `indentCodeBlocks`,
   `emphasizeHttpVerbs`, `failIfChanged`).
 - `src/servirtium/native.nim` — the raw FFI surface, 1:1 with the
@@ -61,7 +61,9 @@ all run against the real native libservirtium_vcr:
   static content served from disk; untaped path 404s without consuming the
   cursor; two playback servers at once (one server per port).
 - **`tests/record_test.nim`** — record then replay the same interaction;
-  record + replay a POST with a body.
+  record + replay a POST with a body. Stable ordering: sorted pretty JSON, and
+  the `needs pretty_json` refusal; a record server refuses a playback range. The
+  playback suite also covers a playback range.
 - **`tests/mutation_test.nim`** — redacts a response body before it lands on the
   tape; attaches a note; removes a named response header; mutation state does
   not leak between fixtures; `failIfChanged` raises on drift.

@@ -189,6 +189,8 @@ srv.emphasizeHttpVerbs()   # *GET* instead of bare GET in headings
 srv.prettyXml(2)           # pretty-print recorded XML bodies (indent 1..16)
 srv.prettyJson(2)          # pretty-print recorded JSON bodies (indent 1..16)
 srv.addLicenseNotice("Licence terms of the recorded service")  # under ## LICENSE NOTICE
+srv.setSortJsonKeys(true)  # stable order: keys sorted (needs prettyJson, or close raises)
+srv.sortJsonArray("/items", "id")  # ... and one array sorted by member "id"
 doAssert srv.start()
 ```
 
@@ -223,3 +225,15 @@ Each `start` owns its own native handle, and all of a fixture's state — tape,
 cursor, mutations, static mounts, note, diagnostics — is scoped to that handle.
 Nothing is process-global, so N `VcrServer`s can run at once without
 interfering. See [architecture.md](architecture.md#concurrency-one-server-per-port).
+
+## Playback range
+
+Replay only part of a tape, by interaction number (the `## Interaction N`
+headings, 0-based, inclusive; `toIdx < 0` = through the last). Playback only; a
+record server refuses it. `setPlaybackRange` returns `""` or the reason it was refused.
+
+```nim
+let srv = playback("tapes/shop.md")
+doAssert srv.setPlaybackRange(4, 6) == ""   # skip login and cart, replay 4..6
+doAssert srv.start()
+```

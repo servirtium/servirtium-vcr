@@ -151,3 +151,46 @@ suite "named secrets":
     defer: replay.close()
     discard run(@["drive", replay.baseUrl()]); replay.assertNoMismatches()
     discard run(@["check", tape])
+
+  test "sortJsonKeys with prettyJson writes sorted, pretty JSON":
+    let tape = tempTape("sorted_json")
+    let rec = record(tape, upstreamBaseUrl())
+    rec.prettyJson(2)
+    rec.setSortJsonKeys(true)
+    check rec.getSortJsonKeys()
+    check rec.sortJsonArray("/list") == ""
+    check rec.sortJsonArrayAt("/data", "/list", "id") == ""
+    check rec.sortJsonArray("a/b") != ""  # a bad path is refused
+    rec.setSortResponseHeaders(true)
+    check rec.getSortResponseHeaders()
+    check rec.sortHeaderValue("Allow") == ""
+    check rec.start()
+    programReply("{\"zebra\":1,\"apple\":{\"mango\":2,\"banana\":3}}", "application/json")
+    discard getBody(rec.baseUrl(), "/data")
+    discard nextObservation()
+    rec.close()
+    check readFile(tape).contains(
+      "{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}")
+
+  test "sortJsonKeys without prettyJson is refused at emit time":
+    let tape = tempTape("sorted_refused")
+    let rec = record(tape, upstreamBaseUrl())
+    rec.setSortJsonKeys(true)
+    check rec.start()
+    programReply("{\"zebra\":1,\"apple\":2}", "application/json")
+    discard getBody(rec.baseUrl(), "/data")
+    discard nextObservation()
+    var refusal = ""
+    try:
+      rec.close()
+    except VcrError as e:
+      refusal = e.msg
+    check refusal.contains("sort_json_keys needs pretty_json")
+    check not fileExists(tape)
+
+  test "a record server refuses a playback range":
+    let tape = tempTape("range_refused")
+    let rec = record(tape, upstreamBaseUrl())
+    check rec.setPlaybackRange(0, 1) != ""
+    check rec.getPlaybackRangeFrom() == -1
+    rec.discardRecording()

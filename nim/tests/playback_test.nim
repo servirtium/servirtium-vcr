@@ -44,6 +44,28 @@ proc getWithHeader(base, path, header: string): tuple[status: int, body: string]
   splitStatus(output)
 
 suite "servirtium playback":
+  test "playback range replays only the chosen interactions":
+    let tape = currentSourcePath().parentDir() / ".." / ".." / "core_tests" / "tapes" / "playback_range.tape"
+    let vcr = playback(tape)
+    check vcr.getPlaybackRangeFrom() == -1
+    check vcr.redactCredentials() == ""
+    check vcr.setPlaybackRange(7, 7) == ""
+    check vcr.getPlaybackRangeFrom() == 7
+    check vcr.getPlaybackRangeTo() == 7
+    check vcr.setPlaybackRange(9) != ""  # past the tape's end
+    check vcr.start()
+    defer: vcr.close()
+    # The test brings its own cookie and skips the whole journey.
+    let (status, body) = getWithHeader(vcr.baseUrl(), "/logout", "Cookie: sid=live-session")
+    check status == 200
+    check body.strip() == "bye"
+    check vcr.lastIndex() == 7
+    let skipped = getWithHeader(vcr.baseUrl(), "/login", "Cookie: sid=live-session")
+    check skipped.body.strip() != "login-form"
+    check vcr.lastError().contains("outside the playback range")
+    vcr.clearPlaybackRange()
+    check vcr.getPlaybackRangeFrom() == -1
+
   test "replays a recorded GET":
     let vcr = playback(tapePath("single_get.md"))
     check vcr.addLicenseNotice("test notice") == ""  # playback ignores it
