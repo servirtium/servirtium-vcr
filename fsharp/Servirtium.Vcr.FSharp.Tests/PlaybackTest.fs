@@ -148,3 +148,70 @@ let ``named secrets round trip`` () =
         run "check" tape |> ignore
     finally
         System.IO.Directory.Delete(directory, true)
+
+
+[<Fact>]
+let ``sortJsonKeys with prettyJson writes sorted pretty JSON`` () =
+    use upstream = new System.Net.HttpListener()
+    let port = (let l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0) in l.Start(); let p = (l.LocalEndpoint :?> System.Net.IPEndPoint).Port in l.Stop(); p)
+    let baseUrl = sprintf "http://127.0.0.1:%d" port
+    upstream.Prefixes.Add(baseUrl + "/")
+    upstream.Start()
+    let serve = System.Threading.Tasks.Task.Run(fun () ->
+        try
+            while upstream.IsListening do
+                let ctx = upstream.GetContext()
+                let payload = System.Text.Encoding.UTF8.GetBytes("""{"b":1,"a":{"d":2,"c":3}}""")
+                ctx.Response.ContentType <- "application/json"
+                ctx.Response.ContentLength64 <- int64 payload.Length
+                ctx.Response.OutputStream.Write(payload, 0, payload.Length)
+                ctx.Response.Close()
+        with _ -> ())
+    let tape = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vcr-sort-" + System.Guid.NewGuid().ToString() + ".md")
+    try
+        let record (configure: RecordBuilder -> RecordBuilder) =
+            (Vcr.Record(tape, baseUrl) |> configure).Start()
+        // with prettyJson: sorted, pretty
+        do
+            use rec1 = record (Servirtium.prettyJson 2 >> Servirtium.sortJsonKeys)
+            get (rec1.BaseUrl + "/doc") |> ignore
+        Assert.Contains("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}", (System.IO.File.ReadAllText tape).Replace("\r\n", "\n"))
+        System.IO.File.Delete tape
+        // without prettyJson: refused when the tape is written
+        let rec2 = record Servirtium.sortJsonKeys
+        get (rec2.BaseUrl + "/doc") |> ignore
+        let ex = Assert.Throws<VcrException>(fun () -> rec2.Dispose())
+        Assert.Contains("sort_json_keys needs pretty_json", ex.Message)
+        Assert.False(System.IO.File.Exists tape)
+        // a bad rule fails start
+        let bad = Assert.Throws<VcrException>(fun () -> record (Servirtium.sortHeaderValue "") |> ignore)
+        Assert.Contains("SortHeaderValue", bad.Message)
+    finally
+        upstream.Stop()
+        if System.IO.File.Exists tape then System.IO.File.Delete tape
+
+[<Fact>]
+let ``playbackRange skips early interactions and serves a later one`` () =
+    let root = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../.."))
+    let rangeTape = System.IO.Path.Combine(root, "core_tests/tapes/playback_range.tape")
+    let start from =
+        (Vcr.Playback(rangeTape) |> Servirtium.redactCredentialsOnPlayback |> Servirtium.playbackRange from (-1)).Start()
+    let getWithCookie (url: string) =
+        use client = new HttpClient()
+        use request = new HttpRequestMessage(HttpMethod.Get, url)
+        request.Headers.TryAddWithoutValidation("Cookie", "sid=live") |> ignore
+        client.SendAsync(request).Result
+    do
+        use vcr = start 7
+        Assert.Equal(8, Servirtium.tapeLength vcr)
+        Assert.Equal(System.Net.HttpStatusCode.OK, (getWithCookie (Servirtium.baseUrl vcr + "/logout")).StatusCode)
+        Assert.Equal(7, Servirtium.lastIndex vcr)
+        Assert.True(Servirtium.matchedCleanly vcr)
+    do
+        use vcr = start 7
+        getWithCookie (Servirtium.baseUrl vcr + "/login") |> ignore // interaction 0 is outside the range
+        Assert.False(Servirtium.matchedCleanly vcr)
+        Assert.Contains("outside the playback range", Servirtium.lastError vcr)
+    let bad = Assert.Throws<VcrException>(fun () -> start 99 |> ignore)
+    Assert.Contains("PlaybackRange", bad.Message)
+

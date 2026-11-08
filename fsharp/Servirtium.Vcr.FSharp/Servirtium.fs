@@ -58,6 +58,31 @@ module Servirtium =
     let upstreamCafile (path: string) (builder: RecordBuilder) : RecordBuilder =
         builder.UpstreamCafile(path)
 
+    /// Opt-in stable order: write JSON response bodies' object keys sorted at every depth.
+    /// Needs `prettyJson`: without it the tape is refused when written (disposing the server throws).
+    let sortJsonKeys (builder: RecordBuilder) : RecordBuilder =
+        builder.SortJsonKeys()
+
+    /// Sort the JSON response arrays `path` selects by member `by` ("" = by each element's canonical JSON).
+    let sortJsonArray (path: string) (by: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.SortJsonArray(path, by)
+
+    /// The same, only for interactions whose request path matches the regex `requestRegex`.
+    let sortJsonArrayAt (requestRegex: string) (path: string) (by: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.SortJsonArrayAt(requestRegex, path, by)
+
+    /// Write response header lines sorted by name (case-insensitive).
+    let sortResponseHeaders (builder: RecordBuilder) : RecordBuilder =
+        builder.SortResponseHeaders()
+
+    /// Sort one response header's comma-separated items ("Allow").
+    let sortHeaderValue (name: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.SortHeaderValue(name)
+
+    /// Replay only interactions `from`..`to` of the tape (0-based, inclusive; `to` < 0 = through the last).
+    let playbackRange (from: int) (``to``: int) (builder: PlaybackBuilder) : PlaybackBuilder =
+        builder.PlaybackRange(from, ``to``)
+
     /// Header presets (opt-in): drop Host, Connection, Content-Length, ... on the record builder.
     let removeTransportHeaders (builder: RecordBuilder) : RecordBuilder =
         builder.RemoveTransportHeaders()

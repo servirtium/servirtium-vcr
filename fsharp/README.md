@@ -49,6 +49,24 @@ logic.
   can sit in a pipeline (`vcr |> Servirtium.baseUrl`).
 - **`matchedCleanly`** — the assertion most tests actually want, without
   naming the enum.
+- **Builder steps as pipeline functions** — redactions, header presets and the
+  opt-in stable order (`sortJsonKeys`, `sortJsonArray`, `sortJsonArrayAt`,
+  `sortResponseHeaders`, `sortHeaderValue`; the JSON ones need `prettyJson`,
+  else disposing the recording server throws `VcrException` "sort_json_keys needs
+  pretty_json ...") on a `RecordBuilder`, and `playbackRange from to` on a
+  `PlaybackBuilder` (interaction numbers, 0-based, inclusive, `to` < 0 = through
+  the last; selection by number only):
+
+  ```fsharp
+  Vcr.Record(tape, upstream)
+  |> Servirtium.prettyJson 2
+  |> Servirtium.sortJsonKeys
+  |> Servirtium.sortJsonArray "versions" "/created"
+  |> Servirtium.sortResponseHeaders
+  |> fun b -> b.Start()
+
+  Vcr.Playback(tape) |> Servirtium.playbackRange 4 6 |> fun b -> b.Start()
+  ```
 
 ## Layout
 
