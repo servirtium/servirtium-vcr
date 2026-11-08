@@ -119,6 +119,21 @@ Full surface in **[docs/usage.md](docs/usage.md)** — playback, record,
 redactions, unredactions, header removal, notes, strict matching, static
 content, drift, diagnostics.
 
+### Stable ordering and playback range
+
+Both are opt-in builder options; a refused rule or range throws `VcrException` from `start()`
+(or `close()` for the pretty-JSON rule below).
+
+- **Stable order (record builder):** `.sortJsonKeys()`, `.sortJsonArray(path, by)`,
+  `.sortJsonArrayAt(requestRegex, path, by)`, `.sortResponseHeaders()`, `.sortHeaderValue(name)`;
+  `server.sortJsonKeys` / `server.sortResponseHeaders` read the state back and
+  `clearStableOrder()` turns it off. Sorted JSON is only written pretty-printed: without
+  `.prettyJson(2)`, `close()` throws `sort_json_keys needs pretty_json: ...` and writes nothing.
+- **Playback range (playback only):** `Vcr.playback(tape).playbackRange(from, to)` replays only the
+  tape's `## Interaction N` headings `from`..`to` (0-based, inclusive; `to < 0` = through the last);
+  a bad range makes `start()` throw. On a running server, `setPlaybackRange` (throws on a record
+  server), `clearPlaybackRange()` and `playbackRange` (null when the whole tape plays).
+
 ## Concurrency: one server per port
 
 The binding uses a **one server per port** (handle-based ABI): N independent VCR

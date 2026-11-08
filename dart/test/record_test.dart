@@ -57,9 +57,10 @@ void main() {
     upstream = await HttpServer.bind('127.0.0.1', 0);
     upstreamBase = 'http://127.0.0.1:${upstream.port}';
     upstream.listen((req) async {
-      const body = 'hello-from-upstream';
+      final json = req.uri.path == '/json';
+      final body = json ? '{"zebra":1,"apple":{"mango":2,"banana":3}}' : 'hello-from-upstream';
       req.response
-        ..headers.contentType = ContentType.text
+        ..headers.contentType = json ? ContentType.json : ContentType.text
         ..contentLength = body.length; // explicit length → non-chunked
       req.response.write(body);
       await req.response.close();
@@ -88,6 +89,44 @@ void main() {
       expect(play.lastKind, VcrOutcome.ok);
     } finally {
       play.close();
+    }
+  });
+
+  test('sortJsonKeys with prettyJson writes sorted, pretty JSON', () async {
+    final rec = Vcr.record(tapePath, upstreamBase)
+        .prettyJson(2)
+        .sortJsonKeys()
+        .sortJsonArray('/list')
+        .sortJsonArrayAt('/data', '/list', 'id')
+        .sortResponseHeaders()
+        .sortHeaderValue('Allow')
+        .port(0)
+        .start();
+    expect(rec.sortJsonKeys, isTrue);
+    expect(rec.sortResponseHeaders, isTrue);
+    await httpGet('${rec.baseUrl}/json');
+    rec.close();
+    expect(File(tapePath).readAsStringSync(),
+        contains('{\n  "apple": {\n    "banana": 3,\n    "mango": 2\n  },\n  "zebra": 1\n}'));
+  });
+
+  test('sortJsonKeys without prettyJson is refused at emit time', () async {
+    final rec = Vcr.record(tapePath, upstreamBase).sortJsonKeys().port(0).start();
+    await httpGet('${rec.baseUrl}/json');
+    expect(() => rec.close(),
+        throwsA(isA<VcrException>().having((e) => e.message, 'message', contains('sort_json_keys needs pretty_json'))));
+    expect(File(tapePath).existsSync(), isFalse);
+    expect(() => Vcr.record(tapePath, upstreamBase).sortJsonArray('a/b').port(0).start(),
+        throwsA(isA<VcrException>()));
+  });
+
+  test('a record server refuses a playback range', () {
+    final rec = Vcr.record(tapePath, upstreamBase).port(0).start();
+    try {
+      expect(() => rec.setPlaybackRange(0, 1), throwsA(isA<VcrException>()));
+      expect(rec.playbackRange, isNull);
+    } finally {
+      rec.discard();
     }
   });
 

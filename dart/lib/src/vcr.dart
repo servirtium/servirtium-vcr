@@ -324,6 +324,7 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   bool _matchJsonBody = false;
   bool _matchXmlBody = false;
   bool _matchMultiple = false;
+  (int, int)? _playbackRange;
   final List<String> _matchHeaders = [];
 
   @override
@@ -358,6 +359,15 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   /// polling/retries or non-deterministic request order.
   PlaybackBuilder matchMultiple([bool on = true]) {
     _matchMultiple = on;
+    return this;
+  }
+
+  /// Replay only interactions [from]..[to] of the tape: the numbers of its
+  /// `## Interaction N` headings, 0-based and inclusive; [to] < 0 means through
+  /// the last. Selection is by number only. A bad range (from < 0, to before
+  /// from, past the tape's end) makes `start()` throw [VcrException].
+  PlaybackBuilder playbackRange(int from, [int to = -1]) {
+    _playbackRange = (from, to);
     return this;
   }
 
@@ -396,6 +406,10 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     if (_matchJsonBody) Native.setMatchJsonBody(handle, 1);
     if (_matchXmlBody) Native.setMatchXmlBody(handle, 1);
     if (_matchMultiple) Native.setMatchMultiple(handle, 1);
+    final range = _playbackRange;
+    if (range != null) {
+      _check(Native.setPlaybackRange(handle, range.$1, range.$2), 'playbackRange');
+    }
     for (final name in _matchHeaders) {
       withUtf8(name, (n) => Native.matchHeader(handle, n));
     }
@@ -452,6 +466,10 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   int _prettyJson = 0;
   String? _upstreamCafile;
   String? _licenseNotice;
+  bool _sortJsonKeys = false;
+  final List<(String, String, String)> _sortJsonArrays = []; // request regex ('' = every request), path, by
+  bool _sortResponseHeaders = false;
+  final List<String> _sortHeaderValues = [];
   bool _failIfChanged = false;
 
   @override
@@ -539,6 +557,45 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     return this;
   }
 
+  /// Opt-in stable order: sort JSON object keys at every depth in recorded JSON
+  /// response bodies. Sorted JSON is only written pretty-printed: without
+  /// [prettyJson], `close()` throws [VcrException] "sort_json_keys needs
+  /// pretty_json: ..." and writes nothing.
+  RecordBuilder sortJsonKeys([bool on = true]) {
+    _sortJsonKeys = on;
+    return this;
+  }
+
+  /// Sort the JSON response arrays [path] selects (JSON pointer from the root,
+  /// `*` for one segment, `""` the root array, or a bare member name) by member
+  /// [by] (`""` = each element's canonical JSON). A refused rule makes
+  /// `start()` throw; needs [prettyJson] like [sortJsonKeys].
+  RecordBuilder sortJsonArray(String path, [String by = '']) {
+    _sortJsonArrays.add(('', path, by));
+    return this;
+  }
+
+  /// As [sortJsonArray], only for interactions whose request path (query
+  /// included) matches the regex [request].
+  RecordBuilder sortJsonArrayAt(String request, String path, [String by = '']) {
+    _sortJsonArrays.add((request, path, by));
+    return this;
+  }
+
+  /// Opt-in stable order: response header lines sorted by name
+  /// (case-insensitive); a repeated header's lines keep their order.
+  RecordBuilder sortResponseHeaders([bool on = true]) {
+    _sortResponseHeaders = on;
+    return this;
+  }
+
+  /// Opt-in stable order: one response header's comma-separated items sorted
+  /// (`Allow`); repeatable.
+  RecordBuilder sortHeaderValue(String name) {
+    _sortHeaderValues.add(name);
+    return this;
+  }
+
   /// On close, still write the freshly recorded tape but throw if it differs
   /// from the on-disk one (the drift contract).
   RecordBuilder failIfChanged([bool on = true]) {
@@ -560,6 +617,20 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     final notice = _licenseNotice;
     if (notice != null) {
       withUtf8(notice, (t) => _check(Native.addLicenseNotice(handle, t), 'addLicenseNotice'));
+    }
+    if (_sortJsonKeys) Native.setSortJsonKeys(handle, 1);
+    for (final (request, path, by) in _sortJsonArrays) {
+      withUtf8(path, (p) => withUtf8(by, (b) {
+            if (request.isEmpty) {
+              _check(Native.sortJsonArray(handle, p, b), 'sortJsonArray');
+            } else {
+              withUtf8(request, (r) => _check(Native.sortJsonArrayAt(handle, r, p, b), 'sortJsonArrayAt'));
+            }
+          }));
+    }
+    if (_sortResponseHeaders) Native.setSortResponseHeaders(handle, 1);
+    for (final name in _sortHeaderValues) {
+      withUtf8(name, (n) => _check(Native.sortHeaderValue(handle, n), 'sortHeaderValue'));
     }
     for (final (operation, field, pattern, replacement) in _redactions) {
       final call = switch (operation) {
@@ -688,6 +759,32 @@ class VcrServer {
   void note(String title, String body) {
     final h = _requireHandle;
     withUtf8(title, (t) => withUtf8(body, (b) => _check(Native.note(h, t, b), 'note')));
+  }
+
+  /// Whether recorded JSON object keys are sorted (the `sortJsonKeys` opt-in).
+  bool get sortJsonKeys => Native.getSortJsonKeys(_requireHandle) != 0;
+
+  /// Whether recorded response header lines are sorted (the `sortResponseHeaders` opt-in).
+  bool get sortResponseHeaders => Native.getSortResponseHeaders(_requireHandle) != 0;
+
+  /// Turn every stable-order rule off.
+  void clearStableOrder() => Native.clearStableOrder(_requireHandle);
+
+  /// Playback only: replay just interactions [from]..[to] ([to] < 0 = through
+  /// the last). Prefer [PlaybackBuilder.playbackRange]; this is the same call on
+  /// a running server, before traffic. Throws [VcrException] on a record server
+  /// (a recording always captures the whole conversation) or a bad range.
+  void setPlaybackRange(int from, [int to = -1]) =>
+      _check(Native.setPlaybackRange(_requireHandle, from, to), 'setPlaybackRange');
+
+  /// Replay the whole tape again.
+  void clearPlaybackRange() => Native.clearPlaybackRange(_requireHandle);
+
+  /// The playback range as `(from, to)`, or null when the whole tape is replayed.
+  (int, int)? get playbackRange {
+    final from = Native.getPlaybackRangeFrom(_requireHandle);
+    if (from < 0) return null;
+    return (from, Native.getPlaybackRangeTo(_requireHandle));
   }
 
   /// Rewind the replay cursor to interaction 0 and clear last-* slots.

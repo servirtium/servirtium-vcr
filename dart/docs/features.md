@@ -17,6 +17,8 @@ exercised by `dart test` against the real native library.
 | Header presets (transport / cloud vendor) | ✅ | `.removeTransportHeaders()` / `.removeCloudHeaders(vendor)` | ✅ |
 | Credential redaction preset | ✅ | `.redactCredentials()` / `.redactCredentialHeader(name)` | ✅ |
 | License notice / upstream CA file / pretty JSON | ✅ | `.addLicenseNotice(text)` / `.upstreamCafile(path)` / `.prettyJson(n)` | — |
+| Stable order (sorted JSON keys / arrays, response headers) | ✅ | `.sortJsonKeys()` / `.sortJsonArray(path, by)` / `.sortJsonArrayAt(re, path, by)` / `.sortResponseHeaders()` / `.sortHeaderValue(name)` | ✅ |
+| Playback range (replay interactions from..to) | ✅ | `.playbackRange(from, to)` / `server.setPlaybackRange(from, to)` | ✅ |
 | Strict request matching | ✅ | `.strictHeaders()` | — |
 | JSON request-body matching (semantic, opt-in) | ✅ | `.matchJsonBody()` | — |
 | Reusable / order-independent matching (opt-in) | ✅ | `.matchMultiple()` | — |

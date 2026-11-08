@@ -204,6 +204,14 @@ typedef _UntapedD = Pointer<Utf8> Function(Pointer<Void> server, Pointer<Utf8> p
 typedef _SetIntC = Void Function(Pointer<Void> server, Int32 on);
 typedef _SetIntD = void Function(Pointer<Void> server, int on);
 
+typedef _Str3C = Pointer<Utf8> Function(
+    Pointer<Void> server, Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c);
+typedef _Str3D = Pointer<Utf8> Function(
+    Pointer<Void> server, Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c);
+
+typedef _RangeC = Pointer<Utf8> Function(Pointer<Void> server, Int32 from, Int32 to);
+typedef _RangeD = Pointer<Utf8> Function(Pointer<Void> server, int from, int to);
+
 typedef _MatchHeaderC = Void Function(Pointer<Void> server, Pointer<Utf8> name);
 typedef _MatchHeaderD = void Function(Pointer<Void> server, Pointer<Utf8> name);
 
@@ -325,6 +333,30 @@ class Native {
       'aether_vcr_embed_set_upstream_cafile');
   static final addLicenseNotice = _lib.lookupFunction<_UntapedC, _UntapedD>(
       'aether_vcr_embed_add_license_notice');
+  static final setSortJsonKeys =
+      _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_sort_json_keys');
+  static final getSortJsonKeys =
+      _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_get_sort_json_keys');
+  static final sortJsonArray =
+      _lib.lookupFunction<_WholeTapeC, _WholeTapeD>('aether_vcr_embed_sort_json_array');
+  static final sortJsonArrayAt =
+      _lib.lookupFunction<_Str3C, _Str3D>('aether_vcr_embed_sort_json_array_at');
+  static final setSortResponseHeaders =
+      _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_sort_response_headers');
+  static final getSortResponseHeaders =
+      _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_get_sort_response_headers');
+  static final sortHeaderValue =
+      _lib.lookupFunction<_UntapedC, _UntapedD>('aether_vcr_embed_sort_header_value');
+  static final clearStableOrder =
+      _lib.lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_clear_stable_order');
+  static final setPlaybackRange =
+      _lib.lookupFunction<_RangeC, _RangeD>('aether_vcr_embed_set_playback_range');
+  static final clearPlaybackRange =
+      _lib.lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_clear_playback_range');
+  static final getPlaybackRangeFrom =
+      _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_get_playback_range_from');
+  static final getPlaybackRangeTo =
+      _lib.lookupFunction<_IntHandleC, _IntHandleD>('aether_vcr_embed_get_playback_range_to');
   static final clearRedactions = _lib
       .lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_clear_redactions');
   static final clearUnredactions = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(

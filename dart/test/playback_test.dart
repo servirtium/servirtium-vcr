@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:servirtium/servirtium.dart';
@@ -50,6 +51,46 @@ void main() {
     } finally {
       directory.deleteSync(recursive: true);
     }
+  });
+
+  test('playback range replays only the chosen interactions', () async {
+    final vcr = Vcr.playback('../core_tests/tapes/playback_range.tape')
+        .redactCredentials()
+        .playbackRange(7, 7)
+        .port(0)
+        .start();
+    try {
+      expect(vcr.playbackRange, (7, 7));
+      // The test brings its own cookie and skips the whole journey.
+      Future<(int, String)> get(String path) async {
+        final client = HttpClient()..userAgent = null; // the tape recorded only the Cookie
+        try {
+          final req = await client.getUrl(Uri.parse('${vcr.baseUrl}$path'));
+          req.headers.set('Cookie', 'sid=live-session', preserveHeaderCase: true);
+          final resp = await req.close();
+          return (resp.statusCode, await resp.transform(utf8.decoder).join());
+        } finally {
+          client.close(force: true);
+        }
+      }
+
+      final (status, body) = await get('/logout');
+      expect(status, 200);
+      expect(body.trim(), 'bye');
+      expect(vcr.lastIndex, 7);
+      final (_, skipped) = await get('/login');
+      expect(skipped, isNot(contains('login-form')));
+      expect(vcr.lastError, contains('outside the playback range'));
+      vcr.clearPlaybackRange();
+      expect(vcr.playbackRange, isNull);
+    } finally {
+      vcr.close();
+    }
+  });
+
+  test('a bad playback range is refused at start', () {
+    expect(() => Vcr.playback('../core_tests/tapes/playback_range.tape').playbackRange(9).port(0).start(),
+        throwsA(isA<VcrException>()));
   });
 
   test('flags a path mismatch via diagnostics', () async {
