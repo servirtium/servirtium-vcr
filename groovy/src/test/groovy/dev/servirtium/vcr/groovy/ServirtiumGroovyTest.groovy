@@ -1,6 +1,8 @@
 package dev.servirtium.vcr.groovy
 
+import dev.servirtium.vcr.Field
 import dev.servirtium.vcr.Outcome
+import dev.servirtium.vcr.VcrException
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Test
 
@@ -14,6 +16,8 @@ import java.nio.file.Files
 import static dev.servirtium.vcr.groovy.Servirtium.playback
 import static dev.servirtium.vcr.groovy.Servirtium.record
 import static org.junit.jupiter.api.Assertions.assertEquals
+import static org.junit.jupiter.api.Assertions.assertThrows
+import static org.junit.jupiter.api.Assertions.assertNotEquals
 
 /**
  * Proves the Groovy DSL drives libservirtium_vcr end-to-end: record the
@@ -105,5 +109,109 @@ class ServirtiumGroovyTest {
         } finally {
             play.close()
         }
+    }
+    private static HttpServer jsonUpstream(String body, Map<String, String> headers = [:]) {
+        def upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
+        upstream.createContext("/") { ex ->
+            byte[] bytes = body.getBytes()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            headers.each { k, v -> ex.responseHeaders.add(k, v) }
+            ex.sendResponseHeaders(200, bytes.length)
+            ex.responseBody.withCloseable { it.write(bytes) }
+        }
+        upstream.start()
+        upstream
+    }
+
+    @Test
+    void sortJsonKeysWithPrettyJsonWritesSortedPrettyJson() {
+        def upstream = jsonUpstream('{"b":1,"a":{"d":2,"c":3}}')
+        def tape = Files.createTempFile("servirtium-groovy-sort", ".md")
+        try {
+            def rec = record(tape.toString(), "http://127.0.0.1:${upstream.address.port}") {
+                port(0); prettyJson(2); sortJsonKeys()
+            }
+            try { get(rec.baseUrl() + "/doc") } finally { rec.close() }
+            assert Files.readString(tape).contains('{\n  "a": {\n    "c": 3,\n    "d": 2\n  },\n  "b": 1\n}')
+        } finally {
+            upstream.stop(0)
+            Files.deleteIfExists(tape)
+        }
+    }
+
+    @Test
+    void sortJsonKeysWithoutPrettyJsonIsRefusedWhenTheTapeIsWritten() {
+        def upstream = jsonUpstream('{"b":1,"a":2}')
+        def tape = Files.createTempFile("servirtium-groovy-refuse", ".md")
+        Files.delete(tape)
+        try {
+            def rec = record(tape.toString(), "http://127.0.0.1:${upstream.address.port}") { port(0); sortJsonKeys() }
+            get(rec.baseUrl() + "/doc")
+            def e = assertThrows(VcrException) { rec.close() }
+            assert e.message.contains("sort_json_keys needs pretty_json")
+            assert !Files.exists(tape)
+        } finally {
+            upstream.stop(0)
+            Files.deleteIfExists(tape)
+        }
+    }
+
+    @Test
+    void arrayAndHeaderSortRulesApplyAndABadOneFailsStart() {
+        def upstream = jsonUpstream('[{"n":"z"},{"n":"a"}]', [Allow: 'POST, GET'])
+        def tape = Files.createTempFile("servirtium-groovy-arrays", ".md")
+        def base = "http://127.0.0.1:${upstream.address.port}"
+        try {
+            def rec = record(tape.toString(), base) {
+                port(0); prettyJson(2)
+                sortJsonArray("", "n"); sortJsonArrayAt("/doc", "", "n")
+                sortResponseHeaders(); sortHeaderValue("Allow")
+            }
+            try { get(rec.baseUrl() + "/doc") } finally { rec.close() }
+            def text = Files.readString(tape)
+            assert text.indexOf('"n": "a"') < text.indexOf('"n": "z"')
+            assert text.contains("Allow: GET, POST")
+            def e = assertThrows(VcrException) { record(tape.toString(), base) { port(0); sortHeaderValue("") } }
+            assert e.message.contains("sortHeaderValue")
+        } finally {
+            upstream.stop(0)
+            Files.deleteIfExists(tape)
+        }
+    }
+
+    private static HttpResponse<String> getWithCookie(String url) {
+        HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build().send(
+            HttpRequest.newBuilder(URI.create(url)).header("Cookie", "sid=live").build(),
+            HttpResponse.BodyHandlers.ofString())
+    }
+
+    @Test
+    void playbackRangeSkipsEarlyInteractionsAndServesALaterOne() {
+        def rangeTape = '../core_tests/tapes/playback_range.tape'
+        def vcr = playback(rangeTape) {
+            port(0); redactCredentials(); removeHeader(Field.REQUEST_HEADERS, "User-Agent"); playbackRange(7)
+        }
+        try {
+            assertEquals(8, vcr.tapeLength())
+            assertEquals(200, getWithCookie(vcr.baseUrl() + "/logout").statusCode())
+            assertEquals(7, vcr.lastIndex())
+            assertEquals(Outcome.OK, vcr.lastKind())
+        } finally { vcr.close() }
+        def vcr2 = playback(rangeTape) {
+            port(0); redactCredentials(); removeHeader(Field.REQUEST_HEADERS, "User-Agent"); playbackRange(7)
+        }
+        try {
+            getWithCookie(vcr2.baseUrl() + "/login") // interaction 0 is outside the range
+            assertNotEquals(Outcome.OK, vcr2.lastKind())
+            assert vcr2.lastError().contains("outside the playback range")
+        } finally { vcr2.close() }
+    }
+
+    @Test
+    void playbackRangeWithABadRangeFailsStart() {
+        def e = assertThrows(VcrException) {
+            playback('../core_tests/tapes/playback_range.tape') { port(0); playbackRange(99) }
+        }
+        assert e.message.contains("playbackRange")
     }
 }
