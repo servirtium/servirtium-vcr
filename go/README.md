@@ -51,6 +51,7 @@ VER=v2.0.0-alpha.13                      # a release tag of servirtium-vcr
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$VER
 
 # 1. the Go module (resolves the tag go/$VER; use @main before that tag exists)
+[ -f go.mod ] || go mod init servirtium_check      # skip: use your own module
 go get github.com/servirtium/servirtium-vcr/go/v2@$VER
 
 # 2. the native library for this OS/arch, into ./native (checksum-verified)
