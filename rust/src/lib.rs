@@ -171,6 +171,7 @@ impl Vcr {
             match_xml_body: false,
             match_multiple: false,
             match_headers: Vec::new(),
+            playback_range: None,
         }
     }
 
@@ -195,6 +196,10 @@ impl Vcr {
             pretty_json: 0,
             upstream_cafile: None,
             license_notice: None,
+            sort_json_keys: false,
+            sort_json_arrays: Vec::new(),
+            sort_response_headers: false,
+            sort_header_values: Vec::new(),
             fail_if_changed: false,
         }
     }
@@ -299,6 +304,7 @@ pub struct PlaybackBuilder {
     match_xml_body: bool,
     match_multiple: bool,
     match_headers: Vec<String>,
+    playback_range: Option<(i32, i32)>,
 }
 
 impl PlaybackBuilder {
@@ -399,6 +405,14 @@ impl PlaybackBuilder {
     /// polling/retries or non-deterministic request order.
     pub fn match_multiple(mut self) -> Self {
         self.match_multiple = true;
+        self
+    }
+    /// Replay only interactions `from`..=`to` of the tape: the numbers of its
+    /// `## Interaction N` headings, 0-based and inclusive; `to < 0` means
+    /// through the last. Selection is by number only. A bad range (from < 0,
+    /// to before from, past the tape's end) makes `start()` return an error.
+    pub fn playback_range(mut self, from: i32, to: i32) -> Self {
+        self.playback_range = Some((from, to));
         self
     }
     /// Match playback on this specific request header's value (ignoring the
@@ -534,6 +548,12 @@ impl PlaybackBuilder {
             )?;
         }
 
+        if let Some((from, to)) = self.playback_range {
+            if let Err(e) = check(n, unsafe { (n.set_playback_range)(handle, from, to) }, "set_playback_range") {
+                unsafe { (n.stop)(handle) };
+                return Err(e);
+            }
+        }
         if let Some(resolver) = self.secret_resolver.as_mut() { secret_stage(n, handle, None, Some(&mut **resolver))?; }
         if unsafe { (n.start)(handle) } < 0 {
             let err = drain_start_error(n, handle);
@@ -562,6 +582,11 @@ pub struct RecordBuilder {
     pretty_json: i32,
     upstream_cafile: Option<String>,
     license_notice: Option<String>,
+    sort_json_keys: bool,
+    /// (request regex or "" for every request, path, by)
+    sort_json_arrays: Vec<(String, String, String)>,
+    sort_response_headers: bool,
+    sort_header_values: Vec<String>,
     fail_if_changed: bool,
 }
 
@@ -750,6 +775,46 @@ impl RecordBuilder {
         self.license_notice = Some(text.into());
         self
     }
+    /// Opt-in stable order: sort JSON object keys at every depth in recorded
+    /// JSON response bodies. Sorted JSON is only written pretty-printed: without
+    /// [`pretty_json`](Self::pretty_json) the tape is refused when it is
+    /// emitted (`finish()` returns "sort_json_keys needs pretty_json: ...").
+    pub fn sort_json_keys(mut self) -> Self {
+        self.sort_json_keys = true;
+        self
+    }
+    /// Sort the JSON response arrays `path` selects (JSON pointer from the
+    /// root, `*` for one segment, `""` the root array, or a bare member name)
+    /// by member `by` (a name or JSON pointer, or several comma-separated;
+    /// `""` sorts by each element's canonical JSON). A refused rule makes
+    /// `start()` return an error; needs `pretty_json` like `sort_json_keys`.
+    pub fn sort_json_array(mut self, path: impl Into<String>, by: impl Into<String>) -> Self {
+        self.sort_json_arrays.push((String::new(), path.into(), by.into()));
+        self
+    }
+    /// As [`sort_json_array`](Self::sort_json_array), only for interactions
+    /// whose request path (query included) matches the regex `request`.
+    pub fn sort_json_array_at(
+        mut self,
+        request: impl Into<String>,
+        path: impl Into<String>,
+        by: impl Into<String>,
+    ) -> Self {
+        self.sort_json_arrays.push((request.into(), path.into(), by.into()));
+        self
+    }
+    /// Opt-in stable order: response header lines sorted by name
+    /// (case-insensitive); a repeated header's lines keep their order.
+    pub fn sort_response_headers(mut self) -> Self {
+        self.sort_response_headers = true;
+        self
+    }
+    /// Opt-in stable order: one response header's comma-separated items sorted
+    /// (`"Allow"`); repeatable.
+    pub fn sort_header_value(mut self, name: impl Into<String>) -> Self {
+        self.sort_header_values.push(name.into());
+        self
+    }
     /// On flush, still write the freshly recorded tape but fail if it differs
     /// from the on-disk one — the drift contract, so a normal `git diff`
     /// shows the change and CI fails loudly. The failure surfaces from
@@ -796,6 +861,27 @@ impl RecordBuilder {
         }
         if self.pretty_json > 0 {
             unsafe { (n.set_pretty_json)(handle, self.pretty_json) };
+        }
+        if self.sort_json_keys {
+            unsafe { (n.set_sort_json_keys)(handle, 1) };
+        }
+        for (request, path, by) in &self.sort_json_arrays {
+            let refused = if request.is_empty() {
+                check(n, unsafe { (n.sort_json_array)(handle, cstr(path)?.as_ptr(), cstr(by)?.as_ptr()) }, "sort_json_array")
+            } else {
+                check(
+                    n,
+                    unsafe { (n.sort_json_array_at)(handle, cstr(request)?.as_ptr(), cstr(path)?.as_ptr(), cstr(by)?.as_ptr()) },
+                    "sort_json_array_at",
+                )
+            };
+            refused?;
+        }
+        if self.sort_response_headers {
+            unsafe { (n.set_sort_response_headers)(handle, 1) };
+        }
+        for name in &self.sort_header_values {
+            check(n, unsafe { (n.sort_header_value)(handle, cstr(name)?.as_ptr()) }, "sort_header_value")?;
         }
         if let Some(path) = &self.upstream_cafile {
             check(n, unsafe { (n.set_upstream_cafile)(handle, cstr(path)?.as_ptr()) }, "set_upstream_cafile")?;
@@ -991,6 +1077,41 @@ impl VcrServer {
     /// Call between requests to annotate specific interactions.
     pub fn note(&self, title: &str, body: &str) -> Result<(), VcrError> {
         check(self.n, unsafe { (self.n.note)(self.handle, cstr(title)?.as_ptr(), cstr(body)?.as_ptr()) }, "note")
+    }
+
+    /// Whether recorded JSON object keys are sorted (the `sort_json_keys` opt-in).
+    pub fn sort_json_keys(&self) -> bool {
+        (unsafe { (self.n.get_sort_json_keys)(self.handle) }) != 0
+    }
+
+    /// Whether recorded response header lines are sorted (the `sort_response_headers` opt-in).
+    pub fn sort_response_headers(&self) -> bool {
+        (unsafe { (self.n.get_sort_response_headers)(self.handle) }) != 0
+    }
+
+    /// Turn every stable-order rule off.
+    pub fn clear_stable_order(&self) {
+        unsafe { (self.n.clear_stable_order)(self.handle) };
+    }
+
+    /// Playback only: replay just interactions `from`..=`to` (`to < 0` =
+    /// through the last). Prefer [`PlaybackBuilder::playback_range`]; this is
+    /// the same call on a running server, before traffic. Errors on a record
+    /// server (a recording always captures the whole conversation) or a bad range.
+    pub fn set_playback_range(&self, from: i32, to: i32) -> Result<(), VcrError> {
+        check(self.n, unsafe { (self.n.set_playback_range)(self.handle, from, to) }, "set_playback_range")
+    }
+
+    /// Replay the whole tape again.
+    pub fn clear_playback_range(&self) {
+        unsafe { (self.n.clear_playback_range)(self.handle) };
+    }
+
+    /// The playback range as `(from, to)`, or `None` when the whole tape is replayed.
+    pub fn playback_range(&self) -> Option<(i32, i32)> {
+        let from = unsafe { (self.n.get_playback_range_from)(self.handle) };
+        let to = unsafe { (self.n.get_playback_range_to)(self.handle) };
+        if from < 0 { None } else { Some((from, to)) }
     }
 
     /// Rewind the replay cursor to interaction 0 and clear last-* slots.

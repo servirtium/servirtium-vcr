@@ -174,3 +174,39 @@ fn substitute_fills_base_url_and_assert_all_consumed_tracks_replay() {
     vcr.assert_all_redactions_used().expect("substitution matched");
     assert_eq!("", vcr.last_tls_protocol());
 }
+
+/// The shared shop-journey tape (core_tests/tapes/playback_range.tape): 0 GET /login ...
+/// 7 GET /logout.
+fn range_tape() -> String {
+    format!("{}/../core_tests/tapes/playback_range.tape", env!("CARGO_MANIFEST_DIR"))
+}
+
+fn get_with_cookie(base: &str, path: &str) -> String {
+    raw_get(base, path, &[("Cookie", "sid=live-session")])
+}
+
+#[test]
+fn playback_range_replays_only_the_chosen_interactions() {
+    let vcr = Vcr::playback(range_tape())
+        .redact_credentials()
+        .playback_range(7, 7)
+        .port(0)
+        .start()
+        .unwrap();
+    assert_eq!(Some((7, 7)), vcr.playback_range());
+    let base = vcr.base_url();
+    // The test brings its own cookie and skips the whole journey: interaction 7 is served first.
+    assert_eq!("bye", get_with_cookie(&base, "/logout").trim());
+    assert_eq!(7, vcr.last_index());
+    // A skipped interaction is never served, and is named as outside the range.
+    assert_ne!("login-form", get_with_cookie(&base, "/login").trim());
+    assert!(vcr.last_error().contains("outside the playback range"), "{}", vcr.last_error());
+    vcr.clear_playback_range();
+    assert_eq!(None, vcr.playback_range());
+}
+
+#[test]
+fn a_bad_playback_range_is_refused_at_start() {
+    let err = Vcr::playback(range_tape()).playback_range(9, -1).port(0).start().err().unwrap();
+    assert!(err.message().contains("set_playback_range"), "{err}");
+}

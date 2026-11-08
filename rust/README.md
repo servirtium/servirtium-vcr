@@ -112,6 +112,22 @@ under `[dev-dependencies]`. The future registry form is `servirtium = "=2.0.0-al
   the package root.
 - Windows: use the `.dll` asset and its full path in `SERVIRTIUM_VCR_LIB`.
 
+## Stable ordering and playback range
+
+Both are opt-in builder options; a refused rule or range comes back as a `VcrError`.
+
+- **Stable order (record builder):** `.sort_json_keys()`, `.sort_json_array(path, by)`,
+  `.sort_json_array_at(request_regex, path, by)`, `.sort_response_headers()`,
+  `.sort_header_value(name)`; `VcrServer::sort_json_keys()` / `sort_response_headers()` read the
+  state back and `clear_stable_order()` turns it off. Sorted JSON is only written
+  pretty-printed: without `.pretty_json(2)`, `finish()` returns
+  `sort_json_keys needs pretty_json: ...` and writes nothing. A refused rule (a bad path)
+  makes `start()` return the error.
+- **Playback range (playback only):** `Vcr::playback(tape).playback_range(from, to)` replays only
+  the tape's `## Interaction N` headings `from`..=`to` (0-based; `to < 0` = through the last); a bad
+  range makes `start()` fail. On a running server, `set_playback_range` (an error on a record
+  server), `clear_playback_range()` and `playback_range()` (`None` when the whole tape plays).
+
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,

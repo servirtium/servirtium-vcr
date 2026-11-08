@@ -31,6 +31,56 @@ fn record_accepts_license_notice_pretty_json_and_presets() {
         .is_err());
 }
 
+const UNSORTED: &str = r#"{"zebra":1,"apple":{"mango":2,"banana":3}}"#;
+const SORTED: &str = "{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}";
+
+#[test]
+fn sort_json_keys_with_pretty_json_writes_sorted_pretty_json() {
+    let upstream = FakeUpstream::new();
+    upstream.set_body(UNSORTED);
+    upstream.set_content_type("application/json");
+    let tape = TempTape::new();
+    let rec = Vcr::record(&tape.0, &upstream.base_url)
+        .pretty_json(2)
+        .sort_json_keys()
+        .sort_json_array("/list", "")
+        .sort_json_array_at("/data", "/list", "id")
+        .sort_response_headers()
+        .sort_header_value("Allow")
+        .port(0)
+        .start()
+        .unwrap();
+    assert!(rec.sort_json_keys());
+    assert!(rec.sort_response_headers());
+    let _ = ureq::get(&format!("{}/data", rec.base_url())).call().unwrap();
+    rec.finish().unwrap();
+    assert!(tape.read().contains(SORTED), "sorted, pretty JSON expected in:\n{}", tape.read());
+}
+
+#[test]
+fn sort_json_keys_without_pretty_json_is_refused() {
+    let upstream = FakeUpstream::new();
+    upstream.set_body(UNSORTED);
+    upstream.set_content_type("application/json");
+    let tape = TempTape::new();
+    let rec = Vcr::record(&tape.0, &upstream.base_url).sort_json_keys().port(0).start().unwrap();
+    let _ = ureq::get(&format!("{}/data", rec.base_url())).call().unwrap();
+    let err = rec.finish().unwrap_err();
+    assert!(err.message().contains("sort_json_keys needs pretty_json"), "{err}");
+    assert!(!std::path::Path::new(&tape.0).exists(), "a refused tape is not written");
+    assert!(Vcr::record(&tape.0, &upstream.base_url).sort_json_array("a/b", "").port(0).start().is_err());
+}
+
+#[test]
+fn a_record_server_refuses_a_playback_range() {
+    let upstream = FakeUpstream::new();
+    let tape = TempTape::new();
+    let rec = Vcr::record(&tape.0, &upstream.base_url).port(0).start().unwrap();
+    assert!(rec.set_playback_range(0, 1).is_err());
+    assert_eq!(None, rec.playback_range());
+    rec.discard();
+}
+
 #[test]
 fn records_then_replays_the_same_interaction() {
     let upstream = FakeUpstream::new();

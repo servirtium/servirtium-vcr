@@ -110,6 +110,10 @@ impl FakeUpstream {
         self.state.lock().unwrap().response_body = body.to_string();
     }
 
+    pub fn set_content_type(&self, content_type: &str) {
+        self.state.lock().unwrap().content_type = content_type.to_string();
+    }
+
     pub fn set_header(&self, name: &str, value: &str) {
         self.state
             .lock()
