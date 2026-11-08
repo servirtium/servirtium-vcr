@@ -42,6 +42,13 @@
    (redact_credentials 1)
    (redact_credential_header 2)
    (set_upstream_cafile 2)
+   (set_sort_json_keys 2) (get_sort_json_keys 1)
+   (sort_json_array 3) (sort_json_array_at 4)
+   (set_sort_response_headers 2) (get_sort_response_headers 1)
+   (sort_header_value 2)
+   (clear_stable_order 1)
+   (set_playback_range 3) (clear_playback_range 1)
+   (get_playback_range_from 1) (get_playback_range_to 1)
    (close 1)
    ;; introspection
    (base_url 1)
@@ -228,6 +235,57 @@
     (#"" 'ok)
     (err (erlang:error (tuple 'servirtium err)))))
 
+
+;; Stable ordering (record side, all opt-in; the tape is byte-exact without
+;; them). Sorted JSON is only written pretty-printed: a record with
+;; set_sort_json_keys/sort_json_array* but without set_pretty_json is refused
+;; when the tape is written (close/1 returns #(error "sort_json_keys needs
+;; pretty_json: ...")).
+;; JSON object keys sorted at every depth in recorded JSON response bodies.
+(defun set_sort_json_keys (vcr on)
+  (servirtium_nif:set_sort_json_keys (maps:get 'handle vcr) (bool-int on)))
+(defun get_sort_json_keys (vcr)
+  (=/= (servirtium_nif:get_sort_json_keys (maps:get 'handle vcr)) 0))
+;; The JSON arrays PATH selects (JSON pointer, "*" for one segment, "" the
+;; root array, or a bare member name) sorted by member BY ("" = canonical
+;; JSON). Returns ok or raises #(servirtium Reason).
+(defun sort_json_array (vcr path by)
+  (str-result (servirtium_nif:sort_json_array (maps:get 'handle vcr) (to-bin path) (to-bin by))))
+;; The same, only for requests whose path (query included) matches REQUEST.
+(defun sort_json_array_at (vcr request path by)
+  (str-result (servirtium_nif:sort_json_array_at (maps:get 'handle vcr)
+                                                 (to-bin request) (to-bin path) (to-bin by))))
+;; Response header lines sorted by name (case-insensitive).
+(defun set_sort_response_headers (vcr on)
+  (servirtium_nif:set_sort_response_headers (maps:get 'handle vcr) (bool-int on)))
+(defun get_sort_response_headers (vcr)
+  (=/= (servirtium_nif:get_sort_response_headers (maps:get 'handle vcr)) 0))
+;; One response header's comma-separated items sorted ("Allow"). Returns ok
+;; or raises #(servirtium Reason).
+(defun sort_header_value (vcr name)
+  (str-result (servirtium_nif:sort_header_value (maps:get 'handle vcr) (to-bin name))))
+;; Every stable-order rule off.
+(defun clear_stable_order (vcr)
+  (servirtium_nif:clear_stable_order (maps:get 'handle vcr)))
+
+;; Playback only: replay just interactions FROM..TO (inclusive, 0-based, the
+;; tape's "## Interaction N" numbers; TO < 0 = through the last). Returns ok
+;; or raises #(servirtium Reason) (a record server, or FROM past the tape).
+(defun set_playback_range (vcr from to)
+  (str-result (servirtium_nif:set_playback_range (maps:get 'handle vcr) from to)))
+(defun clear_playback_range (vcr)
+  (servirtium_nif:clear_playback_range (maps:get 'handle vcr)))
+;; The range in force, first and last interaction; -1 when none is set.
+(defun get_playback_range_from (vcr)
+  (servirtium_nif:get_playback_range_from (maps:get 'handle vcr)))
+(defun get_playback_range_to (vcr)
+  (servirtium_nif:get_playback_range_to (maps:get 'handle vcr)))
+
+(defun bool-int (on) (if on 1 0))
+(defun str-result (result)
+  (case result
+    (#"" 'ok)
+    (err (erlang:error (tuple 'servirtium err)))))
 (defun consume-flag (consume) (if consume 1 0))
 (defun last_error (vcr consume)
   (binary_to_list (servirtium_nif:last_error_ex (maps:get 'handle vcr) (consume-flag consume))))

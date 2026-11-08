@@ -114,6 +114,40 @@ lfe -noshell -pa . -eval '(consumer:main (list))' -eval '(halt 0)'     # -> PASS
   that, not a Servirtium problem.
 - In-repo development: `aeb lfe/.tests.ae`.
 
+## Stable ordering and playback range
+
+Opt-in, off by default. Stable ordering is record side, for a service that sends
+the same response in a different order every run; the tape is byte-exact without it.
+
+```lisp
+(let ((rec (servirtium_lfe:record "tapes/data.md" upstream)))
+  (servirtium_lfe:set_pretty_json rec 2)               ; sorted JSON is only written pretty-printed
+  (servirtium_lfe:set_sort_json_keys rec 'true)        ; object keys sorted at every depth
+  (servirtium_lfe:sort_json_array rec "/items" "/id")  ; path, by
+  (servirtium_lfe:sort_json_array_at rec "^/users" "" "name") ; request regex, path, by
+  (servirtium_lfe:set_sort_response_headers rec 'true)
+  (servirtium_lfe:sort_header_value rec "Allow")
+  ;; ... drive the system under test ...
+  (servirtium_lfe:close rec))
+```
+
+A rule the core refuses raises `#(servirtium Reason)`. Sorting JSON without
+`set_pretty_json` is refused when the tape is written, so `close` returns
+`#(error "sort_json_keys needs pretty_json: ...")` and writes nothing.
+`get_sort_json_keys` / `get_sort_response_headers` read the switches back;
+`clear_stable_order` turns every rule off.
+
+Replay only a slice of a tape, by the tape's `## Interaction N` number (0-based,
+inclusive; `to` < 0 = through the last):
+
+```lisp
+(let ((vcr (servirtium_lfe:playback "tapes/journey.md")))
+  (servirtium_lfe:set_playback_range vcr 4 6)     ; raises #(servirtium Reason) if refused
+  (servirtium_lfe:get_playback_range_from vcr)    ; -1 when none is set
+  (servirtium_lfe:clear_playback_range vcr))
+```
+
+A record server refuses a range, so a test cannot overwrite a journey's tape with a slice.
 ## Building and testing
 
 Contributors who want to build the lib from source instead (Aether toolchain
