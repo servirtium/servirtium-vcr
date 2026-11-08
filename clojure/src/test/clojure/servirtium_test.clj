@@ -4,6 +4,7 @@
   offline. Same libservirtium_vcr the other bindings use, reached through the Java FFM
   binding."
   (:require [clojure.test :refer [deftest is]]
+            [clojure.string :as str]
             [servirtium :as vcr])
   (:import [dev.servirtium.vcr Outcome]
            [com.sun.net.httpserver HttpServer HttpHandler]
@@ -17,6 +18,29 @@
       (.send (-> (HttpRequest/newBuilder (URI/create url)) (.build))
              (HttpResponse$BodyHandlers/ofString))
       (.body)))
+
+(defn- start-json-upstream
+  "An upstream answering any path with `body` as JSON plus the extra header pairs."
+  [body & headers]
+  (let [server (HttpServer/create (InetSocketAddress. "127.0.0.1" 0) 0)]
+    (.createContext server "/"
+      (reify HttpHandler
+        (handle [_ ex]
+          (let [bytes (.getBytes ^String body)]
+            (.add (.getResponseHeaders ex) "Content-Type" "application/json")
+            (doseq [[k v] (partition 2 headers)] (.add (.getResponseHeaders ex) k v))
+            (.sendResponseHeaders ex 200 (alength bytes))
+            (with-open [out (.getResponseBody ex)]
+              (.write out bytes))))))
+    (.start server)
+    server))
+
+(defn- base-of [^HttpServer server] (str "http://127.0.0.1:" (.getPort (.getAddress server))))
+
+(defn- http-get-with-cookie [url]
+  (-> (HttpClient/newBuilder) (.version java.net.http.HttpClient$Version/HTTP_1_1) (.build)
+      (.send (-> (HttpRequest/newBuilder (URI/create url)) (.header "Cookie" "sid=live") (.build))
+             (HttpResponse$BodyHandlers/ofString))))
 
 (defn- start-upstream []
   (let [server (HttpServer/create (InetSocketAddress. "127.0.0.1" 0) 0)]
@@ -112,3 +136,56 @@
         (with-open [files (Files/list dir)]
           (doseq [file (iterator-seq (.iterator files))] (Files/delete file)))
         (Files/delete dir)))))
+
+(deftest sort-json-keys-with-pretty-json-writes-sorted-pretty-json
+  (let [upstream (start-json-upstream "{\"b\":1,\"a\":{\"d\":2,\"c\":3}}")
+        tape (Files/createTempFile "servirtium-clj-sort" ".md" (make-array FileAttribute 0))]
+    (try
+      (with-open [v (vcr/record (str tape) (base-of upstream) {:port 0 :pretty-json 2 :sort-json-keys true})]
+        (http-get (str (.baseUrl v) "/doc")))
+      (is (.contains (Files/readString tape) "{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}"))
+      (finally (.stop upstream 0) (Files/deleteIfExists tape)))))
+
+(deftest sort-json-keys-without-pretty-json-is-refused
+  (let [upstream (start-json-upstream "{\"b\":1,\"a\":2}")
+        tape (Files/createTempFile "servirtium-clj-refuse" ".md" (make-array FileAttribute 0))]
+    (Files/delete tape)
+    (try
+      (let [rec (vcr/record (str tape) (base-of upstream) {:port 0 :sort-json-keys true})]
+        (http-get (str (.baseUrl rec) "/doc"))
+        (is (thrown-with-msg? dev.servirtium.vcr.VcrException #"sort_json_keys needs pretty_json" (.close rec)))
+        (is (not (Files/exists tape (make-array java.nio.file.LinkOption 0)))))
+      (finally (.stop upstream 0) (Files/deleteIfExists tape)))))
+
+(deftest array-and-header-sort-rules-apply-and-a-bad-one-fails-start
+  (let [upstream (start-json-upstream "[{\"n\":\"z\"},{\"n\":\"a\"}]" "Allow" "POST, GET")
+        tape (Files/createTempFile "servirtium-clj-arrays" ".md" (make-array FileAttribute 0))]
+    (try
+      (with-open [v (vcr/record (str tape) (base-of upstream)
+                      {:port 0 :pretty-json 2 :sort-json-array [["" "n"]] :sort-json-array-at [["/doc" "" "n"]]
+                       :sort-response-headers true :sort-header-value ["Allow"]})]
+        (http-get (str (.baseUrl v) "/doc")))
+      (let [text (Files/readString tape)]
+        (is (< (.indexOf text "\"n\": \"a\"") (.indexOf text "\"n\": \"z\"")))
+        (is (.contains text "Allow: GET, POST")))
+      (is (thrown-with-msg? dev.servirtium.vcr.VcrException #"sortHeaderValue"
+            (vcr/record (str tape) (base-of upstream) {:port 0 :sort-header-value [""]})))
+      (finally (.stop upstream 0) (Files/deleteIfExists tape)))))
+
+(def ^:private range-tape "core_tests/tapes/playback_range.tape")
+(def ^:private range-opts {:port 0 :redact-credentials true :remove-request-header ["User-Agent"]})
+
+(deftest playback-range-skips-early-interactions-and-serves-a-later-one
+  (with-open [v (vcr/playback range-tape (assoc range-opts :playback-range [7 -1]))]
+    (is (= 8 (.tapeLength v)))
+    (is (= 200 (.statusCode (http-get-with-cookie (str (.baseUrl v) "/logout")))))
+    (is (= 7 (.lastIndex v)))
+    (is (= Outcome/OK (.lastKind v))))
+  (with-open [v (vcr/playback range-tape (assoc range-opts :playback-range 7))]
+    (http-get-with-cookie (str (.baseUrl v) "/login")) ; interaction 0 is outside the range
+    (is (not= Outcome/OK (.lastKind v)))
+    (is (str/includes? (.lastError v) "outside the playback range"))))
+
+(deftest playback-range-with-a-bad-range-fails-start
+  (is (thrown-with-msg? dev.servirtium.vcr.VcrException #"playbackRange"
+        (vcr/playback range-tape {:port 0 :playback-range [99 -1]}))))

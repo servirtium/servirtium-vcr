@@ -35,6 +35,34 @@ the JVM's binding; **Kotlin, Scala, Clojure and Groovy all consume that one
 jar** rather than re-binding the native library. So Clojure is first-class
 without a separate native FFI to maintain.
 
+## Stable order and playback range
+
+Opt-in, record side: sort what a service sends in a different order every run.
+Playback side: replay only a slice of a tape.
+
+```clojure
+(vcr/record tape upstream
+  {:pretty-json 2                               ; required for the JSON rules
+   :sort-json-keys true                         ; object keys sorted at every depth
+   :sort-json-array [["versions" "/created"]]   ; arrays `versions` holds, by member
+   :sort-json-array-at [["^/secrets" "" "name"]] ; only for matching request paths
+   :sort-response-headers true                  ; header lines by name
+   :sort-header-value ["Allow"]})               ; "POST, GET" -> "GET, POST"
+
+(vcr/playback tape {:playback-range [4 6]})     ; interactions 4..6 only
+```
+
+The opts are `:sort-json-keys`, `:sort-json-array`, `:sort-json-array-at`,
+`:sort-response-headers`, `:sort-header-value` (record) and `:playback-range`
+(playback; `[from to]` or a bare `from`). A rule the core refuses (an empty header name, a bad regex, a bad range) fails
+`record` / `playback` with a `VcrException`. The JSON rules are only written pretty-printed:
+without `prettyJson` the tape is refused when it is written (closing the server
+throws `VcrException`, "sort_json_keys needs pretty_json ...") and nothing is
+written. `playbackRange` selects by interaction number only (the `## Interaction N`
+headings, 0-based, inclusive; `to` < 0 means through the last); a request outside
+the range is never served. Both are the Java binding's, see
+[../java/docs/usage.md](../java/docs/usage.md).
+
 ## Getting it
 
 **Not on Maven Central yet** (Central publication is pending; the coordinates
