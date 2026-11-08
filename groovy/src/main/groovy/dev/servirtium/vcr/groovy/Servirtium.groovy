@@ -28,8 +28,8 @@ class Servirtium {
     static VcrServer playback(String tapePath, Closure configure = null) {
         def builder = Vcr.playback(tapePath)
         if (configure != null) {
-            configure.delegate = builder
-            configure.resolveStrategy = Closure.DELEGATE_FIRST
+            configure.setDelegate(builder)
+            configure.setResolveStrategy(Closure.DELEGATE_FIRST)
             configure()
         }
         builder.start()
@@ -43,8 +43,8 @@ class Servirtium {
     static VcrServer record(String tapePath, String upstreamBase, Closure configure = null) {
         def builder = Vcr.record(tapePath, upstreamBase)
         if (configure != null) {
-            configure.delegate = builder
-            configure.resolveStrategy = Closure.DELEGATE_FIRST
+            configure.setDelegate(builder)
+            configure.setResolveStrategy(Closure.DELEGATE_FIRST)
             configure()
         }
         builder.start()
