@@ -867,9 +867,9 @@ process launchers; the shared fixture itself stays language-neutral.
   `strlen`, copies through `ffi/pointer-buffer` and frees with
   `aether_vcr_embed_free_string`. Other Janet traps: `buffer/push` of an integer
   pushes a *byte* (stringify a Content-Length first), and `case`, `label`,
-  `flush` are core names (don't define them). aeb has no Janet SDK, so
-  `janet/.tests.ae` is a plain `bldr.build` + `os.system` node (the
-  `bruno_import_demo` shape); `bootstrap.sh` gates it on `janet` being on PATH.
+  `flush` are core names (don't define them). `janet/.tests.ae` uses
+  aeb's Janet SDK (`janet.test()` with `script(...)`, aeb v0.343+);
+  `bootstrap.sh` gates it on `janet` being on PATH.
 - **Julia backticks brace-expand.** A literal `%{http_code}` inside a `` `…` ``
   command is a parse error (`shell_parse`), so the curl format string lives in a
   `String` variable and is interpolated. Bit me in `julia/test/playback_test.jl`.

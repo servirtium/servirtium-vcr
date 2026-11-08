@@ -17,7 +17,7 @@
 # Env overrides:
 #   PREFIX        install prefix                 (default: $HOME/.local; no sudo)
 #   AETHER_REF    ae tag/branch/SHA to install   (default: $AE_FETCH below)
-#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.340)
+#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.343)
 #   MIN_AE        minimum acceptable ae version  (default: $AE_PIN below)
 #   AEB_TIMEOUT   passed through to aeb (seconds)  (optional)
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
@@ -54,7 +54,11 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-11-07 (latest): ae 0.878.0 -> 0.897.0, for std.json's `pretty` (first
+# 2026-11-08 (latest): aeb v0.340 -> v0.343, REQUIRED: janet/.tests.ae now
+# uses aeb's Janet SDK (lib/janet, first released in v0.343) instead of a
+# hand-rolled shell step. Aether unchanged at 0.897.0 (v0.343 pins its own
+# AETHER_PIN to the 0.860.0 floor; the on-PATH 0.897.0 compiles the programs).
+# 2026-11-07: ae 0.878.0 -> 0.897.0, for std.json's `pretty` (first
 # released in 0.897.0, aether #3620), which the opt-in `pretty_json` recording
 # option calls at tape-write time. Evidence-based floor: core/vcr.ae does not
 # compile on older ae. aeb unchanged (see the VERIFIED line in the commit).
@@ -373,7 +377,7 @@ AE_FETCH="v0.897.0"
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.340 == the verified release for this cut.
+#   aeb floor == AEB_REF == v0.343 == the verified release for this cut.
 #
 # v0.327 (from v0.326) is REQUIRED, coupled with AE_PIN 0.824: v0.326's bldr
 # does not compile on ae 0.818+ (E0902), and v0.327 is the first release that
@@ -426,7 +430,7 @@ AE_FETCH="v0.897.0"
 #
 # Released aeb bundles now report their version. Enforce the release floor;
 # an unversioned development build cannot establish that it meets the pin.
-AEB_REF="${AEB_REF:-v0.340}"
+AEB_REF="${AEB_REF:-v0.343}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX

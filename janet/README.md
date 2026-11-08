@@ -193,9 +193,9 @@ redaction, notes, header removal, whole-tape normalize/redact, state not leaking
 between fixtures, drift with `:fail-if-changed` and `:or-check`, discard,
 HAR round trip, structured redaction and named secrets through the shared
 `core_tests` fixtures). The HTTP client is Janet's own `net/*`; the record
-upstream is the compiled Aether `test_upstream`. aeb has no Janet SDK, so
-`.tests.ae` is the generic `bldr.build` + `os.system` node, gated by
-`bootstrap.sh` on `janet` being on PATH.
+upstream is the compiled Aether `test_upstream`. `.tests.ae` uses aeb's
+Janet SDK (`janet.test()`, aeb v0.343+), gated by `bootstrap.sh` on `janet`
+being on PATH.
 
 ## Concurrency: one server per port
 
