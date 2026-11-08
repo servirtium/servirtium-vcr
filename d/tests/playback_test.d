@@ -116,6 +116,84 @@ int main() {
         ck("new test empty", server.diagnosticsJson() == "[]");
     }
 
+    // ---- stable ordering and playback range, through the shared core_tests tapes ----
+    {
+        import std.file : tempDir, mkdirRecurse, exists, readText;
+        import core.sys.posix.unistd : getpid;
+        const root = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "../..");
+        const upstreamTape = buildNormalizedPath(root, "core_tests/tapes/stable_order_upstream.tape");
+        const dir = tempDir() ~ "/vcr-order-d-" ~ getpid().to!string;
+        mkdirRecurse(dir);
+        scope (exit) rmdirRecurse(dir);
+
+        // (a) sortJsonKeys + prettyJson writes sorted, pretty JSON
+        {
+            auto up = Vcr.playback(upstreamTape);
+            scope (exit) up.close();
+            auto rec = Vcr.record(dir ~ "/sorted.md", up.baseUrl());
+            scope (exit) rec.close();
+            rec.prettyJson(2);
+            rec.setSortJsonKeys();
+            ck("getSortJsonKeys reads back", rec.getSortJsonKeys());
+            rec.sortJsonArray("/list");
+            rec.sortJsonArrayAt("/data", "/list", "id");
+            rec.setSortResponseHeaders();
+            ck("getSortResponseHeaders reads back", rec.getSortResponseHeaders());
+            rec.sortHeaderValue("Allow");
+            ck("a bad sort path is refused", collectExceptionMsg!VcrException(rec.sortJsonArray("a/b")) !is null);
+            httpGet(rec.baseUrl() ~ "/data");
+            rec.flush();
+            ck("keys sorted and pretty-printed", readText(dir ~ "/sorted.md").canFind(
+                "{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}"));
+        }
+
+        // (b) sortJsonKeys without prettyJson is refused at emit time
+        {
+            auto up = Vcr.playback(upstreamTape);
+            scope (exit) up.close();
+            auto rec = Vcr.record(dir ~ "/refused.md", up.baseUrl());
+            scope (exit) rec.close();
+            rec.setSortJsonKeys();
+            httpGet(rec.baseUrl() ~ "/data");
+            const msg = collectExceptionMsg!VcrException(rec.flush());
+            ck("sort without prettyJson is refused", msg !is null && msg.canFind("sort_json_keys needs pretty_json"));
+            ck("nothing written when refused", !exists(dir ~ "/refused.md"));
+        }
+
+        // a record handle refuses a playback range
+        {
+            auto up = Vcr.playback(upstreamTape);
+            scope (exit) up.close();
+            auto rec = Vcr.record(dir ~ "/range.md", up.baseUrl());
+            scope (exit) rec.close();
+            ck("record handle refuses a playback range",
+               collectExceptionMsg!VcrException(rec.setPlaybackRange(0, 1)) !is null);
+            ck("no range on a record handle", rec.getPlaybackRangeFrom() == -1);
+        }
+
+        // (c) playback range: the test brings its own cookie and skips the login
+        {
+            auto rp = Vcr.playback(buildNormalizedPath(root, "core_tests/tapes/playback_range.tape"));
+            scope (exit) rp.close();
+            ck("no range by default", rp.getPlaybackRangeFrom() == -1 && rp.getPlaybackRangeTo() == -1);
+            rp.redactCredentials();
+            rp.strictIgnoreCommonHeaders();
+            rp.setPlaybackRange(7, 7);
+            ck("range reads back", rp.getPlaybackRangeFrom() == 7 && rp.getPlaybackRangeTo() == 7);
+            string withCookie(string url) {
+                return executeShell("curl -g -s -S -H 'Cookie: sid=live-session' '" ~ url ~ "'").output.strip;
+            }
+            ck("range serves the later interaction", withCookie(rp.baseUrl() ~ "/logout") == "bye");
+            ck("served interaction 7", rp.lastIndex() == 7);
+            ck("a skipped interaction is not served", withCookie(rp.baseUrl() ~ "/login") != "login-form");
+            ck("skipped interaction is named as outside the range",
+               rp.lastError().canFind("outside the playback range"));
+            ck("bad range refused", collectExceptionMsg!VcrException(rp.setPlaybackRange(9)) !is null);
+            rp.clearPlaybackRange();
+            ck("cleared range", rp.getPlaybackRangeFrom() == -1);
+        }
+    }
+
     // The tape by absolute path, derived from this source file's location, so
     // the facts don't depend on the working directory.
     const tape = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "..", "tapes",

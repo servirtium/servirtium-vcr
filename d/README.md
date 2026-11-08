@@ -119,6 +119,20 @@ EOF
   linking recipe (`-L$DIR -lservirtium_vcr -rpath $DIR` with dmd) was run by hand
   and works; the `dub.sdl` parse and the unset-variable behaviour are untested.
 
+### Stable ordering and playback range
+
+Both are opt-in; a refused rule or range throws `VcrException` (the reason is its message).
+
+- **Stable order (record side):** `setSortJsonKeys()` / `getSortJsonKeys()`,
+  `sortJsonArray(path, by)`, `sortJsonArrayAt(requestRegex, path, by)`,
+  `setSortResponseHeaders()` / `getSortResponseHeaders()`, `sortHeaderValue(name)`,
+  `clearStableOrder()`. Sorted JSON is only written pretty-printed: with a JSON sort rule and no
+  `prettyJson()`, `flush()` throws `sort_json_keys needs pretty_json: ...` and writes nothing.
+- **Playback range (playback only):** `setPlaybackRange(from, to)` replays only the tape's
+  `## Interaction N` headings `from`..`to` (0-based, inclusive; `to < 0` = through the last);
+  a record handle or a bad range throws. `clearPlaybackRange()`,
+  `getPlaybackRangeFrom()` / `getPlaybackRangeTo()` (-1 when none).
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the
