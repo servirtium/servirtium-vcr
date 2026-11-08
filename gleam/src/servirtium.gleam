@@ -340,6 +340,121 @@ pub fn set_upstream_cafile(vcr: Vcr, path: String) -> Result(Nil, String) {
   servirtium_result.from_error(nif_set_upstream_cafile(vcr.handle, path))
 }
 
+// ---- stable ordering (record side, opt-in) ---------------------------------
+// Off by default; the tape is byte-exact without them. Sorted JSON is only
+// written pretty-printed: a record with `set_sort_json_keys`/`sort_json_array*`
+// but without `set_pretty_json` is refused when the tape is written
+// (`close` returns CloseError("sort_json_keys needs pretty_json: ...")).
+
+@external(erlang, "servirtium_nif", "set_sort_json_keys")
+fn nif_set_sort_json_keys(handle: Int, on: Int) -> Nil
+
+@external(erlang, "servirtium_nif", "get_sort_json_keys")
+fn nif_get_sort_json_keys(handle: Int) -> Int
+
+/// Sort JSON object keys at every depth in recorded JSON response bodies.
+pub fn set_sort_json_keys(vcr: Vcr, on: Bool) -> Nil {
+  let _ = nif_set_sort_json_keys(vcr.handle, bool_int(on))
+  Nil
+}
+
+pub fn get_sort_json_keys(vcr: Vcr) -> Bool {
+  nif_get_sort_json_keys(vcr.handle) != 0
+}
+
+@external(erlang, "servirtium_nif", "sort_json_array")
+fn nif_sort_json_array(handle: Int, path: String, by: String) -> String
+
+/// Sort the JSON response arrays `path` selects (JSON pointer, "*" for one
+/// segment, "" the root array, or a bare member name) by member `by`
+/// ("" = each element's canonical JSON). Error carries the refusal reason.
+pub fn sort_json_array(vcr: Vcr, path: String, by: String) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_sort_json_array(vcr.handle, path, by))
+}
+
+@external(erlang, "servirtium_nif", "sort_json_array_at")
+fn nif_sort_json_array_at(handle: Int, request: String, path: String, by: String) -> String
+
+/// The same, only for requests whose path (query included) matches the
+/// regex `request`.
+pub fn sort_json_array_at(vcr: Vcr, request: String, path: String, by: String) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_sort_json_array_at(vcr.handle, request, path, by))
+}
+
+@external(erlang, "servirtium_nif", "set_sort_response_headers")
+fn nif_set_sort_response_headers(handle: Int, on: Int) -> Nil
+
+@external(erlang, "servirtium_nif", "get_sort_response_headers")
+fn nif_get_sort_response_headers(handle: Int) -> Int
+
+/// Sort response header lines by name (case-insensitive).
+pub fn set_sort_response_headers(vcr: Vcr, on: Bool) -> Nil {
+  let _ = nif_set_sort_response_headers(vcr.handle, bool_int(on))
+  Nil
+}
+
+pub fn get_sort_response_headers(vcr: Vcr) -> Bool {
+  nif_get_sort_response_headers(vcr.handle) != 0
+}
+
+@external(erlang, "servirtium_nif", "sort_header_value")
+fn nif_sort_header_value(handle: Int, name: String) -> String
+
+/// Sort one response header's comma-separated items ("Allow").
+pub fn sort_header_value(vcr: Vcr, name: String) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_sort_header_value(vcr.handle, name))
+}
+
+@external(erlang, "servirtium_nif", "clear_stable_order")
+fn nif_clear_stable_order(handle: Int) -> Nil
+
+/// Every stable-order rule off.
+pub fn clear_stable_order(vcr: Vcr) -> Nil {
+  let _ = nif_clear_stable_order(vcr.handle)
+  Nil
+}
+
+fn bool_int(on: Bool) -> Int {
+  case on {
+    True -> 1
+    False -> 0
+  }
+}
+
+// ---- playback range (playback only) ----------------------------------------
+
+@external(erlang, "servirtium_nif", "set_playback_range")
+fn nif_set_playback_range(handle: Int, from: Int, to: Int) -> String
+
+@external(erlang, "servirtium_nif", "clear_playback_range")
+fn nif_clear_playback_range(handle: Int) -> Nil
+
+@external(erlang, "servirtium_nif", "get_playback_range_from")
+fn nif_get_playback_range_from(handle: Int) -> Int
+
+@external(erlang, "servirtium_nif", "get_playback_range_to")
+fn nif_get_playback_range_to(handle: Int) -> Int
+
+/// Replay only interactions `from`..`to` (0-based, inclusive, the tape's
+/// "## Interaction N" numbers; `to` < 0 = through the last). Error carries the
+/// refusal reason, e.g. on a record handle or a range past the tape.
+pub fn set_playback_range(vcr: Vcr, from: Int, to: Int) -> Result(Nil, String) {
+  servirtium_result.from_error(nif_set_playback_range(vcr.handle, from, to))
+}
+
+pub fn clear_playback_range(vcr: Vcr) -> Nil {
+  let _ = nif_clear_playback_range(vcr.handle)
+  Nil
+}
+
+/// The range in force, first and last interaction; -1 when none is set.
+pub fn get_playback_range_from(vcr: Vcr) -> Int {
+  nif_get_playback_range_from(vcr.handle)
+}
+
+pub fn get_playback_range_to(vcr: Vcr) -> Int {
+  nif_get_playback_range_to(vcr.handle)
+}
 @external(erlang, "servirtium_nif", "last_error_ex")
 fn nif_last_error_ex(handle: Int, consume: Int) -> String
 @external(erlang, "servirtium_nif", "diagnostics_json")

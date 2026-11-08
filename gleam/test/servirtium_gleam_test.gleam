@@ -11,6 +11,7 @@
 //// assertions (it raises on mismatch, no eunit), but `main` invokes the test
 //// directly and `halt`s 0/1 so `gleam test` reports pass/fail correctly.
 
+import gleam/int
 import gleam/string
 import gleam/option.{None, Some}
 import gleeunit/should
@@ -26,6 +27,8 @@ pub fn main() {
   named_secrets_test()
   structured_redaction_test()
   replay_diagnostics_test()
+  stable_order_test()
+  playback_range_test()
   playback_single_get_test()
   let _ = io_format("PASS: gleam servirtium playback~n", [])
   halt(0)
@@ -148,4 +151,70 @@ pub fn named_secrets_test() {
   servirtium.assert_no_mismatches(replay) |> should.equal(Ok(Nil))
   servirtium.close(replay) |> should.equal(servirtium.Closed)
   let _ = shell("rm -r '" <> directory <> "'")
+}
+
+@external(erlang, "servirtium_json_upstream", "start")
+fn json_upstream_start(body: String) -> Int
+@external(erlang, "servirtium_json_upstream", "stop")
+fn json_upstream_stop(port: Int) -> Nil
+
+// Stable ordering: (a) sort_json_keys + pretty_json writes sorted, pretty JSON;
+// (b) sort_json_keys without pretty_json is refused when the tape is written.
+pub fn stable_order_test() {
+  let directory = "/tmp/vcr-stable-gleam-" <> from_charlist(getpid())
+  let _ = shell("mkdir -p '" <> directory <> "'")
+  let port = json_upstream_start("{\"b\":1,\"a\":{\"z\":2,\"y\":3}}")
+  let upstream = "http://127.0.0.1:" <> int.to_string(port)
+
+  let sorted = directory <> "/sorted.md"
+  let rec = servirtium.record(sorted, upstream)
+  servirtium.set_sort_json_keys(rec, True)
+  servirtium.get_sort_json_keys(rec) |> should.be_true()
+  servirtium.set_pretty_json(rec, 2)
+  let _ = servirtium.curl(servirtium.base_url(rec) <> "/data")
+  servirtium.close(rec) |> should.equal(servirtium.Closed)
+  shell("cat '" <> sorted <> "'")
+  |> string.contains("\"a\": {\n    \"y\": 3,\n    \"z\": 2\n  },\n  \"b\": 1")
+  |> should.be_true()
+
+  let refused = servirtium.record(directory <> "/refused.md", upstream)
+  servirtium.set_sort_json_keys(refused, True)
+  let _ = servirtium.curl(servirtium.base_url(refused) <> "/data")
+  case servirtium.close(refused) {
+    servirtium.CloseError(msg) ->
+      msg |> string.contains("sort_json_keys needs pretty_json") |> should.be_true()
+    servirtium.Closed -> panic as "expected sort_json_keys without pretty_json to be refused"
+  }
+
+  let probe = servirtium.record(directory <> "/probe.md", "http://127.0.0.1:1")
+  servirtium.sort_header_value(probe, "") |> should.be_error()
+  servirtium.set_sort_response_headers(probe, True)
+  servirtium.get_sort_response_headers(probe) |> should.be_true()
+  servirtium.clear_stable_order(probe)
+  servirtium.get_sort_response_headers(probe) |> should.be_false()
+  let _ = servirtium.close(probe)
+  json_upstream_stop(port)
+  let _ = shell("rm -r '" <> directory <> "'")
+}
+
+// Playback range: skip the first interaction, serve a later one; a record
+// handle refuses a range.
+pub fn playback_range_test() {
+  let vcr = servirtium.playback("tapes/range.md")
+  servirtium.get_playback_range_from(vcr) |> should.equal(-1)
+  servirtium.set_playback_range(vcr, 1, -1) |> should.equal(Ok(Nil))
+  servirtium.get_playback_range_from(vcr) |> should.equal(1)
+  servirtium.get_playback_range_to(vcr) |> should.equal(2)
+  servirtium.curl(servirtium.base_url(vcr) <> "/step/second")
+  |> trim_trailing_newlines()
+  |> should.equal("second-body")
+  servirtium.last_index(vcr) |> should.equal(1)
+  servirtium.set_playback_range(vcr, 9, -1) |> should.be_error()
+  servirtium.clear_playback_range(vcr)
+  servirtium.get_playback_range_from(vcr) |> should.equal(-1)
+  let _ = servirtium.close(vcr)
+
+  let rec = servirtium.record("/tmp/vcr-range-refused-gleam-" <> from_charlist(getpid()) <> ".md", "http://127.0.0.1:1")
+  servirtium.set_playback_range(rec, 0, -1) |> should.be_error()
+  let _ = servirtium.close(rec)
 }

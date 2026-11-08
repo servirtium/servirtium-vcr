@@ -122,6 +122,40 @@ ERL_LIBS=../erlang/_build gleam test
 `gleam test` honors `ERL_LIBS`, so the `servirtium_nif` module and its
 `priv/servirtium_nif.so` load over the BEAM the standard OTP way.
 
+## Stable ordering and playback range
+
+Opt-in, off by default. Stable ordering is record side, for a service that sends
+the same response in a different order every run; the tape is byte-exact without it.
+
+```gleam
+let rec = servirtium.record("tapes/data.tape.md", upstream)
+servirtium.set_pretty_json(rec, 2)               // sorted JSON is only written pretty-printed
+servirtium.set_sort_json_keys(rec, True)         // object keys sorted at every depth
+let assert Ok(_) = servirtium.sort_json_array(rec, "/items", "/id")            // path, by
+let assert Ok(_) = servirtium.sort_json_array_at(rec, "^/users", "", "name")   // request regex, path, by
+servirtium.set_sort_response_headers(rec, True)
+let assert Ok(_) = servirtium.sort_header_value(rec, "Allow")
+// ... drive the system under test ...
+let assert servirtium.Closed = servirtium.close(rec)
+```
+
+A rule the core refuses comes back as `Error(reason)`. Sorting JSON without
+`set_pretty_json` is refused when the tape is written, so `close` returns
+`CloseError("sort_json_keys needs pretty_json: ...")` and writes nothing.
+`get_sort_json_keys` / `get_sort_response_headers` read the switches back;
+`clear_stable_order` turns every rule off.
+
+Replay only a slice of a tape, by the tape's `## Interaction N` number (0-based,
+inclusive; `to < 0` = through the last):
+
+```gleam
+let vcr = servirtium.playback("tapes/journey.md")
+let assert Ok(_) = servirtium.set_playback_range(vcr, 4, 6)   // Error(reason) if refused
+servirtium.get_playback_range_from(vcr)                       // -1 when none is set
+servirtium.clear_playback_range(vcr)
+```
+
+A record handle refuses a range, so a test cannot overwrite a journey's tape with a slice.
 ## Concurrency: one server per port
 
 The Aether VCR runs **one server per port**: each handle owns its own tape,
