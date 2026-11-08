@@ -37,7 +37,21 @@ static char *http_get(const char *url) {
     FILE *p;
     size_t n;
 
-    snprintf(cmd, sizeof(cmd), "curl -s -S '%s'", url);
+    snprintf(cmd, sizeof(cmd), "curl -g -s -S '%s'", url);
+    p = popen(cmd, "r");
+    if (p == NULL) return NULL;
+    n = fread(buf, 1, sizeof(buf) - 1, p);
+    pclose(p);
+    buf[n] = '\0';
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = '\0';
+    return strdup(buf);
+}
+
+/* As http_get, sending a session cookie of the caller's own. */
+static char *http_get_cookie(const char *url) {
+    char cmd[1024], buf[4096];
+    FILE *p; size_t n;
+    snprintf(cmd, sizeof(cmd), "curl -g -s -S -H 'Cookie: sid=live-session' '%s'", url);
     p = popen(cmd, "r");
     if (p == NULL) return NULL;
     n = fread(buf, 1, sizeof(buf) - 1, p);
@@ -101,6 +115,91 @@ static void named_secrets(const char *tape) {
     value=sv_base_url(replay); snprintf(command,sizeof command,"'%s' drive '%s'",fixture,value.ptr); sv_free(value);
     ck("secret playback driver",system(command)==0); value=sv_assert_no_mismatches(replay); ck("secret matches",value.len==0); sv_free(value); sv_close(replay);
     unlink(target); snprintf(target,sizeof target,"%s/url",directory); unlink(target); snprintf(target,sizeof target,"%s/done",directory); unlink(target); rmdir(directory);
+}
+
+
+/* Stable ordering and playback range, through the shared core_tests tapes. A
+ * playback handle serves a JSON body with unsorted keys; a record handle
+ * proxies it. */
+static void stable_order_and_range(const char *tape) {
+    char root[4096], upstream_tape[8192], range_tape[8192], out[4096], url[512], content[8192];
+    char dir[] = "/tmp/vcr-order-c-XXXXXX";
+    char *part, *body; int i; FILE *f; size_t n; sv_vcr *up, *rec, *rp; sv_str base, v;
+    snprintf(root, sizeof root, "%s", tape);
+    for (i=0; i<3; ++i) { part = strrchr(root, '/'); if (part) *part = '\0'; }
+    snprintf(upstream_tape, sizeof upstream_tape, "%s/core_tests/tapes/stable_order_upstream.tape", root);
+    snprintf(range_tape, sizeof range_tape, "%s/core_tests/tapes/playback_range.tape", root);
+    ck("order temp dir", mkdtemp(dir) != NULL);
+
+    /* (a) sort_json_keys + pretty_json writes sorted, pretty JSON */
+    up = sv_playback(upstream_tape);
+    ck("order upstream opens", up != NULL); if (!up) return;
+    base = sv_base_url(up);
+    snprintf(out, sizeof out, "%s/sorted.md", dir);
+    rec = sv_record(out, base.ptr); sv_free(base);
+    ck("order recorder opens", rec != NULL); if (!rec) return;
+    sv_set_sort_json_keys(rec, 1); sv_set_pretty_json(rec, 2);
+    ck("get_sort_json_keys reads back", sv_get_sort_json_keys(rec) == 1);
+    v = sv_sort_json_array(rec, "/list", ""); ck("sort_json_array accepted", v.len == 0); sv_free(v);
+    v = sv_sort_json_array_at(rec, "/data", "/list", "id"); ck("sort_json_array_at accepted", v.len == 0); sv_free(v);
+    sv_set_sort_response_headers(rec, 1);
+    ck("get_sort_response_headers reads back", sv_get_sort_response_headers(rec) == 1);
+    v = sv_sort_header_value(rec, "Allow"); ck("sort_header_value accepted", v.len == 0); sv_free(v);
+    v = sv_base_url(rec); snprintf(url, sizeof url, "%s/data", v.ptr); sv_free(v);
+    body = http_get(url); free(body);
+    v = sv_close_and_flush(rec, NULL); ck("sorted flush ok", v.len == 0); sv_free(v);
+    f = fopen(out, "r"); n = 0; if (f) { n = fread(content, 1, sizeof(content) - 1, f); fclose(f); } content[n] = '\0';
+    ck("keys sorted and pretty-printed",
+       strstr(content, "{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}") != NULL);
+
+    /* (b) sort_json_keys without pretty_json is refused at emit time */
+    snprintf(out, sizeof out, "%s/refused.md", dir);
+    base = sv_base_url(up);
+    rec = sv_record(out, base.ptr); sv_free(base);
+    sv_set_sort_json_keys(rec, 1);
+    v = sv_base_url(rec); snprintf(url, sizeof url, "%s/data", v.ptr); sv_free(v);
+    sv_reset_cursor(up);
+    body = http_get(url); free(body);
+    v = sv_close_and_flush(rec, NULL);
+    ck("sort without pretty_json is refused", v.len > 0 && strstr(v.ptr, "sort_json_keys needs pretty_json") != NULL);
+    sv_free(v);
+    f = fopen(out, "r");
+    ck("nothing written when refused", f == NULL);
+    if (f) fclose(f);
+    sv_close(up);
+
+    /* (c) playback range: the test brings its own cookie and skips the login */
+    rp = sv_playback(range_tape);
+    ck("range playback opens", rp != NULL); if (!rp) return;
+    ck("no range by default", sv_get_playback_range_from(rp) == -1 && sv_get_playback_range_to(rp) == -1);
+    v = sv_redact_credentials(rp); sv_free(v);
+    sv_strict_ignore_common_headers(rp);
+    v = sv_set_playback_range(rp, 4, 6); ck("range 4..6 accepted", v.len == 0); sv_free(v);
+    ck("range reads back", sv_get_playback_range_from(rp) == 4 && sv_get_playback_range_to(rp) == 6);
+    base = sv_base_url(rp);
+    snprintf(url, sizeof url, "%s/checkout/{{uuid-1}}/card", base.ptr);
+    body = http_get_cookie(url);
+    ck("range serves the first interaction in the range", body != NULL && strcmp(body, "card-form") == 0);
+    ck("served interaction 4", sv_last_index(rp) == 4);
+    free(body);
+    snprintf(url, sizeof url, "%s/login", base.ptr); sv_free(base);
+    body = http_get_cookie(url);
+    ck("a skipped interaction is not served", body != NULL && strcmp(body, "login-form") != 0);
+    v = sv_last_error(rp);
+    ck("skipped interaction is named as outside the range", strstr(v.ptr, "outside the playback range") != NULL);
+    sv_free(v); free(body);
+    v = sv_set_playback_range(rp, 9, -1); ck("bad range refused", v.len > 0); sv_free(v);
+    sv_clear_playback_range(rp);
+    ck("cleared range", sv_get_playback_range_from(rp) == -1);
+    sv_close(rp);
+    up = sv_playback(upstream_tape);
+    base = sv_base_url(up);
+    snprintf(out, sizeof out, "%s/range.md", dir);
+    rec = sv_record(out, base.ptr); sv_free(base);
+    v = sv_set_playback_range(rec, 0, 1);
+    ck("record handle refuses a playback range", v.len > 0); sv_free(v);
+    sv_close(rec); sv_close(up);
+    { char cmd[8192]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir); (void)system(cmd); }
 }
 
 int main(int argc, char **argv) {
@@ -258,6 +357,7 @@ int main(int argc, char **argv) {
         sv_close(server);
     }
 
+    stable_order_and_range(tape);
     named_secrets(tape);
 
     if (failures == 0) {

@@ -76,6 +76,18 @@ extern char *aether_vcr_embed_redact_credentials(sv_handle h);
 extern char *aether_vcr_embed_redact_credential_header(sv_handle h, const char *name);
 extern char *aether_vcr_embed_set_upstream_cafile(sv_handle h, const char *path);
 extern char *aether_vcr_embed_add_license_notice(sv_handle h, const char *text);
+extern void  aether_vcr_embed_set_sort_json_keys(sv_handle h, int on);
+extern int   aether_vcr_embed_get_sort_json_keys(sv_handle h);
+extern char *aether_vcr_embed_sort_json_array(sv_handle h, const char *path, const char *by);
+extern char *aether_vcr_embed_sort_json_array_at(sv_handle h, const char *request, const char *path, const char *by);
+extern void  aether_vcr_embed_set_sort_response_headers(sv_handle h, int on);
+extern int   aether_vcr_embed_get_sort_response_headers(sv_handle h);
+extern char *aether_vcr_embed_sort_header_value(sv_handle h, const char *name);
+extern void  aether_vcr_embed_clear_stable_order(sv_handle h);
+extern char *aether_vcr_embed_set_playback_range(sv_handle h, int from, int to);
+extern void  aether_vcr_embed_clear_playback_range(sv_handle h);
+extern int   aether_vcr_embed_get_playback_range_from(sv_handle h);
+extern int   aether_vcr_embed_get_playback_range_to(sv_handle h);
 extern void  aether_vcr_embed_clear_redactions(sv_handle h);
 extern void  aether_vcr_embed_clear_unredactions(sv_handle h);
 extern void  aether_vcr_embed_clear_normalizations(sv_handle h);
@@ -470,6 +482,58 @@ sv_str sv_set_upstream_cafile(sv_vcr *vcr, const char *path) {
 sv_str sv_add_license_notice(sv_vcr *vcr, const char *text) {
     if (vcr == NULL) return empty_str();
     return adopt(aether_vcr_embed_add_license_notice(vcr->h, text));
+}
+
+void sv_set_sort_json_keys(sv_vcr *vcr, int on) {
+    if (vcr != NULL) aether_vcr_embed_set_sort_json_keys(vcr->h, on);
+}
+
+int sv_get_sort_json_keys(sv_vcr *vcr) {
+    return vcr != NULL ? aether_vcr_embed_get_sort_json_keys(vcr->h) : 0;
+}
+
+sv_str sv_sort_json_array(sv_vcr *vcr, const char *path, const char *by) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_sort_json_array(vcr->h, path, by));
+}
+
+sv_str sv_sort_json_array_at(sv_vcr *vcr, const char *request, const char *path, const char *by) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_sort_json_array_at(vcr->h, request, path, by));
+}
+
+void sv_set_sort_response_headers(sv_vcr *vcr, int on) {
+    if (vcr != NULL) aether_vcr_embed_set_sort_response_headers(vcr->h, on);
+}
+
+int sv_get_sort_response_headers(sv_vcr *vcr) {
+    return vcr != NULL ? aether_vcr_embed_get_sort_response_headers(vcr->h) : 0;
+}
+
+sv_str sv_sort_header_value(sv_vcr *vcr, const char *name) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_sort_header_value(vcr->h, name));
+}
+
+void sv_clear_stable_order(sv_vcr *vcr) {
+    if (vcr != NULL) aether_vcr_embed_clear_stable_order(vcr->h);
+}
+
+sv_str sv_set_playback_range(sv_vcr *vcr, int from, int to) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_set_playback_range(vcr->h, from, to));
+}
+
+void sv_clear_playback_range(sv_vcr *vcr) {
+    if (vcr != NULL) aether_vcr_embed_clear_playback_range(vcr->h);
+}
+
+int sv_get_playback_range_from(sv_vcr *vcr) {
+    return vcr != NULL ? aether_vcr_embed_get_playback_range_from(vcr->h) : -1;
+}
+
+int sv_get_playback_range_to(sv_vcr *vcr) {
+    return vcr != NULL ? aether_vcr_embed_get_playback_range_to(vcr->h) : -1;
 }
 
 void sv_clear_redactions(sv_vcr *vcr) {

@@ -124,6 +124,22 @@ yourself (`aeb c/.package.ae` writes a `servirtium.pc`; no release asset carries
 - Do not vendor the library into git; do keep the two source files at one tag.
 - Windows: use the `.dll` asset with its `.dll.lib` import library by hand.
 
+### Stable ordering and playback range
+
+Both are opt-in and one call each; strings come back `""` on success, else the reason
+(release with `sv_free`).
+
+- **Stable order (record side):** `sv_set_sort_json_keys(vcr, 1)` (and `sv_get_sort_json_keys`),
+  `sv_sort_json_array(vcr, path, by)`, `sv_sort_json_array_at(vcr, request_regex, path, by)`,
+  `sv_set_sort_response_headers(vcr, 1)` (and `sv_get_sort_response_headers`),
+  `sv_sort_header_value(vcr, "Allow")`, `sv_clear_stable_order(vcr)`. Sorted JSON is only
+  written pretty-printed: with a JSON sort rule and no `sv_set_pretty_json`, `sv_close_and_flush`
+  returns `sort_json_keys needs pretty_json: ...` and writes nothing.
+- **Playback range (playback only):** `sv_set_playback_range(vcr, from, to)` replays only the
+  tape's `## Interaction N` headings `from`..`to` (0-based, inclusive; `to < 0` = through the last);
+  a record handle or a bad range is refused. `sv_clear_playback_range`,
+  `sv_get_playback_range_from` / `_to` (-1 when none).
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

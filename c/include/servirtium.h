@@ -228,6 +228,36 @@ void sv_set_pretty_xml(sv_vcr *vcr, int indent);
 void sv_set_pretty_json(sv_vcr *vcr, int indent);
 /* Current pretty-JSON indent (0 = off). */
 int sv_get_pretty_json(sv_vcr *vcr);
+/* Opt-in stable order (record side; all off by default, the tape is byte-exact
+ * without them). Sorted JSON is only written pretty-printed: with any JSON sort
+ * rule registered and pretty_json off, sv_close_and_flush (and the check
+ * variants) return "sort_json_keys needs pretty_json: ..." and write nothing. */
+/* Sort JSON object keys at every depth in recorded JSON response bodies. */
+void sv_set_sort_json_keys(sv_vcr *vcr, int on);
+int sv_get_sort_json_keys(sv_vcr *vcr);
+/* Sort the JSON response arrays `path` selects (JSON pointer from the root, "*"
+ * for one segment, "" the root array, or a bare member name) by member `by`
+ * ("" = each element's canonical JSON). Returns "" or the refusal reason. */
+sv_str sv_sort_json_array(sv_vcr *vcr, const char *path, const char *by);
+/* The same, only for requests whose path (query included) matches `request`
+ * (a regex). Returns "" or the refusal reason. */
+sv_str sv_sort_json_array_at(sv_vcr *vcr, const char *request, const char *path, const char *by);
+/* Sort response header lines by name (case-insensitive). */
+void sv_set_sort_response_headers(sv_vcr *vcr, int on);
+int sv_get_sort_response_headers(sv_vcr *vcr);
+/* Sort one response header's comma-separated items ("Allow"). "" or the reason. */
+sv_str sv_sort_header_value(sv_vcr *vcr, const char *name);
+/* Turn every stable-order rule off. */
+void sv_clear_stable_order(sv_vcr *vcr);
+/* Playback only: replay just interactions from..to of the tape (0-based,
+ * inclusive; to < 0 = through the last). Selection is by interaction number.
+ * Returns "" or the refusal reason (a record handle refuses; so does a bad
+ * range). Call after opening, before traffic. */
+sv_str sv_set_playback_range(sv_vcr *vcr, int from, int to);
+void sv_clear_playback_range(sv_vcr *vcr);
+/* The range's ends; -1 when none is set. */
+int sv_get_playback_range_from(sv_vcr *vcr);
+int sv_get_playback_range_to(sv_vcr *vcr);
 void sv_clear_redactions(sv_vcr *vcr);
 void sv_clear_unredactions(sv_vcr *vcr);
 void sv_clear_normalizations(sv_vcr *vcr);
