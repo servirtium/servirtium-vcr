@@ -90,6 +90,12 @@ typo does not silently do nothing. Every option has an equivalent function
 | `:indent-code-blocks` / `:emphasize-http-verbs` | true | `indent-code-blocks` / `emphasize-http-verbs` |
 | `:pretty-xml` / `:pretty-json` | indent 1..16 (`true` = 2) | `set-pretty-xml` / `set-pretty-json` |
 | `:rules-footer` | bool | `set-rules-footer` |
+| `:sort-json-keys` | bool (record; needs `:pretty-json`) | `set-sort-json-keys` |
+| `:sort-json-arrays` | `[[path by] ...]` (record; needs `:pretty-json`) | `sort-json-array` |
+| `:sort-json-arrays-at` | `[[request-regex path by] ...]` (record; needs `:pretty-json`) | `sort-json-array-at` |
+| `:sort-response-headers` | bool (record) | `set-sort-response-headers` |
+| `:sort-header-values` | name or `[names]` (record) | `sort-header-value` |
+| `:playback-range` | `[from to]` (playback only) | `set-playback-range` |
 | `:license-notice` | text | `add-license-notice` |
 | `:upstream-cafile` | PEM path | `set-upstream-cafile` |
 | `:tls` / `:tls-pem` | `[cert key]` (paths / in-memory PEM) | `set-tls` / `set-tls-pem` |
@@ -98,6 +104,44 @@ typo does not silently do nothing. Every option has an equivalent function
 
 Fields are the keywords `:path`, `:response-body`, `:request-headers`,
 `:request-body`, `:response-headers` (and `:response` for substitutions).
+
+### Stable ordering (record; opt-in)
+
+For a service that sends the same response in a different order every run. Each
+rule is off by default; the tape is byte-exact without them.
+
+```janet
+(servirtium/with-record [vcr tape upstream
+                         {:pretty-json 2                            # required by the JSON rules
+                          :sort-json-keys true                      # object keys sorted at every depth
+                          :sort-json-arrays [["/items" "/id"]]      # [path by]
+                          :sort-json-arrays-at [["^/users" "" "name"]] # [request-regex path by]
+                          :sort-response-headers true               # header lines sorted by name
+                          :sort-header-values ["Allow"]}]           # one header's comma-separated items
+  ...)
+```
+
+Sorted JSON is only written pretty-printed: a record with `:sort-json-keys` or a
+sort-array rule but without `:pretty-json` is refused when the tape is written,
+so `flush-tape` (and so `with-record`) raises with "sort_json_keys needs
+pretty_json: sorted JSON is only written pretty-printed (turn pretty_json on)"
+and writes nothing. A rule the core refuses outright raises from `record`.
+
+### Playback range (playback only)
+
+Replay only interactions `from`..`to` of a tape, by the tape's `## Interaction N`
+number (0-based, inclusive; `to` < 0 = through the last). Interactions outside the
+range are never served.
+
+```janet
+(servirtium/with-playback [vcr tape {:playback-range [4 6]}]
+  (servirtium/set-playback-range vcr 4 -1)   # raises when refused
+  (servirtium/get-playback-range vcr)        # [4 6], or nil when none is set
+  (servirtium/clear-playback-range vcr))
+```
+
+A record server refuses a range (`set-playback-range` raises), so a test cannot
+silently overwrite a journey's tape with a slice.
 
 ### Redaction and unredaction
 

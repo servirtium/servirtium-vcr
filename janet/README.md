@@ -77,7 +77,9 @@ signatures are one table (`abi` in `servirtium/init.janet`), copied from
 # match-header, set-strict-headers, set-match-json-body, set-match-multiple, static-content,
 # untaped, note, normalize-whole-tape, redact-whole-tape, add-license-notice,
 # set-pretty-json, remove-transport-headers, remove-cloud-headers, redact-credentials,
-# redact-credential-header, set-upstream-cafile, set-tls, ...
+# redact-credential-header, set-upstream-cafile, set-tls, set-sort-json-keys, sort-json-array,
+# sort-json-array-at, set-sort-response-headers, sort-header-value, clear-stable-order,
+# set-playback-range, clear-playback-range, get-playback-range, ...
 ```
 
 Every function has a docstring (`(doc servirtium/playback)`). Full tour and the

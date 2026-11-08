@@ -29,6 +29,8 @@ the binding's `test/*.janet` suite against the real native library, unless noted
 | Credential presets | yes | yes | `:redact-credentials` / `:redact-credential-headers` | yes |
 | License notice | yes | yes | `:license-notice` / `add-license-notice` | yes |
 | Pretty JSON / pretty XML | yes | yes | `:pretty-json` / `:pretty-xml` | yes (JSON output checked) |
+| Stable ordering (record, opt-in) | yes | yes | `:sort-json-keys` `:sort-json-arrays` `:sort-json-arrays-at` `:sort-response-headers` `:sort-header-values` (JSON sorting needs `:pretty-json`) | yes |
+| Playback range (replay a slice of a tape) | yes | yes | `:playback-range` / `set-playback-range` | yes |
 | Upstream CA file | yes | yes | `:upstream-cafile` | core probe (`tls_probe.ae`) |
 | TLS serving | yes | yes | `:tls` / `:tls-pem` / `last-tls-protocol` | rejection only |
 | Format options (indent, emphasize, rules footer) | yes | yes | `:indent-code-blocks` `:emphasize-http-verbs` `:rules-footer` | accepted |

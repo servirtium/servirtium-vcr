@@ -228,4 +228,16 @@
     (h/eq (servirtium/outcomes 7) :record-error)
     (h/eq (length servirtium/outcomes) 8)))
 
+(h/testcase "a playback range skips early interactions and serves a later one"
+  (fn []
+    (servirtium/with-playback [vcr (tape "range.md") {:playback-range [1 -1]}]
+      (h/eq (servirtium/get-playback-range vcr) [1 2] "range")
+      (h/eq (h/get-body (servirtium/base-url vcr) "/step/second") "second-body" "interaction 1 is served")
+      (h/eq (servirtium/last-index vcr) 1 "last-index")
+      # interaction 0 is outside the range: never served
+      (h/truthy (not= 200 (h/get-status (servirtium/base-url vcr) "/step/first")) "outside the range")
+      (h/contains (servirtium/last-error vcr) "outside the playback range" "diagnostic")
+      (h/truthy (h/raises (fn [] (servirtium/set-playback-range vcr 9 -1))) "a range past the tape raises")
+      (servirtium/clear-playback-range vcr)
+      (h/eq (servirtium/get-playback-range vcr) nil "cleared"))))
 (h/done "playback")

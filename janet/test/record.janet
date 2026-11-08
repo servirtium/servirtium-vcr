@@ -257,4 +257,49 @@
       (h/contains (h/read-file har) "\"log\"" "exported HAR")
       (h/truthy ((h/raises (fn [] (servirtium/har-import "/nonexistent.har" tape))) :message) "missing HAR is an error"))))
 
+(h/testcase "sort-json-keys with pretty-json writes sorted, pretty JSON"
+  (fn []
+    (def json "{\"b\":1,\"a\":{\"z\":2,\"y\":3}}")
+    (def up (h/start-upstream {:body json :content-type "application/json"}))
+    (def tape (h/temp-path "sorted.md"))
+    (defer (do ((up :close)) (h/rm tape))
+      (servirtium/with-record [rec tape (up :base-url) {:sort-json-keys true :pretty-json 2}]
+        (h/truthy (servirtium/get-sort-json-keys rec) "sort-json-keys is on")
+        (h/eq (h/get-body (servirtium/base-url rec) "/data") json "the live body is untouched"))
+      (h/contains (h/read-file tape) "\"a\": {\n    \"y\": 3,\n    \"z\": 2\n  },\n  \"b\": 1"
+                  "sorted, pretty tape"))))
+
+(h/testcase "sort-json-keys without pretty-json is refused when the tape is written"
+  (fn []
+    (def up (h/start-upstream {:body "{\"b\":1,\"a\":2}" :content-type "application/json"}))
+    (def tape (h/temp-path "refused.md"))
+    (defer (do ((up :close)) (h/rm tape))
+      (def rec (servirtium/record tape (up :base-url) {:sort-json-keys true}))
+      (h/get-body (servirtium/base-url rec) "/data")
+      (def err (h/raises (fn [] (servirtium/flush-tape rec))))
+      (h/contains (err :message) "sort_json_keys needs pretty_json" "refusal message")
+      (h/eq (h/read-file tape) nil "nothing written"))))
+
+(h/testcase "refused rules raise; the switches read back and clear"
+  (fn []
+    (def tape (h/temp-path "probe.md"))
+    (defer (h/rm tape)
+      (h/truthy (h/raises (fn [] (servirtium/record tape "http://127.0.0.1:1" {:sort-header-values [""]})))
+                "an empty header name is refused")
+      (def rec (servirtium/record tape "http://127.0.0.1:1" {:sort-response-headers true}))
+      (defer (servirtium/stop rec)
+        (h/truthy (servirtium/get-sort-response-headers rec) "on")
+        (servirtium/clear-stable-order rec)
+        (h/eq (servirtium/get-sort-response-headers rec) false "cleared")))))
+
+(h/testcase "a record server refuses a playback range"
+  (fn []
+    (def tape (h/temp-path "range-refused.md"))
+    (defer (h/rm tape)
+      (def rec (servirtium/record tape "http://127.0.0.1:1"))
+      (defer (servirtium/stop rec)
+        (h/truthy (h/raises (fn [] (servirtium/set-playback-range rec 0 -1)))
+                  "set-playback-range raises on a record server"))
+      (h/truthy (h/raises (fn [] (servirtium/record tape "http://127.0.0.1:1" {:playback-range [0 -1]})))
+                ":playback-range raises on a record server"))))
 (h/done "record")

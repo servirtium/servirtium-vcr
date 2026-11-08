@@ -153,6 +153,18 @@
    "get_pretty_xml" [:int32 :ptr]
    "set_pretty_json" [:void :ptr :int32]
    "get_pretty_json" [:int32 :ptr]
+   "set_sort_json_keys" [:void :ptr :int32]
+   "get_sort_json_keys" [:int32 :ptr]
+   "sort_json_array" [:ptr :ptr :string :string]
+   "sort_json_array_at" [:ptr :ptr :string :string :string]
+   "set_sort_response_headers" [:void :ptr :int32]
+   "get_sort_response_headers" [:int32 :ptr]
+   "sort_header_value" [:ptr :ptr :string]
+   "clear_stable_order" [:void :ptr]
+   "set_playback_range" [:ptr :ptr :int32 :int32]
+   "clear_playback_range" [:void :ptr]
+   "get_playback_range_from" [:int32 :ptr]
+   "get_playback_range_to" [:int32 :ptr]
    "set_match_multiple" [:void :ptr :int32]
    "match_header" [:void :ptr :string]
    "clear_match_headers" [:void :ptr]
@@ -465,6 +477,83 @@
 (defn get-pretty-json "The current pretty-JSON indent (0 = off)." [srv]
   (c "get_pretty_json" (any-handle srv "get_pretty_json")))
 
+# Stable ordering (record side, all opt-in; the tape is byte-exact without
+# them). Sorted JSON is only written pretty-printed: a record with
+# set-sort-json-keys or sort-json-array* but without set-pretty-json is refused
+# when the tape is written (`flush-tape` raises "sort_json_keys needs
+# pretty_json: ...").
+
+(defn set-sort-json-keys
+  "Record: sort JSON object keys at every depth in recorded JSON response
+  bodies. Needs `set-pretty-json`, or the tape is refused when written."
+  [srv on]
+  (c "set_sort_json_keys" (live srv "set_sort_json_keys") (flag on)) nil)
+
+(defn get-sort-json-keys "Whether `set-sort-json-keys` is on." [srv]
+  (not= 0 (c "get_sort_json_keys" (any-handle srv "get_sort_json_keys"))))
+
+(defn sort-json-array
+  ```
+  Record: sort the JSON response arrays `path` selects (a JSON pointer from the
+  root, "*" for any one segment, "" the root array, or a bare member name) by
+  member `by` ("" sorts by each element's canonical JSON). Raises with the
+  core's reason if the rule is refused.
+  ```
+  [srv path by]
+  (check "sort_json_array"
+         (c "sort_json_array" (live srv "sort_json_array")
+            (str "sort_json_array" path) (str "sort_json_array" by))))
+
+(defn sort-json-array-at
+  "As `sort-json-array`, only for requests whose path (query included) matches
+  the regex `request`."
+  [srv request path by]
+  (check "sort_json_array_at"
+         (c "sort_json_array_at" (live srv "sort_json_array_at")
+            (str "sort_json_array_at" request) (str "sort_json_array_at" path)
+            (str "sort_json_array_at" by))))
+
+(defn set-sort-response-headers
+  "Record: sort response header lines by name (case-insensitive)."
+  [srv on]
+  (c "set_sort_response_headers" (live srv "set_sort_response_headers") (flag on)) nil)
+
+(defn get-sort-response-headers "Whether `set-sort-response-headers` is on." [srv]
+  (not= 0 (c "get_sort_response_headers" (any-handle srv "get_sort_response_headers"))))
+
+(defn sort-header-value
+  "Record: sort one response header's comma-separated items (\"Allow\"). Raises
+  with the core's reason if the name is refused."
+  [srv name]
+  (check "sort_header_value"
+         (c "sort_header_value" (live srv "sort_header_value") (str "sort_header_value" name))))
+
+(defn clear-stable-order "Turn every stable-order rule off." [srv]
+  (c "clear_stable_order" (live srv "clear_stable_order")) nil)
+
+# Playback range (playback only): replay a slice of a tape, selected by the
+# tape's interaction NUMBER.
+
+(defn set-playback-range
+  ```
+  Playback: replay only interactions `from`..`to` (0-based, inclusive, the
+  tape's `## Interaction N` numbers; `to` < 0 = through the last). Raises on a
+  record server or an impossible range.
+  ```
+  [srv from to]
+  (check "set_playback_range"
+         (c "set_playback_range" (live srv "set_playback_range") from to)))
+
+(defn clear-playback-range "Replay the whole tape again." [srv]
+  (c "clear_playback_range" (live srv "clear_playback_range")) nil)
+
+(defn get-playback-range
+  "The playback range in force as [from to], or nil when none is set."
+  [srv]
+  (def h (any-handle srv "get_playback_range"))
+  (def from (c "get_playback_range_from" h))
+  (if (< from 0) nil [from (c "get_playback_range_to" h)]))
+
 (defn remove-transport-headers
   "Leave the connection-describing headers (Host, Connection, Content-Length
   and the other hop-by-hop headers, Accept-Encoding) out of the recording."
@@ -675,7 +764,8 @@
    :unredact :substitute :normalize-whole-tape :redact-whole-tape :notes
    :static-content :untaped :indent-code-blocks :emphasize-http-verbs
    :rules-footer :pretty-xml :pretty-json :license-notice :upstream-cafile
-   :tls :tls-pem])
+   :sort-json-keys :sort-json-arrays :sort-json-arrays-at :sort-response-headers
+   :sort-header-values :playback-range :tls :tls-pem])
 
 (def- passthrough-options
   [:host :port :label :native-lib :flush-mode :secret-redactor :secret-resolver])
@@ -723,6 +813,12 @@
     :pretty-json (set-pretty-json srv (if (number? v) v 2))
     :license-notice (add-license-notice srv v)
     :upstream-cafile (set-upstream-cafile srv v)
+    :sort-json-keys (set-sort-json-keys srv v)
+    :sort-json-arrays (apply-all srv key sort-json-array v)
+    :sort-json-arrays-at (apply-all srv key sort-json-array-at v)
+    :sort-response-headers (set-sort-response-headers srv v)
+    :sort-header-values (each n (one-or-many v) (sort-header-value srv n))
+    :playback-range (set-playback-range srv ;v)
     :tls (set-tls srv ;v)
     :tls-pem (set-tls-pem srv ;v)))
 
