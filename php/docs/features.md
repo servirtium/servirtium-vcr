@@ -23,6 +23,8 @@ exercised by the PHPUnit suite against the real native library.
 | Header presets (transport / cloud vendor) | ✅ | `->removeTransportHeaders()` / `->removeCloudHeaders($vendor)` | ✅ |
 | Credential redaction preset | ✅ | `->redactCredentials()` / `->redactCredentialHeader($name)` | ✅ |
 | License notice / upstream CA file / pretty JSON | ✅ | `->addLicenseNotice($text)` / `->upstreamCafile($path)` / `->prettyJson($n)` | ✅ notice + presets |
+| Stable order (record, opt-in; needs `prettyJson` for JSON) | — | `->sortJsonKeys()` / `->sortJsonArray($path, $by)` / `->sortJsonArrayAt($requestRegex, $path, $by)` / `->sortResponseHeaders()` / `->sortHeaderValue($name)` | ✅ |
+| Playback range (replay interactions `from`..`to` by number) | — | `->playbackRange($from, $to = -1)` | ✅ |
 | Format options (indent / emphasize) | ✅ | `->indentCodeBlocks()` / `->emphasizeHttpVerbs()` / `->prettyXml()` | — |
 | Diagnostics (last error/kind/index) | ✅ | `lastError`/`lastKind`/`lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | (automatic) | — |

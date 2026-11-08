@@ -85,6 +85,18 @@ final class Native
         char*  aether_vcr_embed_redact_credential_header(void* server, const char* name);
         char*  aether_vcr_embed_set_upstream_cafile(void* server, const char* path);
         char*  aether_vcr_embed_add_license_notice(void* server, const char* text);
+        void   aether_vcr_embed_set_sort_json_keys(void* server, int on);
+        int    aether_vcr_embed_get_sort_json_keys(void* server);
+        char*  aether_vcr_embed_sort_json_array(void* server, const char* path, const char* by);
+        char*  aether_vcr_embed_sort_json_array_at(void* server, const char* request, const char* path, const char* by);
+        void   aether_vcr_embed_set_sort_response_headers(void* server, int on);
+        int    aether_vcr_embed_get_sort_response_headers(void* server);
+        char*  aether_vcr_embed_sort_header_value(void* server, const char* name);
+        void   aether_vcr_embed_clear_stable_order(void* server);
+        char*  aether_vcr_embed_set_playback_range(void* server, int from, int to);
+        void   aether_vcr_embed_clear_playback_range(void* server);
+        int    aether_vcr_embed_get_playback_range_from(void* server);
+        int    aether_vcr_embed_get_playback_range_to(void* server);
         void   aether_vcr_embed_clear_redactions(void* server);
         void   aether_vcr_embed_clear_unredactions(void* server);
         void   aether_vcr_embed_clear_header_removals(void* server);

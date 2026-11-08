@@ -38,6 +38,12 @@ final class RecordBuilder extends VcrBuilderBase
     private int $prettyJsonIndent = 0;
     private ?string $upstreamCafilePath = null;
     private ?string $licenseNoticeText = null;
+    private bool $sortJsonKeysOn = false;
+    /** @var list<array{0: ?string, 1: string, 2: string}> */
+    private array $sortJsonArrays = [];
+    private bool $sortResponseHeadersOn = false;
+    /** @var list<string> */
+    private array $sortHeaderValues = [];
     private bool $failIfChangedOn = false;
 
     public function __construct(string $tapePath, string $upstreamBase)
@@ -159,6 +165,60 @@ final class RecordBuilder extends VcrBuilderBase
     }
 
     /**
+     * Opt-in stable order: write JSON response bodies' object keys sorted at
+     * every depth. Sorted JSON is only written pretty-printed: without
+     * prettyJson() the tape is refused when written (stop() throws
+     * VcrException, "sort_json_keys needs pretty_json ...").
+     */
+    public function sortJsonKeys(bool $on = true): static
+    {
+        $this->sortJsonKeysOn = $on;
+
+        return $this;
+    }
+
+    /**
+     * Sort the JSON response arrays $path selects (a JSON pointer from the
+     * root, "*" for one segment, "" the root array, or a bare member name) by
+     * member $by (a name, a pointer, or several comma-separated; "" sorts by
+     * each element's canonical JSON). Replay serves the sorted order. Needs
+     * prettyJson(). A rule the core refuses throws at start().
+     */
+    public function sortJsonArray(string $path, string $by = ''): static
+    {
+        $this->sortJsonArrays[] = [null, $path, $by];
+
+        return $this;
+    }
+
+    /**
+     * Like sortJsonArray(), only for interactions whose request path (query
+     * included) matches the regex $requestRegex.
+     */
+    public function sortJsonArrayAt(string $requestRegex, string $path, string $by = ''): static
+    {
+        $this->sortJsonArrays[] = [$requestRegex, $path, $by];
+
+        return $this;
+    }
+
+    /** Write response header lines sorted by name (case-insensitive); a repeated header's lines keep their order. */
+    public function sortResponseHeaders(bool $on = true): static
+    {
+        $this->sortResponseHeadersOn = $on;
+
+        return $this;
+    }
+
+    /** Sort one response header's comma-separated items ("Allow"). */
+    public function sortHeaderValue(string $name): static
+    {
+        $this->sortHeaderValues[] = $name;
+
+        return $this;
+    }
+
+    /**
      * On stop, still write the freshly recorded tape but throw if it differs
      * from the on-disk one — the Servirtium step-4 drift contract, so a
      * normal `git diff` shows the change and CI fails loudly.
@@ -191,6 +251,22 @@ final class RecordBuilder extends VcrBuilderBase
         }
         if ($this->licenseNoticeText !== null) {
             self::check($lib->aether_vcr_embed_add_license_notice($handle, $this->licenseNoticeText), 'addLicenseNotice');
+        }
+        if ($this->sortJsonKeysOn) {
+            $lib->aether_vcr_embed_set_sort_json_keys($handle, 1);
+        }
+        foreach ($this->sortJsonArrays as [$request, $path, $by]) {
+            if ($request === null) {
+                self::check($lib->aether_vcr_embed_sort_json_array($handle, $path, $by), 'sortJsonArray');
+            } else {
+                self::check($lib->aether_vcr_embed_sort_json_array_at($handle, $request, $path, $by), 'sortJsonArrayAt');
+            }
+        }
+        if ($this->sortResponseHeadersOn) {
+            $lib->aether_vcr_embed_set_sort_response_headers($handle, 1);
+        }
+        foreach ($this->sortHeaderValues as $name) {
+            self::check($lib->aether_vcr_embed_sort_header_value($handle, $name), 'sortHeaderValue');
         }
         foreach ($this->redactions as [$operation, $field, $pattern, $replacement]) {
             self::check($lib->$operation($handle, $field->value, $pattern, $replacement), 'redact');

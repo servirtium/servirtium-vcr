@@ -103,4 +103,63 @@ final class PlaybackTest extends TestCase
             $vcr->stop();
         }
     }
+    private function rangePlayback(int $from): \Servirtium\PlaybackBuilder
+    {
+        // file_get_contents adds only Host; the tape records only Cookie.
+        return Vcr::playback($this->tape('playback_range.md'))->redactCredentials()->playbackRange($from)->port(0);
+    }
+
+    private function getWithCookie(string $url): array
+    {
+        $ctx = stream_context_create(['http' => ['ignore_errors' => true, 'timeout' => 5, 'header' => "Cookie: sid=live\r\n"]]);
+        $body = @file_get_contents($url, false, $ctx);
+        $status = 0;
+        if (isset($http_response_header[0]) && preg_match('#HTTP/\S+\s+(\d+)#', $http_response_header[0], $m)) {
+            $status = (int) $m[1];
+        }
+        return [$status, $body === false ? '' : $body];
+    }
+
+    public function testPlaybackRangeSkipsEarlyInteractionsAndServesALaterOne(): void
+    {
+        $vcr = $this->rangePlayback(7)->start();
+        try {
+            $this->assertSame(8, $vcr->tapeLength());
+            [$status] = $this->getWithCookie($vcr->baseUrl() . '/logout');
+            $this->assertSame(200, $status);
+            $this->assertSame(7, $vcr->lastIndex());
+            $this->assertSame(VcrOutcome::Ok, $vcr->lastKind());
+        } finally {
+            $vcr->stop();
+        }
+        $vcr = $this->rangePlayback(7)->start();
+        try {
+            $this->getWithCookie($vcr->baseUrl() . '/login'); // interaction 0 is outside the range
+            $this->assertNotSame(VcrOutcome::Ok, $vcr->lastKind());
+            $this->assertStringContainsString('outside the playback range', $vcr->lastError());
+        } finally {
+            $vcr->stop();
+        }
+    }
+
+    public function testPlaybackRangeBadRangeThrowsAtStart(): void
+    {
+        $this->expectException(\Servirtium\VcrException::class);
+        $this->expectExceptionMessageMatches('/playbackRange/');
+        Vcr::playback($this->tape('playback_range.md'))->playbackRange(99)->port(0)->start();
+    }
+
+    public function testPlaybackRangeIsRefusedOnARecordHandle(): void
+    {
+        $tape = sys_get_temp_dir() . '/vcr_php_range_' . uniqid() . '.md';
+        $rec = Vcr::record($tape, 'http://127.0.0.1:1')->port(0)->start();
+        try {
+            $handle = (new \ReflectionMethod($rec, 'requireHandle'))->invoke($rec);
+            $lib = \Servirtium\Native::lib();
+            $this->assertNotSame('', \Servirtium\Native::takeString($lib->aether_vcr_embed_set_playback_range($handle, 0, -1)));
+            $this->assertSame(-1, $lib->aether_vcr_embed_get_playback_range_from($handle));
+        } finally {
+            $rec->discard();
+        }
+    }
 }

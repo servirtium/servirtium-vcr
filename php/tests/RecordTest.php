@@ -90,7 +90,11 @@ final class RecordTest extends TestCase
         // A fixed upstream response; php -S sets Content-Length (no chunking).
         file_put_contents(
             $this->docroot . '/router.php',
-            '<?php header("Content-Type: text/plain"); echo "hello-from-upstream";'
+            '<?php if (strpos($_SERVER["REQUEST_URI"], "/doc") === 0) {'
+            . ' header("Content-Type: application/json"); header("Allow: POST, GET"); echo \'{"b":1,"a":{"d":2,"c":3}}\';'
+            . '} elseif (strpos($_SERVER["REQUEST_URI"], "/list") === 0) {'
+            . ' header("Content-Type: application/json"); echo \'[{"n":"z"},{"n":"a"}]\';'
+            . '} else { header("Content-Type: text/plain"); echo "hello-from-upstream"; }'
         );
         $this->upstream = proc_open(
             ['php', '-S', "127.0.0.1:$port", $this->docroot . '/router.php'],
@@ -128,6 +132,44 @@ final class RecordTest extends TestCase
         $ctx = stream_context_create(['http' => ['ignore_errors' => true, 'timeout' => 5]]);
         $body = @file_get_contents($url, false, $ctx);
         return $body === false ? '' : $body;
+    }
+
+    public function testSortJsonKeysWithPrettyJsonWritesSortedPrettyJson(): void
+    {
+        $rec = Vcr::record($this->tape, $this->upstreamBase)->prettyJson(2)->sortJsonKeys()->port(0)->start();
+        $this->httpGet($rec->baseUrl() . '/doc');
+        $rec->stop();
+
+        $this->assertStringContainsString("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}", file_get_contents($this->tape));
+    }
+
+    public function testSortJsonKeysWithoutPrettyJsonIsRefused(): void
+    {
+        $rec = Vcr::record($this->tape, $this->upstreamBase)->sortJsonKeys()->port(0)->start();
+        $this->httpGet($rec->baseUrl() . '/doc');
+        try {
+            $rec->stop();
+            $this->fail('expected the tape to be refused');
+        } catch (\Servirtium\VcrException $e) {
+            $this->assertStringContainsString('sort_json_keys needs pretty_json', $e->getMessage());
+        }
+        $this->assertFileDoesNotExist($this->tape);
+    }
+
+    public function testArrayAndHeaderSortRulesAreAppliedAndRefusedWhenBad(): void
+    {
+        $rec = Vcr::record($this->tape, $this->upstreamBase)->prettyJson(2)
+            ->sortJsonArray('', 'n')->sortJsonArrayAt('/list', '', 'n')
+            ->sortResponseHeaders()->sortHeaderValue('Allow')->port(0)->start();
+        $this->httpGet($rec->baseUrl() . '/list');
+        $rec->stop();
+
+        $tape = file_get_contents($this->tape);
+        $this->assertLessThan(strpos($tape, '"n": "z"'), strpos($tape, '"n": "a"'));
+
+        $this->expectException(\Servirtium\VcrException::class);
+        $this->expectExceptionMessageMatches('/sortHeaderValue/');
+        Vcr::record($this->tape, $this->upstreamBase)->sortHeaderValue('')->port(0)->start();
     }
 
     public function testRecordsThenReplaysTheSameInteraction(): void

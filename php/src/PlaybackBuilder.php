@@ -34,6 +34,9 @@ final class PlaybackBuilder extends VcrBuilderBase
     /** @var list<string> */
     private array $matchHeaders = [];
 
+    /** @var array{0: int, 1: int}|null */
+    private ?array $playbackRangeValue = null;
+
     public function __construct(string $tapePath)
     {
         parent::__construct($tapePath);
@@ -100,6 +103,18 @@ final class PlaybackBuilder extends VcrBuilderBase
     }
 
     /**
+     * Replay only interactions $from..$to of the tape (0-based, inclusive, the
+     * "## Interaction N" numbers; $to < 0 means through the last). Selection
+     * is by number only. A bad range throws VcrException at start().
+     */
+    public function playbackRange(int $from, int $to = -1): static
+    {
+        $this->playbackRangeValue = [$from, $to];
+
+        return $this;
+    }
+
+    /**
      * Replace a redacted placeholder in the recorded expectation with the
      * real value the live SUT sends, so a committed (scrubbed) tape still
      * matches.
@@ -146,6 +161,9 @@ final class PlaybackBuilder extends VcrBuilderBase
         }
         foreach ($this->matchHeaders as $name) {
             $lib->aether_vcr_embed_match_header($handle, $name);
+        }
+        if ($this->playbackRangeValue !== null) {
+            self::check($lib->aether_vcr_embed_set_playback_range($handle, $this->playbackRangeValue[0], $this->playbackRangeValue[1]), 'playbackRange');
         }
         foreach ($this->unredactions as [$field, $pattern, $replacement]) {
             self::check($lib->aether_vcr_embed_unredact($handle, $field->value, $pattern, $replacement), 'unredact');
