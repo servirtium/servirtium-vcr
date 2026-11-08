@@ -18,6 +18,8 @@
 #include <memory>
 #include <string>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <cstdlib>
 #include <unistd.h>
 
@@ -49,7 +51,17 @@ std::string run_cmd(const std::string& cmd) {
 
 // GET a URL with curl, returning the body.
 std::string http_get(const std::string& url) {
-    return run_cmd("curl -s -S '" + url + "'");
+    return run_cmd("curl -g -s -S '" + url + "'");
+}
+
+// As http_get, sending a session cookie of the caller's own.
+std::string http_get_cookie(const std::string& url) {
+    return run_cmd("curl -g -s -S -H 'Cookie: sid=live-session' '" + url + "'");
+}
+
+std::string read_file(const std::string& path) {
+    std::ifstream in(path);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
 // The HTTP status curl reports for a URL, as a string ("200", "404", ...).
@@ -208,6 +220,69 @@ int main(int argc, char** argv) {
             return "pw-" + service + "&secret";
         });
         run("drive", replay.base_url()); replay.assert_no_mismatches(); replay.close(); run("check", target);
+        std::filesystem::remove_all(directory);
+    }
+
+    {   // stable ordering and playback range, through the shared core_tests tapes
+        const auto root = std::filesystem::path(tape).parent_path().parent_path().parent_path();
+        const auto upstream_tape = (root / "core_tests/tapes/stable_order_upstream.tape").string();
+        char temp[] = "/tmp/vcr-order-cpp-XXXXXX";
+        const std::string directory = mkdtemp(temp);
+        {
+            auto up = servirtium::Vcr::playback(upstream_tape);
+            {   // (a) sort_json_keys + pretty_json writes sorted, pretty JSON
+                auto rec = servirtium::Vcr::record(directory + "/sorted.md", up.base_url());
+                rec.set_sort_json_keys(true);
+                rec.pretty_json(2);
+                ck("get_sort_json_keys reads back", rec.get_sort_json_keys());
+                rec.sort_json_array("/list");
+                rec.sort_json_array_at("/data", "/list", "id");
+                rec.set_sort_response_headers(true);
+                ck("get_sort_response_headers reads back", rec.get_sort_response_headers());
+                rec.sort_header_value("Allow");
+                try { rec.sort_json_array("a/b"); ck("a bad sort path is refused", false); }
+                catch (const servirtium::Error&) { ck("a bad sort path is refused", true); }
+                http_get(rec.base_url() + "/data");
+                rec.flush();
+                ck("keys sorted and pretty-printed",
+                   read_file(directory + "/sorted.md").find("{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}") != std::string::npos);
+            }
+            up.reset_cursor();
+            {   // (b) sort_json_keys without pretty_json is refused at emit time
+                auto rec = servirtium::Vcr::record(directory + "/refused.md", up.base_url());
+                rec.set_sort_json_keys(true);
+                http_get(rec.base_url() + "/data");
+                try { rec.flush(); ck("sort without pretty_json is refused", false); }
+                catch (const servirtium::Error& e) {
+                    ck("sort without pretty_json is refused",
+                       std::string(e.what()).find("sort_json_keys needs pretty_json") != std::string::npos);
+                }
+                ck("nothing written when refused", !std::filesystem::exists(directory + "/refused.md"));
+            }
+            {   // a record handle refuses a playback range
+                auto rec = servirtium::Vcr::record(directory + "/range.md", up.base_url());
+                try { rec.set_playback_range(0, 1); ck("record handle refuses a playback range", false); }
+                catch (const servirtium::Error&) { ck("record handle refuses a playback range", true); }
+            }
+        }
+        {   // (c) playback range: the test brings its own cookie and skips the login
+            auto rp = servirtium::Vcr::playback((root / "core_tests/tapes/playback_range.tape").string());
+            ck("no range by default", rp.get_playback_range_from() == -1 && rp.get_playback_range_to() == -1);
+            rp.redact_credentials();
+            rp.strict_ignore_common_headers();
+            rp.set_playback_range(4, 6);
+            ck("range reads back", rp.get_playback_range_from() == 4 && rp.get_playback_range_to() == 6);
+            ck("range serves the first interaction in the range",
+               http_get_cookie(rp.base_url() + "/checkout/{{uuid-1}}/card") == "card-form");
+            ck("served interaction 4", rp.last_index() == 4);
+            ck("a skipped interaction is not served", http_get_cookie(rp.base_url() + "/login") != "login-form");
+            ck("skipped interaction is named as outside the range",
+               rp.last_error().find("outside the playback range") != std::string::npos);
+            try { rp.set_playback_range(9, -1); ck("bad range refused", false); }
+            catch (const servirtium::Error&) { ck("bad range refused", true); }
+            rp.clear_playback_range();
+            ck("cleared range", rp.get_playback_range_from() == -1);
+        }
         std::filesystem::remove_all(directory);
     }
 

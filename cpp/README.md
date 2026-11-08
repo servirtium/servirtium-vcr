@@ -117,6 +117,20 @@ Link line for your own program: `c++ -std=c++17 -Ithird_party/servirtium yours.c
 - Errors are `servirtium::Error` exceptions; the check program catches them.
 - Windows: use the `.dll` asset with its `.dll.lib` import library by hand.
 
+### Stable ordering and playback range
+
+Both are opt-in; a refusal throws `servirtium::Error` (the reason is its message).
+
+- **Stable order (record side):** `set_sort_json_keys(on)` / `get_sort_json_keys()`,
+  `sort_json_array(path, by)`, `sort_json_array_at(request_regex, path, by)`,
+  `set_sort_response_headers(on)` / `get_sort_response_headers()`, `sort_header_value(name)`,
+  `clear_stable_order()`. Sorted JSON is only written pretty-printed: with a JSON sort rule and
+  no `pretty_json()`, `flush()` throws `sort_json_keys needs pretty_json: ...` and writes nothing.
+- **Playback range (playback only):** `set_playback_range(from, to)` replays only the tape's
+  `## Interaction N` headings `from`..`to` (0-based, inclusive; `to < 0` = through the last);
+  a record handle or a bad range throws. `clear_playback_range()`,
+  `get_playback_range_from()` / `get_playback_range_to()` (-1 when none).
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

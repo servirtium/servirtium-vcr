@@ -156,7 +156,7 @@ public:
     Vcr(const Vcr&) = delete;
     Vcr& operator=(const Vcr&) = delete;
 
-    Vcr(Vcr&& other) noexcept : vcr_(other.vcr_), secret_context_(std::move(other.secret_context_)) { other.vcr_ = nullptr; }
+    Vcr(Vcr&& other) noexcept : secret_context_(std::move(other.secret_context_)), vcr_(other.vcr_) { other.vcr_ = nullptr; }
 
     Vcr& operator=(Vcr&& other) noexcept {
         if (this != &other) {
@@ -344,6 +344,51 @@ public:
     void pretty_json(int indent = 2) { sv_set_pretty_json(vcr_, indent); }
     // Current pretty-JSON indent (0 = off).
     int get_pretty_json() const { return sv_get_pretty_json(vcr_); }
+    // Opt-in stable order (record side; all off by default, the tape is
+    // byte-exact without them). Sorted JSON is only written pretty-printed:
+    // with a JSON sort rule and no pretty_json(), flush() throws
+    // "sort_json_keys needs pretty_json: ..." and writes nothing.
+    // Sort JSON object keys at every depth in recorded JSON response bodies.
+    void set_sort_json_keys(bool on = true) { sv_set_sort_json_keys(vcr_, on ? 1 : 0); }
+    bool get_sort_json_keys() const { return sv_get_sort_json_keys(vcr_) != 0; }
+
+    // Sort the JSON response arrays `path` selects (JSON pointer from the root,
+    // "*" for one segment, "" the root array, or a bare member name) by member
+    // `by` ("" = each element's canonical JSON). Throws Error if refused.
+    void sort_json_array(const std::string& path, const std::string& by = "") {
+        detail::check(sv_sort_json_array(vcr_, path.c_str(), by.c_str()), "sort_json_array");
+    }
+
+    // The same, only for requests whose path (query included) matches the
+    // regex `request`. Throws Error if refused.
+    void sort_json_array_at(const std::string& request, const std::string& path,
+                            const std::string& by = "") {
+        detail::check(sv_sort_json_array_at(vcr_, request.c_str(), path.c_str(), by.c_str()),
+                      "sort_json_array_at");
+    }
+
+    // Sort response header lines by name (case-insensitive).
+    void set_sort_response_headers(bool on = true) { sv_set_sort_response_headers(vcr_, on ? 1 : 0); }
+    bool get_sort_response_headers() const { return sv_get_sort_response_headers(vcr_) != 0; }
+
+    // Sort one response header's comma-separated items ("Allow"). Throws Error if refused.
+    void sort_header_value(const std::string& name) {
+        detail::check(sv_sort_header_value(vcr_, name.c_str()), "sort_header_value");
+    }
+
+    // Turn every stable-order rule off.
+    void clear_stable_order() { sv_clear_stable_order(vcr_); }
+
+    // Playback only: replay just interactions from..to of the tape (0-based
+    // "## Interaction N" numbers, inclusive; to < 0 = through the last). Throws
+    // Error on a record handle or a bad range. Call after opening, before traffic.
+    void set_playback_range(int from, int to = -1) {
+        detail::check(sv_set_playback_range(vcr_, from, to), "set_playback_range");
+    }
+    void clear_playback_range() { sv_clear_playback_range(vcr_); }
+    // The range's ends; -1 when none is set.
+    int get_playback_range_from() const { return sv_get_playback_range_from(vcr_); }
+    int get_playback_range_to() const { return sv_get_playback_range_to(vcr_); }
     void clear_redactions() { sv_clear_redactions(vcr_); }
     void clear_unredactions() { sv_clear_unredactions(vcr_); }
     void clear_normalizations() { sv_clear_normalizations(vcr_); }
