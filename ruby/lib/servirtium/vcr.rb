@@ -195,6 +195,7 @@ module Servirtium
       @match_xml_body = false
       @match_multiple = false
       @match_headers = []
+      @playback_range = nil
     end
 
     # Compare the SUT's request headers against the recorded block on every
@@ -239,6 +240,14 @@ module Servirtium
     # of the recorded header block); repeatable.
     def match_header(name)
       @match_headers << name
+      self
+    end
+
+    # Replay only interactions +from+..+to+ of the tape (0-based, inclusive, the
+    # "## Interaction N" numbers; +to+ < 0 means through the last). Selection is
+    # by number only. A bad range raises Servirtium::Error at +start+.
+    def playback_range(from, to = -1)
+      @playback_range = [from, to]
       self
     end
 
@@ -290,6 +299,9 @@ module Servirtium
       @match_headers.each do |name|
         Native.call(:match_header, handle, name)
       end
+      if @playback_range
+        check(Native.call(:set_playback_range, handle, *@playback_range), 'set_playback_range')
+      end
       @unredactions.each do |field, pattern, replacement|
         check(Native.call(:unredact, handle, field, pattern, replacement), 'unredact')
       end
@@ -314,6 +326,10 @@ module Servirtium
       @pretty_json = 0
       @upstream_cafile = nil
       @license_notice = nil
+      @sort_json_keys = false
+      @sort_json_arrays = []
+      @sort_response_headers = false
+      @sort_header_values = []
       @fail_if_changed = false
     end
 
@@ -333,6 +349,45 @@ module Servirtium
     # ignores it.
     def add_license_notice(text)
       @license_notice = text
+      self
+    end
+
+    # Opt-in stable order: write JSON response bodies' object keys sorted at
+    # every depth. Sorted JSON is only written pretty-printed: without
+    # {#pretty_json} the tape is refused when written (+close+ raises
+    # Servirtium::Error, "sort_json_keys needs pretty_json ...").
+    def sort_json_keys(on: true)
+      @sort_json_keys = on
+      self
+    end
+
+    # Sort the JSON response arrays +path+ selects (a JSON pointer from the
+    # root, "*" for one segment, "" the root array, or a bare member name) by
+    # member +by+ (a name, a pointer, or several comma-separated; "" sorts by
+    # each element's canonical JSON). Replay serves the sorted order. Needs
+    # {#pretty_json}. A rule the core refuses raises at +start+.
+    def sort_json_array(path, by = '')
+      @sort_json_arrays << [nil, path, by]
+      self
+    end
+
+    # Like {#sort_json_array}, only for interactions whose request path (query
+    # included) matches +request_regex+.
+    def sort_json_array_at(request_regex, path, by = '')
+      @sort_json_arrays << [request_regex, path, by]
+      self
+    end
+
+    # Write response header lines sorted by name (case-insensitive); a repeated
+    # header's lines keep their order.
+    def sort_response_headers(on: true)
+      @sort_response_headers = on
+      self
+    end
+
+    # Sort one response header's comma-separated items ("Allow").
+    def sort_header_value(name)
+      @sort_header_values << name
       self
     end
 
@@ -447,6 +502,18 @@ module Servirtium
       Native.call(:set_pretty_json, handle, @pretty_json) if @pretty_json > 0
       check(Native.call(:set_upstream_cafile, handle, @upstream_cafile), 'set_upstream_cafile') if @upstream_cafile
       check(Native.call(:add_license_notice, handle, @license_notice), 'add_license_notice') if @license_notice
+      Native.call(:set_sort_json_keys, handle, 1) if @sort_json_keys
+      @sort_json_arrays.each do |request_regex, path, by|
+        if request_regex.nil?
+          check(Native.call(:sort_json_array, handle, path, by), 'sort_json_array')
+        else
+          check(Native.call(:sort_json_array_at, handle, request_regex, path, by), 'sort_json_array_at')
+        end
+      end
+      Native.call(:set_sort_response_headers, handle, 1) if @sort_response_headers
+      @sort_header_values.each do |name|
+        check(Native.call(:sort_header_value, handle, name), 'sort_header_value')
+      end
       @redactions.each do |operation, field, pattern, replacement|
         check(Native.call(operation, handle, field, pattern, replacement), 'redact')
       end

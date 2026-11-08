@@ -53,6 +53,41 @@ RSpec.describe 'Servirtium record' do
     end.to raise_error(Servirtium::Error)
   end
 
+  it 'writes sorted, pretty JSON with sort_json_keys and pretty_json' do
+    @upstream.stop
+    @upstream = FakeUpstream.new(body: '{"b":1,"a":{"d":2,"c":3}}', content_type: 'application/json')
+    Servirtium.record(@tape, @upstream.base_url).pretty_json(2).sort_json_keys.port(0).start do |server|
+      get(server.base_url, '/doc')
+    end
+
+    expect(File.read(@tape)).to include("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}")
+  end
+
+  it 'refuses sort_json_keys without pretty_json when the tape is written' do
+    @upstream.stop
+    @upstream = FakeUpstream.new(body: '{"b":1,"a":2}', content_type: 'application/json')
+    server = Servirtium.record(@tape, @upstream.base_url).sort_json_keys.port(0).start
+    get(server.base_url, '/doc')
+
+    expect { server.close }.to raise_error(Servirtium::Error, /sort_json_keys needs pretty_json/)
+    expect(File.exist?(@tape)).to be(false)
+  end
+
+  it 'applies array and header sort rules and raises when the core refuses one' do
+    @upstream.stop
+    @upstream = FakeUpstream.new(body: '[{"n":"z"},{"n":"a"}]', content_type: 'application/json')
+    Servirtium.record(@tape, @upstream.base_url).pretty_json(2)
+              .sort_json_array('', 'n').sort_json_array_at('/doc', '', 'n')
+              .sort_response_headers.sort_header_value('Allow')
+              .port(0).start { |server| get(server.base_url, '/doc') }
+
+    tape = File.read(@tape)
+    expect(tape.index('"n": "a"')).to be < tape.index('"n": "z"')
+    expect do
+      Servirtium.record(@tape, @upstream.base_url).sort_header_value('').port(0).start { |_s| nil }
+    end.to raise_error(Servirtium::Error, /sort_header_value/)
+  end
+
   it 'redacts a value out of the response body before it lands on the tape' do
     @upstream = FakeUpstream.new(body: 'token=SECRET123 rest', chunked: false)
     Servirtium.record(@tape, @upstream.base_url)

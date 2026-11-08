@@ -28,6 +28,8 @@ library.
 | Header presets (transport / cloud vendor) | ✅ | ✅ | `.remove_transport_headers` / `.remove_cloud_headers(vendor)` | ✅ |
 | Credential redaction preset | ✅ | ✅ | `.redact_credentials` / `.redact_credential_header(name)` | ✅ |
 | License notice / upstream CA file / pretty JSON | ✅ | ✅ | `.add_license_notice(text)` / `.upstream_cafile(path)` / `.pretty_json` | ✅ notice + presets |
+| Stable order (record, opt-in; needs `pretty_json` for JSON) | ✅ | — | `.sort_json_keys` / `.sort_json_array(path, by)` / `.sort_json_array_at(request_regex, path, by)` / `.sort_response_headers` / `.sort_header_value(name)` | ✅ |
+| Playback range (replay interactions `from`..`to` by number) | — | ✅ | `.playback_range(from, to = -1)` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indent_code_blocks` / `.emphasize_http_verbs` / `.pretty_xml` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `last_error` / `last_kind` / `last_index` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |

@@ -82,6 +82,55 @@ RSpec.describe 'Servirtium playback' do
       expect(server.last_tls_protocol).to eq('')
     end
   end
+
+  describe 'playback range' do
+    let(:range_tape) { File.expand_path('../tapes/playback_range.md', __dir__) }
+
+    # Net::HTTP adds Accept/User-Agent/Accept-Encoding; the tape records only Cookie.
+    def range_playback(range)
+      b = Servirtium.playback(range_tape).redact_credentials.playback_range(*range)
+      %w[Accept User-Agent Accept-Encoding].each { |h| b = b.remove_header(Servirtium::Field::REQUEST_HEADERS, h) }
+      b.port(0)
+    end
+
+    def get_with_cookie(server, path)
+      uri = URI.join(server.base_url, path)
+      req = Net::HTTP::Get.new(uri)
+      req['Cookie'] = 'sid=live'
+      Net::HTTP.start(uri.host, uri.port) { |http| http.request(req) }
+    end
+
+    it 'skips early interactions and serves a later one' do
+      range_playback([7]).start do |server|
+        expect(server.tape_length).to eq(8)
+        expect(get_with_cookie(server, '/logout').code).to eq('200')
+        expect(server.last_index).to eq(7)
+        expect(server.last_kind).to eq(:ok)
+      end
+      range_playback([7]).start do |server|
+        get_with_cookie(server, '/login') # interaction 0 is outside the range
+        expect(server.last_kind).not_to eq(:ok)
+        expect(server.last_error).to include('outside the playback range')
+      end
+    end
+
+    it 'raises at start for a bad range' do
+      expect { Servirtium.playback(range_tape).playback_range(99).port(0).start }
+        .to raise_error(Servirtium::Error, /playback_range/)
+    end
+
+    it 'is refused on a record handle' do
+      Dir.mktmpdir('servirtium-ruby-range') do |dir|
+        Servirtium.record(File.join(dir, 'r.md'), 'http://127.0.0.1:1').port(0).start do |server|
+          handle = server.send(:handle)
+          native = Servirtium.const_get(:Native)
+          err = native.take_string(native.call(:set_playback_range, handle, 0, -1))
+          expect(err).not_to be_empty
+          expect(native.call(:get_playback_range_from, handle)).to eq(-1)
+        end
+      end
+    end
+  end
 end
 
 
