@@ -18,6 +18,12 @@ cleanup() { [ -n "${SVC:-}" ] && kill "$SVC" 2>/dev/null || true
             [ -n "${REPLAY:-}" ] && kill "$REPLAY" 2>/dev/null || true; }
 trap cleanup EXIT
 
+# A fixed port collides with whatever else is running on the host (a stray
+# http.server on 8099 broke this on a shared lab machine); take free ones.
+free_port() { local p; while :; do p=$((20000 + RANDOM % 20000))
+  (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null || { echo "$p"; return; }; done; }
+IMPORT_PORT="$(free_port)"; REPLAY_PORT="$(free_port)"
+
 echo "==> 1. start the contrived widget service (Aether)"
 "$SERVICE" > "$HERE/.port" 2>/dev/null &
 SVC=$!
@@ -27,7 +33,7 @@ echo "    listening on 127.0.0.1:$PORT"
 
 echo "==> 2. hydrate the Bruno collection into a tape (makes REAL calls)"
 rm -f "$TAPE"
-"$CLI" import-bru "$HERE/collection" "http://127.0.0.1:$PORT" "$TAPE"
+"$CLI" import-bru "$HERE/collection" "http://127.0.0.1:$PORT" "$TAPE" --port "$IMPORT_PORT"
 
 echo "==> 3. lint the tape"
 "$CLI" check --canonical "$TAPE"
@@ -37,23 +43,23 @@ kill "$SVC" 2>/dev/null || true; SVC=""
 sleep 1
 
 echo "==> 5. replay the tape"
-"$CLI" serve "$TAPE" 8131 >/dev/null 2>&1 &
+"$CLI" serve "$TAPE" "$REPLAY_PORT" >/dev/null 2>&1 &
 REPLAY=$!
 sleep 2
-printf '    GET    /widgets    -> '; curl --fail-with-body -s http://127.0.0.1:8131/widgets; echo
+printf '    GET    /widgets    -> '; curl --fail-with-body -s http://127.0.0.1:$REPLAY_PORT/widgets; echo
 printf '    POST   /widgets    -> '; curl --fail-with-body -s -X POST -H 'Content-Type: application/json' \
   --data-binary '{
     "name": "flange",
     "colour": "blue"
-  }' http://127.0.0.1:8131/widgets; echo
+  }' http://127.0.0.1:$REPLAY_PORT/widgets; echo
 printf '    PUT    /widgets/2  -> '; curl --fail-with-body -s -X PUT -H 'Content-Type: application/json' \
   --data-binary '{
     "colour": "green"
-  }' http://127.0.0.1:8131/widgets/2; echo
-printf '    DELETE /widgets/2  -> '; curl --fail-with-body -s -X DELETE http://127.0.0.1:8131/widgets/2; echo
-printf '    GET    /widgets.xml -> '; curl --fail-with-body -s http://127.0.0.1:8131/widgets.xml; echo
+  }' http://127.0.0.1:$REPLAY_PORT/widgets/2; echo
+printf '    DELETE /widgets/2  -> '; curl --fail-with-body -s -X DELETE http://127.0.0.1:$REPLAY_PORT/widgets/2; echo
+printf '    GET    /widgets.xml -> '; curl --fail-with-body -s http://127.0.0.1:$REPLAY_PORT/widgets.xml; echo
 printf '    POST   /widgets.xml -> '; curl --fail-with-body -s -X POST -H 'Content-Type: application/xml' \
   --data-binary '<widget><name>grommet</name><colour>amber</colour></widget>' \
-  http://127.0.0.1:8131/widgets.xml; echo
+  http://127.0.0.1:$REPLAY_PORT/widgets.xml; echo
 
 echo "==> done — those six responses came from $TAPE, not from the service"
