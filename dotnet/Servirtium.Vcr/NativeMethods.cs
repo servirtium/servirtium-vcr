@@ -258,6 +258,42 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_pretty_json")]
     internal static extern void SetPrettyJson(IntPtr server, int indent);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_sort_json_keys")]
+    internal static extern void SetSortJsonKeys(IntPtr server, int on);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_get_sort_json_keys")]
+    internal static extern int GetSortJsonKeys(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_sort_json_array", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr SortJsonArray(IntPtr server, string path, string by);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_sort_json_array_at", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr SortJsonArrayAt(IntPtr server, string request, string path, string by);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_sort_response_headers")]
+    internal static extern void SetSortResponseHeaders(IntPtr server, int on);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_get_sort_response_headers")]
+    internal static extern int GetSortResponseHeaders(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_sort_header_value", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr SortHeaderValue(IntPtr server, string name);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_stable_order")]
+    internal static extern void ClearStableOrder(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_playback_range")]
+    internal static extern IntPtr SetPlaybackRange(IntPtr server, int from, int to);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_playback_range")]
+    internal static extern void ClearPlaybackRange(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_get_playback_range_from")]
+    internal static extern int GetPlaybackRangeFrom(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_get_playback_range_to")]
+    internal static extern int GetPlaybackRangeTo(IntPtr server);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_clear_redactions")]
     internal static extern void ClearRedactions(IntPtr server);
 

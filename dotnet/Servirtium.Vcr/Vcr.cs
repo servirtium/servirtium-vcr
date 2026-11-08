@@ -298,6 +298,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     private bool _matchJsonBody;
     private bool _matchXmlBody;
     private bool _matchMultiple;
+    private (int from, int to)? _playbackRange;
 
     internal PlaybackBuilder(string tapePath) : base(tapePath) { }
     private protected override PlaybackBuilder Self => this;
@@ -347,6 +348,19 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     public PlaybackBuilder MatchMultiple(bool on = true)
     {
         _matchMultiple = on;
+        return this;
+    }
+
+    /// <summary>
+    /// Replay only interactions <paramref name="from"/>..<paramref name="to"/>
+    /// of the tape (0-based, inclusive, the <c>## Interaction N</c> numbers;
+    /// <paramref name="to"/> &lt; 0 means through the last). Selection is by
+    /// number only. A bad range throws <see cref="VcrException"/> at
+    /// <see cref="Start"/>.
+    /// </summary>
+    public PlaybackBuilder PlaybackRange(int from, int to = -1)
+    {
+        _playbackRange = (from, to);
         return this;
     }
 
@@ -440,6 +454,10 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         {
             NativeMethods.MatchHeader(handle, name);
         }
+        if (_playbackRange is { } range)
+        {
+            Check(NativeMethods.SetPlaybackRange(handle, range.from, range.to), nameof(PlaybackRange));
+        }
         foreach ((VcrField field, string pattern, string replacement) in _unredactions)
         {
             Check(NativeMethods.Unredact(handle, (int)field, pattern, replacement), nameof(Unredact));
@@ -491,6 +509,10 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     private int _prettyJson;
     private string? _licenseNotice;
     private string? _upstreamCafile;
+    private bool _sortJsonKeys;
+    private bool _sortResponseHeaders;
+    private readonly List<(string? request, string path, string by)> _sortJsonArrays = new();
+    private readonly List<string> _sortHeaderValues = new();
     private bool _failIfChanged;
     private bool _requireLoopbackUpstream;
 
@@ -612,6 +634,58 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     }
 
     /// <summary>
+    /// Opt-in stable order: write JSON response bodies' object keys sorted at
+    /// every depth. Sorted JSON is only written pretty-printed: without
+    /// <see cref="PrettyJson"/> the tape is refused when it is written
+    /// (<c>Dispose</c> throws <see cref="VcrException"/>, "sort_json_keys
+    /// needs pretty_json ...").
+    /// </summary>
+    public RecordBuilder SortJsonKeys(bool on = true)
+    {
+        _sortJsonKeys = on;
+        return this;
+    }
+
+    /// <summary>
+    /// Sort the JSON response arrays <paramref name="path"/> selects (a JSON
+    /// pointer from the root, <c>*</c> for one segment, <c>""</c> the root
+    /// array, or a bare member name) by member <paramref name="by"/> (a name,
+    /// a pointer, or several comma-separated; <c>""</c> sorts by each
+    /// element's canonical JSON). Replay serves the sorted order. Needs
+    /// <see cref="PrettyJson"/>. A rule the core refuses throws at
+    /// <see cref="Start"/>.
+    /// </summary>
+    public RecordBuilder SortJsonArray(string path, string by = "")
+    {
+        _sortJsonArrays.Add((null, path, by));
+        return this;
+    }
+
+    /// <summary>
+    /// Like <see cref="SortJsonArray"/>, only for interactions whose request
+    /// path (query included) matches the regex <paramref name="requestRegex"/>.
+    /// </summary>
+    public RecordBuilder SortJsonArrayAt(string requestRegex, string path, string by = "")
+    {
+        _sortJsonArrays.Add((requestRegex, path, by));
+        return this;
+    }
+
+    /// <summary>Write response header lines sorted by name (case-insensitive); a repeated header's lines keep their order.</summary>
+    public RecordBuilder SortResponseHeaders(bool on = true)
+    {
+        _sortResponseHeaders = on;
+        return this;
+    }
+
+    /// <summary>Sort one response header's comma-separated items (<c>Allow</c>).</summary>
+    public RecordBuilder SortHeaderValue(string name)
+    {
+        _sortHeaderValues.Add(name);
+        return this;
+    }
+
+    /// <summary>
     /// On dispose, still write the freshly recorded tape but throw if it
     /// differs from the on-disk one — the Servirtium step-4 drift contract,
     /// so a normal <c>git diff</c> shows the change and CI fails loudly.
@@ -676,6 +750,23 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         if (_upstreamCafile is not null)
         {
             Check(NativeMethods.SetUpstreamCafile(handle, _upstreamCafile), nameof(UpstreamCafile));
+        }
+        if (_sortJsonKeys) NativeMethods.SetSortJsonKeys(handle, 1);
+        foreach (var (request, path, by) in _sortJsonArrays)
+        {
+            if (request is null)
+            {
+                Check(NativeMethods.SortJsonArray(handle, path, by), nameof(SortJsonArray));
+            }
+            else
+            {
+                Check(NativeMethods.SortJsonArrayAt(handle, request, path, by), nameof(SortJsonArrayAt));
+            }
+        }
+        if (_sortResponseHeaders) NativeMethods.SetSortResponseHeaders(handle, 1);
+        foreach (string name in _sortHeaderValues)
+        {
+            Check(NativeMethods.SortHeaderValue(handle, name), nameof(SortHeaderValue));
         }
         foreach (var (operation, field, pattern, replacement) in _redactions)
         {

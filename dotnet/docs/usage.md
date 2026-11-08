@@ -235,6 +235,40 @@ Vcr.Record(tape, upstream)
 Playback tolerates either form regardless, so cross-implementation tapes
 load cleanly.
 
+## Stable order (record, opt-in)
+
+For a service that answers in a different order every run. All off by default;
+the tape is byte-exact without them.
+
+```csharp
+Vcr.Record(tape, upstream)
+    .PrettyJson(2)                                  // required: sorted JSON is only written pretty-printed
+    .SortJsonKeys()                                 // object keys sorted at every depth
+    .SortJsonArray("versions", "/created")          // arrays `versions` holds, by member
+    .SortJsonArrayAt("^/secrets", "", "name")       // only for matching request paths
+    .SortResponseHeaders()                          // header lines by name
+    .SortHeaderValue("Allow")                       // "POST, GET" -> "GET, POST"
+    .Start();
+```
+
+A rule the core refuses (an empty header name, a bad regex) throws
+`VcrException` at `Start()`. `SortJsonKeys()` / `SortJsonArray*()` without
+`PrettyJson()` are refused when the tape is written: `Dispose()` throws
+`VcrException` ("sort_json_keys needs pretty_json ...") and writes nothing.
+
+## Playback range
+
+Replay only a slice of a tape, by interaction number (the `## Interaction N`
+headings, 0-based, inclusive; `to` < 0 means through the last):
+
+```csharp
+Vcr.Playback(tape).PlaybackRange(4, 6).Start();
+```
+
+A request outside the range is never served (kind `VcrOutcome.PathOrMethodDiff`,
+"... is outside the playback range 4-6"). A bad range throws `VcrException` at
+`Start()`.
+
 ## `VcrServer` members
 
 | Member | Meaning |

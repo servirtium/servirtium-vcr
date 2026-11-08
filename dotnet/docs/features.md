@@ -23,6 +23,8 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.MatchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.StaticContent(mount, dir)` | ✅ |
 | Drift: overwrite + fail-if-changed | ✅ | ✅ | `.FailIfChanged()` | ✅ |
+| Stable order (record, opt-in; needs pretty JSON for JSON) | ✅ | — | `.SortJsonKeys()` / `.SortJsonArray(path, by)` / `.SortJsonArrayAt(requestRegex, path, by)` / `.SortResponseHeaders()` / `.SortHeaderValue(name)` | ✅ |
+| Playback range (replay interactions `from`..`to` by number) | — | ✅ | `.PlaybackRange(from, to = -1)` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `.IndentCodeBlocks()` / `.EmphasizeHttpVerbs()` / `.PrettyXml(n)` / `.PrettyJson(n)` | — |
 | Header presets / license notice / upstream CA | ✅ | ✅ | `.RemoveTransportHeaders()` / `.RemoveCloudHeaders(v)` / `.RedactCredentials()` / `.RedactCredentialHeader(n)` / `.AddLicenseNotice(t)` / `.UpstreamCafile(p)` | ✅ license notice |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `LastError`/`LastKind`/`LastIndex` | ✅ |

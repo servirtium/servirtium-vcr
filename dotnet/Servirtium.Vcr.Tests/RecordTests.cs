@@ -67,6 +67,55 @@ public class RecordTests : IDisposable
         Assert.Contains("Recorded under the MIT licence", tape);
     }
 
+    [Fact]
+    public async Task SortJsonKeys_with_PrettyJson_writes_sorted_pretty_json()
+    {
+        using var up = new FakeUpstream { ResponseBody = "{\"b\":1,\"a\":{\"d\":2,\"c\":3}}", ResponseContentType = "application/json" };
+        using (var rec = Vcr.Record(_tapePath, up.BaseUrl).Port(0).PrettyJson(2).SortJsonKeys().Start())
+        using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
+        {
+            await client.GetStringAsync("/doc");
+        }
+
+        string tape = File.ReadAllText(_tapePath).Replace("\r\n", "\n");
+        Assert.Contains("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}", tape);
+    }
+
+    [Fact]
+    public async Task SortJsonKeys_without_PrettyJson_is_refused_when_the_tape_is_written()
+    {
+        using var up = new FakeUpstream { ResponseBody = "{\"b\":1,\"a\":2}", ResponseContentType = "application/json" };
+        var rec = Vcr.Record(_tapePath, up.BaseUrl).Port(0).SortJsonKeys().Start();
+        using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
+        {
+            await client.GetStringAsync("/doc");
+        }
+
+        var ex = Assert.Throws<VcrException>(() => rec.Dispose());
+        Assert.Contains("sort_json_keys needs pretty_json", ex.Message);
+        Assert.False(File.Exists(_tapePath));
+    }
+
+    [Fact]
+    public async Task Array_and_header_sort_rules_are_applied_and_a_bad_one_fails_start()
+    {
+        using var up = new FakeUpstream { ResponseBody = "[{\"n\":\"z\"},{\"n\":\"a\"}]", ResponseContentType = "application/json" };
+        up.ExtraResponseHeaders["Allow"] = "POST, GET";
+        using (var rec = Vcr.Record(_tapePath, up.BaseUrl).Port(0).PrettyJson(2)
+                   .SortJsonArray("", "n").SortJsonArrayAt("/doc", "", "n")
+                   .SortResponseHeaders().SortHeaderValue("Allow").Start())
+        using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
+        {
+            await client.GetStringAsync("/doc");
+        }
+
+        string tape = File.ReadAllText(_tapePath);
+        Assert.True(tape.IndexOf("\"n\": \"a\"", StringComparison.Ordinal) < tape.IndexOf("\"n\": \"z\"", StringComparison.Ordinal), tape);
+        Assert.Contains("Allow: GET, POST", tape);
+        var ex = Assert.Throws<VcrException>(() => Vcr.Record(_tapePath, up.BaseUrl).Port(0).SortHeaderValue("").Start());
+        Assert.Contains("SortHeaderValue", ex.Message);
+    }
+
     private void ServeUpstream()
     {
         try
