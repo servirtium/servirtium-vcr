@@ -40,6 +40,10 @@ export Vcr, VcrError, Field, Outcome,
     remove_transport_headers, remove_cloud_headers,
     redact_credentials, redact_credential_header,
     set_upstream_cafile, add_license_notice,
+    set_sort_json_keys, get_sort_json_keys, sort_json_array, sort_json_array_at,
+    set_sort_response_headers, get_sort_response_headers, sort_header_value,
+    clear_stable_order,
+    set_playback_range, clear_playback_range, get_playback_range,
     close!, flush!, flush_fail_if_changed!, flush_or_check!, discard!,
     har_import, har_export
 
@@ -454,6 +458,82 @@ add_license_notice(vcr::Vcr, text) =
     check(ccall((:aether_vcr_embed_add_license_notice, LIB), Ptr{Cchar},
                 (Ptr{Cvoid}, Cstring), vcr.handle, text), "add_license_notice")
 
+# Opt-in stable ordering (record side; off by default, so the tape is
+# byte-exact without them). Sorted JSON is only written pretty-printed: a
+# record with set_sort_json_keys / sort_json_array* but without
+# set_pretty_json is refused when the tape is written (`flush!` throws a
+# VcrError mentioning "sort_json_keys needs pretty_json").
+
+"""Sort JSON object keys at every depth in recorded JSON response bodies."""
+set_sort_json_keys(vcr::Vcr, on::Bool=true) =
+    ccall((:aether_vcr_embed_set_sort_json_keys, LIB), Cvoid,
+          (Ptr{Cvoid}, Cint), vcr.handle, on ? 1 : 0)
+
+"""Whether `set_sort_json_keys` is on."""
+get_sort_json_keys(vcr::Vcr) =
+    ccall((:aether_vcr_embed_get_sort_json_keys, LIB), Cint, (Ptr{Cvoid},), vcr.handle) != 0
+
+"""
+    sort_json_array(vcr, path, by)
+
+Sort the JSON response arrays `path` selects (a JSON pointer from the root, `"*"`
+for any one segment, `""` the root array, or a bare member name) by member `by`
+(`""` sorts by each element's canonical JSON). Throws `VcrError` with the
+refusal reason.
+"""
+sort_json_array(vcr::Vcr, path, by) =
+    check(ccall((:aether_vcr_embed_sort_json_array, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring, Cstring), vcr.handle, path, by), "sort_json_array")
+
+"""The same, only for requests whose path (query included) matches the regex `request`."""
+sort_json_array_at(vcr::Vcr, request, path, by) =
+    check(ccall((:aether_vcr_embed_sort_json_array_at, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring, Cstring, Cstring), vcr.handle, request, path, by),
+          "sort_json_array_at")
+
+"""Sort response header lines by name (case-insensitive)."""
+set_sort_response_headers(vcr::Vcr, on::Bool=true) =
+    ccall((:aether_vcr_embed_set_sort_response_headers, LIB), Cvoid,
+          (Ptr{Cvoid}, Cint), vcr.handle, on ? 1 : 0)
+
+"""Whether `set_sort_response_headers` is on."""
+get_sort_response_headers(vcr::Vcr) =
+    ccall((:aether_vcr_embed_get_sort_response_headers, LIB), Cint, (Ptr{Cvoid},), vcr.handle) != 0
+
+"""Sort one response header's comma-separated items (`"Allow"`). Throws `VcrError` with the refusal reason."""
+sort_header_value(vcr::Vcr, name) =
+    check(ccall((:aether_vcr_embed_sort_header_value, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring), vcr.handle, name), "sort_header_value")
+
+"""Turn every stable-order rule off."""
+clear_stable_order(vcr::Vcr) =
+    ccall((:aether_vcr_embed_clear_stable_order, LIB), Cvoid, (Ptr{Cvoid},), vcr.handle)
+
+# Playback range (playback only): replay a slice of a tape, selected by the
+# tape's interaction NUMBER.
+
+"""
+    set_playback_range(vcr, from, to)
+
+Replay only interactions `from`..`to` (0-based, inclusive, the tape's
+`## Interaction N` numbers; `to < 0` = through the last). Throws `VcrError` on
+a record handle or an impossible range.
+"""
+set_playback_range(vcr::Vcr, from::Integer, to::Integer) =
+    check(ccall((:aether_vcr_embed_set_playback_range, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cint, Cint), vcr.handle, from, to), "set_playback_range")
+
+"""Replay the whole tape again."""
+clear_playback_range(vcr::Vcr) =
+    ccall((:aether_vcr_embed_clear_playback_range, LIB), Cvoid, (Ptr{Cvoid},), vcr.handle)
+
+"""The range in force as `(from, to)`, or `nothing` when none is set."""
+function get_playback_range(vcr::Vcr)
+    from = Int(ccall((:aether_vcr_embed_get_playback_range_from, LIB), Cint, (Ptr{Cvoid},), vcr.handle))
+    from < 0 && return nothing
+    to = Int(ccall((:aether_vcr_embed_get_playback_range_to, LIB), Cint, (Ptr{Cvoid},), vcr.handle))
+    return (from, to)
+end
 for (fn, sym) in ((:clear_redactions, :aether_vcr_embed_clear_redactions),
                   (:clear_unredactions, :aether_vcr_embed_clear_unredactions),
                   (:clear_normalizations, :aether_vcr_embed_clear_normalizations),

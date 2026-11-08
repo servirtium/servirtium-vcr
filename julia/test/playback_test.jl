@@ -5,6 +5,7 @@
 # same tape every other binding in this repo replays byte-for-byte. Needs only
 # the libservirtium_vcr.so (SERVIRTIUM_VCR_LIB). Uses Julia's Test stdlib.
 using Test
+using Sockets
 include("../src/Servirtium.jl")
 using .Servirtium
 
@@ -165,5 +166,82 @@ end
             run_fixture("drive", base_url(replay)); assert_no_mismatches(replay)
         end
         run_fixture("check", tape)
+    end
+end
+
+# A tiny upstream answering every request with a JSON body, on an OS-chosen
+# port of 127.0.0.1 (Sockets stdlib; no dependencies).
+function with_json_upstream(f, body)
+    server = listen(ip"127.0.0.1", 0)
+    _, port = getsockname(server)
+    @async while isopen(server)
+        sock = try accept(server) catch; break end
+        @async try
+            readavailable(sock)
+            write(sock, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" *
+                        "Content-Length: $(sizeof(body))\r\nConnection: close\r\n\r\n$body")
+        finally
+            close(sock)
+        end
+    end
+    try
+        f("http://127.0.0.1:$port")
+    finally
+        close(server)
+    end
+end
+
+@testset "Stable ordering (record)" begin
+    json = "{\"b\":1,\"a\":{\"z\":2,\"y\":3}}"
+    mktempdir() do dir
+        with_json_upstream(json) do upstream
+            # sort_json_keys + pretty_json writes sorted, pretty JSON
+            sorted = joinpath(dir, "sorted.md")
+            record(sorted, upstream) do rec
+                set_sort_json_keys(rec, true)
+                @test get_sort_json_keys(rec)
+                set_pretty_json(rec, 2)
+                @test http_get("$(base_url(rec))/data") == json
+            end
+            @test occursin("\"a\": {\n    \"y\": 3,\n    \"z\": 2\n  },\n  \"b\": 1", read(sorted, String))
+
+            # sort_json_keys WITHOUT pretty_json is refused when the tape is written
+            rec = record(joinpath(dir, "refused.md"), upstream)
+            set_sort_json_keys(rec, true)
+            http_get("$(base_url(rec))/data")
+            err = try flush!(rec); nothing catch e; e end
+            @test err isa VcrError
+            @test occursin("sort_json_keys needs pretty_json", err.msg)
+
+            # a refused rule throws; the switches read back and clear
+            probe = record(joinpath(dir, "probe.md"), upstream)
+            @test_throws VcrError sort_header_value(probe, "")
+            set_sort_response_headers(probe, true)
+            @test get_sort_response_headers(probe)
+            clear_stable_order(probe)
+            @test !get_sort_response_headers(probe)
+            close!(probe)
+        end
+    end
+end
+
+@testset "Playback range" begin
+    RANGE = joinpath(@__DIR__, "..", "tapes", "range.md")
+    playback(RANGE) do vcr
+        @test get_playback_range(vcr) === nothing
+        set_playback_range(vcr, 1, -1)
+        @test get_playback_range(vcr) == (1, 2)
+        # the first interaction is skipped, the second is served
+        @test http_get("$(base_url(vcr))/step/second") == "second-body"
+        @test last_index(vcr) == 1
+        @test_throws VcrError set_playback_range(vcr, 9, -1)
+        clear_playback_range(vcr)
+        @test get_playback_range(vcr) === nothing
+    end
+    # a record handle refuses a range
+    mktempdir() do dir
+        rec = record(joinpath(dir, "refused.md"), "http://127.0.0.1:1")
+        @test_throws VcrError set_playback_range(rec, 0, -1)
+        close!(rec)
     end
 end

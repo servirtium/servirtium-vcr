@@ -114,6 +114,41 @@ is `Pkg.add(name="Servirtium", version="2.0.0-alpha.13")`; it does not resolve t
 - The version `2.0.0-alpha.13` is valid Julia semver as written; no respelling is needed.
 - Windows: use the `.dll` asset and its full path.
 
+## Stable ordering and playback range
+
+Opt-in, off by default. Stable ordering is record side, for a service that sends
+the same response in a different order every run; the tape is byte-exact without it.
+
+```julia
+record("tapes/data.md", upstream) do rec
+    set_pretty_json(rec, 2)                    # sorted JSON is only written pretty-printed
+    set_sort_json_keys(rec, true)              # object keys sorted at every depth
+    sort_json_array(rec, "/items", "/id")      # path, by
+    sort_json_array_at(rec, "^/users", "", "name")   # request regex, path, by
+    set_sort_response_headers(rec, true)
+    sort_header_value(rec, "Allow")
+    # ... drive the system under test ...
+end
+```
+
+A rule the core refuses throws `VcrError`. Sorting JSON without `set_pretty_json`
+is refused when the tape is written, so `flush!` (and the `record do` block's
+exit) throws a `VcrError` containing "sort_json_keys needs pretty_json" and
+writes nothing. `get_sort_json_keys` / `get_sort_response_headers` read the
+switches back; `clear_stable_order` turns every rule off.
+
+Replay only a slice of a tape, by the tape's `## Interaction N` number (0-based,
+inclusive; `to < 0` = through the last):
+
+```julia
+playback("tapes/journey.md") do vcr
+    set_playback_range(vcr, 4, 6)      # throws VcrError if refused
+    get_playback_range(vcr)            # (4, 6), or nothing
+    clear_playback_range(vcr)
+end
+```
+
+A record handle refuses a range, so a test cannot overwrite a journey's tape with a slice.
 ## Building and testing
 
 ```sh
