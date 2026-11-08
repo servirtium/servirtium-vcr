@@ -116,6 +116,20 @@ The in-repo integration tests point at a specific `.so` with
 `SERVIRTIUM_VCR_LIB=<path-to-libservirtium_vcr.so>`; a consumer that relies on
 the module's own bundled `native/` copy needs nothing set.
 
+## Stable ordering and playback range
+
+Both are opt-in builder options; a refused rule or range comes back as an `error` from `Start()`.
+
+- **Stable order (record builder):** `.SortJSONKeys()`, `.SortJSONArray(path, by)`,
+  `.SortJSONArrayAt(requestRegex, path, by)`, `.SortResponseHeaders()`, `.SortHeaderValue(name)`;
+  `Server.SortJSONKeys()` / `SortResponseHeaders()` read the state back and `ClearStableOrder()`
+  turns it off. Sorted JSON is only written pretty-printed: without `.PrettyJSON(2)`, `Close()`
+  returns `sort_json_keys needs pretty_json: ...` and writes nothing.
+- **Playback range (playback only):** `servirtium.Playback(tape).PlaybackRange(from, to)` replays
+  only the tape's `## Interaction N` headings `from`..`to` (0-based, inclusive; `to < 0` = through
+  the last); a bad range makes `Start()` fail. On a running server, `SetPlaybackRange` (an error on a
+  record server), `ClearPlaybackRange()` and `PlaybackRange()` (`ok` is false when the whole tape plays).
+
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,

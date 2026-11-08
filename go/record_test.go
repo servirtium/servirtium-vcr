@@ -228,6 +228,78 @@ func TestRecordLicenseNoticeAndPresets(t *testing.T) {
 	}
 }
 
+const unsortedJSON = `{"zebra":1,"apple":{"mango":2,"banana":3}}`
+const sortedJSON = "{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}"
+
+func TestRecordSortJSONKeysWithPrettyJSONWritesSortedPrettyJSON(t *testing.T) {
+	up := newFakeUpstream()
+	defer up.close()
+	up.responseBody, up.contentType = unsortedJSON, "application/json"
+	tape := tempTape(t, "sorted.md")
+	rec, err := servirtium.Record(tape, up.baseURL()).PrettyJSON(2).SortJSONKeys().
+		SortJSONArray("/list", "").SortJSONArrayAt("/data", "/list", "id").
+		SortResponseHeaders().SortHeaderValue("Allow").Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rec.SortJSONKeys() || !rec.SortResponseHeaders() {
+		t.Fatal("the stable-order getters should read back on")
+	}
+	resp, err := http.Get(rec.BaseURL() + "/data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if err := rec.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTape(t, tape); !strings.Contains(got, sortedJSON) {
+		t.Fatalf("expected sorted, pretty JSON in:\n%s", got)
+	}
+}
+
+func TestRecordSortJSONKeysWithoutPrettyJSONIsRefused(t *testing.T) {
+	up := newFakeUpstream()
+	defer up.close()
+	up.responseBody, up.contentType = unsortedJSON, "application/json"
+	tape := tempTape(t, "refused.md")
+	rec, err := servirtium.Record(tape, up.baseURL()).SortJSONKeys().Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(rec.BaseURL() + "/data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	err = rec.Close()
+	if err == nil || !strings.Contains(err.Error(), "sort_json_keys needs pretty_json") {
+		t.Fatalf("expected the needs-pretty_json refusal, got %v", err)
+	}
+	if _, statErr := os.Stat(tape); statErr == nil {
+		t.Fatal("a refused tape must not be written")
+	}
+	if _, err := servirtium.Record(tape, up.baseURL()).SortJSONArray("a/b", "").Start(); err == nil {
+		t.Fatal("expected a bad sort path to be refused at Start")
+	}
+}
+
+func TestRecordServerRefusesAPlaybackRange(t *testing.T) {
+	up := newFakeUpstream()
+	defer up.close()
+	rec, err := servirtium.Record(tempTape(t, "range.md"), up.baseURL()).Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rec.Discard()
+	if err := rec.SetPlaybackRange(0, 1); err == nil {
+		t.Fatal("a record server must refuse a playback range")
+	}
+	if _, _, ok := rec.PlaybackRange(); ok {
+		t.Fatal("no range should be set")
+	}
+}
+
 func TestRetainedReplayDiagnostics(t *testing.T) {
 	_, source, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(source), "..")

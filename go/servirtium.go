@@ -99,6 +99,18 @@ char*  aether_vcr_embed_redact_credentials(void* server);
 char*  aether_vcr_embed_redact_credential_header(void* server, const char* name);
 char*  aether_vcr_embed_set_upstream_cafile(void* server, const char* path);
 char*  aether_vcr_embed_add_license_notice(void* server, const char* text);
+void   aether_vcr_embed_set_sort_json_keys(void* server, int on);
+int    aether_vcr_embed_get_sort_json_keys(void* server);
+char*  aether_vcr_embed_sort_json_array(void* server, const char* path, const char* by);
+char*  aether_vcr_embed_sort_json_array_at(void* server, const char* request, const char* path, const char* by);
+void   aether_vcr_embed_set_sort_response_headers(void* server, int on);
+int    aether_vcr_embed_get_sort_response_headers(void* server);
+char*  aether_vcr_embed_sort_header_value(void* server, const char* name);
+void   aether_vcr_embed_clear_stable_order(void* server);
+char*  aether_vcr_embed_set_playback_range(void* server, int from, int to);
+void   aether_vcr_embed_clear_playback_range(void* server);
+int    aether_vcr_embed_get_playback_range_from(void* server);
+int    aether_vcr_embed_get_playback_range_to(void* server);
 void   aether_vcr_embed_clear_redactions(void* server);
 void   aether_vcr_embed_clear_unredactions(void* server);
 void   aether_vcr_embed_clear_header_removals(void* server);
@@ -386,6 +398,7 @@ type PlaybackBuilder struct {
 	matchHeaders  []string
 	unredactions  []replacement
 	substitutions []replacement
+	playbackRange *[2]int
 }
 
 // Host binds the host. Defaults to 127.0.0.1.
@@ -456,6 +469,15 @@ func (b *PlaybackBuilder) RedactCredentials() *PlaybackBuilder {
 // as RedactCredentials.
 func (b *PlaybackBuilder) RedactCredentialHeader(name string) *PlaybackBuilder {
 	b.credentialHeaders = append(b.credentialHeaders, name)
+	return b
+}
+
+// PlaybackRange replays only interactions from..to of the tape: the numbers of
+// its "## Interaction N" headings, 0-based and inclusive; to < 0 means through
+// the last. Selection is by number only. A bad range (from < 0, to before from,
+// past the tape's end) makes Start return an error.
+func (b *PlaybackBuilder) PlaybackRange(from, to int) *PlaybackBuilder {
+	b.playbackRange = &[2]int{from, to}
 	return b
 }
 
@@ -544,6 +566,12 @@ func (b *PlaybackBuilder) applyConfig(handle unsafe.Pointer) error {
 	if b.matchMultiple {
 		C.aether_vcr_embed_set_match_multiple(handle, 1)
 	}
+	if b.playbackRange != nil {
+		res := C.aether_vcr_embed_set_playback_range(handle, C.int(b.playbackRange[0]), C.int(b.playbackRange[1]))
+		if err := checkErr(res, "PlaybackRange"); err != nil {
+			return err
+		}
+	}
 	for _, name := range b.matchHeaders {
 		cName := C.CString(name)
 		C.aether_vcr_embed_match_header(handle, cName)
@@ -631,6 +659,10 @@ type RecordBuilder struct {
 	emphasizeHTTPVerb   bool
 	prettyXML           int
 	prettyJSON          int
+	sortJSONKeys        bool
+	sortJSONArrays      [][3]string // request regex ("" = every request), path, by
+	sortRespHeaders     bool
+	sortHeaderValues    []string
 	upstreamCafile      string
 	licenseNotice       string
 	failIfChanged       bool
@@ -809,6 +841,40 @@ func (b *RecordBuilder) PrettyXML(indent int) *RecordBuilder { b.prettyXML = ind
 // PrettyJSON pretty-prints recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
 func (b *RecordBuilder) PrettyJSON(indent int) *RecordBuilder { b.prettyJSON = indent; return b }
 
+// SortJSONKeys is the opt-in stable order for JSON object keys: they are sorted
+// at every depth in recorded JSON response bodies. Sorted JSON is only written
+// pretty-printed: without PrettyJSON, Close returns "sort_json_keys needs
+// pretty_json: ..." and writes nothing.
+func (b *RecordBuilder) SortJSONKeys() *RecordBuilder { b.sortJSONKeys = true; return b }
+
+// SortJSONArray sorts the JSON response arrays path selects (JSON pointer from
+// the root, "*" for one segment, "" the root array, or a bare member name) by
+// member by (a name or JSON pointer, or several comma-separated; "" sorts by
+// each element's canonical JSON). A refused rule makes Start return an error;
+// needs PrettyJSON like SortJSONKeys.
+func (b *RecordBuilder) SortJSONArray(path, by string) *RecordBuilder {
+	b.sortJSONArrays = append(b.sortJSONArrays, [3]string{"", path, by})
+	return b
+}
+
+// SortJSONArrayAt is SortJSONArray only for interactions whose request path
+// (query included) matches the regex request.
+func (b *RecordBuilder) SortJSONArrayAt(request, path, by string) *RecordBuilder {
+	b.sortJSONArrays = append(b.sortJSONArrays, [3]string{request, path, by})
+	return b
+}
+
+// SortResponseHeaders sorts response header lines by name (case-insensitive);
+// a repeated header's lines keep their order.
+func (b *RecordBuilder) SortResponseHeaders() *RecordBuilder { b.sortRespHeaders = true; return b }
+
+// SortHeaderValue sorts one response header's comma-separated items ("Allow").
+// Call again for more headers.
+func (b *RecordBuilder) SortHeaderValue(name string) *RecordBuilder {
+	b.sortHeaderValues = append(b.sortHeaderValues, name)
+	return b
+}
+
 // UpstreamCafile verifies an https upstream against this PEM CA file.
 func (b *RecordBuilder) UpstreamCafile(path string) *RecordBuilder { b.upstreamCafile = path; return b }
 
@@ -839,6 +905,38 @@ func (b *RecordBuilder) applyConfig(handle unsafe.Pointer) error {
 	}
 	if b.prettyJSON > 0 {
 		C.aether_vcr_embed_set_pretty_json(handle, C.int(b.prettyJSON))
+	}
+	if b.sortJSONKeys {
+		C.aether_vcr_embed_set_sort_json_keys(handle, 1)
+	}
+	for _, r := range b.sortJSONArrays {
+		cPath, cBy := C.CString(r[1]), C.CString(r[2])
+		var res *C.char
+		op := "SortJSONArray"
+		if r[0] == "" {
+			res = C.aether_vcr_embed_sort_json_array(handle, cPath, cBy)
+		} else {
+			op = "SortJSONArrayAt"
+			cReq := C.CString(r[0])
+			res = C.aether_vcr_embed_sort_json_array_at(handle, cReq, cPath, cBy)
+			C.free(unsafe.Pointer(cReq))
+		}
+		C.free(unsafe.Pointer(cPath))
+		C.free(unsafe.Pointer(cBy))
+		if err := checkErr(res, op); err != nil {
+			return err
+		}
+	}
+	if b.sortRespHeaders {
+		C.aether_vcr_embed_set_sort_response_headers(handle, 1)
+	}
+	for _, n := range b.sortHeaderValues {
+		cName := C.CString(n)
+		res := C.aether_vcr_embed_sort_header_value(handle, cName)
+		C.free(unsafe.Pointer(cName))
+		if err := checkErr(res, "SortHeaderValue"); err != nil {
+			return err
+		}
 	}
 	if b.upstreamCafile != "" {
 		cPath := C.CString(b.upstreamCafile)
@@ -1037,6 +1135,37 @@ func (s *Server) Note(title, body string) error {
 	defer C.free(unsafe.Pointer(cTitle))
 	defer C.free(unsafe.Pointer(cBody))
 	return checkErr(C.aether_vcr_embed_note(s.handle, cTitle, cBody), "Note")
+}
+
+// SortJSONKeys reports whether recorded JSON object keys are sorted (the
+// RecordBuilder.SortJSONKeys opt-in).
+func (s *Server) SortJSONKeys() bool { return C.aether_vcr_embed_get_sort_json_keys(s.handle) != 0 }
+
+// SortResponseHeaders reports whether recorded response header lines are sorted.
+func (s *Server) SortResponseHeaders() bool {
+	return C.aether_vcr_embed_get_sort_response_headers(s.handle) != 0
+}
+
+// ClearStableOrder turns every stable-order rule off.
+func (s *Server) ClearStableOrder() { C.aether_vcr_embed_clear_stable_order(s.handle) }
+
+// SetPlaybackRange replays only interactions from..to (to < 0 = through the
+// last). Prefer PlaybackBuilder.PlaybackRange; this is the same call on a
+// running server, before traffic. It errors on a record server (a recording
+// always captures the whole conversation) or a bad range.
+func (s *Server) SetPlaybackRange(from, to int) error {
+	return checkErr(C.aether_vcr_embed_set_playback_range(s.handle, C.int(from), C.int(to)), "SetPlaybackRange")
+}
+
+// ClearPlaybackRange replays the whole tape again.
+func (s *Server) ClearPlaybackRange() { C.aether_vcr_embed_clear_playback_range(s.handle) }
+
+// PlaybackRange returns the playback range's ends, or ok=false when the whole
+// tape is replayed.
+func (s *Server) PlaybackRange() (from, to int, ok bool) {
+	from = int(C.aether_vcr_embed_get_playback_range_from(s.handle))
+	to = int(C.aether_vcr_embed_get_playback_range_to(s.handle))
+	return from, to, from >= 0
 }
 
 // ResetCursor rewinds the replay cursor to interaction 0 and clears the

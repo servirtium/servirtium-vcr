@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -212,5 +213,57 @@ func TestSubstituteFillsPlaceholderAndAssertAllConsumed(t *testing.T) {
 	}
 	if p := srv.LastTLSProtocol(); p != "" {
 		t.Fatalf("expected no TLS, got %q", p)
+	}
+}
+
+// The shared shop-journey tape: 0 GET /login ... 7 GET /logout. A test that
+// brings its own session cookie replays only the interaction it needs.
+func TestPlaybackRangeReplaysOnlyTheChosenInteractions(t *testing.T) {
+	_, source, _, _ := runtime.Caller(0)
+	tape := filepath.Join(filepath.Dir(source), "..", "core_tests", "tapes", "playback_range.tape")
+	srv, err := servirtium.Playback(tape).RedactCredentials().PlaybackRange(7, 7).Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	if from, to, ok := srv.PlaybackRange(); !ok || from != 7 || to != 7 {
+		t.Fatalf("range reads back as %d..%d ok=%v", from, to, ok)
+	}
+	get := func(path string) string {
+		req, _ := http.NewRequest("GET", srv.BaseURL()+path, nil)
+		req.Header.Set("Cookie", "sid=live-session")
+		req.Header.Set("User-Agent", "") // empty = not sent; the tape recorded only the Cookie
+		// DisableCompression keeps Go from adding Accept-Encoding.
+		resp, err := (&http.Client{Transport: &http.Transport{DisableCompression: true}}).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b)
+	}
+	if got := get("/logout"); got != "bye\n" && got != "bye" {
+		t.Fatalf("expected the later interaction to be served, got %q", got)
+	}
+	if srv.LastIndex() != 7 {
+		t.Fatalf("served interaction %d, want 7", srv.LastIndex())
+	}
+	if got := get("/login"); strings.Contains(got, "login-form") {
+		t.Fatalf("a skipped interaction was served: %q", got)
+	}
+	if !strings.Contains(srv.LastError(), "outside the playback range") {
+		t.Fatalf("last error: %q", srv.LastError())
+	}
+	srv.ClearPlaybackRange()
+	if _, _, ok := srv.PlaybackRange(); ok {
+		t.Fatal("range should be cleared")
+	}
+}
+
+func TestPlaybackBadRangeIsRefusedAtStart(t *testing.T) {
+	_, source, _, _ := runtime.Caller(0)
+	tape := filepath.Join(filepath.Dir(source), "..", "core_tests", "tapes", "playback_range.tape")
+	if _, err := servirtium.Playback(tape).PlaybackRange(9, -1).Start(); err == nil {
+		t.Fatal("expected a range past the tape's end to be refused")
 	}
 }
