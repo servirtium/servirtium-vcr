@@ -20,6 +20,11 @@ import std.http.client
 import std.string
 import std.os
 import std.fs
+// The pure-Aether TLS 1.3 server is reached through weak symbols that resolve only
+// when this is imported (core/embed.ae does the same for the shipped libs). Without
+// it the probe relies on an OpenSSL that Aether's default build does not link on
+// every platform (FreeBSD): "the pure-Aether TLS server is not linked".
+import std.cryptography.tls13_server
 
 extern exit(code: int)
 
