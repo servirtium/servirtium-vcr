@@ -24,6 +24,8 @@ against the real native library.
 | Header presets (transport / cloud vendor) | ✅ | ✅ | `.removeTransportHeaders()` / `.removeCloudHeaders(vendor)` | ✅ |
 | Credential redaction preset | ✅ | ✅ | `.redactCredentials()` / `.redactCredentialHeader(name)` | ✅ |
 | License notice / upstream CA file / pretty JSON | ✅ | ✅ | `.addLicenseNotice(text)` / `.upstreamCafile(path)` / `.prettyJson(n)` | ✅ notice + pretty JSON |
+| Stable order (record, opt-in; needs pretty JSON for JSON) | ✅ | — | `.sortJsonKeys()` / `.sortJsonArray(path, by)` / `.sortJsonArrayAt(requestRegex, path, by)` / `.sortResponseHeaders()` / `.sortHeaderValue(name)` | ✅ |
+| Playback range (replay interactions `from`..`to` by number) | — | ✅ | `.playbackRange(from, to = -1)` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` / `.prettyXml(n)` | — |
 | Whole-tape normalization (correlated) | ✅ | ✅ | `.normalizeWholeTape(pattern, name)` | — |
 | Whole-tape redaction (uncorrelated) | ✅ | ✅ | `.redactWholeTape(pattern, replacement)` | — |

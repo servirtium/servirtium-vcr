@@ -26,6 +26,43 @@ describe('record', () => {
     expect(() => Vcr.record(tapePath, 'http://127.0.0.1:1').removeCloudHeaders('nosuchvendor').port(0).start()).toThrow()
   })
 
+  it('writes sorted, pretty JSON with sortJsonKeys and prettyJson', async () => {
+    upstream = await startFakeUpstream('{"b":1,"a":{"d":2,"c":3}}', 'application/json')
+    tapePath = tmpTape()
+    const rec = Vcr.record(tapePath, upstream.baseUrl).prettyJson(2).sortJsonKeys().port(0).start()
+    try {
+      await (await fetch(`${rec.baseUrl}/doc`)).text()
+    } finally {
+      rec.close()
+    }
+    expect(fs.readFileSync(tapePath, 'utf8')).toContain('{\n  "a": {\n    "c": 3,\n    "d": 2\n  },\n  "b": 1\n}')
+  })
+
+  it('refuses sortJsonKeys without prettyJson when the tape is written', async () => {
+    upstream = await startFakeUpstream('{"b":1,"a":2}', 'application/json')
+    tapePath = tmpTape()
+    const rec = Vcr.record(tapePath, upstream.baseUrl).sortJsonKeys().port(0).start()
+    await (await fetch(`${rec.baseUrl}/doc`)).text()
+    expect(() => rec.close()).toThrow(/sort_json_keys needs pretty_json/)
+    expect(fs.existsSync(tapePath)).toBe(false)
+  })
+
+  it('applies array and header sort rules and throws when the core refuses one', async () => {
+    upstream = await startFakeUpstream('[{"n":"z"},{"n":"a"}]', 'application/json')
+    tapePath = tmpTape()
+    const rec = Vcr.record(tapePath, upstream.baseUrl).prettyJson(2)
+      .sortJsonArray('', 'n').sortJsonArrayAt('/doc', '', 'n')
+      .sortResponseHeaders().sortHeaderValue('Allow').port(0).start()
+    try {
+      await (await fetch(`${rec.baseUrl}/doc`)).text()
+    } finally {
+      rec.close()
+    }
+    const tape = fs.readFileSync(tapePath, 'utf8')
+    expect(tape.indexOf('"n": "a"')).toBeLessThan(tape.indexOf('"n": "z"'))
+    expect(() => Vcr.record(tapePath, upstream.baseUrl).sortHeaderValue('').port(0).start()).toThrow(/sortHeaderValue/)
+  })
+
   it('records then replays the same interaction (chunked upstream de-chunked)', async () => {
     upstream = await startChunkedUpstream('hello-from-upstream')
     tapePath = tmpTape()

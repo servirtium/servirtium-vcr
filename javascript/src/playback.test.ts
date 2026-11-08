@@ -1,5 +1,6 @@
 import * as path from 'path'
 import { Vcr, VcrField, VcrOutcome } from './index'
+import * as N from './native'
 
 const tape = (name: string) => path.join(__dirname, '..', 'tapes', name)
 
@@ -71,4 +72,52 @@ it('substitutes a custom placeholder and tracks full replay', async () => {
   } finally {
     vcr.close()
   }
+})
+
+describe('playback range', () => {
+  // fetch adds Accept/User-Agent/etc.; the tape records only Cookie.
+  const rangePlayback = (from: number) => {
+    let b = Vcr.playback(tape('playback_range.md')).redactCredentials().playbackRange(from)
+    for (const h of ['Accept', 'Accept-Language', 'Sec-Fetch-Mode', 'User-Agent', 'Accept-Encoding', 'Connection']) {
+      b = b.removeHeader(VcrField.RequestHeaders, h)
+    }
+    return b.port(0)
+  }
+  const get = (base: string, p: string) => fetch(`${base}${p}`, { headers: { Cookie: 'sid=live' } })
+
+  it('skips early interactions and serves a later one', async () => {
+    const vcr = rangePlayback(7).start()
+    try {
+      expect(vcr.tapeLength).toBe(8)
+      const res = await get(vcr.baseUrl, '/logout')
+      expect(res.status).toBe(200)
+      expect(vcr.lastIndex).toBe(7)
+      expect(vcr.lastKind).toBe(VcrOutcome.Ok)
+    } finally {
+      vcr.close()
+    }
+    const vcr2 = rangePlayback(7).start()
+    try {
+      await (await get(vcr2.baseUrl, '/login')).text() // interaction 0 is outside the range
+      expect(vcr2.lastKind).not.toBe(VcrOutcome.Ok)
+      expect(vcr2.lastError).toContain('outside the playback range')
+    } finally {
+      vcr2.close()
+    }
+  })
+
+  it('throws at start for a bad range', () => {
+    expect(() => Vcr.playback(tape('playback_range.md')).playbackRange(99).port(0).start()).toThrow(/playbackRange/)
+  })
+
+  it('is refused on a record handle', () => {
+    const rec = Vcr.record(path.join(require('os').tmpdir(), 'range_refusal.md'), 'http://127.0.0.1:1').port(0).start()
+    try {
+      const handle = (rec as any).requireHandle()
+      expect(N.takeString(N.setPlaybackRange(handle, 0, -1))).not.toBe('')
+      expect(N.getPlaybackRangeFrom(handle)).toBe(-1)
+    } finally {
+      rec.discard()
+    }
+  })
 })

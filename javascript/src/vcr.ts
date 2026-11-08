@@ -275,6 +275,7 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   private matchXmlBodyOn = false
   private matchMultipleOn = false
   private readonly matchHeaders: string[] = []
+  private playbackRangeValue: { from: number; to: number } | null = null
 
   constructor(tapePath: string) {
     super(tapePath)
@@ -343,6 +344,16 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   }
 
   /**
+   * Replay only interactions `from`..`to` of the tape (0-based, inclusive, the
+   * `## Interaction N` numbers; `to` < 0 means through the last). Selection is
+   * by number only. A bad range throws `VcrError` at `start()`.
+   */
+  playbackRange(from: number, to = -1): PlaybackBuilder {
+    this.playbackRangeValue = { from, to }
+    return this
+  }
+
+  /**
    * Rewrite the replayed response: regex `pattern` -> `replacement` in the
    * response body or headers (`{{baseUrl}}` is already expanded by core).
    */
@@ -364,6 +375,9 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     if (this.matchMultipleOn) N.setMatchMultiple(handle, 1)
     for (const name of this.matchHeaders) {
       N.matchHeader(handle, name)
+    }
+    if (this.playbackRangeValue !== null) {
+      check(N.setPlaybackRange(handle, this.playbackRangeValue.from, this.playbackRangeValue.to), 'playbackRange')
     }
     for (const { field, pattern, replacement } of this.unredactions) {
       check(N.unredact(handle, field, pattern, replacement), 'unredact')
@@ -406,6 +420,10 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   private prettyJsonIndent = 0
   private upstreamCafilePath: string | null = null
   private licenseNoticeText: string | null = null
+  private sortJsonKeysOn = false
+  private readonly sortJsonArrays: Array<{ request: string | null; path: string; by: string }> = []
+  private sortResponseHeadersOn = false
+  private readonly sortHeaderValues: string[] = []
   private failIfChangedOn = false
 
   constructor(tapePath: string, private readonly upstreamBase: string) {
@@ -509,6 +527,50 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   }
 
   /**
+   * Opt-in stable order: write JSON response bodies' object keys sorted at
+   * every depth. Sorted JSON is only written pretty-printed: without
+   * `prettyJson` the tape is refused when written (`close()` throws
+   * `VcrError`, "sort_json_keys needs pretty_json ...").
+   */
+  sortJsonKeys(on = true): RecordBuilder {
+    this.sortJsonKeysOn = on
+    return this
+  }
+
+  /**
+   * Sort the JSON response arrays `path` selects (a JSON pointer from the
+   * root, `*` for one segment, `""` the root array, or a bare member name) by
+   * member `by` (a name, a pointer, or several comma-separated; `""` sorts by
+   * each element's canonical JSON). Replay serves the sorted order. Needs
+   * `prettyJson`. A rule the core refuses throws at `start()`.
+   */
+  sortJsonArray(path: string, by = ''): RecordBuilder {
+    this.sortJsonArrays.push({ request: null, path, by })
+    return this
+  }
+
+  /**
+   * Like `sortJsonArray`, only for interactions whose request path (query
+   * included) matches the regex `requestRegex`.
+   */
+  sortJsonArrayAt(requestRegex: string, path: string, by = ''): RecordBuilder {
+    this.sortJsonArrays.push({ request: requestRegex, path, by })
+    return this
+  }
+
+  /** Write response header lines sorted by name (case-insensitive); a repeated header's lines keep their order. */
+  sortResponseHeaders(on = true): RecordBuilder {
+    this.sortResponseHeadersOn = on
+    return this
+  }
+
+  /** Sort one response header's comma-separated items (`Allow`). */
+  sortHeaderValue(name: string): RecordBuilder {
+    this.sortHeaderValues.push(name)
+    return this
+  }
+
+  /**
    * On close, still write the freshly recorded tape but throw if it differs
    * from the on-disk one — the Servirtium step-4 drift contract, so a normal
    * `git diff` shows the change and CI fails loudly.
@@ -526,6 +588,15 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     if (this.prettyJsonIndent > 0) N.setPrettyJson(handle, this.prettyJsonIndent)
     if (this.upstreamCafilePath !== null) check(N.setUpstreamCafile(handle, this.upstreamCafilePath), 'upstreamCafile')
     if (this.licenseNoticeText !== null) check(N.addLicenseNotice(handle, this.licenseNoticeText), 'addLicenseNotice')
+    if (this.sortJsonKeysOn) N.setSortJsonKeys(handle, 1)
+    for (const { request, path, by } of this.sortJsonArrays) {
+      if (request === null) check(N.sortJsonArray(handle, path, by), 'sortJsonArray')
+      else check(N.sortJsonArrayAt(handle, request, path, by), 'sortJsonArrayAt')
+    }
+    if (this.sortResponseHeadersOn) N.setSortResponseHeaders(handle, 1)
+    for (const name of this.sortHeaderValues) {
+      check(N.sortHeaderValue(handle, name), 'sortHeaderValue')
+    }
     for (const { operation, field, pattern, replacement } of this.redactions) {
       check(operation(handle, field, pattern, replacement), 'redact')
     }

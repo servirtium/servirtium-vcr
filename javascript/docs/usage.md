@@ -192,6 +192,40 @@ Vcr.record(tape, upstream)
 Playback tolerates either form regardless, so cross-implementation tapes load
 cleanly.
 
+## Stable order (record, opt-in)
+
+For a service that answers in a different order every run. All off by default;
+the tape is byte-exact without them.
+
+```ts
+const rec = Vcr.record(tape, upstream)
+  .prettyJson(2)                                // required: sorted JSON is only written pretty-printed
+  .sortJsonKeys()                               // object keys sorted at every depth
+  .sortJsonArray('versions', '/created')        // arrays `versions` holds, by member
+  .sortJsonArrayAt('^/secrets', '', 'name')     // only for matching request paths
+  .sortResponseHeaders()                        // header lines by name
+  .sortHeaderValue('Allow')                     // "POST, GET" -> "GET, POST"
+  .start()
+```
+
+A rule the core refuses (an empty header name, a bad regex) throws `VcrError`
+at `start()`. `sortJsonKeys` / `sortJsonArray*` without `prettyJson` are
+refused when the tape is written: `close()` throws `VcrError`
+("sort_json_keys needs pretty_json ...") and writes nothing.
+
+## Playback range
+
+Replay only a slice of a tape, by interaction number (the `## Interaction N`
+headings, 0-based, inclusive; `to` < 0 means through the last):
+
+```ts
+Vcr.playback(tape).playbackRange(4, 6).start()
+```
+
+A request outside the range is never served (kind `PathOrMethodDiff`,
+"... is outside the playback range 4-6"). A bad range throws `VcrError` at
+`start()`.
+
 ## `VcrServer` members
 
 | Member | Meaning |

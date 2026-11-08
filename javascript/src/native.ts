@@ -280,6 +280,40 @@ export const addLicenseNotice = lazy(
   'void* aether_vcr_embed_add_license_notice(void* server, const char* text)',
 )
 
+export const setSortJsonKeys = lazy('void aether_vcr_embed_set_sort_json_keys(void* server, int on)')
+
+export const getSortJsonKeys = lazy('int aether_vcr_embed_get_sort_json_keys(void* server)')
+
+export const sortJsonArray = lazy(
+  'void* aether_vcr_embed_sort_json_array(void* server, const char* path, const char* by)',
+)
+
+export const sortJsonArrayAt = lazy(
+  'void* aether_vcr_embed_sort_json_array_at(void* server, const char* request, const char* path, const char* by)',
+)
+
+export const setSortResponseHeaders = lazy(
+  'void aether_vcr_embed_set_sort_response_headers(void* server, int on)',
+)
+
+export const getSortResponseHeaders = lazy('int aether_vcr_embed_get_sort_response_headers(void* server)')
+
+export const sortHeaderValue = lazy(
+  'void* aether_vcr_embed_sort_header_value(void* server, const char* name)',
+)
+
+export const clearStableOrder = lazy('void aether_vcr_embed_clear_stable_order(void* server)')
+
+export const setPlaybackRange = lazy(
+  'void* aether_vcr_embed_set_playback_range(void* server, int from, int to)',
+)
+
+export const clearPlaybackRange = lazy('void aether_vcr_embed_clear_playback_range(void* server)')
+
+export const getPlaybackRangeFrom = lazy('int aether_vcr_embed_get_playback_range_from(void* server)')
+
+export const getPlaybackRangeTo = lazy('int aether_vcr_embed_get_playback_range_to(void* server)')
+
 export const clearRedactions = lazy('void aether_vcr_embed_clear_redactions(void* server)')
 
 export const clearUnredactions = lazy('void aether_vcr_embed_clear_unredactions(void* server)')
