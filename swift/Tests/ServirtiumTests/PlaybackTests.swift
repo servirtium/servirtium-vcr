@@ -54,17 +54,8 @@ final class PlaybackTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("target/test-tools/redaction_fixture").path
         func run(_ args: [String]) throws -> String {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = [fixture] + args
-            let output = Pipe()
-            process.standardOutput = output
-            process.standardError = output
-            try process.run()
-            let bytes = output.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            let text = String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            XCTAssertEqual(process.terminationStatus, 0, text)
+            let (status, text) = runFixture([fixture] + args)
+            XCTAssertEqual(status, 0, text)
             return text
         }
         let upstream = try run(["start", directory.path])
@@ -83,12 +74,8 @@ final class PlaybackTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent()
         try Vcr.withPlayback(root.appendingPathComponent("core_tests/diagnostics/playback.md").path) { server in
             server.testContext("Swift scenario", sourceFile: "scenario.test", sourceLine: 123)
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = [root.appendingPathComponent("target/test-tools/diagnostic_fixture").path, server.baseUrl]
-            try process.run()
-            process.waitUntilExit()
-            XCTAssertEqual(process.terminationStatus, 0)
+            let (status, _) = runFixture([root.appendingPathComponent("target/test-tools/diagnostic_fixture").path, server.baseUrl])
+            XCTAssertEqual(status, 0)
             XCTAssertTrue(server.readLastError(consume: false).contains("owner"))
             XCTAssertTrue(server.readLastError(consume: false).contains("scenario.test:123"))
             XCTAssertFalse(server.diagnosticsJson().contains("\"retrieved\":1"))

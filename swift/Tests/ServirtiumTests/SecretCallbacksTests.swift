@@ -9,13 +9,9 @@ final class SecretCallbacksTests: XCTestCase {
         let tape = directory.appendingPathComponent("tape.md").path
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("target/test-tools/secret_fixture").path
         func run(_ action: String, _ arg: String) throws -> String {
-            let process = Process(); let output = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = [fixture, action, arg]; process.standardOutput = output
-            try process.run()
-            let data = output.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
-            XCTAssertEqual(process.terminationStatus, 0)
-            return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            let (status, text) = runFixture([fixture, action, arg])
+            XCTAssertEqual(status, 0, text)
+            return text
         }
         var count = 0
         let rec = try Vcr.record(tape, upstreamBase: run("start", directory.path)).secretRedactor { key, request in
