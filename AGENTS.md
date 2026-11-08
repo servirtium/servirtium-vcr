@@ -181,6 +181,43 @@ reference). Quick facts:
   ABI diagnostics, Python/CLI suites and 200 start/immediate-stop cycles.
   This does not claim verification of the unreleased 0.849.0 binary.
 
+## GhostBSD (FreeBSD) lane
+
+`ssh ghostbsd` (FreeBSD 15.1 amd64) is a regular test host beside the Linux box
+`cachyos`. Everything lives under `~/aether-lab/` there; `~/aether`,
+`~/aether-ui`, `~/aeoenv.sh`, `~/scm` and `~/aether-lab/aether` belong to other
+sessions.
+
+- **Sync** the committed tree, never the working tree (macOS adds `._` files):
+  `git archive HEAD | ssh ghostbsd 'mkdir -p ~/aether-lab/servirtium-vcr && tar xf - -C ~/aether-lab/servirtium-vcr'`
+- **Toolchain**: released Aether 0.897.0 + aeb v0.343 in the private prefix
+  `~/aether-lab/svcr-prefix` (aeb's `get.sh` with `PREFIX=`, `AE_PIN`, `AEB_REF`).
+  `. ~/aether-lab/svcr-env.sh` puts it first on `PATH`, sets `AE_CC=cc CC=cc`
+  (no gcc on FreeBSD; `aeb-link` honours `AE_CC`), and `LD_PRELOAD`s
+  `~/aether-lab/svcr-shim/shfix.so` (see below). `ae` still shares
+  `~/.aether/cache` (content-addressed).
+- **Run**: `. ~/aether-lab/svcr-env.sh; cd ~/aether-lab/servirtium-vcr; aeb <lang>/.tests.ae`,
+  one at a time (`core_tests/.tests.ae` first; it takes ~5 min).
+- **Present**: c, cpp (clang++), go, java (openjdk25), python (3.12; pytest only
+  in the venv `~/aether-lab/svcr-venv`, put its `bin` first on `PATH`), ruby (3.4;
+  but no `rspec`/`bundler`/`gem`), zig 0.16 (too old: `zig/` needs 0.17.x, its
+  `build.zig` fails on `b.root`). **Missing**: node, php, rust/cargo, dotnet
+  (csharp, fsharp), swift, kotlin, scala/sbt, groovy, clojure, erlang, elixir,
+  gleam, lfe, nim, d, crystal, haskell, julia, lua, janet, dart, pharo.
+- **Released-ae problems on FreeBSD** (Aether bugs, not servirtium's):
+  1. `std/os/aether_os.c` runs `sh -c -- <cmd>`; FreeBSD `sh` takes `--` as the
+     command, so every `os.system` fails with `--: not found` (aeb cannot even
+     build its own helpers). The `LD_PRELOAD` shim drops the `--`; delete it
+     once Aether fixes this.
+  2. The FreeBSD release `libaether.a` is built without PCRE2 (not even the
+     vendored engine): `std.regex` answers "built without libpcre2-8". Fails
+     `sort_json_array_at` / `normalize` / `redact_whole_tape` tests in every
+     binding (core_tests: keeps_headers, rules_footer, stable_order).
+  3. `std.http` `serve_file` double-sends the response (known, separate PR), so
+     the static_content tests fail (core_tests, go, java, python).
+- `core_tests/tls_probe.ae` imports `std.cryptography.tls13_server` so HTTPS
+  works without an OpenSSL link; that was the one servirtium-side gap.
+
 ## Third-party-consumer tests (`.package.ae` + `.example.ae`)
 
 The in-tree `<lang>/.tests.ae` runs each binding's own suite against the source
