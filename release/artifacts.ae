@@ -27,6 +27,16 @@ replace_pattern(pattern: string, text: string, replacement: string) -> (string, 
     defer regex.free(re)
     return regex.replace_all(re, text, replacement)
 }
+// The slot whose library this host can dlopen: the ABI-export check loads it.
+// Release runners are linux-x86_64, so that stays the fallback; a FreeBSD or
+// macOS host checks its own slot (a Linux ELF cannot be dlopen'd there).
+host_slot() -> string {
+    key = "${os.platform()}-${os.arch()}."
+    for i in 0..PLATFORMS.len {
+        if string.starts_with(PLATFORMS[i], key) == 1 { return PLATFORMS[i] }
+    }
+    return "linux-x86_64.so"
+}
 check_version(root: string, tag: string) -> string {
     if regex.matches_lit("^v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$", tag)! == 0 { return "invalid release tag: ${tag}" }
     want = string.trim(fs.read("${root}/SERVIRTIUM_VCR_VERSION")!)
@@ -96,7 +106,8 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
     }
     toml = fs.read("${packages}/aether.toml")!
     if regex.matches_lit("(?m)^binary = \"servirtium_vcr\"$", toml)! == 0 || regex.matches_lit("(?m)^modules = \"[.]\"$", toml)! == 0 { return "ae-add manifest must export binary servirtium_vcr at modules = '.'" }
-    library = dl.open("${dist}/libservirtium_vcr-${tag}-linux-x86_64.so")!
+    slot = host_slot()
+    library = dl.open("${dist}/libservirtium_vcr-${tag}-${slot}")!
     defer dl.close(library)
     source = fs.read("${root}/core/embed.ae")!
     re = regex.compile_flags("^vcr_embed_\\w+(?=[(])", regex.FLAG_MULTILINE)!
@@ -108,9 +119,9 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
     for i in 0..count {
         name = string.substring(source, regex.find_all_start(symbols, i), regex.find_all_end(symbols, i))
         symbol, err = dl.symbol(library, "aether_${name}")
-        if symbol == null || err != "" { return "missing Linux ABI export: aether_${name}" }
+        if symbol == null || err != "" { return "missing ABI export in ${slot}: aether_${name}" }
     }
-    println("Verified ${PLATFORMS.len} libraries, Windows import libraries, ${PLATFORMS.len} ae-add packages, checksums, and ${count} Linux ABI exports.")
+    println("Verified ${PLATFORMS.len} libraries, Windows import libraries, ${PLATFORMS.len} ae-add packages, checksums, and ${count} ABI exports (${slot}).")
     return ""
 }
 check_packages(dist: string) -> string {

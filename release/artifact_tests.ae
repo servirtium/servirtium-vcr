@@ -1,6 +1,9 @@
 // Controlled artifact matrix: exercise verification, not cross compilation.
 // Only the host library is loaded. Other slots intentionally reuse fixture
 // bytes; the musl slot changes the ELF NEEDED name without moving its offsets.
+// On a non-glibc host (FreeBSD: libc.so.7) the Linux slots get the same bytes
+// with NEEDED libc.so.7 renamed to libc.so.6 (same length), and the host's own
+// slot keeps the unpatched library, which is the one the ABI check dlopens.
 import release.artifacts
 import std.cryptography
 import std.fs
@@ -54,11 +57,13 @@ main() {
     data, _n, err = fs.read_binary(os.getenv("SERVIRTIUM_VCR_LIB"))
     check(err == "", "read host library")
     library = data
-    musl = string.replace_all(library, "libc.so.6", "libc.so${string.from_char(0)}${string.from_char(0)}")
+    linux_library = string.replace_all(library, "libc.so.7", "libc.so.6")
+    musl = string.replace_all(linux_library, "libc.so.6", "libc.so${string.from_char(0)}${string.from_char(0)}")
     dist = "${root}/dist"
     check(fs.mkdir_p("${dist}/ae-add") == "", "fixture artifacts directory")
     for i in 0..PLATFORMS.len {
         platform = PLATFORMS[i]; payload = library
+        if string.starts_with(platform, "linux-") == 1 { payload = linux_library }
         if string.contains(platform, "-musl") == 1 { payload = musl }
         asset("${dist}/libservirtium_vcr-${TAG}-${platform}", payload)
         asset("${dist}/ae-add/servirtium_vcr-${TAG}-${platform}", payload)
@@ -93,7 +98,7 @@ main() {
     package = "${dist}/ae-add/servirtium_vcr-${TAG}-linux-x86_64.so"
     asset(package, "different validly-checksummed bytes")
     expect_failure(root, dist, "ae-add package differs")
-    asset(package, library)
+    asset(package, linux_library)
     sums = fs.read("${dist}/SHA256SUMS.txt")!
     write_fixture("${dist}/SHA256SUMS.txt", "")
     expect_failure(root, dist, "invalid SHA256SUMS")
@@ -103,9 +108,9 @@ main() {
     write_fixture("${dist}/ae-add/aether.toml", toml)
     asset(raw, musl); manifest(dist)
     expect_failure(root, dist, "wrong Linux libc")
-    asset(raw, library); manifest(dist)
+    asset(raw, linux_library); manifest(dist)
     write_fixture("${root}/core/embed.ae", "${source}\nvcr_embed_missing_for_test() {}\n")
-    expect_failure(root, dist, "missing Linux ABI export")
+    expect_failure(root, dist, "missing ABI export")
     write_fixture("${root}/core/embed.ae", source)
     // Published downloads flatten the ae-add directory.
     entries = fs.list_dir("${dist}/ae-add")!
