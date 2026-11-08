@@ -188,3 +188,95 @@ describe "named secrets" do
     end
   end
 end
+
+
+describe "Stable ordering" do
+  upstream_tape = File.expand_path("../../core_tests/tapes/stable_order_upstream.tape", __DIR__)
+
+  it "sort_json_keys with pretty_json writes sorted, pretty JSON" do
+    directory = File.tempname("vcr-order")
+    Dir.mkdir(directory)
+    begin
+      Servirtium.playback(upstream_tape) do |up|
+        Servirtium.record(File.join(directory, "sorted.md"), up.base_url) do |rec|
+          rec.pretty_json(2)
+          rec.sort_json_keys = true
+          rec.sort_json_keys?.should be_true
+          rec.sort_json_array("/list")
+          rec.sort_json_array_at("/data", "/list", "id")
+          rec.sort_response_headers = true
+          rec.sort_response_headers?.should be_true
+          rec.sort_header_value("Allow")
+          expect_raises(Servirtium::Error) { rec.sort_json_array("a/b") }
+          HTTP::Client.get("#{rec.base_url}/data")
+        end
+      end
+      File.read(File.join(directory, "sorted.md")).should contain(
+        "{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}")
+    ensure
+      Dir.glob(File.join(directory, "*")).each { |file| File.delete(file) }
+      Dir.delete(directory)
+    end
+  end
+
+  it "sort_json_keys without pretty_json is refused at emit time" do
+    directory = File.tempname("vcr-order")
+    Dir.mkdir(directory)
+    begin
+      Servirtium.playback(upstream_tape) do |up|
+        rec = Servirtium.record(File.join(directory, "refused.md"), up.base_url)
+        rec.sort_json_keys = true
+        HTTP::Client.get("#{rec.base_url}/data")
+        expect_raises(Servirtium::Error, /sort_json_keys needs pretty_json/) { rec.flush }
+      end
+      File.exists?(File.join(directory, "refused.md")).should be_false
+    ensure
+      Dir.glob(File.join(directory, "*")).each { |file| File.delete(file) }
+      Dir.delete(directory)
+    end
+  end
+end
+
+
+describe "Playback range" do
+  range_tape = File.expand_path("../../core_tests/tapes/playback_range.tape", __DIR__)
+
+  it "replays only the chosen interactions" do
+    Servirtium.playback(range_tape) do |vcr|
+      vcr.playback_range_from.should eq(-1)
+      vcr.redact_credentials
+      vcr.strict_ignore_common_headers
+      vcr.set_playback_range(7, 7)
+      vcr.playback_range_from.should eq(7)
+      vcr.playback_range_to.should eq(7)
+      headers = HTTP::Headers{"Cookie" => "sid=live-session"}
+      # The test brings its own cookie and skips the whole journey.
+      HTTP::Client.get("#{vcr.base_url}/logout", headers: headers).body.strip.should eq("bye")
+      vcr.last_index.should eq(7)
+      HTTP::Client.get("#{vcr.base_url}/login", headers: headers).body.should_not contain("login-form")
+      vcr.last_error.should contain("outside the playback range")
+      expect_raises(Servirtium::Error) { vcr.set_playback_range(9) }
+      vcr.clear_playback_range
+      vcr.playback_range_from.should eq(-1)
+    end
+  end
+
+  it "is refused on a record handle" do
+    directory = File.tempname("vcr-order")
+    Dir.mkdir(directory)
+    begin
+      Servirtium.playback(File.expand_path("../../core_tests/tapes/stable_order_upstream.tape", __DIR__)) do |up|
+        rec = Servirtium.record(File.join(directory, "range.md"), up.base_url)
+        begin
+          expect_raises(Servirtium::Error) { rec.set_playback_range(0, 1) }
+          rec.playback_range_from.should eq(-1)
+        ensure
+          rec.discard
+        end
+      end
+    ensure
+      Dir.glob(File.join(directory, "*")).each { |file| File.delete(file) }
+      Dir.delete(directory)
+    end
+  end
+end

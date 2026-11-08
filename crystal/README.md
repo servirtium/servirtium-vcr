@@ -117,6 +117,20 @@ crystal run check.cr
 - If `version:` does not resolve, the repo has no matching tag with the root
   `shard.yml`; use `branch: main` instead of `version:`.
 
+### Stable ordering and playback range
+
+Both are opt-in; a refused rule or range raises `Servirtium::Error` (the reason is its message).
+
+- **Stable order (record side):** `sort_json_keys = true` / `sort_json_keys?`,
+  `sort_json_array(path, by)`, `sort_json_array_at(request_regex, path, by)`,
+  `sort_response_headers = true` / `sort_response_headers?`, `sort_header_value(name)`,
+  `clear_stable_order`. Sorted JSON is only written pretty-printed: with a JSON sort rule and no
+  `pretty_json`, `flush` raises `sort_json_keys needs pretty_json: ...` and writes nothing.
+- **Playback range (playback only):** `set_playback_range(from, to)` replays only the tape's
+  `## Interaction N` headings `from`..`to` (0-based, inclusive; `to < 0` = through the last);
+  a record handle or a bad range raises. `clear_playback_range`,
+  `playback_range_from` / `playback_range_to` (-1 when none).
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

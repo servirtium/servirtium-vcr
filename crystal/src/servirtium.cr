@@ -95,6 +95,18 @@ lib LibVcr
   fun redact_credential_header = aether_vcr_embed_redact_credential_header(h : Void*, name : LibC::Char*) : LibC::Char*
   fun set_upstream_cafile = aether_vcr_embed_set_upstream_cafile(h : Void*, path : LibC::Char*) : LibC::Char*
   fun add_license_notice = aether_vcr_embed_add_license_notice(h : Void*, text : LibC::Char*) : LibC::Char*
+  fun set_sort_json_keys = aether_vcr_embed_set_sort_json_keys(h : Void*, on : LibC::Int) : Void
+  fun get_sort_json_keys = aether_vcr_embed_get_sort_json_keys(h : Void*) : LibC::Int
+  fun sort_json_array = aether_vcr_embed_sort_json_array(h : Void*, path : LibC::Char*, by : LibC::Char*) : LibC::Char*
+  fun sort_json_array_at = aether_vcr_embed_sort_json_array_at(h : Void*, request : LibC::Char*, path : LibC::Char*, by : LibC::Char*) : LibC::Char*
+  fun set_sort_response_headers = aether_vcr_embed_set_sort_response_headers(h : Void*, on : LibC::Int) : Void
+  fun get_sort_response_headers = aether_vcr_embed_get_sort_response_headers(h : Void*) : LibC::Int
+  fun sort_header_value = aether_vcr_embed_sort_header_value(h : Void*, name : LibC::Char*) : LibC::Char*
+  fun clear_stable_order = aether_vcr_embed_clear_stable_order(h : Void*) : Void
+  fun set_playback_range = aether_vcr_embed_set_playback_range(h : Void*, from : LibC::Int, to : LibC::Int) : LibC::Char*
+  fun clear_playback_range = aether_vcr_embed_clear_playback_range(h : Void*) : Void
+  fun get_playback_range_from = aether_vcr_embed_get_playback_range_from(h : Void*) : LibC::Int
+  fun get_playback_range_to = aether_vcr_embed_get_playback_range_to(h : Void*) : LibC::Int
   fun clear_redactions = aether_vcr_embed_clear_redactions(h : Void*) : Void
   fun clear_unredactions = aether_vcr_embed_clear_unredactions(h : Void*) : Void
   fun clear_normalizations = aether_vcr_embed_clear_normalizations(h : Void*) : Void
@@ -481,6 +493,77 @@ module Servirtium
     # Current pretty-JSON indent (0 = off).
     def get_pretty_json : Int32
       LibVcr.get_pretty_json(@handle)
+    end
+
+    # Opt-in stable order (record side; all off by default, the tape is
+    # byte-exact without them). Sorted JSON is only written pretty-printed:
+    # with a JSON sort rule and no pretty_json, flush raises Error
+    # "sort_json_keys needs pretty_json: ..." and writes nothing.
+
+    # Sort JSON object keys at every depth in recorded JSON response bodies.
+    def sort_json_keys=(on : Bool)
+      LibVcr.set_sort_json_keys(@handle, on ? 1 : 0)
+    end
+
+    # Whether JSON object keys are sorted (sort_json_keys=).
+    def sort_json_keys? : Bool
+      LibVcr.get_sort_json_keys(@handle) != 0
+    end
+
+    # Sort the JSON response arrays `path` selects (JSON pointer from the root,
+    # "*" for one segment, "" the root array, or a bare member name) by member
+    # `by` ("" = each element's canonical JSON). Raises Error if the rule is refused.
+    def sort_json_array(path : String, by : String = "") : Nil
+      check LibVcr.sort_json_array(@handle, path, by), "sort_json_array"
+    end
+
+    # The same, only for requests whose path (query included) matches the
+    # regex `request`. Raises Error if the rule is refused.
+    def sort_json_array_at(request : String, path : String, by : String = "") : Nil
+      check LibVcr.sort_json_array_at(@handle, request, path, by), "sort_json_array_at"
+    end
+
+    # Sort response header lines by name (case-insensitive).
+    def sort_response_headers=(on : Bool)
+      LibVcr.set_sort_response_headers(@handle, on ? 1 : 0)
+    end
+
+    # Whether response header lines are sorted (sort_response_headers=).
+    def sort_response_headers? : Bool
+      LibVcr.get_sort_response_headers(@handle) != 0
+    end
+
+    # Sort one response header's comma-separated items ("Allow"). Raises Error if refused.
+    def sort_header_value(name : String) : Nil
+      check LibVcr.sort_header_value(@handle, name), "sort_header_value"
+    end
+
+    # Turn every stable-order rule off.
+    def clear_stable_order : Nil
+      LibVcr.clear_stable_order(@handle)
+    end
+
+    # Playback only: replay just interactions `from`..`to` of the tape (the
+    # numbers of its "## Interaction N" headings, 0-based, inclusive; `to` < 0 =
+    # through the last). Raises Error on a record handle (a recording always
+    # captures the whole conversation) or a bad range. Call after opening,
+    # before traffic.
+    def set_playback_range(from : Int32, to : Int32 = -1) : Nil
+      check LibVcr.set_playback_range(@handle, from, to), "set_playback_range"
+    end
+
+    # Replay the whole tape again.
+    def clear_playback_range : Nil
+      LibVcr.clear_playback_range(@handle)
+    end
+
+    # The range's ends; -1 when none is set.
+    def playback_range_from : Int32
+      LibVcr.get_playback_range_from(@handle)
+    end
+
+    def playback_range_to : Int32
+      LibVcr.get_playback_range_to(@handle)
     end
 
     def clear_redactions : Nil
