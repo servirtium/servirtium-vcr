@@ -69,6 +69,80 @@ final class PlaybackTests: XCTestCase {
         _ = try run(["check", directory.path])
     }
 
+    private var repoRoot: URL {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    private func recordedTape(configure: (Vcr) throws -> Void, flushPath: String) throws -> String? {
+        let upstream = repoRoot.appendingPathComponent("core_tests/tapes/stable_order_upstream.tape").path
+        try Vcr.withPlayback(upstream) { up in
+            let rec = try Vcr.record(flushPath, upstreamBase: up.baseUrl)
+            try configure(rec)
+            _ = try httpGet(rec.baseUrl + "/data")
+            try rec.flush()
+        }
+        return try? String(contentsOfFile: flushPath, encoding: .utf8)
+    }
+
+    func testSortJsonKeysWithPrettyJsonWritesSortedPrettyJson() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).md").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let text = try recordedTape(configure: { rec in
+            rec.prettyJson(2)
+            rec.setSortJsonKeys()
+            XCTAssertTrue(rec.sortJsonKeys)
+            try rec.sortJsonArray("/list")
+            try rec.sortJsonArray(at: "/data", "/list", by: "id")
+            rec.setSortResponseHeaders()
+            XCTAssertTrue(rec.sortResponseHeaders)
+            try rec.sortHeaderValue("Allow")
+            XCTAssertThrowsError(try rec.sortJsonArray("a/b"))
+        }, flushPath: path)
+        XCTAssertTrue(text?.contains("{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}") ?? false, text ?? "no tape")
+    }
+
+    func testSortJsonKeysWithoutPrettyJsonIsRefused() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).md").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        XCTAssertThrowsError(try recordedTape(configure: { $0.setSortJsonKeys() }, flushPath: path)) { error in
+            XCTAssertTrue("\(error)".contains("sort_json_keys needs pretty_json"), "\(error)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    }
+
+    func testPlaybackRangeReplaysOnlyTheChosenInteractions() throws {
+        let tape = repoRoot.appendingPathComponent("core_tests/tapes/playback_range.tape").path
+        try Vcr.withPlayback(tape) { vcr in
+            XCTAssertEqual(vcr.playbackRangeFrom, -1)
+            try vcr.redactCredentials()
+            vcr.strictIgnoreCommonHeaders()
+            try vcr.setPlaybackRange(from: 7, to: 7)
+            XCTAssertEqual(vcr.playbackRangeFrom, 7)
+            XCTAssertEqual(vcr.playbackRangeTo, 7)
+            let cookie = ["curl", "-s", "-S", "-H", "Cookie: sid=live-session"]
+            // The test brings its own cookie and skips the whole journey.
+            XCTAssertEqual(try runCommand(cookie + [vcr.baseUrl + "/logout"]), "bye")
+            XCTAssertEqual(vcr.lastIndex, 7)
+            XCTAssertNotEqual(try runCommand(cookie + [vcr.baseUrl + "/login"]), "login-form")
+            XCTAssertTrue(vcr.lastError.contains("outside the playback range"), vcr.lastError)
+            XCTAssertThrowsError(try vcr.setPlaybackRange(from: 9))
+            vcr.clearPlaybackRange()
+            XCTAssertEqual(vcr.playbackRangeFrom, -1)
+        }
+    }
+
+    func testARecordHandleRefusesAPlaybackRange() throws {
+        let upstream = repoRoot.appendingPathComponent("core_tests/tapes/stable_order_upstream.tape").path
+        try Vcr.withPlayback(upstream) { up in
+            let rec = try Vcr.record(FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).md").path,
+                                     upstreamBase: up.baseUrl)
+            defer { rec.discard() }
+            XCTAssertThrowsError(try rec.setPlaybackRange(from: 0, to: 1))
+            XCTAssertEqual(rec.playbackRangeFrom, -1)
+        }
+    }
+
     func testRetainedReplayDiagnostics() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()

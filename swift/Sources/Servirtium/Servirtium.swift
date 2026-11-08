@@ -371,6 +371,63 @@ public final class Vcr {
     public func prettyJson(_ indent: Int32 = 2) { aether_vcr_embed_set_pretty_json(handle, indent) }
     /// Current pretty-JSON indent (0 = off).
     public var prettyJsonIndent: Int32 { aether_vcr_embed_get_pretty_json(handle) }
+
+    // Opt-in stable order (record side; all off by default, the tape is
+    // byte-exact without them). Sorted JSON is only written pretty-printed:
+    // with a JSON sort rule and no prettyJson(), flush() throws
+    // "sort_json_keys needs pretty_json: ..." and writes nothing.
+
+    /// Sort JSON object keys at every depth in recorded JSON response bodies.
+    public func setSortJsonKeys(_ on: Bool = true) {
+        aether_vcr_embed_set_sort_json_keys(handle, on ? 1 : 0)
+    }
+    /// Whether JSON object keys are sorted (setSortJsonKeys).
+    public var sortJsonKeys: Bool { aether_vcr_embed_get_sort_json_keys(handle) != 0 }
+
+    /// Sort the JSON response arrays `path` selects (JSON pointer from the root,
+    /// "*" for one segment, "" the root array, or a bare member name) by member
+    /// `by` ("" = each element's canonical JSON). Throws if the rule is refused.
+    public func sortJsonArray(_ path: String, by: String = "") throws {
+        try check(aether_vcr_embed_sort_json_array(handle, path, by), "sortJsonArray")
+    }
+
+    /// The same, only for requests whose path (query included) matches the
+    /// regex `request`. Throws if the rule is refused.
+    public func sortJsonArray(at request: String, _ path: String, by: String = "") throws {
+        try check(aether_vcr_embed_sort_json_array_at(handle, request, path, by), "sortJsonArrayAt")
+    }
+
+    /// Sort response header lines by name (case-insensitive).
+    public func setSortResponseHeaders(_ on: Bool = true) {
+        aether_vcr_embed_set_sort_response_headers(handle, on ? 1 : 0)
+    }
+    /// Whether response header lines are sorted (setSortResponseHeaders).
+    public var sortResponseHeaders: Bool { aether_vcr_embed_get_sort_response_headers(handle) != 0 }
+
+    /// Sort one response header's comma-separated items ("Allow"). Throws if refused.
+    public func sortHeaderValue(_ name: String) throws {
+        try check(aether_vcr_embed_sort_header_value(handle, name), "sortHeaderValue")
+    }
+
+    /// Turn every stable-order rule off.
+    public func clearStableOrder() { aether_vcr_embed_clear_stable_order(handle) }
+
+    // Playback range (playback only).
+
+    /// Replay just interactions `from`...`to` of the tape (the numbers of its
+    /// "## Interaction N" headings, 0-based, inclusive; `to < 0` = through the
+    /// last). Throws on a record handle (a recording always captures the whole
+    /// conversation) or a bad range. Call after opening, before traffic.
+    public func setPlaybackRange(from: Int32, to: Int32 = -1) throws {
+        try check(aether_vcr_embed_set_playback_range(handle, from, to), "setPlaybackRange")
+    }
+    /// Replay the whole tape again.
+    public func clearPlaybackRange() { aether_vcr_embed_clear_playback_range(handle) }
+    /// The range's start, or -1 when none is set.
+    public var playbackRangeFrom: Int32 { aether_vcr_embed_get_playback_range_from(handle) }
+    /// The range's end, or -1 when none is set.
+    public var playbackRangeTo: Int32 { aether_vcr_embed_get_playback_range_to(handle) }
+
     public func clearRedactions() { aether_vcr_embed_clear_redactions(handle) }
     public func clearUnredactions() { aether_vcr_embed_clear_unredactions(handle) }
     public func clearNormalizations() { aether_vcr_embed_clear_normalizations(handle) }
