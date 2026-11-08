@@ -290,6 +290,78 @@ ServirtiumLibrary >> substitute: server field: field pattern: pattern replacemen
 	^ self ffiCall: #( void* aether_vcr_embed_substitute ( void* server, int field, String pattern, String replacement, int required ) )
 ]
 
+{ #category : 'ffi - stable order' }
+ServirtiumLibrary >> setSortJsonKeys: server on: on [
+
+	^ self ffiCall: #( void aether_vcr_embed_set_sort_json_keys ( void* server, int on ) )
+]
+
+{ #category : 'ffi - stable order' }
+ServirtiumLibrary >> getSortJsonKeys: server [
+
+	^ self ffiCall: #( int aether_vcr_embed_get_sort_json_keys ( void* server ) )
+]
+
+{ #category : 'ffi - stable order' }
+ServirtiumLibrary >> sortJsonArray: server path: path by: by [
+
+	^ self ffiCall: #( void* aether_vcr_embed_sort_json_array ( void* server, String path, String by ) )
+]
+
+{ #category : 'ffi - stable order' }
+ServirtiumLibrary >> sortJsonArrayAt: server request: request path: path by: by [
+
+	^ self ffiCall: #( void* aether_vcr_embed_sort_json_array_at ( void* server, String request, String path, String by ) )
+]
+
+{ #category : 'ffi - stable order' }
+ServirtiumLibrary >> setSortResponseHeaders: server on: on [
+
+	^ self ffiCall: #( void aether_vcr_embed_set_sort_response_headers ( void* server, int on ) )
+]
+
+{ #category : 'ffi - stable order' }
+ServirtiumLibrary >> getSortResponseHeaders: server [
+
+	^ self ffiCall: #( int aether_vcr_embed_get_sort_response_headers ( void* server ) )
+]
+
+{ #category : 'ffi - stable order' }
+ServirtiumLibrary >> sortHeaderValue: server name: name [
+
+	^ self ffiCall: #( void* aether_vcr_embed_sort_header_value ( void* server, String name ) )
+]
+
+{ #category : 'ffi - stable order' }
+ServirtiumLibrary >> clearStableOrder: server [
+
+	^ self ffiCall: #( void aether_vcr_embed_clear_stable_order ( void* server ) )
+]
+
+{ #category : 'ffi - playback range' }
+ServirtiumLibrary >> setPlaybackRange: server from: from to: to [
+
+	^ self ffiCall: #( void* aether_vcr_embed_set_playback_range ( void* server, int from, int to ) )
+]
+
+{ #category : 'ffi - playback range' }
+ServirtiumLibrary >> clearPlaybackRange: server [
+
+	^ self ffiCall: #( void aether_vcr_embed_clear_playback_range ( void* server ) )
+]
+
+{ #category : 'ffi - playback range' }
+ServirtiumLibrary >> getPlaybackRangeFrom: server [
+
+	^ self ffiCall: #( int aether_vcr_embed_get_playback_range_from ( void* server ) )
+]
+
+{ #category : 'ffi - playback range' }
+ServirtiumLibrary >> getPlaybackRangeTo: server [
+
+	^ self ffiCall: #( int aether_vcr_embed_get_playback_range_to ( void* server ) )
+]
+
 { #category : 'ffi - clearing' }
 ServirtiumLibrary >> clearSubstitutions: server [
 

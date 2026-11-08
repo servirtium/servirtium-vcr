@@ -117,6 +117,55 @@ ServirtiumServer >> noteTitle: aTitle body: aBody [
 	err isEmpty ifFalse: [ ServirtiumError signal: err ]
 ]
 
+{ #category : 'playback range' }
+ServirtiumServer >> setPlaybackRangeFrom: aFrom to: aTo [
+	"Playback only: replay just interactions aFrom..aTo (0-based, inclusive;
+	 aTo < 0 = through the last). Raises a ServirtiumError on a record server
+	 or an impossible range."
+
+	| err |
+	err := self library takeString: (self library setPlaybackRange: self handle from: aFrom to: aTo).
+	err isEmpty ifFalse: [ ServirtiumError signal: 'vcr setPlaybackRange failed: ' , err ]
+]
+
+{ #category : 'playback range' }
+ServirtiumServer >> clearPlaybackRange [
+	"Replay the whole tape again."
+
+	self library clearPlaybackRange: self handle
+]
+
+{ #category : 'playback range' }
+ServirtiumServer >> playbackRange [
+	"The playback range in force as from -> to, or nil when none is set."
+
+	| from |
+	from := self library getPlaybackRangeFrom: self handle.
+	from < 0 ifTrue: [ ^ nil ].
+	^ from -> (self library getPlaybackRangeTo: self handle)
+]
+
+{ #category : 'stable order' }
+ServirtiumServer >> sortJsonKeysEnabled [
+	"Whether sortJsonKeys is on (record mode)."
+
+	^ (self library getSortJsonKeys: self handle) ~= 0
+]
+
+{ #category : 'stable order' }
+ServirtiumServer >> sortResponseHeadersEnabled [
+	"Whether sortResponseHeaders is on (record mode)."
+
+	^ (self library getSortResponseHeaders: self handle) ~= 0
+]
+
+{ #category : 'stable order' }
+ServirtiumServer >> clearStableOrder [
+	"Turn every stable-order rule off."
+
+	self library clearStableOrder: self handle
+]
+
 { #category : 'diagnostics' }
 ServirtiumServer >> resetCursor [
 	"Rewind the replay cursor to interaction 0 and clear last-* slots."

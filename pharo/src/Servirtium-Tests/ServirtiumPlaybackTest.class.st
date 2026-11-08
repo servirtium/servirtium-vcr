@@ -99,3 +99,18 @@ ServirtiumPlaybackTest >> testSubstituteRewritesCustomPlaceholderAndAssertAllCon
 		self assert: server lastKind equals: #ok.
 		server assertAllConsumed ] ensure: [ server stop ]
 ]
+
+{ #category : 'tests' }
+ServirtiumPlaybackTest >> testAPlaybackRangeSkipsEarlyInteractionsAndServesALaterOne [
+
+	(Servirtium playback: (self tapePath: 'range.md'))
+		playbackRangeFrom: 1 to: -1;
+		port: 0;
+		startThenDo: [ :server |
+			self assert: server playbackRange equals: 1 -> 2.
+			self assert: (ZnClient new get: server baseUrl , '/step/second') equals: 'second-body'.
+			self assert: server lastIndex equals: 1.
+			self should: [ server setPlaybackRangeFrom: 9 to: -1 ] raise: ServirtiumError.
+			server clearPlaybackRange.
+			self assert: server playbackRange isNil ]
+]

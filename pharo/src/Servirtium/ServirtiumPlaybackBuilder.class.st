@@ -14,6 +14,7 @@ Class {
 		'matchXmlBody',
 		'matchMultiple',
 		'matchHeaders',
+		'playbackRange',
 		'substitutions'
 	],
 	#category : 'Servirtium',
@@ -30,6 +31,7 @@ ServirtiumPlaybackBuilder >> initializeTape: aTapePath [
 	matchXmlBody := false.
 	matchMultiple := false.
 	matchHeaders := OrderedCollection new.
+	playbackRange := nil.
 	substitutions := OrderedCollection new
 ]
 
@@ -107,6 +109,17 @@ ServirtiumPlaybackBuilder >> matchHeader: aName [
 ]
 
 { #category : 'configuring' }
+ServirtiumPlaybackBuilder >> playbackRangeFrom: aFrom to: aTo [
+	"Replay only interactions aFrom..aTo of the tape (0-based, inclusive, the
+	 tape's '## Interaction N' numbers; aTo < 0 = through the last).
+	 Selection is by number only. start raises a ServirtiumError if the range
+	 is refused."
+
+	playbackRange := aFrom -> aTo.
+	^ self
+]
+
+{ #category : 'configuring' }
 ServirtiumPlaybackBuilder >> unredactField: aField pattern: aPattern replacement: aReplacement [
 	"Replace a redacted placeholder in the recorded expectation with the real
 	 value the live SUT sends, so a committed (scrubbed) tape still matches."
@@ -141,6 +154,10 @@ ServirtiumPlaybackBuilder >> applyConfig: handle [
 	matchMultiple ifTrue: [ self library setMatchMultiple: handle on: 1 ].
 	matchHeaders do: [ :name |
 		self library matchHeader: handle name: name ].
+	playbackRange ifNotNil: [ :range |
+		self
+			check: (self library setPlaybackRange: handle from: range key to: range value)
+			op: 'setPlaybackRange' ].
 	unredactions do: [ :tuple |
 		self
 			check: (self library unredact: handle field: (tuple at: 1) pattern: (tuple at: 2) replacement: (tuple at: 3))

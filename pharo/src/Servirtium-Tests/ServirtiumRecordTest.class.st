@@ -221,3 +221,64 @@ ServirtiumRecordTest >> testNamedSecretsRoundTrip [
     self assert: calls equals: 2.
     self assert: tape asFileReference contents equals: bytes
 ]
+
+{ #category : 'helpers' }
+ServirtiumRecordTest >> startJsonUpstream: aJsonString [
+	"A throwaway upstream answering every request with aJsonString as
+	 application/json."
+
+	| server |
+	server := ZnServer on: 0.
+	server
+		onRequestRespond: [ :request | ZnResponse ok: (ZnEntity json: aJsonString) ];
+		start.
+	[ server isListening and: [ server port > 0 ] ]
+		whileFalse: [ (Delay forMilliseconds: 20) wait ].
+	^ server
+]
+
+{ #category : 'tests' }
+ServirtiumRecordTest >> testSortJsonKeysWithPrettyJsonWritesSortedPrettyJson [
+
+	| json jsonUpstream expected |
+	json := '{"b":1,"a":{"z":2,"y":3}}'.
+	jsonUpstream := self startJsonUpstream: json.
+	[
+		(Servirtium record: tape upstream: 'http://127.0.0.1:' , jsonUpstream port asString)
+			sortJsonKeys;
+			prettyJson: 2;
+			port: 0;
+			startThenDo: [ :rec |
+				self assert: rec sortJsonKeysEnabled.
+				self assert: (ZnClient new get: rec baseUrl , '/data') equals: json ].
+		expected := '"a": {' , String lf , '    "y": 3,' , String lf , '    "z": 2' , String lf , '  },' , String lf , '  "b": 1'.
+		self assert: (tape asFileReference contents includesSubstring: expected) ]
+		ensure: [ jsonUpstream stop ]
+]
+
+{ #category : 'tests' }
+ServirtiumRecordTest >> testSortJsonKeysWithoutPrettyJsonIsRefusedWhenTheTapeIsWritten [
+
+	| jsonUpstream |
+	jsonUpstream := self startJsonUpstream: '{"b":1,"a":2}'.
+	[
+		self
+			should: [
+				(Servirtium record: tape upstream: 'http://127.0.0.1:' , jsonUpstream port asString)
+					sortJsonKeys;
+					port: 0;
+					startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/data' ] ]
+			raise: ServirtiumError
+			withExceptionDo: [ :e |
+				self assert: (e messageText includesSubstring: 'sort_json_keys needs pretty_json') ] ]
+		ensure: [ jsonUpstream stop ]
+]
+
+{ #category : 'tests' }
+ServirtiumRecordTest >> testARecordServerRefusesAPlaybackRange [
+
+	(Servirtium record: tape upstream: self upstreamBase)
+		port: 0;
+		startThenDo: [ :rec |
+			self should: [ rec setPlaybackRangeFrom: 0 to: -1 ] raise: ServirtiumError ]
+]

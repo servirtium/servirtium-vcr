@@ -178,6 +178,47 @@ API calls while CSS/JS/images come from your build output:
 Playback tolerates either form regardless, so cross-implementation tapes load
 cleanly.
 
+## Stable ordering (record; opt-in)
+
+For a service that sends the same response in a different order every run.
+Each rule is off by default; the tape is byte-exact without them.
+
+```smalltalk
+(Servirtium record: tape upstream: upstream)
+    prettyJson: 2;                              "required by the JSON rules below"
+    sortJsonKeys;                               "object keys sorted at every depth"
+    sortJsonArray: '/items' by: '/id';          "path, member to sort by"
+    sortJsonArrayAt: '^/users' path: '' by: 'name';  "request regex, path, by"
+    sortResponseHeaders;                        "header lines sorted by name"
+    sortHeaderValue: 'Allow';                   "one header's comma-separated items"
+    start.
+```
+
+Sorted JSON is only written pretty-printed: a record with `sortJsonKeys` or a
+sort-array rule but without `prettyJson:` is refused when the tape is written, so
+`stop` (and so `startThenDo:`) raises a `ServirtiumError` containing
+"sort_json_keys needs pretty_json: sorted JSON is only written pretty-printed
+(turn pretty_json on)" and writes nothing. A rule the core refuses outright
+raises from `start`.
+
+## Playback range (playback only)
+
+Replay only interactions `from`..`to` of a tape, by the tape's `## Interaction N`
+number (0-based, inclusive; `to < 0` = through the last). Interactions outside the
+range are never served.
+
+```smalltalk
+(Servirtium playback: tape)
+    playbackRangeFrom: 4 to: 6;
+    startThenDo: [ :server |
+        server setPlaybackRangeFrom: 4 to: -1.   "raises ServirtiumError when refused"
+        server playbackRange.                    "4 -> 6, or nil when none is set"
+        server clearPlaybackRange ].
+```
+
+A record server refuses a range (`setPlaybackRangeFrom:to:` raises), so a test
+cannot silently overwrite a journey's tape with a slice.
+
 ## `ServirtiumServer` messages
 
 | Message | Meaning |

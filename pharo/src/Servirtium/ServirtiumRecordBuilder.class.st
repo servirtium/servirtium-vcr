@@ -20,6 +20,10 @@ Class {
 		'prettyJson',
 		'upstreamCafile',
 		'licenseNotice',
+		'sortJsonKeys',
+		'sortJsonArrays',
+		'sortResponseHeaders',
+		'sortHeaderValues',
 		'failIfChanged'
 	],
 	#category : 'Servirtium',
@@ -46,6 +50,10 @@ ServirtiumRecordBuilder >> initializeTape: aTapePath [
 	prettyJson := 0.
 	upstreamCafile := nil.
 	licenseNotice := nil.
+	sortJsonKeys := false.
+	sortJsonArrays := OrderedCollection new.
+	sortResponseHeaders := false.
+	sortHeaderValues := OrderedCollection new.
 	failIfChanged := false
 ]
 
@@ -157,6 +165,53 @@ ServirtiumRecordBuilder >> addLicenseNotice: aText [
 ]
 
 { #category : 'configuring' }
+ServirtiumRecordBuilder >> sortJsonKeys [
+	"Stable ordering (opt-in): sort JSON object keys at every depth in recorded
+	 JSON response bodies. Sorted JSON is only written pretty-printed: without
+	 prettyJson the tape is refused when it is written (stop raises a
+	 ServirtiumError saying 'sort_json_keys needs pretty_json')."
+
+	sortJsonKeys := true.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> sortJsonArray: aPath by: aMember [
+	"Sort the JSON response arrays aPath selects (a JSON pointer, '*' for one
+	 segment, '' the root array, or a bare member name) by member aMember
+	 ('' = each element's canonical JSON). Needs prettyJson like sortJsonKeys.
+	 Repeatable; start raises a ServirtiumError if the core refuses the rule."
+
+	sortJsonArrays add: { nil. aPath. aMember }.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> sortJsonArrayAt: aRequestRegex path: aPath by: aMember [
+	"As sortJsonArray:by:, only for requests whose path (query included)
+	 matches aRequestRegex."
+
+	sortJsonArrays add: { aRequestRegex. aPath. aMember }.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> sortResponseHeaders [
+	"Sort response header lines by name (case-insensitive)."
+
+	sortResponseHeaders := true.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> sortHeaderValue: aName [
+	"Sort one response header's comma-separated items ('Allow'). Repeatable."
+
+	sortHeaderValues add: aName.
+	^ self
+]
+
+{ #category : 'configuring' }
 ServirtiumRecordBuilder >> failIfChanged [
 	"On stop, still write the freshly recorded tape but raise if it differs
 	 from the on-disk one — the Servirtium step-4 drift contract, so a normal
@@ -174,6 +229,22 @@ ServirtiumRecordBuilder >> applyConfig: handle [
 	emphasizeHttpVerbs ifTrue: [ self library emphasizeHttpVerbs: handle ].
 	prettyXml > 0 ifTrue: [ self library setPrettyXml: handle indent: prettyXml ].
 	prettyJson > 0 ifTrue: [ self library setPrettyJson: handle indent: prettyJson ].
+	sortJsonKeys ifTrue: [ self library setSortJsonKeys: handle on: 1 ].
+	sortJsonArrays do: [ :tuple |
+		(tuple at: 1)
+			ifNil: [
+				self
+					check: (self library sortJsonArray: handle path: (tuple at: 2) by: (tuple at: 3))
+					op: 'sortJsonArray' ]
+			ifNotNil: [ :request |
+				self
+					check: (self library sortJsonArrayAt: handle request: request path: (tuple at: 2) by: (tuple at: 3))
+					op: 'sortJsonArrayAt' ] ].
+	sortResponseHeaders ifTrue: [ self library setSortResponseHeaders: handle on: 1 ].
+	sortHeaderValues do: [ :name |
+		self
+			check: (self library sortHeaderValue: handle name: name)
+			op: 'sortHeaderValue' ].
 	upstreamCafile ifNotNil: [
 		self
 			check: (self library setUpstreamCafile: handle path: upstreamCafile)

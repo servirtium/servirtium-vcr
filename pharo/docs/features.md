@@ -27,6 +27,8 @@ diagnostics), mapped through the stack. "Test" = exercised by
 | Header presets (transport / cloud vendor) | ✅ | ✅ | `removeTransportHeaders` / `removeCloudHeaders: vendor` | ✅ |
 | Credential redaction preset | ✅ | ✅ | `redactCredentials` / `redactCredentialHeader: name` | ✅ |
 | License notice / upstream CA file / pretty JSON | ✅ | ✅ | `addLicenseNotice: text` / `upstreamCafile: path` / `prettyJson: n` | ✅ notice + presets |
+| Stable ordering (record, opt-in) | ✅ | ✅ | `sortJsonKeys` / `sortJsonArray:by:` / `sortJsonArrayAt:path:by:` / `sortResponseHeaders` / `sortHeaderValue:` (JSON sorting needs `prettyJson:`) | ✅ |
+| Playback range (replay a slice of a tape) | ✅ | ✅ | `playbackRangeFrom:to:` / `setPlaybackRangeFrom:to:` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `indentCodeBlocks` / `emphasizeHttpVerbs` / `prettyXml: n` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError`/`lastKind`/`lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
