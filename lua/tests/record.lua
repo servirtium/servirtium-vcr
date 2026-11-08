@@ -141,4 +141,43 @@ do
     os.remove(directory)
 end
 
+-- stable ordering --------------------------------------------------------------
+do
+    h.case("sort_json_keys with pretty_json writes sorted, pretty JSON")
+    local json = '{"b":1,"a":{"z":2,"y":3}}'
+    local up = h.start_upstream({ body = json, content_type = "application/json" })
+    local tape = h.temp_tape("sorted.md")
+    local rec = assert(servirtium.record(tape, up.base_url):sort_json_keys():pretty_json(2):port(0):start())
+    h.truthy(rec:sort_json_keys_enabled(), "sort_json_keys is on")
+    h.eq(h.curl_get(rec:base_url(), "/data"), json, "live body is untouched")
+    h.eq(rec:close(), "", "close (flush) returns no error")
+    h.contains(h.read_file(tape), '"a": {\n    "y": 3,\n    "z": 2\n  },\n  "b": 1', "sorted, pretty tape")
+    os.remove(tape)
+
+    h.case("sort_json_keys without pretty_json is refused when the tape is written")
+    local refused = h.temp_tape("refused.md")
+    local rec2 = assert(servirtium.record(refused, up.base_url):sort_json_keys():port(0):start())
+    h.curl_get(rec2:base_url(), "/data")
+    h.contains(rec2:close(), "sort_json_keys needs pretty_json", "refusal message")
+    h.eq(h.read_file(refused), nil, "nothing written")
+    up.close()
+
+    h.case("refused rules and clear_stable_order")
+    local bad = servirtium.record(tape, "http://127.0.0.1:1"):sort_header_value(""):port(0):start()
+    h.eq(bad, nil, "an empty header name is refused")
+    local probe = assert(servirtium.record(tape, "http://127.0.0.1:1"):sort_response_headers():port(0):start())
+    h.truthy(probe:sort_response_headers_enabled(), "sort_response_headers is on")
+    probe:clear_stable_order()
+    h.eq(probe:sort_response_headers_enabled(), false, "clear_stable_order turns it off")
+    probe:discard()
+end
+
+-- playback range: a record server refuses it ---------------------------------
+do
+    h.case("a record server refuses a playback range")
+    local tape = h.temp_tape("range-refused.md")
+    local rec = assert(servirtium.record(tape, "http://127.0.0.1:1"):port(0):start())
+    h.truthy(rec:set_playback_range(0, -1) ~= "", "refused on a record handle")
+    rec:discard()
+end
 h.done("record")

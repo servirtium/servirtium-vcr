@@ -106,6 +106,18 @@ extern void  aether_vcr_embed_indent_code_blocks(void *h);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *h);
 extern void  aether_vcr_embed_set_pretty_xml(void *h, int indent);
 extern void  aether_vcr_embed_set_pretty_json(void *h, int indent);
+extern void  aether_vcr_embed_set_sort_json_keys(void *h, int on);
+extern int   aether_vcr_embed_get_sort_json_keys(void *h);
+extern char *aether_vcr_embed_sort_json_array(void *h, const char *path, const char *by);
+extern char *aether_vcr_embed_sort_json_array_at(void *h, const char *request, const char *path, const char *by);
+extern void  aether_vcr_embed_set_sort_response_headers(void *h, int on);
+extern int   aether_vcr_embed_get_sort_response_headers(void *h);
+extern char *aether_vcr_embed_sort_header_value(void *h, const char *name);
+extern void  aether_vcr_embed_clear_stable_order(void *h);
+extern char *aether_vcr_embed_set_playback_range(void *h, int from, int to);
+extern void  aether_vcr_embed_clear_playback_range(void *h);
+extern int   aether_vcr_embed_get_playback_range_from(void *h);
+extern int   aether_vcr_embed_get_playback_range_to(void *h);
 extern char *aether_vcr_embed_remove_transport_headers(void *h);
 extern char *aether_vcr_embed_remove_cloud_headers(void *h, const char *vendor);
 extern char *aether_vcr_embed_redact_credentials(void *h);
@@ -627,6 +639,105 @@ static int l_add_license_notice(lua_State *L)
     return push_owned_string(L, aether_vcr_embed_add_license_notice(h, text));
 }
 
+/* set_sort_json_keys(handle, on) */
+static int l_set_sort_json_keys(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    aether_vcr_embed_set_sort_json_keys(h, lua_toboolean(L, 2));
+    return 0;
+}
+
+/* get_sort_json_keys(handle) -> boolean */
+static int l_get_sort_json_keys(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    lua_pushboolean(L, aether_vcr_embed_get_sort_json_keys(h) != 0);
+    return 1;
+}
+
+/* sort_json_array(handle, path, by) -> string (empty == ok) */
+static int l_sort_json_array(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *path = luaL_checkstring(L, 2);
+    const char *by = luaL_checkstring(L, 3);
+    return push_owned_string(L, aether_vcr_embed_sort_json_array(h, path, by));
+}
+
+/* sort_json_array_at(handle, request, path, by) -> string (empty == ok) */
+static int l_sort_json_array_at(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *request = luaL_checkstring(L, 2);
+    const char *path = luaL_checkstring(L, 3);
+    const char *by = luaL_checkstring(L, 4);
+    return push_owned_string(L, aether_vcr_embed_sort_json_array_at(h, request, path, by));
+}
+
+/* set_sort_response_headers(handle, on) */
+static int l_set_sort_response_headers(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    aether_vcr_embed_set_sort_response_headers(h, lua_toboolean(L, 2));
+    return 0;
+}
+
+/* get_sort_response_headers(handle) -> boolean */
+static int l_get_sort_response_headers(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    lua_pushboolean(L, aether_vcr_embed_get_sort_response_headers(h) != 0);
+    return 1;
+}
+
+/* sort_header_value(handle, name) -> string (empty == ok) */
+static int l_sort_header_value(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *name = luaL_checkstring(L, 2);
+    return push_owned_string(L, aether_vcr_embed_sort_header_value(h, name));
+}
+
+/* clear_stable_order(handle) */
+static int l_clear_stable_order(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    aether_vcr_embed_clear_stable_order(h);
+    return 0;
+}
+
+/* set_playback_range(handle, from, to) -> string (empty == ok) */
+static int l_set_playback_range(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int from = (int)luaL_checkinteger(L, 2);
+    int to = (int)luaL_checkinteger(L, 3);
+    return push_owned_string(L, aether_vcr_embed_set_playback_range(h, from, to));
+}
+
+/* clear_playback_range(handle) */
+static int l_clear_playback_range(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    aether_vcr_embed_clear_playback_range(h);
+    return 0;
+}
+
+/* get_playback_range_from(handle) / get_playback_range_to(handle) -> int (-1 = none) */
+static int l_get_playback_range_from(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    lua_pushinteger(L, aether_vcr_embed_get_playback_range_from(h));
+    return 1;
+}
+
+static int l_get_playback_range_to(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    lua_pushinteger(L, aether_vcr_embed_get_playback_range_to(h));
+    return 1;
+}
+
 /* ---- module registration ------------------------------------------------ */
 
 static int l_secret_begin(lua_State *L) { return push_owned_string(L, aether_vcr_embed_secret_begin(check_handle(L, 1), (int)luaL_checkinteger(L, 2))); }
@@ -694,6 +805,18 @@ static const luaL_Reg servirtium_funcs[] = {
     {"emphasize_http_verbs",            l_emphasize_http_verbs},
     {"set_pretty_xml",                  l_set_pretty_xml},
     {"set_pretty_json",                 l_set_pretty_json},
+    {"set_sort_json_keys",              l_set_sort_json_keys},
+    {"get_sort_json_keys",              l_get_sort_json_keys},
+    {"sort_json_array",                 l_sort_json_array},
+    {"sort_json_array_at",              l_sort_json_array_at},
+    {"set_sort_response_headers",       l_set_sort_response_headers},
+    {"get_sort_response_headers",       l_get_sort_response_headers},
+    {"sort_header_value",               l_sort_header_value},
+    {"clear_stable_order",              l_clear_stable_order},
+    {"set_playback_range",              l_set_playback_range},
+    {"clear_playback_range",            l_clear_playback_range},
+    {"get_playback_range_from",         l_get_playback_range_from},
+    {"get_playback_range_to",           l_get_playback_range_to},
     {"remove_transport_headers",        l_remove_transport_headers},
     {"remove_cloud_headers",            l_remove_cloud_headers},
     {"redact_credentials",              l_redact_credentials},

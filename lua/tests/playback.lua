@@ -118,4 +118,24 @@ do
     a:close(); b:close()
 end
 
+-- playback range: skip early interactions, serve a later one -----------------
+do
+    h.case("a playback range skips early interactions and serves a later one")
+    local srv = assert(servirtium.playback(tape("range.md")):playback_range(1, -1):port(0):start())
+    local from, to = srv:get_playback_range()
+    h.eq(from, 1, "range from")
+    h.eq(to, 2, "range to")
+    h.eq(h.curl_get(srv:base_url(), "/step/second"), "second-body", "interaction 1 is served")
+    h.eq(srv:last_index(), 1, "last_index")
+    -- interaction 0 is outside the range: never served
+    h.curl_get(srv:base_url(), "/step/first")
+    h.contains(srv:last_error(), "outside the playback range", "outside the range is refused")
+    h.truthy(srv:set_playback_range(9, -1) ~= "", "a range past the tape is refused")
+    srv:clear_playback_range()
+    h.eq(srv:get_playback_range(), nil, "cleared")
+    srv:close()
+
+    local bad = servirtium.playback(tape("range.md")):playback_range(9, -1):port(0):start()
+    h.eq(bad, nil, "start() refuses an impossible range")
+end
 h.done("playback")

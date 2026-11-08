@@ -72,13 +72,31 @@ servirtium.record(tape, upstreamBase)
     :note("Login", "establishes the session")
     :indent_code_blocks()
     :emphasize_http_verbs()
+    :pretty_json(2)                       -- sorted JSON is only written pretty-printed
+    :sort_json_keys()                     -- stable ordering (opt-in): object keys sorted at every depth
+    :sort_json_array("/items", "/id")     -- path, by
+    :sort_json_array_at("^/users", "", "name")   -- request regex, path, by
+    :sort_response_headers()
+    :sort_header_value("Allow")
     :fail_if_changed()
     :start()
+
+-- Playback range: replay only interactions 4..6 (0-based, inclusive; to < 0 = through the last)
+servirtium.playback(tape):playback_range(4, 6):start()
 ```
 
 `Server` methods: `:base_url([host])`, `:port()`, `:tape_length()`,
 `:last_kind()`, `:last_index()`, `:last_error()`, `:clear_last_error()`,
-`:reset_cursor()`, `:note(title, body)`, `:close()`.
+`:reset_cursor()`, `:note(title, body)`, `:close()`,
+`:set_playback_range(from, to)` (returns `""` or the refusal reason),
+`:clear_playback_range()`, `:get_playback_range()` (`from, to`, or `nil`),
+`:sort_json_keys_enabled()`, `:sort_response_headers_enabled()`,
+`:clear_stable_order()`.
+
+Sorting JSON without `:pretty_json()` is refused when the tape is written:
+`:close()` returns `"sort_json_keys needs pretty_json: ..."` and writes nothing.
+A rule the core refuses (an empty header name, say) makes `:start()` return
+`nil, err`. A record server refuses a playback range.
 
 Module constants:
 

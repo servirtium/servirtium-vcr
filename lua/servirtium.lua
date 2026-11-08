@@ -186,6 +186,40 @@ function Server:discard()
     return ""
 end
 
+-- Playback only: replay just interactions from..to (inclusive, 0-based, the
+-- tape's "## Interaction N" numbers; to < 0 = through the last). Returns
+-- libservirtium_vcr's error string ("" on success; non-empty on a record
+-- server or an impossible range).
+function Server:set_playback_range(from, to)
+    return C.set_playback_range(self._handle, from, to)
+end
+
+-- Replay the whole tape again.
+function Server:clear_playback_range()
+    C.clear_playback_range(self._handle)
+end
+
+-- The playback range in force: from, to, or nil when none is set.
+function Server:get_playback_range()
+    local from = C.get_playback_range_from(self._handle)
+    if from < 0 then return nil end
+    return from, C.get_playback_range_to(self._handle)
+end
+
+-- Record mode: whether sort_json_keys / sort_response_headers are on, and
+-- clear_stable_order() turns every stable-order rule off.
+function Server:sort_json_keys_enabled()
+    return C.get_sort_json_keys(self._handle)
+end
+
+function Server:sort_response_headers_enabled()
+    return C.get_sort_response_headers(self._handle)
+end
+
+function Server:clear_stable_order()
+    C.clear_stable_order(self._handle)
+end
+
 local function new_server(handle, mode, tape, host, fail_if_changed)
     return setmetatable({
         _handle = handle,
@@ -343,6 +377,14 @@ function PlaybackBuilder:redact_credential_header(name)
     return self
 end
 
+-- Replay only interactions from..to of the tape (inclusive, 0-based, the
+-- tape's "## Interaction N" numbers; to < 0 = through the last). Selection is
+-- by number only. start() returns nil, err if the range is refused.
+function PlaybackBuilder:playback_range(from, to)
+    self._playback_range = { from = from, to = to }
+    return self
+end
+
 -- Match playback on this specific request header's value (ignoring the rest of
 -- the recorded header block); repeatable.
 function PlaybackBuilder:match_header(name)
@@ -413,6 +455,10 @@ function PlaybackBuilder:start()
         end
         if self._match_multiple then
             C.set_match_multiple(handle, true)
+        end
+        if self._playback_range then
+            check(C.set_playback_range(handle, self._playback_range.from, self._playback_range.to),
+                  "set_playback_range")
         end
         for _, name in ipairs(self._match_headers) do
             C.match_header(handle, name)
@@ -567,6 +613,43 @@ function RecordBuilder:pretty_json(indent)
     return self
 end
 
+-- Stable ordering (record side, all opt-in; the tape is byte-exact without
+-- them). Sorted JSON is only written pretty-printed: sort_json_keys or
+-- sort_json_array* without pretty_json is refused when the tape is written
+-- (close() returns "sort_json_keys needs pretty_json: ...").
+-- Sort JSON object keys at every depth in recorded JSON response bodies.
+function RecordBuilder:sort_json_keys(on)
+    self._sort_json_keys = (on == nil) or on
+    return self
+end
+
+-- Sort the JSON response arrays `path` selects (JSON pointer, "*" for one
+-- segment, "" the root array, or a bare member name) by member `by` ("" =
+-- each element's canonical JSON). Repeatable. start() returns nil, err if the
+-- core refuses the rule.
+function RecordBuilder:sort_json_array(path, by)
+    table.insert(self._sort_json_arrays, { path = path, by = by })
+    return self
+end
+
+-- The same, only for requests whose path (query included) matches the regex.
+function RecordBuilder:sort_json_array_at(request, path, by)
+    table.insert(self._sort_json_arrays, { request = request, path = path, by = by })
+    return self
+end
+
+-- Sort response header lines by name (case-insensitive).
+function RecordBuilder:sort_response_headers(on)
+    self._sort_response_headers = (on == nil) or on
+    return self
+end
+
+-- Sort one response header's comma-separated items ("Allow"). Repeatable.
+function RecordBuilder:sort_header_value(name)
+    table.insert(self._sort_header_values, name)
+    return self
+end
+
 -- Verify an https upstream against this PEM CA file.
 function RecordBuilder:upstream_cafile(path)
     self._upstream_cafile = path
@@ -609,6 +692,22 @@ function RecordBuilder:start()
         end
         if self._pretty_json > 0 then
             C.set_pretty_json(handle, self._pretty_json)
+        end
+        if self._sort_json_keys then
+            C.set_sort_json_keys(handle, true)
+        end
+        for _, r in ipairs(self._sort_json_arrays) do
+            if r.request then
+                check(C.sort_json_array_at(handle, r.request, r.path, r.by), "sort_json_array_at")
+            else
+                check(C.sort_json_array(handle, r.path, r.by), "sort_json_array")
+            end
+        end
+        if self._sort_response_headers then
+            C.set_sort_response_headers(handle, true)
+        end
+        for _, name in ipairs(self._sort_header_values) do
+            check(C.sort_header_value(handle, name), "sort_header_value")
         end
         if self._upstream_cafile then
             check(C.set_upstream_cafile(handle, self._upstream_cafile), "set_upstream_cafile")
@@ -659,6 +758,9 @@ local SERVER_METHODS = {
     base_url = true, port = true, tape_length = true, last_kind = true,
     last_index = true, last_error = true, clear_last_error = true,
     reset_cursor = true, note = true, close = true,
+    set_playback_range = true, clear_playback_range = true, get_playback_range = true,
+    sort_json_keys_enabled = true, sort_response_headers_enabled = true,
+    clear_stable_order = true,
     last_tls_protocol = true, clear_substitutions = true,
     assert_all_consumed = true, assert_all_redactions_used = true,
     assert_no_unfilled_placeholders = true,
@@ -711,6 +813,10 @@ function M.record(tapePath, upstream, opts)
     b._emphasize_http_verbs = false
     b._pretty_xml = 0
     b._pretty_json = 0
+    b._sort_json_keys = false
+    b._sort_json_arrays = {}
+    b._sort_response_headers = false
+    b._sort_header_values = {}
     b._fail_if_changed = false
     if opts then
         if opts.port  ~= nil then b._port  = opts.port  end
