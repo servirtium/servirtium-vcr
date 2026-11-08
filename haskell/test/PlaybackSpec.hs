@@ -19,6 +19,20 @@ spec = describe "playback" $ do
       n <- tapeLength vcr
       n `shouldBe` 1
 
+  it "a playback range skips early interactions and serves a later one" $
+    withPlayback (playbackOptions "test/tapes/range.md") { pbPlaybackRange = Just (1, -1) } $ \vcr -> do
+      playbackRange vcr `shouldReturn` Just (1, 2)
+      url <- baseUrl vcr
+      body <- httpGet (url ++ "/step/second")
+      body `shouldBe` "second-body"
+      lastIndex vcr `shouldReturn` 1
+      -- Interaction 0 is outside the range: never served.
+      st <- httpGetStatus (url ++ "/step/first")
+      st `shouldBe` 599
+      setPlaybackRange vcr 9 (-1) `shouldThrow` anyException
+      clearPlaybackRange vcr
+      playbackRange vcr `shouldReturn` Nothing
+
   it "answers an untaped path 404 without consuming the cursor" $
     withPlayback (playbackOptions "test/tapes/single_get.md")
       { pbUntaped = ["/favicon.ico"] } $ \vcr -> do

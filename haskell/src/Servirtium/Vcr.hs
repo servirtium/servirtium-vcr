@@ -70,6 +70,10 @@ module Servirtium.Vcr
   , note
   , resetCursor
   , clearLastError
+  , -- * Playback range
+    setPlaybackRange
+  , clearPlaybackRange
+  , playbackRange
   ) where
 
 import Control.Exception (Exception, bracket, throwIO, onException)
@@ -176,6 +180,10 @@ data PlaybackOptions = PlaybackOptions
     -- on the playback options too, as with every rule (default 'False').
   , pbRedactCredentialHeaders :: [String]
     -- ^ One more credential header each, with the same treatment (default @[]@).
+  , pbPlaybackRange :: Maybe (Int, Int)
+    -- ^ @Just (from, to)@: replay only interactions @from@..@to@ (0-based,
+    -- inclusive, the tape's @## Interaction N@ numbers; @to < 0@ = through the
+    -- last). Selection is by number only (default 'Nothing').
   , pbMatchMultiple  :: Bool
     -- ^ Opt in to reusable, order-independent playback: matches any recorded
     -- interaction (not just the next in sequence) and doesn't consume it — for
@@ -277,6 +285,24 @@ data RecordOptions = RecordOptions
   , recLicenseNotice      :: Maybe String
     -- ^ Text put under @## LICENSE NOTICE@ at the top of each tape; playback
     -- ignores it (default 'Nothing').
+  , recSortJsonKeys      :: Bool
+    -- ^ Sort JSON object keys at every depth in recorded JSON response bodies.
+    -- Sorted JSON is only written pretty-printed: without a 'recPrettyJson'
+    -- the tape is refused when it is written ('stop' throws 'VcrException'
+    -- with @sort_json_keys needs pretty_json@). Default 'False'.
+  , recSortJsonArrays    :: [(String, String)]
+    -- ^ @(path, by)@: sort the JSON response arrays @path@ selects (a JSON
+    -- pointer, @*@ for one segment, @\"\"@ the root array, or a bare member
+    -- name) by member @by@ (@\"\"@ = each element's canonical JSON). Needs
+    -- 'recPrettyJson' like 'recSortJsonKeys'. Default @[]@.
+  , recSortJsonArraysAt  :: [(String, String, String)]
+    -- ^ @(requestRegex, path, by)@: the same, only for requests whose path
+    -- (query included) matches the regex. Default @[]@.
+  , recSortResponseHeaders :: Bool
+    -- ^ Sort response header lines by name, case-insensitively. Default 'False'.
+  , recSortHeaderValues  :: [String]
+    -- ^ Response header names whose comma-separated items are sorted
+    -- (@\"Allow\"@). Default @[]@.
   , recFailIfChanged     :: Bool
     -- ^ On stop, write the freshly recorded tape but throw 'VcrException' if
     -- it differs from the on-disk one — the drift contract.
@@ -310,6 +336,7 @@ playbackOptions tape = PlaybackOptions
   , pbRemoveCloudHeaders = []
   , pbRedactCredentials = False
   , pbRedactCredentialHeaders = []
+  , pbPlaybackRange = Nothing
   , pbMatchMultiple = False
   , pbMatchHeaders  = []
   , pbUnredactions  = []
@@ -354,6 +381,11 @@ recordOptions tape upstream = RecordOptions
   , recPrettyJson         = 0
   , recUpstreamCafile     = Nothing
   , recLicenseNotice      = Nothing
+  , recSortJsonKeys       = False
+  , recSortJsonArrays     = []
+  , recSortJsonArraysAt   = []
+  , recSortResponseHeaders = False
+  , recSortHeaderValues   = []
   , recFailIfChanged      = False
   , recStaticContent      = []
   , recUntaped            = []
@@ -508,6 +540,9 @@ startPlayback opts = do
       applyHeaderPresets handle (pbRemoveTransportHeaders opts) (pbRemoveCloudHeaders opts)
         (pbRedactCredentials opts) (pbRedactCredentialHeaders opts)
       when (pbStrictHeaders opts) $ N.aether_vcr_embed_set_strict_headers handle 1
+      mapM_ (\(from, to) -> check "set_playback_range" $
+               N.aether_vcr_embed_set_playback_range handle (fromIntegral from) (fromIntegral to))
+            (pbPlaybackRange opts)
       when (pbMatchJsonBody opts) $ N.aether_vcr_embed_set_match_json_body handle 1
       when (pbMatchXmlBody opts) $ N.aether_vcr_embed_set_match_xml_body handle 1
       when (pbMatchMultiple opts) $ N.aether_vcr_embed_set_match_multiple handle 1
@@ -594,6 +629,20 @@ startRecord opts = do
                withCString path $ \cPath ->
                  N.aether_vcr_embed_set_upstream_cafile handle cPath)
             (recUpstreamCafile opts)
+      when (recSortJsonKeys opts) (N.aether_vcr_embed_set_sort_json_keys handle 1)
+      mapM_ (\(path, by) -> check "sort_json_array" $
+               withCString path $ \cPath -> withCString by $ \cBy ->
+                 N.aether_vcr_embed_sort_json_array handle cPath cBy)
+            (recSortJsonArrays opts)
+      mapM_ (\(request, path, by) -> check "sort_json_array_at" $
+               withCString request $ \cRequest -> withCString path $ \cPath -> withCString by $ \cBy ->
+                 N.aether_vcr_embed_sort_json_array_at handle cRequest cPath cBy)
+            (recSortJsonArraysAt opts)
+      when (recSortResponseHeaders opts) (N.aether_vcr_embed_set_sort_response_headers handle 1)
+      mapM_ (\name -> check "sort_header_value" $
+               withCString name $ \cName ->
+                 N.aether_vcr_embed_sort_header_value handle cName)
+            (recSortHeaderValues opts)
       mapM_ (\text -> check "add_license_notice" $
                withCString text $ \cText ->
                  N.aether_vcr_embed_add_license_notice handle cText)
@@ -719,6 +768,25 @@ note server title body =
 -- | Rewind the replay cursor to interaction 0 and clear the last-* slots.
 resetCursor :: VcrServer -> IO ()
 resetCursor server = N.aether_vcr_embed_reset_cursor (vcrHandle server)
+
+-- | Replay only interactions @from@..@to@ of the tape (0-based, inclusive;
+-- @to < 0@ = through the last). Playback only: throws 'VcrException' on a
+-- record server or an impossible range.
+setPlaybackRange :: VcrServer -> Int -> Int -> IO ()
+setPlaybackRange server from to =
+  check "set_playback_range" $
+    N.aether_vcr_embed_set_playback_range (vcrHandle server) (fromIntegral from) (fromIntegral to)
+
+-- | Replay the whole tape again.
+clearPlaybackRange :: VcrServer -> IO ()
+clearPlaybackRange server = N.aether_vcr_embed_clear_playback_range (vcrHandle server)
+
+-- | The playback range in force as @Just (from, to)@, or 'Nothing' when none is set.
+playbackRange :: VcrServer -> IO (Maybe (Int, Int))
+playbackRange server = do
+  from <- N.aether_vcr_embed_get_playback_range_from (vcrHandle server)
+  to <- N.aether_vcr_embed_get_playback_range_to (vcrHandle server)
+  pure (if from < 0 then Nothing else Just (fromIntegral from, fromIntegral to))
 
 -- | Clear the last-error slot between sub-cases.
 clearLastError :: VcrServer -> IO ()

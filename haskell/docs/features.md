@@ -27,6 +27,8 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Credential redaction preset | ✅ | ✅ | `pbRedactCredentials` / `pbRedactCredentialHeaders` (and `rec…`) | — |
 | License notice / upstream CA file / pretty JSON | ✅ | ✅ | `recLicenseNotice` / `recUpstreamCafile` / `recPrettyJson` | ✅ notice + pretty JSON |
 | Format options (indent / emphasize) | ✅ | ✅ | `recIndentCodeBlocks` / `recEmphasizeHttpVerbs` / `recPrettyXml` | — |
+| Stable ordering (record, opt-in) | ✅ | ✅ | `recSortJsonKeys` / `recSortJsonArrays` / `recSortJsonArraysAt` / `recSortResponseHeaders` / `recSortHeaderValues` (JSON sorting needs `recPrettyJson`) | ✅ |
+| Playback range (replay a slice of a tape) | ✅ | ✅ | `pbPlaybackRange`, `setPlaybackRange` / `clearPlaybackRange` / `playbackRange` | ✅ |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError` / `lastKind` / `lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
 | Chunked de-chunk on record | ✅ | ✅ | (automatic) | — |

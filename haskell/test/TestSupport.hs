@@ -7,6 +7,7 @@ module TestSupport
   ( httpGet
   , httpGetStatus
   , withUpstream
+  , withUpstreamAs
   ) where
 
 import Control.Concurrent (forkIO)
@@ -42,10 +43,14 @@ httpGetStatus url = do
 -- @Content-Length@ and a @text/plain@ content type). @act@ receives the base
 -- URL (e.g. @http:\/\/127.0.0.1:53321@). The server is torn down afterwards.
 withUpstream :: String -> (String -> IO a) -> IO a
-withUpstream body act =
+withUpstream = withUpstreamAs "text/plain"
+
+-- | 'withUpstream' with a chosen @Content-Type@ (e.g. @application/json@).
+withUpstreamAs :: String -> String -> (String -> IO a) -> IO a
+withUpstreamAs contentType body act =
   bracket open close $ \sock -> do
     p <- socketPort sock
-    void $ forkIO (acceptLoop sock body)
+    void $ forkIO (acceptLoop sock contentType body)
     act ("http://127.0.0.1:" ++ show p)
   where
     open = do
@@ -64,25 +69,25 @@ resolve host p = do
 
 -- | Accept connections until the listening socket is closed (teardown), at
 -- which point @accept@ throws and the loop exits quietly.
-acceptLoop :: Socket -> String -> IO ()
-acceptLoop sock body = loop
+acceptLoop :: Socket -> String -> String -> IO ()
+acceptLoop sock contentType body = loop
   where
     loop = do
       r <- try (accept sock) :: IO (Either SomeException (Socket, SockAddr))
       case r of
         Left _ -> pure ()  -- listening socket closed: stop.
         Right (conn, _) -> do
-          void $ forkIO (handleConn conn body `finally` close conn)
+          void $ forkIO (handleConn conn contentType body `finally` close conn)
           loop
 
-handleConn :: Socket -> String -> IO ()
-handleConn conn body = do
+handleConn :: Socket -> String -> String -> IO ()
+handleConn conn contentType body = do
   -- Drain the request (we don't need to parse it for these tests).
   _ <- (try (recv conn 4096) :: IO (Either SomeException BS.ByteString))
   let payload = BC.pack body
       resp = BS.concat
         [ "HTTP/1.1 200 OK\r\n"
-        , "Content-Type: text/plain\r\n"
+        , "Content-Type: " <> BC.pack contentType <> "\r\n"
         , "Content-Length: " <> BC.pack (show (BS.length payload)) <> "\r\n"
         , "Connection: close\r\n"
         , "\r\n"

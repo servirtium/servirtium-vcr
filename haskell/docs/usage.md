@@ -185,6 +185,45 @@ withRecord (recordOptions tape upstream)
 Playback tolerates either form regardless, so cross-implementation tapes load
 cleanly.
 
+## Stable ordering (record; opt-in)
+
+For a service that sends the same response in a different order every run.
+Each rule is off by default; the tape is byte-exact without them.
+
+```haskell
+withRecord (recordOptions tape upstream)
+  { recPrettyJson          = 2                        -- required by the JSON rules below
+  , recSortJsonKeys        = True                     -- object keys sorted at every depth
+  , recSortJsonArrays      = [("/items", "/id")]      -- (path, by): sort that array by member
+  , recSortJsonArraysAt    = [("^/users", "", "name")] -- (request regex, path, by)
+  , recSortResponseHeaders = True                     -- header lines sorted by name
+  , recSortHeaderValues    = ["Allow"]                -- one header's comma-separated items
+  } $ \vcr -> ...
+```
+
+Sorted JSON is only written pretty-printed: a record with `recSortJsonKeys` or a
+sort-array rule but without `recPrettyJson` is refused when the tape is written,
+so `stop` (and so `withRecord`) throws `VcrException` containing
+"sort_json_keys needs pretty_json: sorted JSON is only written pretty-printed
+(turn pretty_json on)", and writes nothing. A rule the core refuses outright
+throws `VcrException` from `startRecord`.
+
+## Playback range (playback only)
+
+Replay only interactions `from`..`to` of a tape, by the tape's `## Interaction N`
+number (0-based, inclusive; `to < 0` = through the last). Interactions outside
+the range are never served.
+
+```haskell
+withPlayback (playbackOptions tape) { pbPlaybackRange = Just (4, 6) } $ \vcr -> ...
+
+setPlaybackRange vcr 4 (-1)   -- throws VcrException when refused
+playbackRange vcr             -- Just (4, 6) | Nothing
+clearPlaybackRange vcr
+```
+
+A record server refuses a range (`VcrException`), so a test cannot silently
+overwrite a journey's tape with a slice.
 ## `VcrServer` accessors (all in `IO`)
 
 | Function | Meaning |

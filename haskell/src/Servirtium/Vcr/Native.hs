@@ -76,6 +76,18 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_redact_credential_header
   , aether_vcr_embed_set_upstream_cafile
   , aether_vcr_embed_add_license_notice
+  , aether_vcr_embed_set_sort_json_keys
+  , aether_vcr_embed_get_sort_json_keys
+  , aether_vcr_embed_sort_json_array
+  , aether_vcr_embed_sort_json_array_at
+  , aether_vcr_embed_set_sort_response_headers
+  , aether_vcr_embed_get_sort_response_headers
+  , aether_vcr_embed_sort_header_value
+  , aether_vcr_embed_clear_stable_order
+  , aether_vcr_embed_set_playback_range
+  , aether_vcr_embed_clear_playback_range
+  , aether_vcr_embed_get_playback_range_from
+  , aether_vcr_embed_get_playback_range_to
   , aether_vcr_embed_clear_redactions
   , aether_vcr_embed_clear_unredactions
   , aether_vcr_embed_clear_header_removals
@@ -237,6 +249,42 @@ foreign import ccall unsafe "aether_vcr_embed_set_upstream_cafile"
 
 foreign import ccall unsafe "aether_vcr_embed_add_license_notice"
   aether_vcr_embed_add_license_notice :: Handle -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_set_sort_json_keys"
+  aether_vcr_embed_set_sort_json_keys :: Handle -> CInt -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_get_sort_json_keys"
+  aether_vcr_embed_get_sort_json_keys :: Handle -> IO CInt
+
+foreign import ccall unsafe "aether_vcr_embed_sort_json_array"
+  aether_vcr_embed_sort_json_array :: Handle -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_sort_json_array_at"
+  aether_vcr_embed_sort_json_array_at :: Handle -> CString -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_set_sort_response_headers"
+  aether_vcr_embed_set_sort_response_headers :: Handle -> CInt -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_get_sort_response_headers"
+  aether_vcr_embed_get_sort_response_headers :: Handle -> IO CInt
+
+foreign import ccall unsafe "aether_vcr_embed_sort_header_value"
+  aether_vcr_embed_sort_header_value :: Handle -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_clear_stable_order"
+  aether_vcr_embed_clear_stable_order :: Handle -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_set_playback_range"
+  aether_vcr_embed_set_playback_range :: Handle -> CInt -> CInt -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_clear_playback_range"
+  aether_vcr_embed_clear_playback_range :: Handle -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_get_playback_range_from"
+  aether_vcr_embed_get_playback_range_from :: Handle -> IO CInt
+
+foreign import ccall unsafe "aether_vcr_embed_get_playback_range_to"
+  aether_vcr_embed_get_playback_range_to :: Handle -> IO CInt
 
 foreign import ccall unsafe "aether_vcr_embed_clear_redactions"
   aether_vcr_embed_clear_redactions :: Handle -> IO ()
