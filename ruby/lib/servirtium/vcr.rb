@@ -281,25 +281,6 @@ module Servirtium
 
     private
 
-    # Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
-    def pretty_json(indent = 2)
-      @pretty_json = indent
-      self
-    end
-
-    # Verify an +https://+ upstream against this PEM CA file.
-    def upstream_cafile(path)
-      @upstream_cafile = path
-      self
-    end
-
-    # Put +text+ under "## LICENSE NOTICE" at the top of each tape; playback
-    # ignores it.
-    def add_license_notice(text)
-      @license_notice = text
-      self
-    end
-
     def apply_config(handle)
       super
       Native.call(:set_strict_headers, handle, 1) if @strict_headers
@@ -334,6 +315,31 @@ module Servirtium
       @upstream_cafile = nil
       @license_notice = nil
       @fail_if_changed = false
+    end
+
+    # Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    def pretty_json(indent = 2)
+      @pretty_json = indent
+      self
+    end
+
+    # Verify an +https://+ upstream against this PEM CA file.
+    def upstream_cafile(path)
+      @upstream_cafile = path
+      self
+    end
+
+    # Put +text+ under "## LICENSE NOTICE" at the top of each tape; playback
+    # ignores it.
+    def add_license_notice(text)
+      @license_notice = text
+      self
+    end
+
+    # Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    def pretty_xml(indent = 2)
+      @pretty_xml = indent
+      self
     end
 
     # Scrub a value out of the given field before it lands on the tape.
@@ -431,12 +437,6 @@ module Servirtium
       raise Servirtium::Error,
             "vcr record failed to start for tape '#{@tape_path}' " \
             "(upstream '#{@upstream_base}')"
-    end
-
-    # Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
-    def pretty_xml(indent = 2)
-      @pretty_xml = indent
-      self
     end
 
     def apply_config(handle)

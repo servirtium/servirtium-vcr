@@ -22,7 +22,8 @@ RSpec.describe 'Servirtium record' do
 
   it 'records a live interaction then replays the same tape offline' do
     # ---- record (forwards to the live upstream, writes the tape on close) ----
-    Servirtium.record(@tape, @upstream.base_url).port(0).start do |server|
+    # A tape keeps the headers as sent; the transport preset leaves the chunked framing header out.
+    Servirtium.record(@tape, @upstream.base_url).remove_transport_headers.port(0).start do |server|
       res = get(server.base_url, '/greeting')
       expect(res.body).to eq('hello-from-upstream')
     end
