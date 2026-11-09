@@ -48,70 +48,78 @@ them. Each suite's `LICENCE-NOTE.md` gives the clause and the commands.
 
 | Suite | Cases | Container |
 |---|---|---|
-| `vault` | 21 (comprehensive: 19 API, 2 module; userpass and approle logins on their own tapes, health and seal status, mounts, ACL policies and their enforcement, KV v2 and v1, transit, tokens, response wrapping and the cubbyhole, errors) | `hashicorp/vault:1.13.0` |
-| `couchdb` | 18 (comprehensive: 15 API, 3 module) | `couchdb:3` |
-| `consul` | 15 (comprehensive: 11 API, 4 module; ACLs on, the ACL bootstrap is the login tape; status, catalog and members, KV with cas, transactions, sessions and locks, services and TTL checks, ACL policies and tokens with enforcement, errors) | `hashicorp/consul:1.15` |
-| `openfga` | 1 | `openfga/openfga:v1.18.0` |
-| `typesense` | 3 | `typesense/typesense:26.0` |
-| `mockserver` | 2 | `mockserver/mockserver:5.15.0` |
-| `minio` | 18 (comprehensive: 16 API, 2 module; S3 has no login, every request is signed) | `cgr.dev/chainguard/minio:latest` |
-| `opensearch` | 1 | `opensearchproject/opensearch:2.11.1` |
-| `elasticsearch` | 1 | `docker.elastic.co/elasticsearch/elasticsearch:8.9.0` |
-| `localstack` | 1 | `localstack/localstack:3.4` |
-| `dynamodb` | test + recorder only, tapes not shipped ([why](dynamodb/LICENCE-NOTE.md)) | `amazon/dynamodb-local:2.2.1` |
-| `s3mock` | 1 | `adobe/s3mock:3.9.1` |
-| `garage` | 2 | `dxflrs/garage:v2.4.1` |
-| `azurite` | 2 (3 tapes) | `mcr.microsoft.com/azure-storage/azurite:3.28.0` |
-| `fakegcsserver` | 1 | `fsouza/fake-gcs-server:1.56.1` |
-| `gcloud_firestore` | test + recorder only, tapes not shipped ([why](gcloud_firestore/LICENCE-NOTE.md)) | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
-| `gcloud_datastore` | test + recorder only, tapes not shipped ([why](gcloud_datastore/LICENCE-NOTE.md)) | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
-| `gcloud_pubsub` | test + recorder only, tapes not shipped ([why](gcloud_pubsub/LICENCE-NOTE.md)) | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
-| `gcloud_spanner` | 4 | `gcr.io/cloud-spanner-emulator/emulator:1.5.40` (REST, port 9020) |
-| `gcloud_bigquery` | 1 | `ghcr.io/goccy/bigquery-emulator:0.6.1` (linux/amd64 only) |
-| `meilisearch` | 2 | `getmeili/meilisearch:v1.10.3` |
-| `solr` | 1 | `solr:9` |
-| `qdrant` | 2 | `qdrant/qdrant:v1.7.4` |
-| `chroma` | 1 | `chromadb/chroma:1.4.0` |
-| `weaviate` | 1 | `semitechnologies/weaviate:1.29.0` |
-| `milvus` | 1 | `milvusdb/milvus:v2.3.9` |
-| `pinecone` | test + recorder only, tapes not shipped ([why](pinecone/LICENCE-NOTE.md)) | `ghcr.io/pinecone-io/pinecone-local:v0.7.0` |
-| `vearch` | 1 | `vearch/vearch:3.5.1` |
-| `mailpit` | 10 (comprehensive: 8 API, 2 module; the REST API and health endpoints, Send API, paging, search, read state, tags, deletes, an SMTP-received mail, errors; no login: Mailpit's API is open) | `axllent/mailpit:v1.20` |
-| `inbucket` | 1 | `inbucket/inbucket:sha-2d409bb` |
-| `papercutsmtp` | 1 | `changemakerstudiosus/papercut-smtp:latest` |
-| `dex` | 10 (comprehensive: 8 API, 2 module, 9 tapes since the config-rendering module case has no HTTP; the password grant is the login tape; discovery and keys, userinfo, introspection, authorization-code flow, refresh rotation, bad requests, error statuses) | `dexidp/dex:v2.45.0` |
-| `forgejo` | 2 | `codeberg.org/forgejo/forgejo:11` |
-| `registry` | 4 | `registry:2.8.3` |
-| `toxiproxy` | 1 (2 tapes) | `ghcr.io/shopify/toxiproxy:2.12.0` |
-| `grafana_lgtm` | 1 (5 tapes) | `grafana/otel-lgtm:0.6.0` |
-| `nginx` | 4 (5 tapes) | `nginx:1.25` |
-| `arangodb` | 1 | `arangodb:3.11.5` |
-| `couchbase` | 1 (+1 live only) | `couchbase:community-7.1.1` |
-| `clickhouse` | 1 | `clickhouse/clickhouse-server:23.3.8.21-alpine` |
-| `cockroachdb` | test + recorder only, tapes not shipped ([why](cockroachdb/LICENCE-NOTE.md)); 12 cases (comprehensive: HTTP API v2, with login) | `cockroachdb/cockroach:v23.1.30` |
-| `cratedb` | 1 | `crate:5.7` |
-| `databend` | 1 | `datafuselabs/databend:v1.2.615` |
-| `influxdb` | 1 (+1 live only) | `influxdb:2.7.11` |
-| `neo4j` | 2 | `neo4j:4.4` |
-| `orientdb` | 1 | `orientdb:3.2` |
-| `questdb` | 1 | `questdb/questdb:9.0.0` |
-| `ravendb` | 1 | `ravendb/ravendb:6.0-ubuntu-latest` |
-| `surrealdb` | 3 (+1 live only) | `surrealdb/surrealdb:v1.1.1` |
-| `tidb` | 8 (comprehensive: status and schema API on 10080, standalone, no login) | `pingcap/tidb:v8.4.0` |
-| `dind` | 7 (comprehensive: Engine API on 2375, version/info, images, containers, networks, volumes, errors; no login) | `docker:28.0.1-dind` (runs `busybox:1.36.1` inside) |
-| `lowkeyvault` | 8 tapes, 7 cases (comprehensive: Azure Key Vault REST API over HTTPS, secrets, keys, certificates, errors; login on its own two tapes) | `nagyesta/lowkey-vault:7.3.48-ubi10-minimal` |
-| `scylladb` | 16 (comprehensive: REST management API on 10000, identity and ring, keyspaces, table metrics, flush/compact, snapshots, schema version, log levels, tracing, gossip, errors; no login) | `scylladb/scylla:6.2` |
-| `yugabytedb` | 11 tapes, 9 cases (comprehensive: master 7000 and tserver 9000 JSON endpoints, version, masters, tablet servers, health, cluster config, tables, varz, filtered metrics, errors; no login; recorded on x86_64 Linux) | `yugabytedb/yugabyte:2024.1.3.0-b105` |
-| `trino` | 1 | `trinodb/trino:435` |
-| `presto` | 1 | `prestodb/presto:0.286` |
-| `timeplus` | test + recorder only, tapes not shipped ([why](timeplus/LICENCE-NOTE.md)) | `timeplus/timeplusd:2.3.37` |
-| `kurrentdb` | 1 | `kurrentplatform/kurrentdb:26.1.1` |
-| `etcd` | 4 (6 tapes; +1 live only) | `gcr.io/etcd-development/etcd:v3.5.14` |
-| `rabbitmq` | 17 (comprehensive: 15 management-API, 2 module; +2 live only; Basic auth, one login tape) | `rabbitmq:3.12.11-management-alpine` |
-| `activemq` | 1 | `apache/activemq-classic:5.18.7` |
-| `artemis` | 1 | `apache/activemq-artemis:2.30.0-alpine` |
-| `pulsar` | 1 | `apachepulsar/pulsar:4.0.9` |
-| `redpanda` | 1 (2 tapes) | `docker.io/redpandadata/redpanda:v25.2.4` |
+| [`vault`](vault/README.md) | 21 (comprehensive: 19 API, 2 module; userpass and approle logins on their own tapes, health and seal status, mounts, ACL policies and their enforcement, KV v2 and v1, transit, tokens, response wrapping and the cubbyhole, errors) | `hashicorp/vault:1.13.0` |
+| [`couchdb`](couchdb/README.md) | 18 (comprehensive: 15 API, 3 module) | `couchdb:3` |
+| [`consul`](consul/README.md) | 15 (comprehensive: 11 API, 4 module; ACLs on, the ACL bootstrap is the login tape; status, catalog and members, KV with cas, transactions, sessions and locks, services and TTL checks, ACL policies and tokens with enforcement, errors) | `hashicorp/consul:1.15` |
+| [`openfga`](openfga/README.md) | 1 | `openfga/openfga:v1.18.0` |
+| [`typesense`](typesense/README.md) | 3 | `typesense/typesense:26.0` |
+| [`mockserver`](mockserver/README.md) | 2 | `mockserver/mockserver:5.15.0` |
+| [`minio`](minio/README.md) | 18 (comprehensive: 16 API, 2 module; S3 has no login, every request is signed) | `cgr.dev/chainguard/minio:latest` |
+| [`opensearch`](opensearch/README.md) | 1 | `opensearchproject/opensearch:2.11.1` |
+| [`elasticsearch`](elasticsearch/README.md) | 1 | `docker.elastic.co/elasticsearch/elasticsearch:8.9.0` |
+| [`localstack`](localstack/README.md) | 1 | `localstack/localstack:3.4` |
+| [`dynamodb`](dynamodb/README.md) | test + recorder only, tapes not shipped ([why](dynamodb/LICENCE-NOTE.md)) | `amazon/dynamodb-local:2.2.1` |
+| [`s3mock`](s3mock/README.md) | 1 | `adobe/s3mock:3.9.1` |
+| [`garage`](garage/README.md) | 2 | `dxflrs/garage:v2.4.1` |
+| [`azurite`](azurite/README.md) | 2 (3 tapes) | `mcr.microsoft.com/azure-storage/azurite:3.28.0` |
+| [`fakegcsserver`](fakegcsserver/README.md) | 1 | `fsouza/fake-gcs-server:1.56.1` |
+| [`gcloud_firestore`](gcloud_firestore/README.md) | test + recorder only, tapes not shipped ([why](gcloud_firestore/LICENCE-NOTE.md)) | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| [`gcloud_datastore`](gcloud_datastore/README.md) | test + recorder only, tapes not shipped ([why](gcloud_datastore/LICENCE-NOTE.md)) | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| [`gcloud_pubsub`](gcloud_pubsub/README.md) | test + recorder only, tapes not shipped ([why](gcloud_pubsub/LICENCE-NOTE.md)) | `gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` |
+| [`gcloud_spanner`](gcloud_spanner/README.md) | 4 | `gcr.io/cloud-spanner-emulator/emulator:1.5.40` (REST, port 9020) |
+| [`gcloud_bigquery`](gcloud_bigquery/README.md) | 1 | `ghcr.io/goccy/bigquery-emulator:0.6.1` (linux/amd64 only) |
+| [`meilisearch`](meilisearch/README.md) | 2 | `getmeili/meilisearch:v1.10.3` |
+| [`solr`](solr/README.md) | 1 | `solr:9` |
+| [`qdrant`](qdrant/README.md) | 2 | `qdrant/qdrant:v1.7.4` |
+| [`chroma`](chroma/README.md) | 1 | `chromadb/chroma:1.4.0` |
+| [`weaviate`](weaviate/README.md) | 1 | `semitechnologies/weaviate:1.29.0` |
+| [`milvus`](milvus/README.md) | 1 | `milvusdb/milvus:v2.3.9` |
+| [`pinecone`](pinecone/README.md) | test + recorder only, tapes not shipped ([why](pinecone/LICENCE-NOTE.md)) | `ghcr.io/pinecone-io/pinecone-local:v0.7.0` |
+| [`vearch`](vearch/README.md) | 1 | `vearch/vearch:3.5.1` |
+| [`mailpit`](mailpit/README.md) | 10 (comprehensive: 8 API, 2 module; the REST API and health endpoints, Send API, paging, search, read state, tags, deletes, an SMTP-received mail, errors; no login: Mailpit's API is open) | `axllent/mailpit:v1.20` |
+| [`inbucket`](inbucket/README.md) | 1 | `inbucket/inbucket:sha-2d409bb` |
+| [`papercutsmtp`](papercutsmtp/README.md) | 1 | `changemakerstudiosus/papercut-smtp:latest` |
+| [`dex`](dex/README.md) | 10 (comprehensive: 8 API, 2 module, 9 tapes since the config-rendering module case has no HTTP; the password grant is the login tape; discovery and keys, userinfo, introspection, authorization-code flow, refresh rotation, bad requests, error statuses) | `dexidp/dex:v2.45.0` |
+| [`forgejo`](forgejo/README.md) | 2 | `codeberg.org/forgejo/forgejo:11` |
+| [`registry`](registry/README.md) | 4 | `registry:2.8.3` |
+| [`toxiproxy`](toxiproxy/README.md) | 1 (2 tapes) | `ghcr.io/shopify/toxiproxy:2.12.0` |
+| [`grafana_lgtm`](grafana_lgtm/README.md) | 1 (5 tapes) | `grafana/otel-lgtm:0.6.0` |
+| [`nginx`](nginx/README.md) | 4 (5 tapes) | `nginx:1.25` |
+| [`arangodb`](arangodb/README.md) | 1 | `arangodb:3.11.5` |
+| [`couchbase`](couchbase/README.md) | 1 (+1 live only) | `couchbase:community-7.1.1` |
+| [`clickhouse`](clickhouse/README.md) | 1 | `clickhouse/clickhouse-server:23.3.8.21-alpine` |
+| [`cockroachdb`](cockroachdb/README.md) | test + recorder only, tapes not shipped ([why](cockroachdb/LICENCE-NOTE.md)); 12 cases (comprehensive: HTTP API v2, with login) | `cockroachdb/cockroach:v23.1.30` |
+| [`cratedb`](cratedb/README.md) | 1 | `crate:5.7` |
+| [`databend`](databend/README.md) | 1 | `datafuselabs/databend:v1.2.615` |
+| [`influxdb`](influxdb/README.md) | 1 (+1 live only) | `influxdb:2.7.11` |
+| [`neo4j`](neo4j/README.md) | 2 | `neo4j:4.4` |
+| [`orientdb`](orientdb/README.md) | 1 | `orientdb:3.2` |
+| [`questdb`](questdb/README.md) | 1 | `questdb/questdb:9.0.0` |
+| [`ravendb`](ravendb/README.md) | 1 | `ravendb/ravendb:6.0-ubuntu-latest` |
+| [`surrealdb`](surrealdb/README.md) | 3 (+1 live only) | `surrealdb/surrealdb:v1.1.1` |
+| [`tidb`](tidb/README.md) | 8 (comprehensive: status and schema API on 10080, standalone, no login) | `pingcap/tidb:v8.4.0` |
+| [`dind`](dind/README.md) | 7 (comprehensive: Engine API on 2375, version/info, images, containers, networks, volumes, errors; no login) | `docker:28.0.1-dind` (runs `busybox:1.36.1` inside) |
+| [`lowkeyvault`](lowkeyvault/README.md) | 10 tapes, 9 cases (comprehensive: Azure Key Vault REST API over HTTPS, secrets, keys, certificates, errors; login on its own two tapes; two real-usage cases, one tape each: an app signs a webhook with a vault secret, an app unwraps its data key and decrypts its config) | `nagyesta/lowkey-vault:7.3.48-ubi10-minimal` |
+| [`scylladb`](scylladb/README.md) | 16 (comprehensive: REST management API on 10000, identity and ring, keyspaces, table metrics, flush/compact, snapshots, schema version, log levels, tracing, gossip, errors; no login) | `scylladb/scylla:6.2` |
+| [`yugabytedb`](yugabytedb/README.md) | 11 tapes, 9 cases (comprehensive: master 7000 and tserver 9000 JSON endpoints, version, masters, tablet servers, health, cluster config, tables, varz, filtered metrics, errors; no login; recorded on x86_64 Linux) | `yugabytedb/yugabyte:2024.1.3.0-b105` |
+| [`trino`](trino/README.md) | 1 | `trinodb/trino:435` |
+| [`presto`](presto/README.md) | 1 | `prestodb/presto:0.286` |
+| [`timeplus`](timeplus/README.md) | test + recorder only, tapes not shipped ([why](timeplus/LICENCE-NOTE.md)) | `timeplus/timeplusd:2.3.37` |
+| [`kurrentdb`](kurrentdb/README.md) | 1 | `kurrentplatform/kurrentdb:26.1.1` |
+| [`etcd`](etcd/README.md) | 4 (6 tapes; +1 live only) | `gcr.io/etcd-development/etcd:v3.5.14` |
+| [`rabbitmq`](rabbitmq/README.md) | 17 (comprehensive: 15 management-API, 2 module; +2 live only; Basic auth, one login tape) | `rabbitmq:3.12.11-management-alpine` |
+| [`activemq`](activemq/README.md) | 1 | `apache/activemq-classic:5.18.7` |
+| [`artemis`](artemis/README.md) | 1 | `apache/activemq-artemis:2.30.0-alpine` |
+| [`pulsar`](pulsar/README.md) | 1 | `apachepulsar/pulsar:4.0.9` |
+| [`redpanda`](redpanda/README.md) | 1 (2 tapes) | `docker.io/redpandadata/redpanda:v25.2.4` |
+
+## Fidelity: emulators vs the real service
+
+Each service directory has a README that says what its tapes are. There are three kinds:
+
+- **Emulators of a cloud or proprietary service** (`lowkeyvault` for Azure Key Vault, `azurite` for Azure Storage, `localstack` and `dynamodb` for AWS, `fakegcsserver`, `gcloud_*` for Google Cloud, `pinecone`; and the S3-compatible `s3mock`, `minio` and `garage`). The tapes are what the emulator said, not what the cloud service said. They are useful up to the point of your first recording against the real service: it may differ from the emulator by characters, words or whitespace (error codes and messages, header names and values, JSON field order and formatting, ids, authentication challenges, API-version behaviour). Use them as a scaffold to start writing tests and client code, record against the real service as soon as you can, and keep your own tapes from then on. Each README names the differences the tests already document.
+- **The real product at a pinned image version** (everything else, for example `vault`, `couchdb`, `neo4j`, `elasticsearch`, `rabbitmq`). The tapes are the real software, but at that version and in the default configuration the test starts it with. Versions and configuration change responses, so re-record against yours.
+- **Tapes not shipped** (the seven suites in "Tapes we don't ship" above). Each directory's `LICENCE-NOTE.md` says why; record your own with `TCAE_VCR=record`.
 
 ## A tape is a test scenario you can keep
 
@@ -232,7 +240,7 @@ Per suite (registered at the top of its `main`):
 | surrealdb | | per-statement `"time"` | each `Authorization: Basic` credential, as `REDACTED[<label>]` | |
 | tidb | | the DDL owner's UUID (`{{uuid-N}}`) | the container IP, `start_timestamp`, `max_procs`, `connections`, `update_timestamp`, the case tables' ids (1001, 1002, in bodies and `table_id(s)=`) and the case database's (110) | |
 | dind | | container, network, endpoint and sandbox ids (`{{docker-id-N}}`; image ids and layer digests are content hashes and stay) | the daemon's clock fields (`Created`, `StartedAt`, `FinishedAt`, `CreatedAt`, `LastTagTime`, `SystemTime`), `/info`'s `ID`, `Name`, `NFd`, `NGoroutines`, container and image counts, `NCPU`, `MemTotal`, `KernelVersion`, a running container's `Pid`, `/netns/<hex>`, `top`'s process table, the 12-hex short container id, endpoints' random MAC addresses, a container list's Unix `Created` | | |
-| lowkeyvault | | 32-hex version ids (`{{version-N}}`), signature / wrapped-key / ciphertext blobs (`{{blob-N}}`), the identity endpoint's JWTs (`{{jwt-N}}`) | attribute times (`created`, `updated`, `deletedDate`, `scheduledPurgeDate`, a certificate's `exp`/`nbf`), a generated key's `n`, `x`, `y`, a certificate's `cer`, `csr`, `x5t`, the identity `expires_on`, Spring's error `timestamp` | `Authorization: Bearer` (credential preset, `AUTHORIZATION_N`) and `X-IDENTITY-HEADER` (`X_IDENTITY_HEADER_1`) | |
+| lowkeyvault | | 32-hex version ids (`{{version-N}}`), signature / wrapped-key / ciphertext blobs (`{{blob-N}}`), the identity endpoint's JWTs (`{{jwt-N}}`) | attribute times (`created`, `updated`, `deletedDate`, `scheduledPurgeDate`, a certificate's `exp`/`nbf`), a generated key's `n`, `x`, `y`, a certificate's `cer`, `csr`, `x5t`, the identity `expires_on`, Spring's error `timestamp` | `Authorization: Bearer` (credential preset, `AUTHORIZATION_N`) and `X-IDENTITY-HEADER` (`X_IDENTITY_HEADER_1`); the real-usage cases' secrets (a stored secret's `value`, an unwrapped data key's `value`) as named secrets (`{{secret:NAME\|N}}`), resolved to fakes on replay | |
 | trino | | `uptime`, the query id, the `nextUri` token | | |
 | presto | | `uptime` | | |
 | timeplus | | `x-timeplus-query-id` | | |
@@ -451,6 +459,21 @@ it is on the tape, and playback is plain HTTP.
   a Java set, written with its items sorted. A certificate policy without
   explicit key usages gets them from a set in varying order, so the cases
   name one of each.
+- **Real-usage cases (two, one tape each).** `signs_a_webhook_with_the_signing_secret`
+  and `unwraps_the_data_key_and_decrypts_the_config` are written as an
+  application's own unit tests: a small piece of app code (in the test file,
+  knowing nothing of Servirtium) reads a secret or unwraps a key through the
+  vault and then does its job in-process (HMAC-SHA256, AES-256-GCM). The tape
+  holds only the app's vault traffic; what the operator stored beforehand (the
+  secret, the key, the wrapped data key) is set up live, outside the recording.
+  The secrets are named secrets (`servirtium.named_secret`, over the core's
+  staged secret API, docs/secrets.md): the tape has `{{secret:NAME|N}}`, a live
+  run uses a freshly generated random secret, and playback resolves the name
+  to a plausible FAKE, never a real value. The tests assert on what the app
+  received in that run (the config is sealed under whichever data key the vault
+  will hand back), so they hold live and on replay. Lowkey Vault checks
+  `unwrapKey` against the key's `decrypt` operation, so that key allows
+  encrypt and decrypt as well.
 
 Checks with no HTTP in them (a module's defaults, `tc.exec`, inspecting the
 container, a refused option) run only live, and are skipped in playback.

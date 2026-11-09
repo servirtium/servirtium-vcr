@@ -12,6 +12,8 @@ test against it, with no container and no service.
 The recorded services' licences and terms bind anyone using their tapes: see
 [`from-testcontainers/UPSTREAM-TERMS.md`](from-testcontainers/UPSTREAM-TERMS.md).
 
+Each service directory has its own README with what its tapes cover, their fidelity (an emulator of a cloud service, or the real product at a pinned version: either way, record against your own target before trusting details), the cases, and how to run the recording test in record and playback modes.
+
 Only services with an HTTP API can be here: Servirtium records HTTP
 messages, so a binary protocol (Mongo, Postgres, Redis, Kafka) cannot be
 recorded this way.
