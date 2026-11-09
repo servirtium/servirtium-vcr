@@ -48,7 +48,7 @@ in your own project directory (Node 22+):
 
 ```sh
 set -eu
-VER=2.0.0-alpha.13                       # a release version of servirtium-vcr; nothing else to edit
+VER=2.0.0-alpha.14                       # a release version of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/v$VER
 
 # 1. install the tarball (adds "@servirtium/vcr" to package.json; koffi comes from the registry).
@@ -70,8 +70,8 @@ fetch(vcr.baseUrl + "/ok").then(r => r.text()).then(t => {
 ```
 
 The same thing as a `package.json` dependency:
-`"@servirtium/vcr": "https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.13/servirtium-vcr-2.0.0-alpha.13.tgz"`.
-Once published it will be `npm install @servirtium/vcr@2.0.0-alpha.13`; that does not work today.
+`"@servirtium/vcr": "https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.14/servirtium-vcr-2.0.0-alpha.14.tgz"`.
+Once published it will be `npm install @servirtium/vcr@2.0.0-alpha.14`; that does not work today.
 A `.sha256` sits beside the tarball on the release page if you want to verify it first.
 
 ### Notes for coding agents

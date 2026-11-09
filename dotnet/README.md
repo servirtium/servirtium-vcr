@@ -44,7 +44,7 @@ make a throwaway one to check with; skip them to use yours):
 
 ```sh
 set -eu
-VER=2.0.0-alpha.13                       # a release version of servirtium-vcr; nothing else to edit
+VER=2.0.0-alpha.14                       # a release version of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/v$VER
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/v$VER
 
@@ -73,7 +73,7 @@ CS
 dotnet run
 ```
 
-In a `.csproj` the dependency is `<PackageReference Include="Servirtium.Vcr" Version="2.0.0-alpha.13" />`.
+In a `.csproj` the dependency is `<PackageReference Include="Servirtium.Vcr" Version="2.0.0-alpha.14" />`.
 Once published it is the same line with no `nuget.config` change; it does not resolve from nuget.org today.
 `PackageReference` to a prerelease needs the explicit version, as above.
 

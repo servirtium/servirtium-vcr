@@ -86,7 +86,7 @@ aeb(cap) {
 
             maven.install()
 
-            publish_artifact("maven_gav", "dev.servirtium:vcr:2.0.0-alpha.13")
+            publish_artifact("maven_gav", "dev.servirtium:vcr:2.0.0-alpha.14")
             println("java package: installed multi-platform servirtium-vcr jar (6 libservirtium_vcr natives bundled) to ~/.m2")
             return 0
         }
@@ -108,7 +108,7 @@ aeb(cap) {
         //    job; the main sources are JDK-only.
         maven.install()
 
-        publish_artifact("maven_gav", "dev.servirtium:vcr:2.0.0-alpha.13")
+        publish_artifact("maven_gav", "dev.servirtium:vcr:2.0.0-alpha.14")
         println("java package: installed servirtium-vcr jar (libservirtium_vcr.so bundled) to ~/.m2")
         return 0
     }

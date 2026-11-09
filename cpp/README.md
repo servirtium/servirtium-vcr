@@ -65,7 +65,7 @@ project:
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.13                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.14                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
@@ -139,9 +139,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.13/libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.13/libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.14/libservirtium_vcr-v2.0.0-alpha.14-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.14/libservirtium_vcr-v2.0.0-alpha.14-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.14-linux-x86_64.so.sha256   # -> OK
 ```
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows

@@ -57,14 +57,14 @@ Add the shard (shards needs `shard.yml` at the repo root; the root
 dependencies:
   servirtium:
     github: servirtium/servirtium-vcr
-    version: ~> 2.0.0-alpha.13
+    version: ~> 2.0.0-alpha.14
 ```
 
 Fetch the native library and build:
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.13                      # a release tag from the releases page; nothing else to edit
+TAG=v2.0.0-alpha.14                      # a release tag from the releases page; nothing else to edit
 case "$(uname -s)" in
   Linux)  OS=linux;  EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
   Darwin) OS=macos;  EXT=dylib; LIBC= ;;
@@ -139,9 +139,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.13/libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.13/libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.14/libservirtium_vcr-v2.0.0-alpha.14-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.14/libservirtium_vcr-v2.0.0-alpha.14-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.14-linux-x86_64.so.sha256   # -> OK
 ```
 
 **Build the package locally**
@@ -151,9 +151,9 @@ drop the downloaded library at the package-relative path below, then consume it
 from source (a git or path shard dependency).
 
 ```sh
-# from the crystal binding directory, with libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so downloaded:
+# from the crystal binding directory, with libservirtium_vcr-v2.0.0-alpha.14-linux-x86_64.so downloaded:
 mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.13-linux-x86_64.so native/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.14-linux-x86_64.so native/libservirtium_vcr.so
 # the package now carries the native library; consume it from source (see this README's usage/examples).
 ```
 
@@ -163,7 +163,7 @@ Then point your own `shard.yml` at it. **You must state the version explicitly**
 dependencies:
   servirtium:
     path: ../path/to/servirtium-vcr/crystal
-    version: 2.0.0-alpha.13      # REQUIRED — see below
+    version: 2.0.0-alpha.14      # REQUIRED — see below
 ```
 
 The `version:` line is not optional while this is a prerelease. Omit it and
@@ -176,7 +176,7 @@ E: Unable to satisfy the following requirements:
 ```
 
 — which does not mention prereleases and reads like the shard is missing
-entirely. Naming `2.0.0-alpha.13` resolves it. This goes away once a non-
+entirely. Naming `2.0.0-alpha.14` resolves it. This goes away once a non-
 prerelease version ships.
 
 Available platforms: linux (x86_64, arm64), macOS (x86_64, arm64), Windows

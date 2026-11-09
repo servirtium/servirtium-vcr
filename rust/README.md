@@ -44,7 +44,7 @@ is loaded at run time (`libloading`): fetch it from the same release and point
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.13                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.14                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
@@ -89,8 +89,8 @@ cargo test --test servirtium_check          # -> test replays_a_tape ... ok
 ```
 
 `Cargo.toml` after step 2:
-`servirtium = { git = "https://github.com/servirtium/servirtium-vcr", tag = "v2.0.0-alpha.13" }`
-under `[dev-dependencies]`. The future registry form is `servirtium = "=2.0.0-alpha.13"`
+`servirtium = { git = "https://github.com/servirtium/servirtium-vcr", tag = "v2.0.0-alpha.14" }`
+under `[dev-dependencies]`. The future registry form is `servirtium = "=2.0.0-alpha.14"`
 (a prerelease needs the exact requirement); it does not resolve today.
 
 ### Notes for coding agents

@@ -6,8 +6,8 @@
 # Elixir (`servirtium`), Gleam (`servirtium_gleam`) and LFE (`servirtium_lfe`) all use the
 # servirtium_nif app; only Erlang users need servirtium_erl.
 #
-#   VER=v2.0.0-alpha.13 sh build-nif-app.sh ./beam-libs
-#   SRC=main VER=v2.0.0-alpha.13 sh build-nif-app.sh ./beam-libs   # sources from another ref
+#   VER=v2.0.0-alpha.14 sh build-nif-app.sh ./beam-libs
+#   SRC=main VER=v2.0.0-alpha.14 sh build-nif-app.sh ./beam-libs   # sources from another ref
 #   LIB=/path/to/libservirtium_vcr.so sh build-nif-app.sh ./beam-libs   # use a local library
 #
 # VER  release tag whose libservirtium_vcr asset to download (default: SERVIRTIUM_VCR_VERSION on main)

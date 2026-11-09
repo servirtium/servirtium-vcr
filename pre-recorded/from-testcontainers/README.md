@@ -538,7 +538,7 @@ same way an "already logged in" tape is replayed.
 
 - **Servirtium:** `lib/servirtium_vcr` is a relative symlink to this
   repository's own `core/` (`../../../core`), so the suites record with the
-  Servirtium they sit beside (v2.0.0-alpha.13 for the tapes here). `ae test`
+  Servirtium they sit beside (v2.0.0-alpha.14 for the tapes here). `ae test`
   searches a project's `lib/` first.
 - **testcontainers-ae:** an `ae add` dependency in `aether.toml`
   (github.com/servirtium/testcontainers-ae, pinned by tree hash). It is only

@@ -60,7 +60,7 @@
 import Foundation
 import PackageDescription
 
-let binaryTag = "v2.0.0-alpha.13"
+let binaryTag = "v2.0.0-alpha.14"
 let binaryChecksum = ""
 
 let envDir = ProcessInfo.processInfo.environment["SERVIRTIUM_VCR_LIB_DIR"] ?? ""
