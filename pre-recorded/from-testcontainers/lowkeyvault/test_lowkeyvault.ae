@@ -142,6 +142,10 @@
 // delete, recover); the challenge and the token; and the representative
 // errors 400, 401, 404, 405, 409 and 500 (Lowkey Vault answers several
 // client mistakes with 500 or a bare 404, and the tapes keep what it does).
+// And two real-usage cases at the end (an app signing a webhook with a vault
+// secret, an app unwrapping its data key to decrypt its config), one tape each,
+// written as an application's own unit tests; their secrets are named secrets
+// resolved to fakes on replay (see "real usage" below).
 // Out: purge that succeeds (a purgeable vault has to be created through the
 // management API under a different host name, and the recorder forwards one
 // Host; this default vault is Recoverable and refuses), backup / restore
@@ -164,6 +168,12 @@ import std.fs
 import std.os
 import std.json
 import std.list
+import std.bytes
+import std.encoding
+import std.cryptography
+import std.cryptography.hmac
+import std.cryptography.aes
+import std.cryptography.rsa
 import std.http.client
 import testcontainers as tc
 import testcontainers.docker
@@ -198,6 +208,45 @@ const OTHER_DIGEST = "SG6kYiTRu0-2gPNPfJrZao8k7Ii-c-qOWmxlJg6cuKc"
 
 // "hello", base64url: the plaintext the encrypt cases use.
 const PLAINTEXT = "aGVsbG8"
+
+// Fixtures of the two "real usage" cases at the end of the suite, which read
+// like an application's own unit tests.
+//
+// What the operator puts in the vault is a SECRET, so it is never on a tape and
+// never in this file. A live run makes up a fresh one (the OS CSPRNG) and
+// seeds the vault with it; the tape holds a labelled placeholder instead
+// (a named secret, {{secret:NAME|N}}); on replay Servirtium puts back a secret-shaped FAKE, which
+// is what the app then receives. Both cases assert on the value the app
+// actually received in that run (`webhook_secret`, `data_key`), so the same
+// test holds live and on replay without knowing anything real.
+var webhook_secret: string = ""
+var data_key: string = ""
+
+// The replay fakes: shaped like the real thing (a "whsec_" token; 32 ASCII
+// bytes, an AES-256 key), recognisable in a log, worth nothing.
+const FAKE_WEBHOOK_SECRET = "whsec_FAKE_for_playback_0000000000000000"
+const FAKE_DATA_KEY = "FAKE-data-key-for-playback-0000!"
+
+// The payload the shop sends.
+const WEBHOOK_PAYLOAD = "{\"event\":\"order.paid\",\"order_id\":1042,\"amount\":4999}"
+
+// The AES-GCM nonce of the stored config, and its plaintext.
+const CONFIG_NONCE = "tcae-nonce-1"
+const CONFIG_PLAINTEXT = "{\"db_url\":\"postgres://orders@db.internal/orders\",\"pool\":8}"
+
+// Choose this run's secrets: fresh random ones live, the fakes on replay.
+fn init_secrets() {
+    webhook_secret = FAKE_WEBHOOK_SECRET
+    data_key = FAKE_DATA_KEY
+    if servirtium.live() == 1 {
+        h1, e1 = cryptography.random_hex(16)
+        h2, e2 = cryptography.random_hex(16)
+        if e1 == "" && e2 == "" {
+            webhook_secret = "whsec_${h1}"
+            data_key = h2
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -419,6 +468,102 @@ fn finish(rec: ptr) {
     end_vault()
 }
 
+// Real-usage cases: the vault, then the recording
+// ------------------------------------------------
+// A real-usage case sets its vault up BEFORE the recording (a fresh vault, a
+// token, whatever the operator would have stored there: live only, nothing of
+// it on the tape), so the tape holds only what the application itself says to
+// the vault. open_vault() starts the vault and points `api` at it directly;
+// the case seeds it; start_recording() then puts the recorder in front of it.
+
+// Live: a fresh vault and a token; `api`, `cafile` and `token` talk to it
+// directly (the seeding is not recorded). Replay: the placeholder token and
+// no vault. Returns the vault's URL ("" on replay) and ok = 0 when the vault
+// cannot start.
+fn open_vault() -> (string, int) {
+    addr = ""
+    token = PLAYBACK_TOKEN
+    cafile = ""
+    if servirtium.live() == 1 {
+        addr = start_vault()
+        if addr == "" { return "", 0 }
+        token = token_live()
+        cafile = cafile_live
+        api = addr
+    }
+    return addr, 1
+}
+
+// The recording of the case, in front of the vault open_vault() started.
+// Sets `api` to the recorder's (or the replay server's) base URL.
+fn start_recording(case_: string, addr: string) -> ptr {
+    base, rec = servirtium.recording("lowkeyvault", case_, addr)
+    api = base
+    return rec
+}
+
+// base64url without padding, as Key Vault writes keys and blobs.
+fn b64url_encode_bytes(raw: byte[]) -> string {
+    std = encoding.base64_encode(raw)
+    return string.replace_all(string.replace_all(std, "+", "-"), "/", "_")
+}
+
+fn b64url_encode(raw: string) -> string {
+    return b64url_encode_bytes(string.bytes(raw))
+}
+
+// The bytes of a base64url string ("" when it is not one).
+fn b64url_decode(s: string) -> string {
+    std = string.replace_all(string.replace_all(s, "-", "+"), "_", "/")
+    raw, err = encoding.base64_decode(std)
+    if err != "" { return "" }
+    return raw
+}
+
+// ---------------------------------------------------------------------------
+// The application
+// ---------------------------------------------------------------------------
+// What a service would contain, which the two real-usage cases at the end of
+// the suite exercise. Nothing here knows about Servirtium or the tapes: it is
+// given a vault's base URL and a bearer token, as an app is, and calls Key
+// Vault's REST API with the client it would use anyway.
+
+// The webhook signing secret, read from the vault. "" when it cannot be.
+fn webhook_signing_secret(vault: string, bearer: string) -> string {
+    st, b, err = http_send("GET", "${vault}/secrets/webhook-signing-key?${V}", ["Authorization: Bearer ${bearer}"], "", "", cafile)
+    if err != "" || st != 200 { return "" }
+    return jstr(b, "value")
+}
+
+// The header that signs a webhook payload for the receiver to verify:
+// "X-Signature: sha256=<hex HMAC-SHA256 of the payload>". "" when the secret
+// is not available (the app must not send an unsigned webhook).
+fn webhook_signature_header(vault: string, bearer: string, payload: string) -> string {
+    secret = webhook_signing_secret(vault, bearer)
+    if string.length(secret) == 0 { return "" }
+    mac = hmac.hmac_sha256_hex(string.bytes(secret), string.bytes(payload))
+    return "X-Signature: sha256=${mac}"
+}
+
+// The app's configuration is stored AES-256-GCM encrypted under a data key,
+// itself stored wrapped (RSA-OAEP) by a vault key: `key_path` is the vault
+// key's path with its version, `wrapped_key` the wrapped data key (base64url)
+// and `sealed_config` the encrypted config (base64, ciphertext then tag).
+// Returns the config's plaintext, "" when it cannot be had.
+fn load_config(vault: string, bearer: string, key_path: string, wrapped_key: string, sealed_config: string) -> string {
+    st, b, err = http_send("POST", "${vault}${key_path}/unwrapkey?${V}", ["Authorization: Bearer ${bearer}"], "application/json", "{\"alg\":\"RSA-OAEP\",\"value\":\"${wrapped_key}\"}", cafile)
+    if err != "" || st != 200 { return "" }
+    data_key = b64url_decode(jstr(b, "value"))
+    if string.length(data_key) != 32 { return "" }
+    sealed, serr = encoding.base64_decode(sealed_config)
+    if serr != "" { return "" }
+    ctx = aes.new_encryptor(string.bytes(data_key))
+    iv = bytes.from_slice(string.bytes(CONFIG_NONCE))
+    plain, oerr = aes.gcm_open(ctx, iv, string.bytes(""), string.bytes(sealed))
+    if oerr != "" { return "" }
+    return bytes.to_string(plain, string.length(sealed) - 16)
+}
+
 // ---------------------------------------------------------------------------
 // Recording rules
 // ---------------------------------------------------------------------------
@@ -433,6 +578,15 @@ fn api_rules() {
     // The managed-identity request's own header (the emulator's fixed
     // "header"): the same treatment, so no credential is on any tape.
     servirtium.redact_credential_header("X-IDENTITY-HEADER")
+    // The two real-usage cases read a SECRET from the vault: the webhook
+    // signing secret (a secret's `value`) and the config's data key (an
+    // unwrapKey answer's `value`). Neither goes on a tape: each is written as a
+    // named secret ({{secret:NAME|N}}) and on replay resolved to a FAKE of the
+    // same shape (never the real one: that exists only on the wire of a live
+    // recording). The other tapes' `value`s are not secrets and are not matched
+    // (the rule is scoped by request path).
+    servirtium.named_secret("/secrets/webhook-signing-key", "value", "webhook-signing-key", FAKE_WEBHOOK_SECRET)
+    servirtium.named_secret("/keys/tcae-config-key/", "value", "config-data-key", b64url_encode(FAKE_DATA_KEY))
 
     // Version ids: 32 lower-case hex after a "/" or a quote and before a "/",
     // a quote or a "?": in `id`/`kid` URLs, in the path of a version-specific
@@ -499,6 +653,7 @@ main() {
     fw = spec.init()
     if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
 
+    init_secrets()
     api_rules()
     spec.describe(fw, "Azure Key Vault API (Lowkey Vault)") {
         spec.after_each() callback { testing.cleanup_all() }
@@ -959,6 +1114,102 @@ main() {
             spec.assert_contains(b, "\"error\":\"Method Not Allowed\"", "method not allowed")
             st, b = kv("PUT", "/secrets/tcae_bad_name?${V}", "{\"value\":\"x\"}")
             spec.assert_eq(st, 500, "a name Key Vault does not allow: ${b}")
+            finish(rec)
+        }
+
+        // ---- real usage: an application using what a vault holds ----------
+
+        // PORTING: these two cases are written as an application's own unit
+        // tests, not as demonstrations of the API. Each has ONE tape holding
+        // only the application's own Key Vault traffic; what the application
+        // then does with the answer (an HMAC, an AES-GCM decryption) is plain
+        // in-process code, so a port needs nothing but its language's HMAC /
+        // AES-GCM. What the operator put in the vault beforehand (the secret,
+        // the key) is set up live, before the recording starts, and is on no
+        // tape. The cases above are the API surface; these are "how it is
+        // used".
+        //
+        // PORTING (name webhook-signing-key; the secret is stored before the
+        // recording starts):
+        //   GET /secrets/webhook-signing-key?api-version=7.4 -> 200 {"value":"{{secret:webhook-signing-key|N}}", ...}
+        // The secret is not on the tape: the named secret webhook-signing-key
+        // ({{secret:webhook-signing-key|N}}) is, and on replay it is resolved to a FAKE
+        // secret of your choice (here whsec_FAKE_for_playback_0000000000000000), by
+        // your Servirtium's secret resolver (docs/secrets.md: the response body's
+        // "value" field of a /secrets/webhook-signing-key interaction). The real
+        // secret exists only in a live recording run (made up fresh then). The app signs
+        //   {"event":"order.paid","order_id":1042,"amount":4999}
+        // with HMAC-SHA256 under the secret it was given, and the header must be
+        //   X-Signature: sha256=<hex HMAC-SHA256 of the payload under the secret>
+        // so the test computes the expected value from the secret of THAT run
+        // (on replay the fake, whose answer, as
+        // printf %s '<payload>' | openssl dgst -sha256 -hmac '<fake>' -hex says, is
+        // fbe8aa937dab1c4e7f31b7c6f0b63ac907e2b47fec0d33343458600367f332de).
+        spec.it("signs a webhook with the signing secret from the vault") callback {
+            addr, ok = open_vault()
+            if ok == 0 { return }
+            if servirtium.live() == 1 {
+                st, b = kv("PUT", "/secrets/webhook-signing-key?${V}", "{\"value\":\"${webhook_secret}\"}")
+                spec.assert_eq(st, 200, "the operator stores the signing secret: ${b}")
+            }
+            rec = start_recording("signs_a_webhook_with_the_signing_secret", addr)
+
+            header = webhook_signature_header(api, token, WEBHOOK_PAYLOAD)
+
+            // What the receiver, who shares the secret, computes for the payload.
+            expected = hmac.hmac_sha256_hex(string.bytes(webhook_secret), string.bytes(WEBHOOK_PAYLOAD))
+            spec.assert_str_eq(header, "X-Signature: sha256=${expected}", "the webhook is signed with the vault's secret")
+            finish(rec)
+        }
+
+        // PORTING (key tcae-config-key, RSA 2048, key_ops wrapKey, unwrapKey, encrypt, decrypt
+        // (Lowkey Vault wants encrypt and decrypt allowed too: it checks unwrapKey
+        // against DECRYPT, wrapKey against ENCRYPT) created before the recording; a 32-byte data key is wrapped with it
+        // (RSA-OAEP, SHA-1, Key Vault's "RSA-OAEP") from the key's public parts,
+        // and the config is encrypted under that data key with AES-256-GCM, nonce
+        // "tcae-nonce-1", no AAD, stored as base64 of ciphertext then the 16-byte
+        // tag. Those are the test's fixtures. On replay the app is handed the key
+        // path /keys/tcae-config-key/{{version-1}} and the wrapped key {{blob-1}},
+        // the tokens the tape holds, and the config sealed under the replay data
+        // key):
+        //   POST /keys/tcae-config-key/{{version-1}}/unwrapkey?api-version=7.4 {"alg":"RSA-OAEP","value":"{{blob-1}}"}
+        //        -> 200 {"kid":"https://{{request.host}}/keys/tcae-config-key/{{version-1}}","value":"{{secret:config-data-key|N}}"}
+        // The unwrapped data key is a secret in the response, so the tape holds
+        // the named secret config-data-key, and on replay it is resolved
+        // as a FAKE key: here the base64url of the 32 bytes
+        // FAKE-data-key-for-playback-0000!. A fake key cannot decrypt a config
+        // that was sealed under the real one, so the test seals its config under
+        // whichever data key this run's vault will hand back (live: the fresh
+        // random one it wrapped; replay: the fake, which is a valid AES-256 key)
+        // and asserts the plaintext. What it proves either way: the app unwraps
+        // through the vault and uses what came back (see the deliberate break),
+        // not that a particular real key was recovered.
+        spec.it("unwraps the data key with the vault's key and decrypts the config") callback {
+            addr, ok = open_vault()
+            if ok == 0 { return }
+            // What the app's deployment stores: the vault key's path, the data
+            // key wrapped by it, and the config encrypted under the data key.
+            key_path = "/keys/tcae-config-key/{{version-1}}"
+            wrapped = "{{blob-1}}"
+            if servirtium.live() == 1 {
+                st, b = kv("POST", "/keys/tcae-config-key/create?${V}", "{\"kty\":\"RSA\",\"key_size\":2048,\"key_ops\":[\"wrapKey\",\"unwrapKey\",\"encrypt\",\"decrypt\"]}")
+                spec.assert_eq(st, 200, "the operator creates the key-encryption key: ${b}")
+                key_path = path_of(jstr(b, "key.kid"))
+                pub = rsa.key_from_bytes(string.bytes(b64url_decode(jstr(b, "key.n"))), string.bytes(b64url_decode(jstr(b, "key.e"))), string.bytes(""))
+                seed, serr = cryptography.random_buffer(20)
+                spec.assert_ok(serr, "random OAEP seed")
+                w = rsa.encrypt_oaep_hash(pub, "sha1", string.bytes(data_key), seed)
+                wrapped = b64url_encode_bytes(bytes.view(w)[0..rsa.modulus_bytes(pub)])
+            }
+            enc = aes.new_encryptor(string.bytes(data_key))
+            nonce = bytes.from_slice(string.bytes(CONFIG_NONCE))
+            ct = aes.gcm_seal(enc, nonce, string.bytes(""), string.bytes(CONFIG_PLAINTEXT))
+            sealed = encoding.base64_encode(bytes.view(ct)[0..string.length(CONFIG_PLAINTEXT) + 16])
+            rec = start_recording("unwraps_the_data_key_and_decrypts_the_config", addr)
+
+            config = load_config(api, token, key_path, wrapped, sealed)
+
+            spec.assert_str_eq(config, CONFIG_PLAINTEXT, "the config is decrypted with the vault-unwrapped data key")
             finish(rec)
         }
     }
