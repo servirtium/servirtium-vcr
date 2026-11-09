@@ -168,6 +168,14 @@ jobs:
           loaded and checked for every declared C ABI export. This does not claim
           a record/playback test pass on every target platform.
           NOTES
+          # A re-run for a tag that is already released (a manual run after a
+          # later step failed, e.g. a GitHub download 504) publishes nothing:
+          # releases are immutable, and "Verify published downloads" below
+          # re-checks every asset that is actually published.
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::notice::$RELEASE_TAG is already released; not re-publishing. The published assets are verified below."
+            exit 0
+          fi
           flags=()
           if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
           gh release create "$RELEASE_TAG" --verify-tag "${flags[@]}" \
@@ -301,6 +309,15 @@ jobs:
             '    targets: [.executableTarget(name: "ConsumerExample", dependencies: [' \
             '        .product(name: "Servirtium", package: "servirtium-vcr")])]' ')' > "$c/Package.swift"
           cd "$c"
-          env -u SERVIRTIUM_VCR_LIB_DIR swift run ConsumerExample
+          # GitHub's release-download URLs intermittently answer 504 (seen
+          # 2026-11-09 on this very bundle), and SwiftPM does not retry. Retry
+          # the whole resolve/build/run a few times before calling it a failure.
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if env -u SERVIRTIUM_VCR_LIB_DIR swift run ConsumerExample; then ok=1; break; fi
+            echo "::warning::swift run failed (attempt $attempt); retrying in $((attempt * 30)) s"
+            sleep $((attempt * 30))
+          done
+          test "$ok" = 1
           grep -q "\"revision\" : \"$(git -C "$GITHUB_WORKSPACE" rev-parse "refs/tags/${RELEASE_TAG#v}^{commit}")\"" Package.resolved
           echo "SwiftPM resolved ${RELEASE_TAG#v} from GitHub and replayed the canonical tape." >> "$GITHUB_STEP_SUMMARY"

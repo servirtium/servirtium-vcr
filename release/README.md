@@ -70,9 +70,17 @@ The flow, with no tag ever moved:
    than 6.2).
 
 Never create the bare tag by hand at the `v` tag's commit: its manifest has
-no checksum. If step 3 or 4 fails after publishing, rerun just that step's
-commands (the workflow cannot be re-run once the release exists); step 3 is
-idempotent when the bare tag already carries the published checksum.
+no checksum. If a step after publishing fails (for example a GitHub download
+504 in step 5), start a manual run for the same tag:
+`gh workflow run release.yml -R servirtium/servirtium-vcr -f tag=<tag>`. It uses
+main's workflow file, so it needs this re-runnable version. The publish step
+then skips the existing release, and "Verify published downloads" re-checks
+every published asset. The Go and Swift tag steps and the checksum carry are
+idempotent: they check what is already there instead of re-creating it.
+"Re-run failed jobs" on the original run does not work: it replays that run's
+own workflow file, whose publish step fails on the existing release. Step 5
+retries `swift run` up to five times, because SwiftPM does not retry a
+failed download.
 
 Use a new unused version; pushing `main` alone does not publish a release.
 Prerelease tags (`-alpha`, `-beta`, `-rc`, etc.) are marked as prereleases on
