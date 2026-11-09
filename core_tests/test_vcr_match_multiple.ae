@@ -20,22 +20,8 @@ import std.fs
 import std.json
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18116
-
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
 
 fail(msg: string) {
     println("FAIL: ${msg}")
@@ -69,14 +55,11 @@ expect(path: string, want_status: int, want_body: string) {
 main() {
     println("=== VCR match-multiple (reusable, order-independent) ===\n")
 
-    raw = vcr.load("core_tests/tapes/multi_match.tape", PORT)
+    raw, raw_oerr = vcr.open_playback("core_tests/tapes/multi_match.tape", PORT)
     if raw == null { fail("vcr.load returned null") }
     vcr.set_match_multiple_h(raw, 1)
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     expect("/b", 200, "body-b")     // out of order
     expect("/a", 200, "body-a")
@@ -84,7 +67,7 @@ main() {
     expect("/b", 200, "body-b")     // reused again
     expect("/zz", 599, "")          // no matching interaction
 
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
     println("\n=== match-multiple subtest passed ===")
     exit(0)
 }

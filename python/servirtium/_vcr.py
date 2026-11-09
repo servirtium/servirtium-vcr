@@ -240,7 +240,6 @@ def _secret_stage(handle, callback, resolving: bool):
         _check(N.secret_finish(handle), "secret_finish")
     except BaseException:
         N.secret_abort(handle)
-        N.stop(handle)
         raise
 
 
@@ -358,19 +357,20 @@ class PlaybackBuilder(_BuilderBase):
             N.encode(self._host),
             self._port,
         )
-        if not handle:
-            raise VcrError(
-                f"vcr playback failed to start for tape '{self._tape_path}': "
-                f"{_drain_start_error(None)}"
-            )
-        self._apply_config(handle)
-        if self._secret_resolver is not None:
-            _secret_stage(handle, self._secret_resolver, True)
-        if N.start(handle) < 0:
-            raise VcrError(
-                f"vcr playback failed to begin serving for tape "
-                f"'{self._tape_path}': {_drain_start_error(handle)}"
-            )
+        _check_open(handle, f"vcr playback failed to start for tape '{self._tape_path}'")
+        try:
+            self._apply_config(handle)
+            if self._secret_resolver is not None:
+                _secret_stage(handle, self._secret_resolver, True)
+            if N.start(handle) < 0:
+                raise VcrError(
+                    f"vcr playback failed to begin serving for tape "
+                    f"'{self._tape_path}': {_drain_start_error(handle)}"
+                )
+        except BaseException:
+            N.stop(handle)
+            N.destroy(handle)
+            raise
         return VcrServer(handle, self._host, self._tape_path, record_mode=False, fail_if_changed=False)
 
 
@@ -566,22 +566,27 @@ class RecordBuilder(_BuilderBase):
             N.encode(self._host),
             self._port,
         )
-        if not handle:
-            raise VcrError(
-                f"vcr record failed to start for tape '{self._tape_path}' "
-                f"(upstream '{self._upstream_base}'): {_drain_start_error(None)}"
-            )
-        self._apply_config(handle)
-        # Stage the note now (open_record cleared the tape) so it attaches
-        # to the first interaction the SUT triggers.
-        if self._note is not None:
-            title, body = self._note
-            _check(N.note(handle, N.encode(title), N.encode(body)), "note")
-        if N.start(handle) < 0:
-            raise VcrError(
-                f"vcr record failed to begin serving for tape "
-                f"'{self._tape_path}': {_drain_start_error(handle)}"
-            )
+        _check_open(
+            handle,
+            f"vcr record failed to start for tape '{self._tape_path}' "
+            f"(upstream '{self._upstream_base}')",
+        )
+        try:
+            self._apply_config(handle)
+            # Stage the note now (open_record cleared the tape) so it attaches
+            # to the first interaction the SUT triggers.
+            if self._note is not None:
+                title, body = self._note
+                _check(N.note(handle, N.encode(title), N.encode(body)), "note")
+            if N.start(handle) < 0:
+                raise VcrError(
+                    f"vcr record failed to begin serving for tape "
+                    f"'{self._tape_path}': {_drain_start_error(handle)}"
+                )
+        except BaseException:
+            N.stop(handle)
+            N.destroy(handle)
+            raise
         return VcrServer(
             handle,
             self._host,
@@ -592,11 +597,18 @@ class RecordBuilder(_BuilderBase):
         )
 
 
+def _check_open(handle, what: str) -> None:
+    """An open always returns a handle; a failed one carries its own reason.
+    Read it, destroy the dead handle, and raise."""
+    if not handle:
+        raise VcrError(f"{what}: out of memory")
+    reason = N.take_string(N.open_error(handle))
+    if reason:
+        N.destroy(handle)
+        raise VcrError(f"{what}: {reason}")
+
+
 def _drain_start_error(handle) -> str:
-    # When open failed there's no handle; the failure reason is still
-    # retrievable by re-opening — but we can't. Fall back to a generic hint.
-    if handle is None:
-        return "(no detail; check tape path and port availability)"
     err = N.take_string(N.last_error(handle))
     return err or "(no detail; check tape path and port availability)"
 
@@ -718,10 +730,13 @@ class VcrServer:
             return
         handle = self._handle
         self._handle = None
-        if not self._record_mode:
-            N.stop(handle)
-            return
-        N.take_string(N.discard(handle, N.encode(self._tape_path)))
+        try:
+            if not self._record_mode:
+                N.stop(handle)
+                return
+            N.take_string(N.discard(handle, N.encode(self._tape_path)))
+        finally:
+            N.destroy(handle)
 
     def close(self) -> None:
         """Stop the server; flush the tape if recording."""
@@ -730,20 +745,27 @@ class VcrServer:
         handle = self._handle
         self._handle = None
 
-        if not self._record_mode:
-            N.stop(handle)
-            return
+        try:
+            if not self._record_mode:
+                N.stop(handle)
+                return
 
-        if self._secret_redactor is not None:
-            _secret_stage(handle, self._secret_redactor, False)
+            if self._secret_redactor is not None:
+                try:
+                    _secret_stage(handle, self._secret_redactor, False)
+                except BaseException:
+                    N.stop(handle)
+                    raise
 
-        if self._fail_if_changed:
-            result = N.stop_and_flush_fail_if_changed(handle, N.encode(self._tape_path))
-        else:
-            result = N.stop_and_flush(handle, N.encode(self._tape_path))
-        err = N.take_string(result)
-        if err:
-            raise VcrError(err)
+            if self._fail_if_changed:
+                result = N.stop_and_flush_fail_if_changed(handle, N.encode(self._tape_path))
+            else:
+                result = N.stop_and_flush(handle, N.encode(self._tape_path))
+            err = N.take_string(result)
+            if err:
+                raise VcrError(err)
+        finally:
+            N.destroy(handle)
 
     def __enter__(self) -> "VcrServer":
         return self

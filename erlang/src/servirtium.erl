@@ -53,7 +53,7 @@
 -export_type([server/0, outcome/0]).
 
 -opaque server() :: #{
-    handle := non_neg_integer(),
+    handle := reference(),
     host := string(),
     mode := playback | record,
     tape := string()
@@ -104,15 +104,13 @@ playback_open(TapePath, Host, Resolver) ->
         list_to_binary(Host),
         0
     ),
-    case Handle of
-        0 -> error({servirtium, {playback_open_failed, TapePath}});
-        _ -> ok
-    end,
+    open_checked(Handle, fun(Why) -> {playback_open_failed, TapePath, Why} end),
     case Resolver of undefined -> ok; _ -> servirtium_nif:secret_stage(Handle, Resolver, true) end,
     case servirtium_nif:start(Handle) of
         Rc when Rc < 0 ->
             Detail = binary_to_list(servirtium_nif:last_error(Handle)),
             servirtium_nif:stop(Handle),
+            servirtium_nif:destroy(Handle),
             error({servirtium, {playback_start_failed, TapePath, Detail}});
         _ ->
             #{handle => Handle, host => Host, mode => playback, tape => TapePath}
@@ -133,17 +131,25 @@ record(TapePath, UpstreamBase, Host) ->
         list_to_binary(Host),
         0
     ),
-    case Handle of
-        0 -> error({servirtium, {record_open_failed, TapePath, UpstreamBase}});
-        _ -> ok
-    end,
+    open_checked(Handle, fun(Why) -> {record_open_failed, TapePath, UpstreamBase, Why} end),
     case servirtium_nif:start(Handle) of
         Rc when Rc < 0 ->
             Detail = binary_to_list(servirtium_nif:last_error(Handle)),
             servirtium_nif:stop(Handle),
+            servirtium_nif:destroy(Handle),
             error({servirtium, {record_start_failed, TapePath, Detail}});
         _ ->
             #{handle => Handle, host => Host, mode => record, tape => TapePath}
+    end.
+
+%% An open_* call always yields a handle; a failed open is a dead one carrying its
+%% reason. Read it, destroy the handle, and raise.
+open_checked(Handle, Err) ->
+    case servirtium_nif:open_error(Handle) of
+        <<>> -> ok;
+        Why ->
+            servirtium_nif:destroy(Handle),
+            error({servirtium, Err(binary_to_list(Why))})
     end.
 
 %% ---- running-server members ----------------------------------------------
@@ -180,11 +186,12 @@ last_index(#{handle := H}) ->
     servirtium_nif:last_index(H).
 
 %% Stop the server. In record mode this also flushes the captured tape to
-%% disk. Returns ok, or {error, Msg} on a record-flush problem. Idempotent-ish
-%% (a second close on the same handle is undefined; close once).
+%% disk, then frees the VCR. Returns ok, or {error, Msg} on a record-flush problem.
+%% Idempotent: the handle is a resource, a second close is a harmless no-op.
 -spec close(server()) -> ok | {error, string()}.
 close(#{mode := playback, handle := H}) ->
     servirtium_nif:stop(H),
+    servirtium_nif:destroy(H),
     ok;
 close(#{mode := record, handle := H, tape := Tape} = Server) ->
     case maps:get(secret_redactor, Server, undefined) of
@@ -192,6 +199,7 @@ close(#{mode := record, handle := H, tape := Tape} = Server) ->
         Callback -> servirtium_nif:secret_stage(H, Callback, false)
     end,
     Res = servirtium_nif:stop_and_flush(H, list_to_binary(Tape)),
+    servirtium_nif:destroy(H),
     case Res of
         <<>> -> ok;
         Msg when is_binary(Msg) -> {error, binary_to_list(Msg)}

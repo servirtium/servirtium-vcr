@@ -26,15 +26,19 @@
 // `--emit=lib` it lands as `aether_vcr_embed_<name>`.
 //
 // PER-LISTENER contract: N independent VCR servers can run concurrently
-// in one process. The opaque handle is the HTTP server pointer; every
+// in one process. The opaque handle is the VCR's own record; every
 // config / diagnostic / lifecycle call takes the handle and addresses
-// THAT server's state (tape / cursor / mutations / mounts / diagnostics).
-// Lifecycle is open -> configure -> start:
+// THAT VCR's state (tape / cursor / rules / diagnostics), and nothing about
+// any VCR is kept outside its record. Lifecycle is
+// open -> check -> configure -> start -> stop -> (read diagnostics) -> destroy:
 //   1. vcr_embed_open_playback / _open_playback_url / _open_record
-//      create + bind the server and return the handle (NOT serving yet);
-//   2. config calls (redact / static_content / untaped / strict / ...)
+//      create + bind the server and return a handle (NOT serving yet);
+//   2. vcr_embed_open_error(handle) is "" if it opened, else the reason;
+//   3. config calls (redact / static_content / untaped / strict / ...)
 //      take the handle;
-//   3. vcr_embed_start(handle) begins serving on a background thread.
+//   4. vcr_embed_start(handle) begins serving on a background thread;
+//   5. vcr_embed_stop / _stop_and_flush* / _discard stop serving;
+//   6. vcr_embed_destroy(handle) frees it (every handle, failed or not).
 
 import vcr
 import std.http
@@ -63,89 +67,94 @@ extern vcr_embed_dup(s: string) -> ptr
 extern vcr_embed_free(s: ptr)
 
 // ---- lifecycle: open (create + bind + register, NOT serving) ----
+//
+// Every open returns a handle (null only if memory ran out). Check it with
+// vcr_embed_open_error(handle): "" means it opened; anything else is why it
+// did not, and that handle is a dead VCR carrying only its reason (start
+// fails on it). Either way the caller owns the handle and frees it with
+// vcr_embed_destroy. Nothing about a failed open is kept anywhere else.
+
+// Bind a freshly opened VCR to host:port, or turn it into a failed-open handle.
+bind_opened(h: @into ptr, err: string, label: string, tape: string, host: string, port: int) -> ptr {
+    if h == null { return vcr.failed_open_h(err) }
+    vcr.diagnostic_open_h(h, label, tape)
+    http_server_set_host(vcr.server_of(h), host)
+    rc = http_server_bind_raw(vcr.server_of(h), host, port)
+    if rc < 0 {
+        vcr.destroy_h(h)
+        return vcr.failed_open_h("vcr: cannot bind ${host}:${port}")
+    }
+    return h
+}
 
 // Parse `tape_path`, create + bind `host:port` (port 0 = OS-assigned),
 // register the per-server wildcard dispatcher, and return the handle.
 // `label` is human-facing (logs/diagnostics), never the state key.
 // Does NOT start serving — call vcr_embed_start(handle) after config.
-// Returns null on parse/bind failure (reason via vcr_embed_last_error).
 vcr_embed_open_playback(label: string, tape_path: string, host: string, port: int) -> ptr {
-    vcr.set_quiet(1)
-    raw = vcr.load(tape_path, port)
-    if raw == 0 {
-        return null
-    }
-    vcr.diagnostic_open_h(raw, label, tape_path)
-    http_server_set_host(raw, host)
-    rc = http_server_bind_raw(raw, host, port)
-    if rc < 0 {
-        vcr.eject(raw)
-        return null
-    }
-    return raw
+    h, err = vcr.open_playback(tape_path, port)
+    return bind_opened(h, err, label, tape_path, host, port)
 }
 
 // As vcr_embed_open_playback, but the tape is fetched over HTTP from
 // `tape_url` instead of read from disk.
 vcr_embed_open_playback_url(label: string, tape_url: string, host: string, port: int) -> ptr {
-    vcr.set_quiet(1)
-    raw = vcr.load_url(tape_url, port)
-    if raw == 0 {
-        return null
-    }
-    vcr.diagnostic_open_h(raw, label, tape_url)
-    http_server_set_host(raw, host)
-    rc = http_server_bind_raw(raw, host, port)
-    if rc < 0 {
-        vcr.eject(raw)
-        return null
-    }
-    return raw
+    h, err = vcr.open_playback_url(tape_url, port)
+    return bind_opened(h, err, label, tape_url, host, port)
 }
 
 // Record mode: create + bind `host:port`; the dispatcher will forward
 // each request to `upstream_base`, return the live response, and capture
-// the interaction. Flush with vcr_embed_stop_and_flush. Returns null on
-// failure. Does NOT start serving — call vcr_embed_start(handle).
+// the interaction. Flush with vcr_embed_stop_and_flush. Does NOT start
+// serving — call vcr_embed_start(handle).
 vcr_embed_open_record(label: string, tape_path: string, upstream_base: string, host: string, port: int) -> ptr {
-    vcr.set_quiet(1)
-    raw = vcr.load_record(tape_path, upstream_base, port)
-    if raw == 0 {
-        return null
-    }
-    vcr.diagnostic_open_h(raw, label, tape_path)
-    http_server_set_host(raw, host)
-    rc = http_server_bind_raw(raw, host, port)
-    if rc < 0 {
-        vcr.eject(raw)
-        return null
-    }
-    return raw
+    h, err = vcr.open_record(tape_path, upstream_base, port)
+    return bind_opened(h, err, label, tape_path, host, port)
+}
+
+// "" if the handle's open succeeded, else why it failed. Caller frees.
+vcr_embed_open_error(s: ptr) -> ptr {
+    return vcr_embed_dup(vcr.open_error_h(s))
 }
 
 // Begin serving: start the accept loop on a background thread. Returns
-// >= 0 on success, < 0 on failure.
+// >= 0 on success, < 0 on failure (including a failed-open handle).
 vcr_embed_start(s: ptr) -> int {
+    if s == null { return -1 }
+    if vcr.server_of(s) == null { return -1 }
     // Returns once the accept loop is live (not merely spawned), so an
     // immediate stop is never lost -- see vcr.start_background_h.
     if vcr.secret_check_ready_h(s) != "" { return -1 }
     return vcr.start_background_h(s, 10000)
 }
 
-// Stop the accept loop (playback handles just stop).
+// Stop the accept loop. The handle stays valid (diagnostics, flush) until
+// vcr_embed_destroy.
 vcr_embed_stop(s: ptr) {
+    if s == null { return }
     vcr.eject(s)
+}
+
+// Free the VCR: stops it if it is still serving, then frees its server and
+// its record. Every handle an open returned, failed or not, must be
+// destroyed exactly once; the handle is invalid afterwards. Read
+// diagnostics (and flush) before destroying.
+vcr_embed_destroy(s: ptr) {
+    if s == null { return }
+    vcr.destroy_h(s)
 }
 
 // Record handles: stop + flush the captured markdown to `tape_path`.
 // Returns "" on success, else an error (caller frees the string).
 vcr_embed_stop_and_flush(s: ptr, tape_path: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.stop_and_flush_h(s, tape_path))
 }
 
 // Stop + flush, overwriting the tape AND returning a non-empty drift
 // error when the new recording differs (Servirtium step-4 contract).
 vcr_embed_stop_and_flush_fail_if_changed(s: ptr, tape_path: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.stop_and_flush_fail_if_changed_h(s, tape_path))
 }
 
@@ -153,6 +162,7 @@ vcr_embed_stop_and_flush_fail_if_changed(s: ptr, tape_path: string) -> ptr {
 // tape to a `<tape_path>.actual` sibling and byte-compares against the
 // committed tape WITHOUT overwriting it. Caller frees.
 vcr_embed_stop_and_flush_or_check(s: ptr, tape_path: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.stop_and_flush_or_check_h(s, tape_path))
 }
 
@@ -163,6 +173,7 @@ vcr_embed_stop_and_flush_or_check(s: ptr, tape_path: string) -> ptr {
 // discard on failure). `tape_path` is accepted for call-site symmetry with
 // the flush family and ignored. Returns "" (nothing to fail). Caller frees.
 vcr_embed_discard(s: ptr, tape_path: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.discard_h(s, tape_path))
 }
 
@@ -170,13 +181,17 @@ vcr_embed_discard(s: ptr, tape_path: string) -> ptr {
 
 // Resolved listening port (the OS-assigned port when started with 0).
 vcr_embed_port(s: ptr) -> int {
-    return http_server_port(s)
+    if s == null { return 0 }
+    if vcr.server_of(s) == null { return 0 }
+    return http_server_port(vcr.server_of(s))
 }
 
 // "http://<host>:<port>" (or "https://…" when TLS is enabled on this handle)
 // for the running server — caller frees.
 vcr_embed_base_url(s: ptr, host: string) -> ptr {
-    p = http_server_port(s)
+    if s == null { return vcr_embed_dup("") }
+    if vcr.server_of(s) == null { return vcr_embed_dup("") }
+    p = http_server_port(vcr.server_of(s))
     scheme = "http"
     if vcr.tls_enabled_h(s) != 0 { scheme = "https" }
     url = "${scheme}://${host}:${p}"
@@ -190,6 +205,7 @@ vcr_embed_base_url(s: ptr, host: string) -> ptr {
 // that is unreadable / unparseable / mismatched, or a core built without
 // OpenSSL). On error, start() also fails and last_error carries the reason.
 vcr_embed_set_tls(s: ptr, cert_path: string, key_path: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.set_tls_h(s, cert_path, key_path))
 }
 
@@ -198,6 +214,7 @@ vcr_embed_set_tls(s: ptr, cert_path: string, key_path: string) -> ptr {
 // Same contract ("" = OK / error string), applied at start via
 // http.server_set_tls_pem (aether #3362). Configure before start.
 vcr_embed_set_tls_pem(s: ptr, cert_pem: string, key_pem: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.set_tls_pem_h(s, cert_pem, key_pem))
 }
 
@@ -212,6 +229,7 @@ vcr_embed_set_tls_pem(s: ptr, cert_pem: string, key_pem: string) -> ptr {
 // rule). required: 1 = assert_all_redactions_used reports it if never used; 0 =
 // optional (a shared fixture's safeguard a given tape may not exercise).
 vcr_embed_substitute(s: ptr, field: int, pattern: string, replacement: string, required: int) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.substitute_h(s, field, pattern, replacement, required))
 }
 
@@ -219,10 +237,12 @@ vcr_embed_substitute(s: ptr, field: int, pattern: string, replacement: string, r
 // pure-Aether TLS 1.3 server), "" for plain HTTP. Lets a test assert the server
 // negotiated 1.3, not just that the client was configured for it. Caller frees.
 vcr_embed_last_tls_protocol(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.last_tls_protocol_h(s))
 }
 
 vcr_embed_clear_substitutions(s: ptr) {
+    if s == null { return }
     vcr.clear_substitutions_h(s)
 }
 
@@ -231,6 +251,7 @@ vcr_embed_clear_substitutions(s: ptr) {
 // surface this as an AssertAllConsumed()/RequireAllConsumed() check so a test
 // fails when the SUT skipped a taped step. Caller frees.
 vcr_embed_assert_all_consumed(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.assert_all_consumed_h(s))
 }
 
@@ -238,6 +259,7 @@ vcr_embed_assert_all_consumed(s: ptr) -> ptr {
 // matched something, else a message listing the rules that never fired (a
 // verifyNoMoreInteractions()-style check for scrubbing config). Caller frees.
 vcr_embed_assert_all_redactions_used(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.assert_all_redactions_used_h(s))
 }
 
@@ -246,14 +268,17 @@ vcr_embed_assert_all_redactions_used(s: ptr) -> ptr {
 // (a typo, or a placeholder no rule covers). Works with a shared fixture or
 // per-test rules. Caller frees.
 vcr_embed_assert_no_unfilled_placeholders(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.assert_no_unfilled_placeholders_h(s))
 }
 
 vcr_embed_tape_length(s: ptr) -> int {
+    if s == null { return 0 }
     return vcr.tape_length_h(s)
 }
 
 vcr_embed_reset_cursor(s: ptr) {
+    if s == null { return }
     vcr.reset_cursor_h(s)
 }
 
@@ -262,6 +287,7 @@ vcr_embed_reset_cursor(s: ptr) {
 // The last match-failure detail, or — when no match failure is pending —
 // the last load failure reason (fetch/parse/bind).
 vcr_embed_last_error(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     e = vcr.last_error_h(s)
     if e == "" {
         e = vcr.load_error_h(s)
@@ -271,47 +297,58 @@ vcr_embed_last_error(s: ptr) -> ptr {
 
 // Additive ABI: consume acknowledges retrieval without deleting the event.
 vcr_embed_last_error_ex(s: ptr, consume: int) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     e = vcr.last_error_ex_h(s, consume)
     if e == "" { e = vcr.load_error_h(s) }
     return vcr_embed_dup(e)
 }
 vcr_embed_diagnostics_json(s: ptr, consume: int) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.diagnostics_json_h(s, consume))
 }
 vcr_embed_assert_no_mismatches(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.assert_no_mismatches_h(s))
 }
 vcr_embed_test_context(s: ptr, test_name: string, source_file: string, source_line: int) {
+    if s == null { return }
     vcr.test_context_h(s, test_name, source_file, source_line)
 }
 
 vcr_embed_last_kind(s: ptr) -> int {
+    if s == null { return 0 }
     return vcr.last_kind_h(s)
 }
 
 vcr_embed_last_index(s: ptr) -> int {
+    if s == null { return -1 }
     return vcr.last_index_h(s)
 }
 
 vcr_embed_clear_last_error(s: ptr) {
+    if s == null { return }
     vcr.clear_last_error_h(s)
 }
 
 // ---- mutations / config (handle 1st arg; call BEFORE start) ----
 
 vcr_embed_redact(s: ptr, field: int, pattern: string, replacement: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_h(s, field, pattern, replacement))
 }
 
 // Structured redaction: explicit header/body scope; query rules target the URL.
 vcr_embed_redact_header(s: ptr, field: int, name: string, replacement: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_header_h(s, field, name, replacement))
 }
 vcr_embed_redact_query_param(s: ptr, field: int, name: string, replacement: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     if field != vcr.FIELD_PATH { return vcr_embed_dup("query redaction requires the path field") }
     return vcr_embed_dup(vcr.redact_query_param_h(s, name, replacement))
 }
 vcr_embed_redact_json_field(s: ptr, field: int, name: string, replacement: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_json_field_h(s, field, name, replacement))
 }
 
@@ -327,10 +364,12 @@ vcr_embed_har_export(tape_path: string, har_path: string) -> ptr {
 }
 
 vcr_embed_unredact(s: ptr, field: int, pattern: string, replacement: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.unredact_h(s, field, pattern, replacement))
 }
 
 vcr_embed_remove_header(s: ptr, field: int, name: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.remove_header_h(s, field, name))
 }
 
@@ -341,6 +380,7 @@ vcr_embed_remove_header(s: ptr, field: int, name: string) -> ptr {
 // token, so a re-record comes out byte-identical and drift detection
 // (fail_if_changed) only fires on real changes. Configure before start.
 vcr_embed_normalize_whole_tape(s: ptr, pattern: string, name: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.normalize_whole_tape_h(s, pattern, name))
 }
 
@@ -349,6 +389,7 @@ vcr_embed_normalize_whole_tape(s: ptr, pattern: string, name: string) -> ptr {
 // headers, nonces): a value whose distinct-count varies per run, so a
 // correlated token would not be byte-stable. Configure before start.
 vcr_embed_redact_whole_tape(s: ptr, pattern: string, replacement: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_whole_tape_h(s, pattern, replacement))
 }
 
@@ -356,9 +397,11 @@ vcr_embed_redact_whole_tape(s: ptr, pattern: string, replacement: string) -> ptr
 // footer shows in place of the pattern (a pattern holding a per-run value,
 // such as a mapped port, would make the footer differ run to run).
 vcr_embed_normalize_whole_tape_described(s: ptr, pattern: string, name: string, description: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.normalize_whole_tape_described_h(s, pattern, name, description))
 }
 vcr_embed_redact_whole_tape_described(s: ptr, pattern: string, replacement: string, description: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_whole_tape_described_h(s, pattern, replacement, description))
 }
 
@@ -367,6 +410,7 @@ vcr_embed_redact_whole_tape_described(s: ptr, pattern: string, replacement: stri
 // is dropped from BOTH the recorded expectation and the live request
 // before strict matching. Returns "" on success, else the first error.
 vcr_embed_strict_ignore_common_headers(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.strict_ignore_common_headers_h(s))
 }
 
@@ -380,6 +424,7 @@ vcr_embed_strict_ignore_common_headers(s: ptr) -> ptr {
 // client identity headers; this covers tracing/correlation. Call both for the
 // full default-ignore set. Returns "" on success, else the first error.
 vcr_embed_ignore_volatile_headers(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.ignore_volatile_headers_h(s))
 }
 
@@ -387,32 +432,40 @@ vcr_embed_ignore_volatile_headers(s: ptr) -> ptr {
 // ordinary rules, listed under the preset's name in the recording-rules
 // footer. Each returns "" on success, else an error.
 vcr_embed_remove_transport_headers(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.remove_transport_headers_h(s))
 }
 // vendor: one of "aws", "azure", "cloudflare", "fastly", "gcp".
 vcr_embed_remove_cloud_headers(s: ptr, vendor: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.remove_cloud_headers_h(s, vendor))
 }
 // Record mode: verify an https upstream against this PEM CA file.
 vcr_embed_set_upstream_cafile(s: ptr, path: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.set_upstream_cafile_h(s, path))
 }
 vcr_embed_redact_credentials(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_credentials_h(s))
 }
 vcr_embed_redact_credential_header(s: ptr, name: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_credential_header_h(s, name))
 }
 
 vcr_embed_add_license_notice(s: ptr, text: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.add_license_notice_h(s, text))
 }
 
 vcr_embed_note(s: ptr, title: string, body: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.note_h(s, title, body))
 }
 
 vcr_embed_static_content(s: ptr, mount_path: string, fs_dir: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.static_content_h(s, mount_path, fs_dir))
 }
 
@@ -420,10 +473,12 @@ vcr_embed_static_content(s: ptr, mount_path: string, fs_dir: string) -> ptr {
 // the VCR answers it 404 without consuming the playback cursor or, in
 // record mode, forwarding/recording it. Configure before start.
 vcr_embed_untaped(s: ptr, path: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.untaped_h(s, path))
 }
 
 vcr_embed_set_strict_headers(s: ptr, on: int) {
+    if s == null { return }
     vcr.set_strict_headers_h(s, on)
 }
 
@@ -431,6 +486,7 @@ vcr_embed_set_strict_headers(s: ptr, on: int) {
 // listing what the test left out or rewrote (removed headers, redactions,
 // normalizations) and where. Playback does not read it.
 vcr_embed_set_rules_footer(s: ptr, on: int) {
+    if s == null { return }
     vcr.set_rules_footer_h(s, on)
 }
 
@@ -438,6 +494,7 @@ vcr_embed_set_rules_footer(s: ptr, on: int) {
 // whitespace ignored) instead of byte-for-byte. Off by default; non-JSON
 // bodies always fall back to the byte-exact comparison.
 vcr_embed_set_match_json_body(s: ptr, on: int) {
+    if s == null { return }
     vcr.set_match_json_body_h(s, on)
 }
 
@@ -446,6 +503,7 @@ vcr_embed_set_match_json_body(s: ptr, on: int) {
 // byte-for-byte. Off by default; non-XML bodies always fall back to the
 // byte-exact comparison. The twin of set_match_json_body for SOAP/XML APIs.
 vcr_embed_set_match_xml_body(s: ptr, on: int) {
+    if s == null { return }
     vcr.set_match_xml_body_h(s, on)
 }
 
@@ -453,9 +511,11 @@ vcr_embed_set_match_xml_body(s: ptr, on: int) {
 // tape is written. indent 0 = off (default), 1..16 = spaces per level (>16
 // clamps to 16). Request bodies are never changed.
 vcr_embed_set_pretty_xml(s: ptr, indent: int) {
+    if s == null { return }
     vcr.set_pretty_xml_h(s, indent)
 }
 vcr_embed_get_pretty_xml(s: ptr) -> int {
+    if s == null { return 0 }
     return vcr.get_pretty_xml_h(s)
 }
 
@@ -464,9 +524,11 @@ vcr_embed_get_pretty_xml(s: ptr) -> int {
 // (default), 1..16 = spaces per level (>16 clamps to 16). Request bodies are
 // never changed.
 vcr_embed_set_pretty_json(s: ptr, indent: int) {
+    if s == null { return }
     vcr.set_pretty_json_h(s, indent)
 }
 vcr_embed_get_pretty_json(s: ptr) -> int {
+    if s == null { return 0 }
     return vcr.get_pretty_json_h(s)
 }
 
@@ -474,9 +536,11 @@ vcr_embed_get_pretty_json(s: ptr) -> int {
 // AGENTS.md). All off by default; the tape is byte-exact without them.
 // JSON object keys sorted at every depth in recorded JSON response bodies.
 vcr_embed_set_sort_json_keys(s: ptr, on: int) {
+    if s == null { return }
     vcr.sort_json_keys_h(s, on)
 }
 vcr_embed_get_sort_json_keys(s: ptr) -> int {
+    if s == null { return 0 }
     return vcr.get_sort_json_keys_h(s)
 }
 
@@ -488,6 +552,7 @@ vcr_embed_get_sort_json_keys(s: ptr) -> int {
 // the sorted order. Returns "" on success or the reason the
 // rule was refused (caller frees).
 vcr_embed_sort_json_array(s: ptr, path: string, by: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.sort_json_array_h(s, path, by))
 }
 
@@ -495,26 +560,31 @@ vcr_embed_sort_json_array(s: ptr, path: string, by: string) -> ptr {
 // sent) matches the regex `request` (one endpoint's list). Returns "" or the
 // reason the rule was refused (caller frees).
 vcr_embed_sort_json_array_at(s: ptr, request: string, path: string, by: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.sort_json_array_at_h(s, request, path, by))
 }
 
 // Response header lines sorted by name (case-insensitive); a repeated
 // header's lines keep their order.
 vcr_embed_set_sort_response_headers(s: ptr, on: int) {
+    if s == null { return }
     vcr.sort_response_headers_h(s, on)
 }
 vcr_embed_get_sort_response_headers(s: ptr) -> int {
+    if s == null { return 0 }
     return vcr.get_sort_response_headers_h(s)
 }
 
 // One response header's comma-separated items sorted ("Allow"). Returns ""
 // or the reason the name was refused (caller frees).
 vcr_embed_sort_header_value(s: ptr, name: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.sort_header_value_h(s, name))
 }
 
 // Every stable-order rule off.
 vcr_embed_clear_stable_order(s: ptr) {
+    if s == null { return }
     vcr.clear_stable_order_h(s)
 }
 
@@ -522,6 +592,7 @@ vcr_embed_clear_stable_order(s: ptr) {
 // independent) instead of consuming them in strict recorded order. Off by
 // default (strict ordered playback).
 vcr_embed_set_match_multiple(s: ptr, on: int) {
+    if s == null { return }
     vcr.set_match_multiple_h(s, on)
 }
 
@@ -533,16 +604,20 @@ vcr_embed_set_match_multiple(s: ptr, on: int) {
 // Playback only: a record handle refuses it. Returns "" or the reason it
 // was refused (caller frees).
 vcr_embed_set_playback_range(s: ptr, from: int, to: int) -> ptr {
+    if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.set_playback_range_h(s, from, to))
 }
 vcr_embed_clear_playback_range(s: ptr) {
+    if s == null { return }
     vcr.clear_playback_range_h(s)
 }
 // The range in force: first and last interaction, or -1 when none is set.
 vcr_embed_get_playback_range_from(s: ptr) -> int {
+    if s == null { return 0 }
     return vcr.playback_range_from_h(s)
 }
 vcr_embed_get_playback_range_to(s: ptr) -> int {
+    if s == null { return 0 }
     return vcr.playback_range_to_h(s)
 }
 
@@ -550,45 +625,56 @@ vcr_embed_get_playback_range_to(s: ptr) -> int {
 // recorded interaction's value during playback matching (opt-in, additive to
 // any other rules). Call once per header name; clear resets the set.
 vcr_embed_match_header(s: ptr, name: string) {
+    if s == null { return }
     vcr.add_match_header_h(s, name)
 }
 vcr_embed_clear_match_headers(s: ptr) {
+    if s == null { return }
     vcr.clear_match_headers_h(s)
 }
 
 vcr_embed_indent_code_blocks(s: ptr) {
+    if s == null { return }
     vcr.indent_code_blocks_h(s)
 }
 
 vcr_embed_emphasize_http_verbs(s: ptr) {
+    if s == null { return }
     vcr.emphasize_http_verbs_h(s)
 }
 
 vcr_embed_clear_redactions(s: ptr) {
+    if s == null { return }
     vcr.clear_redactions_h(s)
 }
 
 vcr_embed_clear_normalizations(s: ptr) {
+    if s == null { return }
     vcr.clear_normalizations_h(s)
 }
 
 vcr_embed_clear_unredactions(s: ptr) {
+    if s == null { return }
     vcr.clear_unredactions_h(s)
 }
 
 vcr_embed_clear_header_removals(s: ptr) {
+    if s == null { return }
     vcr.clear_header_removals_h(s)
 }
 
 vcr_embed_clear_static_content(s: ptr) {
+    if s == null { return }
     vcr.clear_static_content_h(s)
 }
 
 vcr_embed_clear_untaped(s: ptr) {
+    if s == null { return }
     vcr.clear_untaped_h(s)
 }
 
 vcr_embed_clear_format_options(s: ptr) {
+    if s == null { return }
     vcr.clear_format_options_h(s)
 }
 
@@ -596,14 +682,15 @@ vcr_embed_clear_format_options(s: ptr) {
 
 // Free any char* returned by a vcr_embed_* function above.
 vcr_embed_free_string(s: ptr) {
+    if s == null { return }
     vcr_embed_free(s)
 }
 
 // Staged secret callbacks: the host invokes its callback between these calls.
-vcr_embed_secret_begin(s: ptr, resolving: int) -> ptr { return vcr_embed_dup(vcr.secret_begin_h(s, resolving)) }
-vcr_embed_secret_next(s: ptr) -> int { return vcr.secret_next_h(s) }
-vcr_embed_secret_get(s: ptr, part: int) -> ptr { return vcr_embed_dup(vcr.secret_get_h(s, part)) }
-vcr_embed_secret_interaction(s: ptr) -> int { return vcr.secret_interaction_h(s) }
-vcr_embed_secret_apply(s: ptr, value: string) -> ptr { return vcr_embed_dup(vcr.secret_apply_h(s, value)) }
-vcr_embed_secret_finish(s: ptr) -> ptr { return vcr_embed_dup(vcr.secret_finish_h(s)) }
-vcr_embed_secret_abort(s: ptr) { vcr.secret_abort_h(s) }
+vcr_embed_secret_begin(s: ptr, resolving: int) -> ptr { if s == null { return vcr_embed_dup("") }; return vcr_embed_dup(vcr.secret_begin_h(s, resolving)) }
+vcr_embed_secret_next(s: ptr) -> int { if s == null { return 0 }; return vcr.secret_next_h(s) }
+vcr_embed_secret_get(s: ptr, part: int) -> ptr { if s == null { return vcr_embed_dup("") }; return vcr_embed_dup(vcr.secret_get_h(s, part)) }
+vcr_embed_secret_interaction(s: ptr) -> int { if s == null { return 0 }; return vcr.secret_interaction_h(s) }
+vcr_embed_secret_apply(s: ptr, value: string) -> ptr { if s == null { return vcr_embed_dup("") }; return vcr_embed_dup(vcr.secret_apply_h(s, value)) }
+vcr_embed_secret_finish(s: ptr) -> ptr { if s == null { return vcr_embed_dup("") }; return vcr_embed_dup(vcr.secret_finish_h(s)) }
+vcr_embed_secret_abort(s: ptr) { if s == null { return }; vcr.secret_abort_h(s) }

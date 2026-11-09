@@ -283,30 +283,29 @@ final class RecordBuilder extends VcrBuilderBase
     {
         Native::configure($this->nativeLibValue);
         $lib = Native::lib();
-        $handle = $lib->aether_vcr_embed_open_record(
+        $handle = self::checkOpen($lib->aether_vcr_embed_open_record(
             $this->labelValue,
             $this->tapePath,
             $this->upstreamBase,
             $this->hostValue,
             $this->portValue,
-        );
-        if ($handle === null || FFI::isNull($handle)) {
-            throw new VcrException(
-                "vcr record failed to start for tape '{$this->tapePath}' "
-                . "(upstream '{$this->upstreamBase}')"
-            );
-        }
-        $this->applyConfig($handle);
-        // Stage the note now (open_record cleared the tape) so it attaches to
-        // the first interaction the SUT triggers, before serving begins.
-        if ($this->note !== null) {
-            [$title, $body] = $this->note;
-            self::check($lib->aether_vcr_embed_note($handle, $title, $body), 'note');
-        }
-        if ($lib->aether_vcr_embed_start($handle) < 0) {
-            $err = self::drainStartError($handle);
+        ), "vcr record failed to start for tape '{$this->tapePath}' (upstream '{$this->upstreamBase}')");
+        try {
+            $this->applyConfig($handle);
+            // Stage the note now (open_record cleared the tape) so it attaches to
+            // the first interaction the SUT triggers, before serving begins.
+            if ($this->note !== null) {
+                [$title, $body] = $this->note;
+                self::check($lib->aether_vcr_embed_note($handle, $title, $body), 'note');
+            }
+            if ($lib->aether_vcr_embed_start($handle) < 0) {
+                $err = self::drainStartError($handle);
+                throw new VcrException("vcr record failed to begin serving for tape '{$this->tapePath}': {$err}");
+            }
+        } catch (\Throwable $e) {
             $lib->aether_vcr_embed_stop($handle);
-            throw new VcrException("vcr record failed to begin serving for tape '{$this->tapePath}': {$err}");
+            $lib->aether_vcr_embed_destroy($handle);
+            throw $e;
         }
 
         return new VcrServer(

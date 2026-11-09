@@ -32,6 +32,28 @@ ServirtiumPlaybackTest >> testReplaysARecordedGetOnADynamicPort [
 ]
 
 { #category : 'tests' }
+ServirtiumPlaybackTest >> testMissingTapeSignalsTheOpenError [
+
+	| error |
+	[ (Servirtium playback: (self tapePath: 'definitely_missing.md')) port: 0; start ]
+		on: ServirtiumError
+		do: [ :e | error := e ].
+	self assert: error notNil.
+	self assert: (error messageText includesSubstring: 'definitely_missing')
+]
+
+{ #category : 'tests' }
+ServirtiumPlaybackTest >> testOpenStartStopFiftyTimesAndDoubleStopIsHarmless [
+
+	50 timesRepeat: [
+		| server |
+		server := (Servirtium playback: (self tapePath: 'single_get.md')) port: 0; start.
+		self assert: server port > 0.
+		server stop.
+		server stop ]
+]
+
+{ #category : 'tests' }
 ServirtiumPlaybackTest >> testFlagsAPathMismatchViaDiagnostics [
 
 	(Servirtium playback: (self tapePath: 'single_get.md'))

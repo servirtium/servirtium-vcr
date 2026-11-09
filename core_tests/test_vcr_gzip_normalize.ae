@@ -84,9 +84,9 @@ main() {
     if serr1 != "" { println("FAIL: upstream start ${serr1}"); exit(1) }
     wait_ready("http://127.0.0.1:${UPSTREAM_PORT}/gzip")
 
-    recorder = vcr.load_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    recorder, recorder_oerr = vcr.open_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
     if recorder == null { println("FAIL: load_record"); exit(1) }
-    serr2 = http.server_start_background(recorder)
+    serr2 = http.server_start_background(vcr.server_of(recorder))
     if serr2 != "" { println("FAIL: recorder start ${serr2}"); exit(1) }
     sleep(250)
 
@@ -98,7 +98,7 @@ main() {
     if client.response_status(resp1) != 200 {
         println("FAIL: record status ${client.response_status(resp1)}")
         println("      body: ${client.response_body(resp1)}")
-        println("      vcr.last_error: ${vcr.last_error()}")
+        println("      vcr.last_error: ${vcr.last_error_h(recorder)}")
         exit(1)
     }
     if client.response_header(resp1, "Content-Encoding") != "gzip" {
@@ -107,7 +107,7 @@ main() {
     }
     client.response_free(resp1)
 
-    ferr = vcr.eject_record(recorder, TAPE_PATH)
+    ferr = vcr.stop_and_flush_h(recorder, TAPE_PATH)
     if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
 
     tape, terr = fs.read(TAPE_PATH)
@@ -125,9 +125,9 @@ main() {
         exit(1)
     }
 
-    playback = vcr.load(TAPE_PATH, PLAYBACK_PORT)
+    playback, playback_oerr = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT)
     if playback == null { println("FAIL: load playback"); exit(1) }
-    serr3 = http.server_start_background(playback)
+    serr3 = http.server_start_background(vcr.server_of(playback))
     if serr3 != "" { println("FAIL: playback start ${serr3}"); exit(1) }
     sleep(250)
 
@@ -147,7 +147,7 @@ main() {
     }
     client.response_free(resp2)
 
-    vcr.reset_cursor()
+    vcr.reset_cursor_h(playback)
     req3 = client.request("GET", "http://127.0.0.1:${PLAYBACK_PORT}/gzip")
     client.set_header(req3, "Accept-Encoding", "gzip")
     client.set_timeout(req3, 5s)
@@ -164,7 +164,7 @@ main() {
     }
     client.response_free(resp3)
 
-    vcr.eject(playback)
+    vcr.destroy_h(playback)
     http_server_stop(upstream)
     fs.delete(TAPE_PATH)
 

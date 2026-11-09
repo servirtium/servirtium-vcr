@@ -172,6 +172,27 @@ module Servirtium
       err.empty? ? '(no detail; check tape path and port availability)' : err
     end
 
+    # An open always returns a handle; a failed one carries its own reason.
+    # Read it, destroy the dead handle, and raise.
+    def check_open(handle, what)
+      raise Servirtium::Error, "#{what}: out of memory" if handle.null?
+
+      reason = Native.take_string(Native.call(:open_error, handle))
+      return handle if reason.empty?
+
+      Native.call(:destroy, handle)
+      raise Servirtium::Error, "#{what}: #{reason}"
+    end
+
+    # Run the post-open steps; on any failure stop and destroy the handle.
+    def guard_open(handle)
+      yield
+    rescue Exception # rubocop:disable Lint/RescueException
+      Native.call(:stop, handle)
+      Native.call(:destroy, handle)
+      raise
+    end
+
     # Hand a freshly built server to the block (auto-closing it) or return it.
     def with_server(server)
       return server unless block_given?
@@ -274,16 +295,15 @@ module Servirtium
     # Start the server. With a block, yields the {Server} and closes it after.
     def start(&)
       Native.configure(@native_lib)
-      handle = Native.call(:open_playback, @label, @tape_path, @host, @port)
-      if handle.null?
-        raise Servirtium::Error,
-              "vcr playback failed to start for tape '#{@tape_path}'"
-      end
-      apply_config(handle)
-      Secrets.stage(handle, @secret_resolver, resolving: true) if @secret_resolver
-      if Native.call(:start, handle).negative?
-        raise Servirtium::Error,
-              "vcr playback failed to begin serving for tape '#{@tape_path}': #{drain_start_error(handle)}"
+      handle = check_open(Native.call(:open_playback, @label, @tape_path, @host, @port),
+                          "vcr playback failed to start for tape '#{@tape_path}'")
+      guard_open(handle) do
+        apply_config(handle)
+        Secrets.stage(handle, @secret_resolver, resolving: true) if @secret_resolver
+        if Native.call(:start, handle).negative?
+          raise Servirtium::Error,
+                "vcr playback failed to begin serving for tape '#{@tape_path}': #{drain_start_error(handle)}"
+        end
       end
       with_server(Server.new(handle, @host, @tape_path, record_mode: false), &)
     end
@@ -470,13 +490,15 @@ module Servirtium
     def start(&)
       Native.configure(@native_lib)
       handle = open_handle
-      apply_config(handle)
-      # Stage the note now (open_record cleared the tape) so it attaches to
-      # the first interaction the SUT triggers, before serving begins.
-      check(Native.call(:note, handle, @note[0], @note[1]), 'note') if @note
-      if Native.call(:start, handle).negative?
-        raise Servirtium::Error,
-              "vcr record failed to begin serving for tape '#{@tape_path}': #{drain_start_error(handle)}"
+      guard_open(handle) do
+        apply_config(handle)
+        # Stage the note now (open_record cleared the tape) so it attaches to
+        # the first interaction the SUT triggers, before serving begins.
+        check(Native.call(:note, handle, @note[0], @note[1]), 'note') if @note
+        if Native.call(:start, handle).negative?
+          raise Servirtium::Error,
+                "vcr record failed to begin serving for tape '#{@tape_path}': #{drain_start_error(handle)}"
+        end
       end
       server = Server.new(handle, @host, @tape_path, record_mode: true,
                                                      fail_if_changed: @fail_if_changed, secret_redactor: @secret_redactor)
@@ -486,12 +508,8 @@ module Servirtium
     private
 
     def open_handle
-      handle = Native.call(:open_record, @label, @tape_path, @upstream_base, @host, @port)
-      return handle unless handle.null?
-
-      raise Servirtium::Error,
-            "vcr record failed to start for tape '#{@tape_path}' " \
-            "(upstream '#{@upstream_base}')"
+      check_open(Native.call(:open_record, @label, @tape_path, @upstream_base, @host, @port),
+                 "vcr record failed to start for tape '#{@tape_path}' (upstream '#{@upstream_base}')")
     end
 
     def apply_config(handle)

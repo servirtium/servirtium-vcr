@@ -36,24 +36,25 @@ fail(msg: string) {
 // not. `norm_dates` chooses whether the Date rule is registered. Returns the
 // flushed-tape bytes via emit_tape (no file needed).
 tape_for(uuid: string, date0: string, date1: string, norm_dates: int) -> string {
-    vcr.clear_recording()
-    vcr.clear_normalizations()
-    _e = vcr.normalize_whole_tape(PATTERN_UUID, "id")
-    if norm_dates == 1 { _d = vcr.redact_whole_tape(PATTERN_DATE, "Date: <DATE>") }
+    vh = vcr.open_offline()
+    _e = vcr.normalize_whole_tape_h(vh, PATTERN_UUID, "id")
+    if norm_dates == 1 { _d = vcr.redact_whole_tape_h(vh, PATTERN_DATE, "Date: <DATE>") }
 
     body = "{\"id\":\"${uuid}\",\"url\":\"http://h/${uuid}\",\"title\":\"a todo\"}"
 
-    e = vcr.record_full_response("POST", "/", 201, "application/json",
+    e = vcr.record_full_response_h(vh, "POST", "/", 201, "application/json",
             body, "Host: h", "{\"title\":\"a todo\"}",
             "content-type: application/json\nDate: ${date0}")
     if e != "" { fail("record POST: ${e}") }
 
-    e = vcr.record_full_response("GET", "/${uuid}", 200, "application/json",
+    e = vcr.record_full_response_h(vh, "GET", "/${uuid}", 200, "application/json",
             body, "Host: h", "",
             "content-type: application/json\nDate: ${date1}")
     if e != "" { fail("record GET: ${e}") }
 
-    return vcr.emit_tape()
+    out = vcr.emit_tape_h(vh)
+    vcr.destroy_h(vh)
+    return out
 }
 
 main() {

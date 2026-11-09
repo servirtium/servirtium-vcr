@@ -70,6 +70,20 @@ RSpec.describe 'Servirtium playback' do
       .to raise_error(Servirtium::Error, /failed to start/)
   end
 
+  it 'reports the missing tape in the open error' do
+    expect { Servirtium.playback('does/not/exist.md').port(0).start }
+      .to raise_error(Servirtium::Error, /exist\.md/)
+  end
+
+  it 'opens and closes 50 times and tolerates a double close' do
+    50.times do
+      server = Servirtium.playback(tape).port(0).start
+      expect(get(server, '/ok').body).to eq('ok-body')
+      server.close
+      server.close
+    end
+  end
+
   it 'substitutes a custom placeholder and tracks full replay' do
     base_tape = File.expand_path('../tapes/base_url.md', __dir__)
     builder = Servirtium.playback(base_tape)

@@ -190,3 +190,19 @@ suite "servirtium playback":
     vcr.assertAllConsumed()
     vcr.assertAllRedactionsUsed()
     check vcr.lastTlsProtocol() == ""
+
+  test "a failed open raises VcrError naming the missing tape":
+    var message = ""
+    try:
+      discard playback(tapePath("no_such_tape.md"))
+    except VcrError as e:
+      message = e.msg
+    check message.contains("no_such_tape")
+
+  test "open start close fifty times; a second close is harmless":
+    for i in 0 ..< 50:
+      let vcr = playback(tapePath("single_get.md"))
+      check vcr.start()
+      check vcr.port() > 0
+      vcr.close()
+      vcr.close()

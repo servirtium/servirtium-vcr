@@ -20,8 +20,8 @@ fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
 main() {
     println("=== response-side substitution: {{baseUrl}}/{{request.host}}/{{vault}} on playback ===\n")
 
-    srv = vcr.load(TAPE, PORT)
-    if srv == null { fail("load: ${vcr.load_error()}") }
+    srv, srv_oerr = vcr.open_playback(TAPE, PORT)
+    if srv == null { fail("load: ${srv_oerr}") }
 
     // Caller substitution for a non-request-derived placeholder. {{vault}} is in
     // the BODY only on this tape, but FIELD_RESPONSE (body AND headers, one rule)
@@ -38,7 +38,7 @@ main() {
 
     rc = vcr.start_background_h(srv, 10000)
     if rc != 0 { fail("start: ${vcr.last_error_h(srv)}") }
-    port = http.server_port(srv)
+    port = http.server_port(vcr.server_of(srv))
     expect_base = "http://127.0.0.1:${port}"
 
     req = client.request("GET", "${expect_base}/page1")
@@ -92,7 +92,7 @@ main() {
         fail("assert_all_redactions_used must NOT leak the replacement value; got '${rep}'")
     }
 
-    vcr.eject(srv)
+    vcr.destroy_h(srv)
     println("\nPASS: response substitution filled ({{baseUrl}}, {{request.host}}, {{vault}});")
     println("      FIELD_RESPONSE + required/optional + assert_no_unfilled_placeholders verified")
     exit(0)

@@ -34,9 +34,9 @@ assert_not_contains(haystack: string, needle: string, label: string) {
     }
 }
 
-record_one(body: string) {
-    vcr.clear_recording()
-    err = vcr.record_full_response("GET", "/drift", 200, "text/plain", body,
+record_one(vh: ptr, body: string) {
+    vcr.clear_recording_h(vh)
+    err = vcr.record_full_response_h(vh, "GET", "/drift", 200, "text/plain", body,
         "Accept: text/plain\n",
         "",
         "Content-Type: text/plain\nX-Recorded: yes\n")
@@ -47,6 +47,7 @@ record_one(body: string) {
 }
 
 main() {
+    vh = vcr.open_offline()
     println("=== VCR drift-fail flush test ===")
 
     TAPE_PATH = tape_path()
@@ -55,8 +56,8 @@ main() {
     fs.delete(ACTUAL_PATH)
 
     println("Test 1: first recording creates tape without drift failure")
-    record_one("alpha\n")
-    err1 = vcr.flush_and_fail_if_changed(TAPE_PATH)
+    record_one(vh, "alpha\n")
+    err1 = vcr.flush_and_fail_if_changed_h(vh, TAPE_PATH)
     if err1 != "" {
         println("FAIL: first flush returned '${err1}'")
         exit(1)
@@ -70,8 +71,8 @@ main() {
     println("  PASS")
 
     println("Test 2: identical re-record passes and does not create .actual")
-    record_one("alpha\n")
-    err2 = vcr.flush_and_fail_if_changed(TAPE_PATH)
+    record_one(vh, "alpha\n")
+    err2 = vcr.flush_and_fail_if_changed_h(vh, TAPE_PATH)
     if err2 != "" {
         println("FAIL: identical flush returned '${err2}'")
         exit(1)
@@ -84,8 +85,8 @@ main() {
     println("  PASS")
 
     println("Test 3: changed re-record overwrites tape and returns drift failure")
-    record_one("bravo\n")
-    err3 = vcr.flush_and_fail_if_changed(TAPE_PATH)
+    record_one(vh, "bravo\n")
+    err3 = vcr.flush_and_fail_if_changed_h(vh, TAPE_PATH)
     if err3 == "" {
         println("FAIL: changed flush did not report drift")
         exit(1)
@@ -106,8 +107,8 @@ main() {
     println("  PASS")
 
     println("Test 4: new recording is now the baseline")
-    record_one("bravo\n")
-    err4 = vcr.flush_and_fail_if_changed(TAPE_PATH)
+    record_one(vh, "bravo\n")
+    err4 = vcr.flush_and_fail_if_changed_h(vh, TAPE_PATH)
     if err4 != "" {
         println("FAIL: post-drift baseline flush returned '${err4}'")
         exit(1)

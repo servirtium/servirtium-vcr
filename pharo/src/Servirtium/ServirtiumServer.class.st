@@ -184,7 +184,8 @@ ServirtiumServer >> clearLastError [
 ServirtiumServer >> stop [
 	"Stop the server. In record mode also flush the tape to disk (raising a
 	 ServirtiumError on a non-empty flush error, e.g. failIfChanged drift).
-	 Idempotent: a second call is a no-op."
+	 Then frees the VCR (destroy) and nils the handle. Idempotent: a second
+	 call is a no-op. Read diagnostics BEFORE stop."
 
 	| h err |
 	(handle isNil or: [ handle isNull ]) ifTrue: [ ^ self ].
@@ -192,13 +193,15 @@ ServirtiumServer >> stop [
 	handle := nil.
 
 	recordMode ifFalse: [
-		self library stop: h.
+		[ self library stop: h ] ensure: [ self library destroy: h ].
 		^ self ].
 
-	secretRedactor ifNotNil: [ self library stageSecrets: h callback: secretRedactor resolving: false ].
-	err := self library takeString: (failIfChanged
-		ifTrue: [ self library stopAndFlushFailIfChanged: h tape: tapePath ]
-		ifFalse: [ self library stopAndFlush: h tape: tapePath ]).
+	[
+		secretRedactor ifNotNil: [ self library stageSecrets: h callback: secretRedactor resolving: false ].
+		err := self library takeString: (failIfChanged
+			ifTrue: [ self library stopAndFlushFailIfChanged: h tape: tapePath ]
+			ifFalse: [ self library stopAndFlush: h tape: tapePath ]) ]
+		ensure: [ self library destroy: h ].
 	err isEmpty ifFalse: [ ServirtiumError signal: err ]
 ]
 
@@ -215,10 +218,11 @@ ServirtiumServer >> discard [
 	handle := nil.
 
 	recordMode ifFalse: [
-		self library stop: h.
+		[ self library stop: h ] ensure: [ self library destroy: h ].
 		^ self ].
 
-	self library takeString: (self library discard: h tape: tapePath)
+	[ self library takeString: (self library discard: h tape: tapePath) ]
+		ensure: [ self library destroy: h ]
 ]
 
 { #category : 'diagnostics' }

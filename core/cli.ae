@@ -106,9 +106,9 @@ run_serve(argc: int) {
         remaining = ""
     }
 
-    raw = vcr.load(first, port)
+    raw, oerr = vcr.open_playback(first, port)
     if raw == null {
-        println("servirtium serve: ${vcr.load_error()}")
+        println("servirtium serve: ${oerr}")
         exit(1)
     }
     while remaining != "" {
@@ -137,8 +137,8 @@ run_serve(argc: int) {
     println("servirtium: ${n} interaction(s); ${mode}")
     println("servirtium: Ctrl-C to stop")
 
-    rc = http_server_start_raw(raw)
-    vcr.eject(raw)
+    rc = http_server_start_raw(vcr.server_of(raw))
+    vcr.destroy_h(raw)
     if rc != 0 { exit(1) }
     exit(0)
 }
@@ -229,8 +229,8 @@ run_import_bru(argc: int) {
     nfiles = fs.dir_list_count(files)
     if nfiles == 0 { println("servirtium import-bru: no .bru files under ${dir}"); fs.dir_list_free(files); exit(1) }
 
-    raw = vcr.load_record(out, upstream, port)
-    if raw == null { println("servirtium import-bru: ${vcr.load_error()}"); exit(1) }
+    raw, oerr = vcr.open_record(out, upstream, port)
+    if raw == null { println("servirtium import-bru: ${oerr}"); exit(1) }
 
     // Keep the promise the header comment above makes. client.set_body() below
     // sets a Content-Type on every request that carries a body, and the record
@@ -248,7 +248,7 @@ run_import_bru(argc: int) {
     // (ae 0.706 rejects it as E0200; older ae leaked it to gcc as an
     // "incompatible pointer type" on the generated C).
     vcr_actor = spawn(VCRActor())
-    vcr_actor ! StartVCR { raw: raw }
+    vcr_actor ! StartVCR { raw: vcr.server_of(raw) }
     sleep(500)
 
     proxy = "http://127.0.0.1:${port}"
@@ -336,7 +336,8 @@ run_import_bru(argc: int) {
     }
 
     fs.dir_list_free(files)
-    e = vcr.eject_record(raw, out)
+    e = vcr.stop_and_flush_h(raw, out)
+    vcr.destroy_h(raw)
     if string.length(e) > 0 { println("servirtium import-bru: ${e}"); exit(1) }
     println("servirtium: import-bru hydrated ${hydrated} interaction(s) from ${dir} -> ${out}")
     exit(0)

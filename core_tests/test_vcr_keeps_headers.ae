@@ -121,19 +121,19 @@ main() {
     if serr1 != "" { println("FAIL: upstream start ${serr1}"); exit(1) }
     wait_ready("http://127.0.0.1:${UPSTREAM_PORT}/answer")
 
-    recorder = vcr.load_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    recorder, recorder_oerr = vcr.open_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
     if recorder == null { println("FAIL: load_record"); exit(1) }
     rerr = vcr.remove_header_h(recorder, vcr.FIELD_RESPONSE_HEADERS, "X-Amz-Cf-Id")
     if rerr != "" { println("FAIL: remove_header_h ${rerr}"); exit(1) }
     cerr = vcr.redact_whole_tape_h(recorder, "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z", "TIME")
     if cerr != "" { println("FAIL: redact_whole_tape_h ${cerr}"); exit(1) }
-    serr2 = http.server_start_background(recorder)
+    serr2 = http.server_start_background(vcr.server_of(recorder))
     if serr2 != "" { println("FAIL: recorder start ${serr2}"); exit(1) }
     sleep(250)
 
     st1, body1, _cl1 = get_answer(RECORD_PORT)
     if st1 != 200 || body1 != BODY {
-        println("FAIL: record ${st1} '${body1}'; vcr.last_error: ${vcr.last_error()}")
+        println("FAIL: record ${st1} '${body1}'; vcr.last_error: ${vcr.last_error_h(recorder)}")
         exit(1)
     }
     sst1, sbody1 = get_stamp(RECORD_PORT)
@@ -141,7 +141,7 @@ main() {
         println("FAIL: record /stamp ${sst1} '${sbody1}'")
         exit(1)
     }
-    ferr = vcr.eject_record(recorder, TAPE_PATH)
+    ferr = vcr.stop_and_flush_h(recorder, TAPE_PATH)
     if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
 
     tape, terr = fs.read(TAPE_PATH)
@@ -174,15 +174,15 @@ main() {
     println("  PASS a body the tape changed carries its own Content-Length")
 
     // Playback on another port: the Host differs from the recorded one.
-    playback = vcr.load(TAPE_PATH, PLAYBACK_PORT)
+    playback, playback_oerr = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT)
     if playback == null { println("FAIL: load playback"); exit(1) }
-    serr3 = http.server_start_background(playback)
+    serr3 = http.server_start_background(vcr.server_of(playback))
     if serr3 != "" { println("FAIL: playback start ${serr3}"); exit(1) }
     sleep(250)
 
     st2, body2, cl2 = get_answer(PLAYBACK_PORT)
     if st2 != 200 || body2 != BODY {
-        println("FAIL: playback ${st2} '${body2}'; vcr.last_error: ${vcr.last_error()}")
+        println("FAIL: playback ${st2} '${body2}'; vcr.last_error: ${vcr.last_error_h(playback)}")
         exit(1)
     }
     if cl2 != "" && cl2 != "${string.length(BODY)}" {
@@ -191,12 +191,12 @@ main() {
     }
     sst2, sbody2 = get_stamp(PLAYBACK_PORT)
     if sst2 != 200 || sbody2 != STAMP_TAPED {
-        println("FAIL: playback /stamp ${sst2} '${sbody2}'; vcr.last_error: ${vcr.last_error()}")
+        println("FAIL: playback /stamp ${sst2} '${sbody2}'; vcr.last_error: ${vcr.last_error_h(playback)}")
         exit(1)
     }
     println("  PASS playback from another address matches and frames its own body")
 
-    vcr.eject(playback)
+    vcr.destroy_h(playback)
     http_server_stop(upstream)
     fs.delete(TAPE_PATH)
     println("PASS")

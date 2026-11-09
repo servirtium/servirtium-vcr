@@ -144,7 +144,7 @@ main() {
     if serr1 != "" { println("FAIL: upstream start ${serr1}"); exit(1) }
     wait_ready("http://127.0.0.1:${UPSTREAM_PORT}/me")
 
-    recorder = vcr.load_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    recorder, recorder_oerr = vcr.open_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
     if recorder == null { println("FAIL: load_record"); exit(1) }
     bad = vcr.remove_cloud_headers_h(recorder, "acme-cdn")
     if string.contains(bad, "unknown vendor 'acme-cdn' (known: aws, azure, cloudflare, fastly, gcp)") != 1 {
@@ -153,20 +153,20 @@ main() {
     }
     presets(recorder)
     vcr.set_rules_footer_h(recorder, 1)
-    serr2 = http.server_start_background(recorder)
+    serr2 = http.server_start_background(vcr.server_of(recorder))
     if serr2 != "" { println("FAIL: recorder start ${serr2}"); exit(1) }
     sleep(250)
 
     st1, st2, live_cookie, _b = flow(RECORD_PORT, BEARER)
     if st1 != 200 || st2 != 200 {
-        println("FAIL: record ${st1}/${st2}; vcr.last_error: ${vcr.last_error()}")
+        println("FAIL: record ${st1}/${st2}; vcr.last_error: ${vcr.last_error_h(recorder)}")
         exit(1)
     }
     if string.contains(live_cookie, SESSION) != 1 {
         println("FAIL: recording changed what the client got: ${live_cookie}")
         exit(1)
     }
-    ferr = vcr.eject_record(recorder, TAPE_PATH)
+    ferr = vcr.stop_and_flush_h(recorder, TAPE_PATH)
     if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
 
     tape, terr = fs.read(TAPE_PATH)
@@ -204,10 +204,10 @@ main() {
 
     // Playback with a different live token: credential headers match on
     // presence; the replayed Set-Cookie is the one the client sends back.
-    playback = vcr.load(TAPE_PATH, PLAYBACK_PORT)
-    if playback == null { println("FAIL: load playback: ${vcr.last_error()}"); exit(1) }
+    playback, playback_oerr = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT)
+    if playback == null { println("FAIL: load playback: ${vcr.last_error_h(playback)}"); exit(1) }
     presets(playback)
-    serr3 = http.server_start_background(playback)
+    serr3 = http.server_start_background(vcr.server_of(playback))
     if serr3 != "" { println("FAIL: playback start ${serr3}"); exit(1) }
     sleep(250)
     pst1, pst2, pcookie, pbody = flow(PLAYBACK_PORT, "another-token-ZZZZ")
@@ -223,7 +223,7 @@ main() {
     if aerr != "" { println("FAIL: ${aerr}"); exit(1) }
     println("  PASS playback matches a different live token and serves the tokens")
 
-    vcr.eject(playback)
+    vcr.destroy_h(playback)
     http_server_stop(upstream)
     fs.delete(TAPE_PATH)
     println("PASS")

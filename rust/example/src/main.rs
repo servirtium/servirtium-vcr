@@ -24,10 +24,8 @@ const REQ_STRIP: &[&str] = &[
 const RESP_STRIP: &[&str] = &["Content-Length", "Connection", "Date", "Server", "Transfer-Encoding"];
 
 /// A tiny raw-socket HTTP upstream that answers any request with
-/// `200 text/plain` / `ok-body`. Deliberately NOT a second VCR server — the
-/// crate serializes VCR servers process-wide (a second `start()` blocks until
-/// the first is dropped), so recording against a *playback* server would
-/// deadlock. A raw socket sidesteps that: only the record server is a VCR.
+/// `200 text/plain` / `ok-body`: a stand-in for a live service to record
+/// against, so the example needs no second VCR.
 fn spawn_raw_upstream() -> u16 {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind upstream");

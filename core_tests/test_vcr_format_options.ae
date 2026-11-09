@@ -29,7 +29,6 @@ import std.json
 extern exit(code: int)
 // Use raw form: actor receive handlers can't cleanly discard the
 // wrapper's string return without an unused-result warning.
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18130
 const ALT_TAPE  = "core_tests/tapes/alt_format.tape"
@@ -42,19 +41,6 @@ flush_out_path() -> {
     if tmp == 0 { tmp = io.getenv("TMPDIR") }
     if tmp == 0 { tmp = "/tmp" }
     return "${tmp}/vcr_format_options_test.tape"
-}
-
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
 }
 
 assert_contains(haystack: string, needle: string, label: string) {
@@ -78,13 +64,10 @@ main() {
 
     // ---- Test 1: replay an alternative-form tape ----
     println("Test 1: replay tape using *GET* + 4-space-indented body")
-    raw = vcr.load(ALT_TAPE, PORT)
+    raw, raw_oerr = vcr.open_playback(ALT_TAPE, PORT)
     if raw == null { println("  FAIL: vcr.load"); exit(1) }
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     creq = client.request("GET", "http://127.0.0.1:${PORT}/alt")
     cresp, cerr = client.send_request(creq)
@@ -100,17 +83,18 @@ main() {
     }
     println("  PASS: 200 + ${body1_owned}")
 
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
+    vh = vcr.open_offline()
 
     // ---- Test 2: recorder emits the alternative forms when toggled ----
     println("\nTest 2: recorder emits *GET* + indented blocks when toggles set")
     // Capture an interaction directly via vcr.record (no live HTTP needed).
-    rerr = vcr.record("GET", "/foo", 200, "text/plain", "line-one\nline-two\n")
+    rerr = vcr.record_h(vh, "GET", "/foo", 200, "text/plain", "line-one\nline-two\n")
     if rerr != "" { println("  FAIL: record: ${rerr}"); exit(1) }
 
-    vcr.emphasize_http_verbs()
-    vcr.indent_code_blocks()
-    ferr = vcr.flush(FLUSH_OUT)
+    vcr.emphasize_http_verbs_h(vh)
+    vcr.indent_code_blocks_h(vh)
+    ferr = vcr.flush_h(vh, FLUSH_OUT)
     if ferr != "" { println("  FAIL: flush: ${ferr}"); exit(1) }
 
     on_disk, derr = fs.read(FLUSH_OUT)
@@ -129,8 +113,8 @@ main() {
 
     // ---- Test 3: clearing toggles restores fenced/bare form ----
     println("\nTest 3: clear_format_options restores defaults")
-    vcr.clear_format_options()
-    ferr2 = vcr.flush(FLUSH_OUT)
+    vcr.clear_format_options_h(vh)
+    ferr2 = vcr.flush_h(vh, FLUSH_OUT)
     if ferr2 != "" { println("  FAIL: re-flush: ${ferr2}"); exit(1) }
     on_disk2, derr2 = fs.read(FLUSH_OUT)
     if derr2 != "" { println("  FAIL: re-read: ${derr2}"); exit(1) }

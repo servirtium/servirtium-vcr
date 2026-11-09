@@ -137,4 +137,20 @@ void main() {
       vcr.close();
     }
   });
+
+  test('a missing tape reports its reason through the open error', () {
+    expect(
+        () => Vcr.playback(_tape('no_such_tape.md')).port(0).start(),
+        throwsA(isA<VcrException>()
+            .having((e) => e.toString(), 'message', contains('no_such_tape.md'))));
+  });
+
+  test('opens, starts and closes 50 times; double close is harmless', () {
+    for (var i = 0; i < 50; i++) {
+      final vcr = Vcr.playback(_tape('single_get.md')).port(0).start();
+      expect(vcr.tapeLength, 1);
+      vcr.close();
+      vcr.close();
+    }
+  });
 }

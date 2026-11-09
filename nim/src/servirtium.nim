@@ -95,21 +95,28 @@ proc takeString(p: cstring): string =
   result = $p
   native.free_string(p)
 
+proc openChecked(h: native.Handle; mode, tapePath: string; recording: bool): VcrServer =
+  ## Every open yields a handle; a failed one carries its reason (`open_error`).
+  ## Raise VcrError with that reason after destroying the dead handle.
+  if h == nil:
+    raise newException(VcrError, &"failed to open {mode} for tape {tapePath}: out of memory")
+  let why = takeString(native.open_error(h))
+  if why.len > 0:
+    native.destroy(h)
+    raise newException(VcrError, &"failed to open {mode} for tape {tapePath}: {why}")
+  VcrServer(handle: h, recording: recording, tapePath: tapePath)
+
 proc playback*(tapePath: string; host = defaultHost; port: cint = 0): VcrServer =
   ## Open a playback server over `tapePath` (does not start it yet).
   let h = native.open_playback(cstring("nim"), cstring(tapePath), cstring(host), port)
-  if h == nil:
-    raise newException(VcrError, &"failed to open playback for tape {tapePath}")
-  VcrServer(handle: h, recording: false, tapePath: tapePath)
+  openChecked(h, "playback", tapePath, false)
 
 proc record*(tapePath, upstream: string; host = defaultHost; port: cint = 0): VcrServer =
   ## Open a record server: forwards to `upstream`, writing `tapePath` on
   ## close. Does not start it yet.
   let h = native.open_record(cstring("nim"), cstring(tapePath), cstring(upstream),
                              cstring(host), port)
-  if h == nil:
-    raise newException(VcrError, &"failed to open record for tape {tapePath}")
-  VcrServer(handle: h, recording: true, tapePath: tapePath)
+  openChecked(h, "record", tapePath, true)
 
 proc secretRedactor*(s: VcrServer; callback: SecretRedactor): VcrServer {.discardable.} =
   s.secretRedactorCallback = callback
@@ -137,6 +144,7 @@ proc secretStage(s: VcrServer; resolving: bool) =
   except:
     native.secret_abort(h)
     native.stop(h)
+    native.destroy(h)
     s.handle = nil
     raise
 
@@ -420,11 +428,13 @@ proc close*(s: VcrServer) =
         takeString(native.stop_and_flush_fail_if_changed(s.handle, cstring(s.tapePath)))
       else:
         takeString(native.stop_and_flush(s.handle, cstring(s.tapePath)))
+    native.destroy(s.handle)
     s.handle = nil
     if err.len > 0:
       raise newException(VcrError, err)
   else:
     native.stop(s.handle)
+    native.destroy(s.handle)
     s.handle = nil
 
 proc discardRecording*(s: VcrServer) =
@@ -437,7 +447,9 @@ proc discardRecording*(s: VcrServer) =
   if s.recording:
     # discard_h always returns "" (nothing to fail); free the owned string.
     discard takeString(native.discard_recording(s.handle, cstring(s.tapePath)))
+    native.destroy(s.handle)
     s.handle = nil
   else:
     native.stop(s.handle)
+    native.destroy(s.handle)
     s.handle = nil

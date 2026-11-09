@@ -3,6 +3,8 @@
 module PlaybackSpec (spec) where
 
 import Control.Exception (try)
+import Control.Monad (forM_)
+import Data.List (isInfixOf)
 import Test.Hspec
 import Servirtium.Vcr
 import TestSupport (httpGet, httpGetStatus)
@@ -58,3 +60,16 @@ spec = describe "playback" $ do
       assertAllRedactionsUsed vcr
       proto <- lastTlsProtocol vcr
       proto `shouldBe` ""
+
+  it "reports a missing tape through the open error" $ do
+    r <- try (startPlayback (playbackOptions "test/tapes/no_such_tape.md")) :: IO (Either VcrException VcrServer)
+    case r of
+      Left (VcrException msg) -> msg `shouldSatisfy` isInfixOf "no_such_tape.md"
+      Right _ -> expectationFailure "a missing tape must not start"
+
+  it "opens, starts and stops 50 times; a second stop is harmless" $
+    forM_ [1 .. 50 :: Int] $ \_ -> do
+      vcr <- startPlayback (playbackOptions "test/tapes/single_get.md")
+      tapeLength vcr `shouldReturn` 1
+      stop vcr
+      stop vcr

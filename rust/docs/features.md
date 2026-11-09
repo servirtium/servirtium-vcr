@@ -61,6 +61,6 @@ the Rust API. Both are small `embed.ae` additions if wanted:
   existing Aether VCR limitation).
 
 The core runs **one server per port** — N independent VCR servers run concurrently in
-one process, each keyed by its own handle (the wrapper still serializes
-fixtures with one process-wide lock as belt-and-braces). See
+one process, each keyed by its own handle, with nothing shared between
+them in the core or the wrapper. See
 [architecture.md](architecture.md#concurrency-one-server-per-port).

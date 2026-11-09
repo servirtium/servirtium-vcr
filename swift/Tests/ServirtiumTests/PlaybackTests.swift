@@ -229,6 +229,21 @@ final class PlaybackTests: XCTestCase {
         vcr.close()
     }
 
+    func testMissingTapeSurfacesTheOpenError() {
+        XCTAssertThrowsError(try Vcr.playback("/no/such/dir/no_such_tape.md")) { error in
+            XCTAssertTrue("\(error)".contains("no_such_tape.md"), "\(error)")
+        }
+    }
+
+    func testManyOpenStartCloseCyclesAndDoubleCloseAreHarmless() throws {
+        for _ in 0..<50 {
+            let vcr = try Vcr.playback(tape)
+            XCTAssertEqual(vcr.tapeLength, 1)
+            vcr.close()
+            vcr.close()
+        }
+    }
+
     func testTwoServersRunConcurrentlyOnePerHandle() throws {
         let a = try Vcr.playback(tape)
         let b = try Vcr.playback(tape)

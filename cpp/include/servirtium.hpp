@@ -99,7 +99,7 @@ inline void check(sv_str s, const char* what) {
 }  // namespace detail
 
 // A running VCR server. Move-only: the handle has one owner, and the
-// destructor stops it.
+// destructor stops it and frees the underlying VCR.
 struct SecretRequest {
     std::string method, path, location, format, field_path;
     int interaction;
@@ -112,9 +112,10 @@ public:
     static Vcr playback(const std::string& tape_path, SecretResolver resolver) {
         SecretContext context;
         context.resolver = std::move(resolver);
-        auto h = sv_playback_with_secrets(tape_path.c_str(), "127.0.0.1", 0, resolve_secret, &context);
-        if (context.error) { if (h) sv_close(h); std::rethrow_exception(context.error); }
-        return Vcr(h, "playback");
+        sv_str err{nullptr, 0};
+        auto h = sv_playback_with_secrets(tape_path.c_str(), "127.0.0.1", 0, resolve_secret, &context, &err);
+        if (context.error) { sv_free(err); std::rethrow_exception(context.error); }
+        return Vcr(opened(h, err, "playback"));
     }
     Vcr& secret_redactor(SecretRedactor callback) {
         if (vcr_ == nullptr) throw Error("Vcr is closed");
@@ -125,32 +126,41 @@ public:
     }
     // Replay a markdown tape from disk on an OS-chosen free port (127.0.0.1).
     static Vcr playback(const std::string& tape_path) {
-        return Vcr(sv_playback(tape_path.c_str()), "playback");
+        sv_str err{nullptr, 0};
+        sv_vcr* h = sv_playback(tape_path.c_str(), &err);
+        return Vcr(opened(h, err, "playback"));
     }
 
     // Replay a tape bound to a specific host/port. port 0 = OS-assigned.
     static Vcr playback_on(const std::string& tape_path, const std::string& host,
                            int port) {
-        return Vcr(sv_playback_on(tape_path.c_str(), host.c_str(), port), "playback");
+        sv_str err{nullptr, 0};
+        sv_vcr* h = sv_playback_on(tape_path.c_str(), host.c_str(), port, &err);
+        return Vcr(opened(h, err, "playback"));
     }
 
     // Replay a tape fetched from a URL rather than the filesystem.
     static Vcr playback_url(const std::string& tape_url) {
-        return Vcr(sv_playback_url(tape_url.c_str()), "playback-url");
+        sv_str err{nullptr, 0};
+        sv_vcr* h = sv_playback_url(tape_url.c_str(), &err);
+        return Vcr(opened(h, err, "playback-url"));
     }
 
     // Record: forward each request to upstream_base, return the live response
     // to the SUT, and capture the exchange. Call flush() to write the tape —
     // a plain destructor discards the recording.
     static Vcr record(const std::string& tape_path, const std::string& upstream_base) {
-        return Vcr(sv_record(tape_path.c_str(), upstream_base.c_str()), "record");
+        sv_str err{nullptr, 0};
+        sv_vcr* h = sv_record(tape_path.c_str(), upstream_base.c_str(), &err);
+        return Vcr(opened(h, err, "record"));
     }
 
     static Vcr record_on(const std::string& tape_path, const std::string& upstream_base,
                          const std::string& host, int port) {
-        return Vcr(sv_record_on(tape_path.c_str(), upstream_base.c_str(), host.c_str(),
-                                port),
-                   "record");
+        sv_str err{nullptr, 0};
+        sv_vcr* h = sv_record_on(tape_path.c_str(), upstream_base.c_str(), host.c_str(),
+                                 port, &err);
+        return Vcr(opened(h, err, "record"));
     }
 
     Vcr(const Vcr&) = delete;
@@ -448,10 +458,14 @@ public:
     }
 
 private:
-    Vcr(sv_vcr* vcr, const char* mode) : vcr_(vcr) {
-        if (vcr_ == nullptr) {
-            throw Error(std::string(mode) + " open failed: " + sv_open_error());
-        }
+    explicit Vcr(sv_vcr* vcr) : vcr_(vcr) {}
+
+    // An open's result: the handle, or throw with the reason the C binding
+    // returned through its per-call error out-parameter (always released).
+    static sv_vcr* opened(sv_vcr* h, sv_str err, const char* mode) {
+        std::string why = detail::take(err);
+        if (h == nullptr) throw Error(std::string(mode) + " open failed: " + why);
+        return h;
     }
 
     // Hand the handle to the caller, leaving this object empty.

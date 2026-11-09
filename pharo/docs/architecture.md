@@ -66,8 +66,11 @@ The library path is resolved at runtime, in order:
    pin);
 3. a committed default absolute path.
 
-A `void*` is surfaced as an `ExternalAddress`; a NULL handle (`isNull`) means
-the server failed to start.
+A `void*` is surfaced as an `ExternalAddress`. An open always answers a
+handle; a failed open is a dead one: the builder reads `openError:` (empty
+means opened), destroys the handle and signals a `ServirtiumError` with the
+reason. `ServirtiumServer>>stop` / `discard` stop, then `destroy:` the handle
+and nil it, so a second call is a no-op.
 
 ## String ownership (copy then free)
 

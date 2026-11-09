@@ -1,6 +1,6 @@
 // Step 9 of the Servirtium roadmap: per-interaction "Note" annotations.
 //
-// vcr.note(title, body) stages a note; the next recorded interaction
+// vcr.note_h(h, title, body) stages a note; the next recorded interaction
 // picks it up and the on-disk tape carries a `## [Note] <title>:`
 // block between the interaction heading and its ### sections.
 // Playback ignores the block (the loader walks ### sections only,
@@ -55,23 +55,24 @@ main() {
 
     // ---- Test 1: note() before record() ----
     println("Test 1: note attaches to next interaction")
-    nerr1 = vcr.note("Mary", "Mary had a little lamb,\n   Its fleece was white as snow.\n")
+    vh = vcr.open_offline()
+    nerr1 = vcr.note_h(vh, "Mary", "Mary had a little lamb,\n   Its fleece was white as snow.\n")
     if nerr1 != "" { println("  FAIL: note — ${nerr1}"); exit(1) }
-    rerr1 = vcr.record("GET", "/lamb", 200, "text/plain", "lamb-body")
+    rerr1 = vcr.record_h(vh, "GET", "/lamb", 200, "text/plain", "lamb-body")
     if rerr1 != "" { println("  FAIL: record — ${rerr1}"); exit(1) }
 
     // Test 2 setup: a second interaction with no preceding note().
-    rerr2 = vcr.record("GET", "/no-note", 200, "text/plain", "plain-body")
+    rerr2 = vcr.record_h(vh, "GET", "/no-note", 200, "text/plain", "plain-body")
     if rerr2 != "" { println("  FAIL: record #2 — ${rerr2}"); exit(1) }
 
     // Test 3 setup: note() twice in a row — last wins.
-    vcr.note("Wrong", "this should never appear")
-    vcr.note("Bo Peep", "Little Bo Peep has lost her sheep.")
-    rerr3 = vcr.record("GET", "/sheep", 200, "text/plain", "sheep-body")
+    vcr.note_h(vh, "Wrong", "this should never appear")
+    vcr.note_h(vh, "Bo Peep", "Little Bo Peep has lost her sheep.")
+    rerr3 = vcr.record_h(vh, "GET", "/sheep", 200, "text/plain", "sheep-body")
     if rerr3 != "" { println("  FAIL: record #3 — ${rerr3}"); exit(1) }
 
     // Flush + read back.
-    ferr = vcr.flush(TAPE_PATH)
+    ferr = vcr.flush_h(vh, TAPE_PATH)
     if ferr != "" { println("  FAIL: flush — ${ferr}"); exit(1) }
     on_disk, derr = fs.read(TAPE_PATH)
     if derr != "" { println("  FAIL: read back — ${derr}"); exit(1) }
@@ -98,14 +99,14 @@ main() {
     // notes are present in the markdown but the loader skips them
     // (record-only feature, playback ignores).
     println("\nTest 2: parser tolerates note blocks on reload")
-    raw = vcr.load(TAPE_PATH, 18105)
+    raw, raw_oerr = vcr.open_playback(TAPE_PATH, 18105)
     if raw == null { println("  FAIL: vcr.load returned null"); exit(1) }
-    n = vcr.tape_length()
+    n = vcr.tape_length_h(raw)
     if n != 3 {
         println("  FAIL: expected 3 interactions after reload, got ${n}")
         exit(1)
     }
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
     println("  PASS: ${n} interactions reloaded")
 
     println("\n=== All VCR note tests passed ===")

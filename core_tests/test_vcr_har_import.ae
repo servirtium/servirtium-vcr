@@ -19,24 +19,10 @@ import std.http
 import std.http.client
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const HAR_PATH  = "core_tests/tapes/sample.har"
 const TAPE_PATH = "target/core_tests/har_imported.md"
 const PORT      = 18115
-
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
 
 fail(msg: string) {
     println("FAIL: ${msg}")
@@ -92,13 +78,10 @@ main() {
     // The imported tape must REPLAY: load it, drive the recorded GET /ok?x=1
     // (the query round-trips — a regression guard for the path?query matcher),
     // and assert the recorded response comes back with an Ok outcome.
-    raw = vcr.load(TAPE_PATH, PORT)
+    raw, raw_oerr = vcr.open_playback(TAPE_PATH, PORT)
     if raw == null { fail("imported tape did not load as a valid Servirtium tape") }
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     creq = client.request("GET", "http://127.0.0.1:${PORT}/ok?x=1")
     if creq == null { fail("client.request returned null") }
@@ -110,12 +93,12 @@ main() {
     client.response_free(cresp)
 
     if status != 200 {
-        fail("replay of imported GET /ok?x=1: expected 200, got ${status} (last_error='${vcr.last_error()}')")
+        fail("replay of imported GET /ok?x=1: expected 200, got ${status} (last_error='${vcr.last_error_h(raw)}')")
     }
     if string.contains(rbody, "ok-body") != 1 {
         fail("replay body: expected 'ok-body', got '${rbody}'")
     }
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
 
     println("PASS: HAR import produced a tape that replays (query round-trips)")
     println("\n=== HAR import subtest passed ===")

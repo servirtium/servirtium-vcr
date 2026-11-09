@@ -38,7 +38,9 @@ public import std.typecons : Nullable, nullable;
 
 // ---- the flat C ABI (aether_vcr_embed_*) -----------------------------------
 // Handle-based: N independent VCR servers can run concurrently in one process,
-// each keyed by its own handle; null from an open_* means failure.
+// each keyed by its own handle; an open_* always returns a handle (null only when
+// out of memory) and a failed one carries its reason in open_error. Every handle
+// is destroyed exactly once.
 
 private extern (C) nothrow @nogc {
     // lifecycle
@@ -56,6 +58,8 @@ private extern (C) nothrow @nogc {
     char* aether_vcr_embed_secret_apply(void*, const(char)*);
     char* aether_vcr_embed_secret_finish(void*);
     void aether_vcr_embed_secret_abort(void*);
+    char* aether_vcr_embed_open_error(void* h);
+    void  aether_vcr_embed_destroy(void* h);
     int   aether_vcr_embed_start(void* h);
     void  aether_vcr_embed_stop(void* h);
     char* aether_vcr_embed_stop_and_flush(void* h, const(char)* tape);
@@ -245,8 +249,7 @@ struct Vcr {
     static Vcr playback(string tapePath, string host = "127.0.0.1", int port = 0, SecretResolver secretResolver = null) {
         auto h = aether_vcr_embed_open_playback("", tapePath.toStringz,
                                                 host.toStringz, port);
-        if (h !is null && secretResolver !is null) secretStage(h, null, secretResolver);
-        return Vcr(started(h, "playback open failed: " ~ tapePath), host, tapePath);
+        return Vcr(started(h, "playback open failed: " ~ tapePath, secretResolver), host, tapePath);
     }
 
     /// Replay a tape fetched from a URL rather than the filesystem.
@@ -267,13 +270,20 @@ struct Vcr {
         return Vcr(started(h, "record open failed: " ~ tapePath), host, tapePath);
     }
 
-    /// Start an opened handle, cleaning up and throwing rather than handing back
-    /// a dead server. Shared by every open above.
-    private static void* started(void* h, string failure) {
-        if (h is null) throw new VcrException(failure);
+    /// Check the open, stage resolver secrets, and start the handle, destroying
+    /// it and throwing (with the native reason) rather than handing back a dead
+    /// server. Shared by every open above.
+    private static void* started(void* h, string failure, SecretResolver secretResolver = null) {
+        if (h is null) throw new VcrException(failure ~ ": out of memory");
+        const why = takeString(aether_vcr_embed_open_error(h));
+        if (why.length) {
+            aether_vcr_embed_destroy(h);
+            throw new VcrException(failure ~ ": " ~ why);
+        }
+        scope(failure) aether_vcr_embed_destroy(h);
+        if (secretResolver !is null) secretStage(h, null, secretResolver);
         if (aether_vcr_embed_start(h) < 0) {
             const detail = takeString(aether_vcr_embed_last_error(h));
-            aether_vcr_embed_stop(h);
             throw new VcrException(detail.length ? failure ~ ": " ~ detail : failure);
         }
         return h;
@@ -534,6 +544,7 @@ struct Vcr {
         if (closed) return;
         closed = true;
         aether_vcr_embed_stop(handle);
+        aether_vcr_embed_destroy(handle);
     }
 
     /// Stop and write the captured tape. `tapePath` defaults to the one the
@@ -560,6 +571,7 @@ struct Vcr {
     void discard(string tapePath = null) {
         if (closed) return;
         closed = true;
+        scope(exit) aether_vcr_embed_destroy(handle);
         const target = tapePath !is null ? tapePath : (tape !is null ? tape : "");
         check(aether_vcr_embed_discard(handle, target.toStringz), "discard");
     }
@@ -568,6 +580,7 @@ struct Vcr {
     private void flushVia(string tapePath, FlushFn call) {
         if (closed) return;
         closed = true;
+        scope(exit) aether_vcr_embed_destroy(handle);
         if (secretRedactorCallback !is null) secretStage(handle, secretRedactorCallback, null);
         const target = tapePath !is null ? tapePath : (tape !is null ? tape : "");
         check(call(handle, target.toStringz), "flush");

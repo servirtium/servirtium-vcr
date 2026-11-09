@@ -15,6 +15,6 @@ internal static class SecretCallbacks {
                 if (replacement != null) Check(NativeMethods.SecretApply(handle, replacement));
             }
             Check(NativeMethods.SecretFinish(handle));
-        } catch { NativeMethods.SecretAbort(handle); NativeMethods.Stop(handle); throw; }
+        } catch { NativeMethods.SecretAbort(handle); NativeMethods.Stop(handle); throw; } // caller destroys
     }
 }

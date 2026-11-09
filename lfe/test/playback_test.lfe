@@ -13,6 +13,7 @@
   (export (main 1)))
 
 (defun main (_args)
+  (open-failure-and-lifecycle)
   (named-secrets)
   (stable-order)
   (playback-range)
@@ -77,6 +78,23 @@
         (if (=:= fails 0)
             (progn (io:format "PASS: lfe servirtium playback~n") (halt 0))
             (progn (io:format "FAILED: ~p lfe test(s)~n" (list fails)) (halt 1)))))))
+
+;; A missing tape surfaces its reason via open_error; open/start/close 50 times,
+;; and a second close is harmless.
+(defun open-failure-and-lifecycle ()
+  (case (catch (servirtium_lfe:playback "tapes/definitely_missing.md"))
+    ((tuple 'EXIT (tuple (tuple 'servirtium (tuple 'playback_open_failed _ why)) _))
+     (require-found why "definitely_missing"))
+    (other (erlang:error (tuple 'expected_open_failure other))))
+  (lists:foreach
+   (lambda (_)
+     (let ((vcr (servirtium_lfe:playback "tapes/single_get.md")))
+       (case (> (servirtium_lfe:port vcr) 0)
+         ('true 'ok)
+         (_ (erlang:error 'no_port)))
+       (require-ok (servirtium_lfe:close vcr))
+       (require-ok (servirtium_lfe:close vcr))))
+   (lists:seq 1 50)))
 
 ;; return 0 on pass, 1 on fail (summed in main — no mutable state).
 (defun ck (label cond)

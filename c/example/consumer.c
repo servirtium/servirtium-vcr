@@ -15,15 +15,15 @@
 
 int main(void) {
     sv_vcr *vcr;
-    sv_str base;
+    sv_str base, err;
     char cmd[1024];
     char buf[4096];
     FILE *p;
     size_t n;
 
-    vcr = sv_playback("tapes/single_get.md");
+    vcr = sv_playback("tapes/single_get.md", &err);
     if (vcr == NULL) {
-        fprintf(stderr, "FAIL: playback open failed: %s\n", sv_open_error());
+        fprintf(stderr, "FAIL: playback open failed: %s\n", err.ptr ? err.ptr : "");
         return 1;
     }
 

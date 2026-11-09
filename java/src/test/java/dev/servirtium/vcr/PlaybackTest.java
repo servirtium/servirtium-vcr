@@ -51,6 +51,23 @@ class PlaybackTest {
     }
 
     @Test
+    void missingTapeSurfacesTheOpenErrorThroughTheHandle() {
+        VcrException e = org.junit.jupiter.api.Assertions.assertThrows(VcrException.class,
+                () -> Vcr.playback(tape("no_such_tape.md")).port(0).start());
+        assertTrue(e.getMessage().contains("no_such_tape.md"), e.getMessage());
+    }
+
+    @Test
+    void manyOpenStartCloseCyclesAndDoubleCloseAreHarmless() throws Exception {
+        for (int i = 0; i < 50; i++) {
+            VcrServer vcr = Vcr.playback(tape("single_get.md")).port(0).start();
+            assertEquals(1, vcr.tapeLength());
+            vcr.close();
+            vcr.close(); // idempotent: destroy ran exactly once
+        }
+    }
+
+    @Test
     void flagsAPathMismatchViaDiagnostics() throws Exception {
         try (VcrServer vcr = Vcr.playback(tape("single_get.md")).port(0).start()) {
             get(vcr, "/nope");

@@ -105,13 +105,13 @@ static void named_secrets(const char *tape) {
     pipe=popen(command,"r"); if(!pipe){ck("secret upstream",0);return;}
     upstream[0]=0; fgets(upstream,sizeof upstream,pipe); ck("secret start",pclose(pipe)==0); upstream[strcspn(upstream,"\r\n")]=0;
     snprintf(target,sizeof target,"%s/tape.md",directory);
-    rec=sv_record(target,upstream); if(!rec){ck("secret record open",0);return;}
+    rec=sv_record(target,upstream, NULL); if(!rec){ck("secret record open",0);return;}
     sv_secret_redactor(rec,redact_secret,&count); value=sv_base_url(rec);
     snprintf(command,sizeof command,"'%s' drive '%s'",fixture,value.ptr); sv_free(value);
     ck("secret recording driver",system(command)==0); ck("deferred callback",count==0);
     value=sv_close_and_flush(rec,NULL); ck("secret flush",value.len==0); sv_free(value); ck("secret count",count==20);
     snprintf(command,sizeof command,"'%s' check '%s'",fixture,target); ck("secret tape",system(command)==0);
-    replay=sv_playback_with_secrets(target,"127.0.0.1",0,resolve_secret,NULL); if(!replay){ck("secret playback open",0);return;}
+    replay=sv_playback_with_secrets(target,"127.0.0.1",0,resolve_secret,NULL,NULL); if(!replay){ck("secret playback open",0);return;}
     value=sv_base_url(replay); snprintf(command,sizeof command,"'%s' drive '%s'",fixture,value.ptr); sv_free(value);
     ck("secret playback driver",system(command)==0); value=sv_assert_no_mismatches(replay); ck("secret matches",value.len==0); sv_free(value); sv_close(replay);
     unlink(target); snprintf(target,sizeof target,"%s/url",directory); unlink(target); snprintf(target,sizeof target,"%s/done",directory); unlink(target); rmdir(directory);
@@ -132,11 +132,11 @@ static void stable_order_and_range(const char *tape) {
     ck("order temp dir", mkdtemp(dir) != NULL);
 
     /* (a) sort_json_keys + pretty_json writes sorted, pretty JSON */
-    up = sv_playback(upstream_tape);
+    up = sv_playback(upstream_tape, NULL);
     ck("order upstream opens", up != NULL); if (!up) return;
     base = sv_base_url(up);
     snprintf(out, sizeof out, "%s/sorted.md", dir);
-    rec = sv_record(out, base.ptr); sv_free(base);
+    rec = sv_record(out, base.ptr, NULL); sv_free(base);
     ck("order recorder opens", rec != NULL); if (!rec) return;
     sv_set_sort_json_keys(rec, 1); sv_set_pretty_json(rec, 2);
     ck("get_sort_json_keys reads back", sv_get_sort_json_keys(rec) == 1);
@@ -155,7 +155,7 @@ static void stable_order_and_range(const char *tape) {
     /* (b) sort_json_keys without pretty_json is refused at emit time */
     snprintf(out, sizeof out, "%s/refused.md", dir);
     base = sv_base_url(up);
-    rec = sv_record(out, base.ptr); sv_free(base);
+    rec = sv_record(out, base.ptr, NULL); sv_free(base);
     sv_set_sort_json_keys(rec, 1);
     v = sv_base_url(rec); snprintf(url, sizeof url, "%s/data", v.ptr); sv_free(v);
     sv_reset_cursor(up);
@@ -169,7 +169,7 @@ static void stable_order_and_range(const char *tape) {
     sv_close(up);
 
     /* (c) playback range: the test brings its own cookie and skips the login */
-    rp = sv_playback(range_tape);
+    rp = sv_playback(range_tape, NULL);
     ck("range playback opens", rp != NULL); if (!rp) return;
     ck("no range by default", sv_get_playback_range_from(rp) == -1 && sv_get_playback_range_to(rp) == -1);
     v = sv_redact_credentials(rp); sv_free(v);
@@ -192,10 +192,10 @@ static void stable_order_and_range(const char *tape) {
     sv_clear_playback_range(rp);
     ck("cleared range", sv_get_playback_range_from(rp) == -1);
     sv_close(rp);
-    up = sv_playback(upstream_tape);
+    up = sv_playback(upstream_tape, NULL);
     base = sv_base_url(up);
     snprintf(out, sizeof out, "%s/range.md", dir);
-    rec = sv_record(out, base.ptr); sv_free(base);
+    rec = sv_record(out, base.ptr, NULL); sv_free(base);
     v = sv_set_playback_range(rec, 0, 1);
     ck("record handle refuses a playback range", v.len > 0); sv_free(v);
     sv_close(rec); sv_close(up);
@@ -215,19 +215,34 @@ int main(int argc, char **argv) {
        case wherever the binary is run from. */
     missing = malloc(strlen(tape) + 16);
     sprintf(missing, "%s.nonexistent", tape);
-    vcr = sv_playback(missing);
+    vcr = sv_playback(missing, &err);
     ck("missing tape yields NULL", vcr == NULL);
-    ck("missing tape sets sv_open_error", strlen(sv_open_error()) > 0);
+    ck("missing tape reports why through the error out-param",
+       err.ptr != NULL && err.len > 0 && strstr(err.ptr, "nonexistent") != NULL);
+    sv_free(err);
     if (vcr != NULL) sv_close(vcr);
     free(missing);
 
+    /* ---- open/start/close many times; closing NULL is harmless ---- */
+    {
+        int i, all_ok = 1;
+        for (i = 0; i < 50; ++i) {
+            sv_vcr *again = sv_playback(tape, NULL);
+            if (again == NULL || sv_port(again) <= 0) all_ok = 0;
+            sv_close(again);
+            sv_close(NULL);
+        }
+        ck("50 open/start/close cycles", all_ok);
+    }
+
     /* ---- playback of the canonical tape ---- */
-    vcr = sv_playback(tape);
+    vcr = sv_playback(tape, &err);
     if (vcr == NULL) {
-        fprintf(stderr, "FATAL: playback open failed: %s\n", sv_open_error());
+        fprintf(stderr, "FATAL: playback open failed: %s\n", err.ptr ? err.ptr : "");
         return 1;
     }
-    ck("successful open clears sv_open_error", strlen(sv_open_error()) == 0);
+    ck("successful open leaves the error empty", err.len == 0);
+    sv_free(err);
 
     base = sv_base_url(vcr);
     ck("base_url is an owned non-empty string", base.ptr != NULL && base.len > 0);
@@ -312,7 +327,7 @@ int main(int argc, char **argv) {
         ck("upstream fixture started", pclose(pipe) == 0);
         upstream[strcspn(upstream, "\r\n")] = '\0';
         snprintf(record_tape, sizeof record_tape, "%s/tape.md", directory);
-        rec = sv_record(record_tape, upstream);
+        rec = sv_record(record_tape, upstream, NULL);
         ck("open structured recorder", rec != NULL);
         value = sv_redact_header(rec, "Authorization"); ck("header helper", value.ptr && !value.ptr[0]); sv_free(value);
         value = sv_redact_query_param(rec, "password"); ck("query helper", value.ptr && !value.ptr[0]); sv_free(value);
@@ -336,7 +351,7 @@ int main(int argc, char **argv) {
         snprintf(root, sizeof root, "%s", tape);
         for (i=0; i<3; ++i) { part = strrchr(root, '/'); if (part) *part = '\0'; }
         snprintf(diagnostic_tape, sizeof diagnostic_tape, "%s/core_tests/diagnostics/playback.md", root);
-        server = sv_playback(diagnostic_tape);
+        server = sv_playback(diagnostic_tape, NULL);
         ck("diagnostic server", server != NULL);
         sv_test_context(server, "C scenario", "scenario.test", 123);
         value = sv_base_url(server);

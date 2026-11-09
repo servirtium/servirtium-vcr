@@ -104,7 +104,7 @@ All formats, matching and tape operations live in the shared Aether core. These 
 
 Snapshot property spelling follows the binding: for example Java uses `request.fieldPath()`, Python `request.field_path`, .NET `request.FieldPath`, and Haskell `secretFieldPath request`. Erlang/Elixir/LFE receive a map; Gleam receives a `SecretRequest` record. C receives borrowed `sv_secret_request` strings during its callback. C++ supplies an owned `SecretRequest` snapshot.
 
-For C, register `sv_secret_redactor(server, callback, userdata)` before flushing, then use `sv_playback_with_secrets(tape, host, port, resolver, userdata)`. Return `NULL` for no decision; returned strings must remain valid until the next callback. C++ uses `recorder.secret_redactor(callback)` and `Vcr::playback(tape, resolver)` with `std::optional<std::string>` results. Its normal explicit flush lifecycle remains in effect.
+For C, register `sv_secret_redactor(server, callback, userdata)` before flushing, then use `sv_playback_with_secrets(tape, host, port, resolver, userdata, &error)`. Return `NULL` for no decision; returned strings must remain valid until the next callback. C++ uses `recorder.secret_redactor(callback)` and `Vcr::playback(tape, resolver)` with `std::optional<std::string>` results. Its normal explicit flush lifecycle remains in effect.
 
 ## Staged C ABI
 

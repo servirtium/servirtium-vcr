@@ -1,7 +1,7 @@
 // vcr_embed_surface_and_strict_ignore_wish.md §2 — strict matching must
 // be able to IGNORE a request header the tape never recorded but that a
 // stock HTTP client always attaches (User-Agent, Accept, ...). The lever
-// is vcr.remove_header(FIELD_REQUEST_HEADERS, name): because it strips
+// is vcr.remove_header_h(h, FIELD_REQUEST_HEADERS, name): because it strips
 // the header from BOTH the recorded expectation and the live request
 // before comparing, strict matching stops seeing it as "unexpected".
 //
@@ -34,9 +34,9 @@ const TAPE   = "core_tests/tapes/strict_no_request_headers.tape"
 // Bind + start a loaded VCR server on a background thread. Returns 0 on
 // failure. Mirrors vcr_embed_start_playback.
 serve_bg(raw: ptr, port: int) -> int {
-    http.server_set_host(raw, "127.0.0.1")
-    if http.server_bind_raw(raw, "127.0.0.1", port) < 0 { return 0 }
-    if http.server_start_background_raw(raw) < 0 { return 0 }
+    http.server_set_host(vcr.server_of(raw), "127.0.0.1")
+    if http.server_bind_raw(vcr.server_of(raw), "127.0.0.1", port) < 0 { return 0 }
+    if http.server_start_background_raw(vcr.server_of(raw)) < 0 { return 0 }
     return 1
 }
 
@@ -61,8 +61,8 @@ main() {
 
     // ---- Phase A: control — the auto-header is rejected as unexpected.
     println("\nPhase A: strict on, no ignore — User-Agent must be rejected")
-    rawA = vcr.load(TAPE, PORT_A)
-    if rawA == null { println("  FAIL: load A: ${vcr.load_error()}"); exit(1) }
+    rawA, rawA_oerr = vcr.open_playback(TAPE, PORT_A)
+    if rawA == null { println("  FAIL: load A: ${rawA_oerr}"); exit(1) }
     vcr.set_strict_headers_h(rawA, 1)
     vcr.clear_last_error_h(rawA)
     if serve_bg(rawA, PORT_A) == 0 { println("  FAIL: serve A"); vcr.eject(rawA); exit(1) }
@@ -79,13 +79,13 @@ main() {
         vcr.eject(rawA); exit(1)
     }
     println("  PASS: rejected 599, last_error='${errA}'")
-    vcr.eject(rawA)
+    vcr.destroy_h(rawA)
     sleep(200)
 
     // ---- Phase B: ignore User-Agent, then the same request matches.
     println("\nPhase B: remove_header(REQUEST_HEADERS, User-Agent) — must match")
-    rawB = vcr.load(TAPE, PORT_B)
-    if rawB == null { println("  FAIL: load B: ${vcr.load_error()}"); exit(1) }
+    rawB, rawB_oerr = vcr.open_playback(TAPE, PORT_B)
+    if rawB == null { println("  FAIL: load B: ${rawB_oerr}"); exit(1) }
     vcr.set_strict_headers_h(rawB, 1)
     vcr.clear_last_error_h(rawB)
     rerr = vcr.remove_header_h(rawB, vcr.FIELD_REQUEST_HEADERS, "User-Agent")
@@ -103,7 +103,7 @@ main() {
         vcr.eject(rawB); exit(1)
     }
     println("  PASS: matched 200, body='${bodyB}'")
-    vcr.eject(rawB)
+    vcr.destroy_h(rawB)
 
     println("\n=== strict-ignore test passed ===")
     exit(0)

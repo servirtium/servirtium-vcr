@@ -29,6 +29,8 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_open_record
   , aether_vcr_embed_start
   , aether_vcr_embed_stop
+  , aether_vcr_embed_open_error
+  , aether_vcr_embed_destroy
   , aether_vcr_embed_stop_and_flush
   , aether_vcr_embed_stop_and_flush_fail_if_changed
   , aether_vcr_embed_stop_and_flush_or_check
@@ -109,7 +111,8 @@ import Foreign.C.String (CString, peekCString)
 import Foreign.C.Types (CInt (..))
 import Foreign.Ptr (Ptr, nullPtr)
 
--- | Opaque server handle from the native side. A NULL pointer means failure.
+-- | Opaque server handle from the native side. @open_*@ always returns non-NULL
+-- (NULL only when out of memory); check @open_error@ and destroy every handle once.
 type Handle = Ptr ()
 
 -- Lifecycle -----------------------------------------------------------------
@@ -131,6 +134,15 @@ foreign import ccall unsafe "aether_vcr_embed_start"
 
 foreign import ccall unsafe "aether_vcr_embed_stop"
   aether_vcr_embed_stop :: Handle -> IO ()
+
+-- | Why the open failed, or @\"\"@ when it succeeded (caller-owned @char*@).
+foreign import ccall unsafe "aether_vcr_embed_open_error"
+  aether_vcr_embed_open_error :: Handle -> IO CString
+
+-- | Free the VCR (stops it if still serving). Every handle an @open_*@
+-- returned, failed or not, is destroyed exactly once; invalid afterwards.
+foreign import ccall unsafe "aether_vcr_embed_destroy"
+  aether_vcr_embed_destroy :: Handle -> IO ()
 
 foreign import ccall unsafe "aether_vcr_embed_stop_and_flush"
   aether_vcr_embed_stop_and_flush :: Handle -> CString -> IO CString

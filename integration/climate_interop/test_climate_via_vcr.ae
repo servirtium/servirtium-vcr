@@ -31,7 +31,6 @@ import std.fs
 import std.json
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18099
 
@@ -45,19 +44,6 @@ const BASE_URL = "http://127.0.0.1:18099"
 // merge actor declarations across modules in v0.1, so the actor pair
 // lives in the test rather than in the VCR module itself.
 
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
-
 // Float compare with tolerance — same 1e-7 the real-network test uses.
 close_enough(got: float, want: float) -> int {
     diff = got - want
@@ -69,18 +55,15 @@ close_enough(got: float, want: float) -> int {
 main() {
     println("=== climate_interop via VCR ===\n")
 
-    raw = vcr.load("integration/climate_interop/tapes/climate_5_endpoints.tape", PORT)
+    raw, raw_oerr = vcr.open_playback("integration/climate_interop/tapes/climate_5_endpoints.tape", PORT)
     if raw == null {
         println("FAIL: tape failed to load")
         exit(1)
     }
-    n = vcr.tape_length()
+    n = vcr.tape_length_h(raw)
     println("VCR loaded with ${n} interactions; spinning server up on port ${PORT}")
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     // ---- Test 1: gbr 1980-1999 ----
     println("\nTest 1: gbr 1980-1999 mean rainfall")
@@ -131,7 +114,7 @@ main() {
     println("  PASS: '${mderr}'")
 
     println("\n=== All 5 climate-via-VCR tests passed ===")
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
     // exit explicitly — the VCR actor's blocking accept loop would
     // otherwise keep the process alive.
     exit(0)

@@ -63,7 +63,7 @@ describe Servirtium do
   end
 
   it "raises a typed error when the tape is missing" do
-    expect_raises(Servirtium::Error, /open failed/) do
+    expect_raises(Servirtium::Error, /open failed.*nonexistent/) do
       Servirtium.playback("#{TAPE}.nonexistent")
     end
   end
@@ -79,6 +79,15 @@ describe Servirtium do
     vcr = Servirtium.playback(TAPE)
     vcr.close
     vcr.close
+  end
+
+  it "opens, starts and closes fifty times; a second close is harmless" do
+    50.times do
+      vcr = Servirtium.playback(TAPE)
+      vcr.port.should be > 0
+      vcr.close
+      vcr.close
+    end
   end
 
   it "runs two servers concurrently, one per handle" do

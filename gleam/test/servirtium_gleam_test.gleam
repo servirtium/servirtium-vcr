@@ -23,7 +23,11 @@ fn halt(code: Int) -> a
 @external(erlang, "io", "format")
 fn io_format(fmt: String, args: List(String)) -> a
 
+@external(erlang, "servirtium_gleam_test_ffi", "panic_message")
+fn panic_message(f: fn() -> a) -> String
+
 pub fn main() {
+  open_failure_and_lifecycle_test()
   named_secrets_test()
   structured_redaction_test()
   replay_diagnostics_test()
@@ -32,6 +36,28 @@ pub fn main() {
   playback_single_get_test()
   let _ = io_format("PASS: gleam servirtium playback~n", [])
   halt(0)
+}
+
+// A missing tape surfaces its reason via open_error; open/start/close 50
+// times, and a second close is harmless.
+pub fn open_failure_and_lifecycle_test() {
+  panic_message(fn() { servirtium.playback("tapes/definitely_missing.md") })
+  |> string.contains("definitely_missing")
+  |> should.be_true()
+  cycle(50)
+}
+
+fn cycle(n: Int) -> Nil {
+  case n {
+    0 -> Nil
+    _ -> {
+      let vcr = servirtium.playback("tapes/single_get.md")
+      { servirtium.port(vcr) > 0 } |> should.be_true()
+      servirtium.close(vcr) |> should.equal(servirtium.Closed)
+      servirtium.close(vcr) |> should.equal(servirtium.Closed)
+      cycle(n - 1)
+    }
+  }
 }
 
 pub fn playback_single_get_test() {

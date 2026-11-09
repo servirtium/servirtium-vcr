@@ -257,7 +257,7 @@ cleanly.
 | `Servirtium.note(srv, title, body)` | stage a note for the next recorded interaction |
 | `Servirtium.reset_cursor(srv)` | rewind replay to interaction 0; clear last-* |
 | `Servirtium.clear_last_error(srv)` | clear the last-error slot between sub-cases |
-| `Servirtium.stop(srv)` | stop; flush tape if recording |
+| `Servirtium.stop(srv)` | stop; flush tape if recording; frees the VCR (idempotent, read diagnostics first) |
 
 ## Outcomes (`last_kind/1`)
 

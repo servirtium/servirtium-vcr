@@ -42,6 +42,8 @@ lib LibVcr
   fun secret_apply = aether_vcr_embed_secret_apply(h : Void*, value : LibC::Char*) : LibC::Char*
   fun secret_finish = aether_vcr_embed_secret_finish(h : Void*) : LibC::Char*
   fun secret_abort = aether_vcr_embed_secret_abort(h : Void*) : Void
+  fun open_error = aether_vcr_embed_open_error(h : Void*) : LibC::Char*
+  fun destroy = aether_vcr_embed_destroy(h : Void*) : Void
   fun start = aether_vcr_embed_start(h : Void*) : LibC::Int
   fun stop = aether_vcr_embed_stop(h : Void*) : Void
   fun stop_and_flush = aether_vcr_embed_stop_and_flush(h : Void*, tape : LibC::Char*) : LibC::Char*
@@ -202,8 +204,7 @@ module Servirtium
 
   def self.playback(tape_path : String, host : String = "127.0.0.1", port : Int32 = 0, secret_resolver : SecretResolver? = nil) : Vcr
     handle = LibVcr.open_playback("", tape_path, host, port)
-    secret_stage(handle, resolver: secret_resolver) if secret_resolver && !handle.null?
-    Vcr.new(started(handle, "playback open failed: #{tape_path}"), host, tape_path)
+    Vcr.new(started(handle, "playback open failed: #{tape_path}", secret_resolver), host, tape_path)
   end
 
   def self.playback(tape_path : String, host : String = "127.0.0.1", port : Int32 = 0, &)
@@ -258,15 +259,26 @@ module Servirtium
     raise Error.new("har_export: #{err}") unless err.empty?
   end
 
-  # Start an opened handle, raising (and cleaning up) rather than handing back
-  # a dead server. Shared by every open above.
+  # Check the open (reason via `open_error`), stage resolver secrets, and start
+  # the handle, destroying it and raising rather than handing back a dead
+  # server. Shared by every open above.
   # :nodoc:
-  def self.started(handle : Void*, failure : String) : Void*
-    raise Error.new(failure) if handle.null?
-    if LibVcr.start(handle) < 0
-      detail = take(LibVcr.last_error(handle))
-      LibVcr.stop(handle)
-      raise Error.new(detail.empty? ? failure : "#{failure}: #{detail}")
+  def self.started(handle : Void*, failure : String, resolver : SecretResolver? = nil) : Void*
+    raise Error.new("#{failure}: out of memory") if handle.null?
+    why = take(LibVcr.open_error(handle))
+    unless why.empty?
+      LibVcr.destroy(handle)
+      raise Error.new("#{failure}: #{why}")
+    end
+    begin
+      secret_stage(handle, resolver: resolver) if resolver
+      if LibVcr.start(handle) < 0
+        detail = take(LibVcr.last_error(handle))
+        raise Error.new(detail.empty? ? failure : "#{failure}: #{detail}")
+      end
+    rescue ex
+      LibVcr.destroy(handle)
+      raise ex
     end
     handle
   end
@@ -605,6 +617,7 @@ module Servirtium
       return if @closed
       @closed = true
       LibVcr.stop(@handle)
+      LibVcr.destroy(@handle)
     end
 
     # Stop and write the captured tape. `tape_path` defaults to the one the
@@ -632,16 +645,24 @@ module Servirtium
       return if @closed
       @closed = true
       path = tape_path || @tape || ""
-      Servirtium.take(LibVcr.discard(@handle, path))
+      begin
+        Servirtium.take(LibVcr.discard(@handle, path))
+      ensure
+        LibVcr.destroy(@handle)
+      end
     end
 
     # The three flush variants differ only in the ABI call, so they share this.
     private def flush_via(tape_path : String?, &block : Void*, String -> LibC::Char*)
       return if @closed
       @closed = true
-      Servirtium.secret_stage(@handle, redactor: @secret_redactor) if @secret_redactor
-      path = tape_path || @tape || ""
-      check block.call(@handle, path), "flush"
+      begin
+        Servirtium.secret_stage(@handle, redactor: @secret_redactor) if @secret_redactor
+        path = tape_path || @tape || ""
+        check block.call(@handle, path), "flush"
+      ensure
+        LibVcr.destroy(@handle)
+      end
     end
 
     private def check(ptr : LibC::Char*, what : String) : Nil

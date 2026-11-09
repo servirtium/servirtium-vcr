@@ -20,19 +20,6 @@ extern exit(code: int)
 
 const PLAYBACK_PORT  = 18242
 
-message StartPlayback { raw: ptr }
-message Noop {}
-
-actor PlaybackActor {
-    state s = 0
-    receive { StartPlayback(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
-
 tape_path() -> {
     tmp = io.getenv("TEMP")
     if tmp == 0 { tmp = io.getenv("TMPDIR") }
@@ -110,10 +97,10 @@ run_matrix(base_url: string) -> string {
     return ""
 }
 
-record_case(method: string, request_body: string, status: int,
+record_case(vh: ptr, method: string, request_body: string, status: int,
             content_type: string, response_body: string,
             response_headers: string) -> string {
-    err = vcr.record_full_response(method, "/verbs", status, content_type,
+    err = vcr.record_full_response_h(vh, method, "/verbs", status, content_type,
                                    response_body, "", request_body,
                                    response_headers)
     if err != "" { return "${method}: ${err}" }
@@ -125,61 +112,60 @@ main() {
     TAPE_PATH = tape_path()
 
     println("Record phase")
-    record_err = record_case("GET", "get-body", 200, "text/plain",
+    vh = vcr.open_offline()
+    record_err = record_case(vh, "GET", "get-body", 200, "text/plain",
                              "GET:get-body",
                              "Content-Type: text/plain\nX-Verb: GET\n")
     if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
 
-    record_err = record_case("POST", "post-body", 201, "text/plain",
+    record_err = record_case(vh, "POST", "post-body", 201, "text/plain",
                              "POST:post-body",
                              "Content-Type: text/plain\nX-Verb: POST\n")
     if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
 
-    record_err = record_case("PUT", "put-body", 200, "text/plain",
+    record_err = record_case(vh, "PUT", "put-body", 200, "text/plain",
                              "PUT:put-body",
                              "Content-Type: text/plain\nX-Verb: PUT\n")
     if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
 
-    record_err = record_case("HEAD", "", 204, "text/plain",
+    record_err = record_case(vh, "HEAD", "", 204, "text/plain",
                              "", "Content-Type: text/plain\nX-Verb: HEAD\n")
     if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
 
-    record_err = record_case("DELETE", "", 200, "text/plain",
+    record_err = record_case(vh, "DELETE", "", 200, "text/plain",
                              "DELETE:done",
                              "Content-Type: text/plain\nX-Verb: DELETE\n")
     if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
 
-    record_err = record_case("OPTIONS", "", 204, "text/plain",
+    record_err = record_case(vh, "OPTIONS", "", 204, "text/plain",
                              "",
                              "Content-Type: text/plain\nX-Verb: OPTIONS\nAllow: POST, PUT, HEAD, DELETE, OPTIONS, TRACE, PATCH\n")
     if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
 
-    record_err = record_case("TRACE", "", 200, "text/plain",
+    record_err = record_case(vh, "TRACE", "", 200, "text/plain",
                              "TRACE",
                              "Content-Type: text/plain\nX-Verb: TRACE\n")
     if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
 
-    record_err = record_case("PATCH", "patch-body", 202, "text/plain",
+    record_err = record_case(vh, "PATCH", "patch-body", 202, "text/plain",
                              "PATCH:patch-body",
                              "Content-Type: text/plain\nX-Verb: PATCH\n")
     if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
 
-    flush_err = vcr.flush(TAPE_PATH)
+    flush_err = vcr.flush_h(vh, TAPE_PATH)
+    vcr.destroy_h(vh)
     if flush_err != "" {
         println("FAIL: flush ${flush_err}")
         exit(1)
     }
 
     println("Playback mode")
-    spawn(SchedHelper())
-    playback_raw = vcr.load(TAPE_PATH, PLAYBACK_PORT)
+    playback_raw, playback_raw_oerr = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT)
     if playback_raw == null {
         println("FAIL: vcr.load returned null")
         exit(1)
     }
-    playback_actor = spawn(PlaybackActor())
-    playback_actor ! StartPlayback { raw: playback_raw }
-    sleep(500)
+    if vcr.start_background_h(playback_raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(playback_raw)}"); exit(1) }
 
     playback_err = run_matrix("http://127.0.0.1:${PLAYBACK_PORT}")
     if playback_err != "" {
@@ -188,6 +174,6 @@ main() {
     }
 
     println("PASS")
-    vcr.eject(playback_raw)
+    vcr.destroy_h(playback_raw)
     exit(0)
 }

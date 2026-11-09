@@ -76,7 +76,8 @@ module Servirtium.Vcr
   , playbackRange
   ) where
 
-import Control.Exception (Exception, bracket, throwIO, onException)
+import Control.Exception (Exception, bracket, throwIO, onException, finally)
+import Data.IORef (IORef, newIORef, atomicModifyIORef')
 import Control.Monad (unless, when)
 import Foreign.C.Types (CInt (..))
 import Foreign.C.String (CString, withCString)
@@ -404,6 +405,7 @@ data VcrServer = VcrServer
   , vcrTapePath :: FilePath
   , vcrRedactor :: Maybe SecretRedactor
   , vcrMode     :: Mode
+  , vcrClosed   :: IORef Bool  -- ^ set once the native handle is destroyed (close is idempotent)
   }
 
 -- Internal helpers ----------------------------------------------------------
@@ -476,6 +478,30 @@ applyTlsPem h =
         withCString keyPem $ \cKey ->
           N.aether_vcr_embed_set_tls_pem h cCert cKey)
 
+-- | Every @open_*@ returns a non-NULL handle (NULL only when out of memory); a
+-- failed open returns a dead handle that carries its own reason. Read the
+-- reason; if the open failed, destroy the handle and throw.
+adoptOpen :: N.Handle -> String -> IO ()
+adoptOpen handle what
+  | handle == nullPtr = throwIO (VcrException (what ++ ": out of memory"))
+  | otherwise = do
+      reason <- N.takeString =<< N.aether_vcr_embed_open_error handle
+      unless (null reason) $ do
+        N.aether_vcr_embed_destroy handle
+        throwIO (VcrException (what ++ ": " ++ reason))
+
+-- | Run the configure-and-start steps on a good handle; if any of them throws,
+-- stop and destroy the handle so it never leaks.
+releaseOnFailure :: N.Handle -> IO a -> IO a
+releaseOnFailure handle act =
+  act `onException` (N.aether_vcr_embed_stop handle >> N.aether_vcr_embed_destroy handle)
+
+-- | Run a close action once, then destroy the native handle; later calls are no-ops.
+closeOnce :: VcrServer -> IO () -> IO ()
+closeOnce server act = do
+  first <- atomicModifyIORef' (vcrClosed server) (\c -> (True, not c))
+  when first $ act `finally` N.aether_vcr_embed_destroy (vcrHandle server)
+
 -- | Build a useful error string from a handle's last-error slot.
 drainStartError :: N.Handle -> IO String
 drainStartError h = do
@@ -494,7 +520,7 @@ type SecretResolver = String -> IO (Maybe String)
 secretStage :: N.Handle -> Maybe SecretRedactor -> Maybe SecretResolver -> IO ()
 secretStage h redactor resolver = stage `onException` cleanup
   where
-    cleanup = N.aether_vcr_embed_secret_abort h >> N.aether_vcr_embed_stop h
+    cleanup = N.aether_vcr_embed_secret_abort h
     get n = N.takeString =<< N.aether_vcr_embed_secret_get h n
     stage = do
       check "secret_begin" $ N.aether_vcr_embed_secret_begin h (maybe 0 (const 1) resolver)
@@ -530,10 +556,8 @@ startPlayback opts = do
       withCString (pbTapePath opts) $ \cTape ->
         withCString (pbHost opts) $ \cHost ->
           N.aether_vcr_embed_open_playback cLabel cTape cHost (fromIntegral (pbPort opts))
-  if handle == nullPtr
-    then throwIO $ VcrException
-      ("vcr playback failed to start for tape '" ++ pbTapePath opts ++ "'")
-    else do
+  adoptOpen handle ("vcr playback failed to start for tape '" ++ pbTapePath opts ++ "'")
+  releaseOnFailure handle $ do
       applyRemoveHeaders handle (pbRemoveHeaders opts)
       when (pbIgnoreVolatileHeaders opts) $
         check "ignore_volatile_headers" $ N.aether_vcr_embed_ignore_volatile_headers handle
@@ -571,11 +595,13 @@ startPlayback opts = do
       if rc < 0
         then do
           detail <- drainStartError handle
-          N.aether_vcr_embed_stop handle
           throwIO $ VcrException
             ("vcr playback failed to begin serving for tape '" ++ pbTapePath opts ++ "': " ++ detail)
-        else pure VcrServer
-          { vcrHandle   = handle
+        else do
+         closed <- newIORef False
+         pure VcrServer
+          { vcrClosed   = closed
+          , vcrHandle   = handle
           , vcrHost     = pbHost opts
           , vcrTapePath = pbTapePath opts
           , vcrRedactor = Nothing
@@ -593,11 +619,9 @@ startRecord opts = do
         withCString (recUpstreamBase opts) $ \cUp ->
           withCString (recHost opts) $ \cHost ->
             N.aether_vcr_embed_open_record cLabel cTape cUp cHost (fromIntegral (recPort opts))
-  if handle == nullPtr
-    then throwIO $ VcrException
-      ("vcr record failed to start for tape '" ++ recTapePath opts
+  adoptOpen handle ("vcr record failed to start for tape '" ++ recTapePath opts
         ++ "' (upstream '" ++ recUpstreamBase opts ++ "')")
-    else do
+  releaseOnFailure handle $ do
       applyRemoveHeaders handle (recRemoveHeaders opts)
       when (recIgnoreVolatileHeaders opts) $
         check "ignore_volatile_headers" $ N.aether_vcr_embed_ignore_volatile_headers handle
@@ -668,8 +692,10 @@ startRecord opts = do
       applyStaticAndUntaped handle (recStaticContent opts) (recUntaped opts)
       applyTls handle (recTls opts)
       applyTlsPem handle (recTlsPem opts)
+      closed <- newIORef False
       let server = VcrServer
-            { vcrHandle   = handle
+            { vcrClosed   = closed
+            , vcrHandle   = handle
             , vcrHost     = recHost opts
             , vcrTapePath = recTapePath opts
             , vcrRedactor = recSecretRedactor opts
@@ -684,7 +710,6 @@ startRecord opts = do
       if rc < 0
         then do
           detail <- drainStartError handle
-          N.aether_vcr_embed_stop handle
           throwIO $ VcrException
             ("vcr record failed to begin serving for tape '" ++ recTapePath opts ++ "': " ++ detail)
         else pure server
@@ -704,7 +729,7 @@ withRecord opts = bracket (startRecord opts) stop
 -- disk, and — when started with 'recFailIfChanged' — throws 'VcrException'
 -- if the freshly recorded tape differs from the on-disk one.
 stop :: VcrServer -> IO ()
-stop server = case vcrMode server of
+stop server = closeOnce server $ case vcrMode server of
   Playback -> N.aether_vcr_embed_stop (vcrHandle server)
   Record failIfChanged -> do
     maybe (pure ()) (\callback -> secretStage (vcrHandle server) (Just callback) Nothing) (vcrRedactor server)
@@ -721,7 +746,7 @@ stop server = case vcrMode server of
 -- never becomes a tape that later replays as the truth. In playback mode it
 -- just stops the server.
 discard :: VcrServer -> IO ()
-discard server = case vcrMode server of
+discard server = closeOnce server $ case vcrMode server of
   Playback -> N.aether_vcr_embed_stop (vcrHandle server)
   Record _ ->
     withCString (vcrTapePath server) $ \cTape ->

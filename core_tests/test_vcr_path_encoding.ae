@@ -37,9 +37,9 @@ check(n: int, recorded: string, sent: string, want_match: int) {
     fs.mkdir_p("target/core_tests")
     path = "target/core_tests/path_encoding_${n}.tape"
     if fs.write(path, section("GET", recorded, "ok")) != "" { fail("write tape") }
-    raw = vcr.load(path, PORT + n)
+    raw, raw_oerr = vcr.open_playback(path, PORT + n)
     if raw == null || vcr.load_error_h(raw) != "" { fail("load ${recorded}") }
-    if http.server_start_background(raw) != "" { fail("start ${n}") }
+    if http.server_start_background(vcr.server_of(raw)) != "" { fail("start ${n}") }
     sleep(150)
     req = client.request("GET", "http://127.0.0.1:${PORT + n}${sent}")
     client.set_timeout(req, 5s)
@@ -48,13 +48,13 @@ check(n: int, recorded: string, sent: string, want_match: int) {
     if err != "" { fail("request ${sent}: ${err}") }
     st = client.response_status(resp)
     client.response_free(resp)
-    le = vcr.last_error()
+    le = vcr.last_error_h(raw)
     if want_match == 1 && st != 200 { fail("tape '${recorded}' did not match sent '${sent}' (${st}): ${le}") }
     if want_match == 0 && st == 200 { fail("tape '${recorded}' matched a different '${sent}'") }
     verb = "matches"
     if want_match == 0 { verb = "does not match" }
     println("  PASS ${recorded} ${verb} ${sent}")
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
     fs.delete(path)
 }
 

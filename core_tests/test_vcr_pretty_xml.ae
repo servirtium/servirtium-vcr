@@ -28,7 +28,6 @@ import std.string
 import std.io
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18171
 
@@ -44,19 +43,6 @@ flush_out_path() -> {
     return "${tmp}/vcr_pretty_xml_test.tape"
 }
 
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
-
 fail(msg: string) {
     println("  FAIL: ${msg}")
     exit(1)
@@ -70,11 +56,11 @@ assert_not_contains(h: string, n: string, label: string) {
     if string.contains(h, n) == 1 { fail("${label} — did not expect '${n}' in:\n${h}") }
 }
 
-record_and_read(path: string, st: int, ctype: string, resp: string, req: string) -> string {
-    vcr.clear_recording()
-    e = vcr.record_full("POST", "/x", st, ctype, resp, REQ_HDRS, req)
+record_and_read(vh: ptr, path: string, st: int, ctype: string, resp: string, req: string) -> string {
+    vcr.clear_recording_h(vh)
+    e = vcr.record_full_h(vh, "POST", "/x", st, ctype, resp, REQ_HDRS, req)
     if e != "" { fail("record_full: ${e}") }
-    f = vcr.flush(path)
+    f = vcr.flush_h(vh, path)
     if f != "" { fail("flush: ${f}") }
     t, de = fs.read(path)
     if de != "" { fail("read back: ${de}") }
@@ -87,8 +73,9 @@ main() {
 
     // ---- 1. on + match_xml_body: both bodies indented ----
     println("Test 1: pretty_xml(2) indents the XML response, leaves the request byte-exact")
-    vcr.vcr_set_pretty_xml(2)
-    t1 = record_and_read(OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
+    vh = vcr.open_offline()
+    vcr.set_pretty_xml_h(vh, 2)
+    t1 = record_and_read(vh, OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t1, "\n  <Body>\n", "response body not indented")
     assert_contains(t1, "\n    <Result id=\"1\">", "response nesting not indented")
     assert_contains(t1, "      <Name>Ann</Name>", "response leaf not indented")
@@ -99,12 +86,9 @@ main() {
 
     // ---- 2. replay the prettified tape ----
     println("Test 2: replay serves the prettified response; the SUT's compact request still matches byte-exactly")
-    raw = vcr.load(OUT, PORT)
+    raw, raw_oerr = vcr.open_playback(OUT, PORT)
     if raw == null { fail("vcr.load") }
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     creq = client.request("POST", "http://127.0.0.1:${PORT}/x")
     client.set_header(creq, "Content-Type", "application/xml")
@@ -123,81 +107,79 @@ main() {
     if string.length(cl2) > 0 && string.equals(cl2, "${blen}") != 1 {
         fail("Content-Length ${cl2} != served body length ${blen}")
     }
-    vcr.eject(raw)
-    // load()/eject() switch the ambient config key; re-apply the bare options.
-    vcr.vcr_set_pretty_xml(2)
+    vcr.destroy_h(raw)
     println("  PASS: 200, Content-Length '${cl2}' vs ${blen} bytes served")
 
     // ---- 3. request XML body never prettified, even with XML matching on ----
     println("Test 3: request body untouched even with a request Content-Type of XML")
-    t3 = record_and_read(OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
+    t3 = record_and_read(vh, OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t3, COMPACT_REQ, "request body must stay byte-exact")
     assert_not_contains(t3, COMPACT_RESP, "response should still be prettified")
     println("  PASS")
 
     // ---- 4. option off ----
     println("Test 4: option off is byte-exact")
-    vcr.vcr_set_pretty_xml(0)
-    t4 = record_and_read(OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
+    vcr.set_pretty_xml_h(vh, 0)
+    t4 = record_and_read(vh, OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t4, COMPACT_RESP, "response not byte-exact")
     assert_contains(t4, COMPACT_REQ, "request not byte-exact")
     println("  PASS")
 
     // ---- 5. malformed XML ----
     println("Test 5: malformed XML recorded byte-exact, recording does not fail")
-    vcr.vcr_set_pretty_xml(2)
-    t5 = record_and_read(OUT, 200, "text/xml", BAD_XML, BAD_XML)
+    vcr.set_pretty_xml_h(vh, 2)
+    t5 = record_and_read(vh, OUT, 200, "text/xml", BAD_XML, BAD_XML)
     assert_contains(t5, BAD_XML, "malformed body must be byte-exact")
     println("  PASS")
 
     // ---- 6. non-XML content type ----
     println("Test 6: non-XML content type untouched")
-    t6 = record_and_read(OUT, 200, "application/json", COMPACT_RESP, COMPACT_REQ)
+    t6 = record_and_read(vh, OUT, 200, "application/json", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t6, COMPACT_RESP, "json-typed body must be untouched")
-    t6b = record_and_read(OUT, 200, "text/plain", COMPACT_RESP, COMPACT_REQ)
+    t6b = record_and_read(vh, OUT, 200, "text/plain", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t6b, COMPACT_RESP, "text/plain body must be untouched")
     println("  PASS")
 
     // ---- 7. +xml type with parameters ----
     println("Test 7: +xml types and parameters are prettified")
-    t7 = record_and_read(OUT, 200, "application/soap+xml; charset=utf-8", COMPACT_RESP, COMPACT_REQ)
+    t7 = record_and_read(vh, OUT, 200, "application/soap+xml; charset=utf-8", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t7, "      <Name>Ann</Name>", "soap+xml not prettified")
-    t7b = record_and_read(OUT, 200, "application/atom+xml", COMPACT_RESP, COMPACT_REQ)
+    t7b = record_and_read(vh, OUT, 200, "application/atom+xml", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t7b, "      <Name>Ann</Name>", "atom+xml not prettified")
-    t7c = record_and_read(OUT, 200, "TEXT/XML; charset=ISO-8859-1", COMPACT_RESP, COMPACT_REQ)
+    t7c = record_and_read(vh, OUT, 200, "TEXT/XML; charset=ISO-8859-1", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t7c, "      <Name>Ann</Name>", "TEXT/XML not prettified")
     println("  PASS")
 
     // ---- 8. redaction on the raw body ----
     println("Test 8: redaction spanning elements still applies (raw body redacted first)")
     SECRET = "<K>top</K><V>secret</V>"
-    vcr.clear_redactions()
-    rr = vcr.redact(vcr.FIELD_RESPONSE_BODY, SECRET, "<K>x</K>")
+    vcr.clear_redactions_h(vh)
+    rr = vcr.redact_h(vh, vcr.FIELD_RESPONSE_BODY, SECRET, "<K>x</K>")
     if rr != "" { fail("redact: ${rr}") }
-    t8 = record_and_read(OUT, 200, "application/xml", "<R><A><K>top</K><V>secret</V></A></R>", COMPACT_REQ)
+    t8 = record_and_read(vh, OUT, 200, "application/xml", "<R><A><K>top</K><V>secret</V></A></R>", COMPACT_REQ)
     assert_not_contains(t8, "secret", "secret leaked")
     assert_contains(t8, "    <K>x</K>", "redacted value should be indented")
-    vcr.clear_redactions()
+    vcr.clear_redactions_h(vh)
     println("  PASS")
 
     // ---- 9. clear_format_options ----
     println("Test 9: clear_format_options turns pretty_xml off")
-    vcr.clear_format_options()
-    if vcr.vcr_get_pretty_xml() != 0 { fail("getter still on") }
-    t9 = record_and_read(OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
+    vcr.clear_format_options_h(vh)
+    if vcr.get_pretty_xml_h(vh) != 0 { fail("getter still on") }
+    t9 = record_and_read(vh, OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t9, COMPACT_RESP, "still prettified after clear")
     println("  PASS")
 
     // ---- 10. width and clamp ----
     println("Test 10: indent width 4; >16 clamps to 16; <0 is off")
-    vcr.vcr_set_pretty_xml(4)
-    t10 = record_and_read(OUT, 200, "application/xml", COMPACT_RESP, "")
+    vcr.set_pretty_xml_h(vh, 4)
+    t10 = record_and_read(vh, OUT, 200, "application/xml", COMPACT_RESP, "")
     assert_contains(t10, "\n    <Body>", "width 4 not applied")
-    vcr.vcr_set_pretty_xml(99)
-    if vcr.vcr_get_pretty_xml() != 16 { fail("99 should clamp to 16") }
-    vcr.vcr_set_pretty_xml(-3)
-    if vcr.vcr_get_pretty_xml() != 0 { fail("-3 should be off") }
-    vcr.clear_format_options()
+    vcr.set_pretty_xml_h(vh, 99)
+    if vcr.get_pretty_xml_h(vh) != 16 { fail("99 should clamp to 16") }
+    vcr.set_pretty_xml_h(vh, -3)
+    if vcr.get_pretty_xml_h(vh) != 0 { fail("-3 should be off") }
+    vcr.clear_format_options_h(vh)
     println("  PASS")
 
     println("\n=== All pretty_xml tests passed ===")

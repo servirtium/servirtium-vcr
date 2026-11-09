@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Servirtium;
 
+use FFI;
 use FFI\CData;
 
 /**
@@ -240,6 +241,25 @@ abstract class VcrBuilderBase
         if ($err !== '') {
             throw new VcrException("vcr {$op} failed: {$err}");
         }
+    }
+
+    /**
+     * An open always returns a handle; a failed one carries its own reason.
+     * Read it, destroy the dead handle, and throw.
+     */
+    final protected static function checkOpen(?CData $handle, string $what): CData
+    {
+        $lib = Native::lib();
+        if ($handle === null || FFI::isNull($handle)) {
+            throw new VcrException("{$what}: out of memory");
+        }
+        $reason = Native::takeString($lib->aether_vcr_embed_open_error($handle));
+        if ($reason !== '') {
+            $lib->aether_vcr_embed_destroy($handle);
+            throw new VcrException("{$what}: {$reason}");
+        }
+
+        return $handle;
     }
 
     /** Drain the last-error slot for a failed start, with a fallback hint. */

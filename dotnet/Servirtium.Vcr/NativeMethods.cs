@@ -84,6 +84,12 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_open_record", CharSet = CharSet.Ansi)]
     internal static extern IntPtr OpenRecord(string label, string tapePath, string upstreamBase, string host, int port);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_open_error")]
+    internal static extern IntPtr OpenError(IntPtr server);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_destroy")]
+    internal static extern void Destroy(IntPtr server);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_start")]
     internal static extern int Start(IntPtr server);
 

@@ -35,7 +35,8 @@ else:
 {.passL: "-L" & libDir & " -L" & bundledDir &
   " -lservirtium_vcr -Wl,-rpath," & libDir & " -Wl,-rpath," & bundledDir.}
 
-## Opaque server handle from the native side. `nil` means failure.
+## Opaque server handle from the native side. `nil` only when out of memory; a failed open is a dead handle with its
+## reason in `open_error`. Every handle must be `destroy`ed exactly once.
 type Handle* = pointer
 
 # --- lifecycle ---
@@ -45,6 +46,10 @@ proc open_playback_url*(label, tape_url, host: cstring, port: cint): Handle
   {.importc: "aether_vcr_embed_open_playback_url", cdecl.}
 proc open_record*(label, tape_path, upstream_base, host: cstring, port: cint): Handle
   {.importc: "aether_vcr_embed_open_record", cdecl.}
+proc open_error*(h: Handle): cstring
+  {.importc: "aether_vcr_embed_open_error", cdecl.}
+proc destroy*(h: Handle)
+  {.importc: "aether_vcr_embed_destroy", cdecl.}
 proc start*(h: Handle): cint
   {.importc: "aether_vcr_embed_start", cdecl.}
 proc stop*(h: Handle)

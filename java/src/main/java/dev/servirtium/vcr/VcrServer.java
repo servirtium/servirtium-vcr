@@ -216,6 +216,7 @@ public final class VcrServer implements AutoCloseable {
         handle = null;
         committed = true;
         try {
+            try {
             if (secretRedactor != null) SecretCallbacks.stage(h, secretRedactor, null);
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment tape = NativeMethods.cString(arena, tapePath);
@@ -226,6 +227,9 @@ public final class VcrServer implements AutoCloseable {
                 if (err != null && !err.isEmpty()) {
                     throw new VcrException(err);
                 }
+            }
+            } finally {
+                VcrBuilderBase.destroy(h);
             }
         } catch (Throwable t) {
             throw VcrBuilderBase.rethrow("commit", t);
@@ -251,15 +255,14 @@ public final class VcrServer implements AutoCloseable {
             NativeMethods.takeString(res);
         } catch (Throwable t) {
             throw VcrBuilderBase.rethrow("discard", t);
+        } finally {
+            VcrBuilderBase.destroy(h);
         }
     }
 
     @Override
     public void close() {
-        // Already committed or discarded: nothing left to do.
-        if (committed || discarded) {
-            return;
-        }
+        // Already committed, discarded or closed (handle gone): nothing left to do.
         if (handle == null) {
             return;
         }
@@ -270,6 +273,8 @@ public final class VcrServer implements AutoCloseable {
                 NativeMethods.STOP.invokeExact(h);
             } catch (Throwable t) {
                 throw VcrBuilderBase.rethrow("close", t);
+            } finally {
+                VcrBuilderBase.destroy(h);
             }
             return;
         }

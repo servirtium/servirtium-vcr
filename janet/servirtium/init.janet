@@ -100,6 +100,8 @@
    "open_playback_url" [:ptr :string :string :string :int32]
    "open_record" [:ptr :string :string :string :string :int32]
    "start" [:int32 :ptr]
+   "open_error" [:ptr :ptr]
+   "destroy" [:void :ptr]
    "stop" [:void :ptr]
    "stop_and_flush" [:ptr :ptr :string]
    "stop_and_flush_fail_if_changed" [:ptr :ptr :string]
@@ -276,14 +278,23 @@
 # ---- the server object --------------------------------------------------------
 
 (defn- live [srv op]
-  (unless (and (table? srv) (srv :handle))
-    (fail op "not a servirtium server"))
-  (when (srv :closed) (fail op "the server is already stopped"))
+  (unless (table? srv) (fail op "not a servirtium server"))
+  (when (or (srv :closed) (nil? (srv :handle))) (fail op "the server is already stopped"))
   (srv :handle))
 
 (defn- any-handle [srv op]
-  (unless (and (table? srv) (srv :handle)) (fail op "not a servirtium server"))
+  (unless (table? srv) (fail op "not a servirtium server"))
+  (unless (srv :handle) (fail op "the server is already stopped"))
   (srv :handle))
+
+(defn- release
+  "Destroy the server's VCR exactly once and forget the handle. The handle is
+  invalid afterwards; a second call is a no-op."
+  [srv]
+  (when-let [h (srv :handle)]
+    (put srv :handle nil)
+    (put srv :closed true)
+    (c "destroy" h)))
 
 # ---- configuration -----------------------------------------------------------
 # Each raises {:error :servirtium ...} if libservirtium_vcr rejects it. Call
@@ -737,19 +748,16 @@
       (check "secret_finish" (c "secret_finish" h)))
     ([err fib]
       (c "secret_abort" h)
-      (c "stop" h)
       (propagate err fib))))
 
 # ---- lifecycle -----------------------------------------------------------------
 
 (defn- started
-  "Start an opened handle, cleaning up and raising rather than handing back a
-  dead server."
+  "Start an opened handle, raising rather than handing back a dead server
+  (the caller stops and destroys it)."
   [h failure op]
-  (unless h (fail op failure))
   (when (< (c "start" h) 0)
     (def detail (take (c "last_error_ex" h 0)))
-    (c "stop" h)
     (fail op (if (empty? detail) failure (string failure ": " detail))))
   h)
 
@@ -831,7 +839,12 @@
                        ". Known: " (string/join (map string (sort (array/concat @[] option-order passthrough-options))) " "))))))
 
 (defn- finish-open [h tape host lbl opts op failure]
-  (unless h (fail op failure))
+  (unless h (fail op (string failure ": out of memory")))
+  # An open always returns a handle; a failed one carries its own reason.
+  (def reason (take (c "open_error" h)))
+  (unless (empty? reason)
+    (c "destroy" h)
+    (fail op (string failure ": " reason)))
   (def srv @{:handle h :host host :tape tape :closed false
              :flush-mode (get opts :flush-mode :overwrite)
              :secret-redactor (get opts :secret-redactor)})
@@ -844,7 +857,7 @@
         (secret-stage srv :resolver r))
       (started h failure op))
     ([err fib]
-      (unless (srv :closed) (put srv :closed true) (c "stop" h))
+      (when (srv :handle) (c "stop" h) (release srv))
       (propagate err fib)))
   srv)
 
@@ -904,9 +917,9 @@
 (defn stop
   "Stop the server, discarding any recording. Idempotent."
   [srv]
-  (when (and (table? srv) (srv :handle) (not (srv :closed)))
-    (put srv :closed true)
-    (c "stop" (srv :handle)))
+  (when (and (table? srv) (srv :handle))
+    (unless (srv :closed) (c "stop" (srv :handle)))
+    (release srv))
   nil)
 
 (defn- pick-tape [srv opts]
@@ -923,18 +936,23 @@
   ```
   [srv &opt opts]
   (default opts {})
-  (def h (any-handle srv "flush"))
-  (unless (srv :closed)
+  (when (and (table? srv) (srv :handle))
+    (def h (srv :handle))
     (put srv :closed true)
-    (when (srv :secret-redactor) (secret-stage srv :redactor (srv :secret-redactor)))
-    (def mode (get opts :mode (srv :flush-mode)))
-    (def tape (pick-tape srv opts))
-    (check (string "flush " mode)
-           (case mode
-             :overwrite (c "stop_and_flush" h tape)
-             :fail-if-changed (c "stop_and_flush_fail_if_changed" h tape)
-             :or-check (c "stop_and_flush_or_check" h tape)
-             (fail "flush" (string "unknown flush mode " (string/format "%q" mode)))))))
+    (defer (release srv)
+      (when (srv :secret-redactor)
+        (try (secret-stage srv :redactor (srv :secret-redactor))
+          ([err fib] (c "stop" h) (propagate err fib))))
+      (def mode (get opts :mode (srv :flush-mode)))
+      (def tape (pick-tape srv opts))
+      (check (string "flush " mode)
+             (case mode
+               :overwrite (c "stop_and_flush" h tape)
+               :fail-if-changed (c "stop_and_flush_fail_if_changed" h tape)
+               :or-check (c "stop_and_flush_or_check" h tape)
+               (do (c "stop" h)
+                   (fail "flush" (string "unknown flush mode " (string/format "%q" mode))))))))
+  nil)
 
 (defn discard
   "Record mode: stop the server and DROP the captured recording WITHOUT writing
@@ -942,10 +960,12 @@
   that later replays as the truth. Idempotent; the complement of `flush-tape`."
   [srv &opt opts]
   (default opts {})
-  (def h (any-handle srv "discard"))
-  (unless (srv :closed)
+  (when (and (table? srv) (srv :handle))
+    (def h (srv :handle))
     (put srv :closed true)
-    (check "discard" (c "discard" h (pick-tape srv opts)))))
+    (defer (release srv)
+      (check "discard" (c "discard" h (pick-tape srv opts)))))
+  nil)
 
 (defn call-with-playback
   "Run (f vcr) against a started playback server; the server is stopped on

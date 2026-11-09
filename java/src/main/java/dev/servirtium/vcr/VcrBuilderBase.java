@@ -290,6 +290,24 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
         return new VcrException("vcr " + op + " failed: " + t.getMessage());
     }
 
+    /** The open's failure reason ("" if the open succeeded). */
+    static String openError(MemorySegment handle) {
+        try {
+            String err = NativeMethods.takeString((MemorySegment) NativeMethods.OPEN_ERROR.invokeExact(handle));
+            return err == null ? "" : err;
+        } catch (Throwable t) {
+            return "(could not read open_error: " + t.getMessage() + ")";
+        }
+    }
+
+    static void destroy(MemorySegment handle) {
+        try {
+            NativeMethods.DESTROY.invokeExact(handle);
+        } catch (Throwable t) {
+            throw new VcrException("vcr destroy failed: " + t.getMessage());
+        }
+    }
+
     static String drainStartError(MemorySegment handle) {
         try {
             MemorySegment p = (MemorySegment) NativeMethods.LAST_ERROR.invokeExact(handle);

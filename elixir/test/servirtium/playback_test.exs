@@ -29,6 +29,20 @@ defmodule Servirtium.PlaybackTest do
     end
   end
 
+  test "a missing tape raises with the reason from open_error" do
+    err = assert_raise Servirtium.Error, fn -> Servirtium.playback(tape("definitely_missing.md")) end
+    assert Exception.message(err) =~ "definitely_missing"
+  end
+
+  test "open/start/stop 50 times; a second stop is harmless" do
+    for _ <- 1..50 do
+      {:ok, srv} = Servirtium.playback(tape("single_get.md"), port: 0)
+      assert Servirtium.port(srv) > 0
+      assert :ok = Servirtium.stop(srv)
+      assert :ok = Servirtium.stop(srv)
+    end
+  end
+
   test "substitute rewrites a placeholder; assert_all_consumed tracks replay" do
     Servirtium.with_playback(
       tape("substitute.md"),

@@ -240,4 +240,18 @@
       (h/truthy (h/raises (fn [] (servirtium/set-playback-range vcr 9 -1))) "a range past the tape raises")
       (servirtium/clear-playback-range vcr)
       (h/eq (servirtium/get-playback-range vcr) nil "cleared"))))
+(h/testcase "a missing tape is reported by name through the open path"
+  (fn []
+    (def e (h/raises (fn [] (servirtium/playback "/nonexistent/no-such-tape.md"))))
+    (h/contains (e :message) "no-such-tape" "the reason names the tape")))
+
+(h/testcase "50 open/stop cycles; double stop and double flush are harmless"
+  (fn []
+    (for _ 0 50
+      (def vcr (servirtium/playback single))
+      (h/eq (h/get-body (servirtium/base-url vcr) "/ok") "ok-body" "body")
+      (servirtium/stop vcr)
+      (servirtium/stop vcr)
+      (servirtium/discard vcr)
+      (servirtium/flush-tape vcr))))
 (h/done "playback")

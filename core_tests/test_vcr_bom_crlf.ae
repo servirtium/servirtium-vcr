@@ -11,21 +11,8 @@ import std.string
 import std.fs
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18119
-
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
 
 fail(msg: string) {
     println("FAIL: ${msg}")
@@ -68,15 +55,12 @@ main() {
     werr = fs.write(path, blob)
     if werr != "" { fail("could not write tape: ${werr}") }
 
-    raw = vcr.load(path, PORT)
+    raw, raw_oerr = vcr.open_playback(path, PORT)
     if raw == null { fail("vcr.load returned null — BOM/CRLF tape rejected") }
     if vcr.load_error_h(raw) != "" { fail("load_error: ${vcr.load_error_h(raw)}") }
     if vcr.tape_length_h(raw) != 1 { fail("expected 1 interaction, got ${vcr.tape_length_h(raw)}") }
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     creq = client.request("GET", "http://127.0.0.1:${PORT}/ok")
     cresp, cerr = client.send_request(creq)
@@ -86,11 +70,11 @@ main() {
     body = string.concat(client.response_body(cresp), "")
     client.response_free(cresp)
 
-    if status != 200 { fail("expected 200, got ${status} (last_error='${vcr.last_error()}')") }
+    if status != 200 { fail("expected 200, got ${status} (last_error='${vcr.last_error_h(raw)}')") }
     if string.contains(body, "ok-body") != 1 { fail("expected body 'ok-body', got '${body}'") }
 
     println("PASS: BOM + CRLF tape parsed and replayed (200, body ok-body)")
     println("\n=== BOM/CRLF tolerance passed ===")
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
     exit(0)
 }

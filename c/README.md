@@ -11,8 +11,9 @@ directions.
 ```c
 #include <servirtium.h>
 
-sv_vcr *vcr = sv_playback("tapes/single_get.md");
-if (vcr == NULL) { fprintf(stderr, "%s\n", sv_open_error()); return 1; }
+sv_str err;
+sv_vcr *vcr = sv_playback("tapes/single_get.md", &err);   /* error may be NULL */
+if (vcr == NULL) { fprintf(stderr, "%s\n", err.ptr); sv_free(err); return 1; }
 
 sv_str base = sv_base_url(vcr);        /* "http://127.0.0.1:54213" */
 /* ... point the system-under-test at base.ptr and drive it ... */
@@ -42,7 +43,7 @@ libservirtium_vcr's ABI is already C.** So what this binding adds is exactly thr
 3. **the caller-owned-string discipline made safe** — every ABI `char*` comes
    back as an `sv_str` you release with `sv_free` — plus open+start+error
    reporting folded into one call per mode, so a failed open returns `NULL`
-   with the reason in `sv_open_error()` and never leaves a half-started server
+   with the reason in the call's `sv_str *error` out-parameter (NULL allowed; release with `sv_free`) and never leaves a half-started server
    behind.
 
 This header is **also** the substrate the C++ client (`cpp/`) wraps in RAII.

@@ -282,7 +282,7 @@ A request outside the range is never served (kind `VcrOutcome.PathOrMethodDiff`,
 | `Note(title, body)` | stage a note for the next recorded interaction |
 | `ResetCursor()` | rewind replay to interaction 0; clear last-* |
 | `ClearLastError()` | clear the last-error slot between sub-cases |
-| `Dispose()` | stop; flush tape if recording |
+| `Dispose()` | stop; flush tape if recording; free the native handle (idempotent; read diagnostics before disposing) |
 
 ## `VcrOutcome`
 

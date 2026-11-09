@@ -29,9 +29,8 @@ import org.junit.jupiter.api.Test;
  * service), strip the volatile request headers the client injects and the
  * volatile response headers the upstream adds, and compare the freshly recorded
  * tape against {@code /tapes/single_get.md}. A raw socket — rather than a second
- * VCR playback server — is used deliberately: it keeps the recorder the only VCR
- * server alive, matching the pattern used by the Python and Rust consumer
- * examples (some bindings serialize VCR servers process-wide).
+ * VCR playback server — keeps the example to one VCR, matching the Python and
+ * Rust consumer examples.
  */
 class RecordConsumerTest {
 

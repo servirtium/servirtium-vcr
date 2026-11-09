@@ -2,7 +2,9 @@
 //
 // 1:1 with the `aether_vcr_embed_*` C-ABI exported by the in-repo
 // `core/embed.ae` (libservirtium_vcr itself is `core/vcr.ae`). The opaque server
-// handle is a `void*` pointer; NULL means failure. Every `char*` returned by
+// handle is a `void*` pointer; every open returns non-NULL (NULL only when out
+// of memory), a failed open yielding a dead handle that carries its reason
+// (`openError`); every handle must be `destroy`ed exactly once. Every `char*` returned by
 // the ABI is caller-owned and NUL-terminated — `takeString` decodes it into a
 // JS string and then frees it via `aether_vcr_embed_free_string`, per the
 // ABI's ownership rule.
@@ -10,7 +12,7 @@
 // Per-listener contract (matching the Aether side): N independent VCR servers
 // can run concurrently, one server per port, each keyed by its own handle;
 // every config / diagnostic / lifecycle call takes the handle. Lifecycle is
-// open -> configure(handle) -> start.
+// open -> openError -> configure(handle) -> start -> stop -> destroy.
 
 import * as fs from 'fs'
 import * as path from 'path'
@@ -128,6 +130,21 @@ export const openRecord = lazy(
 export const start = lazy('int aether_vcr_embed_start(void* server)')
 
 export const stop = lazy('void aether_vcr_embed_stop(void* server)')
+
+/**
+ * `char *aether_vcr_embed_open_error(void *h)`: "" if the open succeeded, else
+ * why it failed (caller-owned; decode with `takeString`). Read it right after
+ * every open; a failed open's handle must still be `destroy`ed.
+ */
+export const openError = lazy('void* aether_vcr_embed_open_error(void* server)')
+
+/**
+ * `void aether_vcr_embed_destroy(void *h)`: frees the VCR (stops it if still
+ * serving). Call exactly once per handle an open returned; the handle is invalid
+ * afterwards. `stop` / `stopAndFlush*` / `discard` only stop; diagnostics stay
+ * readable between stop and destroy.
+ */
+export const destroy = lazy('void aether_vcr_embed_destroy(void* server)')
 
 export const stopAndFlush = lazy(
   'void* aether_vcr_embed_stop_and_flush(void* server, const char* tape_path)',
@@ -378,7 +395,7 @@ export function takeString(ptr: CharPtr): string {
   }
 }
 
-/** True when a handle pointer is NULL (start failed). */
+/** True when a handle pointer is NULL (open ran out of memory). */
 export function isNull(ptr: CharPtr): boolean {
   return !ptr || koffi.address(ptr as koffi.IKoffiCType) === 0n
 }

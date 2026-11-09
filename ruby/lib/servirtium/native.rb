@@ -75,6 +75,8 @@ module Servirtium
       [:open_playback_url, 'aether_vcr_embed_open_playback_url', VOIDP, [VOIDP, VOIDP, VOIDP, INT]],
       [:open_record,   'aether_vcr_embed_open_record',   VOIDP,
        [VOIDP, VOIDP, VOIDP, VOIDP, INT]],
+      [:open_error,     'aether_vcr_embed_open_error',     VOIDP, [VOIDP]],
+      [:destroy,        'aether_vcr_embed_destroy',        VOID,  [VOIDP]],
       [:start,          'aether_vcr_embed_start',          INT,   [VOIDP]],
       [:stop,           'aether_vcr_embed_stop',           VOID,  [VOIDP]],
       [:stop_and_flush, 'aether_vcr_embed_stop_and_flush', VOIDP, [VOIDP, VOIDP]],

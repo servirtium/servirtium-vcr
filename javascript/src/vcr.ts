@@ -262,7 +262,7 @@ function secretStage(handle: unknown, redactor?: SecretRedactor, resolver?: Secr
       }
     }
     check(N.secretFinish(handle), 'secretFinish')
-  } catch (error) { N.secretAbort(handle); N.stop(handle); throw error }
+  } catch (error) { N.secretAbort(handle); throw error }
 }
 
 export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
@@ -389,20 +389,21 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 
   start(): VcrServer {
     N.configure(this.nativeLibValue)
-    const handle = N.openPlayback(this.labelValue, this.tapePath, this.hostValue, this.portValue)
-    if (N.isNull(handle)) {
-      throw new VcrError(`vcr playback failed to start for tape '${this.tapePath}'`)
-    }
-    this.applyConfig(handle)
-    if (this.secretResolverValue) secretStage(handle, undefined, this.secretResolverValue)
-    if (N.start(handle) < 0) {
-      const err = drainStartError(handle)
-      N.stop(handle)
-      throw new VcrError(
-        `vcr playback failed to begin serving for tape '${this.tapePath}': ${err}`,
-      )
-    }
-    return new VcrServer(handle, this.hostValue, this.tapePath, false, false)
+    const handle = adoptOpen(
+      N.openPlayback(this.labelValue, this.tapePath, this.hostValue, this.portValue),
+      `vcr playback failed to start for tape '${this.tapePath}'`,
+    )
+    return releaseOnFailure(handle, () => {
+      this.applyConfig(handle)
+      if (this.secretResolverValue) secretStage(handle, undefined, this.secretResolverValue)
+      if (N.start(handle) < 0) {
+        const err = drainStartError(handle)
+        throw new VcrError(
+          `vcr playback failed to begin serving for tape '${this.tapePath}': ${err}`,
+        )
+      }
+      return new VcrServer(handle, this.hostValue, this.tapePath, false, false)
+    })
   }
 }
 
@@ -610,32 +611,57 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
 
   start(): VcrServer {
     N.configure(this.nativeLibValue)
-    const handle = N.openRecord(
-      this.labelValue,
-      this.tapePath,
-      this.upstreamBase,
-      this.hostValue,
-      this.portValue,
+    const handle = adoptOpen(
+      N.openRecord(
+        this.labelValue,
+        this.tapePath,
+        this.upstreamBase,
+        this.hostValue,
+        this.portValue,
+      ),
+      `vcr record failed to start for tape '${this.tapePath}' (upstream '${this.upstreamBase}')`,
     )
-    if (N.isNull(handle)) {
-      throw new VcrError(
-        `vcr record failed to start for tape '${this.tapePath}' (upstream '${this.upstreamBase}')`,
-      )
-    }
-    this.applyConfig(handle)
-    // Stage the note now (openRecord cleared the tape) so it attaches to the
-    // first interaction the SUT triggers, before serving begins.
-    if (this.pendingNote) {
-      check(N.note(handle, this.pendingNote.title, this.pendingNote.body), 'note')
-    }
-    if (N.start(handle) < 0) {
-      const err = drainStartError(handle)
-      N.stop(handle)
-      throw new VcrError(
-        `vcr record failed to begin serving for tape '${this.tapePath}': ${err}`,
-      )
-    }
-    return new VcrServer(handle, this.hostValue, this.tapePath, true, this.failIfChangedOn, this.secretRedactorValue)
+    return releaseOnFailure(handle, () => {
+      this.applyConfig(handle)
+      // Stage the note now (openRecord cleared the tape) so it attaches to the
+      // first interaction the SUT triggers, before serving begins.
+      if (this.pendingNote) {
+        check(N.note(handle, this.pendingNote.title, this.pendingNote.body), 'note')
+      }
+      if (N.start(handle) < 0) {
+        const err = drainStartError(handle)
+        throw new VcrError(
+          `vcr record failed to begin serving for tape '${this.tapePath}': ${err}`,
+        )
+      }
+      return new VcrServer(handle, this.hostValue, this.tapePath, true, this.failIfChangedOn, this.secretRedactorValue)
+    })
+  }
+}
+
+/**
+ * Every open returns a non-NULL handle (NULL only when out of memory); a failed
+ * open returns a dead handle carrying its reason. Read the reason, destroy the
+ * dead handle, and throw.
+ */
+function adoptOpen(handle: unknown, what: string): unknown {
+  if (N.isNull(handle)) throw new VcrError(`${what}: out of memory`)
+  const reason = N.takeString(N.openError(handle))
+  if (reason) {
+    N.destroy(handle)
+    throw new VcrError(`${what}: ${reason}`)
+  }
+  return handle
+}
+
+/** Run `body` on an opened handle; if it throws, stop and destroy the handle. */
+function releaseOnFailure<T>(handle: unknown, body: () => T): T {
+  try {
+    return body()
+  } catch (error) {
+    N.stop(handle)
+    N.destroy(handle)
+    throw error
   }
 }
 
@@ -774,11 +800,15 @@ export class VcrServer {
     if (N.isNull(this.handle)) return
     const h = this.handle
     this.handle = null
-    if (!this.recordMode) {
-      N.stop(h)
-      return
+    try {
+      if (!this.recordMode) {
+        N.stop(h)
+        return
+      }
+      N.takeString(N.discard(h, this.tapePath))
+    } finally {
+      N.destroy(h)
     }
-    N.takeString(N.discard(h, this.tapePath))
   }
 
   /** Stop the server; in record mode, flush the tape (and check drift if failIfChanged). */
@@ -787,18 +817,22 @@ export class VcrServer {
     const h = this.handle
     this.handle = null
 
-    if (!this.recordMode) {
-      N.stop(h)
-      return
-    }
+    try {
+      if (!this.recordMode) {
+        N.stop(h)
+        return
+      }
 
-    if (this.secretRedactorValue) secretStage(h, this.secretRedactorValue)
-    const resultPtr = this.failIfChangedOn
-      ? N.stopAndFlushFailIfChanged(h, this.tapePath)
-      : N.stopAndFlush(h, this.tapePath)
-    const err = N.takeString(resultPtr)
-    if (err) {
-      throw new VcrError(err)
+      if (this.secretRedactorValue) secretStage(h, this.secretRedactorValue)
+      const resultPtr = this.failIfChangedOn
+        ? N.stopAndFlushFailIfChanged(h, this.tapePath)
+        : N.stopAndFlush(h, this.tapePath)
+      const err = N.takeString(resultPtr)
+      if (err) {
+        throw new VcrError(err)
+      }
+    } finally {
+      N.destroy(h) // stops first if secret staging failed
     }
   }
 }

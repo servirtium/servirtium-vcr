@@ -64,7 +64,7 @@ The file name is computed per-platform: `libservirtium_vcr.so` /
 Each `.Start()` opens a native handle (`aether_vcr_embed_open_playback` /
 `open_record`) that **owns its own** tape, replay cursor, mutations, static
 mounts, pending note, and diagnostics. Every native call is keyed by that
-handle (see the `IntPtr server` parameter on every method in
+handle (an open always returns a handle: `open_error` reports a failure and `destroy` frees it, which `Start()` and `Dispose()` do exactly once; see the `IntPtr server` parameter on every method in
 `NativeMethods.cs`), and `VcrServer` holds exactly one handle. Consequences:
 
 - You can run **N independent `VcrServer`s concurrently** in one process —

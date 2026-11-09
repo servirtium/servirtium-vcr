@@ -28,7 +28,6 @@ final class Secrets
             $check($lib->aether_vcr_embed_secret_finish($handle));
         } catch (\Throwable $error) {
             $lib->aether_vcr_embed_secret_abort($handle);
-            $lib->aether_vcr_embed_stop($handle);
             throw $error;
         }
     }

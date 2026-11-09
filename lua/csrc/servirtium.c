@@ -33,6 +33,8 @@ extern void *aether_vcr_embed_open_record(const char *label,
                                           const char *tape_path,
                                           const char *upstream_base,
                                           const char *host, int port);
+extern char *aether_vcr_embed_open_error(void *handle);     /* "" == opened */
+extern void  aether_vcr_embed_destroy(void *handle);
 extern int   aether_vcr_embed_start(void *handle);          /* < 0 fail */
 extern void  aether_vcr_embed_stop(void *handle);
 extern char *aether_vcr_embed_stop_and_flush(void *handle, const char *tape_path);
@@ -161,6 +163,31 @@ static int push_owned_string(lua_State *L, char *s)
     return 1;
 }
 
+/* An open always returns a handle; a failed one carries its own reason. Read
+ * it, destroy the dead handle, and return (nil, reason) -- else the handle. */
+static int finish_open(lua_State *L, void *h, const char *what)
+{
+    char *reason;
+    if (h == NULL) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "%s failed: out of memory", what);
+        return 2;
+    }
+    reason = aether_vcr_embed_open_error(h);
+    if (reason != NULL && reason[0] != '\0') {
+        lua_pushnil(L);
+        lua_pushfstring(L, "%s failed: %s", what, reason);
+        aether_vcr_embed_free_string(reason);
+        aether_vcr_embed_destroy(h);
+        return 2;
+    }
+    if (reason != NULL) {
+        aether_vcr_embed_free_string(reason);
+    }
+    lua_pushlightuserdata(L, h);
+    return 1;
+}
+
 /* ---- low-level bindings (1:1 with the ABI) ------------------------------ */
 
 /* open_playback(tapePath [, host="127.0.0.1"] [, port=0] [, label="servirtium"]) */
@@ -171,13 +198,7 @@ static int l_open_playback(lua_State *L)
     int         port  = (int)luaL_optinteger(L, 3, 0);
     const char *label = luaL_optstring(L, 4, "servirtium");
     void *h = aether_vcr_embed_open_playback(label, tape, host, port);
-    if (h == NULL) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "open_playback failed");
-        return 2;
-    }
-    lua_pushlightuserdata(L, h);
-    return 1;
+    return finish_open(L, h, "open_playback");
 }
 
 /* open_playback_url(tapeUrl [, host] [, port] [, label]) */
@@ -188,13 +209,7 @@ static int l_open_playback_url(lua_State *L)
     int         port  = (int)luaL_optinteger(L, 3, 0);
     const char *label = luaL_optstring(L, 4, "servirtium");
     void *h = aether_vcr_embed_open_playback_url(label, url, host, port);
-    if (h == NULL) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "open_playback_url failed");
-        return 2;
-    }
-    lua_pushlightuserdata(L, h);
-    return 1;
+    return finish_open(L, h, "open_playback_url");
 }
 
 /* open_record(tapePath, upstream [, host="127.0.0.1"] [, port=0] [, label]) */
@@ -206,13 +221,7 @@ static int l_open_record(lua_State *L)
     int         port     = (int)luaL_optinteger(L, 4, 0);
     const char *label    = luaL_optstring(L, 5, "servirtium");
     void *h = aether_vcr_embed_open_record(label, tape, upstream, host, port);
-    if (h == NULL) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "open_record failed");
-        return 2;
-    }
-    lua_pushlightuserdata(L, h);
-    return 1;
+    return finish_open(L, h, "open_record");
 }
 
 /* start(handle) -> rc (int; < 0 fail) */
@@ -297,6 +306,14 @@ static int l_clear_last_error(lua_State *L)
 {
     void *h = check_handle(L, 1);
     aether_vcr_embed_clear_last_error(h);
+    return 0;
+}
+
+/* destroy(handle): free the VCR; the handle is invalid afterwards */
+static int l_destroy(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    aether_vcr_embed_destroy(h);
     return 0;
 }
 
@@ -772,6 +789,7 @@ static const luaL_Reg servirtium_funcs[] = {
     {"test_context", l_test_context},
     {"clear_last_error",                l_clear_last_error},
     {"stop",                            l_stop},
+    {"destroy",                         l_destroy},
     {"stop_and_flush",                  l_stop_and_flush},
     {"stop_and_flush_fail_if_changed",  l_stop_and_flush_fail_if_changed},
     {"stop_and_flush_or_check",         l_stop_and_flush_or_check},

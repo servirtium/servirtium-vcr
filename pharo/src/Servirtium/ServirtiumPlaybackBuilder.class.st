@@ -179,17 +179,15 @@ ServirtiumPlaybackBuilder >> start [
 		tape: tapePath
 		host: host
 		port: port.
-	handle isNull ifTrue: [
-		ServirtiumError signal:
-			'vcr playback failed to start for tape ''' , tapePath , '''' ].
-	self applyConfig: handle.
-	secretResolver ifNotNil: [ self library stageSecrets: handle callback: secretResolver resolving: true ].
-	(self library start: handle) < 0 ifTrue: [
-		| detail |
-		detail := self drainStartError: handle.
-		self library stop: handle.
-		ServirtiumError signal:
-			'vcr playback failed to begin serving for tape ''' , tapePath , ''': ' , detail ].
+	self checkOpened: handle describing: 'vcr playback failed to start for tape ''' , tapePath , ''''.
+	self destroyOnError: handle do: [
+		self applyConfig: handle.
+		secretResolver ifNotNil: [ self library stageSecrets: handle callback: secretResolver resolving: true ].
+		(self library start: handle) < 0 ifTrue: [
+			| detail |
+			detail := self drainStartError: handle.
+			ServirtiumError signal:
+				'vcr playback failed to begin serving for tape ''' , tapePath , ''': ' , detail ] ].
 	^ ServirtiumServer handle: handle host: host tape: tapePath recordMode: false failIfChanged: false
 ]
 

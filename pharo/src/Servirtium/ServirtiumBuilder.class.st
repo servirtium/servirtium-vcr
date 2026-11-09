@@ -228,6 +228,29 @@ ServirtiumBuilder >> check: aResultPointer op: anOperation [
 ]
 
 { #category : 'private' }
+ServirtiumBuilder >> checkOpened: handle describing: aString [
+	"An open always answers a handle; a failed one is dead and carries its
+	 reason. Destroy it and signal with that reason."
+
+	| why |
+	why := self library takeString: (self library openError: handle).
+	why isEmpty ifTrue: [ ^ self ].
+	self library destroy: handle.
+	ServirtiumError signal: aString , ': ' , why
+]
+
+{ #category : 'private' }
+ServirtiumBuilder >> destroyOnError: handle do: aBlock [
+	"Run aBlock; if it raises after a successful open, stop and destroy the
+	 handle (no leak) and re-raise."
+
+	^ aBlock on: Error do: [ :error |
+		self library stop: handle.
+		self library destroy: handle.
+		error pass ]
+]
+
+{ #category : 'private' }
 ServirtiumBuilder >> drainStartError: handle [
 
 	| err |

@@ -26,8 +26,11 @@ NULL-safe (returns an empty String for a NULL pointer). NEVER `readString`
 a returned char* without then freeing it.
 
 == Handles ==
-A server handle is an opaque `void*` surfaced as an ExternalAddress; NULL
-(isNull) means failure. Per-listener: every config / diagnostic / lifecycle
+A server handle is an opaque `void*` surfaced as an ExternalAddress. An open
+always answers a non-NULL handle; a failed open is a dead handle: read
+`openError:` ('' = opened), then `destroy:` it. Every handle is destroyed
+exactly once (ServirtiumServer>>stop / discard do it and nil their handle).
+Per-listener: every config / diagnostic / lifecycle
 call takes the handle, so N servers can run at once. Lifecycle is
 open -> configure(handle) -> start.
 "
@@ -114,6 +117,21 @@ ServirtiumLibrary >> openPlaybackLabel: label tape: tapePath host: host port: po
 ServirtiumLibrary >> openRecordLabel: label tape: tapePath upstream: upstreamBase host: host port: port [
 
 	^ self ffiCall: #( void* aether_vcr_embed_open_record ( String label, String tapePath, String upstreamBase, String host, int port ) )
+]
+
+{ #category : 'ffi - lifecycle' }
+ServirtiumLibrary >> openError: server [
+	"'' when the open succeeded, else why it failed (caller-owned char*; use takeString:)."
+
+	^ self ffiCall: #( void* aether_vcr_embed_open_error ( void* server ) )
+]
+
+{ #category : 'ffi - lifecycle' }
+ServirtiumLibrary >> destroy: server [
+	"Free the VCR (stopping it if still serving). Every handle an open_* call
+	 returned, failed or not, must be destroyed exactly once; it is invalid afterwards."
+
+	^ self ffiCall: #( void aether_vcr_embed_destroy ( void* server ) )
 ]
 
 { #category : 'ffi - lifecycle' }
@@ -589,6 +607,6 @@ ServirtiumLibrary >> stageSecrets: handle callback: callback resolving: resolvin
         check value: (self secretFinish: handle)
     ] on: Error do: [ :error |
         self secretAbort: handle.
-        self stop: handle.
+        self stop: handle.   "the caller destroys the handle"
         error pass ]
 ]

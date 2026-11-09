@@ -32,6 +32,8 @@ final class Native
         void*  aether_vcr_embed_open_playback(const char* label, const char* tape_path, const char* host, int port);
         void*  aether_vcr_embed_open_playback_url(const char* label, const char* tape_url, const char* host, int port);
         void*  aether_vcr_embed_open_record(const char* label, const char* tape_path, const char* upstream_base, const char* host, int port);
+        char*  aether_vcr_embed_open_error(void* server);
+        void   aether_vcr_embed_destroy(void* server);
         int    aether_vcr_embed_start(void* server);
         void   aether_vcr_embed_stop(void* server);
         char*  aether_vcr_embed_stop_and_flush(void* server, const char* tape_path);

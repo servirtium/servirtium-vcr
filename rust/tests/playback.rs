@@ -210,3 +210,21 @@ fn a_bad_playback_range_is_refused_at_start() {
     let err = Vcr::playback(range_tape()).playback_range(9, -1).port(0).start().err().unwrap();
     assert!(err.message().contains("set_playback_range"), "{err}");
 }
+
+#[test]
+fn a_missing_tape_reports_its_reason_through_open_error() {
+    let err = match Vcr::playback(tape_path("no_such_tape.md")).port(0).start() {
+        Ok(_) => panic!("a missing tape must not start"),
+        Err(e) => e,
+    };
+    assert!(err.to_string().contains("no_such_tape.md"), "got: {err}");
+}
+
+#[test]
+fn opens_starts_and_finishes_many_times() {
+    for _ in 0..50 {
+        let vcr = Vcr::playback(tape_path("single_get.md")).port(0).start().unwrap();
+        assert_eq!(1, vcr.tape_length());
+        vcr.finish().unwrap(); // finish stops + destroys; the Drop that follows is a no-op
+    }
+}

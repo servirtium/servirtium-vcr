@@ -138,4 +138,22 @@ do
     local bad = servirtium.playback(tape("range.md")):playback_range(9, -1):port(0):start()
     h.eq(bad, nil, "start() refuses an impossible range")
 end
+-- a missing tape reports why through the open path -------------------------
+do
+    h.case("a missing tape is reported by name")
+    local srv, err = servirtium.playback("/nonexistent/no-such-tape.md"):port(0):start()
+    h.eq(srv, nil, "start() fails")
+    h.contains(err, "no-such-tape", "error names the tape")
+end
+
+-- open/start/close 50 times; double close is harmless ----------------------
+do
+    h.case("50 open/close cycles and double close")
+    for _ = 1, 50 do
+        local srv = assert(servirtium.playback(tape("single_get.md")):port(0):start())
+        h.eq(h.curl_get(srv:base_url(), "/ok"), "ok-body", "body")
+        srv:close()
+        srv:close()
+    end
+end
 h.done("playback")

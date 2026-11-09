@@ -63,9 +63,9 @@ main() {
     // 2. Record: the tape stores the decoded payload, not chunk framing.
     TAPE = tape_path()
     fs.delete(TAPE)
-    recorder = vcr.load_record(TAPE, upstream, RECORD_PORT)
+    recorder, recorder_oerr = vcr.open_record(TAPE, upstream, RECORD_PORT)
     if recorder == null { println("FAIL: load_record"); exit(1) }
-    serr = http.server_start_background(recorder)
+    serr = http.server_start_background(vcr.server_of(recorder))
     if serr != "" { println("FAIL: recorder start ${serr}"); exit(1) }
     sleep(250)
 
@@ -74,7 +74,7 @@ main() {
         println("FAIL: recorder returned '${rec_body}' to the SUT")
         exit(1)
     }
-    ferr = vcr.eject_record(recorder, TAPE)
+    ferr = vcr.stop_and_flush_h(recorder, TAPE)
     if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
 
     tape, terr = fs.read(TAPE)
@@ -86,9 +86,9 @@ main() {
     println("  PASS: record tape stores decoded payload")
 
     // 3. Replay serves the decoded body (framed bytes would fail this).
-    playback = vcr.load(TAPE, PLAYBACK_PORT)
+    playback, playback_oerr = vcr.open_playback(TAPE, PLAYBACK_PORT)
     if playback == null { println("FAIL: load playback"); exit(1) }
-    serr2 = http.server_start_background(playback)
+    serr2 = http.server_start_background(vcr.server_of(playback))
     if serr2 != "" { println("FAIL: playback start ${serr2}"); exit(1) }
     sleep(250)
 
@@ -99,7 +99,7 @@ main() {
     }
     println("  PASS: replay serves decoded body")
 
-    vcr.eject(playback)
+    vcr.destroy_h(playback)
     fs.delete(TAPE)
     println("PASS")
     exit(0)

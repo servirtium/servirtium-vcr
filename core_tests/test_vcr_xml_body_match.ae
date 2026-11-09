@@ -20,7 +20,6 @@ import std.string
 import std.fs
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18117
 
@@ -31,19 +30,6 @@ const REORDERED = "<Envelope xmlns=\"urn:x\">\n  <Body>\n    <Submit when=\"noon
 //    swap two sibling elements to prove order is significant.
 const REORDERED_ELEMS = "<Envelope xmlns=\"urn:x\"><Body><Submit id=\"7\" when=\"noon\"><Age>9</Age><Name>Complaint</Name></Submit></Body></Envelope>"
 const NOT_XML = "this is not xml at all"
-
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
 
 post_xml(url: string, body: string) -> int {
     creq = client.request("POST", url)
@@ -66,13 +52,10 @@ fail(msg: string) {
 main() {
     println("=== VCR opt-in XML request-body matching ===\n")
 
-    raw = vcr.load("core_tests/tapes/xml_body_match.tape", PORT)
+    raw, raw_oerr = vcr.open_playback("core_tests/tapes/xml_body_match.tape", PORT)
     if raw == null { fail("vcr.load returned null") }
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     url = "http://127.0.0.1:${PORT}/soap"
 
@@ -91,7 +74,7 @@ main() {
     vcr.reset_cursor_h(raw)
     statusB = post_xml(url, REORDERED)
     if statusB != 200 {
-        fail("Case B (match on): expected 200 for XML-equal body, got ${statusB} (last_error='${vcr.last_error()}')")
+        fail("Case B (match on): expected 200 for XML-equal body, got ${statusB} (last_error='${vcr.last_error_h(raw)}')")
     }
     println("PASS Case B: match_xml_body accepts attr-reordered / re-spaced XML (200)")
 
@@ -114,6 +97,6 @@ main() {
     println("PASS Case D: non-XML body falls back to byte-exact (599)")
 
     println("\n=== XML body-match subtests passed ===")
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
     exit(0)
 }

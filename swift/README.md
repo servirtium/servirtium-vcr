@@ -55,7 +55,7 @@ marshalling rules to drift from `core/embed.ae`.
   **discards** the recording if it threw, so a failed test can't overwrite a
   good tape.
 - **`throws` instead of NULL/error strings** — a failed open or a rejected
-  config call raises `VcrError`, never hands back a dead handle.
+  config call raises `VcrError` carrying the core's reason (`open_error`), never hands back a dead handle. `close()`/`flush()`/`discard()` free the native handle (idempotent; read diagnostics first).
 - **Typed enums** (`Field`, `Outcome`) and automatic caller-owned-string
   handling in exactly one place.
 

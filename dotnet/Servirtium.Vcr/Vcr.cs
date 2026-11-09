@@ -471,19 +471,27 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     public VcrServer Start()
     {
         IntPtr handle = NativeMethods.OpenPlayback(LabelValue, TapePath, HostValue, PortValue);
-        if (handle == IntPtr.Zero)
+        try
         {
-            throw new VcrException($"vcr playback failed to start for tape '{TapePath}'");
+            string openErr = NativeMethods.TakeString(NativeMethods.OpenError(handle));
+            if (!string.IsNullOrEmpty(openErr))
+            {
+                throw new VcrException($"vcr playback failed to start for tape '{TapePath}': {openErr}");
+            }
+            ApplyConfig(handle);
+            if (_secretResolver != null) SecretCallbacks.Stage(handle, null, _secretResolver);
+            if (NativeMethods.Start(handle) < 0)
+            {
+                string detail = DrainStartError(handle);
+                throw new VcrException($"vcr playback failed to begin serving for tape '{TapePath}': {detail}");
+            }
+            return new VcrServer(handle, HostValue, TapePath, recordMode: false, failIfChanged: false, tlsCertPem: ResolveTlsCertPem());
         }
-        ApplyConfig(handle);
-        if (_secretResolver != null) SecretCallbacks.Stage(handle, null, _secretResolver);
-        if (NativeMethods.Start(handle) < 0)
+        catch
         {
-            string detail = DrainStartError(handle);
-            NativeMethods.Stop(handle);
-            throw new VcrException($"vcr playback failed to begin serving for tape '{TapePath}': {detail}");
+            NativeMethods.Destroy(handle);
+            throw;
         }
-        return new VcrServer(handle, HostValue, TapePath, recordMode: false, failIfChanged: false, tlsCertPem: ResolveTlsCertPem());
     }
 
     private static string DrainStartError(IntPtr handle)
@@ -786,25 +794,33 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     {
         CheckLoopbackUpstream();
         IntPtr handle = NativeMethods.OpenRecord(LabelValue, TapePath, _upstreamBase, HostValue, PortValue);
-        if (handle == IntPtr.Zero)
+        try
         {
-            throw new VcrException(
-                $"vcr record failed to start for tape '{TapePath}' (upstream '{_upstreamBase}')");
+            string openErr = NativeMethods.TakeString(NativeMethods.OpenError(handle));
+            if (!string.IsNullOrEmpty(openErr))
+            {
+                throw new VcrException(
+                    $"vcr record failed to start for tape '{TapePath}' (upstream '{_upstreamBase}'): {openErr}");
+            }
+            ApplyConfig(handle);
+            // Stage the note now (open_record cleared the tape) so it attaches to
+            // the first interaction the SUT triggers, before serving begins.
+            if (_note is { } n)
+            {
+                Check(NativeMethods.Note(handle, n.title, n.body), nameof(Note));
+            }
+            if (NativeMethods.Start(handle) < 0)
+            {
+                string detail = NativeMethods.TakeString(NativeMethods.LastError(handle));
+                throw new VcrException($"vcr record failed to begin serving for tape '{TapePath}': {detail}");
+            }
+            return new VcrServer(handle, HostValue, TapePath, recordMode: true, failIfChanged: _failIfChanged, tlsCertPem: ResolveTlsCertPem()) { SecretRedactorCallback = _secretRedactor };
         }
-        ApplyConfig(handle);
-        // Stage the note now (open_record cleared the tape) so it attaches to
-        // the first interaction the SUT triggers, before serving begins.
-        if (_note is { } n)
+        catch
         {
-            Check(NativeMethods.Note(handle, n.title, n.body), nameof(Note));
+            NativeMethods.Destroy(handle);
+            throw;
         }
-        if (NativeMethods.Start(handle) < 0)
-        {
-            string detail = NativeMethods.TakeString(NativeMethods.LastError(handle));
-            NativeMethods.Stop(handle);
-            throw new VcrException($"vcr record failed to begin serving for tape '{TapePath}': {detail}");
-        }
-        return new VcrServer(handle, HostValue, TapePath, recordMode: true, failIfChanged: _failIfChanged, tlsCertPem: ResolveTlsCertPem()) { SecretRedactorCallback = _secretRedactor };
     }
 }
 
@@ -1047,14 +1063,28 @@ public sealed class VcrServer : IDisposable
         IntPtr h = _handle;
         _handle = IntPtr.Zero;
         _committed = true;
-        if (SecretRedactorCallback != null) SecretCallbacks.Stage(h, SecretRedactorCallback, null);
-        IntPtr resultPtr = _failIfChanged
-            ? NativeMethods.StopAndFlushFailIfChanged(h, _tapePath)
-            : NativeMethods.StopAndFlush(h, _tapePath);
-        string err = NativeMethods.TakeString(resultPtr);
-        if (!string.IsNullOrEmpty(err))
+        FlushAndDestroy(h);
+    }
+
+    // Stop + flush the record handle, then destroy it exactly once (even if the
+    // flush or the secret staging throws).
+    private void FlushAndDestroy(IntPtr h)
+    {
+        try
         {
-            throw new VcrException(err);
+            if (SecretRedactorCallback != null) SecretCallbacks.Stage(h, SecretRedactorCallback, null);
+            IntPtr resultPtr = _failIfChanged
+                ? NativeMethods.StopAndFlushFailIfChanged(h, _tapePath)
+                : NativeMethods.StopAndFlush(h, _tapePath);
+            string err = NativeMethods.TakeString(resultPtr);
+            if (!string.IsNullOrEmpty(err))
+            {
+                throw new VcrException(err);
+            }
+        }
+        finally
+        {
+            NativeMethods.Destroy(h);
         }
     }
 
@@ -1070,35 +1100,28 @@ public sealed class VcrServer : IDisposable
         IntPtr h = _handle;
         _handle = IntPtr.Zero;
         _discarded = true;
-        NativeMethods.TakeString(NativeMethods.Discard(h, _tapePath));
+        try { NativeMethods.TakeString(NativeMethods.Discard(h, _tapePath)); }
+        finally { NativeMethods.Destroy(h); }
     }
 
     public void Dispose()
     {
-        // Already committed or discarded: nothing left to do (handle is zeroed).
-        if (_committed || _discarded) return;
+        // Already committed, discarded or disposed: the handle is gone.
         if (_handle == IntPtr.Zero) return;
         IntPtr h = _handle;
         _handle = IntPtr.Zero;
 
         if (!_recordMode)
         {
-            NativeMethods.Stop(h);
+            try { NativeMethods.Stop(h); }
+            finally { NativeMethods.Destroy(h); }
             return;
         }
 
         // Back-compat: a record server disposed WITHOUT an explicit Commit()/
         // Discard() still flushes, so existing tests keep recording on dispose.
         // Tests that must not mint a tape on failure call Discard() in teardown.
-        if (SecretRedactorCallback != null) SecretCallbacks.Stage(h, SecretRedactorCallback, null);
-        IntPtr resultPtr = _failIfChanged
-            ? NativeMethods.StopAndFlushFailIfChanged(h, _tapePath)
-            : NativeMethods.StopAndFlush(h, _tapePath);
-        string err = NativeMethods.TakeString(resultPtr);
-        if (!string.IsNullOrEmpty(err))
-        {
-            throw new VcrException(err);
-        }
+        FlushAndDestroy(h);
     }
 }
 

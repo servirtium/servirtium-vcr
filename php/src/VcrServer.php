@@ -172,19 +172,30 @@ final class VcrServer
         $this->handle = null;
         $lib = Native::lib();
 
-        if (!$this->recordMode) {
-            $lib->aether_vcr_embed_stop($handle);
+        try {
+            if (!$this->recordMode) {
+                $lib->aether_vcr_embed_stop($handle);
 
-            return;
-        }
+                return;
+            }
 
-        if ($this->secretRedactor !== null) { Secrets::stage($handle, $this->secretRedactor, false); }
-        $resultPtr = $this->failIfChanged
-            ? $lib->aether_vcr_embed_stop_and_flush_fail_if_changed($handle, $this->tapePath)
-            : $lib->aether_vcr_embed_stop_and_flush($handle, $this->tapePath);
-        $err = Native::takeString($resultPtr);
-        if ($err !== '') {
-            throw new VcrException($err);
+            if ($this->secretRedactor !== null) {
+                try {
+                    Secrets::stage($handle, $this->secretRedactor, false);
+                } catch (\Throwable $e) {
+                    $lib->aether_vcr_embed_stop($handle);
+                    throw $e;
+                }
+            }
+            $resultPtr = $this->failIfChanged
+                ? $lib->aether_vcr_embed_stop_and_flush_fail_if_changed($handle, $this->tapePath)
+                : $lib->aether_vcr_embed_stop_and_flush($handle, $this->tapePath);
+            $err = Native::takeString($resultPtr);
+            if ($err !== '') {
+                throw new VcrException($err);
+            }
+        } finally {
+            $lib->aether_vcr_embed_destroy($handle);
         }
     }
 
@@ -203,12 +214,16 @@ final class VcrServer
         $this->handle = null;
         $lib = Native::lib();
 
-        if (!$this->recordMode) {
-            $lib->aether_vcr_embed_stop($handle);
+        try {
+            if (!$this->recordMode) {
+                $lib->aether_vcr_embed_stop($handle);
 
-            return;
+                return;
+            }
+
+            Native::takeString($lib->aether_vcr_embed_discard($handle, $this->tapePath));
+        } finally {
+            $lib->aether_vcr_embed_destroy($handle);
         }
-
-        Native::takeString($lib->aether_vcr_embed_discard($handle, $this->tapePath));
     }
 }

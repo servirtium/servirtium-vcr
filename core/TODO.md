@@ -9,9 +9,9 @@ per-request dispatcher, `HttpRequest` field reads, base64/gzip/de-chunk
 helpers) has been folded into PURE AETHER and **deleted**. The runtime lives
 inline in `core/vcr.ae` alongside the parser/emitter (a sibling module can't be
 imported across both build contexts — `embed.ae` builds from `core/`, the tests
-build from repo root with `import core.vcr`). Process-global mutable state lives
-behind `std.config`; collection handles are `std.list` pointers stashed as
-stringified ptrs and re-fetched per call.
+build from repo root with `import core.vcr`). There is no process-global
+state: each VCR's state lives in its own record (`struct Vcr` and its Rules /
+Settings / Tape / Outcome / Secrets), owned by the handle, freed by destroy.
 
 **The former blocker cleared:** record mode needs to iterate *all* request
 headers (to capture whatever the SUT sent), which Aether couldn't do — only
@@ -241,9 +241,9 @@ Useful preparation:
 > (`aether_vcr_embed_start_playback_url`); a one-call
 > `aether_vcr_embed_strict_ignore_common_headers()` drops the volatile
 > request headers (`User-Agent`/`Accept`/`Accept-Encoding`/`Connection`)
-> stock clients send; and embedded mode runs quiet (`vcr.set_quiet`) so
-> load diagnostics never hit the host's stdout — the reason stays on
-> `vcr_embed_last_error()` (falling back to `vcr.load_error()`).
+> stock clients send; and an open never prints: a failed open's reason
+> comes back on the handle (`aether_vcr_embed_open_error`), and the Aether
+> openers return it as `(null, reason)`.
 
 Long-horizon goal, probably many months out: make the Aether VCR usable as an embedded Servirtium server behind test-framework wrappers for higher-level languages. The primary product shape should stay server-first: the system under test talks HTTP to an Aether VCR server, and the language wrapper gives the test author a fixture object that exposes a base URL, lifecycle, tape configuration, mutations, and diagnostics.
 

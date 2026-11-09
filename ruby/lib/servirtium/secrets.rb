@@ -25,7 +25,6 @@ module Servirtium
       check.call(Native.call(:secret_finish, handle))
     rescue Exception
       Native.call(:secret_abort, handle)
-      Native.call(:stop, handle)
       raise
     end
   end

@@ -51,19 +51,19 @@ main() {
     println("=== VCR per-listener concurrency: two VCRs, two tapes, one process ===\n")
 
     // ---- Bring up BOTH playback VCRs at once. ----
-    weather = vcr.load(WEATHER_TAPE, WEATHER_PORT)
-    if weather == null { fail("load weather: ${vcr.load_error()}") }
-    payments = vcr.load(PAYMENTS_TAPE, PAYMENTS_PORT)
-    if payments == null { fail("load payments: ${vcr.load_error()}") }
+    weather, weather_oerr = vcr.open_playback(WEATHER_TAPE, WEATHER_PORT)
+    if weather == null { fail("load weather: ${weather_oerr}") }
+    payments, payments_oerr = vcr.open_playback(PAYMENTS_TAPE, PAYMENTS_PORT)
+    if payments == null { fail("load payments: ${payments_oerr}") }
 
     // Each reports its own tape length (2 each) independently.
     if vcr.tape_length_h(weather) != 2 { fail("weather tape_length ${vcr.tape_length_h(weather)} (want 2)") }
     if vcr.tape_length_h(payments) != 2 { fail("payments tape_length ${vcr.tape_length_h(payments)} (want 2)") }
     println("Both tapes loaded: weather=2, payments=2 interactions")
 
-    serr1 = http.server_start_background(weather)
+    serr1 = http.server_start_background(vcr.server_of(weather))
     if serr1 != "" { fail("weather start ${serr1}") }
-    serr2 = http.server_start_background(payments)
+    serr2 = http.server_start_background(vcr.server_of(payments))
     if serr2 != "" { fail("payments start ${serr2}") }
     sleep(400)
 
@@ -120,8 +120,8 @@ main() {
     if vcr.last_index_h(payments) != 1 { fail("payments last_index bled to ${vcr.last_index_h(payments)}") }
     println("  PASS: weather=TAPE_EXHAUSTED, payments diagnostics intact (OK, index 1)")
 
-    vcr.eject(weather)
-    vcr.eject(payments)
+    vcr.destroy_h(weather)
+    vcr.destroy_h(payments)
     println("\n=== Per-listener concurrency test passed ===")
     exit(0)
 }

@@ -57,6 +57,19 @@ let ``loan pattern disposes the server`` () =
     Assert.True(first > 0 && second > 0)
 
 [<Fact>]
+let ``a missing tape surfaces the open error`` () =
+    let e = Assert.Throws<VcrException>(fun () -> Servirtium.usingPlayback "tapes/no_such_tape.md" Servirtium.port |> ignore)
+    Assert.Contains("no_such_tape.md", e.Message)
+
+[<Fact>]
+let ``many open start dispose cycles and double dispose are harmless`` () =
+    for _ in 1 .. 50 do
+        let vcr = Vcr.Playback(tape).Start()
+        Assert.Equal(1, Servirtium.tapeLength vcr)
+        vcr.Dispose()
+        vcr.Dispose()
+
+[<Fact>]
 let ``reset cursor allows the tape to be replayed twice`` () =
     Servirtium.usingPlayback tape (fun vcr ->
         let url = Servirtium.baseUrl vcr + "/ok"

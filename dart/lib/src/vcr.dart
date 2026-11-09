@@ -92,6 +92,31 @@ void _check(Pointer<Utf8> resultPtr, String op) {
   }
 }
 
+/// Every open returns a non-NULL handle (NULL only when out of memory); a failed
+/// open returns a dead handle carrying its reason. Read the reason, destroy the
+/// dead handle, and throw.
+Pointer<Void> _adoptOpen(Pointer<Void> handle, String what) {
+  if (handle == nullptr) throw VcrException('$what: out of memory');
+  final reason = takeString(Native.openError(handle));
+  if (reason.isNotEmpty) {
+    Native.destroy(handle);
+    throw VcrException('$what: $reason');
+  }
+  return handle;
+}
+
+/// Run [body] on an opened handle; if it throws, stop and destroy the handle so
+/// it never leaks.
+T _releaseOnFailure<T>(Pointer<Void> handle, T Function() body) {
+  try {
+    return body();
+  } catch (_) {
+    Native.stop(handle);
+    Native.destroy(handle);
+    rethrow;
+  }
+}
+
 String _drainStartError(Pointer<Void> handle) {
   final err = takeString(Native.lastError(handle));
   return err.isNotEmpty ? err : '(no detail; check tape path and port availability)';
@@ -120,7 +145,6 @@ void _secretStage(Pointer<Void> handle, {SecretRedactor? redactor, SecretResolve
     _check(Native.secretFinish(handle), 'secretFinish');
   } catch (_) {
     Native.secretAbort(handle);
-    Native.stop(handle);
     rethrow;
   }
 }
@@ -427,24 +451,24 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   /// then begin serving. Throws [VcrException] if it fails to bind/load.
   VcrServer start() {
     Native.configure(_nativeLib);
-    final handle = withUtf8(
-        _label,
-        (l) => withUtf8(
-            _tapePath,
-            (t) => withUtf8(
-                _host, (h) => Native.openPlayback(l, t, h, _port))));
-    if (handle == nullptr) {
-      throw VcrException("vcr playback failed to start for tape '$_tapePath'");
-    }
-    _applyConfig(handle);
-    if (_secretResolver != null) { _secretStage(handle, resolver: _secretResolver); }
-    if (Native.start(handle) < 0) {
-      final err = _drainStartError(handle);
-      Native.stop(handle);
-      throw VcrException(
-          "vcr playback failed to begin serving for tape '$_tapePath': $err");
-    }
-    return VcrServer._(handle, _host, _tapePath, recordMode: false, failIfChanged: false);
+    final handle = _adoptOpen(
+        withUtf8(
+            _label,
+            (l) => withUtf8(
+                _tapePath,
+                (t) => withUtf8(
+                    _host, (h) => Native.openPlayback(l, t, h, _port)))),
+        "vcr playback failed to start for tape '$_tapePath'");
+    return _releaseOnFailure(handle, () {
+      _applyConfig(handle);
+      if (_secretResolver != null) { _secretStage(handle, resolver: _secretResolver); }
+      if (Native.start(handle) < 0) {
+        final err = _drainStartError(handle);
+        throw VcrException(
+            "vcr playback failed to begin serving for tape '$_tapePath': $err");
+      }
+      return VcrServer._(handle, _host, _tapePath, recordMode: false, failIfChanged: false);
+    });
   }
 }
 
@@ -656,35 +680,34 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   /// begin serving. Throws [VcrException] if it fails to bind.
   VcrServer start() {
     Native.configure(_nativeLib);
-    final handle = withUtf8(
-        _label,
-        (l) => withUtf8(
-            _tapePath,
-            (t) => withUtf8(
-                _upstreamBase,
-                (u) => withUtf8(
-                    _host, (h) => Native.openRecord(l, t, u, h, _port)))));
-    if (handle == nullptr) {
-      throw VcrException(
-          "vcr record failed to start for tape '$_tapePath' "
-          "(upstream '$_upstreamBase')");
-    }
-    _applyConfig(handle);
-    // Stage the note now (openRecord cleared the tape) so it attaches to the
-    // first interaction the SUT triggers, before serving begins.
-    final n = _note;
-    if (n != null) {
-      withUtf8(n.$1,
-          (t) => withUtf8(n.$2, (b) => _check(Native.note(handle, t, b), 'note')));
-    }
-    if (Native.start(handle) < 0) {
-      final err = _drainStartError(handle);
-      Native.stop(handle);
-      throw VcrException(
-          "vcr record failed to begin serving for tape '$_tapePath': $err");
-    }
-    return VcrServer._(handle, _host, _tapePath,
-        recordMode: true, failIfChanged: _failIfChanged, secretRedactor: _secretRedactor);
+    final handle = _adoptOpen(
+        withUtf8(
+            _label,
+            (l) => withUtf8(
+                _tapePath,
+                (t) => withUtf8(
+                    _upstreamBase,
+                    (u) => withUtf8(
+                        _host, (h) => Native.openRecord(l, t, u, h, _port))))),
+        "vcr record failed to start for tape '$_tapePath' "
+        "(upstream '$_upstreamBase')");
+    return _releaseOnFailure(handle, () {
+      _applyConfig(handle);
+      // Stage the note now (openRecord cleared the tape) so it attaches to the
+      // first interaction the SUT triggers, before serving begins.
+      final n = _note;
+      if (n != null) {
+        withUtf8(n.$1,
+            (t) => withUtf8(n.$2, (b) => _check(Native.note(handle, t, b), 'note')));
+      }
+      if (Native.start(handle) < 0) {
+        final err = _drainStartError(handle);
+        throw VcrException(
+            "vcr record failed to begin serving for tape '$_tapePath': $err");
+      }
+      return VcrServer._(handle, _host, _tapePath,
+          recordMode: true, failIfChanged: _failIfChanged, secretRedactor: _secretRedactor);
+    });
   }
 }
 
@@ -801,11 +824,15 @@ class VcrServer {
     if (_handle == nullptr) return;
     final h = _handle;
     _handle = nullptr;
-    if (!_recordMode) {
-      Native.stop(h);
-      return;
+    try {
+      if (!_recordMode) {
+        Native.stop(h);
+        return;
+      }
+      withUtf8(_tapePath, (t) => takeString(Native.discard(h, t)));
+    } finally {
+      Native.destroy(h);
     }
-    withUtf8(_tapePath, (t) => takeString(Native.discard(h, t)));
   }
 
   /// Stop the server; flush the tape if recording. Throws [VcrException] on a
@@ -815,20 +842,24 @@ class VcrServer {
     final h = _handle;
     _handle = nullptr;
 
-    if (!_recordMode) {
-      Native.stop(h);
-      return;
-    }
+    try {
+      if (!_recordMode) {
+        Native.stop(h);
+        return;
+      }
 
-    if (_secretRedactor != null) { _secretStage(h, redactor: _secretRedactor); }
-    final resultPtr = withUtf8(
-        _tapePath,
-        (t) => _failIfChanged
-            ? Native.stopAndFlushFailIfChanged(h, t)
-            : Native.stopAndFlush(h, t));
-    final err = takeString(resultPtr);
-    if (err.isNotEmpty) {
-      throw VcrException(err);
+      if (_secretRedactor != null) { _secretStage(h, redactor: _secretRedactor); }
+      final resultPtr = withUtf8(
+          _tapePath,
+          (t) => _failIfChanged
+              ? Native.stopAndFlushFailIfChanged(h, t)
+              : Native.stopAndFlush(h, t));
+      final err = takeString(resultPtr);
+      if (err.isNotEmpty) {
+        throw VcrException(err);
+      }
+    } finally {
+      Native.destroy(h); // stops first if secret staging failed
     }
   }
 }

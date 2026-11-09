@@ -84,6 +84,20 @@ int main(int argc, char** argv) {
         ck("missing tape throws servirtium::Error", true);
         ck("the exception explains why", std::string(e.what()).find("open failed") !=
                                              std::string::npos);
+        ck("the exception names the missing tape",
+           std::string(e.what()).find("nonexistent") != std::string::npos);
+    }
+
+    // ---- open/start/close many times; a second close is harmless ----
+    {
+        bool all_ok = true;
+        for (int i = 0; i < 50; ++i) {
+            auto again = servirtium::Vcr::playback(tape);
+            if (again.port() <= 0) all_ok = false;
+            again.close();
+            again.close();
+        }
+        ck("50 open/start/close cycles with double close", all_ok);
     }
 
     // ---- playback of the canonical tape ----

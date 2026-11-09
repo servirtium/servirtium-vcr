@@ -180,23 +180,25 @@ defmodule Servirtium do
         Keyword.get(opts, :port, 0)
       )
 
-    if handle == 0 do
-      raise Server.error("vcr playback failed to start for tape #{inspect(tape_path)}")
-    end
+    check_open!(handle, "vcr playback failed to start for tape #{inspect(tape_path)}")
 
-    apply_shared_config(handle, opts)
-    apply_playback_config(handle, opts)
+    destroy_on_raise(handle, fn ->
+      apply_shared_config(handle, opts)
+      apply_playback_config(handle, opts)
 
-    if resolver = Keyword.get(opts, :secret_resolver) do
-      Native.secret_stage(handle, resolver, true)
-    end
-    if Native.start(handle) < 0 do
-      detail = drain_start_error(handle)
-      Native.stop(handle)
-      raise Server.error(
-              "vcr playback failed to begin serving for tape #{inspect(tape_path)}: #{detail}"
-            )
-    end
+      if resolver = Keyword.get(opts, :secret_resolver) do
+        Native.secret_stage(handle, resolver, true)
+      end
+
+      if Native.start(handle) < 0 do
+        detail = drain_start_error(handle)
+        Native.stop(handle)
+
+        raise Server.error(
+                "vcr playback failed to begin serving for tape #{inspect(tape_path)}: #{detail}"
+              )
+      end
+    end)
 
     {:ok,
      %Server{
@@ -227,15 +229,16 @@ defmodule Servirtium do
         Keyword.get(opts, :port, 0)
       )
 
-    if handle == 0 do
-      raise Server.error(
-              "vcr record failed to start for tape #{inspect(tape_path)} " <>
-                "(upstream #{inspect(upstream_base)})"
-            )
-    end
+    check_open!(
+      handle,
+      "vcr record failed to start for tape #{inspect(tape_path)} " <>
+        "(upstream #{inspect(upstream_base)})"
+    )
 
-    apply_shared_config(handle, opts)
-    apply_record_config(handle, opts)
+    destroy_on_raise(handle, fn ->
+      apply_shared_config(handle, opts)
+      apply_record_config(handle, opts)
+    end)
 
     srv = %Server{
       handle: handle,
@@ -256,6 +259,7 @@ defmodule Servirtium do
 
           {:error, msg} ->
             Native.stop(handle)
+            Native.destroy(handle)
             raise Server.error(msg)
         end
 
@@ -266,6 +270,8 @@ defmodule Servirtium do
     if Native.start(handle) < 0 do
       detail = drain_start_error(handle)
       Native.stop(handle)
+      Native.destroy(handle)
+
       raise Server.error(
               "vcr record failed to begin serving for tape #{inspect(tape_path)}: #{detail}"
             )
@@ -385,13 +391,14 @@ defmodule Servirtium do
   @doc """
   Stop the server. In record mode this also flushes the captured tape to disk
   (raising or returning `{:error, drift_msg}` on drift if `:fail_if_changed`
-  was set). Returns `:ok` on success. Idempotent.
+  was set). Then frees the VCR. Returns `:ok` on success. Idempotent: the
+  handle is a NIF resource, so a second `stop/1` is a harmless no-op. Read
+  diagnostics BEFORE stopping.
   """
   @spec stop(Server.t()) :: :ok | {:error, String.t()}
-  def stop(%Server{handle: 0}), do: :ok
-
   def stop(%Server{mode: :playback, handle: h}) do
     Native.stop(h)
+    Native.destroy(h)
     :ok
   end
 
@@ -404,6 +411,7 @@ defmodule Servirtium do
         Native.stop_and_flush(h, tape)
       end
 
+    Native.destroy(h)
     check(result)
   end
 
@@ -549,6 +557,27 @@ defmodule Servirtium do
     for {pat, repl} <- Keyword.get(opts, :redact_whole_tape, []) do
       check!(Native.redact_whole_tape(handle, pat, repl), "redact_whole_tape")
     end
+  end
+
+  # open_* always yields a handle; a failed open is a dead one carrying its reason.
+  defp check_open!(handle, what) do
+    case Native.open_error(handle) do
+      "" ->
+        :ok
+
+      reason ->
+        Native.destroy(handle)
+        raise Server.error("#{what}: #{reason}")
+    end
+  end
+
+  # A failure after a successful open must not leak the handle.
+  defp destroy_on_raise(handle, fun) do
+    fun.()
+  rescue
+    e ->
+      Native.destroy(handle)
+      reraise e, __STACKTRACE__
   end
 
   defp drain_start_error(handle) do

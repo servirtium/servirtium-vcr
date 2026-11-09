@@ -123,8 +123,7 @@ public final class Vcr {
     public static func playback(_ tapePath: String, host: String = "127.0.0.1",
                                 port: Int32 = 0, secretResolver: SecretResolver? = nil) throws -> Vcr {
         let h = aether_vcr_embed_open_playback("", tapePath, host, port)
-        if let resolver = secretResolver, let handle = h { try secretStage(handle, resolver: resolver) }
-        return Vcr(handle: try started(h, "playback open failed: \(tapePath)"),
+        return Vcr(handle: try started(h, "playback open failed: \(tapePath)", resolver: secretResolver),
                    host: host, tape: tapePath)
     }
 
@@ -173,14 +172,27 @@ public final class Vcr {
         }
     }
 
-    /// Start an opened handle, cleaning up and throwing rather than handing back
-    /// a dead server. Shared by every open above.
+    /// Check an opened handle (every open returns one; a failed open is a dead
+    /// handle carrying its own reason), start it, and destroy it before throwing
+    /// rather than handing back a dead server. Shared by every open above.
     private static func started(_ handle: UnsafeMutableRawPointer?,
-                                _ failure: String) throws -> UnsafeMutableRawPointer {
-        guard let handle = handle else { throw VcrError(failure) }
+                                _ failure: String,
+                                resolver: SecretResolver? = nil) throws -> UnsafeMutableRawPointer {
+        guard let handle = handle else { throw VcrError("\(failure): out of memory") }
+        let openErr = take(aether_vcr_embed_open_error(handle))
+        if !openErr.isEmpty {
+            aether_vcr_embed_destroy(handle)
+            throw VcrError("\(failure): \(openErr)")
+        }
+        do {
+            if let resolver = resolver { try secretStage(handle, resolver: resolver) }
+        } catch {
+            aether_vcr_embed_destroy(handle)
+            throw error
+        }
         if aether_vcr_embed_start(handle) < 0 {
             let detail = take(aether_vcr_embed_last_error(handle))
-            aether_vcr_embed_stop(handle)
+            aether_vcr_embed_destroy(handle)
             throw VcrError(detail.isEmpty ? failure : "\(failure): \(detail)")
         }
         return handle
@@ -439,12 +451,16 @@ public final class Vcr {
 
     // ---- shutdown --------------------------------------------------------
 
-    /// Stop the server, discarding any recording. Idempotent.
+    /// Stop the server, discarding any recording, and free the native handle
+    /// (read diagnostics before this). Idempotent.
     public func close() {
         if closed { return }
         closed = true
         aether_vcr_embed_stop(handle)
+        aether_vcr_embed_destroy(handle)
     }
+
+    deinit { close() }
 
     /// Stop and write the captured tape. `tapePath` defaults to the one the
     /// recorder was opened with. Idempotent.
@@ -471,6 +487,7 @@ public final class Vcr {
         if closed { return }
         closed = true
         _ = take(aether_vcr_embed_discard(handle, tapePath ?? tape ?? ""))
+        aether_vcr_embed_destroy(handle)
     }
 
     /// The three flush variants differ only in the ABI call, so they share this.
@@ -480,6 +497,7 @@ public final class Vcr {
     ) throws {
         if closed { return }
         closed = true
+        defer { aether_vcr_embed_destroy(handle) }
         if let redactor = redactor { try secretStage(handle, redactor: redactor) }
         try check(call(handle, tapePath ?? tape ?? ""), "flush")
     }

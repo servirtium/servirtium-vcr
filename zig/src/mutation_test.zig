@@ -144,7 +144,8 @@ test "record with sortJsonKeys but no prettyJson is refused at emit time" {
     try std.testing.expectError(error.FileNotFound, readTape(allocator, tape));
 
     // The low-level wrapper returns the reason itself.
-    var vcr = try servirtium.Vcr.record(allocator, "", tape, upstream, "127.0.0.1", 0);
+    var vcr = try servirtium.Vcr.record(allocator, "", tape, upstream, "127.0.0.1", 0, null);
+    defer vcr.close();
     vcr.setSortJsonKeys(true);
     try std.testing.expect(vcr.sortJsonKeys());
     const bad = try vcr.sortJsonArray("a/b", "");
@@ -321,4 +322,38 @@ test "fail-if-changed returns an error on drift" {
     const text = try readTape(allocator, tape);
     defer allocator.free(text);
     try std.testing.expect(std.mem.indexOf(u8, text, "v2-changed") != null);
+}
+
+test "a failed open reports why through OpenDiagnostics" {
+    const allocator = std.testing.allocator;
+    var diag = servirtium.OpenDiagnostics{};
+    defer diag.deinit();
+    try std.testing.expectError(
+        servirtium.Error.OpenFailed,
+        servirtium.Playback.init(allocator, "tapes/nonexistent.md").port(0).startDiagnosed(&diag),
+    );
+    try std.testing.expect(std.mem.indexOf(u8, diag.message, "nonexistent") != null);
+
+    var low = servirtium.OpenDiagnostics{};
+    defer low.deinit();
+    try std.testing.expectError(
+        servirtium.Error.OpenFailed,
+        servirtium.Vcr.playback(allocator, "", "tapes/nonexistent.md", "127.0.0.1", 0, &low),
+    );
+    try std.testing.expect(std.mem.indexOf(u8, low.message, "nonexistent") != null);
+}
+
+test "open start close fifty times; a second close is harmless" {
+    const allocator = std.testing.allocator;
+    var i: usize = 0;
+    while (i < 50) : (i += 1) {
+        var srv = try servirtium.Playback.init(allocator, "tapes/single_get.md").port(0).start();
+        try std.testing.expect(srv.port() > 0);
+        try srv.close();
+        try srv.close();
+        var low = try servirtium.Vcr.playback(allocator, "", "tapes/single_get.md", "127.0.0.1", 0, null);
+        try low.start();
+        low.close();
+        low.close();
+    }
 }

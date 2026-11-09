@@ -272,7 +272,7 @@ A request outside the range is never served (kind `Outcome.PATH_OR_METHOD_DIFF`,
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `resetCursor()` | rewind replay to interaction 0; clear last-* |
 | `clearLastError()` | clear the last-error slot between sub-cases |
-| `close()` | stop; flush tape if recording |
+| `close()` | stop; flush tape if recording; then free the native handle (idempotent; read diagnostics before close) |
 
 ## `Outcome`
 

@@ -11,7 +11,7 @@
 //   `should_fail_here: ...` request header was sent. The SUT
 //   doesn't send it. Dispatcher must 599 and surface
 //   "should_fail_here ... encountered but not expected" via
-//   vcr.last_error().
+//   vcr.last_error_h(h).
 //
 // Architecture mirrors test_climate_via_vcr: load the tape, spin
 // the VCR up in an actor, drive a single client request, assert
@@ -28,23 +28,9 @@ import std.json
 extern exit(code: int)
 // Use raw form: actor receive handlers can't cleanly discard the
 // wrapper's string return without an unused-result warning.
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT_HEADERS = 18110
 const PORT_BODY    = 18111
-
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
 
 // Drive a bare GET / against the VCR and return the response status.
 // Uses the v2 client request/send_request shape so we can also
@@ -65,15 +51,11 @@ plain_get(url: string) -> int {
 main() {
     println("=== VCR strict request matching ===")
     println("\nSubtest 1: tape expects a header the SUT never sent")
-    vcr.clear_last_error()
 
-    raw = vcr.load("core_tests/tapes/request_headers_that_never_happened.tape", PORT_HEADERS)
+    raw, raw_oerr = vcr.open_playback("core_tests/tapes/request_headers_that_never_happened.tape", PORT_HEADERS)
     if raw == null { println("  FAIL: vcr.load returned null"); exit(1) }
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     url = "http://127.0.0.1:${PORT_HEADERS}/"
     status = plain_get(url)
@@ -81,9 +63,9 @@ main() {
         println("  FAIL: expected 599 from dispatcher, got ${status}"); exit(1)
     }
 
-    err = vcr.last_error()
+    err = vcr.last_error_h(raw)
     if err == "" {
-        println("  FAIL: vcr.last_error() empty after a hostile-tape mismatch"); exit(1)
+        println("  FAIL: vcr.last_error_h(raw) empty after a hostile-tape mismatch"); exit(1)
     }
     if string.contains(err, "should_fail_here") != 1 {
         println("  FAIL: last_error did not mention 'should_fail_here'")
@@ -92,7 +74,7 @@ main() {
     }
     println("  PASS: 599 + last_error='${err}'")
 
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
 
     // NOTE: the second subtest needs a fresh process — the VCR's
     // server-actor blocks on accept() and we can't tear it down

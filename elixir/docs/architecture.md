@@ -40,11 +40,11 @@ The shared NIF:
 
 - declares the `aether_vcr_embed_*` symbols `extern` and registers one NIF per
   function (`ERL_NIF_INIT(servirtium_nif, …)`).
-- The opaque server handle is passed back to Elixir as a **64-bit integer**
-  (`uintptr_t` → `enif_make_uint64`); `0` means failure. Each call returns a
-  distinct handle, and N handles can be live at once — `%Servirtium.Server{}`
-  carries the one it owns. (A NIF resource would also work; an integer is
-  simplest.)
+- The opaque server handle is passed back to Elixir as a **NIF resource
+  reference**. `open_*` always returns one; `open_error/1` says whether it
+  opened (`""` = yes), and `destroy/1` frees it (idempotent, so a second
+  `Servirtium.stop/1` is a no-op; a resource destructor is the safety net).
+  N handles can be live at once — `%Servirtium.Server{}` carries the one it owns.
 - String **in**: an Elixir binary is copied to a NUL-terminated C string
   (`enif_inspect_binary` / iolist) and freed after the call.
 - String **out**: the caller-owned `char*` is copied into an Erlang binary, then

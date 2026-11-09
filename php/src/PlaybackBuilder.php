@@ -177,21 +177,23 @@ final class PlaybackBuilder extends VcrBuilderBase
     {
         Native::configure($this->nativeLibValue);
         $lib = Native::lib();
-        $handle = $lib->aether_vcr_embed_open_playback(
+        $handle = self::checkOpen($lib->aether_vcr_embed_open_playback(
             $this->labelValue,
             $this->tapePath,
             $this->hostValue,
             $this->portValue,
-        );
-        if ($handle === null || FFI::isNull($handle)) {
-            throw new VcrException("vcr playback failed to start for tape '{$this->tapePath}'");
-        }
-        $this->applyConfig($handle);
-        if ($this->secretResolverCallback !== null) { Secrets::stage($handle, $this->secretResolverCallback, true); }
-        if ($lib->aether_vcr_embed_start($handle) < 0) {
-            $err = self::drainStartError($handle);
+        ), "vcr playback failed to start for tape '{$this->tapePath}'");
+        try {
+            $this->applyConfig($handle);
+            if ($this->secretResolverCallback !== null) { Secrets::stage($handle, $this->secretResolverCallback, true); }
+            if ($lib->aether_vcr_embed_start($handle) < 0) {
+                $err = self::drainStartError($handle);
+                throw new VcrException("vcr playback failed to begin serving for tape '{$this->tapePath}': {$err}");
+            }
+        } catch (\Throwable $e) {
             $lib->aether_vcr_embed_stop($handle);
-            throw new VcrException("vcr playback failed to begin serving for tape '{$this->tapePath}': {$err}");
+            $lib->aether_vcr_embed_destroy($handle);
+            throw $e;
         }
 
         return new VcrServer($handle, $this->hostValue, $this->tapePath, recordMode: false, failIfChanged: false);

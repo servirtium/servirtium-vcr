@@ -267,3 +267,29 @@ func TestPlaybackBadRangeIsRefusedAtStart(t *testing.T) {
 		t.Fatal("expected a range past the tape's end to be refused")
 	}
 }
+
+func TestOpenMissingTapeReportsReason(t *testing.T) {
+	srv, err := servirtium.Playback(tapePath("no_such_tape.md")).Port(0).Start()
+	if err == nil {
+		srv.Close()
+		t.Fatal("expected an error for a missing tape")
+	}
+	if !strings.Contains(err.Error(), "no_such_tape.md") {
+		t.Fatalf("error should mention the tape: %v", err)
+	}
+}
+
+func TestOpenStartCloseManyTimes(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		srv, err := servirtium.Playback(tapePath("single_get.md")).Port(0).Start()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := srv.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := srv.Close(); err != nil { // double close is a no-op
+			t.Fatal(err)
+		}
+	}
+}

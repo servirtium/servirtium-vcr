@@ -145,6 +145,8 @@ def _ensure_loaded() -> None:
         "aether_vcr_embed_open_record", _HANDLE,
         [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int],
     )
+    g["open_error"] = _decl("aether_vcr_embed_open_error", _CSTR, [_HANDLE])
+    g["destroy"] = _decl("aether_vcr_embed_destroy", None, [_HANDLE])
     g["start"] = _decl("aether_vcr_embed_start", ctypes.c_int, [_HANDLE])
     g["stop"] = _decl("aether_vcr_embed_stop", None, [_HANDLE])
     g["stop_and_flush"] = _decl("aether_vcr_embed_stop_and_flush", _CSTR, [_HANDLE, ctypes.c_char_p])

@@ -118,9 +118,13 @@ module Servirtium
 
       handle = @handle
       @handle = nil
-      return Native.call(:stop, handle) unless @record_mode
+      begin
+        return Native.call(:stop, handle) unless @record_mode
 
-      flush(handle)
+        flush(handle)
+      ensure
+        Native.call(:destroy, handle)
+      end
     end
 
     # Record mode: stop the server and DROP the captured recording WITHOUT
@@ -133,15 +137,26 @@ module Servirtium
 
       handle = @handle
       @handle = nil
-      return Native.call(:stop, handle) unless @record_mode
+      begin
+        return Native.call(:stop, handle) unless @record_mode
 
-      Native.take_string(Native.call(:discard, handle, @tape_path))
+        Native.take_string(Native.call(:discard, handle, @tape_path))
+      ensure
+        Native.call(:destroy, handle)
+      end
     end
 
     private
 
     def flush(handle)
-      Secrets.stage(handle, @secret_redactor, resolving: false) if @secret_redactor
+      if @secret_redactor
+        begin
+          Secrets.stage(handle, @secret_redactor, resolving: false)
+        rescue Exception # rubocop:disable Lint/RescueException
+          Native.call(:stop, handle)
+          raise
+        end
+      end
       result_ptr = if @fail_if_changed
                      Native.call(:stop_and_flush_fail_if_changed, handle, @tape_path)
                    else

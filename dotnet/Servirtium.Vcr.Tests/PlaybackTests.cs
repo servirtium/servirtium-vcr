@@ -39,6 +39,25 @@ public class PlaybackTests
     }
 
     [Fact]
+    public void Missing_tape_surfaces_the_open_error()
+    {
+        var e = Assert.Throws<VcrException>(() => Vcr.Playback(TapePath("no_such_tape.md")).Port(0).Start());
+        Assert.Contains("no_such_tape.md", e.Message);
+    }
+
+    [Fact]
+    public void Many_open_start_dispose_cycles_and_double_dispose_are_harmless()
+    {
+        for (int i = 0; i < 50; i++)
+        {
+            var vcr = Vcr.Playback(TapePath("single_get.md")).Port(0).Start();
+            Assert.Equal(1, vcr.TapeLength);
+            vcr.Dispose();
+            vcr.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task Flags_a_path_mismatch_via_diagnostics()
     {
         using var vcr = Vcr.Playback(TapePath("single_get.md")).Port(0).Start();

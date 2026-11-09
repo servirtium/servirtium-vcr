@@ -48,7 +48,6 @@ import std.io
 import std.json
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18100
 const VCR_BASE = "http://127.0.0.1:18100"
@@ -57,25 +56,12 @@ const TAPE_PATH = "integration/climate_interop/tapes/climate_5_endpoints.tape"
 
 // ---- Server-actor + scheduler-helper boilerplate (same as step 2). ----
 
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
-
 // ---- Recorder: proxy handler. ----------------------------------------
 //
 // Registered against each path the SUT will visit. Forwards the
 // request to upstream via std.http.client, captures the response,
-// echoes it back to the SUT verbatim, and calls vcr.record() so
-// the captured exchange ends up on the tape.
+// echoes it back to the SUT verbatim, and calls vcr.record_h on the VCR the route
+// carries as `ud`, so the captured exchange ends up on the tape.
 //
 // Why one handler per path rather than a catch-all: std.http.server's
 // routing layer in v0.90 doesn't reliably match `/(.*)` regex
@@ -91,7 +77,7 @@ actor SchedHelper {
 // path-pattern parameters in v0.90. So: five near-identical handlers,
 // each hard-coding its path.
 
-proxy_to(req: ptr, res: ptr, path: string) {
+proxy_to(vh: ptr, req: ptr, res: ptr, path: string) {
     // Forward the request to upstream. v0.1 only forwards the
     // method + URL, not the request headers — adequate for the
     // GitHub-Pages mirror which doesn't gate on headers.
@@ -128,14 +114,14 @@ proxy_to(req: ptr, res: ptr, path: string) {
     http.response_set_body(res, body_owned)
 
     // Capture for the tape.
-    vcr.record("GET", path, status, ctype_owned, body_owned)
+    vcr.record_h(vh, "GET", path, status, ctype_owned, body_owned)
 }
 
-handle_gbr      (req: ptr, res: ptr, ud: ptr) { proxy_to(req, res, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/gbr.xml") }
-handle_fra      (req: ptr, res: ptr, ud: ptr) { proxy_to(req, res, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/fra.xml") }
-handle_egy      (req: ptr, res: ptr, ud: ptr) { proxy_to(req, res, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/egy.xml") }
-handle_gbr_bad  (req: ptr, res: ptr, ud: ptr) { proxy_to(req, res, "/climateweb/rest/v1/country/annualavg/pr/1985/1995/gbr.xml") }
-handle_mde      (req: ptr, res: ptr, ud: ptr) { proxy_to(req, res, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/mde.xml") }
+handle_gbr      (req: ptr, res: ptr, ud: ptr) { proxy_to(ud, req, res, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/gbr.xml") }
+handle_fra      (req: ptr, res: ptr, ud: ptr) { proxy_to(ud, req, res, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/fra.xml") }
+handle_egy      (req: ptr, res: ptr, ud: ptr) { proxy_to(ud, req, res, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/egy.xml") }
+handle_gbr_bad  (req: ptr, res: ptr, ud: ptr) { proxy_to(ud, req, res, "/climateweb/rest/v1/country/annualavg/pr/1985/1995/gbr.xml") }
+handle_mde      (req: ptr, res: ptr, ud: ptr) { proxy_to(ud, req, res, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/mde.xml") }
 
 // ---- Test helpers ----------------------------------------------------
 
@@ -229,29 +215,32 @@ main() {
 
     raw = http.server_create(PORT)
     if raw == 0 { println("FAIL: server_create"); exit(1) }
+    // The VCR the recorder captures into (a server-less one: the proxy
+    // handlers below serve, it only holds the tape).
+    h = vcr.open_offline()
 
     if is_recording == 1 {
         // Register one proxy handler per path. The recorder doesn't
         // need a tape loaded — it builds the in-memory tape array
         // as it captures.
-        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/gbr.xml", handle_gbr,     0)
-        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/fra.xml", handle_fra,     0)
-        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/egy.xml", handle_egy,     0)
-        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1985/1995/gbr.xml", handle_gbr_bad, 0)
-        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/mde.xml", handle_mde,     0)
+        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/gbr.xml", handle_gbr,     h)
+        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/fra.xml", handle_fra,     h)
+        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/egy.xml", handle_egy,     h)
+        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1985/1995/gbr.xml", handle_gbr_bad, h)
+        http.server_get(raw, "/climateweb/rest/v1/country/annualavg/pr/1980/1999/mde.xml", handle_mde,     h)
     } else {
         // Replay mode: load the tape and let the existing dispatcher
         // serve from it. Skip the manual server_create above —
         // vcr.load() does its own. So we redo it.
-        http.server_stop(raw)
-        raw = vcr.load(TAPE_PATH, PORT)
-        if raw == null { println("FAIL: vcr.load"); exit(1) }
+        http.server_free(raw)
+        vcr.destroy_h(h)
+        h, h_oerr = vcr.open_playback(TAPE_PATH, PORT)
+        if h == null { println("FAIL: vcr.load"); exit(1) }
+        raw = vcr.server_of(h)
     }
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    serr_bg = http.server_start_background(raw)
+    if serr_bg != "" { println("FAIL: start: ${serr_bg}"); exit(1) }
 
     run_assertions()
 
@@ -262,24 +251,27 @@ main() {
             // diff offset. The .actual sibling is left on disk so the
             // developer can inspect both and decide whether to update
             // the committed tape or fix the client/upstream.
-            check_err = vcr.flush_or_check(TAPE_PATH)
+            check_err = vcr.flush_or_check_h(h, TAPE_PATH)
             if check_err != "" {
                 println("\nFAIL: re-record diverged from committed tape:")
                 println("  ${check_err}")
                 exit(1)
             }
-            println("\nRe-record check passed: ${vcr.tape_length()} interactions byte-identical to ${TAPE_PATH}")
+            println("\nRe-record check passed: ${vcr.tape_length_h(h)} interactions byte-identical to ${TAPE_PATH}")
         } else {
-            flush_err = vcr.flush(TAPE_PATH)
+            flush_err = vcr.flush_h(h, TAPE_PATH)
             if flush_err != "" {
                 println("FAIL: tape flush: ${flush_err}"); exit(1)
             }
-            println("\nWrote ${vcr.tape_length()} interactions to ${TAPE_PATH}")
+            println("\nWrote ${vcr.tape_length_h(h)} interactions to ${TAPE_PATH}")
             println("Re-run this test to exercise the replay path.")
         }
     }
 
     println("\n=== All 5 record-then-replay tests passed ===")
-    vcr.eject(raw)
+    // The recorder's own server (record mode) is ours to free; in replay
+    // mode it belongs to the VCR, which destroy_h frees.
+    if is_recording == 1 { http.server_free(raw) }
+    vcr.destroy_h(h)
     exit(0)
 }

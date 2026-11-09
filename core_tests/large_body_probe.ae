@@ -84,9 +84,9 @@ main() {
     // 1. Record: forward the full body upstream; echo must come back whole.
     TAPE = tape_path()
     fs.delete(TAPE)
-    recorder = vcr.load_record(TAPE, upstream, RECORD_PORT)
+    recorder, recorder_oerr = vcr.open_record(TAPE, upstream, RECORD_PORT)
     if recorder == null { println("FAIL: load_record"); exit(1) }
-    serr = http.server_start_background(recorder)
+    serr = http.server_start_background(vcr.server_of(recorder))
     if serr != "" { println("FAIL: recorder start ${serr}"); exit(1) }
     sleep(250)
 
@@ -98,7 +98,7 @@ main() {
     }
     println("  PASS: record forwarded the whole ${blen}-byte body")
 
-    ferr = vcr.eject_record(recorder, TAPE)
+    ferr = vcr.stop_and_flush_h(recorder, TAPE)
     if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
 
     // 2. The tape stored the full body.
@@ -111,9 +111,9 @@ main() {
     println("  PASS: tape stored the recorded body")
 
     // 3. Replay: live body must match the recorded body (empty would 599).
-    playback = vcr.load(TAPE, PLAYBACK_PORT)
+    playback, playback_oerr = vcr.open_playback(TAPE, PLAYBACK_PORT)
     if playback == null { println("FAIL: load playback"); exit(1) }
-    serr2 = http.server_start_background(playback)
+    serr2 = http.server_start_background(vcr.server_of(playback))
     if serr2 != "" { println("FAIL: playback start ${serr2}"); exit(1) }
     sleep(250)
 
@@ -133,7 +133,7 @@ main() {
     }
     println("  PASS: replay matched the ${blen}-byte request body")
 
-    vcr.eject(playback)
+    vcr.destroy_h(playback)
     fs.delete(TAPE)
     println("PASS")
     exit(0)

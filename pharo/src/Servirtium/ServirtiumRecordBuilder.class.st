@@ -280,18 +280,16 @@ ServirtiumRecordBuilder >> start [
 		upstream: upstreamBase
 		host: host
 		port: port.
-	handle isNull ifTrue: [
-		ServirtiumError signal:
-			'vcr record failed to start for tape ''' , tapePath , ''' (upstream ''' , upstreamBase , ''')' ].
-	self applyConfig: handle.
-	note ifNotNil: [
-		self check: (self library note: handle title: note key body: note value) op: 'note' ].
-	(self library start: handle) < 0 ifTrue: [
-		| detail |
-		detail := self drainStartError: handle.
-		self library stop: handle.
-		ServirtiumError signal:
-			'vcr record failed to begin serving for tape ''' , tapePath , ''': ' , detail ].
+	self checkOpened: handle describing: 'vcr record failed to start for tape ''' , tapePath , ''' (upstream ''' , upstreamBase , ''')'.
+	self destroyOnError: handle do: [
+		self applyConfig: handle.
+		note ifNotNil: [
+			self check: (self library note: handle title: note key body: note value) op: 'note' ].
+		(self library start: handle) < 0 ifTrue: [
+			| detail |
+			detail := self drainStartError: handle.
+			ServirtiumError signal:
+				'vcr record failed to begin serving for tape ''' , tapePath , ''': ' , detail ] ].
 	^ (ServirtiumServer handle: handle host: host tape: tapePath recordMode: true failIfChanged: failIfChanged) secretRedactor: secretRedactor
 ]
 

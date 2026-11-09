@@ -10,23 +10,9 @@ import std.string
 import std.tcp
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const RECORD_PORT = 18243
 const REFUSED_UPSTREAM = "http://127.0.0.1:1"
-
-message StartRecord { raw: ptr }
-message Noop {}
-
-actor RecordActor {
-    state s = 0
-    receive { StartRecord(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
 
 tape_path() -> {
     tmp = io.getenv("TEMP")
@@ -37,10 +23,9 @@ tape_path() -> {
 
 main() {
     println("=== VCR record-mode last_error ===")
-    vcr.clear_last_error()
     TAPE_PATH = tape_path()
 
-    raw = vcr.load_record(TAPE_PATH, REFUSED_UPSTREAM, RECORD_PORT)
+    raw, raw_oerr = vcr.open_record(TAPE_PATH, REFUSED_UPSTREAM, RECORD_PORT)
     if raw == null {
         println("FAIL: vcr.load_record returned null")
         exit(1)
@@ -58,9 +43,7 @@ main() {
         exit(1)
     }
 
-    spawn(SchedHelper())
-    record_actor = spawn(RecordActor())
-    record_actor ! StartRecord { raw: raw }
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     // Wait until the listen socket is actually bound and accepting.
     //
@@ -137,46 +120,46 @@ main() {
         exit(1)
     }
 
-    err = vcr.last_error()
+    err = vcr.last_error_h(raw)
     if err == "" {
-        println("FAIL: vcr.last_error() empty after record-mode upstream failure")
+        println("FAIL: vcr.last_error_h(raw) empty after record-mode upstream failure")
         exit(1)
     }
     // last_error (the diagnostic) must be scrubbed the same way as the body.
     if string.contains(err, "[SCRUBBED]") != 1 {
-        println("FAIL: vcr.last_error() was not scrubbed")
+        println("FAIL: vcr.last_error_h(raw) was not scrubbed")
         println("      actual: ${err}")
         exit(1)
     }
     if string.contains(err, "upstream") == 1 {
-        println("FAIL: vcr.last_error() still contains the un-redacted token")
+        println("FAIL: vcr.last_error_h(raw) still contains the un-redacted token")
         println("      actual: ${err}")
         exit(1)
     }
-    if vcr.last_kind() != vcr.KIND_RECORD_ERROR {
-        println("FAIL: expected KIND_RECORD_ERROR, got ${vcr.last_kind()}")
+    if vcr.last_kind_h(raw) != vcr.KIND_RECORD_ERROR {
+        println("FAIL: expected KIND_RECORD_ERROR, got ${vcr.last_kind_h(raw)}")
         exit(1)
     }
-    if vcr.last_index() != -1 {
-        println("FAIL: expected last_index -1 for failed recording, got ${vcr.last_index()}")
+    if vcr.last_index_h(raw) != -1 {
+        println("FAIL: expected last_index -1 for failed recording, got ${vcr.last_index_h(raw)}")
         exit(1)
     }
 
-    vcr.clear_last_error()
-    if vcr.last_error() != "" {
+    vcr.clear_last_error_h(raw)
+    if vcr.last_error_h(raw) != "" {
         println("FAIL: clear_last_error did not clear last_error")
         exit(1)
     }
-    if vcr.last_kind() != vcr.KIND_OK {
+    if vcr.last_kind_h(raw) != vcr.KIND_OK {
         println("FAIL: clear_last_error did not reset last_kind")
         exit(1)
     }
-    if vcr.last_index() != -1 {
+    if vcr.last_index_h(raw) != -1 {
         println("FAIL: clear_last_error did not reset last_index")
         exit(1)
     }
 
     println("PASS")
-    vcr.eject_record(raw, TAPE_PATH)
+    vcr.stop_and_flush_h(raw, TAPE_PATH)
     exit(0)
 }

@@ -20,7 +20,8 @@ import java.lang.invoke.MethodHandle;
  * them via {@link #freeString} (see {@link #takeString}).
  *
  * <p>An opaque server handle is a {@code void*} carried as a {@link MemorySegment}
- * address; {@link MemorySegment#NULL} signals failure.
+ * address; an open always returns a non-NULL handle; read {@code open_error} and
+ * {@code destroy} it (every handle is destroyed exactly once).
  */
 final class NativeMethods {
 
@@ -48,6 +49,14 @@ final class NativeMethods {
     static final MethodHandle OPEN_RECORD = down(
             "aether_vcr_embed_open_record",
             FunctionDescriptor.of(C_PTR, C_PTR, C_PTR, C_PTR, C_PTR, C_INT));
+
+    static final MethodHandle OPEN_ERROR = down(
+            "aether_vcr_embed_open_error",
+            FunctionDescriptor.of(C_STR, C_PTR));
+
+    static final MethodHandle DESTROY = down(
+            "aether_vcr_embed_destroy",
+            FunctionDescriptor.ofVoid(C_PTR));
 
     static final MethodHandle START = down(
             "aether_vcr_embed_start",

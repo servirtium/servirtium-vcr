@@ -3,8 +3,10 @@
  * Declares the aether_vcr_embed_* symbols (from core/embed.ae) so Swift can
  * call them DIRECTLY via a clang module map — no glue .c, no second copy of the
  * marshalling rules. Handle-based: N independent VCR servers can run
- * concurrently in one process, each keyed by its own handle; NULL from an
- * open_* means failure. Every char* result is caller-owned and NUL-terminated;
+ * concurrently in one process, each keyed by its own handle. An open_* always
+ * returns a handle (NULL only when out of memory); a failed open is a dead
+ * handle: read aether_vcr_embed_open_error ("" = ok), then destroy it. Every
+ * handle is destroyed exactly once with aether_vcr_embed_destroy. Every char* result is caller-owned and NUL-terminated;
  * free it with aether_vcr_embed_free_string. Most config setters return an
  * error string, empty meaning OK.
  *
@@ -21,6 +23,8 @@ void *aether_vcr_embed_open_playback_url(const char *label, const char *url,
 void *aether_vcr_embed_open_record(const char *label, const char *tape,
                                    const char *upstream_base, const char *host,
                                    int port);
+char *aether_vcr_embed_open_error(void *h);
+void  aether_vcr_embed_destroy(void *h);
 int   aether_vcr_embed_start(void *h);
 void  aether_vcr_embed_stop(void *h);
 char *aether_vcr_embed_stop_and_flush(void *h, const char *tape);

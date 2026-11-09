@@ -6,7 +6,7 @@ module servirtium.example/consumer
 
 go 1.21
 
-require github.com/servirtium/servirtium-vcr/go/v2 v0.0.0
+require github.com/servirtium/servirtium-vcr/go/v2 v2.0.0
 
 // The "published" module copy staged by go/.example.ae (a sibling of this
 // consumer under target/, deliberately WITHOUT the repo's core/ next to it, so

@@ -8,8 +8,8 @@
  * control surface (open/configure/start/stop/diagnostics/mutations). All
  * record/replay semantics live in the Aether core, not here.
  *
- * The opaque server handle is passed back to Elixir as a 64-bit integer
- * (uintptr_t). open_* run fast (binding only), start_* spawn a detached
+ * The opaque server handle is passed back to Erlang as a NIF resource
+ * reference (see vcr_res below). open_* run fast (binding only), start_* spawn a detached
  * pthread inside libservirtium_vcr, so no NIF here blocks the scheduler.
  *
  * PER-LISTENER: N independent servers can run concurrently in one process,
@@ -32,6 +32,8 @@
 extern void *aether_vcr_embed_open_playback(const char *label, const char *tape_path, const char *host, int port);
 extern void *aether_vcr_embed_open_playback_url(const char *label, const char *tape_url, const char *host, int port);
 extern void *aether_vcr_embed_open_record(const char *label, const char *tape_path, const char *upstream_base, const char *host, int port);
+extern char *aether_vcr_embed_open_error(void *server);
+extern void  aether_vcr_embed_destroy(void *server);
 extern int   aether_vcr_embed_start(void *server);
 extern void  aether_vcr_embed_stop(void *server);
 extern char *aether_vcr_embed_stop_and_flush(void *server, const char *tape_path);
@@ -154,17 +156,62 @@ static ERL_NIF_TERM take_cstr(ErlNifEnv *env, char *s)
     return bin;
 }
 
+/* The VCR handle is an Erlang NIF resource (an opaque reference term), not a
+ * raw pointer: the Erlang-side server value is immutable, so "null the stored
+ * handle on close" lives in the resource. destroy/1 is explicit and
+ * idempotent (the second call sees NULL and does nothing); the resource
+ * destructor is only a safety net for a handle that was never closed. */
+typedef struct { void *vcr; } vcr_res;
+static ErlNifResourceType *VCR_RES = NULL;
+
+static void vcr_res_dtor(ErlNifEnv *env, void *obj)
+{
+    UNUSED(env);
+    vcr_res *r = (vcr_res *)obj;
+    if (r->vcr) {
+        aether_vcr_embed_destroy(r->vcr);   /* stops it if still serving */
+        r->vcr = NULL;
+    }
+}
+
+static int load(ErlNifEnv *env, void **priv, ERL_NIF_TERM info)
+{
+    UNUSED(priv); UNUSED(info);
+    VCR_RES = enif_open_resource_type(env, NULL, "servirtium_vcr", vcr_res_dtor,
+                                      ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, NULL);
+    return VCR_RES ? 0 : 1;
+}
+
+/* 1 and *out set for a live handle; 0 for a non-handle or a destroyed one. */
 static int get_handle(ErlNifEnv *env, ERL_NIF_TERM term, void **out)
 {
-    ErlNifUInt64 v;
-    if (!enif_get_uint64(env, term, &v)) return 0;
-    *out = (void *)(uintptr_t)v;
+    vcr_res *r;
+    if (!enif_get_resource(env, term, VCR_RES, (void **)&r)) return 0;
+    if (!r->vcr) return 0;
+    *out = r->vcr;
     return 1;
 }
 
+/* Wrap an open_* result (always non-NULL per the ABI) in a resource term. */
 static ERL_NIF_TERM make_handle(ErlNifEnv *env, void *p)
 {
-    return enif_make_uint64(env, (ErlNifUInt64)(uintptr_t)p);
+    if (!p) return enif_raise_exception(env, enif_make_atom(env, "enomem"));
+    vcr_res *r = enif_alloc_resource(VCR_RES, sizeof(vcr_res));
+    if (!r) {
+        aether_vcr_embed_destroy(p);
+        return enif_raise_exception(env, enif_make_atom(env, "enomem"));
+    }
+    r->vcr = p;
+    ERL_NIF_TERM t = enif_make_resource(env, r);
+    enif_release_resource(r);
+    return t;
+}
+
+/* True when TERM is a handle resource that destroy/1 has already freed. */
+static int is_destroyed_handle(ErlNifEnv *env, ERL_NIF_TERM term)
+{
+    vcr_res *r;
+    return enif_get_resource(env, term, VCR_RES, (void **)&r) && r->vcr == NULL;
 }
 
 /* ---- lifecycle: open -> start ----------------------------------------- */
@@ -184,7 +231,7 @@ static ERL_NIF_TERM nif_open_playback(ErlNifEnv *env, int argc, const ERL_NIF_TE
     }
     void *h = aether_vcr_embed_open_playback(label, tape, host, port);
     enif_free(label); enif_free(tape); enif_free(host);
-    return make_handle(env, h);   /* 0 == NULL == failure, surfaced in Elixir */
+    return make_handle(env, h);   /* never NULL; a failed open is read with open_error/1 */
 }
 
 static ERL_NIF_TERM nif_open_record(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
@@ -207,6 +254,27 @@ static ERL_NIF_TERM nif_open_record(ErlNifEnv *env, int argc, const ERL_NIF_TERM
     return make_handle(env, h);
 }
 
+static ERL_NIF_TERM nif_open_error(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_open_error(h));
+}
+
+/* Explicit, idempotent destroy: frees the VCR once, a second call is a no-op. */
+static ERL_NIF_TERM nif_destroy(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    vcr_res *r;
+    if (!enif_get_resource(env, argv[0], VCR_RES, (void **)&r)) return enif_make_badarg(env);
+    if (r->vcr) {
+        aether_vcr_embed_destroy(r->vcr);
+        r->vcr = NULL;
+    }
+    return enif_make_atom(env, "ok");
+}
+
 static ERL_NIF_TERM nif_start(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
@@ -219,6 +287,7 @@ static ERL_NIF_TERM nif_stop(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]
 {
     UNUSED(argc);
     void *h;
+    if (is_destroyed_handle(env, argv[0])) return enif_make_atom(env, "ok");
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     aether_vcr_embed_stop(h);
     return enif_make_atom(env, "ok");
@@ -228,6 +297,7 @@ static ERL_NIF_TERM nif_stop_and_flush(ErlNifEnv *env, int argc, const ERL_NIF_T
 {
     UNUSED(argc);
     void *h;
+    if (is_destroyed_handle(env, argv[0])) return take_cstr(env, NULL);
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     char *tape = term_to_cstr(env, argv[1]);
     if (!tape) return enif_make_badarg(env);
@@ -240,6 +310,7 @@ static ERL_NIF_TERM nif_stop_and_flush_fail_if_changed(ErlNifEnv *env, int argc,
 {
     UNUSED(argc);
     void *h;
+    if (is_destroyed_handle(env, argv[0])) return take_cstr(env, NULL);
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     char *tape = term_to_cstr(env, argv[1]);
     if (!tape) return enif_make_badarg(env);
@@ -252,6 +323,7 @@ static ERL_NIF_TERM nif_discard(ErlNifEnv *env, int argc, const ERL_NIF_TERM arg
 {
     UNUSED(argc);
     void *h;
+    if (is_destroyed_handle(env, argv[0])) return take_cstr(env, NULL);
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     char *tape = term_to_cstr(env, argv[1]);
     if (!tape) return enif_make_badarg(env);
@@ -327,12 +399,14 @@ static ERL_NIF_TERM nif_last_index(ErlNifEnv *env, int argc, const ERL_NIF_TERM 
 
 static ERL_NIF_TERM nif_secret_begin(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     void *h;
+    if (is_destroyed_handle(env, argv[0])) return take_cstr(env, NULL);   /* closed twice: nothing to stage */
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     int part; if (!enif_get_int(env, argv[1], &part)) return enif_make_badarg(env);
     return take_cstr(env, aether_vcr_embed_secret_begin(h, part));
 }
 static ERL_NIF_TERM nif_secret_next(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     void *h;
+    if (is_destroyed_handle(env, argv[0])) return enif_make_int(env, 0);   /* closed twice: nothing to stage */
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     return enif_make_int(env, aether_vcr_embed_secret_next(h));
 }
@@ -355,11 +429,13 @@ static ERL_NIF_TERM nif_secret_apply(ErlNifEnv *env, int argc, const ERL_NIF_TER
 }
 static ERL_NIF_TERM nif_secret_finish(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     void *h;
+    if (is_destroyed_handle(env, argv[0])) return take_cstr(env, NULL);   /* closed twice: nothing to stage */
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     return take_cstr(env, aether_vcr_embed_secret_finish(h));
 }
 static ERL_NIF_TERM nif_secret_abort(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     void *h;
+    if (is_destroyed_handle(env, argv[0])) return enif_make_atom(env, "ok");   /* closed twice: nothing to stage */
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     aether_vcr_embed_secret_abort(h); return enif_make_atom(env, "ok");
 }
@@ -875,6 +951,8 @@ CLEAR_NIF(nif_clear_playback_range,  aether_vcr_embed_clear_playback_range)
 static ErlNifFunc nif_funcs[] = {
     {"open_playback", 4, nif_open_playback, 0},
     {"open_record",   5, nif_open_record,   0},
+    {"open_error",    1, nif_open_error,    0},
+    {"destroy",       1, nif_destroy,       0},
     {"start",         1, nif_start,         0},
     {"stop",          1, nif_stop,          0},
     {"stop_and_flush", 2, nif_stop_and_flush, 0},
@@ -960,4 +1038,4 @@ static ErlNifFunc nif_funcs[] = {
     {"clear_format_options",  1, nif_clear_format_options,  0},
 };
 
-ERL_NIF_INIT(servirtium_nif, nif_funcs, NULL, NULL, NULL, NULL)
+ERL_NIF_INIT(servirtium_nif, nif_funcs, load, NULL, NULL, NULL)

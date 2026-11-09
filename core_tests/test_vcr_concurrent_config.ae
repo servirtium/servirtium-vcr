@@ -1,0 +1,125 @@
+// Per-handle configuration from many threads at once.
+//
+// Reported 2026-11-09 (Servirtium.Vcr 2.0.0-alpha.14, .NET): eight VCRs
+// started in parallel, each `.RemoveHeader(RequestHeaders, "X-Noise")`,
+// sometimes failed playback with a header mismatch naming X-Noise, the very
+// header that VCR had been told to drop. The removal had landed in ANOTHER
+// VCR's rules: the handle setters used to select their handle through one
+// process-wide "current VCR" slot and then call the no-handle setter, so two
+// threads configuring two VCRs could interleave between those two steps.
+//
+// This test configures WORKERS handles on WORKERS threads at once, ROUNDS
+// times, every worker its own distinct rules, then (single-threaded, after
+// the join) checks that each handle holds exactly the rules its own worker
+// gave it: one header removal, one redaction from redact_h plus one from
+// redact_header_h, one unredaction, one normalization (and a staged note), all
+// naming the same worker, and the indent flag only on even workers.
+
+import core.vcr
+import std.list
+import std.string
+import std.worker
+
+extern exit(code: int)
+
+const WORKERS = 16
+const ROUNDS = 25
+const TAPE = "core_tests/tapes/single_get.tape"
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+// Configure handle `h` as worker `i`. Every rule carries `w<i>` so a rule
+// that leaked into another handle is visible as a foreign worker id.
+configure(h: ptr, i: int) {
+    w = "w${i}"
+    e1 = vcr.remove_header_h(h, vcr.FIELD_REQUEST_HEADERS, "X-Noise-${w}")
+    e2 = vcr.redact_h(h, vcr.FIELD_RESPONSE_BODY, "secret-${w}", "R-${w}")
+    e3 = vcr.unredact_h(h, vcr.FIELD_RESPONSE_BODY, "U-${w}", "plain-${w}")
+    e4 = vcr.normalize_whole_tape_h(h, "tok-${w}-[0-9]+", "tok-${w}")
+    e5 = vcr.note_h(h, "title-${w}", "body-${w}")
+    e6 = vcr.redact_header_h(h, vcr.FIELD_REQUEST_HEADERS, "X-Secret-${w}", "S-${w}")
+    if i % 2 == 0 { vcr.indent_code_blocks_h(h) }
+    if e1 != "" || e2 != "" || e3 != "" || e4 != "" || e5 != "" || e6 != "" {
+        println("worker ${w}: setter error [${e1}|${e2}|${e3}|${e4}|${e5}|${e6}]")
+    }
+}
+
+// "" when handle h (configured by worker i) holds exactly worker i's rules.
+check(h: ptr, i: int) -> string {
+    w = "w${i}"
+    nr = vcr.get_header_removal_count_h(h)
+    if nr != 1 { return "${w}: ${nr} header removals (want 1)" }
+    if vcr.get_header_removal_name_h(h, 0) != "X-Noise-${w}" { return "${w}: removal ${vcr.get_header_removal_name_h(h, 0)}" }
+    nred = vcr.get_redaction_count_h(h)
+    if nred != 2 { return "${w}: ${nred} redactions (want 2)" }
+    j = 0
+    while j < nred {
+        rep = vcr.get_redaction_replacement_h(h, j)
+        if string.ends_with(rep, "-${w}") != 1 { return "${w}: foreign redaction replacement '${rep}'" }
+        j = j + 1
+    }
+    nun = vcr.get_unredaction_count_h(h)
+    if nun != 1 { return "${w}: ${nun} unredactions (want 1)" }
+    if vcr.get_unredaction_replacement_h(h, 0) != "plain-${w}" { return "${w}: unredaction ${vcr.get_unredaction_replacement_h(h, 0)}" }
+    nn = vcr.get_normalization_count_h(h)
+    if nn != 1 { return "${w}: ${nn} normalizations (want 1)" }
+    if vcr.get_normalization_name_h(h, 0) != "tok-${w}" { return "${w}: normalization ${vcr.get_normalization_name_h(h, 0)}" }
+    want_indent = 0
+    if i % 2 == 0 { want_indent = 1 }
+    if vcr.get_indent_code_blocks_h(h) != want_indent { return "${w}: indent ${vcr.get_indent_code_blocks_h(h)} (want ${want_indent})" }
+    return ""
+}
+
+main() {
+    println("=== per-handle config from ${WORKERS} threads x ${ROUNDS} rounds ===")
+    worker.pool_size(WORKERS)
+    bad_rounds = 0
+    first = ""
+    round = 0
+    while round < ROUNDS {
+        // Open every handle first (serially), so the race under test is
+        // configuration alone, not opening.
+        handles = list.new()
+        k = 0
+        while k < WORKERS {
+            h, h_oerr = vcr.open_playback(TAPE, 0)
+            if h == null { fail("load: ${h_oerr}") }
+            list.add(handles, h)
+            k = k + 1
+        }
+        k = 0
+        while k < WORKERS {
+            h, _ = list.get(handles, k)
+            i = k
+            worker.run(|| { configure(h, i); return h }, |r: @keep ptr| { })
+            k = k + 1
+        }
+        worker.wait()
+        k = 0
+        bad = 0
+        while k < WORKERS {
+            h, _ = list.get(handles, k)
+            err = check(h, k)
+            if err != "" {
+                bad = bad + 1
+                if first == "" { first = "round ${round}: ${err}" }
+            }
+            k = k + 1
+        }
+        if bad > 0 { bad_rounds = bad_rounds + 1 }
+        k = 0
+        while k < WORKERS {
+            h, _ = list.get(handles, k)
+            vcr.destroy_h(h)
+            k = k + 1
+        }
+        round = round + 1
+    }
+    println("rounds with a handle holding another handle's rules: ${bad_rounds}/${ROUNDS}")
+    if bad_rounds > 0 { fail(first) }
+    println("PASS")
+    exit(0)
+}

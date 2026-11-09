@@ -1,0 +1,113 @@
+// Many requests at once on ONE ordered-playback VCR.
+//
+// std.http serves from a worker pool, so a VCR's dispatcher runs on several
+// threads at once when the SUT makes concurrent requests. Ordered playback
+// reads the cursor, matches that interaction and advances the cursor; done
+// as separate steps, two requests could both read cursor k, both be served
+// interaction k, and both write k + 1: one interaction served twice, another
+// never, with no mismatch reported. The VCR now holds its own Tape lock for
+// the whole read-match-advance.
+//
+// The tape has N interactions, every one `GET /next` answering `body-<i>`, so
+// any request matches whatever the cursor points at. Each round resets the
+// cursor and sends N concurrent requests from N threads; every body must come
+// back exactly once, and the tape must be fully consumed.
+
+import core.vcr
+import std.http
+import std.http.client
+import std.list
+import std.string
+import std.sync
+import std.worker
+
+extern exit(code: int)
+
+const N = 24
+const ROUNDS = 30
+const PORT = 18361
+const TAPE = "core_tests/tapes/same_vcr_cursor.tape"
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+// GET /next once; count the body index it was served (or the "bad" cell).
+fetch(base: string, cells: ptr, bad: ptr) {
+    req = client.request("GET", "${base}/next")
+    client.set_timeout(req, 10s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { sync.atomic_add(bad, 1); return }
+    status = client.response_status(resp)
+    body = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    if status != 200 || string.starts_with(body, "body-") != 1 { sync.atomic_add(bad, 1); return }
+    k, kerr = string.to_int(string.trim(string.substring(body, 5, string.length(body))))
+    if kerr != "" || k < 0 || k >= N { sync.atomic_add(bad, 1); return }
+    cell, _ = list.get(cells, k)
+    sync.atomic_add(cell, 1)
+}
+
+main() {
+    println("=== ${N} concurrent requests on one ordered VCR x ${ROUNDS} rounds ===")
+    h, h_oerr = vcr.open_playback(TAPE, PORT)
+    if h == null { fail("load: ${h_oerr}") }
+    if vcr.tape_length_h(h) != N { fail("tape_length ${vcr.tape_length_h(h)} (want ${N})") }
+    serr = http.server_start_background(vcr.server_of(h))
+    if serr != "" { fail("start: ${serr}") }
+    sleep(300)
+    base = "http://127.0.0.1:${PORT}"
+    worker.pool_size(N)
+
+    cells = list.new()
+    k = 0
+    while k < N {
+        list.add(cells, sync.atomic_new(0))
+        k = k + 1
+    }
+    bad = sync.atomic_new(0)
+
+    bad_rounds = 0
+    first = ""
+    round = 0
+    while round < ROUNDS {
+        vcr.reset_cursor_h(h)
+        k = 0
+        while k < N {
+            cell, _ = list.get(cells, k)
+            sync.atomic_store(cell, 0)
+            k = k + 1
+        }
+        sync.atomic_store(bad, 0)
+        k = 0
+        while k < N {
+            worker.run(|| { fetch(base, cells, bad); return cells }, |r: @keep ptr| { })
+            k = k + 1
+        }
+        worker.wait()
+        detail = ""
+        k = 0
+        while k < N {
+            cell, _ = list.get(cells, k)
+            c = sync.atomic_load(cell)
+            if c != 1 { detail = "${detail} body-${k} x${c}" }
+            k = k + 1
+        }
+        nbad = sync.atomic_load(bad)
+        if nbad != 0 { detail = "${detail} (${nbad} failed requests)" }
+        unconsumed = vcr.assert_all_consumed_h(h)
+        if unconsumed != "" { detail = "${detail} [${unconsumed}]" }
+        if detail != "" {
+            bad_rounds = bad_rounds + 1
+            if first == "" { first = "round ${round}:${detail}" }
+        }
+        round = round + 1
+    }
+    vcr.destroy_h(h)
+    println("rounds where an interaction was served twice or never: ${bad_rounds}/${ROUNDS}")
+    if bad_rounds > 0 { fail(first) }
+    println("PASS")
+    exit(0)
+}

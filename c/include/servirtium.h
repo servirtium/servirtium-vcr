@@ -79,9 +79,10 @@ typedef enum {
 typedef struct sv_vcr sv_vcr;
 
 /* Replay a markdown tape from disk on an OS-chosen free port (127.0.0.1).
- * Returns NULL if the tape can't be opened or the server can't start; the
- * reason is available from sv_open_error(). */
-sv_vcr *sv_playback(const char *tape_path);
+ * Returns NULL if the tape can't be opened or the server can't start. Every
+ * open function takes a trailing `sv_str *error` (NULL allowed): on failure it
+ * receives the reason (release with sv_free), on success it is set empty. */
+sv_vcr *sv_playback(const char *tape_path, sv_str *error);
 
 typedef struct {
     const char *method, *path, *location, *format, *field_path;
@@ -92,28 +93,26 @@ typedef struct {
 typedef const char *(*sv_secret_redactor_fn)(const char *key, const sv_secret_request *, void *context);
 typedef const char *(*sv_secret_resolver_fn)(const char *token, void *context);
 sv_vcr *sv_playback_with_secrets(const char *tape, const char *host, int port,
-                                 sv_secret_resolver_fn resolver, void *context);
+                                 sv_secret_resolver_fn resolver, void *context,
+                                 sv_str *error);
 void sv_secret_redactor(sv_vcr *, sv_secret_redactor_fn, void *context);
 
 /* Replay a tape bound to a specific host/port. port 0 = OS-assigned. */
-sv_vcr *sv_playback_on(const char *tape_path, const char *host, int port);
+sv_vcr *sv_playback_on(const char *tape_path, const char *host, int port,
+                       sv_str *error);
 
 /* Replay a tape fetched from a URL rather than the filesystem. */
-sv_vcr *sv_playback_url(const char *tape_url);
+sv_vcr *sv_playback_url(const char *tape_url, sv_str *error);
 
 /* Record: forward each request to upstream_base, return the live response to
  * the SUT, and capture the exchange. The tape is written by
  * sv_close_and_flush — plain sv_close discards the recording. */
-sv_vcr *sv_record(const char *tape_path, const char *upstream_base);
+sv_vcr *sv_record(const char *tape_path, const char *upstream_base,
+                  sv_str *error);
 
 /* Record, bound to a specific host/port. port 0 = OS-assigned. */
 sv_vcr *sv_record_on(const char *tape_path, const char *upstream_base,
-                     const char *host, int port);
-
-/* Why the most recent open call (any sv_playback / sv_record variant) in this
- * thread returned NULL. Points at static storage — copy it if you need it to
- * outlive the next call. "" when the last open succeeded. */
-const char *sv_open_error(void);
+                     const char *host, int port, sv_str *error);
 
 /* ---- introspection ----------------------------------------------------- */
 

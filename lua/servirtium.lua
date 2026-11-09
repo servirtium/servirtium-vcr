@@ -70,7 +70,7 @@ local function secret_stage(handle, callback, resolving)
         end
         check(C.secret_finish(handle))
     end)
-    if not ok then C.secret_abort(handle); C.stop(handle); error(err, 0) end
+    if not ok then C.secret_abort(handle); error(err, 0) end
 end
 
 -- ---- Server ---------------------------------------------------------------
@@ -161,15 +161,23 @@ end
 function Server:close()
     if self._closed then return "" end
     self._closed = true
-    if self._secret_redactor then secret_stage(self._handle, self._secret_redactor, false) end
+    local handle = self._handle
+    if self._secret_redactor then
+        local ok, err = pcall(secret_stage, handle, self._secret_redactor, false)
+        if not ok then C.stop(handle); C.destroy(handle); error(err, 0) end
+    end
+    local msg = ""
     if self._mode == "record" then
         if self._fail_if_changed then
-            return C.stop_and_flush_fail_if_changed(self._handle, self._tape)
+            msg = C.stop_and_flush_fail_if_changed(handle, self._tape)
+        else
+            msg = C.stop_and_flush(handle, self._tape)
         end
-        return C.stop_and_flush(self._handle, self._tape)
+    else
+        C.stop(handle)
     end
-    C.stop(self._handle)
-    return ""
+    C.destroy(handle)
+    return msg
 end
 
 -- Record mode: stop the server and DROP the captured recording WITHOUT writing
@@ -179,11 +187,15 @@ end
 function Server:discard()
     if self._closed then return "" end
     self._closed = true
+    local handle = self._handle
+    local msg = ""
     if self._mode == "record" then
-        return C.discard(self._handle, self._tape)
+        msg = C.discard(handle, self._tape)
+    else
+        C.stop(handle)
     end
-    C.stop(self._handle)
-    return ""
+    C.destroy(handle)
+    return msg
 end
 
 -- Playback only: replay just interactions from..to (inclusive, 0-based, the
@@ -472,13 +484,18 @@ function PlaybackBuilder:start()
     end)
     if not ok then
         C.stop(handle)
+        C.destroy(handle)
         return nil, tostring(perr)
     end
 
-    if self._secret_resolver then secret_stage(handle, self._secret_resolver, true) end
+    if self._secret_resolver then
+        local sok, serr = pcall(secret_stage, handle, self._secret_resolver, true)
+        if not sok then C.stop(handle); C.destroy(handle); error(serr, 0) end
+    end
     if C.start(handle) < 0 then
         local msg = C.last_error(handle)
         C.stop(handle)
+        C.destroy(handle)
         return nil, (msg ~= "" and msg) or "playback failed to begin serving"
     end
     return new_server(handle, "playback", self._tape, self._host)
@@ -732,12 +749,14 @@ function RecordBuilder:start()
     end)
     if not ok then
         C.stop(handle)
+        C.destroy(handle)
         return nil, tostring(perr)
     end
 
     if C.start(handle) < 0 then
         local msg = C.last_error(handle)
         C.stop(handle)
+        C.destroy(handle)
         return nil, (msg ~= "" and msg) or "record failed to begin serving"
     end
     local server = new_server(handle, "record", self._tape, self._host, self._fail_if_changed)

@@ -5,7 +5,8 @@
 //! Per-listener contract (matching the Aether side): N independent VCR
 //! servers can run concurrently in one process, each keyed by its own
 //! handle; every config / diagnostic / lifecycle call takes the handle.
-//! Lifecycle is open -> configure(handle) -> start. Returned `char*` values
+//! Lifecycle is open -> open_error -> configure(handle) -> start -> stop ->
+//! destroy. Returned `char*` values
 //! are caller-owned and NUL-terminated; copy them into a Rust `String` via
 //! [`take_string`] which frees them per the ABI.
 
@@ -15,7 +16,8 @@ use std::sync::{Mutex, OnceLock};
 
 use libloading::{Library, Symbol};
 
-/// Opaque server handle from the native side. `NULL` means failure.
+/// Opaque server handle from the native side. `open_*` always returns non-NULL
+/// (NULL only on out-of-memory); check `open_error`, and `destroy` every handle once.
 pub(crate) type Handle = *mut c_void;
 
 /// Function-pointer table resolved once from the loaded library. Holding
@@ -36,6 +38,21 @@ pub(crate) struct Native {
     ) -> Handle,
     pub start: unsafe extern "C" fn(Handle) -> c_int,
     pub stop: unsafe extern "C" fn(Handle),
+    /// `char *aether_vcr_embed_open_error(void *h)`. Returns `""` when the open
+    /// succeeded, else the reason it failed; the string is caller-owned (free it
+    /// with `free_string`, i.e. [`take_string`]). Every `open_*` call returns a
+    /// non-NULL handle (NULL only on out-of-memory); a failed open returns a
+    /// "dead" handle carrying its own reason. Read the reason, then `destroy`
+    /// the handle. `start` returns `< 0` on a dead handle. There is no
+    /// process-wide "last open error" any more: `last_error(NULL)` returns `""`.
+    pub open_error: unsafe extern "C" fn(Handle) -> *mut c_char,
+    /// `void aether_vcr_embed_destroy(void *h)`. Frees the VCR (stops it if it
+    /// is still serving, frees the HTTP server and the record). EVERY handle an
+    /// `open_*` returned, failed or not, must be destroyed exactly once, and is
+    /// invalid afterwards. `stop` / `stop_and_flush*` / `discard` only stop;
+    /// diagnostics (`last_error`, `last_kind`, `assert_*`, `tape_length`, ...) stay
+    /// readable between stop and destroy, never after destroy.
+    pub destroy: unsafe extern "C" fn(Handle),
     pub stop_and_flush: unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
     pub stop_and_flush_fail_if_changed:
         unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
@@ -244,6 +261,8 @@ fn load() -> Result<Native, String> {
         open_record: sym!(b"aether_vcr_embed_open_record\0"),
         start: sym!(b"aether_vcr_embed_start\0"),
         stop: sym!(b"aether_vcr_embed_stop\0"),
+        open_error: sym!(b"aether_vcr_embed_open_error\0"),
+        destroy: sym!(b"aether_vcr_embed_destroy\0"),
         stop_and_flush: sym!(b"aether_vcr_embed_stop_and_flush\0"),
         stop_and_flush_fail_if_changed: sym!(b"aether_vcr_embed_stop_and_flush_fail_if_changed\0"),
         stop_and_flush_or_check: sym!(b"aether_vcr_embed_stop_and_flush_or_check\0"),

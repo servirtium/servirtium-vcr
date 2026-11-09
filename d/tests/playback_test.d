@@ -205,6 +205,20 @@ int main() {
             Vcr.playback(tape ~ ".nonexistent"));
         ck("missing tape throws VcrException", msg !is null);
         ck("the exception explains why", msg !is null && msg.canFind("open failed"));
+        ck("the exception names the missing tape (open_error path)",
+           msg !is null && msg.canFind("nonexistent"));
+    }
+
+    // ---- open/start/close fifty times; a second close is harmless ----
+    {
+        bool allOk = true;
+        foreach (i; 0 .. 50) {
+            auto again = Vcr.playback(tape);
+            if (again.port() <= 0) allOk = false;
+            again.close();
+            again.close();
+        }
+        ck("50 open/start/close cycles with double close", allOk);
     }
 
     // ---- playback of the canonical tape ----

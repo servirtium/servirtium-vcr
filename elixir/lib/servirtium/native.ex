@@ -21,8 +21,8 @@ defmodule Servirtium.Native do
   N independent VCR servers can run concurrently in one process, each keyed by
   its own handle; every config / diagnostic / lifecycle function takes the
   handle. Lifecycle is `open_* -> configure(handle) -> start`. The opaque
-  server handle is a 64-bit integer (`uintptr_t`); a `0` from `open_*` means
-  failure.
+  server handle is a NIF resource reference; `open_*` always returns one (read `open_error/1`: `""` means it
+  opened; otherwise `destroy/1` it). `destroy/1` is idempotent.
 
   String results follow the ABI ownership rule: every returned `char*` is
   caller-owned and NUL-terminated; the NIF copies it into a binary and frees the
@@ -38,6 +38,8 @@ defmodule Servirtium.Native do
 
   defdelegate open_playback(label, tape_path, host, port), to: :servirtium_nif
   defdelegate open_record(label, tape_path, upstream_base, host, port), to: :servirtium_nif
+  defdelegate open_error(handle), to: :servirtium_nif
+  defdelegate destroy(handle), to: :servirtium_nif
   defdelegate start(handle), to: :servirtium_nif
   defdelegate stop(handle), to: :servirtium_nif
   defdelegate stop_and_flush(handle, tape_path), to: :servirtium_nif

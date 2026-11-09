@@ -5,6 +5,19 @@ import * as N from './native'
 const tape = (name: string) => path.join(__dirname, '..', 'tapes', name)
 
 describe('playback', () => {
+  it('reports a missing tape through the open error', () => {
+    expect(() => Vcr.playback(tape('no_such_tape.md')).port(0).start()).toThrow(/no_such_tape\.md/)
+  })
+
+  it('opens, starts and closes 50 times; double close is harmless', () => {
+    for (let i = 0; i < 50; i++) {
+      const vcr = Vcr.playback(tape('single_get.md')).port(0).start()
+      expect(vcr.tapeLength).toBe(1)
+      vcr.close()
+      vcr.close()
+    }
+  })
+
   it('replays a recorded GET on a dynamic port', async () => {
     const vcr = Vcr.playback(tape('single_get.md'))
       .label('replays a recorded GET')

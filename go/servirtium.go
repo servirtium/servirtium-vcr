@@ -45,6 +45,8 @@ void*  aether_vcr_embed_open_playback_url(const char* label, const char* tape_ur
 void*  aether_vcr_embed_open_record(const char* label, const char* tape_path, const char* upstream_base, const char* host, int port);
 int    aether_vcr_embed_start(void* server);
 void   aether_vcr_embed_stop(void* server);
+char*  aether_vcr_embed_open_error(void* server);
+void   aether_vcr_embed_destroy(void* server);
 char*  aether_vcr_embed_stop_and_flush(void* server, const char* tape_path);
 char*  aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path);
 char*  aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path);
@@ -348,6 +350,7 @@ func secretStage(handle unsafe.Pointer, redactor SecretRedactor, resolver Secret
 		if !complete {
 			C.aether_vcr_embed_secret_abort(handle)
 			C.aether_vcr_embed_stop(handle)
+			C.aether_vcr_embed_destroy(handle)
 		}
 	}()
 	mode := 0
@@ -612,10 +615,15 @@ func (b *PlaybackBuilder) Start() (*Server, error) {
 
 	handle := C.aether_vcr_embed_open_playback(cLabel, cTape, cHost, C.int(b.port))
 	if handle == nil {
-		return nil, fmt.Errorf("vcr playback failed to start for tape %q", b.tapePath)
+		return nil, fmt.Errorf("vcr playback failed to start for tape %q: out of memory", b.tapePath)
+	}
+	if err := openError(handle); err != "" {
+		C.aether_vcr_embed_destroy(handle)
+		return nil, fmt.Errorf("vcr playback failed to start for tape %q: %s", b.tapePath, err)
 	}
 	if err := b.applyConfig(handle); err != nil {
 		C.aether_vcr_embed_stop(handle)
+		C.aether_vcr_embed_destroy(handle)
 		return nil, err
 	}
 	if b.secretResolver != nil {
@@ -626,6 +634,7 @@ func (b *PlaybackBuilder) Start() (*Server, error) {
 	if C.aether_vcr_embed_start(handle) < 0 {
 		err := drainStartError(handle)
 		C.aether_vcr_embed_stop(handle)
+		C.aether_vcr_embed_destroy(handle)
 		return nil, fmt.Errorf("vcr playback failed to begin serving for tape %q: %s", b.tapePath, err)
 	}
 	return &Server{handle: handle, host: b.host, tapePath: b.tapePath}, nil
@@ -1009,11 +1018,17 @@ func (b *RecordBuilder) Start() (*Server, error) {
 
 	handle := C.aether_vcr_embed_open_record(cLabel, cTape, cUpstream, cHost, C.int(b.port))
 	if handle == nil {
-		return nil, fmt.Errorf("vcr record failed to start for tape %q (upstream %q)",
+		return nil, fmt.Errorf("vcr record failed to start for tape %q (upstream %q): out of memory",
 			b.tapePath, b.upstreamBase)
+	}
+	if err := openError(handle); err != "" {
+		C.aether_vcr_embed_destroy(handle)
+		return nil, fmt.Errorf("vcr record failed to start for tape %q (upstream %q): %s",
+			b.tapePath, b.upstreamBase, err)
 	}
 	if err := b.applyConfig(handle); err != nil {
 		C.aether_vcr_embed_stop(handle)
+		C.aether_vcr_embed_destroy(handle)
 		return nil, err
 	}
 
@@ -1024,15 +1039,23 @@ func (b *RecordBuilder) Start() (*Server, error) {
 	if b.note != nil {
 		if err := srv.Note(b.note.title, b.note.body); err != nil {
 			C.aether_vcr_embed_stop(handle)
+			C.aether_vcr_embed_destroy(handle)
 			return nil, err
 		}
 	}
 	if C.aether_vcr_embed_start(handle) < 0 {
 		err := drainStartError(handle)
 		C.aether_vcr_embed_stop(handle)
+		C.aether_vcr_embed_destroy(handle)
 		return nil, fmt.Errorf("vcr record failed to begin serving for tape %q: %s", b.tapePath, err)
 	}
 	return srv, nil
+}
+
+// openError reads why an open failed ("" when it succeeded). The caller must
+// still destroy the handle.
+func openError(handle unsafe.Pointer) string {
+	return takeString(C.aether_vcr_embed_open_error(handle))
 }
 
 func drainStartError(handle unsafe.Pointer) string {
@@ -1186,6 +1209,7 @@ func (s *Server) Close() error {
 
 	if !s.recordMode {
 		C.aether_vcr_embed_stop(h)
+		C.aether_vcr_embed_destroy(h)
 		return nil
 	}
 
@@ -1196,6 +1220,7 @@ func (s *Server) Close() error {
 	}
 	cTape := C.CString(s.tapePath)
 	defer C.free(unsafe.Pointer(cTape))
+	defer C.aether_vcr_embed_destroy(h)
 	var res *C.char
 	if s.failIfChanged {
 		res = C.aether_vcr_embed_stop_and_flush_fail_if_changed(h, cTape)
@@ -1220,9 +1245,11 @@ func (s *Server) Discard() {
 	s.handle = nil
 	if !s.recordMode {
 		C.aether_vcr_embed_stop(h)
+		C.aether_vcr_embed_destroy(h)
 		return
 	}
 	cTape := C.CString(s.tapePath)
 	defer C.free(unsafe.Pointer(cTape))
+	defer C.aether_vcr_embed_destroy(h)
 	takeString(C.aether_vcr_embed_discard(h, cTape))
 }

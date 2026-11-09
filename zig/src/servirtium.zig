@@ -18,7 +18,9 @@
 
 const std = @import("std");
 
-/// Opaque server handle from the native side. `null` means failure.
+/// Opaque server handle from the native side. `null` only when out of memory;
+/// a failed open is a dead handle carrying its reason (`open_error`), and every
+/// handle must be `destroy`ed exactly once.
 pub const Handle = ?*anyopaque;
 
 // ---------------------------------------------------------------------------
@@ -39,6 +41,8 @@ pub extern "c" fn aether_vcr_embed_secret_apply(handle: Handle, value: [*c]const
 pub extern "c" fn aether_vcr_embed_secret_finish(handle: Handle) [*c]u8;
 pub extern "c" fn aether_vcr_embed_secret_abort(handle: Handle) void;
 
+pub extern "c" fn aether_vcr_embed_open_error(handle: Handle) [*c]u8;
+pub extern "c" fn aether_vcr_embed_destroy(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_start(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_stop(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_stop_and_flush(handle: Handle, tape_path: [*c]const u8) [*c]u8;
@@ -170,6 +174,42 @@ fn checkErr(allocator: std.mem.Allocator, ptr: [*c]u8) !void {
     if (msg.len != 0) return Error.VcrError;
 }
 
+/// Optional per-call sink for WHY an open/start failed (the Zig error alone
+/// carries no message). Pass a pointer to `Playback.startDiagnosed` /
+/// `Record.startDiagnosed` / `Vcr.playback`; on `error.OpenFailed` or
+/// `error.StartFailed` `message` holds the native reason. Release with `deinit`.
+pub const OpenDiagnostics = struct {
+    message: []u8 = &.{},
+    allocator: ?std.mem.Allocator = null,
+
+    pub fn deinit(self: *OpenDiagnostics) void {
+        if (self.allocator) |a| a.free(self.message);
+        self.* = .{};
+    }
+
+    fn set(self: *OpenDiagnostics, allocator: std.mem.Allocator, message: []u8) void {
+        self.deinit();
+        self.* = .{ .message = message, .allocator = allocator };
+    }
+};
+
+/// Check a fresh open: on a failed open read the reason into `diag`, destroy
+/// the dead handle, and return `error.OpenFailed`.
+fn checkOpened(allocator: std.mem.Allocator, handle: Handle, diag: ?*OpenDiagnostics) Error!void {
+    if (handle == null) return Error.OpenFailed;
+    const msg = takeString(allocator, aether_vcr_embed_open_error(handle)) catch {
+        aether_vcr_embed_destroy(handle);
+        return Error.OpenFailed;
+    };
+    if (msg.len == 0) {
+        allocator.free(msg);
+        return;
+    }
+    if (diag) |d| d.set(allocator, msg) else allocator.free(msg);
+    aether_vcr_embed_destroy(handle);
+    return Error.OpenFailed;
+}
+
 pub const SecretRequest = struct {
     method: []const u8, path: []const u8, location: []const u8,
     format: []const u8, field_path: []const u8, interaction: c_int,
@@ -218,16 +258,17 @@ pub const Vcr = struct {
     allocator: std.mem.Allocator,
 
     /// Open a playback server replaying `tape_path`. `port` 0 picks a free
-    /// port. Returns `error.OpenFailed` if the native side returns NULL.
+    /// port. Returns `error.OpenFailed` (reason in `diag` when given).
     pub fn playback(
         allocator: std.mem.Allocator,
         label: [:0]const u8,
         tape_path: [:0]const u8,
         host: [:0]const u8,
         listen_port: c_int,
+        diag: ?*OpenDiagnostics,
     ) Error!Vcr {
         const h = aether_vcr_embed_open_playback(label.ptr, tape_path.ptr, host.ptr, listen_port);
-        if (h == null) return Error.OpenFailed;
+        try checkOpened(allocator, h, diag);
         return .{ .handle = h, .allocator = allocator };
     }
 
@@ -240,9 +281,10 @@ pub const Vcr = struct {
         upstream_base: [:0]const u8,
         host: [:0]const u8,
         listen_port: c_int,
+        diag: ?*OpenDiagnostics,
     ) Error!Vcr {
         const h = aether_vcr_embed_open_record(label.ptr, tape_path.ptr, upstream_base.ptr, host.ptr, listen_port);
-        if (h == null) return Error.OpenFailed;
+        try checkOpened(allocator, h, diag);
         return .{ .handle = h, .allocator = allocator };
     }
 
@@ -431,9 +473,10 @@ pub const Vcr = struct {
         return takeString(self.allocator, aether_vcr_embed_untaped(self.handle, path.ptr));
     }
 
-    /// Stop serving. Idempotent; the handle is left dangling — call `close`
-    /// only once.
+    /// Stop serving but keep the handle (diagnostics stay readable); call
+    /// `close` afterwards to free it.
     pub fn stop(self: *Vcr) void {
+        if (self.handle == null) return;
         aether_vcr_embed_stop(self.handle);
     }
 
@@ -443,9 +486,11 @@ pub const Vcr = struct {
         return takeString(self.allocator, aether_vcr_embed_stop_and_flush(self.handle, tape_path.ptr));
     }
 
-    /// Stop the server and release the handle. Mirrors RAII close.
+    /// Stop the server and free the handle. Idempotent.
     pub fn close(self: *Vcr) void {
+        if (self.handle == null) return;
         aether_vcr_embed_stop(self.handle);
+        aether_vcr_embed_destroy(self.handle);
         self.handle = null;
     }
 };
@@ -726,6 +771,12 @@ pub const Playback = struct {
 
     /// Open the playback server, apply this fixture's config, then serve.
     pub fn start(self_in: Playback) !Server {
+        return self_in.startDiagnosed(null);
+    }
+
+    /// As `start`, but on `error.OpenFailed` / `error.StartFailed` the native
+    /// reason is left in `diag`.
+    pub fn startDiagnosed(self_in: Playback, diag: ?*OpenDiagnostics) !Server {
         var self = self_in;
         defer self.deinit();
 
@@ -735,8 +786,8 @@ pub const Playback = struct {
             self.host_str.ptr,
             self.listen_port,
         );
-        if (handle == null) return Error.OpenFailed;
-        errdefer aether_vcr_embed_stop(handle);
+        try checkOpened(self.allocator, handle, diag);
+        errdefer aether_vcr_embed_destroy(handle);
 
         try applyBase(self.allocator, handle, self.header_removals.items, self.ignore_volatile_headers, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
         try applyPresets(self.allocator, handle, self.remove_transport_headers, self.cloud_vendors.items, self.redact_credentials, self.credential_headers.items);
@@ -756,7 +807,16 @@ pub const Playback = struct {
         }
 
         if (self.secret_resolver) |resolver| try secretStage(self.allocator, handle, null, resolver);
-        if (aether_vcr_embed_start(handle) < 0) return Error.StartFailed;
+        {
+            // the errdefer above destroys the handle on this failure
+            const rc = aether_vcr_embed_start(handle);
+            if (rc < 0) {
+                if (diag) |d| {
+                    if (takeString(self.allocator, aether_vcr_embed_last_error(handle))) |msg| d.set(self.allocator, msg) else |_| {}
+                }
+                return Error.StartFailed;
+            }
+        }
         return .{
             .handle = handle,
             .allocator = self.allocator,
@@ -1071,6 +1131,12 @@ pub const Record = struct {
     /// Open the record server, apply this fixture's config, stage the note,
     /// then serve.
     pub fn start(self_in: Record) !Server {
+        return self_in.startDiagnosed(null);
+    }
+
+    /// As `start`, but on `error.OpenFailed` / `error.StartFailed` the native
+    /// reason is left in `diag`.
+    pub fn startDiagnosed(self_in: Record, diag: ?*OpenDiagnostics) !Server {
         var self = self_in;
         defer self.deinit();
 
@@ -1081,8 +1147,8 @@ pub const Record = struct {
             self.host_str.ptr,
             self.listen_port,
         );
-        if (handle == null) return Error.OpenFailed;
-        errdefer aether_vcr_embed_stop(handle);
+        try checkOpened(self.allocator, handle, diag);
+        errdefer aether_vcr_embed_destroy(handle);
 
         try applyBase(self.allocator, handle, self.header_removals.items, self.ignore_volatile_headers, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
         try applyPresets(self.allocator, handle, self.remove_transport_headers, self.cloud_vendors.items, self.redact_credentials, self.credential_headers.items);
@@ -1124,7 +1190,16 @@ pub const Record = struct {
             try checkErr(self.allocator, aether_vcr_embed_note(handle, n.title.ptr, n.body.ptr));
         }
 
-        if (aether_vcr_embed_start(handle) < 0) return Error.StartFailed;
+        {
+            // the errdefer above destroys the handle on this failure
+            const rc = aether_vcr_embed_start(handle);
+            if (rc < 0) {
+                if (diag) |d| {
+                    if (takeString(self.allocator, aether_vcr_embed_last_error(handle))) |msg| d.set(self.allocator, msg) else |_| {}
+                }
+                return Error.StartFailed;
+            }
+        }
         return .{
             .handle = handle,
             .allocator = self.allocator,
@@ -1274,6 +1349,7 @@ pub const Server = struct {
         if (self.handle == null) return;
         const h = self.handle;
         self.handle = null;
+        defer aether_vcr_embed_destroy(h);
 
         if (!self.record_mode) {
             aether_vcr_embed_stop(h);
@@ -1295,6 +1371,7 @@ pub const Server = struct {
         if (self.handle == null) return;
         const h = self.handle;
         self.handle = null;
+        defer aether_vcr_embed_destroy(h);
         if (!self.record_mode) {
             aether_vcr_embed_stop(h);
             return;
@@ -1306,6 +1383,7 @@ pub const Server = struct {
     pub fn stop(self: *Server) void {
         if (self.handle == null) return;
         aether_vcr_embed_stop(self.handle);
+        aether_vcr_embed_destroy(self.handle);
         self.handle = null;
     }
 };

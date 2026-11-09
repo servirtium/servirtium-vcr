@@ -68,14 +68,20 @@
 
 (defun playback (tape-path host)
   (let ((handle (servirtium_nif:open_playback #"" (to-bin tape-path) (to-bin host) 0)))
-    (if (=:= handle 0)
-        (error (tuple 'servirtium (tuple 'playback_open_failed tape-path)))
-        (if (< (servirtium_nif:start handle) 0)
-            (let ((detail (binary_to_list (servirtium_nif:last_error handle))))
-              (servirtium_nif:stop handle)
-              (error (tuple 'servirtium
-                            (tuple 'playback_start_failed tape-path detail))))
-            (vcr handle host 'playback tape-path)))))
+    ;; An open always yields a handle; a failed one is dead and carries its reason.
+    (case (servirtium_nif:open_error handle)
+      (#""
+       (if (< (servirtium_nif:start handle) 0)
+           (let ((detail (binary_to_list (servirtium_nif:last_error handle))))
+             (servirtium_nif:stop handle)
+             (servirtium_nif:destroy handle)
+             (error (tuple 'servirtium
+                           (tuple 'playback_start_failed tape-path detail))))
+           (vcr handle host 'playback tape-path)))
+      (why
+       (servirtium_nif:destroy handle)
+       (error (tuple 'servirtium
+                     (tuple 'playback_open_failed tape-path (binary_to_list why))))))))
 
 ;; Record: forward each request to UpstreamBase, capture the exchange, and
 ;; write the tape to TapePath on close/1. Binds an OS-chosen free port.
@@ -98,15 +104,20 @@
 (defun open-recording (tape-path upstream-base host)
   (let ((handle (servirtium_nif:open_record
                  #"" (to-bin tape-path) (to-bin upstream-base) (to-bin host) 0)))
-    (if (=:= handle 0)
-        (error (tuple 'servirtium
-                      (tuple 'record_open_failed tape-path upstream-base)))
-        (if (< (servirtium_nif:start handle) 0)
-            (let ((detail (binary_to_list (servirtium_nif:last_error handle))))
-              (servirtium_nif:stop handle)
-              (error (tuple 'servirtium
-                            (tuple 'record_start_failed tape-path detail))))
-            (vcr handle host 'record tape-path)))))
+    (case (servirtium_nif:open_error handle)
+      (#""
+       (if (< (servirtium_nif:start handle) 0)
+           (let ((detail (binary_to_list (servirtium_nif:last_error handle))))
+             (servirtium_nif:stop handle)
+             (servirtium_nif:destroy handle)
+             (error (tuple 'servirtium
+                           (tuple 'record_start_failed tape-path detail))))
+           (vcr handle host 'record tape-path)))
+      (why
+       (servirtium_nif:destroy handle)
+       (error (tuple 'servirtium
+                     (tuple 'record_open_failed tape-path upstream-base
+                            (binary_to_list why))))))))
 
 ;; ---- running-server members ----------------------------------------------
 
@@ -137,19 +148,24 @@
   (servirtium_nif:last_index (maps:get 'handle vcr)))
 
 ;; Stop the server. In record mode this also flushes the captured tape to
-;; disk. Returns 'ok, or #(error Msg) on a record-flush problem. Close once —
-;; a second close on the same handle is undefined.
+;; disk, then frees the VCR. Returns 'ok, or #(error Msg) on a record-flush
+;; problem. The handle is a NIF resource, so a second close is a harmless no-op.
 (defun close (vcr)
   (case (maps:get 'mode vcr)
-    ('playback (servirtium_nif:stop (maps:get 'handle vcr)) 'ok)
+    ('playback
+     (servirtium_nif:stop (maps:get 'handle vcr))
+     (servirtium_nif:destroy (maps:get 'handle vcr))
+     'ok)
     ('record
      (case (maps:get 'secret_redactor vcr 'undefined)
        ('undefined 'ok)
        (callback (servirtium_nif:secret_stage (maps:get 'handle vcr) callback 'false)))
-     (case (servirtium_nif:stop_and_flush (maps:get 'handle vcr)
-                                          (to-bin (maps:get 'tape vcr)))
-       (#"" 'ok)
-       (msg (tuple 'error (binary_to_list msg)))))))
+     (let ((flushed (servirtium_nif:stop_and_flush (maps:get 'handle vcr)
+                                                   (to-bin (maps:get 'tape vcr)))))
+       (servirtium_nif:destroy (maps:get 'handle vcr))
+       (case flushed
+         (#"" 'ok)
+         (msg (tuple 'error (binary_to_list msg))))))))
 
 ;; ---- internals -----------------------------------------------------------
 

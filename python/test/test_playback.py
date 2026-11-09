@@ -94,3 +94,17 @@ def test_playback_range_is_refused_on_a_record_handle(upstream):
         err = N.take_string(N.set_playback_range(rec._require_handle(), 0, -1))
         assert err != ""
         assert N.get_playback_range_from(rec._require_handle()) == -1
+
+
+def test_open_of_a_missing_tape_reports_why():
+    import pytest
+    with pytest.raises(servirtium.VcrError, match="no-such-tape"):
+        servirtium.playback("/nonexistent/no-such-tape.md").port(0).start()
+
+
+def test_open_close_many_times_and_double_close_is_harmless():
+    for _ in range(50):
+        vcr = servirtium.playback(tape("single_get.md")).port(0).start()
+        assert http_get(vcr.base_url, "/ok") == (200, "ok-body")
+        vcr.close()
+        vcr.close()

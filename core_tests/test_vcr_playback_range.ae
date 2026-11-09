@@ -75,8 +75,8 @@ refused(h: ptr, port: int, method: string, path: string, kind: int, words: strin
 // A playback handle on `port` with the credential preset (Cookie matches on
 // presence) and the common client headers ignored.
 open_range(port: int, from: int, to: int, presets: int) -> ptr {
-    h = vcr.load(TAPE, port)
-    if h == null { fail("load: ${vcr.load_error()}") }
+    h, h_oerr = vcr.open_playback(TAPE, port)
+    if h == null { fail("load: ${h_oerr}") }
     if presets == 1 {
         e = vcr.redact_credentials_h(h)
         if e != "" { fail("redact_credentials: ${e}") }
@@ -113,7 +113,7 @@ main() {
     // reset_cursor goes back to `from`, not 0.
     vcr.reset_cursor_h(h)
     expect(h, 18340, "GET", card, "", 200, "card-form", 4)
-    vcr.eject(h)
+    vcr.destroy_h(h)
 
     println("-- a request for a skipped interaction is unexpected")
     h2 = open_range(18341, 4, 6, 1)
@@ -147,10 +147,10 @@ main() {
     }
     println("  ok: ${ac2}")
     vcr.assert_no_mismatches_h(h2)
-    vcr.eject(h2)
+    vcr.destroy_h(h2)
 
     println("-- match_multiple chooses only within the range")
-    h3 = vcr.load(TAPE, 18342)
+    h3, h3_oerr = vcr.open_playback(TAPE, 18342)
     if h3 == null { fail("load h3") }
     vcr.redact_credentials_h(h3)
     vcr.strict_ignore_common_headers_h(h3)
@@ -172,7 +172,7 @@ main() {
         fail("match_multiple assert_all_consumed: ${ac3}")
     }
     vcr.assert_no_mismatches_h(h3)
-    vcr.eject(h3)
+    vcr.destroy_h(h3)
 
     println("-- without the credential preset the test's own cookie does not match")
     h4 = open_range(18343, 4, 6, 0)
@@ -183,10 +183,10 @@ main() {
     }
     println("  ok: 599 kind 3 (${bd4})")
     vcr.assert_no_mismatches_h(h4)
-    vcr.eject(h4)
+    vcr.destroy_h(h4)
 
     println("-- to < 0 runs to the end; validation; clear")
-    h5 = vcr.load(TAPE, 18344)
+    h5, h5_oerr = vcr.open_playback(TAPE, 18344)
     if h5 == null { fail("load h5") }
     if vcr.set_playback_range_h(h5, 6, 4) == "" { fail("6..4 should be refused") }
     if vcr.set_playback_range_h(h5, -1, 2) == "" { fail("from -1 should be refused") }
@@ -204,12 +204,12 @@ main() {
     if vcr.playback_range_from_h(h5) != -1 { fail("clear") }
     vcr.reset_cursor_h(h5)
     expect(h5, 18344, "GET", "/login", "", 200, "login-form", 0)
-    vcr.eject(h5)
+    vcr.destroy_h(h5)
     println("  ok: validation, open-ended range, clear")
 
     println("-- record mode refuses a range")
-    rec = vcr.load_record("target/core_tests/playback_range_record.md", "http://127.0.0.1:9", 18345)
-    if rec == null { fail("load_record: ${vcr.load_error()}") }
+    rec, rec_oerr = vcr.open_record("target/core_tests/playback_range_record.md", "http://127.0.0.1:9", 18345)
+    if rec == null { fail("load_record: ${rec_oerr}") }
     er = vcr.set_playback_range_h(rec, 0, 0)
     if string.contains(er, "playback only") != 1 { fail("record mode should refuse: '${er}'") }
     if vcr.playback_range_from_h(rec) != -1 { fail("record handle got a range") }

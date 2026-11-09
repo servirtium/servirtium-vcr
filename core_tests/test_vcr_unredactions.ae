@@ -9,22 +9,8 @@ import std.string
 import std.io
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18134
-
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
 
 tape_path() -> {
     tmp = io.getenv("TEMP")
@@ -88,7 +74,7 @@ main() {
     werr = write_tape(TAPE_PATH)
     if werr != "" { println("FAIL: write tape ${werr}"); exit(1) }
 
-    raw = vcr.load(TAPE_PATH, PORT)
+    raw, raw_oerr = vcr.open_playback(TAPE_PATH, PORT)
     if raw == null { println("FAIL: vcr.load returned null"); exit(1) }
 
     u1 = vcr.unredact_h(raw, vcr.FIELD_PATH, "REDACTED", "actual")
@@ -100,10 +86,7 @@ main() {
     h1 = vcr.remove_header_h(raw, vcr.FIELD_REQUEST_HEADERS, "X-Request-Id")
     if h1 != "" { println("FAIL: remove live request header ${h1}"); exit(1) }
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     req1 = client.request("GET", "http://127.0.0.1:${PORT}/secret/actual")
     client.set_header(req1, "Authorization", "Bearer actual")
@@ -134,9 +117,7 @@ main() {
         exit(1)
     }
 
-    vcr.eject(raw)
-    vcr.clear_unredactions()
-    vcr.clear_header_removals()
+    vcr.destroy_h(raw)
     println("PASS")
     exit(0)
 }

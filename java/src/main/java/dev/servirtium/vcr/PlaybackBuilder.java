@@ -196,27 +196,31 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 
     public VcrServer start() {
         NativeLoader.configure(nativeLib);
-        MemorySegment handle;
+        MemorySegment handle = null;
+        boolean ok = false;
         try (Arena arena = Arena.ofConfined()) {
             handle = (MemorySegment) NativeMethods.OPEN_PLAYBACK.invokeExact(
                     NativeMethods.cString(arena, label),
                     NativeMethods.cString(arena, tapePath),
                     NativeMethods.cString(arena, host),
                     port);
-            if (handle.address() == 0) {
-                throw new VcrException("vcr playback failed to start for tape '" + tapePath + "'");
+            String openErr = openError(handle);
+            if (!openErr.isEmpty()) {
+                throw new VcrException("vcr playback failed to start for tape '" + tapePath + "': " + openErr);
             }
             applyConfig(arena, handle);
             if (secretResolver != null) SecretCallbacks.stage(handle, null, secretResolver);
             int rc = (int) NativeMethods.START.invokeExact(handle);
             if (rc < 0) {
                 String detail = drainStartError(handle);
-                NativeMethods.STOP.invokeExact(handle);
                 throw new VcrException(
                         "vcr playback failed to begin serving for tape '" + tapePath + "': " + detail);
             }
+            ok = true;
         } catch (Throwable t) {
             throw rethrow("playback start", t);
+        } finally {
+            if (!ok && handle != null) destroy(handle);
         }
         return new VcrServer(handle, host, tapePath, false, false);
     }

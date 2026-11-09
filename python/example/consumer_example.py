@@ -77,8 +77,7 @@ def _play(builder) -> None:
 def _raw_upstream() -> tuple[socket.socket, int]:
     """A tiny raw-socket HTTP upstream that answers any GET with
     ``200 text/plain`` / ``ok-body`` — a stand-in for a live service to record
-    against. Deliberately NOT a second VCR server (some bindings serialize VCR
-    servers process-wide), so recording needs only the one record server."""
+    against, so the example needs only the one record server."""
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", 0))

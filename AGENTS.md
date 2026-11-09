@@ -86,7 +86,8 @@ a day's care, mostly in the leaf.
 
 Per-listener, handle-based: **N independent VCR servers run concurrently in one
 process** ("one server per port"). Every config/diagnostic/lifecycle call takes
-the opaque handle. `NULL` handle = open failed. Returned `char*` are
+the opaque handle (the VCR's own record; nothing about a VCR lives anywhere
+else, no process-wide state). Returned `char*` are
 **caller-owned, NUL-terminated** — copy out, then free with
 `aether_vcr_embed_free_string`. In `core/embed.ae` those exports (and
 `vcr_embed_dup`/`vcr_embed_free_string`) are typed `ptr`, NOT `string`: since
@@ -98,10 +99,16 @@ exports `-> ptr` and return `vcr_embed_dup(...)`. Most config setters return a `
 
 Lifecycle: `open_playback(label, tape, host, port)` /
 `open_playback_url(label, url, host, port)` /
-`open_record(label, tape, upstream_base, host, port)` → handle;
+`open_record(label, tape, upstream_base, host, port)` → handle, never NULL
+(except out of memory); `open_error(h)` is `""` if it opened, else why not
+(a failed open is a dead handle carrying its reason — there is no global
+"last open error", and `last_error(NULL)` is `""`);
 `start(h)` (`<0` = fail); `base_url(h, host)`; `port(h)`;
 `stop(h)`; `stop_and_flush(h, tape)` (+ `_fail_if_changed` / `_or_check`
-variants for drift detection); `tape_length(h)`; `reset_cursor(h)`.
+variants for drift detection); `tape_length(h)`; `reset_cursor(h)`;
+`destroy(h)` frees the VCR — every handle an open returned, failed or not,
+exactly once, after the last diagnostic read (stop keeps the record readable;
+destroy does not). Every binding's close/dispose idiom stops then destroys.
 
 Diagnostics (read after a request): `last_kind(h)` (Outcome, below),
 `last_index(h)`, `last_error(h)`, `clear_last_error(h)`.

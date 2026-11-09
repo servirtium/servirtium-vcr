@@ -142,6 +142,24 @@ final class PlaybackTest extends TestCase
         }
     }
 
+    public function testOpenOfAMissingTapeReportsWhy(): void
+    {
+        $this->expectException(VcrException::class);
+        $this->expectExceptionMessageMatches('/no-such-tape/');
+        Vcr::playback('/nonexistent/no-such-tape.md')->port(0)->start();
+    }
+
+    public function testOpenStopManyTimesAndDoubleStopIsHarmless(): void
+    {
+        for ($i = 0; $i < 50; $i++) {
+            $vcr = Vcr::playback($this->tape('single_get.md'))->port(0)->start();
+            [$status] = $this->httpGet($vcr->baseUrl() . '/ok');
+            $this->assertSame(200, $status);
+            $vcr->stop();
+            $vcr->stop();
+        }
+    }
+
     public function testPlaybackRangeBadRangeThrowsAtStart(): void
     {
         $this->expectException(\Servirtium\VcrException::class);

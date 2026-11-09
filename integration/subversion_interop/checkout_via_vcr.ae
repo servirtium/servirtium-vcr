@@ -34,7 +34,6 @@ import std.os
 extern exit(code: int)
 // Use raw form: actor receive handlers can't cleanly discard the
 // wrapper's string return without an unused-result warning.
-extern http_server_start_raw(server: ptr) -> int
 
 // Inline-extern std.list (same pattern as contrib/aeocha) — bare
 // `import std.list` would expose list.new etc., but inline keeps
@@ -46,18 +45,6 @@ extern list_get_raw(list: ptr, index: int) -> ptr
 const PORT = 18141
 const TAPE_REL = "integration/subversion_interop/tapes/ExampleSubversionCheckoutRecording.md"
 const TAPE_REL_FROM_TEST_DIR = "tapes/ExampleSubversionCheckoutRecording.md"
-
-message StartSrv { raw: ptr }
-message Noop {}
-
-actor SrvActor {
-    state s = 0
-    receive { StartSrv(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
 
 // Blank the inner content of every fenced code block that
 // immediately follows `marker` in `src`. The block shape we strip
@@ -128,7 +115,7 @@ scrub_tape(src: string) -> string {
 //
 // (No status line, no trailing blank, LF not CRLF.) This function
 // converts the former into the latter for direct byte-equality
-// against vcr.vcr_get_resp_headers(i).
+// against vcr.get_resp_headers_h(h, i).
 //
 // ALSO drops two wire-layer headers that legitimately differ between
 // recording and replay even though the response payload is identical:
@@ -333,7 +320,7 @@ main() {
 
     // 3. Load + start server. vcr.load populates the tape parser
     //    state (vcr_get_* accessors) AND starts the HTTP listener.
-    srv = vcr.load(scrubbed_path, PORT)
+    srv, srv_oerr = vcr.open_playback(scrubbed_path, PORT)
     if srv == null {
         println("FAIL: vcr.load returned null")
         exit(1)
@@ -346,7 +333,7 @@ main() {
     // fights the tape's recorded bytes. (The call that used to sit here
     // passed a bare-int idle of 60000ns — a silent no-op — so defaults were
     // in effect all along; ae 0.6xx's Duration enforcement exposed it.)
-    n_interactions = vcr.tape_length()
+    n_interactions = vcr.tape_length_h(srv)
     println("Loaded ${n_interactions} interactions from tape")
 
     // 4. Snapshot expected data per interaction BEFORE starting the
@@ -361,25 +348,22 @@ main() {
     expected_content_types = list_new()
     i = 0
     while i < n_interactions {
-        list_add_raw(expected_methods,        string_concat(vcr.vcr_get_method(i), ""))
-        list_add_raw(expected_paths,          string_concat(vcr.vcr_get_path(i), ""))
+        list_add_raw(expected_methods,        string_concat(vcr.get_method_h(srv, i), ""))
+        list_add_raw(expected_paths,          string_concat(vcr.get_path_h(srv, i), ""))
         // Status is int; box via map-as-tuple isn't worth it — stash
         // by reading at use-time from vcr's stored copy of the parsed
         // tape (still safe; the dispatcher's cursor doesn't mutate
         // the per-entry status field).
         // Bodies and headers are the heavyweight ones to snapshot.
-        list_add_raw(expected_bodies,         string_concat(vcr.vcr_get_body(i), ""))
-        list_add_raw(expected_headers,        string_concat(vcr.vcr_get_resp_headers(i), ""))
-        list_add_raw(expected_req_bodies,     string_concat(vcr.vcr_get_req_body(i), ""))
-        list_add_raw(expected_content_types,  string_concat(vcr.vcr_get_content_type(i), ""))
+        list_add_raw(expected_bodies,         string_concat(vcr.get_body_h(srv, i), ""))
+        list_add_raw(expected_headers,        string_concat(vcr.get_resp_headers_h(srv, i), ""))
+        list_add_raw(expected_req_bodies,     string_concat(vcr.get_req_body_h(srv, i), ""))
+        list_add_raw(expected_content_types,  string_concat(vcr.get_content_type_h(srv, i), ""))
         i = i + 1
     }
 
     // 5. Start the actor system + the HTTP listener.
-    spawn(SchedHelper())
-    a = spawn(SrvActor())
-    a ! StartSrv { raw: srv }
-    sleep(500)
+    if vcr.start_background_h(srv, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(srv)}"); exit(1) }
 
     // 6. Drive the 17 interactions and assert.
     passed = 0
@@ -389,7 +373,7 @@ main() {
     while i < n_interactions {
         method, _ = string.from_ptr(list_get_raw(expected_methods, i))
         path, _ = string.from_ptr(list_get_raw(expected_paths, i))
-        exp_status = vcr.vcr_get_status(i)   // int — safe to re-read
+        exp_status = vcr.get_status_h(srv, i)   // int — safe to re-read
         exp_body_raw = list_get_raw(expected_bodies, i)
         exp_headers = list_get_raw(expected_headers, i)
         req_body = list_get_raw(expected_req_bodies, i)
@@ -496,7 +480,7 @@ main() {
     }
 
     // 7. Tear down + summary.
-    vcr.eject(srv)
+    vcr.destroy_h(srv)
     println("")
     println("svn_vcr_replay: ${passed} passing, ${failed} failing (of ${n_interactions})")
     if failed > 0 {

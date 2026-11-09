@@ -26,6 +26,8 @@ extern sv_handle aether_vcr_embed_open_playback_url(const char *label, const cha
 extern sv_handle aether_vcr_embed_open_record(const char *label, const char *tape,
                                               const char *upstream_base,
                                               const char *host, int port);
+extern char *aether_vcr_embed_open_error(sv_handle h);
+extern void  aether_vcr_embed_destroy(sv_handle h);
 extern int   aether_vcr_embed_start(sv_handle h);
 extern void  aether_vcr_embed_stop(sv_handle h);
 extern char *aether_vcr_embed_stop_and_flush(sv_handle h, const char *tape);
@@ -120,17 +122,6 @@ struct sv_vcr {
     char *tape;   /* owned; the flush default */
 };
 
-/* Why the last open failed. Static, per the header's contract. */
-static char sv_open_err[512] = "";
-
-static void set_open_error(const char *msg) {
-    if (msg == NULL) msg = "";
-    strncpy(sv_open_err, msg, sizeof(sv_open_err) - 1);
-    sv_open_err[sizeof(sv_open_err) - 1] = '\0';
-}
-
-const char *sv_open_error(void) { return sv_open_err; }
-
 /* Duplicate a NUL-terminated string with malloc. NOT strdup: strdup is POSIX,
  * not ISO C99, so under a strict -std=c99 it isn't declared (and on MSVC it is
  * spelled _strdup). This header advertises plain C99 with no dependencies
@@ -170,16 +161,38 @@ void sv_free(sv_str s) {
     if (s.ptr != NULL) aether_vcr_embed_free_string(s.ptr);
 }
 
-/* Copy libservirtium_vcr's last_error for the static open-error slot, then release
- * it — the caller of an open gets a const char*, not an owned string. */
-static void capture_open_error(sv_handle h, const char *fallback) {
-    char *raw = (h == NULL) ? NULL : aether_vcr_embed_last_error(h);
-    if (raw != NULL && raw[0] != '\0') {
-        set_open_error(raw);
-    } else {
-        set_open_error(fallback);
+/* Hand the caller an open-failure reason through the per-call `error`
+ * out-parameter (NULL allowed). Owned by the caller; release with sv_free. */
+static void set_error(sv_str *error, char *owned) {
+    if (error != NULL) {
+        *error = adopt(owned);
+    } else if (owned != NULL) {
+        aether_vcr_embed_free_string(owned);
     }
-    if (raw != NULL) aether_vcr_embed_free_string(raw);
+}
+
+static void set_error_msg(sv_str *error, const char *msg) {
+    set_error(error, dup_string(msg));
+}
+
+/* Every open returns a handle (NULL only when out of memory); a failed open
+ * is a dead handle carrying its reason. Returns 1 if the open succeeded.
+ * On failure the reason goes to *error and the handle is destroyed. */
+static int open_ok(sv_handle h, sv_str *error, const char *fail_msg) {
+    char *why;
+    if (error != NULL) *error = empty_str();
+    if (h == NULL) {
+        set_error_msg(error, fail_msg);
+        return 0;
+    }
+    why = aether_vcr_embed_open_error(h);
+    if (why != NULL && why[0] != '\0') {
+        set_error(error, why);
+        aether_vcr_embed_destroy(h);
+        return 0;
+    }
+    if (why != NULL) aether_vcr_embed_free_string(why);
+    return 1;
 }
 
 static char *secret_stage(sv_handle h, sv_secret_redactor_fn redactor,
@@ -216,69 +229,78 @@ void sv_secret_redactor(sv_vcr *vcr, sv_secret_redactor_fn callback, void *conte
 }
 
 /* Wrap an opened handle: start it, and on success own a copy of host + tape.
- * On any failure the handle is stopped and NULL returned, so a caller never
- * has to clean up after a failed open. */
+ * On any failure the handle is destroyed and NULL returned, with the reason in
+ * *error, so a caller never has to clean up after a failed open. */
 static sv_vcr *wrap_started(sv_handle h, const char *host, const char *tape,
-                            const char *fail_msg) {
+                            const char *fail_msg, sv_str *error) {
     struct sv_vcr *vcr;
 
-    if (h == NULL) {
-        set_open_error(fail_msg);
-        return NULL;
-    }
+    if (!open_ok(h, error, fail_msg)) return NULL;
     if (aether_vcr_embed_start(h) < 0) {
-        capture_open_error(h, fail_msg);
-        aether_vcr_embed_stop(h);
+        char *why = aether_vcr_embed_last_error(h);
+        if (why != NULL && why[0] != '\0') {
+            set_error(error, why);
+        } else {
+            if (why != NULL) aether_vcr_embed_free_string(why);
+            set_error_msg(error, fail_msg);
+        }
+        aether_vcr_embed_destroy(h);
         return NULL;
     }
     vcr = (struct sv_vcr *)calloc(1, sizeof(*vcr));
     if (vcr == NULL) {
-        set_open_error("out of memory");
+        set_error_msg(error, "out of memory");
         aether_vcr_embed_stop(h);
+        aether_vcr_embed_destroy(h);
         return NULL;
     }
     vcr->h = h;
     vcr->host = dup_string(host);
     vcr->tape = dup_string(tape);
-    set_open_error("");
     return vcr;
 }
 
-sv_vcr *sv_playback_on(const char *tape_path, const char *host, int port) {
+sv_vcr *sv_playback_on(const char *tape_path, const char *host, int port, sv_str *error) {
     sv_handle h = aether_vcr_embed_open_playback("", tape_path, host, port);
-    return wrap_started(h, host, tape_path, "playback open failed");
+    return wrap_started(h, host, tape_path, "playback open failed", error);
 }
 
 sv_vcr *sv_playback_with_secrets(const char *tape, const char *host, int port,
-                                 sv_secret_resolver_fn resolver, void *context) {
+                                 sv_secret_resolver_fn resolver, void *context,
+                                 sv_str *error) {
     sv_handle h = aether_vcr_embed_open_playback("", tape, host, port);
-    char *error;
-    if (h && resolver) {
-        error = secret_stage(h, NULL, resolver, context);
-        if (error && error[0]) { set_open_error(error); aether_vcr_embed_free_string(error); return NULL; }
-        aether_vcr_embed_free_string(error);
+    char *staged;
+    if (!open_ok(h, error, "playback open failed")) return NULL;
+    if (resolver) {
+        staged = secret_stage(h, NULL, resolver, context);
+        if (staged && staged[0]) {
+            set_error(error, staged);
+            aether_vcr_embed_destroy(h);
+            return NULL;
+        }
+        if (staged) aether_vcr_embed_free_string(staged);
     }
-    return wrap_started(h, host, tape, "playback open failed");
+    return wrap_started(h, host, tape, "playback open failed", error);
 }
 
-sv_vcr *sv_playback(const char *tape_path) {
-    return sv_playback_on(tape_path, "127.0.0.1", 0);
+sv_vcr *sv_playback(const char *tape_path, sv_str *error) {
+    return sv_playback_on(tape_path, "127.0.0.1", 0, error);
 }
 
-sv_vcr *sv_playback_url(const char *tape_url) {
+sv_vcr *sv_playback_url(const char *tape_url, sv_str *error) {
     sv_handle h = aether_vcr_embed_open_playback_url("", tape_url, "127.0.0.1", 0);
     /* No local tape path: a URL-sourced tape has nothing to flush back to. */
-    return wrap_started(h, "127.0.0.1", NULL, "playback-url open failed");
+    return wrap_started(h, "127.0.0.1", NULL, "playback-url open failed", error);
 }
 
 sv_vcr *sv_record_on(const char *tape_path, const char *upstream_base,
-                     const char *host, int port) {
+                     const char *host, int port, sv_str *error) {
     sv_handle h = aether_vcr_embed_open_record("", tape_path, upstream_base, host, port);
-    return wrap_started(h, host, tape_path, "record open failed");
+    return wrap_started(h, host, tape_path, "record open failed", error);
 }
 
-sv_vcr *sv_record(const char *tape_path, const char *upstream_base) {
-    return sv_record_on(tape_path, upstream_base, "127.0.0.1", 0);
+sv_vcr *sv_record(const char *tape_path, const char *upstream_base, sv_str *error) {
+    return sv_record_on(tape_path, upstream_base, "127.0.0.1", 0, error);
 }
 
 /* ---- introspection ----------------------------------------------------- */
@@ -570,9 +592,10 @@ void sv_clear_format_options(sv_vcr *vcr) {
 
 /* ---- shutdown ---------------------------------------------------------- */
 
-/* Release the wrapper itself. libservirtium_vcr handle is already stopped by the
- * caller; this frees only what the C layer owns. */
+/* Release the wrapper itself and destroy the libservirtium_vcr handle (already
+ * stopped by the caller). */
 static void free_wrapper(struct sv_vcr *vcr) {
+    aether_vcr_embed_destroy(vcr->h);
     free(vcr->host);
     free(vcr->tape);
     free(vcr);

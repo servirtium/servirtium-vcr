@@ -81,11 +81,8 @@ this.) Consequences:
 - `start()` applies *this* fixture's config to *this* handle. Nothing is
   shared between handles, so a setting from one server never leaks into
   another — no global reset is needed.
-- As a belt-and-braces measure the current wrapper still takes one
-  process-wide `Mutex` for the life of each `VcrServer` (so `cargo test`'s
-  parallel runner is safe with no `--test-threads=1`); the one-server-per-port core
-  means this is a wrapper policy, not an libservirtium_vcr constraint. Tests in
-  *separate* integration-test binaries are separate processes anyway.
+- There is no process-wide lock: `cargo test`'s parallel runner runs
+  fixtures concurrently, each on its own handle and port.
 
 ## A subtle ordering rule (notes)
 

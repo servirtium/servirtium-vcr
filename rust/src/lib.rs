@@ -27,11 +27,8 @@
 //!
 //! The Aether VCR is handle-based: N independent servers can run concurrently,
 //! one per port, each keyed by its own handle with its own tape / cursor /
-//! mutation state. As a belt-and-braces simplification this crate still
-//! serializes every fixture through a process-wide lock acquired in
-//! [`start`](PlaybackBuilder::start) and held by the live [`VcrServer`] — its
-//! own choice, not an libservirtium_vcr constraint. Tests therefore run safely under a
-//! plain `cargo test` with no special flags — they just don't overlap. See
+//! mutation state, and this crate shares nothing between them either: no
+//! process-wide lock, so a plain `cargo test` runs fixtures in parallel. See
 //! `docs/architecture.md`.
 //!
 //! [Servirtium]: https://servirtium.dev
@@ -39,7 +36,7 @@
 mod native;
 
 use std::ffi::c_int;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+
 
 use native::{configure, cstr, native, take_string, Handle, Native};
 
@@ -69,7 +66,7 @@ fn secret_stage(n: &Native, handle: Handle, mut redactor: Option<&mut dyn FnMut(
         }
         check(n, unsafe { (n.secret_finish)(handle) }, "secret_finish")
     }));
-    if !matches!(&result, Ok(Ok(()))) { unsafe { (n.secret_abort)(handle); (n.stop)(handle); } }
+    if !matches!(&result, Ok(Ok(()))) { unsafe { (n.secret_abort)(handle); } }
     match result { Ok(result) => result, Err(panic) => std::panic::resume_unwind(panic) }
 }
 
@@ -144,16 +141,6 @@ impl std::fmt::Display for VcrError {
 }
 
 impl std::error::Error for VcrError {}
-
-/// The wrapper's process-wide lock that serializes fixtures to one at a time
-/// (a belt-and-braces simplification, not an libservirtium_vcr constraint — the
-/// handle-based libservirtium_vcr supports one server per port concurrently). A live
-/// [`VcrServer`] holds this guard for its whole lifetime, so a second
-/// `start()` blocks until the first server is dropped.
-fn server_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
 
 /// Entry point for record/replay fixtures backed by the Aether VCR core.
 pub struct Vcr;
@@ -494,9 +481,8 @@ impl PlaybackBuilder {
     pub fn start(mut self) -> Result<VcrServer, VcrError> {
         configure(self.common.native_lib.clone());
         let n = native().map_err(VcrError::new)?;
-        let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
 
-        let handle = unsafe {
+        let raw = unsafe {
             (n.open_playback)(
                 cstr(&self.common.label)?.as_ptr(),
                 cstr(&self.common.tape_path)?.as_ptr(),
@@ -504,12 +490,12 @@ impl PlaybackBuilder {
                 self.common.port as c_int,
             )
         };
-        if handle.is_null() {
-            return Err(VcrError::new(format!(
-                "vcr playback failed to start for tape '{}'",
-                self.common.tape_path
-            )));
-        }
+        let open = OpenHandle::adopt(
+            n,
+            raw,
+            &format!("vcr playback failed to start for tape '{}'", self.common.tape_path),
+        )?;
+        let handle = open.handle;
 
         // Shared config (header removals, static content, untaped) ...
         self.common.apply_shared(n, handle)?;
@@ -549,21 +535,17 @@ impl PlaybackBuilder {
         }
 
         if let Some((from, to)) = self.playback_range {
-            if let Err(e) = check(n, unsafe { (n.set_playback_range)(handle, from, to) }, "set_playback_range") {
-                unsafe { (n.stop)(handle) };
-                return Err(e);
-            }
+            check(n, unsafe { (n.set_playback_range)(handle, from, to) }, "set_playback_range")?;
         }
         if let Some(resolver) = self.secret_resolver.as_mut() { secret_stage(n, handle, None, Some(&mut **resolver))?; }
         if unsafe { (n.start)(handle) } < 0 {
             let err = drain_start_error(n, handle);
-            unsafe { (n.stop)(handle) };
             return Err(VcrError::new(format!(
                 "vcr playback failed to begin serving for tape '{}': {}",
                 self.common.tape_path, err
             )));
         }
-        Ok(VcrServer::new(n, guard, handle, self.common.host, self.common.tape_path, Mode::Playback, None))
+        Ok(VcrServer::new(n, open.release(), self.common.host, self.common.tape_path, Mode::Playback, None))
     }
 }
 
@@ -826,14 +808,13 @@ impl RecordBuilder {
     }
 
     /// Open a fresh record handle, apply this fixture's config, and start the
-    /// record server. Acquires the wrapper's process-wide lock, held until the
-    /// returned [`VcrServer`] is dropped (which also flushes the tape).
+    /// record server. The returned [`VcrServer`] flushes the tape and frees the
+    /// VCR when dropped.
     pub fn start(self) -> Result<VcrServer, VcrError> {
         configure(self.common.native_lib.clone());
         let n = native().map_err(VcrError::new)?;
-        let guard = server_lock().lock().unwrap_or_else(|e| e.into_inner());
 
-        let handle = unsafe {
+        let raw = unsafe {
             (n.open_record)(
                 cstr(&self.common.label)?.as_ptr(),
                 cstr(&self.common.tape_path)?.as_ptr(),
@@ -842,12 +823,15 @@ impl RecordBuilder {
                 self.common.port as c_int,
             )
         };
-        if handle.is_null() {
-            return Err(VcrError::new(format!(
+        let open = OpenHandle::adopt(
+            n,
+            raw,
+            &format!(
                 "vcr record failed to start for tape '{}' (upstream '{}')",
                 self.common.tape_path, self.upstream_base
-            )));
-        }
+            ),
+        )?;
+        let handle = open.handle;
 
         self.common.apply_shared(n, handle)?;
         if self.indent_code_blocks {
@@ -930,7 +914,6 @@ impl RecordBuilder {
 
         if unsafe { (n.start)(handle) } < 0 {
             let err = drain_start_error(n, handle);
-            unsafe { (n.stop)(handle) };
             return Err(VcrError::new(format!(
                 "vcr record failed to begin serving for tape '{}': {}",
                 self.common.tape_path, err
@@ -939,13 +922,53 @@ impl RecordBuilder {
 
         Ok(VcrServer::new(
             n,
-            guard,
-            handle,
+            open.release(),
             self.common.host,
             self.common.tape_path,
             Mode::Record { fail_if_changed: self.fail_if_changed },
             self.secret_redactor,
         ))
+    }
+}
+
+/// Owns a freshly opened handle until it is handed to a [`VcrServer`]. Any
+/// early return (a failed config call, a failed start) drops the guard, which
+/// stops and destroys the handle exactly once.
+struct OpenHandle {
+    n: &'static Native,
+    handle: Handle,
+}
+
+impl OpenHandle {
+    /// Wrap the handle an `open_*` returned. A NULL handle (out of memory) or a
+    /// dead handle (`open_error` non-empty) is an error; a dead handle is
+    /// destroyed here, once, after its reason has been read.
+    fn adopt(n: &'static Native, handle: Handle, what: &str) -> Result<OpenHandle, VcrError> {
+        if handle.is_null() {
+            return Err(VcrError::new(format!("{what}: out of memory")));
+        }
+        let reason = take_string(n, unsafe { (n.open_error)(handle) });
+        if !reason.is_empty() {
+            unsafe { (n.destroy)(handle) };
+            return Err(VcrError::new(format!("{what}: {reason}")));
+        }
+        Ok(OpenHandle { n, handle })
+    }
+
+    /// Hand ownership to a [`VcrServer`]: the guard no longer destroys.
+    fn release(self) -> Handle {
+        let h = self.handle;
+        std::mem::forget(self);
+        h
+    }
+}
+
+impl Drop for OpenHandle {
+    fn drop(&mut self) {
+        unsafe {
+            (self.n.stop)(self.handle);
+            (self.n.destroy)(self.handle);
+        }
     }
 }
 
@@ -972,8 +995,6 @@ enum Mode {
 pub struct VcrServer {
     secret_redactor: Option<SecretRedactor>,
     n: &'static Native,
-    // Holds the wrapper's process-wide serialization lock for this server's lifetime.
-    _guard: MutexGuard<'static, ()>,
     handle: Handle,
     host: String,
     tape_path: String,
@@ -984,7 +1005,6 @@ pub struct VcrServer {
 impl VcrServer {
     fn new(
         n: &'static Native,
-        guard: MutexGuard<'static, ()>,
         handle: Handle,
         host: String,
         tape_path: String,
@@ -994,7 +1014,6 @@ impl VcrServer {
         VcrServer {
             secret_redactor,
             n,
-            _guard: guard,
             handle,
             host,
             tape_path,
@@ -1153,6 +1172,16 @@ impl VcrServer {
                 }
             }
         }
+        self.destroy_handle();
+    }
+
+    /// Free the native VCR exactly once; the stored handle is nulled so no later
+    /// call can touch it.
+    fn destroy_handle(&mut self) {
+        let h = std::mem::replace(&mut self.handle, std::ptr::null_mut());
+        if !h.is_null() {
+            unsafe { (self.n.destroy)(h) };
+        }
     }
 
     /// Stop + flush. Idempotent via `finished`.
@@ -1161,6 +1190,12 @@ impl VcrServer {
             return Ok(());
         }
         self.finished = true;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.stop_and_flush_once()));
+        self.destroy_handle();
+        match result { Ok(r) => r, Err(p) => std::panic::resume_unwind(p) }
+    }
+
+    fn stop_and_flush_once(&mut self) -> Result<(), VcrError> {
         let h = self.handle;
         match self.mode {
             Mode::Playback => {
@@ -1170,7 +1205,10 @@ impl VcrServer {
             Mode::Record { fail_if_changed } => {
                 if let Some(redactor) = self.secret_redactor.as_mut() {
                     if std::thread::panicking() { unsafe { (self.n.stop)(h) }; return Ok(()); }
-                    secret_stage(self.n, h, Some(&mut **redactor), None)?;
+                    if let Err(e) = secret_stage(self.n, h, Some(&mut **redactor), None) {
+                        unsafe { (self.n.stop)(h) };
+                        return Err(e);
+                    }
                 }
                 let path = cstr(&self.tape_path)?;
                 let ptr = unsafe {

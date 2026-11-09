@@ -13,8 +13,10 @@
 %% Java jar backs the Kotlin/Scala/Clojure/Groovy bindings.)
 %%
 %% Use `servirtium` (servirtium.erl) for the idiomatic Erlang API; this is the
-%% thin FFI seam. The opaque server handle is a 64-bit integer (uintptr_t); 0
-%% from open_* means failure. String results come back as binaries; mutation
+%% thin FFI seam. The opaque server handle is a NIF resource reference. open_*
+%% always returns one; read open_error/1 (<<>> = opened) and destroy/1 it on failure.
+%% destroy/1 is idempotent, and stop/stop_and_flush/discard on a destroyed handle are
+%% no-ops, so closing twice is harmless; a resource destructor is the safety net. String results come back as binaries; mutation
 %% funcs return <<>> on success or an error-message binary.
 -module(servirtium_nif).
 
@@ -24,6 +26,8 @@
     %% lifecycle: open -> start
     open_playback/4,
     open_record/5,
+    open_error/1,
+    destroy/1,
     start/1,
     stop/1,
     stop_and_flush/2,
@@ -132,6 +136,8 @@ init() ->
 
 open_playback(_Label, _TapePath, _Host, _Port) -> erlang:nif_error(not_loaded).
 open_record(_Label, _TapePath, _UpstreamBase, _Host, _Port) -> erlang:nif_error(not_loaded).
+open_error(_Handle) -> erlang:nif_error(not_loaded).
+destroy(_Handle) -> erlang:nif_error(not_loaded).
 start(_Handle) -> erlang:nif_error(not_loaded).
 stop(_Handle) -> erlang:nif_error(not_loaded).
 stop_and_flush(_Handle, _TapePath) -> erlang:nif_error(not_loaded).
@@ -231,7 +237,7 @@ secret_stage(H, Callback, Resolving) ->
         secret_loop(H, Callback, Resolving),
         secret_check(secret_finish(H))
     catch Class:Reason:Stack ->
-        secret_abort(H), stop(H), erlang:raise(Class, Reason, Stack)
+        secret_abort(H), stop(H), destroy(H), erlang:raise(Class, Reason, Stack)
     end.
 secret_check(<<>>) -> ok;
 secret_check(Error) -> error({servirtium, Error}).

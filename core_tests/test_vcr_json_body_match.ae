@@ -23,7 +23,6 @@ import std.fs
 import std.json
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18113
 
@@ -31,19 +30,6 @@ const RECORDED   = "{\"a\":1,\"b\":2,\"nested\":{\"x\":10,\"y\":20},\"list\":[1,
 // Same value, keys reordered and whitespace added — byte-different, JSON-equal.
 const REORDERED  = "{ \"list\": [1, 2, 3], \"b\": 2, \"a\": 1, \"nested\": { \"y\": 20, \"x\": 10 } }"
 const NOT_JSON   = "this is not json at all"
-
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
 
 // POST `body` (as application/json) to /json and return the response status.
 post_json(url: string, body: string) -> int {
@@ -67,13 +53,10 @@ fail(msg: string) {
 main() {
     println("=== VCR opt-in JSON request-body matching ===\n")
 
-    raw = vcr.load("core_tests/tapes/json_body_match.tape", PORT)
+    raw, raw_oerr = vcr.open_playback("core_tests/tapes/json_body_match.tape", PORT)
     if raw == null { fail("vcr.load returned null") }
 
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     url = "http://127.0.0.1:${PORT}/json"
 
@@ -84,8 +67,8 @@ main() {
     if statusA != 599 {
         fail("Case A (match off): expected 599 for reordered body, got ${statusA}")
     }
-    if string.contains(vcr.last_error(), "request body different") != 1 {
-        fail("Case A: last_error did not mention 'request body different': '${vcr.last_error()}'")
+    if string.contains(vcr.last_error_h(raw), "request body different") != 1 {
+        fail("Case A: last_error did not mention 'request body different': '${vcr.last_error_h(raw)}'")
     }
     println("PASS Case A: byte-exact default rejects key-reordered JSON (599)")
 
@@ -95,7 +78,7 @@ main() {
     vcr.reset_cursor_h(raw)
     statusB = post_json(url, REORDERED)
     if statusB != 200 {
-        fail("Case B (match on): expected 200 for JSON-equal body, got ${statusB} (last_error='${vcr.last_error()}')")
+        fail("Case B (match on): expected 200 for JSON-equal body, got ${statusB} (last_error='${vcr.last_error_h(raw)}')")
     }
     println("PASS Case B: match_json_body accepts key-reordered / re-spaced JSON (200)")
 
@@ -109,6 +92,6 @@ main() {
     println("PASS Case C: non-JSON body falls back to byte-exact (599)")
 
     println("\n=== JSON body-match subtests passed ===")
-    vcr.eject(raw)
+    vcr.destroy_h(raw)
     exit(0)
 }

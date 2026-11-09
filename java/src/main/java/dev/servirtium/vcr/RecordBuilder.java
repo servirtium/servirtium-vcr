@@ -344,7 +344,8 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
 
     public VcrServer start() {
         NativeLoader.configure(nativeLib);
-        MemorySegment handle;
+        MemorySegment handle = null;
+        boolean ok = false;
         try (Arena arena = Arena.ofConfined()) {
             handle = (MemorySegment) NativeMethods.OPEN_RECORD.invokeExact(
                     NativeMethods.cString(arena, label),
@@ -352,10 +353,11 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
                     NativeMethods.cString(arena, upstreamBase),
                     NativeMethods.cString(arena, host),
                     port);
-            if (handle.address() == 0) {
+            String openErr = openError(handle);
+            if (!openErr.isEmpty()) {
                 throw new VcrException(
                         "vcr record failed to start for tape '" + tapePath
-                                + "' (upstream '" + upstreamBase + "')");
+                                + "' (upstream '" + upstreamBase + "'): " + openErr);
             }
             applyConfig(arena, handle);
             // Stage the note now (open_record cleared the tape) so it attaches
@@ -370,12 +372,14 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
             int rc = (int) NativeMethods.START.invokeExact(handle);
             if (rc < 0) {
                 String detail = drainStartError(handle);
-                NativeMethods.STOP.invokeExact(handle);
                 throw new VcrException(
                         "vcr record failed to begin serving for tape '" + tapePath + "': " + detail);
             }
+            ok = true;
         } catch (Throwable t) {
             throw rethrow("record start", t);
+        } finally {
+            if (!ok && handle != null) destroy(handle);
         }
         var server = new VcrServer(handle, host, tapePath, true, failIfChanged);
         server.secretRedactor = secretRedactor;

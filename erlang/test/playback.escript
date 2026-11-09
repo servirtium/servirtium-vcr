@@ -50,6 +50,7 @@ main(_) ->
     "[]" = servirtium:diagnostics_json(DiagnosticServer, false),
     ok = servirtium:close(DiagnosticServer),
 
+    open_failure_and_lifecycle(),
     stable_order(),
     playback_range(),
 
@@ -185,3 +186,16 @@ playback_range() ->
         {'EXIT', {{servirtium, Reason}, _}} = (catch servirtium:set_playback_range(Rec, 0, -1)),
         true = is_binary(Reason)
     after _ = servirtium:close(Rec) end.
+
+%% A missing tape surfaces its reason through open_error (no global open
+%% error); repeated open/start/close is leak-free and a second close is a no-op.
+open_failure_and_lifecycle() ->
+    {'EXIT', {{servirtium, {playback_open_failed, _, Why}}, _}} =
+        (catch servirtium:playback("tapes/definitely_missing.md")),
+    true = string:find(Why, "definitely_missing") =/= nomatch,
+    lists:foreach(fun(_) ->
+        Vcr = servirtium:playback("tapes/single_get.md"),
+        true = servirtium:port(Vcr) > 0,
+        ok = servirtium:close(Vcr),
+        ok = servirtium:close(Vcr)
+    end, lists:seq(1, 50)).

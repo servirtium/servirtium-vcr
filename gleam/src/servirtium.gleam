@@ -19,14 +19,25 @@
 //// which is exactly the term type the NIF takes and returns.
 
 // ---- raw NIF surface (FFI to the servirtium_nif Erlang module) -------------
-// The opaque server handle is a 64-bit integer (uintptr_t); 0 from open_*
-// means failure. String args/results are Erlang binaries == Gleam String.
+// The opaque server handle is a NIF resource reference (the `Handle` type
+// below); open_* always returns one, open_error says whether it opened, and
+// destroy frees it (idempotent). String args/results are Erlang binaries ==
+// Gleam String.
 
 import servirtium_result
 import gleam/option.{type Option, None, Some}
 
+/// Opaque reference to a VCR living in the NIF.
+pub type Handle
+
+@external(erlang, "servirtium_nif", "open_error")
+fn nif_open_error(handle: Handle) -> String
+
+@external(erlang, "servirtium_nif", "destroy")
+fn nif_destroy(handle: Handle) -> a
+
 @external(erlang, "servirtium_nif", "open_playback")
-fn nif_open_playback(label: String, tape: String, host: String, port: Int) -> Int
+fn nif_open_playback(label: String, tape: String, host: String, port: Int) -> Handle
 
 @external(erlang, "servirtium_nif", "open_record")
 fn nif_open_record(
@@ -35,34 +46,34 @@ fn nif_open_record(
   upstream: String,
   host: String,
   port: Int,
-) -> Int
+) -> Handle
 
 @external(erlang, "servirtium_nif", "start")
-fn nif_start(handle: Int) -> Int
+fn nif_start(handle: Handle) -> Int
 
 @external(erlang, "servirtium_nif", "stop")
-fn nif_stop(handle: Int) -> a
+fn nif_stop(handle: Handle) -> a
 
 @external(erlang, "servirtium_nif", "stop_and_flush")
-fn nif_stop_and_flush(handle: Int, tape: String) -> String
+fn nif_stop_and_flush(handle: Handle, tape: String) -> String
 
 @external(erlang, "servirtium_nif", "base_url")
-fn nif_base_url(handle: Int, host: String) -> String
+fn nif_base_url(handle: Handle, host: String) -> String
 
 @external(erlang, "servirtium_nif", "port")
-fn nif_port(handle: Int) -> Int
+fn nif_port(handle: Handle) -> Int
 
 @external(erlang, "servirtium_nif", "tape_length")
-fn nif_tape_length(handle: Int) -> Int
+fn nif_tape_length(handle: Handle) -> Int
 
 @external(erlang, "servirtium_nif", "last_error")
-fn nif_last_error(handle: Int) -> String
+fn nif_last_error(handle: Handle) -> String
 
 @external(erlang, "servirtium_nif", "last_kind")
-fn nif_last_kind(handle: Int) -> Int
+fn nif_last_kind(handle: Handle) -> Int
 
 @external(erlang, "servirtium_nif", "last_index")
-fn nif_last_index(handle: Int) -> Int
+fn nif_last_index(handle: Handle) -> Int
 
 // ---- public types ----------------------------------------------------------
 
@@ -74,7 +85,7 @@ pub type Mode {
 
 /// A running VCR server. Treat it as an opaque token.
 pub opaque type Vcr {
-  Vcr(handle: Int, host: String, mode: Mode, tape: String, secret_redactor: Option(fn(String, SecretRequest) -> Option(String)))
+  Vcr(handle: Handle, host: String, mode: Mode, tape: String, secret_redactor: Option(fn(String, SecretRequest) -> Option(String)))
 }
 
 /// Outcome of the most-recent dispatch (mirrors VCR_KIND_* in core/vcr.ae).
@@ -120,9 +131,9 @@ pub type SecretRequest {
   SecretRequest(method: String, path: String, location: String, format: String, field_path: String, interaction: Int)
 }
 @external(erlang, "servirtium_nif", "secret_stage_gleam")
-fn stage_redactor(handle: Int, callback: fn(String, SecretRequest) -> Option(String), resolving: Bool) -> Nil
+fn stage_redactor(handle: Handle, callback: fn(String, SecretRequest) -> Option(String), resolving: Bool) -> Nil
 @external(erlang, "servirtium_nif", "secret_stage_gleam")
-fn stage_resolver(handle: Int, callback: fn(String) -> Option(String), resolving: Bool) -> Nil
+fn stage_resolver(handle: Handle, callback: fn(String) -> Option(String), resolving: Bool) -> Nil
 
 pub fn secret_redactor(vcr: Vcr, callback: fn(String, SecretRequest) -> Option(String)) -> Vcr {
   Vcr(..vcr, secret_redactor: Some(callback))
@@ -132,18 +143,27 @@ pub fn playback_with_secrets(tape: String, callback: fn(String) -> Option(String
 }
 fn playback_open(tape: String, host: String, resolver: Option(fn(String) -> Option(String))) -> Vcr {
   let handle = nif_open_playback("", tape, host, 0)
-  case handle {
-    0 -> panic as "servirtium: playback open failed"
-    _ -> Nil
-  }
+  check_open(handle, "playback")
   case resolver { Some(callback) -> stage_resolver(handle, callback, True) None -> Nil }
   case nif_start(handle) {
     rc if rc < 0 -> {
       let detail = nif_last_error(handle)
       let _ = nif_stop(handle)
+      let _ = nif_destroy(handle)
       panic as { "servirtium: playback start failed: " <> detail }
     }
     _ -> Vcr(handle: handle, host: host, mode: Playback, tape: tape, secret_redactor: None)
+  }
+}
+
+// An open always yields a handle; a failed one is dead and carries its reason.
+fn check_open(handle: Handle, what: String) -> Nil {
+  case nif_open_error(handle) {
+    "" -> Nil
+    reason -> {
+      let _ = nif_destroy(handle)
+      panic as { "servirtium: " <> what <> " open failed: " <> reason }
+    }
   }
 }
 
@@ -156,14 +176,12 @@ pub fn record(tape: String, upstream: String) -> Vcr {
 /// As `record`, but bind a specific host.
 pub fn record_on(tape: String, upstream: String, host: String) -> Vcr {
   let handle = nif_open_record("", tape, upstream, host, 0)
-  case handle {
-    0 -> panic as "servirtium: record open failed"
-    _ -> Nil
-  }
+  check_open(handle, "record")
   case nif_start(handle) {
     rc if rc < 0 -> {
       let detail = nif_last_error(handle)
       let _ = nif_stop(handle)
+      let _ = nif_destroy(handle)
       panic as { "servirtium: record start failed: " <> detail }
     }
     _ -> Vcr(handle: handle, host: host, mode: Record, tape: tape, secret_redactor: None)
@@ -210,16 +228,20 @@ pub type Closed {
 }
 
 /// Stop the server. In record mode this also flushes the captured tape to
-/// disk; returns CloseError(msg) on a record-flush problem. Close once.
+/// disk, then frees the VCR; returns CloseError(msg) on a record-flush problem.
+/// A second close is a harmless no-op. Read diagnostics before closing.
 pub fn close(vcr: Vcr) -> Closed {
   case vcr.mode {
     Playback -> {
       let _ = nif_stop(vcr.handle)
+      let _ = nif_destroy(vcr.handle)
       Closed
     }
     Record -> {
       case vcr.secret_redactor { Some(callback) -> stage_redactor(vcr.handle, callback, False) None -> Nil }
-      case nif_stop_and_flush(vcr.handle, vcr.tape) {
+      let flushed = nif_stop_and_flush(vcr.handle, vcr.tape)
+      let _ = nif_destroy(vcr.handle)
+      case flushed {
         "" -> Closed
         msg -> CloseError(msg)
       }
@@ -248,7 +270,7 @@ pub fn curl(url: String) -> String {
 }
 
 @external(erlang, "servirtium_nif", "redact_header")
-fn nif_redact_header(handle: Int, field: Int, name: String, replacement: String) -> String
+fn nif_redact_header(handle: Handle, field: Int, name: String, replacement: String) -> String
 
 /// Redact a named request value when writing the tape.
 pub fn redact_header(vcr: Vcr, name: String) -> Result(Nil, String) {
@@ -258,7 +280,7 @@ pub fn redact_header_with(vcr: Vcr, name: String, replacement: String, field: In
   servirtium_result.from_error(nif_redact_header(vcr.handle, field, name, replacement))
 }
 @external(erlang, "servirtium_nif", "redact_query_param")
-fn nif_redact_query_param(handle: Int, field: Int, name: String, replacement: String) -> String
+fn nif_redact_query_param(handle: Handle, field: Int, name: String, replacement: String) -> String
 
 /// Redact a named request value when writing the tape.
 pub fn redact_query_param(vcr: Vcr, name: String) -> Result(Nil, String) {
@@ -268,7 +290,7 @@ pub fn redact_query_param_with(vcr: Vcr, name: String, replacement: String, fiel
   servirtium_result.from_error(nif_redact_query_param(vcr.handle, field, name, replacement))
 }
 @external(erlang, "servirtium_nif", "redact_json_field")
-fn nif_redact_json_field(handle: Int, field: Int, name: String, replacement: String) -> String
+fn nif_redact_json_field(handle: Handle, field: Int, name: String, replacement: String) -> String
 
 /// Redact a named request value when writing the tape.
 pub fn redact_json_field(vcr: Vcr, name: String) -> Result(Nil, String) {
@@ -279,7 +301,7 @@ pub fn redact_json_field_with(vcr: Vcr, name: String, replacement: String, field
 }
 
 @external(erlang, "servirtium_nif", "add_license_notice")
-fn nif_add_license_notice(handle: Int, text: String) -> String
+fn nif_add_license_notice(handle: Handle, text: String) -> String
 
 /// Record mode: write `text` under "## LICENSE NOTICE" at the top of each
 /// tape; playback ignores it.
@@ -288,7 +310,7 @@ pub fn add_license_notice(vcr: Vcr, text: String) -> Result(Nil, String) {
 }
 
 @external(erlang, "servirtium_nif", "set_pretty_json")
-fn nif_set_pretty_json(handle: Int, indent: Int) -> Nil
+fn nif_set_pretty_json(handle: Handle, indent: Int) -> Nil
 
 /// Record mode: pretty-print recorded JSON response bodies (indent 1..16;
 /// 0 = off); request bodies are never changed.
@@ -298,7 +320,7 @@ pub fn set_pretty_json(vcr: Vcr, indent: Int) -> Nil {
 }
 
 @external(erlang, "servirtium_nif", "remove_transport_headers")
-fn nif_remove_transport_headers(handle: Int) -> String
+fn nif_remove_transport_headers(handle: Handle) -> String
 
 /// Header preset (opt-in): drop Host, Connection, Content-Length, the other
 /// hop-by-hop headers and the request's Accept-Encoding.
@@ -307,7 +329,7 @@ pub fn remove_transport_headers(vcr: Vcr) -> Result(Nil, String) {
 }
 
 @external(erlang, "servirtium_nif", "remove_cloud_headers")
-fn nif_remove_cloud_headers(handle: Int, vendor: String) -> String
+fn nif_remove_cloud_headers(handle: Handle, vendor: String) -> String
 
 /// Header preset (opt-in): drop a vendor's CDN / load-balancer headers.
 /// `vendor` is "aws", "azure", "cloudflare", "fastly" or "gcp".
@@ -316,7 +338,7 @@ pub fn remove_cloud_headers(vcr: Vcr, vendor: String) -> Result(Nil, String) {
 }
 
 @external(erlang, "servirtium_nif", "redact_credentials")
-fn nif_redact_credentials(handle: Int) -> String
+fn nif_redact_credentials(handle: Handle) -> String
 
 /// Header preset (opt-in): Authorization, cookies, X-Api-Key and X-Auth-Token
 /// become numbered tokens.
@@ -325,7 +347,7 @@ pub fn redact_credentials(vcr: Vcr) -> Result(Nil, String) {
 }
 
 @external(erlang, "servirtium_nif", "redact_credential_header")
-fn nif_redact_credential_header(handle: Int, name: String) -> String
+fn nif_redact_credential_header(handle: Handle, name: String) -> String
 
 /// One more credential header, its whole value a token named after it.
 pub fn redact_credential_header(vcr: Vcr, name: String) -> Result(Nil, String) {
@@ -333,7 +355,7 @@ pub fn redact_credential_header(vcr: Vcr, name: String) -> Result(Nil, String) {
 }
 
 @external(erlang, "servirtium_nif", "set_upstream_cafile")
-fn nif_set_upstream_cafile(handle: Int, path: String) -> String
+fn nif_set_upstream_cafile(handle: Handle, path: String) -> String
 
 /// Record mode: verify an https upstream against this PEM CA file.
 pub fn set_upstream_cafile(vcr: Vcr, path: String) -> Result(Nil, String) {
@@ -347,10 +369,10 @@ pub fn set_upstream_cafile(vcr: Vcr, path: String) -> Result(Nil, String) {
 // (`close` returns CloseError("sort_json_keys needs pretty_json: ...")).
 
 @external(erlang, "servirtium_nif", "set_sort_json_keys")
-fn nif_set_sort_json_keys(handle: Int, on: Int) -> Nil
+fn nif_set_sort_json_keys(handle: Handle, on: Int) -> Nil
 
 @external(erlang, "servirtium_nif", "get_sort_json_keys")
-fn nif_get_sort_json_keys(handle: Int) -> Int
+fn nif_get_sort_json_keys(handle: Handle) -> Int
 
 /// Sort JSON object keys at every depth in recorded JSON response bodies.
 pub fn set_sort_json_keys(vcr: Vcr, on: Bool) -> Nil {
@@ -363,7 +385,7 @@ pub fn get_sort_json_keys(vcr: Vcr) -> Bool {
 }
 
 @external(erlang, "servirtium_nif", "sort_json_array")
-fn nif_sort_json_array(handle: Int, path: String, by: String) -> String
+fn nif_sort_json_array(handle: Handle, path: String, by: String) -> String
 
 /// Sort the JSON response arrays `path` selects (JSON pointer, "*" for one
 /// segment, "" the root array, or a bare member name) by member `by`
@@ -373,7 +395,7 @@ pub fn sort_json_array(vcr: Vcr, path: String, by: String) -> Result(Nil, String
 }
 
 @external(erlang, "servirtium_nif", "sort_json_array_at")
-fn nif_sort_json_array_at(handle: Int, request: String, path: String, by: String) -> String
+fn nif_sort_json_array_at(handle: Handle, request: String, path: String, by: String) -> String
 
 /// The same, only for requests whose path (query included) matches the
 /// regex `request`.
@@ -382,10 +404,10 @@ pub fn sort_json_array_at(vcr: Vcr, request: String, path: String, by: String) -
 }
 
 @external(erlang, "servirtium_nif", "set_sort_response_headers")
-fn nif_set_sort_response_headers(handle: Int, on: Int) -> Nil
+fn nif_set_sort_response_headers(handle: Handle, on: Int) -> Nil
 
 @external(erlang, "servirtium_nif", "get_sort_response_headers")
-fn nif_get_sort_response_headers(handle: Int) -> Int
+fn nif_get_sort_response_headers(handle: Handle) -> Int
 
 /// Sort response header lines by name (case-insensitive).
 pub fn set_sort_response_headers(vcr: Vcr, on: Bool) -> Nil {
@@ -398,7 +420,7 @@ pub fn get_sort_response_headers(vcr: Vcr) -> Bool {
 }
 
 @external(erlang, "servirtium_nif", "sort_header_value")
-fn nif_sort_header_value(handle: Int, name: String) -> String
+fn nif_sort_header_value(handle: Handle, name: String) -> String
 
 /// Sort one response header's comma-separated items ("Allow").
 pub fn sort_header_value(vcr: Vcr, name: String) -> Result(Nil, String) {
@@ -406,7 +428,7 @@ pub fn sort_header_value(vcr: Vcr, name: String) -> Result(Nil, String) {
 }
 
 @external(erlang, "servirtium_nif", "clear_stable_order")
-fn nif_clear_stable_order(handle: Int) -> Nil
+fn nif_clear_stable_order(handle: Handle) -> Nil
 
 /// Every stable-order rule off.
 pub fn clear_stable_order(vcr: Vcr) -> Nil {
@@ -424,16 +446,16 @@ fn bool_int(on: Bool) -> Int {
 // ---- playback range (playback only) ----------------------------------------
 
 @external(erlang, "servirtium_nif", "set_playback_range")
-fn nif_set_playback_range(handle: Int, from: Int, to: Int) -> String
+fn nif_set_playback_range(handle: Handle, from: Int, to: Int) -> String
 
 @external(erlang, "servirtium_nif", "clear_playback_range")
-fn nif_clear_playback_range(handle: Int) -> Nil
+fn nif_clear_playback_range(handle: Handle) -> Nil
 
 @external(erlang, "servirtium_nif", "get_playback_range_from")
-fn nif_get_playback_range_from(handle: Int) -> Int
+fn nif_get_playback_range_from(handle: Handle) -> Int
 
 @external(erlang, "servirtium_nif", "get_playback_range_to")
-fn nif_get_playback_range_to(handle: Int) -> Int
+fn nif_get_playback_range_to(handle: Handle) -> Int
 
 /// Replay only interactions `from`..`to` (0-based, inclusive, the tape's
 /// "## Interaction N" numbers; `to` < 0 = through the last). Error carries the
@@ -456,13 +478,13 @@ pub fn get_playback_range_to(vcr: Vcr) -> Int {
   nif_get_playback_range_to(vcr.handle)
 }
 @external(erlang, "servirtium_nif", "last_error_ex")
-fn nif_last_error_ex(handle: Int, consume: Int) -> String
+fn nif_last_error_ex(handle: Handle, consume: Int) -> String
 @external(erlang, "servirtium_nif", "diagnostics_json")
-fn nif_diagnostics_json(handle: Int, consume: Int) -> String
+fn nif_diagnostics_json(handle: Handle, consume: Int) -> String
 @external(erlang, "servirtium_nif", "assert_no_mismatches")
-fn nif_assert_no_mismatches(handle: Int) -> String
+fn nif_assert_no_mismatches(handle: Handle) -> String
 @external(erlang, "servirtium_nif", "test_context")
-fn nif_test_context(handle: Int, name: String, file: String, line: Int) -> Nil
+fn nif_test_context(handle: Handle, name: String, file: String, line: Int) -> Nil
 fn consume_flag(consume: Bool) -> Int { case consume { True -> 1 False -> 0 } }
 pub fn last_error_with(vcr: Vcr, consume: Bool) -> String {
   nif_last_error_ex(vcr.handle, consume_flag(consume))

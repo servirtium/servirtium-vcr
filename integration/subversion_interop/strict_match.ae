@@ -16,7 +16,7 @@
 //   4. Extra header not in recording → KIND_HEADER_UNEXPECTED
 //
 // The tape is loaded once and the server runs across all cases;
-// vcr.reset_cursor() between cases puts the dispatcher back at
+// vcr.reset_cursor_h(h) between cases puts the dispatcher back at
 // interaction 0 (cleaner than eject+reload).
 //
 // We don't test wrong-path or wrong-method here. The routing
@@ -37,7 +37,6 @@ import std.string
 extern exit(code: int)
 // Use raw form: actor receive handlers can't cleanly discard the
 // wrapper's string return without an unused-result warning.
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18142
 const TAPE_REL = "integration/subversion_interop/tapes/tiny.tape"
@@ -56,18 +55,6 @@ const KIND_HEADER_UNEXPECTED   = 4
 const KIND_TAPE_EXHAUSTED      = 5
 const KIND_BODY_DIFF           = 6
 
-message StartSrv { raw: ptr }
-message Noop {}
-
-actor SrvActor {
-    state s = 0
-    receive { StartSrv(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
-
 kind_name(k: int) -> string {
     if k == KIND_OK                  { return "OK" }
     if k == KIND_PATH_OR_METHOD_DIFF { return "PATH_OR_METHOD_DIFF" }
@@ -80,13 +67,13 @@ kind_name(k: int) -> string {
 }
 
 // Run one permutation. Returns 1 on pass, 0 on fail.
-run_case(label: string, method: string, path: string,
+run_case(vh: ptr, label: string, method: string, path: string,
          set_extra_header: int, extra_name: string, extra_value: string,
          skip_xtrace: int, wrong_xtrace_value: int,
          expected_kind: int) -> int {
     // Reset cursor + per-dispatch outcome slots so cases are
     // independent. Server keeps running across all cases.
-    vcr.reset_cursor()
+    vcr.reset_cursor_h(vh)
 
     url = "http://127.0.0.1:${PORT}${path}"
     req = client.request(method, url)
@@ -116,9 +103,9 @@ run_case(label: string, method: string, path: string,
         return 0
     }
 
-    got_kind = vcr.last_kind()
-    got_index = vcr.last_index()
-    got_msg = vcr.last_error()
+    got_kind = vcr.last_kind_h(vh)
+    got_index = vcr.last_index_h(vh)
+    got_msg = vcr.last_error_h(vh)
     got_status = client.response_status(resp)
     client.response_free(resp)
 
@@ -159,23 +146,20 @@ main() {
     println("VCR strict-match permutation tests")
     println("")
 
-    srv = vcr.load(TAPE_REL, PORT)
+    srv, srv_oerr = vcr.open_playback(TAPE_REL, PORT)
     if srv == null {
         println("FAIL: vcr.load returned null")
         exit(1)
     }
-    vcr.set_strict_headers(1)
+    vcr.set_strict_headers_h(srv, 1)
 
-    spawn(SchedHelper())
-    a = spawn(SrvActor())
-    a ! StartSrv { raw: srv }
-    sleep(500)
+    if vcr.start_background_h(srv, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(srv)}"); exit(1) }
 
     passed = 0
     failed = 0
 
     // Case 1: control — exact recorded request → KIND_OK.
-    r1 = run_case("1. control",
+    r1 = run_case(srv, "1. control",
         "GET", "/strict",
         0, "", "",
         0, 0,
@@ -183,7 +167,7 @@ main() {
     if r1 == 1 { passed = passed + 1 } else { failed = failed + 1 }
 
     // Case 2: skip recorded header → KIND_HEADER_MISSING.
-    r2 = run_case("2. missing recorded header",
+    r2 = run_case(srv, "2. missing recorded header",
         "GET", "/strict",
         0, "", "",
         1, 0,
@@ -191,7 +175,7 @@ main() {
     if r2 == 1 { passed = passed + 1 } else { failed = failed + 1 }
 
     // Case 3: wrong header value → KIND_HEADER_VALUE_DIFF.
-    r3 = run_case("3. wrong header value",
+    r3 = run_case(srv, "3. wrong header value",
         "GET", "/strict",
         0, "", "",
         0, 1,
@@ -199,14 +183,14 @@ main() {
     if r3 == 1 { passed = passed + 1 } else { failed = failed + 1 }
 
     // Case 4: extra header not in recording → KIND_HEADER_UNEXPECTED.
-    r4 = run_case("4. unexpected extra header",
+    r4 = run_case(srv, "4. unexpected extra header",
         "GET", "/strict",
         1, "X-Custom", "boom",
         0, 0,
         KIND_HEADER_UNEXPECTED)
     if r4 == 1 { passed = passed + 1 } else { failed = failed + 1 }
 
-    vcr.eject(srv)
+    vcr.destroy_h(srv)
     println("")
     println("svn_vcr_strict_match: ${passed} passing, ${failed} failing (of 4)")
     if failed > 0 {

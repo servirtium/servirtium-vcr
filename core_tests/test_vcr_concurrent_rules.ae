@@ -1,0 +1,96 @@
+// Many threads configuring ONE VCR at once.
+//
+// A VCR's rule lists used to be created lazily, on first use, by whichever
+// thread touched them first, and stashed in a process-wide store: two threads
+// adding the first rule of a kind to the same VCR could each make a list, and
+// the rules added to the losing list vanished. The lists are now made with the
+// VCR, and additions to them are serialized by the VCR's own Rules lock.
+//
+// Each round opens one VCR, then WORKERS threads each add one header-value
+// sort, one JSON array sort, one header removal and one redaction to it, every
+// one naming its worker. After the join, every rule from every worker must be
+// there: the removals and redactions by count and name, the two sorts in the
+// recording-rules footer of the flushed tape.
+
+import core.vcr
+import std.fs
+import std.list
+import std.string
+import std.worker
+
+extern exit(code: int)
+
+const WORKERS = 16
+const ROUNDS = 100
+const TAPE = "core_tests/tapes/single_get.tape"
+const OUT = "target/core_tests/concurrent_rules.tape"
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+configure(h: ptr, i: int) {
+    w = "w${i}"
+    e1 = vcr.sort_header_value_h(h, "X-Sort-${w}-end")
+    e2 = vcr.sort_json_array_h(h, "arr-${w}-end", "")
+    e3 = vcr.remove_header_h(h, vcr.FIELD_REQUEST_HEADERS, "X-Noise-${w}-end")
+    e4 = vcr.redact_h(h, vcr.FIELD_RESPONSE_BODY, "secret-${w}-end", "R-${w}-end")
+    if e1 != "" || e2 != "" || e3 != "" || e4 != "" {
+        println("worker ${w}: setter error [${e1}|${e2}|${e3}|${e4}]")
+    }
+}
+
+// "" when VCR h holds every worker's rules.
+check(h: ptr) -> string {
+    nr = vcr.get_header_removal_count_h(h)
+    if nr != WORKERS { return "${nr} header removals (want ${WORKERS})" }
+    nred = vcr.get_redaction_count_h(h)
+    if nred != WORKERS { return "${nred} redactions (want ${WORKERS})" }
+    vcr.set_rules_footer_h(h, 1)
+    vcr.set_pretty_json_h(h, 2)
+    ferr = vcr.flush_h(h, OUT)
+    if ferr != "" { return "flush: ${ferr}" }
+    text, rerr = fs.read(OUT)
+    if rerr != "" { return "read back: ${rerr}" }
+    missing = ""
+    i = 0
+    while i < WORKERS {
+        if string.contains(text, "X-Sort-w${i}-end") != 1 { missing = "${missing} X-Sort-w${i}" }
+        if string.contains(text, "arr-w${i}-end") != 1 { missing = "${missing} arr-w${i}" }
+        i = i + 1
+    }
+    if missing != "" { return "footer lacks sort rules:${missing}" }
+    return ""
+}
+
+main() {
+    println("=== ${WORKERS} threads configuring one VCR x ${ROUNDS} rounds ===")
+    fs.mkdir_p("target/core_tests")
+    worker.pool_size(WORKERS)
+    bad_rounds = 0
+    first = ""
+    round = 0
+    while round < ROUNDS {
+        h, h_oerr = vcr.open_playback(TAPE, 0)
+        if h == null { fail("load: ${h_oerr}") }
+        k = 0
+        while k < WORKERS {
+            i = k
+            worker.run(|| { configure(h, i); return h }, |r: @keep ptr| { })
+            k = k + 1
+        }
+        worker.wait()
+        err = check(h)
+        if err != "" {
+            bad_rounds = bad_rounds + 1
+            if first == "" { first = "round ${round}: ${err}" }
+        }
+        vcr.destroy_h(h)
+        round = round + 1
+    }
+    println("rounds where a thread's rule was lost: ${bad_rounds}/${ROUNDS}")
+    if bad_rounds > 0 { fail(first) }
+    println("PASS")
+    exit(0)
+}

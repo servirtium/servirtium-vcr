@@ -21,7 +21,6 @@ import std.string
 import std.io
 
 extern exit(code: int)
-extern http_server_start_raw(server: ptr) -> int
 
 const PORT = 18298
 
@@ -35,29 +34,16 @@ flush_out_path() -> {
     return "${tmp}/vcr_license_notice_test.tape"
 }
 
-message StartVCR { raw: ptr }
-message Noop {}
-
-actor VCRActor {
-    state s = 0
-    receive { StartVCR(raw) -> { s = raw; http_server_start_raw(raw) } }
-}
-
-actor SchedHelper {
-    state x = 0
-    receive { Noop() -> { x = 1 } }
-}
-
 fail(msg: string) {
     println("  FAIL: ${msg}")
     exit(1)
 }
 
-record_and_read(path: string) -> string {
-    vcr.clear_recording()
-    e = vcr.record_full("GET", "/x", 200, "text/plain", "hello", "", "")
+record_and_read(vh: ptr, path: string) -> string {
+    vcr.clear_recording_h(vh)
+    e = vcr.record_full_h(vh, "GET", "/x", 200, "text/plain", "hello", "", "")
     if e != "" { fail("record_full: ${e}") }
-    f = vcr.flush(path)
+    f = vcr.flush_h(vh, path)
     if f != "" { fail("flush: ${f}") }
     t, de = fs.read(path)
     if de != "" { fail("read back: ${de}") }
@@ -69,26 +55,24 @@ main() {
     OUT = flush_out_path()
 
     println("Test 1: the text comes first, as given, then the interactions")
-    e1 = vcr.add_license_notice(LIC1)
+    vh = vcr.open_offline()
+    e1 = vcr.add_license_notice_h(vh, LIC1)
     if e1 != "" { fail("add_license_notice: ${e1}") }
-    t1 = record_and_read(OUT)
+    t1 = record_and_read(vh, OUT)
     if string.starts_with(t1, "## LICENSE NOTICE\n\n${LIC1}\n\n## Interaction 0") != 1 { fail("tape does not start with the notice:\n${t1}") }
     println("  PASS")
 
     println("Test 2: two calls make two paragraphs, in order")
-    e2 = vcr.add_license_notice(LIC2)
+    e2 = vcr.add_license_notice_h(vh, LIC2)
     if e2 != "" { fail("second add: ${e2}") }
-    t2 = record_and_read(OUT)
+    t2 = record_and_read(vh, OUT)
     if string.starts_with(t2, "## LICENSE NOTICE\n\n${LIC1}\n\n${LIC2}\n\n## Interaction 0") != 1 { fail("two paragraphs not as expected:\n${t2}") }
     println("  PASS")
 
     println("Test 3: playback ignores the text")
-    raw = vcr.load(OUT, PORT)
+    raw, raw_oerr = vcr.open_playback(OUT, PORT)
     if raw == null { fail("vcr.load: the notice broke parsing") }
-    spawn(SchedHelper())
-    a = spawn(VCRActor())
-    a ! StartVCR { raw: raw }
-    sleep(500)
+    if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
     creq = client.request("GET", "http://127.0.0.1:${PORT}/x")
     cresp, cerr = client.send_request(creq)
     client.request_free(creq)
@@ -98,14 +82,15 @@ main() {
     client.response_free(cresp)
     if s3 != 200 { fail("status ${s3}, last_error='${vcr.last_error_h(raw)}'") }
     if string.equals(b3, "hello") != 1 { fail("body '${b3}'") }
-    vcr.eject(raw)
+    vcr.destroy_h(vh)
+    vh = vcr.open_offline()
     println("  PASS")
 
     println("Test 4: empty text and tape-structure headings are refused")
-    if vcr.add_license_notice("  \n ") == "" { fail("empty text accepted") }
-    if vcr.add_license_notice("Terms\n## Interaction 9: GET /") == "" { fail("'## ' line accepted") }
-    if vcr.add_license_notice("## [Recording rules]") == "" { fail("rules-footer heading accepted") }
-    if vcr.add_license_notice("## Terms\nNo reverse engineering.") != "" { fail("an ordinary '## ' heading was refused") }
+    if vcr.add_license_notice_h(vh, "  \n ") == "" { fail("empty text accepted") }
+    if vcr.add_license_notice_h(vh, "Terms\n## Interaction 9: GET /") == "" { fail("'## ' line accepted") }
+    if vcr.add_license_notice_h(vh, "## [Recording rules]") == "" { fail("rules-footer heading accepted") }
+    if vcr.add_license_notice_h(vh, "## Terms\nNo reverse engineering.") != "" { fail("an ordinary '## ' heading was refused") }
     println("  PASS")
 
     fs.delete(OUT)

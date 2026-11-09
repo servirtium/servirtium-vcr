@@ -84,6 +84,22 @@ http_status(url) =
         @test true
     end
 
+    @testset "a missing tape is reported by name through the open path" begin
+        err = try playback("/nonexistent/no-such-tape.md"); nothing catch e; e end
+        @test err isa VcrError
+        @test occursin("no-such-tape", err.msg)
+    end
+
+    @testset "50 open/close cycles; double close and flush are harmless" begin
+        for _ in 1:50
+            vcr = playback(TAPE)
+            @test http_get(base_url(vcr) * "/ok") == "ok-body"
+            close!(vcr)
+            close!(vcr)
+            flush!(vcr)
+        end
+    end
+
     @testset "two servers run concurrently, one per handle" begin
         a = playback(TAPE)
         b = playback(TAPE)

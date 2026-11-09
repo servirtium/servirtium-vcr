@@ -242,6 +242,17 @@ class Native {
       _lib.lookupFunction<_StartRecordC, _StartRecordD>('aether_vcr_embed_open_record');
   static final start = _lib.lookupFunction<_StartC, _StartD>('aether_vcr_embed_start');
   static final stop = _lib.lookupFunction<_StopC, _StopD>('aether_vcr_embed_stop');
+  /// `char *aether_vcr_embed_open_error(void *h)`: "" if the open succeeded, else
+  /// why it failed (caller-owned; read it with `takeString`). Every `open*` call
+  /// returns a non-NULL handle (NULL only when out of memory); a failed open
+  /// returns a "dead" handle carrying its own reason. Read it, then [destroy].
+  static final openError =
+      _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_open_error');
+  /// `void aether_vcr_embed_destroy(void *h)`: frees the VCR (stops it if still
+  /// serving). EVERY handle an `open*` returned, failed or not, is destroyed
+  /// exactly once and is invalid afterwards. `stop`/`stopAndFlush*`/`discard`
+  /// only stop; diagnostics stay readable between stop and destroy.
+  static final destroy = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_destroy');
   static final stopAndFlush =
       _lib.lookupFunction<_FlushC, _FlushD>('aether_vcr_embed_stop_and_flush');
   static final stopAndFlushFailIfChanged = _lib.lookupFunction<_FlushC, _FlushD>(

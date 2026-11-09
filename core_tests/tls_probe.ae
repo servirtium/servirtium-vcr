@@ -50,8 +50,8 @@ main() {
 
     println("=== HTTPS listener: serve single_get over TLS, fetch with https:// ===\n")
 
-    srv = vcr.load(TAPE, PORT)
-    if srv == null { fail("load: ${vcr.load_error()}") }
+    srv, srv_oerr = vcr.open_playback(TAPE, PORT)
+    if srv == null { fail("load: ${srv_oerr}") }
 
     // Before start: scheme is http (no TLS staged yet).
     if vcr.tls_enabled_h(srv) != 0 { fail("tls_enabled_h should be 0 before set_tls_h") }
@@ -67,7 +67,7 @@ main() {
     rc = vcr.start_background_h(srv, 10000)
     if rc != 0 { fail("start_background_h (tls) rc=${rc}; last_error=${vcr.last_error_h(srv)}") }
 
-    port = http.server_port(srv)
+    port = http.server_port(vcr.server_of(srv))
     url = "https://127.0.0.1:${port}/ok"
     println("serving TLS on ${url}")
 
@@ -96,8 +96,8 @@ main() {
     upstream = "https://127.0.0.1:${port}"
 
     // Without the CA: the system store does not trust the self-signed cert.
-    rec1 = vcr.load_record(tape_out, upstream, RECORD_PORT)
-    if rec1 == null { fail("load_record: ${vcr.load_error()}") }
+    rec1, rec1_oerr = vcr.open_record(tape_out, upstream, RECORD_PORT)
+    if rec1 == null { fail("load_record: ${rec1_oerr}") }
     if vcr.start_background_h(rec1, 10000) != 0 { fail("recorder start: ${vcr.last_error_h(rec1)}") }
     r1 = client.request("GET", "http://127.0.0.1:${RECORD_PORT}/ok")
     client.set_timeout(r1, 5s)
@@ -107,15 +107,15 @@ main() {
     st1 = client.response_status(resp1)
     client.response_free(resp1)
     if st1 == 200 { fail("an untrusted upstream cert was accepted without set_upstream_cafile_h") }
-    vcr.eject(rec1)
+    vcr.destroy_h(rec1)
     println("  untrusted upstream refused: status ${st1}")
 
     // With the CA: verified, forwarded, recorded.
     // (the https server's tape has one interaction, already served above)
     vcr.reset_cursor_h(srv)
     if vcr.set_upstream_cafile_h(null, "") == "" { fail("set_upstream_cafile_h with an empty path should error") }
-    rec2 = vcr.load_record(tape_out, upstream, RECORD_PORT)
-    if rec2 == null { fail("load_record: ${vcr.load_error()}") }
+    rec2, rec2_oerr = vcr.open_record(tape_out, upstream, RECORD_PORT)
+    if rec2 == null { fail("load_record: ${rec2_oerr}") }
     cerr = vcr.set_upstream_cafile_h(rec2, cert)
     if cerr != "" { fail("set_upstream_cafile_h: ${cerr}") }
     if vcr.start_background_h(rec2, 10000) != 0 { fail("recorder start: ${vcr.last_error_h(rec2)}") }
@@ -128,14 +128,14 @@ main() {
     b2 = string.copy(client.response_body(resp2))
     client.response_free(resp2)
     if st2 != 200 || b2 != "ok-body" { fail("recorder with the CA: status ${st2} body '${b2}'; ${vcr.last_error_h(rec2)}") }
-    ferr = vcr.eject_record(rec2, tape_out)
+    ferr = vcr.stop_and_flush_h(rec2, tape_out)
     if ferr != "" { fail("eject_record: ${ferr}") }
     taped, terr2 = fs.read(tape_out)
     if terr2 != "" || string.contains(taped, "ok-body") != 1 { fail("the tape lacks the body: ${terr2}") }
     fs.delete(tape_out)
     println("  trusted with set_upstream_cafile_h: 200, recorded")
 
-    vcr.eject(srv)
+    vcr.destroy_h(srv)
     println("\nPASS: HTTPS listener served the recorded tape over TLS (status 200, body ok-body)")
     exit(0)
 }

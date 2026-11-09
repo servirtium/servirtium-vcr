@@ -103,7 +103,7 @@ main() {
     if serr1 != "" { println("FAIL: upstream start ${serr1}"); exit(1) }
     wait_ready("http://127.0.0.1:${UPSTREAM_PORT}/a")
 
-    recorder = vcr.load_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    recorder, recorder_oerr = vcr.open_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
     if recorder == null { println("FAIL: load_record"); exit(1) }
     rules(recorder)
     e = vcr.redact_h(recorder, vcr.FIELD_REQUEST_HEADERS, SECRET, PLACEHOLDER)
@@ -113,15 +113,15 @@ main() {
     if e == "" { e = vcr.redact_whole_tape_described_h(recorder, "127\\.0\\.0\\.1:${RECORD_PORT}", "{{request.host}}", "the recorder's own host:port") }
     if e != "" { println("FAIL: rule ${e}"); exit(1) }
     vcr.set_rules_footer_h(recorder, 1)
-    serr2 = http.server_start_background(recorder)
+    serr2 = http.server_start_background(vcr.server_of(recorder))
     if serr2 != "" { println("FAIL: recorder start ${serr2}"); exit(1) }
     sleep(250)
 
     if get(RECORD_PORT, "/a", 1) != 200 || get(RECORD_PORT, "/b", 0) != 200 {
-        println("FAIL: record; vcr.last_error: ${vcr.last_error()}")
+        println("FAIL: record; vcr.last_error: ${vcr.last_error_h(recorder)}")
         exit(1)
     }
-    ferr = vcr.eject_record(recorder, TAPE_PATH)
+    ferr = vcr.stop_and_flush_h(recorder, TAPE_PATH)
     if ferr != "" { println("FAIL: eject_record ${ferr}"); exit(1) }
 
     tape, terr = fs.read(TAPE_PATH)
@@ -155,8 +155,8 @@ main() {
     werr = fs.write(TAPE_PATH, stuffed)
     if werr != "" { println("FAIL: write stuffed tape ${werr}"); exit(1) }
 
-    playback = vcr.load(TAPE_PATH, PLAYBACK_PORT)
-    if playback == null { println("FAIL: load playback: ${vcr.last_error()}"); exit(1) }
+    playback, playback_oerr = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT)
+    if playback == null { println("FAIL: load playback: ${vcr.last_error_h(playback)}"); exit(1) }
     rules(playback)
     ue = vcr.unredact_h(playback, vcr.FIELD_REQUEST_HEADERS, PLACEHOLDER, SECRET)
     if ue != "" { println("FAIL: unredact ${ue}"); exit(1) }
@@ -164,18 +164,18 @@ main() {
         println("FAIL: playback read ${vcr.tape_length_h(playback)} interactions, not 2")
         exit(1)
     }
-    serr3 = http.server_start_background(playback)
+    serr3 = http.server_start_background(vcr.server_of(playback))
     if serr3 != "" { println("FAIL: playback start ${serr3}"); exit(1) }
     sleep(250)
     if get(PLAYBACK_PORT, "/a", 1) != 200 || get(PLAYBACK_PORT, "/b", 0) != 200 {
-        println("FAIL: playback; vcr.last_error: ${vcr.last_error()}")
+        println("FAIL: playback; vcr.last_error: ${vcr.last_error_h(playback)}")
         exit(1)
     }
     aerr = vcr.assert_all_consumed_h(playback)
     if aerr != "" { println("FAIL: ${aerr}"); exit(1) }
     println("  PASS playback stops at the footer: two interactions, both replayed")
 
-    vcr.eject(playback)
+    vcr.destroy_h(playback)
     http_server_stop(upstream)
     fs.delete(TAPE_PATH)
     println("PASS")

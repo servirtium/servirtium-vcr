@@ -25,7 +25,7 @@ final class SecretCallbacks {
             }
             VcrBuilderBase.check((MemorySegment) NativeMethods.SECRET_FINISH.invokeExact(handle), "secretFinish");
         } catch (Throwable error) {
-            try { NativeMethods.SECRET_ABORT.invokeExact(handle); NativeMethods.STOP.invokeExact(handle); }
+            try { NativeMethods.SECRET_ABORT.invokeExact(handle); NativeMethods.STOP.invokeExact(handle); /* caller destroys */ }
             catch (Throwable cleanup) { error.addSuppressed(cleanup); }
             throw VcrBuilderBase.rethrow("secret callback", error);
         }

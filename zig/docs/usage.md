@@ -213,4 +213,12 @@ each other. See [architecture.md](architecture.md#concurrency-one-server-per-por
 `src/servirtium.zig` also exposes a thin `Vcr` handle wrapper
 (`Vcr.playback` / `Vcr.record` constructors plus `start`, `baseUrl`, `port`,
 `lastKind`, `lastError`, `redact`, `stopAndFlush`, `close`, …) for callers who
-want to drive the handle directly without the fluent builders.
+want to drive the handle directly without the fluent builders. Call `close`
+(idempotent) to free the handle — `stop` only stops serving.
+
+A Zig error carries no message, so to learn WHY an open failed pass a
+`servirtium.OpenDiagnostics` to `Playback.startDiagnosed` /
+`Record.startDiagnosed` (or as the last argument of `Vcr.playback` /
+`Vcr.record`); on `error.OpenFailed` / `error.StartFailed` its `message` holds
+the native reason (release with `deinit`). The diagnostics value is per call,
+not global.
