@@ -285,12 +285,10 @@ they record against a **tiny raw-socket HTTP upstream** (200 `text/plain`
 `ok-body`), strip the volatile request headers the client injects *and* the
 volatile response headers the upstream adds (Content-Length/Connection/Date/…),
 flush, and compare the fresh tape to `single_get.md` byte-for-byte — then replay
-the recording to prove recorder+player round-trip. A **raw socket, not a second
-VCR playback server**, is the upstream on purpose: the Rust wrapper (and possibly
-others) **serialize VCR servers process-wide** (`server_lock()` — a second
-`start()` blocks until the first is dropped), so recording *against* an in-process
-playback server would deadlock. Keeping the recorder the only live VCR server
-sidesteps that and is uniform across bindings. The other 18 bindings do the
+the recording to prove recorder+player round-trip. The upstream is a **raw socket, not a second
+VCR playback server**, so the test proves the recorder against something that is
+not Servirtium. Nothing forbids two VCRs in one process any more: each VCR owns
+its state, and the Rust wrapper's process-wide `server_lock()` is gone (939ee82). The other 18 bindings do the
 structural argument only (one libservirtium_vcr, one recorder, no per-binding record logic).
 
 **Tape format is compact/tight, and that is canonical here.** The emitter writes
