@@ -47,7 +47,7 @@ run in your own project directory:
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.14                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.15                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
@@ -66,7 +66,7 @@ curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
 ( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
 cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
 
-# 2. the gem, from the tag (RubyGems spelling of the tag: 2.0.0.alpha.14)
+# 2. the gem, from the tag (RubyGems spelling of the tag: 2.0.0.alpha.15)
 [ -f Gemfile ] || bundle init
 bundle config set --local path vendor/bundle    # skip if your gem directory is writable (system Ruby's is not); gitignore vendor/
 echo "gem 'fiddle'" >> Gemfile                 # Ruby 3.4 warns, Ruby 4 fails under Bundler without it
@@ -84,7 +84,7 @@ vcr.close'
 ```
 
 The dependency line is the `gem 'servirtium', git: ...` line above. The future registry form is
-`gem 'servirtium', '2.0.0.alpha.14'` (RubyGems rejects `2.0.0-alpha.14`: use the dotted
+`gem 'servirtium', '2.0.0.alpha.15'` (RubyGems rejects `2.0.0-alpha.15`: use the dotted
 spelling); it does not resolve today.
 
 ### Notes for coding agents
@@ -92,7 +92,7 @@ spelling); it does not resolve today.
 - `Permission denied @ dir_s_mkdir - /usr/lib/ruby/gems/...` from `bundle install` means a
   system Ruby with a root-owned gem directory: use a local `path` (as above), a Ruby version
   manager, or `GEM_HOME`; never `sudo bundle`.
-- Do not write `gem 'servirtium'` or `gem 'servirtium', '2.0.0.alpha.14'` with no `git:`: it is not
+- Do not write `gem 'servirtium'` or `gem 'servirtium', '2.0.0.alpha.15'` with no `git:`: it is not
   published, so Bundler reports `Could not find gem 'servirtium'` (or resolves an unrelated
   older gem of that name). Do not drop `glob: 'ruby/*.gemspec'`: without it Bundler looks for
   a gemspec at the repo root and says `There are no gemspecs at ...`.

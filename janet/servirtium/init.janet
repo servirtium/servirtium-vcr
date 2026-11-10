@@ -16,7 +16,7 @@
 # no compiler), keyword enums, options structs, `with-*` macros that always
 # stop the server, caller-owned-string handling, and structured errors.
 
-(def version "2.0.0-alpha.14")
+(def version "2.0.0-alpha.15")
 
 # ---- locating and loading the native library -------------------------------
 

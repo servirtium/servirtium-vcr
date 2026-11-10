@@ -20,23 +20,23 @@ that will be published at that tag. For example, for a future alpha:
 ```sh
 # Rewrite every version pin (per-ecosystem spellings + doc download URLs) from the
 # current SERVIRTIUM_VCR_VERSION to the new tag; all-or-nothing:
-SVCR_RELEASE_SET=v2.0.0-alpha.14 aeb release/.version.ae
-SVCR_RELEASE_TAG=v2.0.0-alpha.14 aeb release/.version.ae   # check every pin against the tag
-SVCR_RELEASE_TAG=v2.0.0-alpha.14 SVCR_ARTIFACTS_MODE=version aeb release/.artifacts.ae
+SVCR_RELEASE_SET=v2.0.0-alpha.15 aeb release/.version.ae
+SVCR_RELEASE_TAG=v2.0.0-alpha.15 aeb release/.version.ae   # check every pin against the tag
+SVCR_RELEASE_TAG=v2.0.0-alpha.15 SVCR_ARTIFACTS_MODE=version aeb release/.artifacts.ae
 # Stage and commit the release preparation, then:
-git tag -a v2.0.0-alpha.14 -m 'Servirtium core v2.0.0-alpha.14'
+git tag -a v2.0.0-alpha.15 -m 'Servirtium core v2.0.0-alpha.15'
 git push origin main
-git push origin v2.0.0-alpha.14
+git push origin v2.0.0-alpha.15
 ```
 
-The workflow also creates and pushes `go/v2.0.0-alpha.14` at the same commit. The
+The workflow also creates and pushes `go/v2.0.0-alpha.15` at the same commit. The
 Go binding is the module `github.com/servirtium/servirtium-vcr/go/v2` in the `go/`
 subdirectory, and Go resolves a subdirectory module's versions from tags prefixed
-with that directory (`go get github.com/servirtium/servirtium-vcr/go/v2@v2.0.0-alpha.14`
-looks up `go/v2.0.0-alpha.14`). `publish.sh` does the same when used instead of the
+with that directory (`go get github.com/servirtium/servirtium-vcr/go/v2@v2.0.0-alpha.15`
+looks up `go/v2.0.0-alpha.15`). `publish.sh` does the same when used instead of the
 workflow. Never create the `go/` tag at a different commit than the release tag.
 
-### The Swift package: a second, bare tag (2.0.0-alpha.14 beside v2.0.0-alpha.14)
+### The Swift package: a second, bare tag (2.0.0-alpha.15 beside v2.0.0-alpha.15)
 
 The root `Package.swift` declares the core as `binaryTarget(url:checksum:)` on
 this release's `servirtium-vcr-swift-<tag>.artifactbundle.zip` (static
@@ -156,10 +156,10 @@ bare semver tag, so SwiftPM resolves its `v` tag, whose manifest is the source
 form (`branch:`/`revision:` consumers only).
 
 ```sh
-release/publish.sh v2.0.0-alpha.14              # build the matrix + create the release, assets attached
-release/publish.sh v2.0.0-alpha.14 --prerelease # mark it a pre-release on GitHub (do this for -alpha/-beta/-rc)
-release/publish.sh v2.0.0-alpha.14 --draft      # create as a draft to review first
-release/publish.sh v2.0.0-alpha.14 --no-build   # attach whatever is already in release/dist
+release/publish.sh v2.0.0-alpha.15              # build the matrix + create the release, assets attached
+release/publish.sh v2.0.0-alpha.15 --prerelease # mark it a pre-release on GitHub (do this for -alpha/-beta/-rc)
+release/publish.sh v2.0.0-alpha.15 --draft      # create as a draft to review first
+release/publish.sh v2.0.0-alpha.15 --no-build   # attach whatever is already in release/dist
 ```
 
 `publish.sh` builds (unless `--no-build`), then `gh release create <tag>` with
@@ -170,19 +170,19 @@ so the tagged source and the binaries are the same code.
 
 ### Version strings are pre-release-aware — mind `sort -V`
 
-The canonical version is a SemVer **pre-release** (`2.0.0-alpha.14`). Two gotchas:
+The canonical version is a SemVer **pre-release** (`2.0.0-alpha.15`). Two gotchas:
 
 - **`sort -V` disagrees with SemVer on pre-releases.** SemVer orders
-  `2.0.0-alpha.14` *before* `2.0.0` (a pre-release precedes its final), but
+  `2.0.0-alpha.15` *before* `2.0.0` (a pre-release precedes its final), but
   `sort -V` puts the bare `2.0.0` first and treats any `-suffix` as *later* — so
   `sort -V | tail -1` would rank an alpha as "newer" than the final release. Do
   **not** pick "latest" by `sort -V` once a pre-release and its final coexist;
   let GitHub's own "Latest" flag (set at publish, cleared by `--prerelease`)
   decide, or compare with a real SemVer parser.
 - **Each package ecosystem spells the pre-release differently** — the git tag is
-  `v2.0.0-alpha.14`, but the per-language manifests carry the ecosystem-valid form:
-  Python `2.0.0a14` (PEP 440), RubyGems `2.0.0.alpha.14`,
-  and plain SemVer `2.0.0-alpha.14` everywhere else (npm/cargo/pub/NuGet/hex/Maven/…).
+  `v2.0.0-alpha.15`, but the per-language manifests carry the ecosystem-valid form:
+  Python `2.0.0a15` (PEP 440), RubyGems `2.0.0.alpha.15`,
+  and plain SemVer `2.0.0-alpha.15` everywhere else (npm/cargo/pub/NuGet/hex/Maven/…).
   A single literal string is **not** portable across all of them.
 
 `release/.version.ae` (an aeb node; run `aeb release/.version.ae`) owns this: each

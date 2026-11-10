@@ -8,7 +8,7 @@
 //   dist/lib/libservirtium_c.so            the C client
 //   dist/lib/libservirtium_vcr.so          libservirtium_vcr
 //   dist/lib/pkgconfig/servirtium-cpp.pc   requires servirtium, adds -std=c++17
-//   ../servirtium-cpp-2.0.0-alpha.14.tar.gz         the whole prefix, one file
+//   ../servirtium-cpp-2.0.0-alpha.15.tar.gz         the whole prefix, one file
 //
 // Rather than rebuild the native pieces, this copies c/.package.ae's finished
 // prefix (its `package_dir` artifact) and adds the C++ header — so there is
@@ -29,7 +29,7 @@ aeb(cap) {
         root = _get("root")
         cppdir = "${root}/cpp"
         dist = "${cppdir}/dist"
-        tarball = "${cppdir}/servirtium-cpp-2.0.0-alpha.14.tar.gz"
+        tarball = "${cppdir}/servirtium-cpp-2.0.0-alpha.15.tar.gz"
 
         rc = os.system("rm -rf \"${dist}\" \"${tarball}\" && mkdir -p \"${dist}\" && cp -r \"${cprefix}/.\" \"${dist}/\" && cp \"${cppdir}/include/servirtium.hpp\" \"${dist}/include/\"")
         if rc != 0 {
@@ -53,7 +53,7 @@ aeb(cap) {
 
         publish_artifact("package_dir", "${dist}")
         publish_artifact("tarball", "${tarball}")
-        println("cpp package: built relocatable prefix (C++ header + C client + libservirtium_vcr) → cpp/dist, tarball → cpp/servirtium-cpp-2.0.0-alpha.14.tar.gz")
+        println("cpp package: built relocatable prefix (C++ header + C client + libservirtium_vcr) → cpp/dist, tarball → cpp/servirtium-cpp-2.0.0-alpha.15.tar.gz")
         return 0
     }
 }

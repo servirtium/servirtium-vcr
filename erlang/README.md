@@ -61,10 +61,10 @@ shared native OTP app **`servirtium_nif`** (the C NIF plus `libservirtium_vcr`),
 Gleam and LFE use too. Neither is on Hex yet, so the sources come from this repo and
 `erlang/build-nif-app.sh` builds both apps from a prebuilt release library (no Aether needed;
 needs `erl`, `erlc`, `cc`, `curl`). Once published, a rebar3 project will just say
-`{deps, [{servirtium_erl, "2.0.0-alpha.14"}]}.` in `rebar.config`. Run this in your project:
+`{deps, [{servirtium_erl, "2.0.0-alpha.15"}]}.` in `rebar.config`. Run this in your project:
 
 ```sh
-VER=v2.0.0-alpha.14                      # a release tag of servirtium-vcr
+VER=v2.0.0-alpha.15                      # a release tag of servirtium-vcr
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
 
 # 1. build servirtium_nif + servirtium_erl into ./beam-libs
