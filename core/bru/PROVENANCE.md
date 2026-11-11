@@ -48,7 +48,9 @@ file that needs `dotenv`.
 - Size (macOS arm64, Aether 0.908.0): the `servirtium` CLI went from
   1,056,192 to 2,668,288 bytes and `libservirtium_vcr.so` from 1,798,016 to
   3,412,608 bytes, about 1.6 MB each (QuickJS's engine and about 380 KB of
-  JavaScript).
+  JavaScript). On Linux x86_64 (cachyos, Aether 0.907.0): the CLI from
+  1,026,264 to 2,882,240 and the library from 1,844,080 to 3,639,216, about
+  1.8 MB each.
 
 ## Drift guard
 
