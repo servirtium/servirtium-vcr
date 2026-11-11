@@ -3204,6 +3204,7 @@ apply_substitutions_k(vc: *Vcr, req: ptr, text: string, field: int) -> string {
         out = str_replace_all(out, "{{request.host}}", host)
         out = str_replace_all(out, "{{request.scheme}}", scheme)
         out = str_replace_all(out, "{{baseUrl}}", base)
+        out = fill_request_header_tokens(out, req)
     }
 
     // Caller-registered substitutions for this field.
@@ -3224,6 +3225,29 @@ apply_substitutions_k(vc: *Vcr, req: ptr, text: string, field: int) -> string {
     }
     return out
 }
+// {{request.header.NAME}}: the live request's NAME header (case-insensitive;
+// "" when it has none). For a response that echoes a request header back,
+// such as a client request id or correlation id the client checks: record it
+// as this token (redact_header on the response headers, the token as the
+// replacement) and playback answers each request with its own value.
+fill_request_header_tokens(text: string, req: ptr) -> string {
+    open_tok = "{{request.header."
+    out = text
+    from = 0
+    while from < string.length(out) {
+        at = string.index_of_from(out, open_tok, from)
+        if at < 0 { break }
+        name_start = at + string.length(open_tok)
+        close = string.index_of_from(out, "}}", name_start)
+        if close < 0 { break }
+        name = string.substring(out, name_start, close)
+        value = request_header_value(req, name)
+        out = string_concat(string_concat(string.substring(out, 0, at), value), string.substring(out, close + 2, string.length(out)))
+        from = at + string.length(value)
+    }
+    return out
+}
+
 normalize_whole_tape_h(server: ptr, pattern: string, name: string) -> string {
     return add_normalization_k(key_for(server), pattern, name, "")
 }
