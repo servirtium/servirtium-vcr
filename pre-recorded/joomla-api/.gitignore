@@ -1,0 +1,3 @@
+# A check run leaves <case>.md.actual beside a tape that changed
+*.md.actual
+*.md.tmp

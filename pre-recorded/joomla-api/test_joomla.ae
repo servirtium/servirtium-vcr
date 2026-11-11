@@ -1,0 +1,543 @@
+// Joomla 6 Web Services API, recorded: real requests to a real Joomla in a
+// container (with MariaDB beside it), Servirtium in the middle, one tape per
+// case under tapes/. Written for servirtium-vcr. The requests are cribbed
+// from René Kreijveld's Bruno collection (converted as it is in
+// ../converted/from.bru/renekreijveld_bruno-joomla-api/, whose tapes have
+// almost no responses); these are what Joomla really answers.
+//
+// PORTING: this file is the reference for what each tape holds; the tapes
+// are the re-usable part. A port is a test in your language that makes the
+// same requests, in the same order, against a Servirtium replay server
+// loaded with the tape, and checks the same things. Every request is plain
+// HTTP/1.1 with these headers and no others:
+//   User-Agent: servirtium-vcr pre-recorded tests (Aether std.http.client)
+//   Accept: application/vnd.api+json
+//   X-Joomla-Token: <token>          (every request but the refused ones)
+//   Content-Type: application/json   (only when there is a body)
+// Playback is strict about method, path (query string included, exactly as
+// encoded here), the recorded request headers and the body (byte for byte:
+// send the JSON bodies exactly as written in this file), and fails a case
+// whose recorded requests are not all made. Host, Connection and
+// Content-Length are on the tapes but are transport headers, not compared.
+//
+// The token
+// ---------
+// Joomla's API token is per user: base64("sha256:<user id>:<hex HMAC-SHA256
+// of the user's token seed, keyed by the site's secret>"), the seed being in
+// the user's profile (joomlatoken.token) and the secret in configuration.php.
+// When recording, the test makes it: it writes a seed into the admin's
+// profile in MariaDB and reads the secret from the Joomla container (none of
+// that is recorded). The tapes hold the header as
+//   X-Joomla-Token: X_JOOMLA_TOKEN_1
+// (Servirtium's redact_credential_header), which playback matches on
+// PRESENCE, not value. PORTING: send any X-Joomla-Token on the "logged-in"
+// requests. The refusal case sends none, then an invented one, which the
+// live Joomla refused: its tape holds it as a token of its own and the
+// 401, so a replay answers 401 to any token there, because of the order on
+// the tape, not because it can tell a good token from a bad one.
+//
+// What varies between runs, and what the tapes do with it
+// --------------------------------------------------------
+//   - the admin's user id: the installer picks a random one, so the test
+//     renumbers the admin to 42 in MariaDB before any recording (every
+//     column that holds a user id; the next user then gets 43). The tapes
+//     show 42 because the database said 42: nothing is rewritten.
+//   - times ("2026-11-11 23:01:37": created, modified, publish_up,
+//     registerDate, ...) are collapsed to "2000-01-01 00:00:00".
+//   - the Last-Modified response header (the time of the request) and Date
+//     are left out.
+//   - the token is redacted (above); the new user's password, in a request
+//     body, is on the tape as REDACTED[reader-password] and put back on
+//     replay.
+//   - links carry the host and port the request came to; the tapes have
+//     {{request.host}}, which playback fills with its own.
+// Ids (articles, categories, tags, clients, banners, users, asset ids) are
+// what a fresh install hands out, in the order these cases run, so record
+// the whole suite in order (as below), never one case on its own against a
+// used site. PORTING: take ids from the responses and send them back, as
+// the cases do; never assume them.
+//
+// In and out of scope
+// -------------------
+// In: the token refusal; articles (create, read, update, list, the 409 for
+// deleting one that is not trashed, trash, delete, 404 after); content
+// categories with an article in one (ids chained); tags, and an article
+// tagged with one; banner clients and a banner of a client (ids chained);
+// users (create, read, update, list, delete); the users' groups and access
+// levels; representative errors (404s, a 400 from a save Joomla refuses).
+// Out (the Bruno collection has them; record them as later cases): config,
+// contacts, fields and field groups, languages and overrides, media, menus,
+// messages, modules, newsfeeds, plugins, privacy, redirects, templates,
+// guided tours, the installer.
+//
+// Running it (from pre-recorded/joomla-api, with Podman or Docker):
+//   ae test test_joomla.ae                     containers, no Servirtium
+//   TCAE_VCR=record   ae test test_joomla.ae   write the tapes
+//   TCAE_VCR=check    ae test test_joomla.ae   fail if a tape changed
+//   TCAE_VCR=playback ae test test_joomla.ae   no containers: the tapes
+
+import std.spec
+import std.string
+import std.json
+import std.encoding
+import std.cryptography.hmac
+import std.http
+import std.http.client
+import testcontainers as tc
+import testcontainers.docker
+import testcontainers.network
+import testcontainers.wait
+import testcontainers.testing
+import servirtium
+
+const JOOMLA_IMAGE = "docker.io/library/joomla:6.2.0-php8.4-apache"
+const MARIADB_IMAGE = "docker.io/library/mariadb:11.4.13"
+const SUITE = "tapes"
+const API = "/api/index.php/v1"
+const USER_AGENT = "servirtium-vcr pre-recorded tests (Aether std.http.client)"
+
+// Throwaway, synthetic: the site lives for one test run.
+const DB_NAME = "joomla"
+const DB_USER = "joomla"
+const DB_PASSWORD = "joomla-db-password"
+const DB_ROOT_PASSWORD = "joomla-db-root-password"
+const DB_PREFIX = "joom_"
+const ADMIN_USERNAME = "admin"
+const ADMIN_PASSWORD = "admin-password-for-tests"
+const ADMIN_ID = 42
+const TOKEN_SEED = "servirtium-joomla-token-seed-001"
+const READER_PASSWORD = "reader-password-for-tests"
+
+// Any token a replay accepts (matched on presence), and the invented one.
+const PLAYBACK_TOKEN = "any-value-replay-matches-on-presence"
+const WRONG_TOKEN = "c2hhMjU2OjQyOm5vdC10aGUtcmlnaHQtaG1hYw=="
+
+// The site the cases share: started on first use (live modes), removed at
+// the end. Passed to the helpers that need it, never kept in a global.
+struct Site {
+    net: ptr
+    db: ptr
+    web: ptr
+    addr: string        // http://localhost:<port>, "" until started
+    token: string
+    failed: int
+}
+
+// ---------------------------------------------------------------------------
+// HTTP
+// ---------------------------------------------------------------------------
+
+// One request: (status, body). A transport error fails the case.
+fn joomla(method: string, url: string, token: string, body: string) -> (int, string) {
+    req = client.request(method, url)
+    client.set_header(req, "User-Agent", USER_AGENT)
+    client.set_header(req, "Accept", "application/vnd.api+json")
+    if string.length(token) > 0 { client.set_header(req, "X-Joomla-Token", token) }
+    client.set_timeout(req, 60s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), "application/json") }
+    r, err = client.send_request(req)
+    client.request_free(req)
+    spec.assert_ok(err, "${method} ${url}")
+    if err != "" { return 0, "" }
+    st = client.response_status(r)
+    b = client.response_body(r)
+    client.response_free(r)
+    return st, b
+}
+
+// A string or number in a JSON body by a dotted path ("data.id",
+// "data.attributes.title", "errors.0.title"); "" when absent.
+fn jv(body: string, path: string) -> string {
+    doc, err = json.parse(body)
+    if err != "" { return "" }
+    let v: ptr = doc
+    rest = path
+    while string.length(rest) > 0 && v != null {
+        p = rest
+        dot = string.index_of(rest, ".")
+        if dot >= 0 {
+            p = string.substring(rest, 0, dot)
+            rest = string.substring(rest, dot + 1, string.length(rest))
+        } else {
+            rest = ""
+        }
+        if json.json_type(v) == json.JSON_ARRAY {
+            idx, _ = string.to_int(p)
+            a, _ = json.array_get(v, idx)
+            v = a
+        } else {
+            o, _ = json.object_get(v, p)
+            v = o
+        }
+    }
+    out = ""
+    if v != null {
+        if json.json_type(v) == json.JSON_STRING {
+            s, _e = json.get_string(v)
+            out = string.copy(s)
+        } else if json.json_type(v) == json.JSON_NUMBER {
+            out = string.from_int(json.json_get_int(v))
+        }
+    }
+    json.free(doc)
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// The site (record, check and off modes only)
+// ---------------------------------------------------------------------------
+
+fn sql(site: *Site, statement: string) -> string {
+    code, out, err = tc.exec(site.db as *docker.Container, ["mariadb", "-uroot", "-p${DB_ROOT_PASSWORD}", DB_NAME, "-N", "-B", "-e", statement])
+    spec.assert_ok(err, "mariadb exec")
+    spec.assert_eq(code, 0, "mariadb: ${statement}: ${out}")
+    return string.trim(out)
+}
+
+// Start MariaDB and Joomla on a network of their own, let Joomla install
+// itself, renumber the admin to ADMIN_ID, give it an API token. Sets
+// site.addr and site.token; "" on failure (the case is failed).
+fn start_site(site: *Site) -> string {
+    if site.failed == 1 { return "" }
+    if string.length(site.addr) > 0 { return site.addr }
+    site.failed = 1
+    n, nerr = network.new_random()
+    spec.assert_ok(nerr, "a network")
+    if nerr != "" { return "" }
+    site.net = n as ptr
+    db, derr = tc.run(MARIADB_IMAGE) {
+        with_network(n.name)
+        network_alias(n.name, "db")
+        env("MARIADB_ROOT_PASSWORD", DB_ROOT_PASSWORD)
+        env("MARIADB_DATABASE", DB_NAME)
+        env("MARIADB_USER", DB_USER)
+        env("MARIADB_PASSWORD", DB_PASSWORD)
+        expose("3306/tcp")
+        // The image's entrypoint runs a temporary server first: ready twice.
+        wait_for(wait.for_log("ready for connections") { with_occurrence(2); with_startup_timeout(180s) })
+    }
+    spec.assert_ok(derr, "mariadb starts")
+    if derr != "" { return "" }
+    site.db = db as ptr
+    web, werr = tc.run(JOOMLA_IMAGE) {
+        with_network(n.name)
+        env("JOOMLA_DB_HOST", "db")
+        env("JOOMLA_DB_USER", DB_USER)
+        env("JOOMLA_DB_PASSWORD", DB_PASSWORD)
+        env("JOOMLA_DB_NAME", DB_NAME)
+        env("JOOMLA_DB_PREFIX", DB_PREFIX)
+        env("JOOMLA_SITE_NAME", "Servirtium test site")
+        env("JOOMLA_ADMIN_USER", "Site Admin")
+        env("JOOMLA_ADMIN_USERNAME", ADMIN_USERNAME)
+        env("JOOMLA_ADMIN_PASSWORD", ADMIN_PASSWORD)
+        env("JOOMLA_ADMIN_EMAIL", "admin@example.test")
+        expose("80/tcp")
+        // The installer runs, then Apache starts.
+        wait_for(wait.for_log("resuming normal operations") { with_startup_timeout(300s) })
+    }
+    spec.assert_ok(werr, "joomla starts and installs itself")
+    if werr != "" { return "" }
+    site.web = web as ptr
+    port, perr = tc.mapped_port(web, "80/tcp")
+    spec.assert_ok(perr, "joomla's port")
+    if perr != "" { return "" }
+    addr = "http://localhost:${port}"
+
+    // Renumber the admin (the installer picks a random id) wherever a column
+    // holds a user id, so ids on the tapes are the same every run.
+    old = sql(site, "SELECT id FROM ${DB_PREFIX}users WHERE username='${ADMIN_USERNAME}'")
+    spec.assert_true(string.length(old) > 0, "the admin exists")
+    if string.length(old) == 0 { return "" }
+    stmts = sql(site, "SELECT CONCAT('UPDATE `', table_name, '` SET `', column_name, '`=${ADMIN_ID} WHERE `', column_name, '`=${old};') FROM information_schema.columns WHERE table_schema='${DB_NAME}' AND column_name IN ('created_by','modified_by','created_user_id','modified_user_id','checked_out','user_id')")
+    sql(site, "${stmts} UPDATE ${DB_PREFIX}users SET id=${ADMIN_ID} WHERE id=${old}; ALTER TABLE ${DB_PREFIX}users AUTO_INCREMENT=${ADMIN_ID + 1};")
+    left = sql(site, "SELECT COUNT(*) FROM ${DB_PREFIX}users WHERE id=${old}")
+    spec.assert_str_eq(left, "0", "the admin is renumbered")
+
+    // The API token: a seed in the admin's profile, the site's secret from
+    // configuration.php, and Joomla's token format.
+    seed64 = encoding.base64_encode_padded(string.bytes(TOKEN_SEED))
+    sql(site, "INSERT INTO ${DB_PREFIX}user_profiles (user_id, profile_key, profile_value, ordering) VALUES (${ADMIN_ID},'joomlatoken.token','${seed64}',1),(${ADMIN_ID},'joomlatoken.enabled','1',2)")
+    code, secret, xerr = tc.exec(web, ["php", "-r", "include '/var/www/html/configuration.php'; echo (new JConfig)->secret;"])
+    spec.assert_ok(xerr, "read the site secret")
+    spec.assert_eq(code, 0, "read the site secret: ${secret}")
+    mac = hmac.hmac_sha256_hex(string.bytes(string.trim(secret)), string.bytes(TOKEN_SEED))
+    site.token = encoding.base64_encode_padded(string.bytes("sha256:${ADMIN_ID}:${mac}"))
+
+    // Apache is up; wait for the API to answer the token (not recorded).
+    tries = 0
+    st = 0
+    while tries < 60 && st != 200 {
+        st, _b = joomla("GET", "${addr}${API}/content/categories", site.token, "")
+        if st != 200 { sleep(1000) }
+        tries = tries + 1
+    }
+    spec.assert_eq(st, 200, "the API answers the token")
+    if st != 200 { return "" }
+    site.addr = addr
+    site.failed = 0
+    return addr
+}
+
+fn stop_site(site: *Site) {
+    if site.web != null { tc.terminate(site.web as *docker.Container) }
+    if site.db != null { tc.terminate(site.db as *docker.Container) }
+    if site.net != null { network.remove(site.net as *docker.Network) }
+}
+
+// A case's recording: (base URL to send to, the recording, the token to
+// send, ok). In playback there is no site.
+fn begin(site: *Site, case_: string) -> (string, ptr, string, int) {
+    addr = ""
+    token = PLAYBACK_TOKEN
+    if servirtium.live() == 1 {
+        addr = start_site(site)
+        if addr == "" { return "", null, "", 0 }
+        token = site.token
+    }
+    base, rec = servirtium.recording(SUITE, case_, addr)
+    return "${base}${API}", rec, token, 1
+}
+
+// ---------------------------------------------------------------------------
+// Recording rules (see the header)
+// ---------------------------------------------------------------------------
+
+fn rules() {
+    servirtium.clear_rules()
+    servirtium.redact_credential_header("X-Joomla-Token")
+    servirtium.remove_header(servirtium.FIELD_RESPONSE_HEADERS, "Last-Modified")
+    servirtium.collapse("[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}", "2000-01-01 00:00:00")
+    servirtium.redact(servirtium.FIELD_REQUEST_BODY, READER_PASSWORD, "REDACTED[reader-password]")
+}
+
+// ---------------------------------------------------------------------------
+// The cases
+// ---------------------------------------------------------------------------
+
+// Trash (state -2), then delete: Joomla refuses to delete an item that is
+// not in the trash. path is "/content/articles/7" and the like; field is the
+// state's name there ("state" or "published").
+fn trash_and_delete(api: string, token: string, path: string, field: string) {
+    st, b = joomla("PATCH", "${api}${path}", token, "{\"${field}\":-2}")
+    spec.assert_eq(st, 200, "trash ${path}: ${b}")
+    st, b = joomla("DELETE", "${api}${path}", token, "")
+    spec.assert_eq(st, 204, "delete ${path}: ${b}")
+}
+
+main() {
+    fw = spec.init()
+    if servirtium.skip_if_no_engine(fw) == 1 { return spec.run_summary(fw) }
+    site = heap.new(Site)
+
+    rules()
+    spec.describe(fw, "Joomla 6 Web Services API") {
+
+        // PORTING (tape: refuses_a_request_without_a_token):
+        //   GET /api/index.php/v1/content/articles, no X-Joomla-Token -> 401
+        //       {"errors":[{"title":"Forbidden"}]}
+        //   the same with an invented token -> 401, the same body
+        //   the same with the token -> 200, an empty list
+        spec.it("refuses a request without a token") callback {
+            api, rec, token, ok = begin(site, "refuses_a_request_without_a_token")
+            if ok == 0 { return }
+            st, b = joomla("GET", "${api}/content/articles", "", "")
+            spec.assert_eq(st, 401, "no token: ${b}")
+            spec.assert_str_eq(jv(b, "errors.0.title"), "Forbidden", "Forbidden")
+            st, b = joomla("GET", "${api}/content/articles", WRONG_TOKEN, "")
+            spec.assert_eq(st, 401, "an invented token: ${b}")
+            st, b = joomla("GET", "${api}/content/articles", token, "")
+            spec.assert_eq(st, 200, "the token: ${b}")
+            spec.assert_contains(b, "\"data\":[]", "no articles yet")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (tape: creates_reads_updates_and_deletes_an_article):
+        //   POST   /content/articles {title, alias, articletext, catid 2
+        //          (Uncategorised), language, state 1} -> 200, data.id
+        //   GET    /content/articles/<id> -> 200
+        //   PATCH  /content/articles/<id> {"title":...} -> 200, the new title
+        //   GET    /content/articles -> 200, the list holds it
+        //   DELETE /content/articles/<id> -> 409 (not trashed)
+        //   PATCH  {"state":-2} -> 200; DELETE -> 204; GET -> 404
+        spec.it("creates, reads, updates and deletes an article") callback {
+            api, rec, token, ok = begin(site, "creates_reads_updates_and_deletes_an_article")
+            if ok == 0 { return }
+            st, b = joomla("POST", "${api}/content/articles", token, "{\"title\":\"Servirtium test article\",\"alias\":\"servirtium-test-article\",\"articletext\":\"<p>Written by a test.</p>\",\"catid\":2,\"language\":\"*\",\"state\":1}")
+            spec.assert_eq(st, 200, "create: ${b}")
+            id = jv(b, "data.id")
+            spec.assert_true(string.length(id) > 0, "an id")
+            st, b = joomla("GET", "${api}/content/articles/${id}", token, "")
+            spec.assert_eq(st, 200, "read: ${b}")
+            spec.assert_str_eq(jv(b, "data.attributes.title"), "Servirtium test article", "the title")
+            spec.assert_str_eq(jv(b, "data.attributes.created_by"), "${ADMIN_ID}", "created by the admin")
+            st, b = joomla("PATCH", "${api}/content/articles/${id}", token, "{\"title\":\"Servirtium test article, edited\"}")
+            spec.assert_eq(st, 200, "update: ${b}")
+            spec.assert_str_eq(jv(b, "data.attributes.title"), "Servirtium test article, edited", "the new title")
+            st, b = joomla("GET", "${api}/content/articles", token, "")
+            spec.assert_eq(st, 200, "list: ${b}")
+            spec.assert_str_eq(jv(b, "data.0.id"), id, "the list holds it")
+            st, b = joomla("DELETE", "${api}/content/articles/${id}", token, "")
+            spec.assert_eq(st, 409, "delete before trashing: ${b}")
+            spec.assert_contains(b, "must be trashed before it can be deleted", "why")
+            trash_and_delete(api, token, "/content/articles/${id}", "state")
+            st, b = joomla("GET", "${api}/content/articles/${id}", token, "")
+            spec.assert_eq(st, 404, "gone: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (tape: creates_a_category_and_an_article_in_it):
+        //   POST /content/categories {title, alias, parent_id 1, published 1,
+        //        language, description ""} -> 200, data.id = <cat>
+        //   POST /content/articles {..., "catid":<cat>} -> 200, <art>
+        //   GET  /content/articles?filter%5Bcategory%5D=<cat> -> the article
+        //   GET  /content/categories/<cat> -> 200
+        //   trash and delete the article, then the category
+        spec.it("creates a category and an article in it") callback {
+            api, rec, token, ok = begin(site, "creates_a_category_and_an_article_in_it")
+            if ok == 0 { return }
+            st, b = joomla("POST", "${api}/content/categories", token, "{\"title\":\"Servirtium recordings\",\"alias\":\"servirtium-recordings\",\"parent_id\":1,\"published\":1,\"language\":\"*\",\"description\":\"\"}")
+            spec.assert_eq(st, 200, "create the category: ${b}")
+            cat = jv(b, "data.id")
+            st, b = joomla("POST", "${api}/content/articles", token, "{\"title\":\"Filed under recordings\",\"alias\":\"filed-under-recordings\",\"articletext\":\"<p>In a category of its own.</p>\",\"catid\":${cat},\"language\":\"*\",\"state\":1}")
+            spec.assert_eq(st, 200, "create the article: ${b}")
+            art = jv(b, "data.id")
+            spec.assert_str_eq(jv(b, "data.relationships.category.data.id"), cat, "in the new category")
+            st, b = joomla("GET", "${api}/content/articles?filter%5Bcategory%5D=${cat}", token, "")
+            spec.assert_eq(st, 200, "list by category: ${b}")
+            spec.assert_str_eq(jv(b, "data.0.id"), art, "the article")
+            st, b = joomla("GET", "${api}/content/categories/${cat}", token, "")
+            spec.assert_eq(st, 200, "read the category: ${b}")
+            spec.assert_str_eq(jv(b, "data.attributes.title"), "Servirtium recordings", "its title")
+            trash_and_delete(api, token, "/content/articles/${art}", "state")
+            trash_and_delete(api, token, "/content/categories/${cat}", "published")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (tape: creates_a_tag_and_tags_an_article):
+        //   POST /tags {title, parent_id 1, published 1, language,
+        //        description ""} -> 200, <tag>
+        //   POST /content/articles {..., "tags":["<tag>"]} -> 200, <art>
+        //   GET  /content/articles/<art> -> its tags hold <tag>
+        //   trash and delete the article, then the tag
+        spec.it("creates a tag and tags an article") callback {
+            api, rec, token, ok = begin(site, "creates_a_tag_and_tags_an_article")
+            if ok == 0 { return }
+            st, b = joomla("POST", "${api}/tags", token, "{\"title\":\"recorded\",\"alias\":\"recorded\",\"parent_id\":1,\"published\":1,\"language\":\"*\",\"description\":\"\"}")
+            spec.assert_eq(st, 200, "create the tag: ${b}")
+            tag = jv(b, "data.id")
+            st, b = joomla("POST", "${api}/content/articles", token, "{\"title\":\"Tagged article\",\"alias\":\"tagged-article\",\"articletext\":\"<p>Tagged.</p>\",\"catid\":2,\"language\":\"*\",\"state\":1,\"tags\":[\"${tag}\"]}")
+            spec.assert_eq(st, 200, "create the article: ${b}")
+            art = jv(b, "data.id")
+            st, b = joomla("GET", "${api}/content/articles/${art}", token, "")
+            spec.assert_eq(st, 200, "read it: ${b}")
+            spec.assert_str_eq(jv(b, "data.relationships.tags.data.0.id"), tag, "tagged")
+            st, b = joomla("GET", "${api}/tags/${tag}", token, "")
+            spec.assert_eq(st, 200, "read the tag: ${b}")
+            trash_and_delete(api, token, "/content/articles/${art}", "state")
+            trash_and_delete(api, token, "/tags/${tag}", "published")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (tape: creates_a_banner_client_and_a_banner_for_it):
+        //   POST  /banners/clients {name, contact, email, state 1,
+        //         extrainfo ""} -> 200, <client>
+        //   POST  /banners {name, alias, catid 3 (banners' Uncategorised),
+        //         "cid":<client>, type 1 (custom), custombannercode, ...,
+        //         params} -> 200, <banner>
+        //   GET   /banners?filter%5Bclient_id%5D=<client> -> the banner
+        //   PATCH /banners/<banner> {"sticky":1} -> 200
+        //   trash and delete the banner, then the client
+        spec.it("creates a banner client and a banner for it") callback {
+            api, rec, token, ok = begin(site, "creates_a_banner_client_and_a_banner_for_it")
+            if ok == 0 { return }
+            st, b = joomla("POST", "${api}/banners/clients", token, "{\"name\":\"Acme Adverts\",\"contact\":\"Ann Acme\",\"email\":\"ads@acme.example.test\",\"state\":1,\"extrainfo\":\"\"}")
+            spec.assert_eq(st, 200, "create the client: ${b}")
+            cid = jv(b, "data.id")
+            st, b = joomla("POST", "${api}/banners", token, "{\"name\":\"Spring sale\",\"alias\":\"spring-sale\",\"catid\":3,\"cid\":${cid},\"state\":1,\"type\":1,\"custombannercode\":\"<b>Spring sale</b>\",\"description\":\"\",\"language\":\"*\",\"params\":{\"imageurl\":\"\",\"width\":\"\",\"height\":\"\",\"alt\":\"\"}}")
+            spec.assert_eq(st, 200, "create the banner: ${b}")
+            bid = jv(b, "data.id")
+            spec.assert_str_eq(jv(b, "data.attributes.cid"), cid, "the client's banner")
+            st, b = joomla("GET", "${api}/banners?filter%5Bclient_id%5D=${cid}", token, "")
+            spec.assert_eq(st, 200, "list the client's banners: ${b}")
+            spec.assert_str_eq(jv(b, "data.0.id"), bid, "the banner")
+            st, b = joomla("PATCH", "${api}/banners/${bid}", token, "{\"sticky\":1}")
+            spec.assert_eq(st, 200, "make it sticky: ${b}")
+            spec.assert_str_eq(jv(b, "data.attributes.sticky"), "1", "sticky")
+            trash_and_delete(api, token, "/banners/${bid}", "state")
+            trash_and_delete(api, token, "/banners/clients/${cid}", "state")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (tape: creates_updates_and_deletes_a_user):
+        //   POST   /users {name, username, email, password, password2,
+        //          groups [2] (Registered), block 0} -> 200, <user>
+        //          (the password is REDACTED[reader-password] on the tape)
+        //   GET    /users/<user> -> 200
+        //   PATCH  /users/<user> {"name":...} -> 200
+        //   GET    /users?filter%5Bsearch%5D=testreader -> the user
+        //   DELETE /users/<user> -> 204 (users need no trashing); GET -> 404
+        spec.it("creates, updates and deletes a user") callback {
+            api, rec, token, ok = begin(site, "creates_updates_and_deletes_a_user")
+            if ok == 0 { return }
+            st, b = joomla("POST", "${api}/users", token, "{\"name\":\"Test Reader\",\"username\":\"testreader\",\"email\":\"reader@example.test\",\"password\":\"${READER_PASSWORD}\",\"password2\":\"${READER_PASSWORD}\",\"groups\":[2],\"block\":0}")
+            spec.assert_eq(st, 200, "create: ${b}")
+            uid = jv(b, "data.id")
+            spec.assert_str_eq(uid, "${ADMIN_ID + 1}", "the next id after the admin")
+            st, b = joomla("GET", "${api}/users/${uid}", token, "")
+            spec.assert_eq(st, 200, "read: ${b}")
+            spec.assert_str_eq(jv(b, "data.attributes.username"), "testreader", "the username")
+            st, b = joomla("PATCH", "${api}/users/${uid}", token, "{\"name\":\"Test Reader, renamed\"}")
+            spec.assert_eq(st, 200, "update: ${b}")
+            spec.assert_str_eq(jv(b, "data.attributes.name"), "Test Reader, renamed", "the new name")
+            st, b = joomla("GET", "${api}/users?filter%5Bsearch%5D=testreader", token, "")
+            spec.assert_eq(st, 200, "search: ${b}")
+            spec.assert_str_eq(jv(b, "data.0.id"), uid, "found")
+            st, b = joomla("DELETE", "${api}/users/${uid}", token, "")
+            spec.assert_eq(st, 204, "delete: ${b}")
+            st, b = joomla("GET", "${api}/users/${uid}", token, "")
+            spec.assert_eq(st, 404, "gone: ${b}")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (tape: lists_user_groups_and_access_levels):
+        //   GET /users/groups -> 200, the installer's nine groups
+        //   GET /users/levels -> 200, Public, Registered, Special, Guest,
+        //       Super Users
+        spec.it("lists user groups and access levels") callback {
+            api, rec, token, ok = begin(site, "lists_user_groups_and_access_levels")
+            if ok == 0 { return }
+            st, b = joomla("GET", "${api}/users/groups", token, "")
+            spec.assert_eq(st, 200, "groups: ${b}")
+            spec.assert_contains(b, "\"title\":\"Super Users\"", "Super Users")
+            st, b = joomla("GET", "${api}/users/levels", token, "")
+            spec.assert_eq(st, 200, "levels: ${b}")
+            spec.assert_contains(b, "\"title\":\"Public\"", "Public")
+            servirtium.end_recording(rec)
+        }
+
+        // PORTING (tape: answers_the_representative_errors):
+        //   GET   /content/articles/999999 -> 404 "Resource not found"
+        //   GET   /users/999999 -> 404
+        //   POST  /tags {"title":"no description","parent_id":1} -> 400
+        //         (Joomla's save fails: the column has no default)
+        //   GET   /no/such/route -> 404
+        spec.it("answers the representative errors") callback {
+            api, rec, token, ok = begin(site, "answers_the_representative_errors")
+            if ok == 0 { return }
+            st, b = joomla("GET", "${api}/content/articles/999999", token, "")
+            spec.assert_eq(st, 404, "a missing article: ${b}")
+            spec.assert_str_eq(jv(b, "errors.0.title"), "Resource not found", "not found")
+            st, b = joomla("GET", "${api}/users/999999", token, "")
+            spec.assert_eq(st, 404, "a missing user: ${b}")
+            st, b = joomla("POST", "${api}/tags", token, "{\"title\":\"no description\",\"parent_id\":1}")
+            spec.assert_eq(st, 400, "a save Joomla refuses: ${b}")
+            st, b = joomla("GET", "${api}/no/such/route", token, "")
+            spec.assert_eq(st, 404, "an unknown route: ${b}")
+            servirtium.end_recording(rec)
+        }
+    }
+
+    stop_site(site)
+    heap.free(site)
+    return spec.run_summary(fw)
+}
