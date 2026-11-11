@@ -1,0 +1,46 @@
+// No spaces in names, ever (Paul, 2026-11-11): fails when any tracked file
+// or directory name in the repository holds a space. Directories are checked
+// through the paths of the files they hold (git tracks no empty directory).
+// A name with a space breaks unquoted shell lines, URLs and links in
+// markdown, and the converters here write slugged names for that reason.
+//
+// Run by core_tests/.names.ae (a dep of core_tests/.tests.ae), from the root
+// given in SVCR_TEST_ROOT, or the current directory. Lists every offender.
+
+import std.os
+import std.string
+
+extern exit(code: int)
+
+main() {
+    root = os.getenv("SVCR_TEST_ROOT")
+    if root == "" { root = "." }
+    out, err = os.exec("git -C '${root}' -c core.quotePath=false ls-files")
+    if err != "" { println("names: git ls-files failed: ${err}"); exit(1) }
+    if string.length(out) == 0 { println("names: git ls-files listed nothing under ${root}"); exit(1) }
+    bad = 0
+    total = 0
+    n = string.length(out)
+    cur = 0
+    while cur < n {
+        nl = string.index_of_from(out, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(out, cur, e)
+        if string.length(line) > 0 {
+            total = total + 1
+            if string.contains(line, " ") == 1 || string.contains(line, "\t") == 1 {
+                println("names: a space in a tracked name: '${line}'")
+                bad = bad + 1
+            }
+        }
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    if bad > 0 {
+        println("names: ${bad} of ${total} tracked path(s) have a space in a file or directory name; rename them (lowercase, '-' for spaces)")
+        exit(1)
+    }
+    println("names: ${total} tracked path(s), no spaces")
+    exit(0)
+}

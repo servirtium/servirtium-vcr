@@ -1,0 +1,17 @@
+// The repository-wide name check: no tracked file or directory name may hold
+// a space (core_tests/names_check.ae). A dep of core_tests/.tests.ae, so the
+// usual test gate runs it; standalone: aeb core_tests/.names.ae
+import bldr
+import aether
+import aether (source, lib, caps)
+import bldr (env)
+
+aeb(cap) {
+    bldr.build() {
+        root = _get("root")
+        aether.program_test() {
+            source("names_check.ae"); lib(".."); caps("fs,os,extern")
+            env("SVCR_TEST_ROOT", root)
+        }
+    }
+}
