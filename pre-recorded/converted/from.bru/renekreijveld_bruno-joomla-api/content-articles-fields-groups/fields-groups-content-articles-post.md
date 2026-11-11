@@ -1,0 +1,45 @@
+## Interaction 0: POST /api/index.php/v1/fields/groups/content/articles
+
+## [Note] Converted from Bruno: response body not documented:
+
+Source: Content Articles Fields Groups/fields-groups-content-articles (POST).bru, example 1 of 1: "200 Response (fields/groups/content/articles)"
+Description: todo: response object
+Response body: not documented. The example gives the status (200) and no body, so the
+body below is empty because nothing was documented, not because the service sends nothing.
+Request headers the collection sends (not matched on playback):
+    Accept: application/vnd.api+json
+    Content-Type: application/vnd.api+json
+    X-Joomla-Token: {{api_key}}
+
+### Request headers recorded for playback:
+
+```
+```
+### Request body recorded for playback ():
+
+```
+{
+  "access": 1,
+  "checked_out": 0,
+  "context": "com_content.article",
+  "created_by": 0,
+  "description": "",
+  "language": "*",
+  "note": "",
+  "params": {
+    "display_readonly": "1"
+  },
+  "required": 0,
+  "state": 1,
+  "title": "article field group"
+}
+```
+### Response headers recorded for playback:
+
+```
+```
+### Response body recorded for playback (200: text/plain):
+
+```
+```
+
