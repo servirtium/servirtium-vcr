@@ -6,9 +6,18 @@ Those are different kinds of artifact, so most of the interesting work is
 deciding which Servirtium idiom each Bruno concept becomes. The policy is to
 **expand into Servirtium idioms**, never to preserve Bruno semantics in the tape.
 
-Status: what the importer reads today is four things — `meta.seq`, the verb, the
-`url`, and `body:json`. Everything else in a `.bru` is **silently ignored**.
-Measured below, not assumed.
+Status (2026-11-11): `.bru` files are now read by **Bruno's own parser**
+(`@usebruno/lang`, vendored, run in QuickJS embedded in the CLI and in
+libservirtium_vcr: `core/bru.ae`), and what a request means is worked out once,
+in `core/bru_convert.ae`, for both `import-bru` and the new offline
+`servirtium convert bru` (which turns a collection's saved examples into tapes
+without a service). So variables resolve from the request, its folders and the
+collection (and, for `convert bru`, an environment); folder and collection
+headers and auth are worked out (`convert bru` lists them in each
+interaction's note, credentials never written; `import-bru` still sends
+neither, see below); and json, xml, text, sparql, form-urlencoded and graphql
+bodies are serialised. The measurements below are from the hand-written
+parser this replaced, kept for the reasoning.
 
 ## What silently goes wrong today
 
@@ -101,12 +110,10 @@ whatever the service says to an anonymous caller.
 all reduce to "a request body plus a content type". A tape stores a literal body,
 so each is a small serialiser away.
 
-**Implemented for the literal types**, and the mapping lives in the ENGINE
-(`core/vcr.ae`), not in the CLI — `bru_body_block`, `bru_body_content_type` and
-`bru_body_needs_work`. That placement is the point: Bruno's body-type table is
-capability, and capability belongs in servirtium-core so a second consumer of
-import (another front end, a binding, a service) gets the same answers instead
-of reimplementing it. The CLI only decides what to *do* with the answer.
+**Implemented** in `core/bru_convert.ae` (`body_of`), shared by `import-bru`
+and `convert bru`; it replaced the engine's earlier `bru_body_block` /
+`bru_body_content_type` / `bru_body_needs_work`, along with the hand-written
+`.bru` reader.
 
 | `body:` | sent as | status |
 |---|---|---|
@@ -114,11 +121,13 @@ of reimplementing it. The CLI only decides what to *do* with the answer.
 | `xml` | `application/xml` | literal |
 | `text` | `text/plain` | literal |
 | `sparql` | `application/sparql-query` | literal |
-| `formUrlEncoded`, `multipartForm`, `graphql`, `file` | — | **TODO note**, sent with no body |
+| `formUrlEncoded` | `application/x-www-form-urlencoded` | `k=v&...`, percent-encoded |
+| `graphql` | `application/json` | `{"query":...,"variables":...}` |
+| `multipartForm`, `file` | — | **TODO note**, sent with no body |
 
-The four that remain need real serialisation (k=v joining, multipart framing, a
-GraphQL envelope), so rather than send an empty body and record a
-plausible-looking wrong answer, the importer now leaves an explicit TODO — both
+A collection's own `Content-Type` header, when it sets one, wins over these.
+Multipart framing and file bodies remain: rather than send an empty body and
+record a plausible-looking wrong answer, the importer leaves an explicit TODO,
 on the console and as a `## [Note]` in the tape.
 
 ### `script:*`, `tests`, `asserts` → out of scope, and say so

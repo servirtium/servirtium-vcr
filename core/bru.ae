@@ -1,0 +1,102 @@
+// bru — Bruno's own .bru parser (@usebruno/lang, vendored unchanged under
+// core/bru/third_party/, see core/bru/PROVENANCE.md) run in QuickJS embedded in
+// this program, by aether's engine module contrib.quickjs (shipped with
+// every Aether release; no package to fetch, nothing loaded at run time).
+//
+// This module only PARSES: a .bru text goes in, the parser's JSON comes out.
+// Everything a .bru means for a tape (variables, inherited headers and auth,
+// file names, the tape itself) is Aether, in core/vcr.ae's bru_* functions.
+//
+//     p, err = bru.parser_new()            // one QuickJS runtime, the parser loaded
+//     json, perr = bru.parse(p, "request", text)
+//     bru.parser_free(p)
+//
+// A parser is a handle (its own runtime): no process-wide state, and two
+// parsers can live side by side. kind is "request", "collection" (a
+// collection.bru or folder.bru) or "environment" (environments/*.bru).
+
+import contrib.quickjs as qjs
+import bru_js
+
+exports (parser_new, parser_new_with, parser_free, parse, eval_in, module_definition, BRU_PARSER_VERSION, BRU_PARSER_DIR)
+
+// The vendored parser's version, and its directory under core/bru/third_party/.
+const BRU_PARSER_VERSION = "@usebruno/lang 0.41.0"
+const BRU_PARSER_DIR = "usebruno-lang-0.41.0"
+
+// The parser's runtime: heap cap (KB) and the time one parse may take (ms).
+const BRU_HEAP_KB = 131072
+const BRU_TIME_MS = 30000
+
+// The text of a module definition: the vendored file wrapped as a CommonJS
+// factory for glue.js's require().
+module_definition(name: string, src: string) -> string {
+    return "__svcr_define(\"${name}\", function (module, exports, require, __dirname) {\n${src}\n});\n"
+}
+
+// A runtime with the glue and the embedded parser modules defined: (handle, "")
+// or (null, why). The modules run on first require.
+parser_new() -> (ptr, string) {
+    return parser_new_with("")
+}
+
+// The same, then `extra` (more module definitions, e.g. Bruno's own tests
+// and fixtures for the drift test) evaluated in it.
+parser_new_with(extra: string) -> (ptr, string) {
+    q = qjs.runtime(BRU_HEAP_KB, 0)
+    if q == null { return null, "bru: cannot create a QuickJS runtime" }
+    qjs.set_time_limit(q, BRU_TIME_MS)
+    v, err = qjs.eval(q, bru_js.bru_js_glue(), "glue.js")
+    if err != "" { qjs.dispose(q); return null, "bru: glue.js: ${err}" }
+    qjs.release(q, v)
+    n = bru_js.bru_js_module_count()
+    i = 0
+    while i < n {
+        name = bru_js.bru_js_module_name(i)
+        mv, merr = qjs.eval(q, module_definition(name, bru_js.bru_js_module_source(i)), "${name}.js")
+        if merr != "" { qjs.dispose(q); return null, "bru: ${name}: ${merr}" }
+        qjs.release(q, mv)
+        i = i + 1
+    }
+    if extra != "" {
+        ev, eerr = qjs.eval(q, extra, "extra.js")
+        if eerr != "" { qjs.dispose(q); return null, "bru: ${eerr}" }
+        qjs.release(q, ev)
+    }
+    return q, ""
+}
+
+parser_free(p: ptr) {
+    if p != null { qjs.dispose(p) }
+}
+
+// Evaluate `code` in the parser's runtime: (its value as a string, "") or
+// ("", the exception). For tests and for anything that needs more than parse.
+eval_in(p: ptr, code: string, label: string) -> (string, string) {
+    v, err = qjs.eval(p, code, label)
+    if err != "" { return "", err }
+    s = qjs.to_string(p, v)
+    qjs.release(p, v)
+    return s, ""
+}
+
+// Parse one .bru text: (the parser's result as JSON, "") or ("", the error).
+parse(p: ptr, kind: string, text: string) -> (string, string) {
+    if p == null { return "", "bru: no parser" }
+    fnh, ferr = qjs.get_global(p, "__svcr_parse")
+    if ferr != "" { return "", "bru: ${ferr}" }
+    args = qjs.new_array(p)
+    k = qjs.new_string(p, kind)
+    t = qjs.new_string(p, text)
+    _e0 = qjs.set_index(p, args, 0, k)
+    _e1 = qjs.set_index(p, args, 1, t)
+    r, cerr = qjs.call(p, fnh, 0, args)
+    qjs.release(p, k)
+    qjs.release(p, t)
+    qjs.release(p, args)
+    qjs.release(p, fnh)
+    if cerr != "" { return "", cerr }
+    s = qjs.to_string(p, r)
+    qjs.release(p, r)
+    return s, ""
+}

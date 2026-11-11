@@ -41,6 +41,7 @@
 //   6. vcr_embed_destroy(handle) frees it (every handle, failed or not).
 
 import vcr
+import bru_convert
 import std.http
 // Pulls Aether's PURE-Aether TLS 1.3 server (RFC 8446, NO OpenSSL) into the
 // link: server_set_tls reaches it through weak symbols (aether_pure_tls_server_*)
@@ -356,6 +357,15 @@ vcr_embed_redact_json_field(s: ptr, field: int, name: string, replacement: strin
 // this is a pure file->file transform). Returns "" on success, else an error.
 vcr_embed_har_import(har_path: string, tape_path: string) -> ptr {
     return vcr_embed_dup(vcr.har_import(har_path, tape_path))
+}
+
+// Convert a Bruno collection's examples into tapes under out_dir (no network,
+// no server handle): `servirtium convert bru`. env names an environment
+// ("" for none). Returns "" on success, else the error; the summary of what
+// was written is out_dir/CONVERSION.md.
+vcr_embed_convert_bru(collection_dir: string, out_dir: string, env: string) -> ptr {
+    _summary, err = bru_convert.convert_collection(collection_dir, out_dir, env)
+    return vcr_embed_dup(err)
 }
 
 // Inverse of vcr_embed_har_import: a Servirtium tape -> HAR 1.2 JSON file.

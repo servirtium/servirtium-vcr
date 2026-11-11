@@ -855,3 +855,19 @@ export const Vcr = {
     return new RecordBuilder(tapePath, upstreamBase)
   },
 }
+
+/**
+ * Convert a Bruno collection's examples into Servirtium tapes, with no
+ * network: `servirtium convert bru` from Node. Each request `.bru` with
+ * examples becomes one tape under `outDir` (one interaction per example), at
+ * a space-free path; `outDir/CONVERSION.md` lists what became what. `env`
+ * names an environment (`environments/<env>.bru`) to resolve variables from.
+ * Bruno's own parser does the parsing, inside libservirtium_vcr. Throws
+ * {@link VcrError} on failure.
+ */
+export function convertBru(collectionDir: string, outDir: string, env = ''): void {
+  const err = N.takeString(N.convertBru(collectionDir, outDir, env))
+  if (err) {
+    throw new VcrError(err)
+  }
+}

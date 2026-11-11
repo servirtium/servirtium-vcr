@@ -49,13 +49,13 @@ sleep 2
 printf '    GET    /widgets    -> '; curl --fail-with-body -s http://127.0.0.1:$REPLAY_PORT/widgets; echo
 printf '    POST   /widgets    -> '; curl --fail-with-body -s -X POST -H 'Content-Type: application/json' \
   --data-binary '{
-    "name": "flange",
-    "colour": "blue"
-  }' http://127.0.0.1:$REPLAY_PORT/widgets; echo
+  "name": "flange",
+  "colour": "blue"
+}' http://127.0.0.1:$REPLAY_PORT/widgets; echo
 printf '    PUT    /widgets/2  -> '; curl --fail-with-body -s -X PUT -H 'Content-Type: application/json' \
   --data-binary '{
-    "colour": "green"
-  }' http://127.0.0.1:$REPLAY_PORT/widgets/2; echo
+  "colour": "green"
+}' http://127.0.0.1:$REPLAY_PORT/widgets/2; echo
 printf '    DELETE /widgets/2  -> '; curl --fail-with-body -s -X DELETE http://127.0.0.1:$REPLAY_PORT/widgets/2; echo
 printf '    GET    /widgets.xml -> '; curl --fail-with-body -s http://127.0.0.1:$REPLAY_PORT/widgets.xml; echo
 printf '    POST   /widgets.xml -> '; curl --fail-with-body -s -X POST -H 'Content-Type: application/xml' \

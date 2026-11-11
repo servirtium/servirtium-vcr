@@ -185,6 +185,64 @@ else
   bad "import: HAR -> tape failed"
 fi
 
+# ---- convert bru (a Bruno collection's examples -> tapes, no network) ----
+# A one-request collection of our own, in a folder whose name has a space:
+# the tape lands at a slugged, space-free path, CONVERSION.md lists it, and
+# `serve` answers with the example's response.
+mkdir -p "$TMP/Bru Coll/Widget Things"
+printf '{"version":"1","name":"c","type":"collection"}\n' >"$TMP/Bru Coll/bruno.json"
+cat >"$TMP/Bru Coll/Widget Things/Get One.bru" <<'BRU'
+meta {
+  name: Get One
+  type: http
+  seq: 1
+}
+
+get {
+  url: http://example.test/one
+  body: none
+  auth: none
+}
+
+example {
+  name: OK
+  request: {
+    url: http://example.test/one
+    method: GET
+    mode: none
+  }
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+    body: {
+      type: text
+      content: '''
+        one-body
+      '''
+    }
+  }
+}
+BRU
+if "$BIN" convert bru "$TMP/Bru Coll" "$TMP/bru-out" >"$TMP/convert.log" 2>&1 \
+   && [ -f "$TMP/bru-out/widget-things/get-one.md" ] \
+   && grep -q 'widget-things/get-one.md' "$TMP/bru-out/CONVERSION.md"; then
+  ok "convert bru: collection -> slugged tape + CONVERSION.md"
+  if serve_bg "$TMP/bru-out/widget-things/get-one.md" "$PORT"; then
+    b="$(curl -s "http://127.0.0.1:$PORT/one")"
+    [ "$b" = "one-body" ] && ok "convert bru: converted tape serves the example" || bad "converted tape served '$b'"
+    serve_stop
+  else
+    bad "serve of the converted tape did not start"
+  fi
+else
+  cat "$TMP/convert.log"
+  bad "convert bru failed"
+fi
+"$BIN" convert bru >/dev/null 2>&1; [ $? -eq 2 ] && ok "convert bru without args -> exit 2" || bad "convert bru without args should exit 2"
+"$BIN" convert postman a b >/dev/null 2>&1; [ $? -eq 2 ] && ok "convert of an unknown kind -> exit 2" || bad "unknown convert kind should exit 2"
+
 # ---- usage / bad args ----
 "$BIN" >/dev/null 2>&1; [ $? -eq 2 ] && ok "no args -> usage, exit 2" || bad "no args should exit 2"
 "$BIN" frobnicate >/dev/null 2>&1; [ $? -eq 2 ] && ok "unknown command -> exit 2" || bad "unknown command should exit 2"

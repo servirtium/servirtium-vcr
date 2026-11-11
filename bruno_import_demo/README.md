@@ -53,18 +53,23 @@ machinery works for a non-JSON payload. The `body:` type drives everything —
 the engine maps it to a block name and a Content-Type, so XML travels the same
 path JSON does rather than a special case.
 
-## Two things that will bite you
+## How the collection is read
 
-**The collection directory is globbed FLAT.** `import-bru` does
-`glob("<dir>/*.bru")` and does not recurse, so `collection/` here is flat. Real
-Bruno collections are usually nested by folder (the GitHub one above has
-`Repository/` and `User/`), and pointing `import-bru` at the collection root
-finds **zero** `.bru` files. Point it at one leaf folder at a time, or flatten.
+**Bruno's own parser.** `import-bru` reads `.bru` files with Bruno's parser
+(`@usebruno/lang`, vendored under `core/bru/third_party/` and run in QuickJS
+embedded in the CLI), the same as `servirtium convert bru`, so what it sends is
+what Bruno itself would send: a `body:json` block, for one, is sent outdented,
+as Bruno sends it, not with the `.bru` file's indentation. (Until 2026-11-11 it
+used a hand-written parser that kept that indentation; this demo's curl
+bodies changed with it.)
 
-**Hydration order is `meta.seq`, not filename.** The files are named `01 …` to
-`06 …` only so a human reading the directory sees the same order the importer
-uses; the importer sorts on `seq` from each file's `meta` block. Sequence
-matters here because interaction 3 reads the widget interaction 2 created.
+**The whole collection, folders included.** Point `import-bru` at the
+collection root; it reads every request `.bru` under it (not `folder.bru`,
+`collection.bru` or `environments/`), in folder, then `meta.seq`, then name
+order. Sequence matters here because interaction 3 reads the widget
+interaction 2 created. The files are named `01-…` to `09-…` only so a human
+reading the directory sees the same order; names have no spaces because this
+repository allows none.
 
 ## The bug this demo found
 
@@ -90,12 +95,16 @@ from the request match block, so the code now does what its comment promised.
 
 ## What else a .bru can carry
 
-The importer reads four things — `meta.seq`, the verb, the `url`, and
-`body:json`. Everything else is silently ignored, and some of those omissions
-produce a tape that is wrong while looking right (an unresolved `{{var}}` is
-sent literally and its 404 recorded; a `body:form-urlencoded` POST is sent with
-an empty body). See [`../docs/bruno-import-idioms.md`](../docs/bruno-import-idioms.md)
-for the measured list and the Servirtium idiom each one should expand into.
+`import-bru` sends the method, the URL (variables from the request's own
+`vars:pre-request`, its folders' and the collection's; the base-URL variable
+is the record proxy) and the body with its Content-Type (json, xml, text,
+sparql, form-urlencoded and graphql bodies; a multipart or file body is sent
+with no body and the tape gets a TODO note). It sends no headers and no auth,
+on purpose (above). An unresolved `{{var}}` is still sent literally and its
+404 recorded. See [`../docs/bruno-import-idioms.md`](../docs/bruno-import-idioms.md)
+for the idioms each construct should expand into, and `servirtium convert bru`
+(the root README) for turning a collection's saved examples into tapes with no
+service at all.
 
 ## Tape determinism
 

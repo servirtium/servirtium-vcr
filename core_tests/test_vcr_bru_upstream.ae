@@ -1,0 +1,134 @@
+// The drift guard for the vendored Bruno parser: @usebruno/lang's OWN test
+// files (core/bru/third_party/usebruno-lang-<v>/v2/tests, from the same npm
+// package as the parser) run inside the QuickJS that core/bru.ae embeds,
+// against the parser copy the CLI carries (core/bru_js.ae), under a small
+// Jest stand-in (core_tests/bru_jest_shim.js).
+//
+// So: refreshing the vendored package (core/bru/PROVENANCE.md) brings its
+// new tests along, and a .bru format change that the copy in our binary
+// does not parse the way Bruno's tests expect fails here. It also checks
+// that core/bru_js.ae is what core/bru/gen.sh makes from the vendored files
+// (an edited vendor file that was not regenerated fails).
+//
+// Bruno's serialisers (jsonToBru and friends) are not in the CLI; this test
+// loads them from the vendored tree beside the embedded parser, because
+// many of the tests round-trip through them. dotenvToJson.spec.js is the one
+// file not run: it needs the dotenv package, which nothing we ship uses.
+//
+// Run from the repository root (core_tests/run-tests.sh does).
+
+import core.bru
+import std.fs
+import std.string
+import std.json
+import std.os
+
+extern exit(code: int)
+
+const PKG = "core/bru/third_party/usebruno-lang-0.41.0"
+
+fn jq(s: string) -> string {
+    v = json.str(s)
+    out, err = json.encode(v)
+    json.json_free(v)
+    if err != "" { return "\"\"" }
+    return out
+}
+
+fn ends(s: string, suf: string) -> int { return string.ends_with(s, suf) }
+
+// Files under dir (recursive), relative to PKG, newline-separated, sorted
+// by the walk (order does not matter here).
+fn files_under(dir: string, ext: string) -> string[] {
+    let out: string[] = []
+    found = fs.find_ext("${PKG}/${dir}", ext)
+    n = string.length(found)
+    cur = 0
+    while cur < n {
+        nl = string.index_of_from(found, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(found, cur, e)
+        if string.starts_with(line, "${PKG}/") == 1 { out.push(string.substring(line, string.length(PKG) + 1, string.length(line))) }
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    return out
+}
+
+fn read_or_die(p: string) -> string {
+    t, err = fs.read(p)
+    if err != "" { println("FAIL: cannot read ${p}: ${err}"); exit(1) }
+    return t
+}
+
+fn strip_js(p: string) -> string {
+    if ends(p, ".js") == 1 { return string.substring(p, 0, string.length(p) - 3) }
+    return p
+}
+
+main() {
+    println("=== Bruno's own parser tests, in our QuickJS ===\n")
+
+    rc = os.system("sh core/bru/gen.sh --check")
+    if rc != 0 { println("FAIL: core/bru_js.ae is not what core/bru/gen.sh makes from core/bru/third_party"); exit(1) }
+
+    extra = read_or_die("core_tests/bru_jest_shim.js")
+    extra = "${extra}\nvar __svcr_files = {};\n"
+    // Every test-tree file is readable through fs.readFileSync; .json ones
+    // are also require()-able; .js ones are modules.
+    nspecs = 0
+    for f in files_under("v2/tests", "") {
+        text = read_or_die("${PKG}/${f}")
+        extra = "${extra}__svcr_files[${jq(f)}] = ${jq(text)};\n"
+        if ends(f, ".json") == 1 {
+            extra = "${extra}__svcr_define_json(${jq(f)}, __svcr_files[${jq(f)}]);\n"
+        }
+        if ends(f, ".js") == 1 {
+            extra = "${extra}${bru.module_definition(strip_js(f), text)}"
+        }
+    }
+    // The serialisers the tests round-trip through (not in the CLI).
+    for m in ["v2/src/jsonToBru.js", "v2/src/jsonToEnv.js", "v2/src/jsonToCollectionBru.js", "v2/src/example/jsonToBru.js"] {
+        extra = "${extra}${bru.module_definition(strip_js(m), read_or_die("${PKG}/${m}"))}"
+    }
+    // Node's fs and path, as much as the tests use: files from the map above.
+    extra = "${extra}__svcr_define('fs', function (module) { module.exports = { readFileSync: function (p) { if (!Object.prototype.hasOwnProperty.call(__svcr_files, p)) throw new Error('ENOENT: ' + p); return __svcr_files[p]; }, existsSync: function (p) { return Object.prototype.hasOwnProperty.call(__svcr_files, p); } }; });\n"
+    extra = "${extra}__svcr_define('path', function (module) { module.exports = { join: function () { var parts = []; for (var i = 0; i < arguments.length; i++) { String(arguments[i]).split('/').forEach(function (s) { if (s === '..') parts.pop(); else if (s !== '' && s !== '.') parts.push(s); }); } return parts.join('/'); }, resolve: function () { return this.join.apply(this, arguments); }, dirname: function (p) { var i = p.lastIndexOf('/'); return i < 0 ? '.' : p.substring(0, i); }, basename: function (p) { return p.substring(p.lastIndexOf('/') + 1); } }; });\n"
+    // Load each spec (registering its describes), then run them all.
+    extra = "${extra}var __spec_load_errors = [];\n"
+    for s in files_under("v2/tests", ".spec.js") {
+        if string.contains(s, "dotenvToJson") == 0 {
+            nspecs = nspecs + 1
+            extra = "${extra}try { __svcr_require(${jq(strip_js(s))}); } catch (e) { __spec_load_errors.push(${jq(s)} + ': ' + e.message); }\n"
+        }
+    }
+
+    p, perr = bru.parser_new_with(extra)
+    if perr != "" { println("FAIL: ${perr}"); exit(1) }
+    loads, lerr = bru.eval_in(p, "JSON.stringify(__spec_load_errors)", "load.js")
+    if lerr != "" || loads != "[]" { println("FAIL: spec files did not load: ${loads}${lerr}"); exit(1) }
+    out, rerr = bru.eval_in(p, "__jest_run()", "run.js")
+    bru.parser_free(p)
+    if rerr != "" { println("FAIL: running the specs: ${rerr}"); exit(1) }
+
+    doc, jerr = json.parse(out)
+    if doc == null { println("FAIL: summary is not JSON: ${jerr}: ${out}"); exit(1) }
+    passed = json.json_get_int(json.json_object_get_raw(doc, "passed"))
+    failed = json.json_get_int(json.json_object_get_raw(doc, "failed"))
+    fl = json.json_object_get_raw(doc, "failures")
+    i = 0
+    while i < json.json_array_size(fl) {
+        msg, _e = json.get_string(json.json_array_get_raw(fl, i))
+        println("  FAIL: ${msg}")
+        i = i + 1
+    }
+    json.json_free(doc)
+    println("  ${nspecs} spec file(s): ${passed} passed, ${failed} failed")
+    if failed > 0 { exit(1) }
+    // A floor, so a shim that silently registered nothing cannot pass: the
+    // 0.41.0 package has several hundred tests.
+    if passed < 300 { println("FAIL: only ${passed} tests ran"); exit(1) }
+    println("\n=== Bruno's parser tests passed ===")
+    exit(0)
+}

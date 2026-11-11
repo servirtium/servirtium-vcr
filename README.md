@@ -45,6 +45,7 @@ servirtium-vcr/
   fsharp/        # CLR family — thin layer over the .NET assembly (no 2nd FFI)
   core_tests/    # Aether-level libservirtium_vcr tests (pure-Aether, no binding)
   integration/   # browser · subversion · climate · todobackend cross-binding tests
+  pre-recorded/  # re-usable tapes of real services (recorded, or converted from collections)
   <lang>/docs/   # per-binding usage docs
 ```
 
@@ -187,19 +188,40 @@ One libservirtium_vcr; every binding exposes the same surface.
     convert-once-offline step, not a test-time operation — though
     `har_import`/`har_export` are also in the C ABI for any binding that wants
     to wrap them.)
-  - `servirtium import-bru <bru-dir> <upstream> <out.md> [--var NAME] [--port N]`
-    — **import a Bruno collection and hydrate it.** A `.bru` collection holds
-    request *definitions* with no responses; this fires each request (in
-    `meta.seq` order) through record mode against the real `<upstream>` and
-    captures the live responses into a replayable tape — the "poke the service to
-    fill the blanks" step. The collection's base-url variable (`{{baseUrl}}` by
-    default; `--var` to change) is rewritten to the local record proxy. Request
-    headers are not carried into the match (a collection's headers wouldn't match
-    a test client's — matching is method + path + body, the same policy as HAR
-    import). **It makes real calls to `<upstream>`** (side effects on POST/PUT/
-    DELETE), so point it at a service you mean to hit. A Postman collection can
-    be run the same way after exporting a session to HAR (`servirtium import`),
-    or exported/converted to `.bru` first.
+  - `servirtium convert bru <collection> <out-dir> [--env NAME]` — **convert a
+    Bruno collection's saved examples into tapes, with no network.** Each
+    request `.bru` that has examples becomes one tape (one interaction per
+    example) under `<out-dir>`, at a space-free path (folder and request names
+    lowercased, `-` for spaces: `Banners Categories/Add Category.bru` →
+    `banners-categories/add-category.md`; a collision gets `-2`), and
+    `<out-dir>/CONVERSION.md` lists what became what. Variables resolve from the
+    request, its folders, the collection and `environments/NAME.bru`; one that
+    does not stays as `{{name}}`. Every interaction carries a `## [Note]` naming
+    its source and example and listing the headers the collection sends
+    (credentials never written; request headers are not matched, as for HAR);
+    where the example documents no response body the note's title says
+    `response body not documented`, so an empty body is never mistaken for an
+    empty response. `.bru` files are read by **Bruno's own parser**
+    (`@usebruno/lang`, vendored in `core/bru/`, run in QuickJS embedded in the
+    binary; see [core/bru/PROVENANCE.md](core/bru/PROVENANCE.md)); the rest is
+    Aether (`core/bru_convert.ae`). Also in the C ABI
+    (`aether_vcr_embed_convert_bru`) and the JavaScript binding (`convertBru`).
+    [`pre-recorded/converted/from.bru/`](pre-recorded/README.md) holds a
+    converted collection.
+  - `servirtium import-bru <collection> <upstream> <out.md> [--var NAME] [--port N]`
+    — **import a Bruno collection and hydrate it.** Where `convert bru` uses the
+    examples a collection saved, this fires each request (folders included, in
+    folder, `meta.seq`, then name order) through record mode against the real
+    `<upstream>` and captures the live responses into a replayable tape — the
+    "poke the service to fill the blanks" step. Same parser and request builder
+    as `convert bru`. The collection's base-url variable (`{{baseUrl}}` by
+    default; `--var` to change) is the local record proxy. Request headers are
+    neither sent nor carried into the match (a collection's headers wouldn't
+    match a test client's — matching is method + path + body, the same policy
+    as HAR import). **It makes real calls to `<upstream>`** (side effects on
+    POST/PUT/DELETE), so point it at a service you mean to hit. A Postman
+    collection can be run the same way after exporting a session to HAR
+    (`servirtium import`), or exported/converted to `.bru` first.
 
 Named secrets can be selected by request context at tape emission and restored before playback starts. The same core implementation discovers query/form fields, headers, JSON, XML and YAML across all bindings. See [named secret callbacks](docs/secrets.md) for examples, language APIs and format limits.
 
@@ -268,9 +290,11 @@ Servirtium binding. A friendly map of the neighbourhood:
   same "collection lives in version control" instinct Servirtium has for tapes.
   But a Bruno collection holds request *definitions*, not responses: it's for
   *driving* an API by hand. Servirtium meets it directly —
-  `servirtium import-bru <bru-dir> <upstream> <out.md>` (above) fires a
+  `servirtium import-bru <collection> <upstream> <out.md>` (above) fires a
   collection's requests through record mode against the real upstream and
-  captures the live responses into a replayable tape. So Bruno is a first-class
+  captures the live responses into a replayable tape, and
+  `servirtium convert bru` turns the examples a collection saved into tapes
+  with no service at all. So Bruno is a first-class
   *source* for Servirtium, not a competitor: author requests in Bruno, hydrate
   them into a deterministic tape once, replay offline under any binding.
 - **[Microcks](https://microcks.io/)** — a centralized, Kubernetes-native

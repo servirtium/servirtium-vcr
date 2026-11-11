@@ -399,3 +399,10 @@ export function takeString(ptr: CharPtr): string {
 export function isNull(ptr: CharPtr): boolean {
   return !ptr || koffi.address(ptr as koffi.IKoffiCType) === 0n
 }
+
+// ---- converters (no handle) ------------------------------------------------
+
+/** `char *aether_vcr_embed_convert_bru(dir, out_dir, env)`: "" or the error (caller-owned). */
+export const convertBru = lazy(
+  'void* aether_vcr_embed_convert_bru(const char* collection_dir, const char* out_dir, const char* env)',
+)

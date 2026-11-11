@@ -1,0 +1,519 @@
+// `servirtium convert bru`: a Bruno collection's examples to tapes, with no
+// network (core/bru_convert.ae over Bruno's own parser, core/bru.ae).
+//
+// The collection is our own, written by this test into a temp directory
+// (names with spaces, braces, parentheses and a slug collision cannot be
+// tracked files here: the repository refuses spaced names). It has a
+// collection-level header and API-key auth from a secret variable, an
+// environment, a folder with its own header, a request variable, an
+// unresolved variable, a literal bearer token, an example with a response
+// body and ones without, a request with two examples, a request with none,
+// and a request whose slug is the converter's own CONVERSION.md.
+//
+// What it checks: the exact set of files written, all space-free and
+// collision-free; what each tape holds (path, body, status, the note and
+// whether it says the response was not documented); that no credential
+// value reaches any output; CONVERSION.md; that a converted tape replays;
+// that converting twice gives the same bytes; and the errors.
+
+import core.vcr
+import core.bru_convert
+import std.fs
+import std.string
+import std.http
+import std.http.client
+import std.io
+import std.os
+
+extern exit(code: int)
+
+const LITERAL_TOKEN = "s3cr3t-literal-token-value"
+
+fn fail(msg: string) {
+    println("  FAIL: ${msg}")
+    exit(1)
+}
+
+fn want(hay: string, needle: string, label: string) {
+    if string.contains(hay, needle) != 1 { fail("${label}: expected to find '${needle}' in:\n${hay}") }
+}
+
+fn reject(hay: string, needle: string, label: string) {
+    if string.contains(hay, needle) == 1 { fail("${label}: did not expect '${needle}' in:\n${hay}") }
+}
+
+fn tmp_root() -> string {
+    tmp = io.getenv("TEMP")
+    if tmp == 0 { tmp = io.getenv("TMPDIR") }
+    if tmp == 0 { tmp = "/tmp" }
+    return "${tmp}/svcr_bru_convert"
+}
+
+fn put(path: string, text: string) {
+    merr = fs.mkdir_p(fs.path_dirname(path))
+    if merr != "" { fail("mkdir for ${path}: ${merr}") }
+    werr = fs.write(path, text)
+    if werr != "" { fail("write ${path}: ${werr}") }
+}
+
+fn read(path: string) -> string {
+    t, err = fs.read(path)
+    if err != "" { fail("read ${path}: ${err}") }
+    return t
+}
+
+// Every file under dir, relative, sorted, one per line.
+fn listing(dir: string) -> string {
+    found = fs.find_ext(dir, "")
+    out = ""
+    n = string.length(found)
+    cur = 0
+    let rels: string[] = []
+    while cur < n {
+        nl = string.index_of_from(found, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(found, cur, e)
+        if string.starts_with(line, "${dir}/") == 1 { rels.push(string.substring(line, string.length(dir) + 1, string.length(line))) }
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    let sorted: string[] = []
+    for r in rels {
+        sorted.push(r)
+        j = sorted.len - 1
+        while j > 0 && string.compare(sorted[j - 1], sorted[j]) > 0 {
+            t = sorted[j - 1]
+            sorted[j - 1] = sorted[j]
+            sorted[j] = t
+            j = j - 1
+        }
+    }
+    for s in sorted { out = "${out}${s}\n" }
+    return out
+}
+
+fn write_fixture(root: string) {
+    put("${root}/bruno.json", "{\n  \"version\": \"1\",\n  \"name\": \"Shop\",\n  \"type\": \"collection\"\n}\n")
+    put("${root}/collection.bru", <<BRU
+meta {
+  name: Shop
+}
+
+headers {
+  Accept: application/json
+}
+
+auth {
+  mode: apikey
+}
+
+auth:apikey {
+  key: X-Shop-Token
+  value: {{token}}
+  placement: header
+}
+BRU
+)
+    put("${root}/environments/Local Dev.bru", <<BRU
+vars {
+  host: http://shop.test/api
+}
+vars:secret [
+  token
+]
+BRU
+)
+    put("${root}/Widget Things/folder.bru", <<BRU
+meta {
+  name: Widget Things
+}
+
+headers {
+  X-Folder: widgets
+}
+
+auth {
+  mode: inherit
+}
+BRU
+)
+    put("${root}/Widget Things/Add Item.bru", <<BRU
+meta {
+  name: Add Item
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{host}}/items
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {"name": ""}
+}
+
+example {
+  name: Created
+  description: A widget is made
+
+  request: {
+    url: {{host}}/items
+    method: POST
+    mode: json
+    body:json: {
+      {"name": "sprocket"}
+    }
+  }
+
+  response: {
+    headers: {
+      Content-Type: application/json
+    }
+
+    status: {
+      code: 201
+      text: Created
+    }
+
+    body: {
+      type: json
+      content: '''
+        {"id": 41, "name": "sprocket"}
+      '''
+    }
+  }
+}
+BRU
+)
+    put("${root}/Widget Things/Add-Item.bru", <<BRU
+meta {
+  name: Add Many
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{host}}/items/{{batch}}/bulk
+  body: json
+  auth: inherit
+}
+
+body:json {
+  []
+}
+
+example {
+  name: 200 Response
+  description: todo: response object
+
+  request: {
+    url: {{host}}/items/{{batch}}/bulk
+    method: POST
+    mode: json
+    body:json: {
+      [{"name": "a"}]
+    }
+  }
+
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: text
+      content: '''
+
+      '''
+    }
+  }
+}
+BRU
+)
+    put("${root}/Widget Things/Get {item_id} (GET).bru", <<BRU
+meta {
+  name: Get Item
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{host}}/items/{{item_id}}
+  body: none
+  auth: inherit
+}
+
+vars:pre-request {
+  item_id: 7
+}
+
+example {
+  name: Found
+  request: {
+    url: {{host}}/items/{{item_id}}
+    method: GET
+    mode: none
+  }
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+    body: {
+      type: json
+      content: '''
+        {"id": 7}
+      '''
+    }
+  }
+}
+
+example {
+  name: Gone
+  request: {
+    url: {{host}}/items/{{item_id}}
+    method: GET
+    mode: none
+  }
+  response: {
+    status: {
+      code: 404
+      text: Not Found
+    }
+    body: {
+      type: json
+      content: '''
+        {"error": "no such item"}
+      '''
+    }
+  }
+}
+BRU
+)
+    put("${root}/Widget Things/Delete Item.bru", <<BRU
+meta {
+  name: Delete Item
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{host}}/items/{{item_id}}
+  body: none
+  auth: inherit
+}
+BRU
+)
+    put("${root}/Admin/Secret Thing.bru", <<BRU
+meta {
+  name: Secret Thing
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{host}}/admin/secret
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: s3cr3t-literal-token-value
+}
+
+example {
+  name: OK
+  request: {
+    url: {{host}}/admin/secret
+    method: GET
+    mode: none
+  }
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+    body: {
+      type: text
+      content: '''
+        the secret is out
+      '''
+    }
+  }
+}
+BRU
+)
+    put("${root}/Conversion.bru", <<BRU
+meta {
+  name: Conversion
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{host}}/conversion
+  body: none
+  auth: none
+}
+
+example {
+  name: 200 Response
+  request: {
+    url: {{host}}/conversion
+    method: GET
+    mode: none
+  }
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+    body: {
+      type: text
+      content: '''
+
+      '''
+    }
+  }
+}
+BRU
+)
+}
+
+fn free_port() -> int {
+    s = http.server_create(0)
+    if s == null { return 0 }
+    err = http.server_bind(s, "127.0.0.1", 0)
+    port = 0
+    if err == "" { port = http.server_port(s) }
+    http.server_free(s)
+    return port
+}
+
+fn get(port: int, path: string) -> (int, string) {
+    req = client.request("GET", "http://127.0.0.1:${port}${path}")
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail("GET ${path}: ${err}") }
+    st = client.response_status(resp)
+    b = client.response_body(resp)
+    client.response_free(resp)
+    return st, b
+}
+
+main() {
+    println("=== convert bru: a Bruno collection's examples -> tapes ===\n")
+    base = tmp_root()
+    _rm = os.system("rm -rf '${base}'")
+    root = "${base}/Shop API"
+    out = "${base}/out"
+    out2 = "${base}/out-again"
+    write_fixture(root)
+
+    summary, err = bru_convert.convert_collection(root, out, "Local Dev")
+    if err != "" { fail("convert: ${err}") }
+    println("  ${summary}")
+    want(summary, "5 tape(s), 6 interaction(s) (2 without a documented response body), 1 request(s) with no example", "summary")
+
+    // 1. The files, exactly: slugs, the collision, the reserved name, no
+    //    tape for the request with no example, nothing with a space.
+    files = listing(out)
+    want_files = "CONVERSION.md\nadmin/secret-thing.md\nconversion-2.md\nwidget-things/add-item-2.md\nwidget-things/add-item.md\nwidget-things/get-item-id-get.md\n"
+    if files != want_files { fail("files written:\n${files}\nwanted:\n${want_files}") }
+    reject(files, " ", "a space in a written name")
+    println("  ok: files and names")
+
+    // 2. A documented example.
+    add = read("${out}/widget-things/add-item.md")
+    want(add, "## Interaction 0: POST /api/items\n", "path from the environment's {{host}}")
+    want(add, "## [Note] Converted from Bruno:\n", "note title, documented")
+    reject(add, "not documented", "documented example called undocumented")
+    want(add, "Source: Widget Things/Add Item.bru, example 1 of 1: \"Created\"", "note source")
+    want(add, "Description: A widget is made", "note description")
+    want(add, "    Accept: application/json\n", "collection header listed")
+    want(add, "    X-Folder: widgets\n", "folder header listed")
+    want(add, "    X-Shop-Token: {{token}}\n", "API key shown as its (secret) variable")
+    want(add, "{\"name\": \"sprocket\"}", "the example's request body, not the request's")
+    want(add, "(201: application/json)", "status and content type")
+    want(add, "{\"id\": 41, \"name\": \"sprocket\"}", "the example's response body")
+    want(add, "### Request headers recorded for playback:\n\n```\n```\n", "no request headers in the match block")
+    println("  ok: documented example")
+
+    // 3. An undocumented one, with an unresolved variable.
+    many = read("${out}/widget-things/add-item-2.md")
+    want(many, "## Interaction 0: POST /api/items/{{batch}}/bulk\n", "unresolved variable kept in the path")
+    want(many, "## [Note] Converted from Bruno: response body not documented:\n", "note title, undocumented")
+    want(many, "Response body: not documented.", "note says so")
+    want(many, "Unresolved variables: {{batch}}", "note lists the unresolved variable")
+    want(many, "(200: ", "status kept")
+    reject(many, "Content-Type: text/plain", "no invented Content-Type for an undocumented body")
+    println("  ok: undocumented example")
+
+    // 4. Two examples, one tape; a request variable.
+    two = read("${out}/widget-things/get-item-id-get.md")
+    want(two, "## Interaction 0: GET /api/items/7\n", "request variable resolved")
+    want(two, "## Interaction 1: GET /api/items/7\n", "second example, second interaction")
+    want(two, "(404: application/json)", "second example's status")
+    want(two, "example 2 of 2: \"Gone\"", "second note")
+    println("  ok: two examples")
+
+    // 5. No credential value anywhere.
+    sec = read("${out}/admin/secret-thing.md")
+    want(sec, "    Authorization: Bearer (credential not written)\n", "literal bearer token hidden")
+    for f in ["CONVERSION.md", "admin/secret-thing.md", "conversion-2.md", "widget-things/add-item-2.md", "widget-things/add-item.md", "widget-things/get-item-id-get.md"] {
+        reject(read("${out}/${f}"), LITERAL_TOKEN, "credential in ${f}")
+    }
+    println("  ok: credentials")
+
+    // 6. The index.
+    idx = read("${out}/CONVERSION.md")
+    want(idx, "- Requests: 6; tapes: 5; interactions (one per example): 6\n", "index counts")
+    want(idx, "| `Widget Things/Delete Item.bru` | DELETE /api/items/{{item_id}} | (none: no example) | 0 | 0 |", "index row: no example")
+    want(idx, "| `Widget Things/Add-Item.bru` | POST /api/items/{{batch}}/bulk | [`widget-things/add-item-2.md`](widget-things/add-item-2.md) | 1 | 0 |", "index row: collision")
+    want(idx, "- Environment: `environments/Local Dev.bru`", "index environment")
+    println("  ok: CONVERSION.md")
+
+    // 7. A converted tape replays.
+    port = free_port()
+    h, oerr = vcr.open_playback("${out}/widget-things/get-item-id-get.md", port)
+    if h == null { fail("open_playback: ${oerr}") }
+    if vcr.start_background_h(h, 10000) != 0 { fail("start: ${vcr.last_error_h(h)}") }
+    s1, b1 = get(port, "/api/items/7")
+    s2, b2 = get(port, "/api/items/7")
+    mm = vcr.assert_no_mismatches_h(h)
+    vcr.eject(h)
+    vcr.destroy_h(h)
+    if s1 != 200 || string.contains(b1, "\"id\": 7") != 1 { fail("replay 1: ${s1} ${b1}") }
+    if s2 != 404 || string.contains(b2, "no such item") != 1 { fail("replay 2: ${s2} ${b2}") }
+    if mm != "" { fail("replay mismatches: ${mm}") }
+    println("  ok: replays")
+
+    // 8. Deterministic.
+    _s2, err2 = bru_convert.convert_collection(root, out2, "Local Dev")
+    if err2 != "" { fail("second convert: ${err2}") }
+    if listing(out2) != files { fail("second run wrote other files") }
+    for f2 in ["CONVERSION.md", "admin/secret-thing.md", "conversion-2.md", "widget-things/add-item-2.md", "widget-things/add-item.md", "widget-things/get-item-id-get.md"] {
+        if read("${out}/${f2}") != read("${out2}/${f2}") { fail("${f2} differs between two runs") }
+    }
+    println("  ok: deterministic")
+
+    // 9. Errors.
+    _s3, err3 = bru_convert.convert_collection(root, "${base}/out3", "Nowhere")
+    want(err3, "no environment 'Nowhere'", "unknown environment")
+    _s4, err4 = bru_convert.convert_collection("${base}/no-such-dir", "${base}/out4", "")
+    want(err4, "no such directory", "missing collection")
+    println("  ok: errors")
+
+    // 10. Slugs.
+    if bru_convert.slug("Banners Categories") != "banners-categories" { fail("slug 1") }
+    if bru_convert.slug("fields-groups-contacts-contact-{group_id} (PATCH)") != "fields-groups-contacts-contact-group-id-patch" { fail("slug 2") }
+    if bru_convert.slug("  ") != "untitled" { fail("slug 3") }
+    println("  ok: slugs")
+
+    println("\n=== convert bru passed ===")
+    exit(0)
+}

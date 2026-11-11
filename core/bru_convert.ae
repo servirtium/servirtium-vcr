@@ -1,0 +1,1184 @@
+// bru_convert — what a Bruno collection MEANS for Servirtium, in Aether.
+//
+// Bruno's own parser (core/bru.ae: @usebruno/lang in embedded QuickJS)
+// turns each .bru file into JSON; this module does everything after that:
+// it walks a collection, resolves variables and the headers and auth a
+// request inherits from its folders and collection, builds each request's
+// method, path and body, and writes tapes through Servirtium's own emitter
+// (an offline VCR, the same one record mode uses).
+//
+// Two consumers:
+//   convert_collection(root, out_dir, env) — `servirtium convert bru`: each
+//     request's examples become a tape, no network. One tape per request
+//     .bru, one interaction per example, at a space-free path under out_dir
+//     (slug(), below), plus out_dir/CONVERSION.md listing what became what.
+//   collection_open / request_* — `servirtium import-bru`: the requests,
+//     built the same way, which the CLI then fires at a live service.
+//
+// A collection is a handle (Collection) carrying everything it read: no
+// module-level state.
+//
+// Decisions (README's "Converting a Bruno collection" has the user-facing
+// form):
+//   - Request headers are not put in a tape's request-headers block (the
+//     policy of HAR import and import-bru: a collection's headers would not
+//     match a test client's, and matching is method + path + body). They are
+//     listed in the interaction's note instead, so the tape still documents
+//     them; credential values never appear there (an auth header shows the
+//     {{variable}} it comes from, or "(credential not written)").
+//   - Each interaction carries a `## [Note]`. Its title says whether the
+//     example documented a response body: "Converted from Bruno" or
+//     "Converted from Bruno: response body not documented". In the second
+//     case the tape's body is empty because nothing was documented, not
+//     because the service sends nothing. Playback ignores notes.
+//   - A request with no example becomes no tape (there is no response to
+//     put on one); CONVERSION.md lists it.
+//   - Variables resolve request > folder (nearest first) > environment >
+//     collection; one that does not resolve stays as {{name}} in the path,
+//     body and note, and the note lists it.
+//   - The path is the URL without scheme and host (or without a leading
+//     unresolved {{variable}}, the usual base-URL variable when no
+//     environment is given), query string kept; a space becomes %20.
+
+import bru
+import vcr
+import std.fs
+import std.string
+import std.json
+import std.encoding
+
+exports (
+    Collection, collection_open, collection_free, request_count, request_source,
+    request_build, Built, built_free, convert_collection, slug,
+    REQUEST_MAIN
+)
+
+// request_build's example index for the request itself (not an example).
+const REQUEST_MAIN = -1
+
+// The file the converter writes beside the tapes, and so the one slug no
+// tape at the top of out_dir may take (case-insensitive filesystems).
+const INDEX_FILE = "CONVERSION.md"
+const INDEX_SLUG = "conversion"
+
+struct Collection {
+    parser: ptr
+    root: string
+    env_name: string
+    // Scopes: "" is the collection (collection.bru); every other entry is a
+    // folder (relative dir of a folder.bru). Headers are "Name: value\n"
+    // lines, vars "name=value\n" lines; auth is mode + two fields + placement.
+    scope_dir: string[]
+    scope_headers: string[]
+    scope_vars: string[]
+    scope_auth_mode: string[]
+    scope_auth_a: string[]
+    scope_auth_b: string[]
+    scope_auth_place: string[]
+    env_vars: string
+    // Request files, relative to root, in conversion order (dir, seq, name),
+    // and each one's parsed JSON (parsed once: the parser is the slow part).
+    req_file: string[]
+    req_json: string[]
+    // Problems met while reading the collection (one line each).
+    warnings: string[]
+}
+
+// One request (or one example of it), built.
+struct Built {
+    method: string
+    url: string
+    path: string
+    body: string
+    ctype: string
+    headers: string          // what the collection sends, "Name: value\n" lines (credentials hidden)
+    sent_headers: string     // the same with credentials, as sent (import-bru only; never written)
+    unresolved: string       // "{{a}} {{b}}" or ""
+    unsupported: string      // what was not converted, "; "-separated
+    // The example's response (examples only).
+    status: int
+    resp_ctype: string
+    resp_headers: string
+    resp_body: string
+    documented: int          // 1 when the example has a response body
+    ex_name: string
+    ex_desc: string
+    ex_error: string         // the parser's message when it could not read the example
+    n_examples: int
+}
+
+built_free(b: ptr) {
+    if b != null { heap.free(b as *Built) }
+}
+
+// ---- small helpers -------------------------------------------------------
+
+fn jstr(obj: ptr, key: string) -> string {
+    if obj == null { return "" }
+    if json.json_type(obj) != json.JSON_OBJECT { return "" }
+    v = json.json_object_get_raw(obj, key)
+    if v == null { return "" }
+    t = json.json_type(v)
+    if t == json.JSON_STRING {
+        s, _e = json.get_string(v)
+        return string.copy(s)
+    }
+    if t == json.JSON_NUMBER { return string.from_int(json.json_get_int(v)) }
+    return ""
+}
+
+fn jobj(obj: ptr, key: string) -> ptr {
+    if obj == null { return null }
+    if json.json_type(obj) != json.JSON_OBJECT { return null }
+    return json.json_object_get_raw(obj, key)
+}
+
+fn jarr_len(a: ptr) -> int {
+    if a == null { return 0 }
+    if json.json_type(a) != json.JSON_ARRAY { return 0 }
+    return json.json_array_size(a)
+}
+
+// An array entry's `enabled` (true when absent).
+fn enabled(o: ptr) -> int {
+    v = jobj(o, "enabled")
+    if v == null { return 1 }
+    if json.json_type(v) != json.JSON_BOOL { return 1 }
+    return json.json_get_bool(v)
+}
+
+fn lower(s: string) -> string { return string.to_lower(s) }
+
+// The value of `name` in "name=value\n" lines, and whether it was there.
+fn var_lookup(blob: string, name: string) -> (string, int) {
+    n = string.length(blob)
+    cur = 0
+    while cur < n {
+        nl = string.index_of_from(blob, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(blob, cur, e)
+        eq = string.index_of(line, "=")
+        if eq > 0 && string.substring(line, 0, eq) == name {
+            return string.substring(line, eq + 1, string.length(line)), 1
+        }
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    return "", 0
+}
+
+// "name=value\n" lines for an array of {name, value, enabled} (vars, params).
+fn kv_lines(a: ptr) -> string {
+    out = ""
+    n = jarr_len(a)
+    i = 0
+    while i < n {
+        it = json.json_array_get_raw(a, i)
+        if enabled(it) == 1 {
+            nm = jstr(it, "name")
+            v = jstr(it, "value")
+            nl = string.index_of(v, "\n")
+            if nl >= 0 { v = string.substring(v, 0, nl) }
+            if string.length(nm) > 0 { out = "${out}${nm}=${v}\n" }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// kv_lines for an environment's variables, leaving out the secret ones: a
+// .bru environment never holds a secret's value (Bruno keeps it outside the
+// collection), so its {{name}} stays unresolved rather than becoming "".
+fn env_lines(a: ptr) -> string {
+    out = ""
+    n = jarr_len(a)
+    i = 0
+    while i < n {
+        it = json.json_array_get_raw(a, i)
+        sv = jobj(it, "secret")
+        secret = 0
+        if sv != null && json.json_type(sv) == json.JSON_BOOL { secret = json.json_get_bool(sv) }
+        if enabled(it) == 1 && secret == 0 {
+            nm = jstr(it, "name")
+            v = jstr(it, "value")
+            nl = string.index_of(v, "\n")
+            if nl >= 0 { v = string.substring(v, 0, nl) }
+            if string.length(nm) > 0 { out = "${out}${nm}=${v}\n" }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// "Name: value\n" lines for an array of {name, value, enabled}.
+fn header_lines(a: ptr) -> string {
+    out = ""
+    n = jarr_len(a)
+    i = 0
+    while i < n {
+        it = json.json_array_get_raw(a, i)
+        if enabled(it) == 1 {
+            nm = jstr(it, "name")
+            if string.length(nm) > 0 { out = "${out}${nm}: ${jstr(it, "value")}\n" }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// `base` with `over`'s headers laid on top (same name, any case: replaced).
+fn merge_headers(base: string, over: string) -> string {
+    out = base
+    n = string.length(over)
+    cur = 0
+    while cur < n {
+        nl = string.index_of_from(over, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(over, cur, e)
+        c = string.index_of(line, ":")
+        if c > 0 {
+            out = "${drop_header(out, string.substring(line, 0, c))}${line}\n"
+        }
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    return out
+}
+
+fn drop_header(blob: string, name: string) -> string {
+    out = ""
+    want = lower(name)
+    n = string.length(blob)
+    cur = 0
+    while cur < n {
+        nl = string.index_of_from(blob, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(blob, cur, e)
+        c = string.index_of(line, ":")
+        keep = 1
+        if c > 0 && lower(string.substring(line, 0, c)) == want { keep = 0 }
+        if keep == 1 && string.length(line) > 0 { out = "${out}${line}\n" }
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    return out
+}
+
+fn header_value(blob: string, name: string) -> string {
+    want = lower(name)
+    n = string.length(blob)
+    cur = 0
+    while cur < n {
+        nl = string.index_of_from(blob, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(blob, cur, e)
+        c = string.index_of(line, ":")
+        if c > 0 && lower(string.substring(line, 0, c)) == want {
+            return string.trim(string.substring(line, c + 1, string.length(line)))
+        }
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    return ""
+}
+
+// Percent-encode a form value: RFC 3986 unreserved bytes stay, the rest %XX.
+fn form_encode(s: string) -> string {
+    hex = "0123456789ABCDEF"
+    out = ""
+    b = string.bytes(s)
+    i = 0
+    while i < b.len {
+        ch = b[i]
+        keep = (ch >= 48 && ch <= 57) || (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch == 45 || ch == 46 || ch == 95 || ch == 126
+        if keep {
+            out = string.concat(out, string.substring(s, i, i + 1))
+        } else {
+            out = "${out}%${string.substring(hex, (ch >> 4) & 15, ((ch >> 4) & 15) + 1)}${string.substring(hex, ch & 15, (ch & 15) + 1)}"
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// A JSON string literal for s.
+fn json_quote(s: string) -> string {
+    v = json.str(s)
+    out, err = json.encode(v)
+    json.json_free(v)
+    if err != "" { return "\"\"" }
+    return out
+}
+
+// ---- names ---------------------------------------------------------------
+
+// A file or directory name with no spaces and nothing a shell or a URL
+// minds: ASCII letters and digits lowercased, every other run of bytes one
+// "-", none at either end. "Add Category" -> "add-category",
+// "fields-groups-contacts-contact-{group_id} (PATCH)" ->
+// "fields-groups-contacts-contact-group-id-patch". Empty -> "untitled".
+slug(name: string) -> string {
+    out = ""
+    pending = 0
+    n = string.length(name)
+    i = 0
+    while i < n {
+        ch = string.char_at(name, i)
+        if ch >= 65 && ch <= 90 { ch = ch + 32 }
+        if (ch >= 97 && ch <= 122) || (ch >= 48 && ch <= 57) {
+            if pending == 1 && string.length(out) > 0 { out = "${out}-" }
+            pending = 0
+            out = string.concat(out, string.from_char(ch))
+        } else {
+            pending = 1
+        }
+        i = i + 1
+    }
+    if string.length(out) == 0 { return "untitled" }
+    return out
+}
+
+fn path_dir(rel: string) -> string {
+    i = string.length(rel) - 1
+    while i >= 0 {
+        if string.char_at(rel, i) == 47 { return string.substring(rel, 0, i) }
+        i = i - 1
+    }
+    return ""
+}
+
+fn path_base(rel: string) -> string {
+    i = string.length(rel) - 1
+    while i >= 0 {
+        if string.char_at(rel, i) == 47 { return string.substring(rel, i + 1, string.length(rel)) }
+        i = i - 1
+    }
+    return rel
+}
+
+fn strip_bru(name: string) -> string {
+    if string.ends_with(name, ".bru") == 1 { return string.substring(name, 0, string.length(name) - 4) }
+    return name
+}
+
+// Sort strings by their bytes (insertion sort: a collection is hundreds).
+fn sort_strings(xs: string[]) -> string[] {
+    let out: string[] = []
+    for x in xs {
+        out.push(x)
+        j = out.len - 1
+        while j > 0 && string.compare(out[j - 1], out[j]) > 0 {
+            t = out[j - 1]
+            out[j - 1] = out[j]
+            out[j] = t
+            j = j - 1
+        }
+    }
+    return out
+}
+
+// ---- reading a collection ------------------------------------------------
+
+// The parser's JSON for a file: (json, "") or ("", why).
+fn parse_js(c: *Collection, kind: string, abs: string) -> (string, string) {
+    text, rerr = fs.read(abs)
+    if rerr != "" { return "", "cannot read: ${rerr}" }
+    return bru.parse(c.parser, kind, text)
+}
+
+fn json_doc(js: string) -> (ptr, string) {
+    doc, jerr = json.parse(js)
+    if doc == null { return null, "parser output is not JSON: ${jerr}" }
+    return doc, ""
+}
+
+fn parse_file(c: *Collection, kind: string, abs: string) -> (ptr, string) {
+    js, perr = parse_js(c, kind, abs)
+    if perr != "" { return null, perr }
+    doc, jerr = json.parse(js)
+    if doc == null { return null, "parser output is not JSON: ${jerr}" }
+    return doc, ""
+}
+
+fn add_scope(c: *Collection, dir: string, doc: ptr) {
+    c.scope_dir.push(dir)
+    c.scope_headers.push(header_lines(jobj(doc, "headers")))
+    vars = jobj(doc, "vars")
+    c.scope_vars.push(kv_lines(jobj(vars, "req")))
+    auth = jobj(doc, "auth")
+    mode = jstr(auth, "mode")
+    if dir != "" && mode == "" { mode = "inherit" }
+    a = ""
+    b = ""
+    place = ""
+    if mode == "apikey" {
+        k = jobj(auth, "apikey")
+        a = jstr(k, "key")
+        b = jstr(k, "value")
+        place = jstr(k, "placement")
+    } else if mode == "bearer" {
+        b = jstr(jobj(auth, "bearer"), "token")
+    } else if mode == "basic" {
+        k = jobj(auth, "basic")
+        a = jstr(k, "username")
+        b = jstr(k, "password")
+    }
+    c.scope_auth_mode.push(mode)
+    c.scope_auth_a.push(a)
+    c.scope_auth_b.push(b)
+    c.scope_auth_place.push(place)
+}
+
+// Read the collection at `root` (the directory holding bruno.json or
+// collection.bru), with environment `env` ("" for none: environments/<env>.bru).
+// (handle, "") or (null, why).
+collection_open(root: string, env: string) -> (ptr, string) {
+    if fs.exists(root) == 0 { return null, "bru: no such directory: ${root}" }
+    p, perr = bru.parser_new()
+    if perr != "" { return null, perr }
+    c = heap.new(Collection)
+    c.parser = p
+    c.root = root
+    c.env_name = env
+
+    found = fs.find_ext(root, ".bru")
+    let all: string[] = []
+    n = string.length(found)
+    cur = 0
+    prefix = "${root}/"
+    while cur < n {
+        nl = string.index_of_from(found, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(found, cur, e)
+        if string.starts_with(line, prefix) == 1 { line = string.substring(line, string.length(prefix), string.length(line)) }
+        if string.length(line) > 0 { all.push(line) }
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    files = sort_strings(all)
+
+    // The collection scope first (index 0), then folders in sorted order.
+    have_coll = 0
+    for f in files {
+        if f == "collection.bru" {
+            doc, err = parse_file(c, "collection", "${root}/${f}")
+            if doc == null {
+                c.warnings.push("${f}: ${err}")
+            } else {
+                add_scope(c, "", doc)
+                json.json_free(doc)
+                have_coll = 1
+            }
+        }
+    }
+    if have_coll == 0 {
+        c.scope_dir.push("")
+        c.scope_headers.push("")
+        c.scope_vars.push("")
+        c.scope_auth_mode.push("none")
+        c.scope_auth_a.push("")
+        c.scope_auth_b.push("")
+        c.scope_auth_place.push("")
+    }
+    env_found = 0
+    let reqs: string[] = []
+    for f in files {
+        base = path_base(f)
+        dir = path_dir(f)
+        if f == "collection.bru" {
+            // read above
+        } else if dir == "environments" {
+            if env != "" && strip_bru(base) == env {
+                doc, err = parse_file(c, "environment", "${root}/${f}")
+                if doc == null {
+                    c.warnings.push("${f}: ${err}")
+                } else {
+                    c.env_vars = env_lines(jobj(doc, "variables"))
+                    json.json_free(doc)
+                    env_found = 1
+                }
+            }
+        } else if base == "folder.bru" {
+            doc, err = parse_file(c, "collection", "${root}/${f}")
+            if doc == null {
+                c.warnings.push("${f}: ${err}")
+            } else {
+                add_scope(c, dir, doc)
+                json.json_free(doc)
+            }
+        } else {
+            reqs.push(f)
+        }
+    }
+    if env != "" && env_found == 0 {
+        collection_free(c as ptr)
+        return null, "bru: no environment '${env}' (environments/${env}.bru) under ${root}"
+    }
+    // Requests by directory, then meta.seq, then name.
+    let keyed: string[] = []
+    let parsed_f: string[] = []
+    let parsed_js: string[] = []
+    for f in reqs {
+        seq = 0
+        js, perr2 = parse_js(c, "request", "${root}/${f}")
+        doc, err = json_doc(js)
+        if perr2 != "" { err = perr2 }
+        if perr2 != "" || doc == null {
+            c.warnings.push("${f}: ${err}")
+        } else {
+            parsed_f.push(f)
+            parsed_js.push(js)
+            s, serr = string.to_int(jstr(jobj(doc, "meta"), "seq"))
+            if serr == "" { seq = s }
+            json.json_free(doc)
+            pad = string.pad_start(string.from_int(seq), 9, 48)
+            keyed.push("${path_dir(f)}\n${pad}\n${f}")
+        }
+    }
+    for k in sort_strings(keyed) {
+        nl2 = string.index_of(k, "\n")
+        rest = string.substring(k, nl2 + 1, string.length(k))
+        nl3 = string.index_of(rest, "\n")
+        rf = string.substring(rest, nl3 + 1, string.length(rest))
+        c.req_file.push(rf)
+        for pj in 0..parsed_f.len {
+            if parsed_f[pj] == rf { c.req_json.push(parsed_js[pj]) }
+        }
+    }
+    return c as ptr, ""
+}
+
+collection_free(h: ptr) {
+    if h == null { return }
+    c = h as *Collection
+    bru.parser_free(c.parser)
+    heap.free(c)
+}
+
+request_count(h: ptr) -> int { return (h as *Collection).req_file.len }
+request_source(h: ptr, i: int) -> string { return (h as *Collection).req_file[i] }
+
+// The scopes that apply to request file `rel`, nearest first: indexes into
+// the scope arrays (the folders up the tree, then the collection, 0).
+fn scopes_for(c: *Collection, rel: string) -> int[] {
+    let out: int[] = []
+    d = path_dir(rel)
+    while d != "" {
+        i = 1
+        while i < c.scope_dir.len {
+            if c.scope_dir[i] == d { out.push(i) }
+            i = i + 1
+        }
+        d = path_dir(d)
+    }
+    out.push(0)
+    return out
+}
+
+// {{name}} replaced by its value where `vars` has it; the names left over.
+fn interpolate(s: string, vars: string) -> (string, string) {
+    out = s
+    pass = 0
+    while pass < 3 {
+        res = ""
+        cur = 0
+        n = string.length(out)
+        changed = 0
+        while cur < n {
+            o = string.index_of_from(out, "{{", cur)
+            if o < 0 { res = string.concat(res, string.substring(out, cur, n)); break }
+            cl = string.index_of_from(out, "}}", o + 2)
+            if cl < 0 { res = string.concat(res, string.substring(out, cur, n)); break }
+            name = string.trim(string.substring(out, o + 2, cl))
+            v, ok = var_lookup(vars, name)
+            res = string.concat(res, string.substring(out, cur, o))
+            if ok == 1 {
+                res = string.concat(res, v)
+                changed = 1
+            } else {
+                res = string.concat(res, string.substring(out, o, cl + 2))
+            }
+            cur = cl + 2
+        }
+        out = res
+        if changed == 0 { break }
+        pass = pass + 1
+    }
+    left = ""
+    cur2 = 0
+    n2 = string.length(out)
+    while cur2 < n2 {
+        o2 = string.index_of_from(out, "{{", cur2)
+        if o2 < 0 { break }
+        c2 = string.index_of_from(out, "}}", o2 + 2)
+        if c2 < 0 { break }
+        tok = string.substring(out, o2, c2 + 2)
+        if string.contains(left, tok) == 0 {
+            if left == "" { left = tok } else { left = "${left} ${tok}" }
+        }
+        cur2 = c2 + 2
+    }
+    return out, left
+}
+
+fn add_words(have: string, more: string) -> string {
+    out = have
+    for w in split_words(more) {
+        if string.contains(" ${out} ", " ${w} ") == 0 {
+            if out == "" { out = w } else { out = "${out} ${w}" }
+        }
+    }
+    return out
+}
+
+fn split_words(s: string) -> string[] {
+    let out: string[] = []
+    n = string.length(s)
+    cur = 0
+    while cur < n {
+        sp = string.index_of_from(s, " ", cur)
+        e = n
+        if sp >= 0 { e = sp }
+        w = string.substring(s, cur, e)
+        if string.length(w) > 0 { out.push(w) }
+        if sp < 0 { break }
+        cur = sp + 1
+    }
+    return out
+}
+
+fn add_item(have: string, item: string) -> string {
+    if have == "" { return item }
+    if string.contains(have, item) == 1 { return have }
+    return "${have}; ${item}"
+}
+
+// The URL's path and query: no scheme and host, or no leading unresolved
+// {{variable}}; always starting "/"; spaces as %20.
+fn url_path(url: string) -> string {
+    p = url
+    s = string.index_of(p, "://")
+    if s >= 0 {
+        rest = string.substring(p, s + 3, string.length(p))
+        sl = string.index_of(rest, "/")
+        q = string.index_of(rest, "?")
+        if sl < 0 && q < 0 {
+            p = "/"
+        } else if sl < 0 || (q >= 0 && q < sl) {
+            p = "/${string.substring(rest, q, string.length(rest))}"
+        } else {
+            p = string.substring(rest, sl, string.length(rest))
+        }
+    } else if string.starts_with(p, "{{") == 1 {
+        cl = string.index_of(p, "}}")
+        if cl > 0 { p = string.substring(p, cl + 2, string.length(p)) }
+    }
+    if string.starts_with(p, "/") == 0 { p = "/${p}" }
+    return string.replace_all(p, " ", "%20")
+}
+
+// Content-Type Bruno sends for a body mode when no header sets one.
+fn mode_ctype(mode: string) -> string {
+    if mode == "json" { return "application/json" }
+    if mode == "xml" { return "application/xml" }
+    if mode == "text" { return "text/plain" }
+    if mode == "sparql" { return "application/sparql-query" }
+    if mode == "formUrlEncoded" { return "application/x-www-form-urlencoded" }
+    if mode == "graphql" { return "application/json" }
+    return ""
+}
+
+// Response body type -> Content-Type, when the example names no header.
+fn resp_ctype_of(t: string) -> string {
+    if t == "json" { return "application/json" }
+    if t == "xml" { return "application/xml" }
+    if t == "html" { return "text/html" }
+    if t == "text" { return "text/plain" }
+    return ""
+}
+
+// (body, unsupported) for a body object holding `mode`'s content.
+fn body_of(mode: string, body: ptr) -> (string, string) {
+    if mode == "" || mode == "none" { return "", "" }
+    if mode == "json" { return jstr(body, "json"), "" }
+    if mode == "xml" { return jstr(body, "xml"), "" }
+    if mode == "text" { return jstr(body, "text"), "" }
+    if mode == "sparql" { return jstr(body, "sparql"), "" }
+    if mode == "formUrlEncoded" {
+        a = jobj(body, "formUrlEncoded")
+        out = ""
+        n = jarr_len(a)
+        i = 0
+        while i < n {
+            it = json.json_array_get_raw(a, i)
+            if enabled(it) == 1 {
+                pair = "${form_encode(jstr(it, "name"))}=${form_encode(jstr(it, "value"))}"
+                if out == "" { out = pair } else { out = "${out}&${pair}" }
+            }
+            i = i + 1
+        }
+        return out, ""
+    }
+    if mode == "graphql" {
+        g = jobj(body, "graphql")
+        vars = string.trim(jstr(g, "variables"))
+        if vars == "" { vars = "{}" }
+        return "{\"query\":${json_quote(jstr(g, "query"))},\"variables\":${vars}}", ""
+    }
+    return "", "body mode ${mode} (sent with no body)"
+}
+
+fn is_credential_header(name: string) -> int {
+    n = lower(name)
+    if n == "authorization" || n == "proxy-authorization" || n == "cookie" || n == "x-api-key" || n == "x-auth-token" { return 1 }
+    return 0
+}
+
+// A credential's value as the note shows it: the {{variable}} it comes
+// from, or nothing at all.
+fn credential_shown(raw: string) -> string {
+    t = string.trim(raw)
+    if string.starts_with(t, "{{") == 1 && string.ends_with(t, "}}") == 1 && string.index_of_from(t, "{{", 2) < 0 {
+        return t
+    }
+    return "(credential not written)"
+}
+
+// The headers as the note shows them: a credential header (`cred`, the one
+// the auth mode adds, or a usual credential name) as credential_shown of its
+// value as written; every other header with its variables resolved.
+fn shown_headers(blob: string, cred: string, vars: string) -> (string, string) {
+    out = ""
+    left = ""
+    n = string.length(blob)
+    cur = 0
+    while cur < n {
+        nl = string.index_of_from(blob, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(blob, cur, e)
+        c = string.index_of(line, ":")
+        if c > 0 {
+            nm = string.substring(line, 0, c)
+            v = string.trim(string.substring(line, c + 1, string.length(line)))
+            if is_credential_header(nm) == 1 || (cred != "" && lower(nm) == lower(cred)) {
+                sp = string.index_of(v, " ")
+                if lower(nm) == "authorization" && sp > 0 {
+                    line = "${nm}: ${string.substring(v, 0, sp)} ${credential_shown(string.substring(v, sp + 1, string.length(v)))}"
+                } else {
+                    line = "${nm}: ${credential_shown(v)}"
+                }
+            } else {
+                li, lu = interpolate(line, vars)
+                line = li
+                left = add_words(left, lu)
+            }
+            out = "${out}${line}\n"
+        }
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    return out, left
+}
+
+// Build request `i` (REQUEST_MAIN) or its example `ex`. `extra_vars`
+// ("name=value\n" lines) outrank every other variable (import-bru gives the
+// base-URL variable the record proxy's address this way). (handle, "") or
+// (null, why); free with built_free.
+request_build(h: ptr, i: int, ex: int, extra_vars: string) -> (ptr, string) {
+    c = h as *Collection
+    rel = c.req_file[i]
+    doc, err = json_doc(c.req_json[i])
+    if doc == null { return null, "${rel}: ${err}" }
+    b = heap.new(Built)
+    scopes = scopes_for(c, rel)
+    exs = jobj(doc, "examples")
+    b.n_examples = jarr_len(exs)
+    if ex >= b.n_examples { json.json_free(doc); heap.free(b); return null, "${rel}: no example ${ex}" }
+    let exo: ptr = null
+    let exreq: ptr = null
+    if ex >= 0 {
+        exo = json.json_array_get_raw(exs, ex)
+        exreq = jobj(exo, "request")
+        b.ex_name = jstr(exo, "name")
+        b.ex_error = jstr(exo, "error")
+        b.ex_desc = jstr(exo, "description")
+    }
+
+    // Variables, highest precedence first.
+    vars = extra_vars
+    vars = "${vars}${kv_lines(jobj(jobj(doc, "vars"), "req"))}"
+    for si in scopes {
+        if si != 0 { vars = "${vars}${c.scope_vars[si]}" }
+    }
+    vars = "${vars}${c.env_vars}${c.scope_vars[0]}"
+
+    // Headers: collection, folders (outermost first), request, example.
+    hdrs = ""
+    k = scopes.len - 1
+    while k >= 0 {
+        hdrs = merge_headers(hdrs, c.scope_headers[scopes[k]])
+        k = k - 1
+    }
+    hdrs = merge_headers(hdrs, header_lines(jobj(doc, "headers")))
+    if exreq != null { hdrs = merge_headers(hdrs, header_lines(jobj(exreq, "headers"))) }
+
+    // Auth: the request's, or the nearest scope's that is not inherit.
+    httpo = jobj(doc, "http")
+    auth = jobj(doc, "auth")
+    mode = jstr(httpo, "auth")
+    if mode == "" { mode = jstr(auth, "mode") }
+    aa = ""
+    ab = ""
+    aplace = ""
+    if mode == "apikey" {
+        kk = jobj(auth, "apikey")
+        aa = jstr(kk, "key")
+        ab = jstr(kk, "value")
+        aplace = jstr(kk, "placement")
+    } else if mode == "bearer" {
+        ab = jstr(jobj(auth, "bearer"), "token")
+    } else if mode == "basic" {
+        kk2 = jobj(auth, "basic")
+        aa = jstr(kk2, "username")
+        ab = jstr(kk2, "password")
+    } else if mode == "inherit" {
+        for si2 in scopes {
+            if mode == "inherit" {
+                m2 = c.scope_auth_mode[si2]
+                if m2 != "inherit" && m2 != "" {
+                    mode = m2
+                    aa = c.scope_auth_a[si2]
+                    ab = c.scope_auth_b[si2]
+                    aplace = c.scope_auth_place[si2]
+                }
+            }
+        }
+        if mode == "inherit" { mode = "none" }
+    }
+    // (The note shows the variable a credential comes from, so interpolate
+    // the shown and the sent forms separately.)
+    auth_query = ""
+    cred = ""
+    if mode == "apikey" {
+        if aplace == "queryparams" {
+            auth_query = "${form_encode(aa)}=${ab}"
+        } else if string.length(aa) > 0 {
+            hdrs = merge_headers(hdrs, "${aa}: ${ab}\n")
+            cred = aa
+        }
+    } else if mode == "bearer" {
+        hdrs = merge_headers(hdrs, "Authorization: Bearer ${ab}\n")
+        cred = "Authorization"
+    } else if mode == "basic" {
+        cred = "Authorization"
+        ua, _u1 = interpolate(aa, vars)
+        pb, _u2 = interpolate(ab, vars)
+        hdrs = merge_headers(hdrs, "Authorization: Basic ${encoding.base64_encode_padded(string.bytes("${ua}:${pb}"))}\n")
+    } else if mode != "none" && mode != "" {
+        b.unsupported = add_item(b.unsupported, "auth mode ${mode}")
+    }
+    // Credentials shown as written in the .bru (their {{variable}}), the rest
+    // with variables resolved.
+    shown_i, left_h = shown_headers(hdrs, cred, vars)
+    b.headers = shown_i
+    b.unresolved = add_words(b.unresolved, left_h)
+    // The headers as sent (import-bru), credentials included.
+    sent_i, _ls = interpolate(hdrs, vars)
+    b.sent_headers = sent_i
+
+    // Method, URL, path params, query.
+    method = string.to_upper(jstr(httpo, "method"))
+    url = jstr(httpo, "url")
+    if exreq != null {
+        em = string.to_upper(jstr(exreq, "method"))
+        if em != "" { method = em }
+        eu = jstr(exreq, "url")
+        if eu != "" { url = eu }
+    }
+    params = jobj(doc, "params")
+    np = jarr_len(params)
+    pi = 0
+    while pi < np {
+        po = json.json_array_get_raw(params, pi)
+        if enabled(po) == 1 && jstr(po, "type") == "path" {
+            url = string.replace_all(url, ":${jstr(po, "name")}", jstr(po, "value"))
+        }
+        pi = pi + 1
+    }
+    url_i, left_u = interpolate(url, vars)
+    if auth_query != "" {
+        aq, _lq = interpolate(auth_query, vars)
+        // A literal key never goes on a tape; a {{variable}} may.
+        if credential_shown(ab) == "(credential not written)" {
+            aq = "${form_encode(aa)}=REDACTED"
+            b.unsupported = add_item(b.unsupported, "the API key in the query string is written as REDACTED")
+        }
+        if string.index_of(url_i, "?") >= 0 { url_i = "${url_i}&${aq}" } else { url_i = "${url_i}?${aq}" }
+    }
+    b.unresolved = add_words(b.unresolved, left_u)
+    b.method = method
+    b.url = url_i
+    b.path = url_path(url_i)
+
+    // Body.
+    bmode = jstr(httpo, "body")
+    bodyo = jobj(doc, "body")
+    if exreq != null {
+        eb = jobj(exreq, "body")
+        if eb != null {
+            bmode = jstr(eb, "mode")
+            bodyo = eb
+        }
+    }
+    body, unsup = body_of(bmode, bodyo)
+    if unsup != "" { b.unsupported = add_item(b.unsupported, unsup) }
+    body_i, left_b = interpolate(body, vars)
+    b.unresolved = add_words(b.unresolved, left_b)
+    b.body = body_i
+    ct = header_value(b.headers, "Content-Type")
+    if ct == "" { ct = mode_ctype(bmode) }
+    if string.length(body_i) == 0 { ct = header_value(b.headers, "Content-Type") }
+    b.ctype = ct
+    if jstr(doc, "script") != "" || jobj(doc, "script") != null { b.unsupported = add_item(b.unsupported, "scripts") }
+
+    // The example's response.
+    if exo != null {
+        resp = jobj(exo, "response")
+        st, sterr = string.to_int(jstr(resp, "status"))
+        if sterr == "" { b.status = st }
+        b.resp_headers = header_lines(jobj(resp, "headers"))
+        rb = jobj(resp, "body")
+        content = jstr(rb, "content")
+        rct = header_value(b.resp_headers, "Content-Type")
+        if string.length(string.trim(content)) > 0 {
+            b.resp_body = content
+            b.documented = 1
+            // Bruno's body type stands for a Content-Type only when there is a
+            // body; an undocumented one gets none rather than an invented one.
+            if rct == "" { rct = resp_ctype_of(jstr(rb, "type")) }
+        }
+        b.resp_ctype = rct
+    }
+    json.json_free(doc)
+    return b as ptr, ""
+}
+
+// ---- converting ----------------------------------------------------------
+
+// Lines that would read as tape structure are indented (notes may hold
+// anything a collection's author wrote).
+fn note_safe(s: string) -> string {
+    out = ""
+    n = string.length(s)
+    cur = 0
+    while cur < n {
+        nl = string.index_of_from(s, "\n", cur)
+        e = n
+        if nl >= 0 { e = nl }
+        line = string.substring(s, cur, e)
+        if string.starts_with(line, "#") == 1 || string.starts_with(line, "```") == 1 { line = "    ${line}" }
+        out = "${out}${line}\n"
+        if nl < 0 { break }
+        cur = nl + 1
+    }
+    return out
+}
+
+fn note_for(b: *Built, rel: string, ex: int) -> string {
+    t = "Source: ${rel}, example ${ex + 1} of ${b.n_examples}: \"${b.ex_name}\"\n"
+    if string.length(string.trim(b.ex_desc)) > 0 { t = "${t}Description: ${string.trim(b.ex_desc)}\n" }
+    if b.documented == 0 {
+        t = "${t}Response body: not documented. The example gives the status (${b.status}) and no body, so the\nbody below is empty because nothing was documented, not because the service sends nothing.\n"
+    }
+    if string.length(b.headers) > 0 {
+        t = "${t}Request headers the collection sends (not matched on playback):\n"
+        n = string.length(b.headers)
+        cur = 0
+        while cur < n {
+            nl = string.index_of_from(b.headers, "\n", cur)
+            e = n
+            if nl >= 0 { e = nl }
+            t = "${t}    ${string.substring(b.headers, cur, e)}\n"
+            if nl < 0 { break }
+            cur = nl + 1
+        }
+    }
+    if b.unresolved != "" { t = "${t}Unresolved variables: ${b.unresolved}\n" }
+    if b.unsupported != "" { t = "${t}Not converted: ${b.unsupported}\n" }
+    return note_safe(t)
+}
+
+// The slug of `name`, unique against `used` (keys "<parent>/<slug>", which
+// the caller adds): the second of a name gets "-2", the third "-3", in the
+// order asked.
+fn unique_slug(used: string[], parent: string, name: string) -> string {
+    base = slug(name)
+    s = base
+    k = 2
+    taken = 1
+    while taken == 1 {
+        taken = 0
+        key = "${parent}/${s}"
+        for u in used {
+            if u == key { taken = 1 }
+        }
+        if parent == "#file" && s == INDEX_SLUG { taken = 1 }
+        if taken == 1 {
+            s = "${base}-${k}"
+            k = k + 1
+        }
+    }
+    return s
+}
+
+fn md_cell(s: string) -> string {
+    return string.replace_all(string.replace_all(s, "|", "\\|"), "\n", " ")
+}
+
+// Convert the collection at `root` into tapes under `out_dir`. env names an
+// environment ("" for none). (a one-line summary, "") or ("", why).
+convert_collection(root: string, out_dir: string, env: string) -> (string, string) {
+    h, oerr = collection_open(root, env)
+    if h == null { return "", oerr }
+    c = h as *Collection
+    merr = fs.mkdir_p(out_dir)
+    if merr != "" { collection_free(h); return "", "cannot create ${out_dir}: ${merr}" }
+
+    // Directory slugs first, parents before children (sorted), then files.
+    let used: string[] = []
+    let dir_src: string[] = []
+    let dir_out: string[] = []
+    let dirs_all: string[] = []
+    for f in c.req_file {
+        d = path_dir(f)
+        while d != "" {
+            seen = 0
+            for x in dirs_all {
+                if x == d { seen = 1 }
+            }
+            if seen == 0 { dirs_all.push(d) }
+            d = path_dir(d)
+        }
+    }
+    for d2 in sort_strings(dirs_all) {
+        parent = path_dir(d2)
+        pout = ""
+        for j in 0..dir_src.len {
+            if dir_src[j] == parent { pout = dir_out[j] }
+        }
+        s = unique_slug(used, pout, path_base(d2))
+        used.push("${pout}/${s}")
+        o = s
+        if pout != "" { o = "${pout}/${s}" }
+        dir_src.push(d2)
+        dir_out.push(o)
+    }
+    // File slugs in name order within each directory (deterministic,
+    // independent of seq).
+    files_by_name = sort_strings(c.req_file)
+    let file_src: string[] = []
+    let file_out: string[] = []
+    for f2 in files_by_name {
+        d3 = path_dir(f2)
+        dout = ""
+        for j2 in 0..dir_src.len {
+            if dir_src[j2] == d3 { dout = dir_out[j2] }
+        }
+        s2 = unique_slug(used, "${dout}#file", strip_bru(path_base(f2)))
+        used.push("${dout}#file/${s2}")
+        o2 = "${s2}.md"
+        if dout != "" { o2 = "${dout}/${s2}.md" }
+        file_src.push(f2)
+        file_out.push(o2)
+    }
+
+    rows = ""
+    tapes = 0
+    interactions = 0
+    undocumented = 0
+    skipped = 0
+    errors = ""
+    for i in 0..c.req_file.len {
+        rel = c.req_file[i]
+        out_rel = ""
+        for j3 in 0..file_src.len {
+            if file_src[j3] == rel { out_rel = file_out[j3] }
+        }
+        mb, berr = request_build(h, i, REQUEST_MAIN, "")
+        if mb == null {
+            errors = "${errors}- `${md_cell(rel)}`: ${md_cell(berr)}\n"
+            continue
+        }
+        nex = (mb as *Built).n_examples
+        mmethod = (mb as *Built).method
+        mpath = (mb as *Built).path
+        built_free(mb)
+        if nex == 0 {
+            skipped = skipped + 1
+            rows = "${rows}| `${md_cell(rel)}` | ${mmethod} ${md_cell(mpath)} | (none: no example) | 0 | 0 |\n"
+            continue
+        }
+        vh = vcr.open_offline()
+        docd = 0
+        failed = ""
+        for ex in 0..nex {
+            eb, eerr = request_build(h, i, ex, "")
+            if eb == null {
+                failed = eerr
+            } else if (eb as *Built).ex_error != "" {
+                failed = "example ${ex + 1}: Bruno's parser could not read it: ${(eb as *Built).ex_error}"
+                built_free(eb)
+            } else {
+                b = eb as *Built
+                title = "Converted from Bruno"
+                if b.documented == 0 { title = "Converted from Bruno: response body not documented" } else { docd = docd + 1 }
+                ne = vcr.note_h(vh, title, note_for(b, rel, ex))
+                if ne != "" { failed = ne }
+                re = vcr.record_full_response_h(vh, b.method, b.path, b.status, b.resp_ctype, b.resp_body, "", b.body, b.resp_headers)
+                if re != "" { failed = re }
+                built_free(eb)
+            }
+        }
+        if failed == "" {
+            failed = vcr.flush_h(vh, "${out_dir}/${out_rel}")
+        }
+        vcr.destroy_h(vh)
+        if failed != "" {
+            errors = "${errors}- `${md_cell(rel)}`: ${md_cell(failed)}\n"
+            continue
+        }
+        tapes = tapes + 1
+        interactions = interactions + nex
+        undocumented = undocumented + (nex - docd)
+        rows = "${rows}| `${md_cell(rel)}` | ${mmethod} ${md_cell(mpath)} | [`${out_rel}`](${out_rel}) | ${nex} | ${docd} |\n"
+    }
+
+    envline = "none"
+    if env != "" { envline = "`environments/${md_cell(env)}.bru`" }
+    idx = "# Converted from a Bruno collection\n\n"
+    idx = "${idx}Written by `servirtium convert bru` (Bruno's parser: ${bru.BRU_PARSER_VERSION}, in embedded QuickJS).\n"
+    idx = "${idx}Do not edit by hand: rerun the converter.\n\n"
+    idx = "${idx}- Environment: ${envline}\n"
+    idx = "${idx}- Requests: ${c.req_file.len}; tapes: ${tapes}; interactions (one per example): ${interactions}\n"
+    idx = "${idx}- Interactions whose example documents no response body: ${undocumented} (each tape says so in its `## [Note]`)\n"
+    idx = "${idx}- Requests with no example, so no tape: ${skipped}\n\n"
+    idx = "${idx}| Source `.bru` | Request | Tape | Examples | With a response body |\n|---|---|---|---|---|\n${rows}"
+    nwarn = c.warnings.len
+    if errors != "" || nwarn > 0 {
+        idx = "${idx}\n## Not converted\n\n${errors}"
+        for w in c.warnings { idx = "${idx}- ${md_cell(w)}\n" }
+    }
+    werr = fs.write("${out_dir}/${INDEX_FILE}", idx)
+    collection_free(h)
+    if werr != "" { return "", "cannot write ${INDEX_FILE}: ${werr}" }
+    if errors != "" || nwarn > 0 {
+        return "", "converted ${tapes} tape(s) but some files failed: see ${out_dir}/${INDEX_FILE}"
+    }
+    return "${tapes} tape(s), ${interactions} interaction(s) (${undocumented} without a documented response body), ${skipped} request(s) with no example", ""
+}

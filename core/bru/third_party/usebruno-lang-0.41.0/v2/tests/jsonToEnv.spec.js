@@ -1,0 +1,712 @@
+const parser = require('../src/jsonToEnv');
+const envParser = require('../src/envToJson');
+
+describe('jsonToEnv', () => {
+  it('should stringify empty vars', () => {
+    const input = {
+      variables: []
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+}
+`;
+
+    expect(output).toEqual(expected);
+  });
+
+  it('should stringify single var line', () => {
+    const input = {
+      variables: [
+        {
+          name: 'url',
+          value: 'http://localhost:3000',
+          enabled: true
+        }
+      ]
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+  url: http://localhost:3000
+}
+`;
+    expect(output).toEqual(expected);
+  });
+
+  it('should stringify multiple var lines', () => {
+    const input = {
+      variables: [
+        {
+          name: 'url',
+          value: 'http://localhost:3000',
+          enabled: true
+        },
+        {
+          name: 'port',
+          value: '3000',
+          enabled: false
+        }
+      ]
+    };
+
+    const expected = `vars {
+  url: http://localhost:3000
+  ~port: 3000
+}
+`;
+    const output = parser(input);
+    expect(output).toEqual(expected);
+  });
+
+  it('should stringify description in vars', () => {
+    const input = {
+      variables: [
+        {
+          name: 'url',
+          value: 'http://localhost:3000',
+          enabled: true,
+          description: 'Base API URL.'
+        }
+      ]
+    };
+
+    const output = parser(input);
+    expect(output).toEqual(`vars {
+  @description('Base API URL.')
+  url: http://localhost:3000
+}
+`);
+  });
+
+  it('should stringify multiline description with triple-quoted literal newlines', () => {
+    const input = {
+      variables: [
+        {
+          name: 'url',
+          value: 'http://localhost:3000',
+          enabled: true,
+          description: 'Line one\nLine two'
+        }
+      ]
+    };
+
+    const output = parser(input);
+    expect(output).toContain('@description(\'\'\'\n    Line one\n    Line two\n  \'\'\')');
+  });
+
+  it('should stringify description with emoji', () => {
+    const input = {
+      variables: [
+        {
+          name: 'token',
+          value: 'secret',
+          enabled: true,
+          description: 'API key 🔐 required'
+        }
+      ]
+    };
+
+    const output = parser(input);
+    expect(output).toContain('@description(\'API key 🔐 required\')');
+    expect(output).toContain('token: secret');
+  });
+
+  it('should stringify multiline description with emoji using triple-quoted literal newlines', () => {
+    const input = {
+      variables: [
+        {
+          name: 'note',
+          value: 'val',
+          enabled: true,
+          description: 'Launch 🚀\nSecond line'
+        }
+      ]
+    };
+
+    const output = parser(input);
+    expect(output).toContain('@description(\'\'\'\n    Launch 🚀\n    Second line\n  \'\'\')');
+  });
+
+  it('should stringify description with LF (\\n) as multiline triple-quoted', () => {
+    const input = {
+      variables: [
+        {
+          name: 'note',
+          value: 'val',
+          enabled: true,
+          description: 'First\nSecond\nThird'
+        }
+      ]
+    };
+
+    const output = parser(input);
+    expect(output).toContain('@description(\'\'\'\n    First\n    Second\n    Third\n  \'\'\')');
+  });
+
+  it('should stringify description with CRLF (\\r\\n) as multiline triple-quoted with LF normalization', () => {
+    const input = {
+      variables: [
+        {
+          name: 'note',
+          value: 'val',
+          enabled: true,
+          description: 'Line one\r\nLine two'
+        }
+      ]
+    };
+
+    const output = parser(input);
+    // indentString normalizes \r\n to \n when serializing
+    expect(output).toContain('@description(\'\'\'\n    Line one\n    Line two\n  \'\'\')');
+  });
+
+  it('should stringify secret vars', () => {
+    const input = {
+      variables: [
+        {
+          name: 'url',
+          value: 'http://localhost:3000',
+          enabled: true
+        },
+        {
+          name: 'token',
+          value: 'abracadabra',
+          enabled: true,
+          secret: true
+        }
+      ]
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+  url: http://localhost:3000
+}
+vars:secret [
+  token
+]
+`;
+    expect(output).toEqual(expected);
+  });
+
+  it('should stringify multiple secret vars', () => {
+    const input = {
+      variables: [
+        {
+          name: 'url',
+          value: 'http://localhost:3000',
+          enabled: true
+        },
+        {
+          name: 'access_token',
+          value: 'abracadabra',
+          enabled: true,
+          secret: true
+        },
+        {
+          name: 'access_secret',
+          value: 'abracadabra',
+          enabled: false,
+          secret: true
+        }
+      ]
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+  url: http://localhost:3000
+}
+vars:secret [
+  access_token,
+  ~access_secret
+]
+`;
+    expect(output).toEqual(expected);
+  });
+
+  it('should stringify even if the only secret vars are present', () => {
+    const input = {
+      variables: [
+        {
+          name: 'token',
+          value: 'abracadabra',
+          enabled: true,
+          secret: true
+        }
+      ]
+    };
+
+    const output = parser(input);
+    const expected = `vars:secret [
+  token
+]
+`;
+    expect(output).toEqual(expected);
+  });
+
+  it('should emit @description prefix even for multiline variables', () => {
+    const input = {
+      variables: [
+        {
+          name: 'json_data',
+          value: '{\n  "name": "test"\n}',
+          enabled: true,
+          description: 'A multiline JSON blob'
+        }
+      ]
+    };
+
+    const output = parser(input);
+    expect(output).toEqual(`vars {
+  @description('A multiline JSON blob')
+  json_data: '''
+    {
+      "name": "test"
+    }
+  '''
+}
+`);
+  });
+
+  it('should stringify multiline variables', () => {
+    const input = {
+      variables: [
+        {
+          name: 'json_data',
+          value: '{\n  "name": "test",\n  "value": 123\n}',
+          enabled: true
+        }
+      ]
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+  json_data: '''
+    {
+      "name": "test",
+      "value": 123
+    }
+  '''
+}
+`;
+    expect(output).toEqual(expected);
+  });
+
+  it('should stringify multiline variables containing indentation', () => {
+    const input = {
+      variables: [
+        {
+          name: 'script',
+          value: 'function test() {\n  console.log("hello");\n  return true;\n}',
+          enabled: true
+        }
+      ]
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+  script: '''
+    function test() {
+      console.log("hello");
+      return true;
+    }
+  '''
+}
+`;
+    expect(output).toEqual(expected);
+  });
+
+  it('should stringify disabled multiline variable', () => {
+    const input = {
+      variables: [
+        {
+          name: 'disabled_multiline',
+          value: 'line 1\nline 2\nline 3',
+          enabled: false
+        }
+      ]
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+  ~disabled_multiline: '''
+    line 1
+    line 2
+    line 3
+  '''
+}
+`;
+    expect(output).toEqual(expected);
+  });
+
+  it('should stringify multiple multiline variables', () => {
+    const input = {
+      variables: [
+        {
+          name: 'config',
+          value: 'debug=true\nport=3000',
+          enabled: true
+        },
+        {
+          name: 'template',
+          value: '<html>\n  <body>Hello World</body>\n</html>',
+          enabled: true
+        }
+      ]
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+  config: '''
+    debug=true
+    port=3000
+  '''
+  template: '''
+    <html>
+      <body>Hello World</body>
+    </html>
+  '''
+}
+`;
+    expect(output).toEqual(expected);
+  });
+
+  describe('typed environment variables', () => {
+    it('should serialize @number dataType as a decorator', () => {
+      const input = {
+        variables: [
+          { name: 'port', value: 3000, enabled: true, dataType: 'number' }
+        ]
+      };
+
+      const output = parser(input);
+      expect(output).toEqual(`vars {
+  @number
+  port: 3000
+}
+`);
+    });
+
+    it('should serialize @boolean dataType as a decorator', () => {
+      const input = {
+        variables: [
+          { name: 'isEnabled', value: true, enabled: true, dataType: 'boolean' }
+        ]
+      };
+
+      const output = parser(input);
+      expect(output).toEqual(`vars {
+  @boolean
+  isEnabled: true
+}
+`);
+    });
+
+    it('should serialize @object dataType with JSON-stringified multiline value', () => {
+      const input = {
+        variables: [
+          { name: 'config', value: { a: 1, b: 'x' }, enabled: true, dataType: 'object' }
+        ]
+      };
+
+      const output = parser(input);
+      expect(output).toContain('@object');
+      expect(output).toContain('"a": 1');
+      expect(output).toContain('"b": "x"');
+    });
+
+    it('should not emit a decorator for string dataType', () => {
+      const input = {
+        variables: [
+          { name: 'apiKey', value: 'abc123', enabled: true, dataType: 'string' }
+        ]
+      };
+
+      const output = parser(input);
+      expect(output).toEqual(`vars {
+  apiKey: abc123
+}
+`);
+    });
+
+    it('should drop dataType annotations from existing list and rebuild from dataType field', () => {
+      const input = {
+        variables: [
+          {
+            name: 'port',
+            value: 3000,
+            enabled: true,
+            annotations: [{ name: 'string' }, { name: 'description', value: 'service port' }],
+            dataType: 'number'
+          }
+        ]
+      };
+
+      const output = parser(input);
+      // @string from old annotations should be dropped, @number should be set from dataType
+      expect(output).toContain('@number');
+      expect(output).not.toContain('@string');
+      expect(output).toContain('@description(\'service port\')');
+    });
+
+    it('should emit dataType but not the value for secret vars', () => {
+      const input = {
+        variables: [
+          { name: 'api_key', value: 'redacted', enabled: true, secret: true, dataType: 'number' }
+        ]
+      };
+
+      const output = parser(input);
+      // secret vars use the vars:secret block: the dataType is emitted as a
+      // decorator, but the value is never written to disk.
+      expect(output).toContain('vars:secret');
+      expect(output).toContain('api_key');
+      expect(output).toContain('@number');
+      expect(output).not.toContain('redacted');
+    });
+
+    it('should round-trip non-string values through getValueString', () => {
+      const input = {
+        variables: [
+          { name: 'port', value: 8080, enabled: true, dataType: 'number' },
+          { name: 'flag', value: false, enabled: true, dataType: 'boolean' }
+        ]
+      };
+
+      const output = parser(input);
+      expect(output).toContain('port: 8080');
+      expect(output).toContain('flag: false');
+    });
+  });
+
+  describe('extends', () => {
+    it('should stringify the parent environment ahead of the vars block', () => {
+      const input = {
+        extends: 'base',
+        variables: [{ name: 'url', value: 'http://localhost:3000', enabled: true }]
+      };
+
+      const output = parser(input);
+
+      expect(output).toEqual(`extends: base
+vars {
+  url: http://localhost:3000
+}
+`);
+    });
+
+    it('should stringify the parent environment ahead of the color', () => {
+      const input = {
+        extends: 'base',
+        variables: [],
+        color: 'blue'
+      };
+
+      const output = parser(input);
+
+      expect(output).toEqual(`extends: base
+vars {
+}
+color: blue
+`);
+    });
+
+    it('should omit extends when no parent is set', () => {
+      const input = {
+        variables: [{ name: 'url', value: 'http://localhost:3000', enabled: true }]
+      };
+
+      const output = parser(input);
+
+      expect(output).not.toContain('extends');
+    });
+
+    it('should omit extends when the parent is an empty string', () => {
+      const input = {
+        extends: '',
+        variables: []
+      };
+
+      const output = parser(input);
+
+      expect(output).not.toContain('extends');
+    });
+
+    it('should never write the inheritedFrom provenance of a resolved variable', () => {
+      const input = {
+        extends: 'base',
+        variables: [{ name: 'url', value: 'http://base', enabled: true, inheritedFrom: 'base' }]
+      };
+
+      const output = parser(input);
+
+      expect(output).not.toContain('inheritedFrom');
+      expect(envParser(output).variables[0]).not.toHaveProperty('inheritedFrom');
+    });
+
+    it('should write a list of parents as a list rather than a fabricated name', () => {
+      const input = {
+        extends: ['base', 'staging'],
+        variables: []
+      };
+
+      const output = parser(input);
+
+      expect(output).toEqual(`extends [
+  base,
+  staging
+]
+vars {
+}
+`);
+    });
+
+    it('should round-trip a list of parents through the parser', () => {
+      const input = {
+        extends: ['base', 'staging'],
+        variables: []
+      };
+
+      expect(envParser(parser(input)).extends).toEqual(['base', 'staging']);
+    });
+
+    it('should round-trip a list of parents whose names contain spaces', () => {
+      const input = {
+        extends: ['Base Environment', 'staging server'],
+        variables: []
+      };
+
+      expect(envParser(parser(input)).extends).toEqual(['Base Environment', 'staging server']);
+    });
+
+    it('should quote a list entry whose name carries a list delimiter', () => {
+      const input = {
+        extends: ['acme, inc', 'env[1]', 'plain'],
+        variables: []
+      };
+
+      const output = parser(input);
+
+      expect(output).toEqual(`extends [
+  "acme, inc",
+  "env[1]",
+  plain
+]
+vars {
+}
+`);
+    });
+
+    it('should round-trip list entries whose names carry list delimiters', () => {
+      const input = {
+        extends: ['acme, inc', 'env[1]', '[bracketed]', 'list]end'],
+        variables: []
+      };
+
+      expect(envParser(parser(input)).extends).toEqual(input.extends);
+    });
+
+    it('should omit the whole list when an entry is named something no environment could be called', () => {
+      const input = {
+        extends: ['base', 'say "hi"'],
+        variables: []
+      };
+
+      const output = parser(input);
+
+      expect(output).not.toContain('extends');
+    });
+
+    it('should omit an empty list of parents', () => {
+      const input = {
+        extends: [],
+        variables: []
+      };
+
+      const output = parser(input);
+
+      expect(output).not.toContain('extends');
+    });
+
+    it('should round-trip a parent environment through the parser', () => {
+      const input = {
+        extends: 'base',
+        variables: [
+          { name: 'url', value: 'http://localhost:3000', enabled: true, secret: false },
+          { name: 'token', value: '', enabled: true, secret: true }
+        ],
+        color: 'blue'
+      };
+
+      const output = envParser(parser(input));
+
+      expect(output).toEqual(input);
+    });
+  });
+
+  it('should stringify nested externalSecrets as a vars:externalsecrets block, mapping the identifier and ~ for disabled', () => {
+    const input = {
+      variables: [
+        { name: 'url', value: 'http://localhost:3000', enabled: true },
+        { name: 'port', value: '3000', enabled: false }
+      ],
+      externalSecrets: {
+        type: 'hashicorp-vault-cloud',
+        variables: [
+          { name: 'cloudSecret', path: 'secret/data/cloud', enabled: true },
+          { name: 'dbPassword', path: 'secret/data/db-password', enabled: false }
+        ]
+      }
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+  url: http://localhost:3000
+  ~port: 3000
+}
+vars:externalsecrets:hashicorp-vault-cloud {
+  cloudSecret: secret/data/cloud
+  ~dbPassword: secret/data/db-password
+}
+`;
+
+    expect(output).toEqual(expected);
+  });
+
+  // An empty block must be written tight (`{\n}`), not with a blank line (`{\n\n}`):
+  // the env parser's dictionary rule only accepts a single newline before `}`, so a
+  // blank-line block fails to parse on the next read.
+  it('should emit a parseable empty block when the variables array is empty', () => {
+    const input = {
+      variables: [{ name: 'url', value: 'http://localhost:3000', enabled: true }],
+      externalSecrets: {
+        type: 'hashicorp-vault-cloud',
+        variables: []
+      }
+    };
+
+    const output = parser(input);
+    const expected = `vars {
+  url: http://localhost:3000
+}
+vars:externalsecrets:hashicorp-vault-cloud {
+}
+`;
+    expect(output).toEqual(expected);
+    expect(() => envParser(output)).not.toThrow();
+  });
+
+  it('should not emit a block for an unknown provider type', () => {
+    const input = {
+      variables: [],
+      externalSecrets: {
+        type: 'made-up-provider',
+        variables: [{ name: 'x', path: 'p/x', enabled: true }]
+      }
+    };
+
+    const output = parser(input);
+    expect(output).not.toContain('vars:externalsecrets');
+    expect(output).not.toContain('made-up-provider');
+  });
+});

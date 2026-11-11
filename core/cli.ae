@@ -7,6 +7,8 @@
 //   servirtium check  [--canonical] <tape.md> ...    lint tapes: parse clean? (exit 0/1)
 //   servirtium import <in.har> <out.md>              HAR capture -> Servirtium tape
 //   servirtium export <in.md>  <out.har>             Servirtium tape -> HAR capture
+//   servirtium convert bru <collection> <out-dir> [--env NAME]
+//                                                    Bruno collection's examples -> tapes, no network
 //
 // `serve` defaults to MatchMultiple playback (order-independent and
 // non-consuming, so repeated identical requests keep answering) because a
@@ -25,11 +27,11 @@
 // (aeb builds it via core/.cli.ae -> target/servirtium)
 
 import core.vcr
+import core.bru_convert
 import std.os
 import std.string
 import std.fs
 import std.http.client
-import std.intarr
 
 extern exit(code: int)
 extern http_server_start_raw(server: ptr) -> int
@@ -55,7 +57,9 @@ usage() {
     println("  servirtium check  [--canonical] <tape.md> ...    lint: tapes parse clean (exit 0/1)")
     println("  servirtium import <in.har> <out.md>              HAR capture -> Servirtium tape")
     println("  servirtium export <in.md>  <out.har>             Servirtium tape -> HAR capture")
-    println("  servirtium import-bru <bru-dir> <upstream> <out.md> [--var NAME] [--port N]")
+    println("  servirtium convert bru <collection> <out-dir> [--env NAME]")
+    println("                                                   Bruno collection's examples -> tapes (no network)")
+    println("  servirtium import-bru <collection> <upstream> <out.md> [--var NAME] [--port N]")
     println("                                                   Bruno collection -> hydrate vs upstream -> tape")
     println("")
     println("serve replays repeatably and order-independently (MatchMultiple);")
@@ -183,16 +187,58 @@ run_check(argc: int) {
     exit(0)
 }
 
-// import-bru <bru-dir> <upstream-base> <out.md> [--var NAME] [--port N]
+// convert bru <collection> <out-dir> [--env NAME]
 //
-// Import a Bruno collection (request DEFINITIONS, no responses) and HYDRATE it:
-// each .bru's request is fired through a record-mode proxy at `upstream-base`,
-// and the real responses are captured into `out.md` — a replayable tape.
+// Convert a Bruno collection into tapes with no network: each request .bru's
+// examples become one tape (one interaction per example) under out-dir, at a
+// space-free path (slugified folder and request names), with
+// out-dir/CONVERSION.md listing what became what. Bruno's own parser does
+// the parsing (core/bru.ae); core/bru_convert.ae says what each request means.
+// --env NAME resolves variables from environments/NAME.bru.
+run_convert(argc: int) {
+    if argc < 3 { usage(); exit(2) }
+    kind = os.args_get(2)
+    if string.equals(kind, "bru") == 0 {
+        println("servirtium convert: unknown kind '${kind}' (known: bru)")
+        exit(2)
+    }
+    src = ""
+    out = ""
+    env = ""
+    npos = 0
+    i = 3
+    while i < argc {
+        a = os.args_get(i)
+        if string.equals(a, "--env") == 1 {
+            i = i + 1
+            if i < argc { env = os.args_get(i) }
+        } else {
+            if npos == 0 { src = a } else if npos == 1 { out = a }
+            npos = npos + 1
+        }
+        i = i + 1
+    }
+    if src == "" || out == "" { usage(); exit(2) }
+    summary, err = bru_convert.convert_collection(src, out, env)
+    if err != "" { println("servirtium convert bru: ${err}"); exit(1) }
+    println("servirtium: converted ${src} -> ${out}: ${summary}")
+    exit(0)
+}
+
+// import-bru <collection> <upstream-base> <out.md> [--var NAME] [--port N]
 //
-// The collection's base-url variable (default {{baseUrl}}) is rewritten to the
-// local record proxy. Request headers are intentionally not forwarded into the
-// tape's match block (a collection's headers wouldn't match a test client's;
-// matching is method + path + body — same policy as HAR import).
+// Import a Bruno collection (request DEFINITIONS; any examples are ignored)
+// and HYDRATE it: each request is fired through a record-mode proxy at
+// `upstream-base`, and the real responses are captured into `out.md`, a
+// replayable tape. Requests are read by Bruno's own parser and built by
+// core/bru_convert.ae (the same code as `convert bru`): the whole collection,
+// folders included, in folder, then meta.seq, then name order.
+//
+// The collection's base-url variable (default {{baseUrl}}) is the local
+// record proxy. Only the method, URL and body (with its Content-Type) are
+// sent: request headers are intentionally not sent or put in the tape's
+// match block (a collection's headers would not match a test client's;
+// matching is method + path + body, the same policy as HAR import).
 //
 // WARNING: this makes REAL calls to `upstream-base` (side effects on POST/PUT/
 // DELETE, auth, rate limits). It is the "poke the service to fill the blanks"
@@ -224,13 +270,13 @@ run_import_bru(argc: int) {
     }
     if dir == "" || upstream == "" || out == "" { usage(); exit(2) }
 
-    files, gerr = fs.glob(string.concat(dir, "/*.bru"))
-    if string.length(gerr) > 0 { println("servirtium import-bru: ${gerr}"); exit(1) }
-    nfiles = fs.dir_list_count(files)
-    if nfiles == 0 { println("servirtium import-bru: no .bru files under ${dir}"); fs.dir_list_free(files); exit(1) }
+    coll, cerr0 = bru_convert.collection_open(dir, "")
+    if coll == null { println("servirtium import-bru: ${cerr0}"); exit(1) }
+    nreq = bru_convert.request_count(coll)
+    if nreq == 0 { println("servirtium import-bru: no request .bru files under ${dir}"); bru_convert.collection_free(coll); exit(1) }
 
     raw, oerr = vcr.open_record(out, upstream, port)
-    if raw == null { println("servirtium import-bru: ${oerr}"); exit(1) }
+    if raw == null { println("servirtium import-bru: ${oerr}"); bru_convert.collection_free(coll); exit(1) }
 
     // Keep the promise the header comment above makes. client.set_body() below
     // sets a Content-Type on every request that carries a body, and the record
@@ -252,72 +298,32 @@ run_import_bru(argc: int) {
     sleep(500)
 
     proxy = "http://127.0.0.1:${port}"
-    varneedle = "{{${basevar}}}"
     hydrated = 0
-    // Selection sort on meta.seq so interactions are hydrated in the collection's
-    // intended order (fs.glob returns alphabetical, not seq order). n is small (a
-    // collection is tens of requests) so O(n^2) is fine, and it sidesteps a
-    // parallel-array sort in ae. Each round picks the not-yet-done file with the
-    // lowest seq; ties and missing seq (->0) fall back to glob/alphabetical order
-    // because the scan keeps the FIRST file at a given seq and marks indices done.
-    // done_flags[i] != 0 once file i is processed.
-    done_flags, dferr = intarr.new(nfiles)
-    if string.length(dferr) > 0 { println("servirtium import-bru: ${dferr}"); fs.dir_list_free(files); exit(1) }
-    processed = 0
-    while processed < nfiles {
-        pick = -1
-        pick_seq = 0
-        gi = 0
-        while gi < nfiles {
-            gflag, _gfe = intarr.get(done_flags, gi)
-            if gflag == 0 {
-                gp = fs.dir_list_get(files, gi)
-                gt, ge = fs.read(gp)
-                gseq = 0
-                if string.length(ge) == 0 {
-                    s, serr = string.to_int(vcr.bru_kv(vcr.bru_block_body(gt, "meta"), "seq"))
-                    if serr == "" { gseq = s }
-                }
-                if pick < 0 || gseq < pick_seq { pick = gi; pick_seq = gseq }
-            }
-            gi = gi + 1
+    ri = 0
+    while ri < nreq {
+        src = bru_convert.request_source(coll, ri)
+        bh, berr = bru_convert.request_build(coll, ri, bru_convert.REQUEST_MAIN, "${basevar}=${proxy}\n")
+        ri = ri + 1
+        if bh == null { println("  skip ${src}: ${berr}"); continue }
+        b = bh as *bru_convert.Built
+        method = b.method
+        url = b.url
+        body = b.body
+        ctype = b.ctype
+        unsupported = b.unsupported
+        bru_convert.built_free(bh)
+        if method == "" { println("  skip ${src}: no http verb block"); continue }
+        if string.starts_with(url, proxy) == 0 {
+            println("  skip ${src}: its URL ${url} does not start with {{${basevar}}}")
+            continue
         }
-        if pick < 0 { break }
-        _sfe = intarr.set(done_flags, pick, 1)
-        processed = processed + 1
-        path = fs.dir_list_get(files, pick)
-        text, rerr = fs.read(path)
-        if string.length(rerr) > 0 { println("  skip ${path}: ${rerr}"); continue }
-        method = vcr.bru_method_of(text)
-        if method == "" { println("  skip ${path}: no http verb block"); continue }
-        vb = vcr.bru_block_body(text, vcr.bru_verb_block(method))
-        url = vcr.bru_kv(vb, "url")
-        if url == "" { println("  skip ${path}: no url"); continue }
-        // rewrite the collection's base-url var to the record proxy
-        vat = string.index_of(url, varneedle)
-        if vat >= 0 {
-            url = string.concat(proxy, string.substring(url, vat + string.length(varneedle), string.length(url)))
-        }
-        // Body: the ENGINE owns the Bruno mapping (bru_body_block /
-        // bru_body_content_type / bru_body_needs_work in core/vcr.ae). This
-        // front end only decides what to DO about it, so a second consumer of
-        // import — another CLI, a binding, a service — gets the same answers
-        // without reimplementing Bruno's body-type table.
-        declared = vcr.bru_trim(vcr.bru_kv(vb, "body"))
-        body = ""
-        ctype = ""
-        blk = vcr.bru_body_block(declared)
-        if string.length(blk) > 0 {
-            body = vcr.bru_trim(vcr.bru_block_body(text, blk))
-            ctype = vcr.bru_body_content_type(declared)
-        }
-        if vcr.bru_body_needs_work(declared) == 1 {
+        if string.contains(unsupported, "body mode") == 1 {
             // Import anyway — it does not have to be perfect — but leave an
             // explicit TODO rather than send an empty body and record a
             // plausible lie.
-            println("  TODO ${path}: body type '${declared}' not serialised yet — sent with NO body")
+            println("  TODO ${src}: ${unsupported}")
             _nb = vcr.note_h(raw, "TODO: unsupported Bruno body type",
-                "The request below declares `body: ${declared}`, which the engine cannot\nserialise yet, so it was sent with NO body and the recorded response reflects\nthat. Supply the body by hand, or re-hydrate once the type is supported.")
+                "The request below: ${unsupported}. The recorded response reflects\nthat. Supply the body by hand, or re-hydrate once the type is supported.")
         }
 
         req = client.request(method, url)
@@ -335,7 +341,7 @@ run_import_bru(argc: int) {
         client.request_free(req)
     }
 
-    fs.dir_list_free(files)
+    bru_convert.collection_free(coll)
     e = vcr.stop_and_flush_h(raw, out)
     vcr.destroy_h(raw)
     if string.length(e) > 0 { println("servirtium import-bru: ${e}"); exit(1) }
@@ -355,6 +361,7 @@ main() {
     if string.equals(cmd, "serve") == 1 { run_serve(argc) }
     if string.equals(cmd, "check") == 1 { run_check(argc) }
     if string.equals(cmd, "import-bru") == 1 { run_import_bru(argc) }
+    if string.equals(cmd, "convert") == 1 { run_convert(argc) }
 
     if string.equals(cmd, "import") == 1 {
         if argc < 4 { usage(); exit(2) }
