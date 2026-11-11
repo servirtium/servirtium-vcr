@@ -1,0 +1,100 @@
+// Record mode: set_forward_host_h sends the upstream the client's Host;
+// Expect is never forwarded.
+//
+// Both found by the Azure SDK harness (sdk_harnesses/azure-sdk-for-net):
+//  - Azurite accepts a copy source (Put Block From URL, Copy Blob) only on
+//    "the same Azurite instance": the source URL's host must equal the Host
+//    the request arrived with. The SDK builds the source URL from the
+//    address it uses, the recorder's, while the recorder sent Azurite its
+//    own authority, so every copy failed CannotVerifyCopySource. Opt-in
+//    (a name-based virtual host wants its own name).
+//  - With Expect: 100-continue forwarded, Azurite (Node) answers an interim
+//    100 Continue, which std.http.client returns as the final response; the
+//    SDK saw a bodiless 100 and retried until it gave up. The recorder has
+//    the whole body by then, so the expectation ends at the recorder.
+// The upstream here echoes the Host it was sent, and answers 417
+// Expectation Failed to any request carrying Expect.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18370
+const RECORD_PORT   = 18371
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+handle(req: ptr, res: ptr, ud: ptr) {
+    if string.length(http.get_header(req, "Expect")) > 0 {
+        http.response_set_status(res, 417)
+        http.response_set_body(res, "expectation forwarded")
+        return
+    }
+    http.response_set_status(res, 200)
+    http.response_set_body(res, http.get_header(req, "Host"))
+}
+
+put(port: int, expect: int) -> (int, string) {
+    req = client.request("PUT", "http://127.0.0.1:${port}/container/blob")
+    client.set_timeout(req, 5s)
+    if expect == 1 { client.set_header(req, "Expect", "100-continue") }
+    client.set_body(req, string.bytes("0123456789"), "application/octet-stream")
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err }
+    st = client.response_status(resp)
+    body = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return st, body
+}
+
+record_once(forward: int, expect: int) -> (int, string) {
+    tmp = io.getenv("TMPDIR")
+    if tmp == 0 { tmp = "/tmp" }
+    tape = "${tmp}/vcr_forward_host.tape"
+    rec, _e = vcr.open_record(tape, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if rec == null { fail("open_record") }
+    vcr.set_forward_host_h(rec, forward)
+    if http.server_start_background(vcr.server_of(rec)) != "" { fail("recorder start") }
+    sleep(250)
+    st, body = put(RECORD_PORT, expect)
+    vcr.stop_and_flush_h(rec, tape)
+    vcr.destroy_h(rec)
+    fs.delete(tape)
+    sleep(100)
+    return st, body
+}
+
+main() {
+    println("=== VCR record: forward_host, and Expect stays at the recorder ===")
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { fail("upstream server_create") }
+    http.server_put(upstream, "/*", handle, null)
+    if http.server_start_background(upstream) != "" { fail("upstream start") }
+    sleep(250)
+
+    st1, h1 = record_once(0, 0)
+    if st1 != 200 || string.equals(h1, "127.0.0.1:${UPSTREAM_PORT}") != 1 { fail("default: upstream saw Host '${h1}' (${st1})") }
+    println("  PASS by default the upstream sees its own authority")
+
+    st2, h2 = record_once(1, 0)
+    if st2 != 200 || string.equals(h2, "127.0.0.1:${RECORD_PORT}") != 1 { fail("forward_host: upstream saw Host '${h2}' (${st2})") }
+    println("  PASS with forward_host the upstream sees the client's Host")
+
+    st3, b3 = record_once(0, 1)
+    if st3 != 200 { fail("Expect: 100-continue reached the upstream: ${st3} '${b3}'") }
+    println("  PASS Expect: 100-continue is not forwarded")
+
+    http_server_stop(upstream)
+    println("PASS")
+    exit(0)
+}

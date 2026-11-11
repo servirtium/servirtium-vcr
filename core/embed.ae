@@ -455,6 +455,11 @@ vcr_embed_set_upstream_cafile(s: ptr, path: string) -> ptr {
     if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.set_upstream_cafile_h(s, path))
 }
+// Record mode: send the upstream the client's Host header (on = 1).
+vcr_embed_set_forward_host(s: ptr, on: int) {
+    if s == null { return }
+    vcr.set_forward_host_h(s, on)
+}
 vcr_embed_redact_credentials(s: ptr) -> ptr {
     if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_credentials_h(s))

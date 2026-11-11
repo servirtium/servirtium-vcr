@@ -216,6 +216,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_upstream_cafile", CharSet = CharSet.Ansi)]
     internal static extern IntPtr SetUpstreamCafile(IntPtr server, string path);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_forward_host")]
+    internal static extern void SetForwardHost(IntPtr server, int on);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_note", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Note(IntPtr server, string title, string body);
 

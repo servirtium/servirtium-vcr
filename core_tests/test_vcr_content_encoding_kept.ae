@@ -1,0 +1,133 @@
+// A Content-Encoding the recorder does not decode is kept on the tape and
+// replayed, with the body as sent.
+//
+// Found by the Azure SDK harness (sdk_harnesses/azure-sdk-for-net): Azure
+// Storage returns a blob's stored Content-Encoding as the response header,
+// whatever the bytes are. A properties request for a blob whose encoding is
+// "deflate,gzip" answered with that header and no body; the recorder saw
+// "gzip" among the codings, tried to inflate the empty body and answered
+// the client 500 ("failed to decode gzip response"). Now only gzip alone,
+// on a body that inflates, is decoded (and its header left out, as before);
+// anything else keeps header and bytes, and playback replays a recorded
+// Content-Encoding instead of dropping it. Covered: an empty body under
+// "deflate,gzip", a body labelled gzip that is not gzip, and (unchanged) a
+// real gzip body, stored decoded.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.zlib
+import std.fs
+import std.io
+import std.string
+import std.encoding
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18340
+const RECORD_PORT   = 18341
+const PLAYBACK_PORT = 18342
+const NOT_GZIP_B64  = "AP8BgH8NCgnAc29tZSBieXRlcyBsYWJlbGxlZCBnemlw"
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+unb64(s: string) -> string {
+    out, err = encoding.base64_decode(s)
+    if err != "" { fail("test data base64: ${err}") }
+    return out
+}
+
+handle(req: ptr, res: ptr, ud: ptr) {
+    path = http.request_path(req)
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/octet-stream")
+    if string.equals(path, "/empty") == 1 {
+        http.response_set_header(res, "Content-Encoding", "deflate,gzip")
+        http.response_set_body(res, "")
+    } else if string.equals(path, "/notgzip") == 1 {
+        http.response_set_header(res, "Content-Encoding", "gzip")
+        http.response_set_body_bytes(res, string.bytes(unb64(NOT_GZIP_B64)))
+    } else {
+        gz, _n, err = zlib.gzip_deflate(string.bytes("real gzip text"), 1)
+        if err != "" { fail("deflate ${err}") }
+        http.response_set_header(res, "Content-Encoding", "gzip")
+        http.response_set_header(res, "Content-Type", "text/plain")
+        http.response_set_body_bytes(res, string.bytes(gz))
+    }
+}
+
+// GET `path`; status, Content-Encoding, body as base64.
+get(port: int, path: string) -> (int, string, string) {
+    req = client.request("GET", "http://127.0.0.1:${port}${path}")
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err, "" }
+    st = client.response_status(resp)
+    ce = string.copy(client.response_header(resp, "Content-Encoding"))
+    body = encoding.base64_encode_padded(client.response_body_bytes(resp))
+    client.response_free(resp)
+    return st, ce, body
+}
+
+main() {
+    println("=== VCR keeps a Content-Encoding it does not decode ===")
+    tmp = io.getenv("TMPDIR")
+    if tmp == 0 { tmp = "/tmp" }
+    TAPE_PATH = "${tmp}/vcr_content_encoding_kept.tape"
+    fs.delete(TAPE_PATH)
+
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { fail("upstream server_create") }
+    http.server_get(upstream, "/*", handle, null)
+    if http.server_start_background(upstream) != "" { fail("upstream start") }
+    sleep(250)
+
+    recorder, _roerr = vcr.open_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if recorder == null { fail("open_record") }
+    if http.server_start_background(vcr.server_of(recorder)) != "" { fail("recorder start") }
+    sleep(250)
+    st1, ce1, _b1 = get(RECORD_PORT, "/empty")
+    if st1 != 200 { fail("record /empty answered ${st1}: ${vcr.last_error_h(recorder)}") }
+    if string.equals(ce1, "deflate,gzip") != 1 { fail("record /empty Content-Encoding '${ce1}'") }
+    st2, ce2, b2 = get(RECORD_PORT, "/notgzip")
+    if st2 != 200 || string.equals(b2, NOT_GZIP_B64) != 1 { fail("record /notgzip ${st2} '${b2}'") }
+    if string.equals(ce2, "gzip") != 1 { fail("record /notgzip Content-Encoding '${ce2}'") }
+    st3, _ce3, _b3 = get(RECORD_PORT, "/real")
+    if st3 != 200 { fail("record /real ${st3}") }
+    ferr = vcr.stop_and_flush_h(recorder, TAPE_PATH)
+    if ferr != "" { fail("stop_and_flush ${ferr}") }
+    vcr.destroy_h(recorder)
+    println("  PASS record answers all three as the upstream did")
+
+    tape, terr = fs.read(TAPE_PATH)
+    if terr != "" { fail("read tape ${terr}") }
+    if string.contains(tape, "Content-Encoding: deflate,gzip") != 1 { fail("the codings list is not on the tape:\n${tape}") }
+    if string.contains(tape, "Content-Encoding: gzip") != 1 { fail("the not-gzip body's header is not on the tape:\n${tape}") }
+    if string.contains(tape, "real gzip text") != 1 { fail("the real gzip body is not stored decoded:\n${tape}") }
+    println("  PASS the tape keeps undecoded codings and decodes real gzip")
+
+    playback, _poerr = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT)
+    if playback == null { fail("open_playback") }
+    if http.server_start_background(vcr.server_of(playback)) != "" { fail("playback start") }
+    sleep(250)
+    p1, pce1, _pb1 = get(PLAYBACK_PORT, "/empty")
+    if p1 != 200 || string.equals(pce1, "deflate,gzip") != 1 { fail("playback /empty ${p1} Content-Encoding '${pce1}'") }
+    p2, pce2, pb2 = get(PLAYBACK_PORT, "/notgzip")
+    if p2 != 200 || string.equals(pce2, "gzip") != 1 { fail("playback /notgzip ${p2} Content-Encoding '${pce2}'") }
+    if string.equals(pb2, NOT_GZIP_B64) != 1 { fail("playback /notgzip bytes '${pb2}'") }
+    p3, pce3, _pb3 = get(PLAYBACK_PORT, "/real")
+    if p3 != 200 { fail("playback /real ${p3}") }
+    if string.length(pce3) != 0 { fail("playback /real (client sent no Accept-Encoding) carried Content-Encoding '${pce3}'") }
+    println("  PASS playback replays the recorded Content-Encoding and bytes")
+
+    vcr.destroy_h(playback)
+    http_server_stop(upstream)
+    fs.delete(TAPE_PATH)
+    println("PASS")
+    exit(0)
+}

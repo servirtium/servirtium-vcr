@@ -46,6 +46,15 @@ by)` (error string, caller frees),
 sort rule without `_set_pretty_json` makes the flush return
 `sort_json_keys needs pretty_json: …` (or `sort_json_array …`).
 
+## forward_host in the language bindings (2026-11-11)
+
+`aether_vcr_embed_set_forward_host(h, int)` (record mode: send the upstream
+the client's Host; found by `sdk_harnesses/azure-sdk-for-net`, where Azurite
+accepts a copy source only on the host the request was sent to) is wrapped
+by .NET only (`RecordBuilder.ForwardHost()`, `ForwardHostTests`). The other
+bindings: a `forward_host()` toggle on the record builder, the same shape
+as `match_multiple()`. Core test: `test_vcr_forward_host_and_expect.ae`.
+
 ## Additional language bindings
 
 Candidates retained for future work (2026-10-03). Keep bindings thin: all

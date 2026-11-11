@@ -517,6 +517,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     private int _prettyJson;
     private string? _licenseNotice;
     private string? _upstreamCafile;
+    private bool _forwardHost;
     private bool _sortJsonKeys;
     private bool _sortResponseHeaders;
     private readonly List<(string? request, string path, string by)> _sortJsonArrays = new();
@@ -628,6 +629,19 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     public RecordBuilder AddLicenseNotice(string text)
     {
         _licenseNotice = text;
+        return this;
+    }
+
+    /// <summary>
+    /// Send the upstream the <c>Host</c> header the client sent, as a
+    /// Host-preserving reverse proxy does, instead of the upstream's own
+    /// authority. For a service that checks URLs it is handed against the
+    /// Host it was sent (Azurite accepts a copy source only on its own
+    /// host). Off by default: a name-based virtual host wants its own name.
+    /// </summary>
+    public RecordBuilder ForwardHost(bool on = true)
+    {
+        _forwardHost = on;
         return this;
     }
 
@@ -755,6 +769,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         {
             Check(NativeMethods.AddLicenseNotice(handle, _licenseNotice), nameof(AddLicenseNotice));
         }
+        if (_forwardHost) NativeMethods.SetForwardHost(handle, 1);
         if (_upstreamCafile is not null)
         {
             Check(NativeMethods.SetUpstreamCafile(handle, _upstreamCafile), nameof(UpstreamCafile));

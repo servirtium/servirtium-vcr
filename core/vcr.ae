@@ -145,7 +145,7 @@ exports (
     set_pretty_json_h, get_pretty_json_h, sort_json_keys_h, get_sort_json_keys_h, sort_json_array_h,
     sort_json_array_at_h, sort_response_headers_h, get_sort_response_headers_h, sort_header_value_h,
     clear_stable_order_h, json_canonical, set_tls_h, set_tls_pem_h, tls_enabled_h,
-    last_tls_protocol_h, set_upstream_cafile_h, substitute_h, clear_substitutions_h,
+    last_tls_protocol_h, set_upstream_cafile_h, set_forward_host_h, substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h, indent_code_blocks_h,
     emphasize_http_verbs_h, clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
     clear_static_content_h, clear_untaped_h, clear_format_options_h, diagnostic_open_h,
@@ -433,6 +433,7 @@ struct Settings {
     license_notice: string
     upstream_base: string    // record mode: where requests are forwarded
     upstream_cafile: string
+    forward_host: int        // record mode: send the client's Host upstream
     tls_cert: string
     tls_key: string
     tls_cert_pem: string
@@ -530,6 +531,7 @@ new_settings() -> *Settings {
     s.license_notice = ""
     s.upstream_base = ""
     s.upstream_cafile = ""
+    s.forward_host = 0
     s.tls_cert = ""
     s.tls_key = ""
     s.tls_cert_pem = ""
@@ -1939,11 +1941,6 @@ trim_ws_cr(s: string) -> string {
     return string.substring(s, start, end)
 }
 
-header_block_has_token_value(headers: string, name: string, token: string) -> int {
-    v = response_header_value_from_block(headers, name)
-    return ascii_ci_contains(v, token)
-}
-
 // Build a response-headers blob from the upstream's raw headers, without
 // the status line. For the tape (drop_hop 0) every header the service sent
 // is kept, but for Content-Encoding and Content-Length when the tape stores
@@ -2376,6 +2373,13 @@ read_full_request_body(req: ptr) -> string {
     return bytes.finish(buf, off)
 }
 
+// 1 when a Content-Encoding value is the single coding gzip.
+is_gzip_alone(value: string) -> int {
+    v = string.trim(value)
+    if icmp_rt(v, "gzip") == 0 || icmp_rt(v, "x-gzip") == 0 { return 1 }
+    return 0
+}
+
 // ---- record path (per-server) ----
 
 do_record(vc: *Vcr, req: ptr, res: ptr) {
@@ -2399,10 +2403,18 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
     while i < count {
         key = http.request_header_name(req, i)
         val = http.request_header_value(req, i)
-        if string.length(key) > 0 && is_hop_by_hop_header(key) == 0 {
+        // Expect: 100-continue is between the client and this server, which
+        // already holds the whole body. Forwarded, the upstream answers an
+        // interim 100 Continue, which std.http.client (Aether 0.908) returns
+        // as the final response.
+        if string.length(key) > 0 && is_hop_by_hop_header(key) == 0 && icmp_rt(key, "Expect") != 0 {
             http_request_set_header_raw(creq, key, val)
         }
         i = i + 1
+    }
+    if vc.settings.forward_host == 1 {
+        live_host = request_header_value(req, "Host")
+        if string.length(live_host) > 0 { http_request_set_header_raw(creq, "Host", live_host) }
     }
 
     live_body = read_full_request_body(req)
@@ -2410,6 +2422,13 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
     if body_len > 0 {
         ctype = request_header_value(req, "Content-Type")
         http_request_set_body_raw(creq, string.bytes(live_body), body_len, ctype)
+    } else if string.length(request_header_value(req, "Content-Length")) > 0 {
+        // An empty body the client framed with Content-Length: 0 (a PUT or
+        // POST that creates something with no content) goes upstream framed
+        // the same way. The client request sends no Content-Length for an
+        // empty body, and some services refuse a PUT without one (Azurite:
+        // 400 for "create append blob").
+        http_request_set_header_raw(creq, "Content-Length", "0")
     }
     http_request_set_timeout_raw(creq, 30)
     upstream_ca = vc.settings.upstream_cafile
@@ -2433,13 +2452,19 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
     resp_body_len = http_response_body_length(cresp)
     raw_headers = http_response_headers(cresp)
     caller_headers = response_headers_for_tape(raw_headers, 0, 1)
-    upstream_gzip = header_block_has_token_value(caller_headers, "Content-Encoding", "gzip")
-    resp_headers = response_headers_for_tape(raw_headers, upstream_gzip, 0)
-    content_type = response_header_value_from_block(resp_headers, "Content-Type")
     req_headers = tape_live_headers_k(vc, req)
 
+    // The tape holds a gzipped body decoded, without its Content-Encoding
+    // (Servirtium 1's rule): only when the encoding is gzip alone and there
+    // is a body that inflates. Anything else is kept as sent, header and
+    // bytes: an empty body (HEAD, or a 304) carrying the header, a list of
+    // codings ("deflate, gzip": Azure Storage returns a blob's stored
+    // Content-Encoding as the header, whatever its bytes are), a body that
+    // is not really gzip. Playback replays a recorded Content-Encoding
+    // verbatim.
+    upstream_gzip = 0
     body_for_tape = body
-    if upstream_gzip == 1 {
+    if resp_body_len > 0 && is_gzip_alone(response_header_value_from_block(caller_headers, "Content-Encoding")) == 1 {
         if zlib_backend_available() == 0 {
             http_response_free(cresp)
             record_dispatch_error_k(vc, res, 500, "vcr record mode: gzip response but zlib unavailable")
@@ -2449,13 +2474,13 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
         // AetherString, so string.bytes() is bounded by its real (binary-safe)
         // length -- the same view std.http.client's response_body_bytes hands out.
         inflated, _inflated_len, ierr = zlib.gzip_inflate(string.bytes(body))
-        if ierr != "" {
-            http_response_free(cresp)
-            record_dispatch_error_k(vc, res, 500, "vcr record mode: failed to decode gzip response")
-            return
+        if ierr == "" {
+            upstream_gzip = 1
+            body_for_tape = inflated
         }
-        body_for_tape = inflated
     }
+    resp_headers = response_headers_for_tape(raw_headers, upstream_gzip, 0)
+    content_type = response_header_value_from_block(resp_headers, "Content-Type")
 
     recorded_path = build_recorded_path(req)
     req_body_for_tape = ""
@@ -2514,6 +2539,7 @@ emit_playback_response(vc: *Vcr, e: *Interaction, req: ptr, res: ptr) {
 
     // Emit recorded response headers verbatim (post-substitution).
     emitted_ct = 0
+    recorded_ce = 0
     if string.length(resp_headers) > 0 {
         cursor2 = 0
         rh_len = string.length(resp_headers)
@@ -2534,9 +2560,11 @@ emit_playback_response(vc: *Vcr, e: *Interaction, req: ptr, res: ptr) {
                 if icmp_rt(name, "Content-Type") == 0 { emitted_ct = 1 }
                 // Content-Length, Transfer-Encoding, Connection and the other
                 // hop-by-hop headers are on the tape as the service sent them,
-                // but this response frames itself; Content-Encoding is set
-                // below when the body is gzipped here.
-                if is_hop_by_hop_header(name) == 0 && icmp_rt(name, "Content-Encoding") != 0 {
+                // but this response frames itself. A recorded Content-Encoding
+                // means the body was kept as sent (do_record leaves out the
+                // header of a body it decoded): replay both verbatim.
+                if icmp_rt(name, "Content-Encoding") == 0 { recorded_ce = 1 }
+                if is_hop_by_hop_header(name) == 0 {
                     http_response_add_header(res, name, val)
                 }
             }
@@ -2560,7 +2588,7 @@ emit_playback_response(vc: *Vcr, e: *Interaction, req: ptr, res: ptr) {
             http_response_set_body(res, resp_body)
         }
     } else {
-        if request_accepts_gzip(req) == 1 && zlib_backend_available() == 1 {
+        if recorded_ce == 0 && request_accepts_gzip(req) == 1 && zlib_backend_available() == 1 {
             gz_owned, gz_len, gerr = zlib.gzip_deflate(string.bytes(resp_body), -1)
             if gerr == "" {
                 http_response_set_body_n(res, string.bytes(gz_owned), gz_len)
@@ -3681,6 +3709,19 @@ set_upstream_cafile_h(server: ptr, path: string) -> string {
     vc = key_for(server)
     vc.settings.upstream_cafile = string.copy(path)
     return ""
+}
+
+// Record mode: send the upstream the Host header the client sent, as a
+// reverse proxy that preserves Host does, instead of the upstream's own
+// authority. Opt-in, for a service that checks URLs it is handed against
+// the Host it was sent: Azurite (the Azure Storage emulator) accepts a
+// copy source only on "the same Azurite instance", i.e. the same host as
+// the request's, and the client builds that URL from the address it uses,
+// the recorder's. A name-based virtual host upstream wants its own name,
+// so this is off by default. Connection-level only: the recording is the
+// same either way.
+set_forward_host_h(server: ptr, on: int) {
+    key_for(server).settings.forward_host = on
 }
 
 set_tls_h(server: ptr, cert_path: string, key_path: string) -> string {

@@ -1,0 +1,76 @@
+// An empty request body framed with Content-Length: 0 reaches the upstream
+// framed the same way in record mode.
+//
+// Found by the Azure SDK harness (sdk_harnesses/azure-sdk-for-net): the
+// SDK creates an append blob with a PUT whose body is empty and whose
+// Content-Length is 0. Content-Length is hop-by-hop to the recorder, so it
+// was not forwarded, and the client request sent none for an empty body;
+// Azurite answers such a PUT with 400 ("Incoming URL doesn't match any of
+// swagger defined request patterns"). The upstream here answers 411 Length
+// Required unless the PUT carries Content-Length: 0, as such services do.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18320
+const RECORD_PORT   = 18321
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+handle_put(req: ptr, res: ptr, ud: ptr) {
+    if string.equals(http.get_header(req, "Content-Length"), "0") == 1 {
+        http.response_set_status(res, 201)
+        http.response_set_body(res, "created")
+    } else {
+        http.response_set_status(res, 411)
+        http.response_set_body(res, "length required")
+    }
+}
+
+main() {
+    println("=== VCR record keeps Content-Length: 0 on an empty PUT ===")
+    tmp = io.getenv("TMPDIR")
+    if tmp == 0 { tmp = "/tmp" }
+    TAPE_PATH = "${tmp}/vcr_empty_body_framing.tape"
+    fs.delete(TAPE_PATH)
+
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { fail("upstream server_create") }
+    http.server_put(upstream, "/*", handle_put, null)
+    if http.server_start_background(upstream) != "" { fail("upstream start") }
+    sleep(250)
+
+    recorder, _roerr = vcr.open_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if recorder == null { fail("open_record") }
+    if http.server_start_background(vcr.server_of(recorder)) != "" { fail("recorder start") }
+    sleep(250)
+
+    req = client.request("PUT", "http://127.0.0.1:${RECORD_PORT}/container/appendblob")
+    client.set_timeout(req, 5s)
+    client.set_header(req, "Content-Length", "0")
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail("send ${err}") }
+    st = client.response_status(resp)
+    client.response_free(resp)
+    if st != 201 { fail("the upstream answered ${st}: the empty PUT lost its Content-Length: 0") }
+    println("  PASS the upstream saw Content-Length: 0")
+
+    ferr = vcr.stop_and_flush_h(recorder, TAPE_PATH)
+    if ferr != "" { fail("stop_and_flush ${ferr}") }
+    vcr.destroy_h(recorder)
+    http_server_stop(upstream)
+    fs.delete(TAPE_PATH)
+    println("PASS")
+    exit(0)
+}
