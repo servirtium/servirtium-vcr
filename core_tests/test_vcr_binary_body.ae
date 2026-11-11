@@ -1,0 +1,153 @@
+// Binary request and response bodies survive a record/playback round trip.
+//
+// Found by the Azure SDK harness (sdk_harnesses/azure-sdk-for-net): blob
+// uploads and downloads carry random bytes. The recorder copied them into
+// the markdown tape as they came, and NUL, other control bytes and
+// non-UTF-8 sequences do not survive a code block (or an editor, or git).
+// The emitter now writes a body that is not text as base64, wrapped at 76
+// columns, under a heading marked " base64 below"; the reader decodes a
+// marked request body, and playback already decoded a marked response
+// body. Text bodies (CRLF included) keep their exact bytes. This records a
+// binary PUT answered with binary bytes, checks the tape, replays it (the
+// request matches only with the same bytes; the response is byte-identical)
+// and checks a text body stays text.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+import std.encoding
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18310
+const RECORD_PORT   = 18311
+const PLAYBACK_PORT = 18312
+
+// 0x00 0xFF 0x01 0x80 0x7F CR LF TAB 0xC0 and 120 more bytes: long enough
+// that its base64 wraps.
+const REQ_B64  = "AP8BgH8NCgnAAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3"
+const RESP_B64 = "/v38+/r5+Pf29fTz8vHw7+7t7Ovq6ejn5uXk4+Lh4N/e3dzb2tnY19bV1NPS0dDPzs3My8rJyMfGxcTDwsHAv769vLu6ubi3trW0s7KxsK+urayrqqmop6alpKOioaCfnp2cm5qZmJeWlZSTkpGQj46NjIuKiYiHhoWEg4KBAA=="
+
+tape_path() -> {
+    tmp = io.getenv("TEMP")
+    if tmp == 0 { tmp = io.getenv("TMPDIR") }
+    if tmp == 0 { tmp = "/tmp" }
+    return "${tmp}/vcr_binary_body.tape"
+}
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+unb64(s: string) -> string {
+    out, err = encoding.base64_decode(s)
+    if err != "" { fail("test data base64: ${err}") }
+    return out
+}
+
+handle_put(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/octet-stream")
+    http.response_set_body_bytes(res, string.bytes(unb64(RESP_B64)))
+}
+
+handle_text(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "text/plain; charset=utf-8")
+    http.response_set_body(res, "café\r\nnaïve\n")
+}
+
+// PUT `body`, return the status and the response body as base64.
+put(port: int, path: string, body: string) -> (int, string) {
+    req = client.request("PUT", "http://127.0.0.1:${port}${path}")
+    client.set_timeout(req, 5s)
+    if client.set_body(req, string.bytes(body), "application/octet-stream") != "" { fail("set_body") }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err }
+    st = client.response_status(resp)
+    out = encoding.base64_encode_padded(client.response_body_bytes(resp))
+    client.response_free(resp)
+    return st, out
+}
+
+main() {
+    println("=== VCR records binary bodies as base64 and replays their bytes ===")
+    TAPE_PATH = tape_path()
+    fs.delete(TAPE_PATH)
+    req_body = unb64(REQ_B64)
+
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { fail("upstream server_create") }
+    http.server_put(upstream, "/blob", handle_put, null)
+    http.server_put(upstream, "/text", handle_text, null)
+    if http.server_start_background(upstream) != "" { fail("upstream start") }
+    sleep(250)
+
+    recorder, _roerr = vcr.open_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if recorder == null { fail("open_record") }
+    if http.server_start_background(vcr.server_of(recorder)) != "" { fail("recorder start") }
+    sleep(250)
+    st1, b1 = put(RECORD_PORT, "/blob", req_body)
+    if st1 != 200 || string.equals(b1, RESP_B64) != 1 { fail("record ${st1} '${b1}'; ${vcr.last_error_h(recorder)}") }
+    st2, _b2 = put(RECORD_PORT, "/text", "plain words\r\n")
+    if st2 != 200 { fail("record text ${st2}") }
+    ferr = vcr.stop_and_flush_h(recorder, TAPE_PATH)
+    if ferr != "" { fail("stop_and_flush ${ferr}") }
+
+    tape, terr = fs.read(TAPE_PATH)
+    if terr != "" { fail("read tape ${terr}") }
+    if string.contains(tape, "### Request body recorded for playback (application/octet-stream base64 below):\n") != 1 { fail("request body heading not marked base64:\n${tape}") }
+    if string.contains(tape, "(200: application/octet-stream base64 below):\n") != 1 { fail("response body heading not marked base64:\n${tape}") }
+    if string.contains(tape, "AP8BgH8NCgnAAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4v\n") != 1 { fail("request base64 not wrapped at 76:\n${tape}") }
+    i = 0
+    while i < string.length(tape) {
+        c = string.char_at(tape, i)
+        // NUL, and bytes that never occur in UTF-8: the recorded bodies'.
+        if c == 0 || c == 192 || c >= 254 { fail("the tape still holds a raw binary byte (${c}) at ${i}") }
+        i = i + 1
+    }
+    if string.contains(tape, "### Request body recorded for playback ():\n\n```\nplain words\r\n") != 1 { fail("a text body was not kept as text:\n${tape}") }
+    if string.contains(tape, "café\r\nnaïve\n") != 1 { fail("a UTF-8 text response was not kept as text:\n${tape}") }
+    println("  PASS the tape holds binary bodies as wrapped base64 and text bodies as text")
+
+    playback, _poerr = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT)
+    if playback == null { fail("open_playback") }
+    if vcr.load_error_h(playback) != "" { fail("load_error ${vcr.load_error_h(playback)}") }
+    if http.server_start_background(vcr.server_of(playback)) != "" { fail("playback start") }
+    sleep(250)
+    // One byte changed: not the recorded request.
+    changed = unb64("AP8BgH8NCgnBAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3")
+    stx, _bx = put(PLAYBACK_PORT, "/blob", changed)
+    if stx == 200 { fail("a request body one byte off matched the recording") }
+    if string.contains(vcr.last_error_h(playback), "request body") != 1 { fail("mismatch was not about the body: ${vcr.last_error_h(playback)}") }
+    println("  PASS a binary request body one byte off does not match")
+    vcr.destroy_h(playback)
+
+    playback2, _p2oerr = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT + 1)
+    if playback2 == null { fail("open_playback 2") }
+    if http.server_start_background(vcr.server_of(playback2)) != "" { fail("playback 2 start") }
+    sleep(250)
+    st3, b3 = put(PLAYBACK_PORT + 1, "/blob", req_body)
+    if st3 != 200 { fail("playback ${st3} '${b3}'; ${vcr.last_error_h(playback2)}") }
+    if string.equals(b3, RESP_B64) != 1 { fail("replayed bytes differ: ${b3}") }
+    st4, _b4 = put(PLAYBACK_PORT + 1, "/text", "plain words\r\n")
+    if st4 != 200 { fail("text playback ${st4}; ${vcr.last_error_h(playback2)}") }
+    println("  PASS the binary request matches and the response replays byte-identically")
+
+    // Parse and emit again: the same tape (check mode compares this way).
+    canon = vcr.canonical_check_tape(TAPE_PATH)
+    if canon != "" { fail("re-emitting the tape changed it: ${canon}") }
+    println("  PASS the tape re-emits byte-identically")
+
+    vcr.destroy_h(playback2)
+    http_server_stop(upstream)
+    fs.delete(TAPE_PATH)
+    println("PASS")
+    exit(0)
+}

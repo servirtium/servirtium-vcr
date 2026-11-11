@@ -42,6 +42,12 @@
 //   ok-body
 //   ```
 //
+// A body that is not text (a NUL or other control byte, or bytes that are
+// not UTF-8) is written as base64, wrapped at 76 columns, and its heading
+// says so: `### Request body recorded for playback (<type> base64 below):`
+// and `### Response body recorded for playback (200: <type> base64 below):`.
+// The reader decodes both; text bodies (CRLF included) stay as sent.
+//
 // Format compatibility with other Servirtium implementations (Java,
 // Python, Kotlin, Go, ...) is the design goal — tapes recorded by any
 // of them should be replayable by us. Note the compact spacing above:
@@ -2026,6 +2032,82 @@ decode_base64_body(src: string) -> {
     decoded, err = encoding.base64_decode(src)
     if err != "" { return "", 0, 0 }
     return decoded, string.length(decoded), 1
+}
+
+// ---- binary bodies on the tape ----
+//
+// A body that is not text cannot sit in a markdown code block: NUL and
+// other control bytes, and bytes that are not UTF-8, do not survive an
+// editor, git's text handling or the parser's line splitting. The emitter
+// writes such a body as base64 instead, wrapped at 76 columns, and marks
+// the section heading with " base64 below" (the marker HAR import already
+// gives a response's content type). Text keeps its exact bytes: tab, LF
+// and CR are text, so CRLF bodies stay readable.
+
+// 1 when `s` is not text: a control byte other than tab/LF/CR, DEL, or a
+// byte sequence that is not well-formed UTF-8.
+body_is_binary(s: string) -> int {
+    n = string.length(s)
+    i = 0
+    while i < n {
+        c = string.char_at(s, i)
+        if c < 128 {
+            if c < 32 && c != 9 && c != 10 && c != 13 { return 1 }
+            if c == 127 { return 1 }
+            i = i + 1
+        } else {
+            follow = 0
+            low = 128
+            high = 191
+            if c >= 194 && c <= 223 { follow = 1 }
+            else if c == 224 { follow = 2; low = 160 }
+            else if c >= 225 && c <= 236 { follow = 2 }
+            else if c == 237 { follow = 2; high = 159 }
+            else if c >= 238 && c <= 239 { follow = 2 }
+            else if c == 240 { follow = 3; low = 144 }
+            else if c >= 241 && c <= 243 { follow = 3 }
+            else if c == 244 { follow = 3; high = 143 }
+            else { return 1 }
+            if i + follow >= n { return 1 }
+            // The first continuation byte has the narrowed range (no
+            // overlongs, no surrogates, nothing past U+10FFFF).
+            c1 = string.char_at(s, i + 1)
+            if c1 < low || c1 > high { return 1 }
+            k = 2
+            while k <= follow {
+                ck = string.char_at(s, i + k)
+                if ck < 128 || ck > 191 { return 1 }
+                k = k + 1
+            }
+            i = i + follow + 1
+        }
+    }
+    return 0
+}
+
+// `s`'s bytes as padded base64, 76 characters to a line, no trailing newline.
+base64_wrapped(s: string) -> string {
+    n = string.length(s)
+    if n == 0 { return "" }
+    flat = encoding.base64_encode_padded(string.bytes(s))
+    fl = string.length(flat)
+    if fl <= 76 { return flat }
+    buf = bytes.new(fl + fl / 76 + 1)
+    if buf == null { return flat }
+    off = 0
+    i = 0
+    while i < fl {
+        end = i + 76
+        if end > fl { end = fl }
+        if i > 0 {
+            bytes.copy_from_string(buf, off, "\n", 1)
+            off = off + 1
+        }
+        bytes.copy_from_string(buf, off, string.substring(flat, i, end), end - i)
+        off = off + end - i
+        i = end
+    }
+    return bytes.finish(buf, off)
 }
 
 // Public base64 decode helper (the subversion_interop byte-faithful
@@ -5767,6 +5849,15 @@ emit_one_interaction_k(vc: *Vcr, i: int) -> string {
     note_title_v = string.copy(e.note_title)
     note_body_v  = string.copy(e.note_body)
 
+    // A binary body is written as base64 (see body_is_binary). Text rules
+    // (redactions, normalizations, pretty-printing) leave it alone: they
+    // match text, and a match inside random bytes would corrupt them.
+    // A response body already marked base64 (parsed from a tape, or HAR
+    // import) is base64 text and goes through as it is.
+    resp_bin = 0
+    if ascii_ci_contains(ctype, "base64 below") == 0 && body_is_binary(body) == 1 { resp_bin = 1 }
+    req_bin = body_is_binary(req_b)
+
     path_out   = apply_redactions_for_k(vc, path, FIELD_PATH)
     body_out   = apply_redactions_for_k(vc, body, FIELD_RESPONSE_BODY)
     req_h_out  = apply_redactions_for_k(vc, req_h, FIELD_REQUEST_HEADERS)
@@ -5806,8 +5897,22 @@ emit_one_interaction_k(vc: *Vcr, i: int) -> string {
     // Pretty-print the response body last (opt-in; see pretty_xml_body_k).
     resp_ct = ctype
     if string.length(resp_ct) == 0 { resp_ct = header_value_in_block(resp_h, "Content-Type") }
-    body_out = pretty_xml_body_k(vc, resp_ct, body_out)
-    body_out = pretty_json_body_k(vc, path, resp_ct, body_out)
+    if resp_bin == 0 {
+        body_out = pretty_xml_body_k(vc, resp_ct, body_out)
+        body_out = pretty_json_body_k(vc, path, resp_ct, body_out)
+    } else {
+        body_out = base64_wrapped(body)
+        if string.length(ctype) == 0 { ctype = header_value_in_block(resp_h, "Content-Type") }
+        if string.length(ctype) == 0 { ctype = "application/octet-stream" }
+        ctype = "${ctype} base64 below"
+    }
+    req_b_heading = ""
+    if req_bin == 1 {
+        req_b_out = base64_wrapped(req_b)
+        req_ct = header_value_in_block(req_h, "Content-Type")
+        if string.length(req_ct) == 0 { req_ct = "application/octet-stream" }
+        req_b_heading = "${req_ct} base64 below"
+    }
 
     // A Content-Length on the tape describes the body the tape holds: when a
     // redaction, normalization or pretty-print changed a body, its recorded
@@ -5817,7 +5922,7 @@ emit_one_interaction_k(vc: *Vcr, i: int) -> string {
     if string.equals(body_out, body) == 0 && ascii_ci_contains(ctype, "base64 below") == 0 {
         resp_h_out = set_content_length_in_block(resp_h_out, string.length(body_out))
     }
-    if string.equals(req_b_out, req_b) == 0 {
+    if req_bin == 0 && string.equals(req_b_out, req_b) == 0 {
         req_h_out = set_content_length_in_block(req_h_out, string.length(req_b_out))
     }
 
@@ -5846,7 +5951,7 @@ emit_one_interaction_k(vc: *Vcr, i: int) -> string {
     rb_block = emit_code_block_k(vc, req_b_out)
     out = string_concat(out, "### Request headers recorded for playback:\n\n")
     out = string_concat(out, rh_block)
-    out = string_concat(out, "### Request body recorded for playback ():\n\n")
+    out = string_concat(out, "### Request body recorded for playback (${req_b_heading}):\n\n")
     out = string_concat(out, rb_block)
 
     out = string_concat(out, "### Response headers recorded for playback:\n\n")
@@ -6569,6 +6674,13 @@ parse_one_interaction(vc: *Vcr, chunk: string) -> string {
         } else if string.starts_with(sect_name, "Request body recorded") == 1 {
             block, _ = extract_code_block_at(chunk, sect_nl + 1, sect_body_end)
             req_b = string.copy(block)
+            if ascii_ci_contains(sect_name, "base64 below") == 1 {
+                // A binary request body (see body_is_binary): held decoded,
+                // so playback compares it with the live bytes as they are.
+                decoded, _dlen, dok = decode_base64_body(block)
+                if dok != 1 { return "malformed base64 request body" }
+                req_b = decoded
+            }
         } else if string.starts_with(sect_name, "Response headers recorded") == 1 {
             // Capture the block. Stored verbatim — the dispatcher
             // walks line-by-line and emits each as a real response
