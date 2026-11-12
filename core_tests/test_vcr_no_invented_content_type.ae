@@ -1,0 +1,72 @@
+// Playback does not add a Content-Type the recorded response did not have.
+//
+// Found by the Azure SDK harness (sdk_harnesses/azure-sdk-for-net): the
+// emitter writes "text/plain" in the response-body heading when the service
+// sent no Content-Type (a HEAD 404 from Azure Storage), and playback turned
+// that default into a Content-Type header. The Azure SDK parses an error
+// body when a response has a Content-Type, and reads x-ms-error-code only
+// when it has none, so the replayed 404's ErrorCode came back null.
+// The heading's type is still served for a tape with no response headers
+// at all (hand-written, or older tools).
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+
+extern exit(code: int)
+
+const PORT = 18390
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+// A recorded headers block without Content-Type, then a tape with none.
+tape_text() -> string {
+    return "## Interaction 0: HEAD /blob\n\n### Request headers recorded for playback:\n\n```\n```\n### Request body recorded for playback ():\n\n```\n```\n### Response headers recorded for playback:\n\n```\nx-ms-error-code: BlobNotFound\n```\n### Response body recorded for playback (404: text/plain):\n\n```\n```\n\n## Interaction 1: GET /legacy\n\n### Request headers recorded for playback:\n\n```\n```\n### Request body recorded for playback ():\n\n```\n```\n### Response headers recorded for playback:\n\n```\n```\n### Response body recorded for playback (200: application/json):\n\n```\n{}\n```\n\n"
+}
+
+request_one(method: string, path: string) -> (int, string, string) {
+    req = client.request(method, "http://127.0.0.1:${PORT}${path}")
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err, "" }
+    st = client.response_status(resp)
+    ct = string.copy(client.response_header(resp, "Content-Type"))
+    code = string.copy(client.response_header(resp, "x-ms-error-code"))
+    client.response_free(resp)
+    return st, ct, code
+}
+
+main() {
+    println("=== VCR playback adds no Content-Type the recording lacks ===")
+    tmp = io.getenv("TMPDIR")
+    if tmp == 0 { tmp = "/tmp" }
+    TAPE_PATH = "${tmp}/vcr_no_invented_content_type.tape"
+    fs.write(TAPE_PATH, tape_text())
+
+    pb, _e = vcr.open_playback(TAPE_PATH, PORT)
+    if pb == null { fail("open_playback") }
+    if vcr.load_error_h(pb) != "" { fail("load ${vcr.load_error_h(pb)}") }
+    if http.server_start_background(vcr.server_of(pb)) != "" { fail("playback start") }
+    sleep(250)
+
+    st1, ct1, code1 = request_one("HEAD", "/blob")
+    if st1 != 404 || string.equals(code1, "BlobNotFound") != 1 { fail("HEAD ${st1} x-ms-error-code '${code1}'; ${vcr.last_error_h(pb)}") }
+    if string.length(ct1) != 0 { fail("the replayed 404 carries Content-Type '${ct1}' the recording did not have") }
+    println("  PASS a recorded response without Content-Type is replayed without one")
+
+    st2, ct2, _c2 = request_one("GET", "/legacy")
+    if st2 != 200 || string.equals(ct2, "application/json") != 1 { fail("legacy tape: ${st2} Content-Type '${ct2}'") }
+    println("  PASS a tape with no response headers still gets the heading's type")
+
+    vcr.destroy_h(pb)
+    fs.delete(TAPE_PATH)
+    println("PASS")
+    exit(0)
+}

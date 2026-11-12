@@ -2573,7 +2573,13 @@ emit_playback_response(vc: *Vcr, e: *Interaction, req: ptr, res: ptr) {
             cursor2 = nl + 1
         }
     }
-    if emitted_ct == 0 && e.has_content_type == 1 && string.length(e.content_type) > 0 {
+    // The heading's type stands in for a Content-Type only on a tape with no
+    // response headers (hand-written, or older tools). A recorded headers
+    // block without one means the service sent none, and the heading's type
+    // may be the emitter's text/plain default: a client that branches on a
+    // Content-Type (Azure Storage parses an error body only when there is
+    // none, else reads x-ms-error-code) must not be handed one.
+    if emitted_ct == 0 && string.length(string.trim(resp_headers)) == 0 && e.has_content_type == 1 && string.length(e.content_type) > 0 {
         http_response_add_header(res, "Content-Type", e.content_type)
     }
 
