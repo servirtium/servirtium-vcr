@@ -1,0 +1,18 @@
+// Re-record: Azurite in a container (testcontainers-dotnet), Servirtium in
+// the middle of every selected test, tapes written to tapes/. Then play the
+// new tapes back with the container gone. Needs Docker or Podman. Run by
+// name: aeb sdk_harnesses/azure-sdk-for-net/.record.ae
+import bldr
+import std.os
+
+aeb(cap) {
+    bldr.build() {
+        dep("sdk_harnesses/azure-sdk-for-net/.build.ae")
+        h = "${_get("root")}/sdk_harnesses/azure-sdk-for-net"
+        rc = os.system("\"${h}/run.sh\" record")
+        if rc != 0 { bldr.fail("azure-sdk-for-net harness: record failed (see target/results-record.log)"); return 1 }
+        rc = os.system("\"${h}/run.sh\" playback")
+        if rc != 0 { bldr.fail("azure-sdk-for-net harness: playback of the new tapes failed"); return 1 }
+        println("azure-sdk-for-net harness: recorded and replayed")
+    }
+}

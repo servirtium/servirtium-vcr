@@ -1,0 +1,17 @@
+// Fetch the Azure SDK for .NET at the pin (fetch.sh: sparse, into target/)
+// and build its Azure.Storage.Blobs test project with the Servirtium
+// harness added (run.sh build). Needs the dotnet SDK and network for the
+// fetch and the NuGet restore; everything they write stays under
+// sdk_harnesses/azure-sdk-for-net/target/.
+import bldr
+import std.os
+
+aeb(cap) {
+    bldr.build() {
+        dep("dotnet/Servirtium.Vcr/.build.ae")
+        root = _get("root")
+        rc = os.system("\"${root}/sdk_harnesses/azure-sdk-for-net/run.sh\" build")
+        if rc != 0 { bldr.fail("azure-sdk-for-net harness: build failed (see sdk_harnesses/azure-sdk-for-net/target/build.log)"); return 1 }
+        println("azure-sdk-for-net harness: built")
+    }
+}

@@ -717,6 +717,57 @@ process launchers; the shared fixture itself stays language-neutral.
   source installation uses the backend in `python/pyproject.toml`; `setup.py`
   still owns metadata and native package data. A green in-tree suite alone
   doesn't verify these instructions or compatibility with the published binary.
+- **Binary bodies are base64 on the tape; text bodies never are
+  (2026-11-11).** Found by `sdk_harnesses/azure-sdk-for-net` (blob uploads
+  and downloads of random bytes). `body_is_binary` (a control byte other
+  than tab/LF/CR, DEL, or not well-formed UTF-8) decides at emit time; such
+  a body is written by `base64_wrapped` (76 columns) under a heading marked
+  `base64 below` — the request heading becomes `(<Content-Type or
+  application/octet-stream> base64 below)`, the response's
+  `(200: <type> base64 below)`. Text rules (redactions, normalizations,
+  pretty-printing, the Content-Length fix-up) skip a binary body. The
+  parser decodes a marked request body into `e.req_body`, so matching
+  compares bytes; a marked response body stays base64 in memory, as HAR
+  import always had it, and is decoded on replay. No existing tape held
+  binary bytes, so none re-records differently.
+  `core_tests/test_vcr_binary_body.ae`.
+- **An empty request framed `Content-Length: 0` is forwarded that way
+  (2026-11-11).** Content-Length is hop-by-hop to the recorder and the
+  client request sends none for an empty body; Azurite answers such a PUT
+  (create append blob) with 400. `core_tests/test_vcr_empty_body_framing.ae`.
+- **Record decodes only `Content-Encoding: gzip` alone, on a body that
+  inflates (2026-11-11).** Anything else (an empty body under the header,
+  `deflate,gzip`, a body labelled gzip that is not) keeps header and bytes
+  on the tape, and playback replays a recorded Content-Encoding verbatim
+  and never re-gzips that body (`recorded_ce` in `emit_playback_response`).
+  Azure Storage returns a blob's stored Content-Encoding as the header
+  whatever the bytes are; the old token match tried to inflate an empty
+  HEAD body and answered 500. `core_tests/test_vcr_content_encoding_kept.ae`.
+- **Playback adds no Content-Type the recording lacked (2026-11-11).** The
+  heading's type (the emitter writes `text/plain` when the service sent
+  none) is served as a Content-Type only for a tape with no response
+  headers at all. `core_tests/test_vcr_no_invented_content_type.ae`.
+- **A HEAD response keeps its Content-Length (2026-11-11).**
+  `head_content_length` sets the recorded value on record mode's answer and
+  on playback (the server sends no body for HEAD either way). Note that
+  `remove_transport_headers_h` leaves a response's Content-Length out of the
+  tape, so a suite whose HEAD sizes matter removes the framing headers one
+  by one instead (as the Azure harness does).
+  `core_tests/test_vcr_head_content_length.ae`.
+- **`set_forward_host_h` (opt-in) and `Expect` (2026-11-11).** Record mode
+  sends the upstream the client's Host when asked (Azurite checks a copy
+  source against the Host it was sent); off by default for name-based
+  virtual hosts. `Expect` is never forwarded: the recorder holds the whole
+  body, and an upstream's interim `100 Continue` comes back from
+  std.http.client as the final response (`asks/aether-http-client-interim-1xx.md`).
+  ABI `aether_vcr_embed_set_forward_host`; only .NET wraps it so far
+  (TODO.md). `core_tests/test_vcr_forward_host_and_expect.ae`.
+- **`{{request.header.NAME}}` (2026-11-11).** A response token playback
+  fills with the live request's NAME header (`fill_request_header_tokens`,
+  beside `{{request.host}}`). For services that echo a request id the
+  client verifies (Azure Storage's `x-ms-client-request-id`): record it with
+  `redact_header` on the response headers, the token as the replacement.
+  `core_tests/test_vcr_request_header_token.ae`.
 - **Body CRs are payload; path escapes are spelling (2026-11-07).** Found by
   the CouchDB pilot. (1) `normalize_tape_bytes` folds CRLF to LF only when
   the tape's first `## Interaction ` heading line ends in CRLF (the file was
@@ -1030,7 +1081,12 @@ Vue+Storybook+Selenium component-test demo). `pre-recorded/` re-usable tapes
 of real services' HTTP APIs: `from-testcontainers/` holds, per service, the
 Aether test that records them through testcontainers-ae (an `ae add`
 dependency in its own `aether.toml`; `lib/servirtium_vcr` links back to
-`core/`), moved here from testcontainers-ae on 2026-11-07. Root `README.md`
+`core/`), moved here from testcontainers-ae on 2026-11-07. `sdk_harnesses/` runs a
+vendor SDK's own test suite, unchanged, with Servirtium in the middle
+(fetched at a pinned commit into the harness's `target/`, never checked in;
+recorded against a local emulator only): `azure-sdk-for-net/` is the
+Azure.Storage.Blobs tests against Azurite (2026-11-11; its README).
+Root `README.md`
 has the Bindings table (the registry) and the layout block.
 
 **Packaging is complete; the consumer-example layer is not.** Every one of the

@@ -1,0 +1,12 @@
+# The Azure.Storage.Blobs test classes the harness runs, one per line, each
+# a dotnet test FullyQualifiedName~ value (the namespace keeps BlobClientTests
+# from also matching AppendBlobClientTests). Every test of these classes
+# runs, in both the sync and the async fixture, except those in excluded.txt
+# and excluded-by-hand.txt.
+Azure.Storage.Blobs.Test.ContainerClientTests
+Azure.Storage.Blobs.Test.ServiceClientTests
+Azure.Storage.Blobs.Test.BlobBaseClientTests
+Azure.Storage.Blobs.Test.BlobClientTests
+Azure.Storage.Blobs.Test.BlockBlobClientTests
+Azure.Storage.Blobs.Test.AppendBlobClientTests
+Azure.Storage.Blobs.Test.PageBlobClientTests

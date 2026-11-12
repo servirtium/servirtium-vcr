@@ -63,3 +63,6 @@ erl_crash.dump
 
 # aeo per-dev runtime scratch (audit log, sticky-IP bindings) from `aeo up`
 .aeo/
+
+# sdk_harnesses: fetched SDK sources, NuGet/dotnet caches, results (wipe = rm -rf)
+/sdk_harnesses/*/target/

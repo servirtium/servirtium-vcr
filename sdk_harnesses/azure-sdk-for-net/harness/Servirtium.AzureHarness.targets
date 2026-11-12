@@ -1,0 +1,47 @@
+<Project>
+  <!--
+    Passed to `dotnet build` as -p:CustomAfterMicrosoftCommonTargets=<this file>,
+    so it is imported by every project in the build; it acts only on the
+    Azure.Storage.Blobs test project, whose csproj and test sources stay as
+    fetched. It adds the harness (Servirtium in the middle of every test, and
+    Azurite in a container when recording) to that test assembly.
+  -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Azure.Storage.Blobs.Tests'">
+    <ServirtiumHarnessDir>$(MSBuildThisFileDirectory)</ServirtiumHarnessDir>
+    <ServirtiumVcrDir>$(MSBuildThisFileDirectory)../../../dotnet/Servirtium.Vcr/</ServirtiumVcrDir>
+    <!-- The harness files are ours, not the SDK's: keep the SDK's analyzers off them. -->
+    <NoWarn>$(NoWarn);CS1591;SA1200;SA1402;SA1649;AZC0012;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Azure.Storage.Blobs.Tests'">
+    <Compile Include="$(ServirtiumHarnessDir)*.cs" LinkBase="ServirtiumHarness" />
+
+    <!--
+      AzuriteNUnitFixture is an assembly-wide [SetUpFixture] that starts
+      Azurite from a local npm install for LargeBlobTests (its only user, a
+      2 GiB [LiveOnly] block). Without that npm install it fails the whole
+      assembly's setup. The harness runs Azurite in a container instead, so
+      both files are left out of the compilation (not edited).
+    -->
+    <Compile Remove="$(AzureStorageSharedTestSources)/AzuriteNUnitFixture.cs" />
+    <Compile Remove="$(MSBuildProjectDirectory)/LargeBlobTests.cs" />
+
+    <!--
+      Managed disks and immutability policies are set up through Azure
+      Resource Manager (an Azure subscription), which Azurite does not
+      emulate. Leaving their three files out drops the test project's two
+      Resource Manager references, whose sources need far more of the SDK
+      repository to build.
+    -->
+    <Compile Remove="$(MSBuildProjectDirectory)/ManagedDiskFixture.cs" />
+    <Compile Remove="$(MSBuildProjectDirectory)/ManagedDiskTests.cs" />
+    <Compile Remove="$(MSBuildProjectDirectory)/ImmutableStorageWithVersioningTests.cs" />
+    <ProjectReference Remove="$(MSBuildProjectDirectory)/../../../../sdk/compute/Azure.ResourceManager.Compute/src/Azure.ResourceManager.Compute.csproj" />
+    <ProjectReference Remove="$(MSBuildProjectDirectory)/../../Azure.ResourceManager.Storage/src/Azure.ResourceManager.Storage.csproj" />
+
+    <ProjectReference Include="$(ServirtiumVcrDir).Servirtium.Vcr.generated.csproj" />
+
+    <PackageVersion Include="Testcontainers.Azurite" Version="$(TestcontainersAzuriteVersion)" />
+    <PackageReference Include="Testcontainers.Azurite" />
+  </ItemGroup>
+</Project>

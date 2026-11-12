@@ -1,0 +1,30 @@
+# Written by hand, read with excluded.txt (which is generated).
+
+# Tests that move 16 MiB or more
+# (up to 1 GiB): their tapes would be hundreds of megabytes, far over the
+# 128 KiB cap, and recording one buffers the body several times over in
+# Servirtium's memory (UploadAsync_ProgressReporting's 256 MiB took a 16 GB
+# host into the OOM killer).
+
+## moves 16 MiB to 1 GiB of data: a tape of hundreds of megabytes, never checked in
+BlobBaseClientTests.DownloadFileAsync_Parallel_SmallBlobs*
+BlobBaseClientTests.DownloadFileAsync_Parallel_LargeBlobs*
+BlobBaseClientTests.DownloadToAsync_LargeStream*
+BlobBaseClientTests.GetLayoutAsync_*
+BlobClientTests.UploadFileAsync_SmallBlobs*
+BlobClientTests.UploadFileAsync_LargeBlobs*
+BlobClientTests.UploadStreamAsync_LargeBlobs*
+BlobClientTests.Upload_Stress*
+BlobClientTests.ChecksForCancelation*
+BlockBlobClientTests.StageBlockAsync_ProgressReporting*
+BlockBlobClientTests.UploadAsync_LargeFile*
+BlockBlobClientTests.UploadAsync_ProgressReporting*
+
+## depends on an earlier test, in another class, having set the account's service properties: against the fresh Azurite each class gets, DeleteRetentionPolicy is null
+ServiceClientTests.GetPropertiesAsync
+
+## stages blocks: the SDK library (not the test) names each block from RandomNumberGenerator (BlobHelpers.GenerateBlockId), so no seed repeats the blockid query parameter or the block list body; the SDK's own test proxy ignores blockid for this reason
+BlobClientTests.UploadStreamAsync_SmallBlobs*
+BlobClientTests.UploadAsync_NonZeroStreamPositionMultipleBlocks
+BlockBlobClientTests.UploadAsync_AccessConditions(True)
+BlockBlobClientTests.UploadAsync_NonZeroStreamPositionMultipleBlocks

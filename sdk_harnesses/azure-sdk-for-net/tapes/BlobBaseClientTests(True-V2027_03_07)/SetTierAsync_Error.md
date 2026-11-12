@@ -1,0 +1,106 @@
+## LICENSE NOTICE
+
+Recorded by servirtium-vcr's sdk_harnesses/azure-sdk-for-net harness: the test named in the note below,
+from Azure/azure-sdk-for-net at 5084eb7e2bdcafe0aa70308b114e336096553c74 (MIT licence),
+run unchanged in Live mode against Azurite (mcr.microsoft.com/azure-storage/azurite:3.37.0, MIT licence), Microsoft's Azure Storage emulator,
+not against Azure. Azure.Storage.Blobs built from that same commit.
+Account devstoreaccount1 is Azurite's published development account; its key is not a secret.
+
+## Interaction 0: PUT /devstoreaccount1/test-container-80e1421a-3457-d6e0-cdb5-ba220e7fb83a?restype=container
+
+## [Note] Azure SDK test:
+
+test: Azure.Storage.Blobs.Test.BlobBaseClientTests(True,V2027_03_07).SetTierAsync_Error
+now: 2026-11-12T00:48:26.0578632+00:00
+
+### Request headers recorded for playback:
+
+```
+Authorization: SharedKey AUTHORIZATION_1
+x-ms-return-client-request-id: true
+x-ms-version: 2027-03-07
+```
+### Request body recorded for playback ():
+
+```
+```
+### Response headers recorded for playback:
+
+```
+Server: Azurite-Blob/3.37.0
+etag: "0x1C545E2B0D04840"
+last-modified: Thu, 12 Nov 2026 00:48:26 GMT
+x-ms-client-request-id: {{request.header.x-ms-client-request-id}}
+x-ms-request-id: 3dca605c-8a72-4c5a-8dc5-cf1388ca21e0
+x-ms-version: 2026-06-06
+Date: Thu, 12 Nov 2026 00:48:26 GMT
+Content-Length: 0
+```
+### Response body recorded for playback (201: text/plain):
+
+```
+```
+
+## Interaction 1: PUT /devstoreaccount1/test-container-80e1421a-3457-d6e0-cdb5-ba220e7fb83a/test-blob-717ef96d-5e48-ba5d-6d75-cace08a63ba3?comp=tier
+
+### Request headers recorded for playback:
+
+```
+Authorization: SharedKey AUTHORIZATION_2
+x-ms-access-tier: Cool
+x-ms-return-client-request-id: true
+x-ms-version: 2027-03-07
+```
+### Request body recorded for playback ():
+
+```
+```
+### Response headers recorded for playback:
+
+```
+Server: Azurite-Blob/3.37.0
+x-ms-error-code: BlobNotFound
+x-ms-request-id: f732cf24-f4aa-4c29-8a95-16beacca21c6
+content-type: application/xml
+Date: Thu, 12 Nov 2026 00:48:26 GMT
+```
+### Response body recorded for playback (404: application/xml):
+
+```
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Error>
+  <Code>BlobNotFound</Code>
+  <Message>The specified blob does not exist.
+RequestId:REQUEST-ID
+Time:2000-01-01T00:00:00.0000000Z</Message>
+</Error>
+```
+
+## Interaction 2: DELETE /devstoreaccount1/test-container-80e1421a-3457-d6e0-cdb5-ba220e7fb83a?restype=container
+
+### Request headers recorded for playback:
+
+```
+Authorization: SharedKey AUTHORIZATION_3
+x-ms-return-client-request-id: true
+x-ms-version: 2027-03-07
+```
+### Request body recorded for playback ():
+
+```
+```
+### Response headers recorded for playback:
+
+```
+Server: Azurite-Blob/3.37.0
+x-ms-client-request-id: {{request.header.x-ms-client-request-id}}
+x-ms-request-id: 8fc3e23e-499f-46a4-aaca-e0e2eb2065bf
+x-ms-version: 2026-06-06
+date: Thu, 12 Nov 2026 00:48:26 GMT
+Content-Length: 0
+```
+### Response body recorded for playback (202: text/plain):
+
+```
+```
+

@@ -1,0 +1,18 @@
+// The Azure SDK for .NET's own Azure.Storage.Blobs tests, played back from
+// the tapes in tapes/ with no container and no container engine. Then the
+// negative check: a copy of one tape with its blob's bytes changed must make
+// that test fail. Offline once .build.ae has run.
+import bldr
+import std.os
+
+aeb(cap) {
+    bldr.build() {
+        dep("sdk_harnesses/azure-sdk-for-net/.build.ae")
+        h = "${_get("root")}/sdk_harnesses/azure-sdk-for-net"
+        rc = os.system("\"${h}/run.sh\" playback")
+        if rc != 0 { bldr.fail("azure-sdk-for-net harness: playback failed (see target/results-playback.log)"); return 1 }
+        rc = os.system("\"${h}/run.sh\" negative")
+        if rc != 0 { bldr.fail("azure-sdk-for-net harness: the altered tapes did not make their tests fail"); return 1 }
+        println("test: azure-sdk-for-net Blobs tests replayed; altered tapes fail them")
+    }
+}

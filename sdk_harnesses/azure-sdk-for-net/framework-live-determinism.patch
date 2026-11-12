@@ -1,0 +1,31 @@
+diff --git a/sdk/core/Azure.Core.TestFramework/src/TestRecording.cs b/sdk/core/Azure.Core.TestFramework/src/TestRecording.cs
+index c33e50f8..283b1378 100644
+--- a/sdk/core/Azure.Core.TestFramework/src/TestRecording.cs
++++ b/sdk/core/Azure.Core.TestFramework/src/TestRecording.cs
+@@ -172,6 +172,14 @@ public TestRandom Random
+                     switch (Mode)
+                     {
+                         case RecordedTestMode.Live:
++                            // Servirtium harness: a seed the harness put on the test makes
++                            // Live mode's names, data and Guids repeatable, as Record and
++                            // Playback make them from the test-proxy's RandomSeed variable.
++                            if (NUnit.Framework.TestContext.CurrentContext?.Test?.Properties?.Get("Servirtium.Seed") is string harnessSeed)
++                            {
++                                _random = new TestRandom(RecordedTestMode.Record, int.Parse(harnessSeed, System.Globalization.CultureInfo.InvariantCulture));
++                                break;
++                            }
+ #if NET6_0_OR_GREATER
+                             var liveSeed = RandomNumberGenerator.GetInt32(int.MaxValue);
+ #else
+@@ -235,7 +243,10 @@ public DateTimeOffset Now
+                     switch (Mode)
+                     {
+                         case RecordedTestMode.Live:
+-                            _now = DateTimeOffset.Now;
++                            // Servirtium harness: the moment recorded with the test's tape.
++                            _now = NUnit.Framework.TestContext.CurrentContext?.Test?.Properties?.Get("Servirtium.Now") is string harnessNow
++                                ? DateTimeOffset.Parse(harnessNow, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind)
++                                : DateTimeOffset.Now;
+                             break;
+                         case RecordedTestMode.Record:
+                             // While we can cache DateTimeOffset.Now for playing back tests,

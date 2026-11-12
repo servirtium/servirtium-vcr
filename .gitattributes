@@ -2,3 +2,4 @@
 # from converting line endings in them (see core/vcr.ae normalize_tape_bytes).
 pre-recorded/**/*.md -text
 core_tests/tapes/** -text
+sdk_harnesses/*/tapes/** -text

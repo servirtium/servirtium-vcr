@@ -45,6 +45,7 @@ servirtium-vcr/
   fsharp/        # CLR family — thin layer over the .NET assembly (no 2nd FFI)
   core_tests/    # Aether-level libservirtium_vcr tests (pure-Aether, no binding)
   integration/   # browser · subversion · climate · todobackend cross-binding tests
+  sdk_harnesses/ # a vendor SDK's own test suite with Servirtium in the middle (Azure SDK for .NET, Blobs)
   pre-recorded/  # re-usable tapes of real services (recorded, or converted from collections)
   <lang>/docs/   # per-binding usage docs
 ```

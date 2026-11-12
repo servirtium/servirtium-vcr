@@ -1,0 +1,14 @@
+# Altered tapes that must make their test fail (run.sh negative). One per
+# line: TAPE | TEST FILTER | SED EXPRESSION. The tape is edited in a copy
+# under target/, never here. The tests' data is seeded, so a re-record
+# writes the same names and bytes these expressions look for.
+
+# A response body: one blob in a listing renamed. The test checks the names.
+ContainerClientTests(True-V2027_03_07)/ListBlobsFlatSegmentAsync.md | FullyQualifiedName~ContainerClientTests&Name=ListBlobsFlatSegmentAsync | s,<Name>baz/foo/bar</Name>,<Name>baz/foo/BAR</Name>,
+
+# A binary request body: one base64 character of the uploaded bytes. The
+# SDK's upload no longer matches the tape.
+ContainerClientTests(True-V2027_03_07)/UploadBlobAsync.md | FullyQualifiedName~ContainerClientTests&Name=UploadBlobAsync | s,^ZCp+tMuu,ZCp+tMuv,
+
+# A status: the container create answered 409 instead of 201.
+ContainerClientTests(True-V2027_03_07)/CreateAsync_WithSharedKey.md | FullyQualifiedName~ContainerClientTests&Name=CreateAsync_WithSharedKey | s,^### Response body recorded for playback (201: ,### Response body recorded for playback (409: ,
