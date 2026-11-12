@@ -312,8 +312,7 @@ pub fn add_license_notice(vcr: Vcr, text: String) -> Result(Nil, String) {
 @external(erlang, "servirtium_nif", "set_pretty_json")
 fn nif_set_pretty_json(handle: Handle, indent: Int) -> Nil
 
-/// Record mode: pretty-print recorded JSON response bodies (indent 1..16;
-/// 0 = off); request bodies are never changed.
+/// Shared JSON layout setting: format both recorded bodies and match JSON requests.
 pub fn set_pretty_json(vcr: Vcr, indent: Int) -> Nil {
   let _ = nif_set_pretty_json(vcr.handle, indent)
   Nil
@@ -497,5 +496,13 @@ pub fn assert_no_mismatches(vcr: Vcr) -> Result(Nil, String) {
 }
 pub fn test_context(vcr: Vcr, name: String, file: String, line: Int) -> Nil {
   let _ = nif_test_context(vcr.handle, name, file, line)
+  Nil
+}
+
+/// Shared XML layout setting: format both recorded bodies and match XML requests.
+@external(erlang, "servirtium_nif", "set_pretty_xml")
+fn nif_set_pretty_xml(handle: Handle, indent: Int) -> Nil
+pub fn set_pretty_xml(vcr: Vcr, indent: Int) -> Nil {
+  let _ = nif_set_pretty_xml(vcr.handle, indent)
   Nil
 }

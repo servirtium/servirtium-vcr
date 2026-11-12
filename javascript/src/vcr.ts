@@ -304,12 +304,13 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     return this
   }
 
-  /**
-   * Opt in to matching request bodies by semantic XML equality (attribute
-   * order / insignificant whitespace ignored; element order significant)
-   * instead of byte-for-byte — the SOAP/XML twin of `matchJsonBody`. Non-XML
-   * bodies fall back to byte-exact.
-   */
+  /** Match JSON requests by canonical form; serve tape responses as written. */
+  prettyJson(indent = 2): PlaybackBuilder { return this.matchJsonBody(indent > 0) }
+
+  /** Match XML requests by canonical form; serve tape responses as written. */
+  prettyXml(indent = 2): PlaybackBuilder { return this.matchXmlBody(indent > 0) }
+
+  /** Compatibility alias for XML layout matching; malformed bodies stay byte-exact. */
   matchXmlBody(on = true): PlaybackBuilder {
     this.matchXmlBodyOn = on
     return this
@@ -503,13 +504,13 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     return this
   }
 
-  /** Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. */
+  /** Pretty-print recorded XML request and response bodies (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML. */
   prettyXml(indent = 2): RecordBuilder {
     this.prettyXmlIndent = indent
     return this
   }
 
-  /** Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed. */
+  /** Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout. */
   prettyJson(indent = 2): RecordBuilder {
     this.prettyJsonIndent = indent
     return this

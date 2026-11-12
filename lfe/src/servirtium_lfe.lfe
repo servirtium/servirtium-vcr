@@ -36,6 +36,7 @@
    (redact_query_param 2) (redact_query_param 4)
    (redact_json_field 2) (redact_json_field 4)
    (add_license_notice 2)
+   (set_pretty_xml 2)
    (set_pretty_json 2)
    (remove_transport_headers 1)
    (remove_cloud_headers 2)
@@ -318,3 +319,6 @@
   (servirtium:playback_with_secrets tape resolver))
 (defun secret_redactor (server callback)
   (maps:put 'secret_redactor callback server))
+
+(defun set_pretty_xml (vcr indent)
+  (servirtium_nif:set_pretty_xml (maps:get 'handle vcr) indent))

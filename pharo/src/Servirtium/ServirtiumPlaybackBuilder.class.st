@@ -205,3 +205,23 @@ ServirtiumPlaybackBuilder >> secretResolver: callback [
     secretResolver := callback.
     ^ self
 ]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> prettyXml [
+    ^ self prettyXml: 2
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> prettyXml: anIndent [
+    ^ self matchXmlBody: anIndent > 0
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> prettyJson [
+    ^ self prettyJson: 2
+]
+
+{ #category : 'configuring' }
+ServirtiumPlaybackBuilder >> prettyJson: anIndent [
+    ^ self matchJsonBody: anIndent > 0
+]

@@ -377,12 +377,19 @@ impl PlaybackBuilder {
         self.match_json_body = true;
         self
     }
-    /// Opt in to matching request bodies by *semantic* XML equality (attribute
-    /// order and insignificant whitespace ignored; element order significant)
-    /// instead of byte-for-byte — the SOAP/XML twin of [`match_json_body`]. A
-    /// non-XML body falls back to the byte-exact comparison.
-    ///
-    /// [`match_json_body`]: Self::match_json_body
+    /// Match JSON requests by canonical form; serve tape responses as written.
+    pub fn pretty_json(mut self, indent: i32) -> Self {
+        self.match_json_body = indent > 0;
+        self
+    }
+
+    /// Match XML requests by canonical form; serve tape responses as written.
+    pub fn pretty_xml(mut self, indent: i32) -> Self {
+        self.match_xml_body = indent > 0;
+        self
+    }
+
+    /// Compatibility alias for XML layout matching; malformed bodies stay byte-exact.
     pub fn match_xml_body(mut self) -> Self {
         self.match_xml_body = true;
         self
@@ -736,12 +743,12 @@ impl RecordBuilder {
         self.emphasize_http_verbs = true;
         self
     }
-    /// Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    /// Pretty-print recorded XML request and response bodies (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
     pub fn pretty_xml(mut self, indent: i32) -> Self {
         self.pretty_xml = indent;
         self
     }
-    /// Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    /// Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout.
     pub fn pretty_json(mut self, indent: i32) -> Self {
         self.pretty_json = indent;
         self

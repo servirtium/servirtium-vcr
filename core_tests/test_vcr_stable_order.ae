@@ -210,7 +210,7 @@ main() {
     vcr.sort_json_keys_h(vh, 1)
     t2 = rec(vh, OUT, "application/json", UNSORTED, RESP_H, UNSORTED)
     need(t2, fenced(pj("{\"a\":{\"c\":null,\"y\":[{\"b\":2,\"q\":1},3]},\"m\":\"x\",\"m\":\"y\",\"z\":1}")), "keys sorted at every depth")
-    need(t2, "```\n${UNSORTED}\n```", "the request body is never reordered")
+    need(t2, pj(UNSORTED), "the request body is formatted but never reordered")
     need(t2, "Content-Type: application/json\nX-Zeta: 1", "headers untouched by the JSON option")
     pretty_in = "{\n  \"b\": 1,\n  \"a\": {\n    \"d\": true,\n    \"c\": \"x\"\n  }\n}"
     t2b = rec(vh, OUT, "application/json", pretty_in, "", "")

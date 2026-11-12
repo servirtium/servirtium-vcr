@@ -101,10 +101,10 @@ defmodule Servirtium do
     * `:indent_code_blocks` — `true` to emit 4-space-indented blocks
     * `:emphasize_http_verbs` — `true` to emit `*GET*` instead of `GET`
     * `:pretty_xml` — indent width (integer) to pretty-print recorded XML bodies
-      (1..16; 0 = off). Request bodies are never changed.
+      (1..16; 0 = off). Formats both recorded bodies and enables request layout matching on playback.
       Falls back to byte-exact if the body isn't well-formed XML.
     * `:pretty_json` — indent width (integer) to pretty-print recorded JSON
-      bodies (1..16; 0 = off). Request bodies are never changed.
+      bodies (1..16; 0 = off). Formats both recorded bodies and enables request layout matching on playback.
       Falls back to byte-exact if the body isn't valid JSON.
     * `:license_notice` — text written under `## LICENSE NOTICE` at the top of
       each tape (playback ignores it)
@@ -466,6 +466,14 @@ defmodule Servirtium do
   end
 
   defp apply_playback_config(handle, opts) do
+    case Keyword.get(opts, :pretty_json, 0) do
+      n when is_integer(n) and n > 0 -> Native.set_pretty_json(handle, n)
+      _ -> :ok
+    end
+    case Keyword.get(opts, :pretty_xml, 0) do
+      n when is_integer(n) and n > 0 -> Native.set_pretty_xml(handle, n)
+      _ -> :ok
+    end
     if Keyword.get(opts, :strict_headers, false), do: Native.set_strict_headers(handle, 1)
     if Keyword.get(opts, :match_json_body, false), do: Native.set_match_json_body(handle, 1)
     if Keyword.get(opts, :match_xml_body, false), do: Native.set_match_xml_body(handle, 1)

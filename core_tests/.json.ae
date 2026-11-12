@@ -1,0 +1,14 @@
+// One core JSON contract runs in every language binding's fixture DAG.
+import bldr
+import aether
+import aether (source, lib, caps)
+aeb(cap) {
+    bldr.build() {
+        aether.program_test() {
+            source("test_vcr_json_matrix.ae"); lib(".."); caps("fs,net,os,extern")
+        }
+        aether.program_test() {
+            source("test_vcr_pretty_json.ae"); lib(".."); caps("fs,net,os,extern")
+        }
+    }
+}

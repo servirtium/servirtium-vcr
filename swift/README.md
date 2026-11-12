@@ -83,7 +83,7 @@ to fetch, set or copy:
 // Package.swift of your project (swift-tools-version 5.9 or later; Swift 6.2+ to build)
 platforms: [.macOS(.v13)],
 dependencies: [
-    .package(url: "https://github.com/servirtium/servirtium-vcr", from: "2.0.0-alpha.15"),
+    .package(url: "https://github.com/servirtium/servirtium-vcr", from: "2.0.0-alpha.16"),
 ],
 targets: [
     .target(name: "YourTarget", dependencies: [
@@ -124,7 +124,7 @@ a branch or revision and link a downloaded shared library yourself:
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.15                      # a release tag from the releases page; nothing else to edit
+TAG=v2.0.0-alpha.16                      # a release tag from the releases page; nothing else to edit
 case "$(uname -s)" in
   Linux)  OS=linux;  EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
   Darwin) OS=macos;  EXT=dylib; LIBC= ;;
@@ -155,7 +155,7 @@ tagged, and it is not bit-reproducible. So:
    the source form.
 2. The release workflow publishes the bundle, writes its checksum on a commit
    on top of the `v<version>` commit, tags that commit with the **bare** semver
-   tag (`2.0.0-alpha.15`, no `v`) and pushes the tag. SwiftPM reads both tags as
+   tag (`2.0.0-alpha.16`, no `v`) and pushes the tag. SwiftPM reads both tags as
    the same version and prefers the one without the `v`, so `from:` /
    `exact:` resolve to the commit carrying the checksum. No tag is moved.
 3. It applies the same one-line change on `main`, so `branch: "main"` uses the
@@ -177,7 +177,7 @@ workflow finishes picks up the bare tag.
   SE-0482), on macOS 13+ or Linux glibc. An older toolchain fails to read the
   bundle; there, use the source form.
 - Resolution of a version tag pins the commit with the BARE semver tag
-  (`2.0.0-alpha.15`). If `Package.resolved` shows the commit of `v2.0.0-alpha.15`
+  (`2.0.0-alpha.16`). If `Package.resolved` shows the commit of `v2.0.0-alpha.16`
   instead, the bare tag did not exist yet when you resolved:
   `swift package update` (or delete the pin) once the release workflow has
   finished.
@@ -221,9 +221,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.15/libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.15/libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.16/libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.16/libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so.sha256   # -> OK
 ```
 
 **Build the package locally**
@@ -233,9 +233,9 @@ drop the downloaded library at the package-relative path below, then consume it
 from source (a local/path Swift Package Manager dependency).
 
 ```sh
-# from the swift binding directory, with libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so downloaded:
+# from the swift binding directory, with libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so downloaded:
 mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so native/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so native/libservirtium_vcr.so
 # the package now carries the native library; consume it from source (see this README's usage/examples).
 ```
 

@@ -45,8 +45,8 @@ ruby       file      ruby/pkg/servirtium.gem
 javascript file      javascript/pkgout
 dotnet     feed      dotnet/pkg
 fsharp     feed      fsharp/pkg
-c          tarball   c/servirtium-c-2.0.0-alpha.15.tar.gz
-cpp        tarball   cpp/servirtium-cpp-2.0.0-alpha.15.tar.gz
+c          tarball   c/servirtium-c-2.0.0-alpha.16.tar.gz
+cpp        tarball   cpp/servirtium-cpp-2.0.0-alpha.16.tar.gz
 lua        dir       lua/dist
 php        source    php
 dart       source    dart
@@ -110,10 +110,10 @@ consume_hint() {
         haskell:*)    note "cabal build with a path source-repository-package at $_dest" ;;
         crystal:*)    note "dependencies:  servirtium: {path: $_dest}   # in shard.yml" ;;
         swift:*)      note ".package(path: \"$_dest\")                  # in Package.swift" ;;
-        d:*)          note "dub add-local $_dest 2.0.0-alpha.15" ;;
+        d:*)          note "dub add-local $_dest 2.0.0-alpha.16" ;;
         *:beam)       note "ERL_LIBS=$_dest   (mix: SERVIRTIUM_NIF_EBIN=$_dest/servirtium_nif/ebin)" ;;
         *:m2)         note "installed to ~/.m2 — add the dependency:"
-                      note "dev.servirtium:vcr$( [ "$_lang" = java ] || echo "-$_lang" ):2.0.0-alpha.15" ;;
+                      note "dev.servirtium:vcr$( [ "$_lang" = java ] || echo "-$_lang" ):2.0.0-alpha.16" ;;
     esac
     echo
     note "The libservirtium_vcr.so travels inside the package; no SERVIRTIUM_VCR_LIB needed."

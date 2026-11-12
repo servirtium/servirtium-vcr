@@ -127,7 +127,7 @@ One libservirtium_vcr; every binding exposes the same surface.
   tape on close).
 - **Canonical Servirtium markdown** — interoperable with other Servirtium
   implementations; fenced or 4-space-indented code blocks; optional emphasized
-  HTTP verbs; optional `pretty_xml` indentation of recorded XML bodies ([docs/pretty-xml.md](docs/pretty-xml.md)); gzip + chunked transfer decoded to the stored payload.
+  HTTP verbs; optional `pretty_xml` and `pretty_json` indentation of recorded request and response bodies, with matching playback settings ([XML](docs/pretty-xml.md), [JSON](docs/pretty-json.md)); gzip + chunked transfer decoded to the stored payload.
   Opt-in *stable order* for a service that answers in a different order
   each run: JSON object keys sorted, chosen JSON arrays sorted by a member,
   response headers sorted by name, a set-valued header's items (`Allow`)
@@ -401,7 +401,7 @@ target, so they install in that order. aeb's
 from a bare clone: prebuilt-binary-first per platform, source fallback otherwise,
 fetching the pinned Aether via Aether's own `get.sh`. The authoritative pins live
 in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` and `AE_FETCH` are now **one
-number** — `0.898.0`, a published release carrying `std.json`'s `pretty`
+number** — `0.912.0`, a published release carrying `std.json`'s `pretty`
 (used by the `pretty_json` recording option) and `std.xml`'s `pretty` (used by
 `pretty_xml`) on top of in-memory TLS PEM and
 the RSA/P-384/P-521/Ed25519 key support. (They used
@@ -412,8 +412,8 @@ means "tested". The trade: a user with a good-but-different ae gets a fetch
 they didn't strictly need.) The **aeb** pin is one number on the same policy:
 `AEB_REF` == floor == `v0.344` (it has the Janet SDK the Janet binding's tests
 use, and is the first aeb built with Aether 0.898.0, which FreeBSD needs),
-paired with Aether 0.898.0 (aeb v0.344 pins its own AETHER_PIN/AETHER_FETCH to
-0.898.0 too). The
+used here with Aether 0.912.0. `bootstrap.sh` explicitly passes the selected
+`ae` to aeb so its private orchestrator toolchain cannot select an older compiler. The
 pair preserves distinct GNU/musl binary-package identities (the libc-aware
 release floor is still Aether 0.838.0, which 0.860 satisfies). `bootstrap.sh` now checks the aeb release version as well as the
 Aether floor. The commands below pin that
@@ -430,13 +430,13 @@ pinned `ae` (>= `AE_PIN`) THEN a pinned `aeb`, binary-first, into `~/.local`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/v0.344/get.sh \
-  | AE_PIN=0.898.0 AEB_REF=v0.344 sh
+  | AE_PIN=0.912.0 AEB_REF=v0.344 sh
 ```
 
 (Prefer this to `sh -c "$(curl …)"` — the piped form is what `get.sh`'s
 executed-mode guard is built for. If you want a fetch error and install progress
 on your own terminal rather than through the pipe, download first and run the
-file: `curl … -o get.sh && AE_PIN=0.898.0 AEB_REF=v0.344 bash get.sh` — same
+file: `curl … -o get.sh && AE_PIN=0.912.0 AEB_REF=v0.344 bash get.sh` — same
 result.)
 
 ### Optionally: `aeo` (only for the containerized integration tests)
@@ -450,7 +450,7 @@ the same way, and ensures `ae` + `aeb` first (aeo shells them at runtime):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh \
-  | AE_PIN=0.898.0 AEB_REF=v0.344 AEO_REF=v0.2.3 sh
+  | AE_PIN=0.912.0 AEB_REF=v0.344 AEO_REF=v0.2.3 sh
 ```
 
 (Verified binary-first on a clean `debian:13-slim` — no compiler, no `make` —

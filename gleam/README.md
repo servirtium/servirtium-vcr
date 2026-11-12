@@ -61,7 +61,7 @@ git dependencies cannot point at a subdirectory of a repository, and this packag
 In your Gleam project:
 
 ```sh
-VER=v2.0.0-alpha.15                      # a release tag of servirtium-vcr
+VER=v2.0.0-alpha.16                      # a release tag of servirtium-vcr
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
 
 # 1. a checkout of that tag (only gleam/ and erlang/ are used)

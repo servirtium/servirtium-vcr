@@ -161,6 +161,10 @@ tapes (see "Bruno" below); both return `""` or the error.
 The build runner is **aeb** (sibling repo `../aeb`; its `AGENTS.md` is the deep
 reference). Quick facts:
 
+- Manage Aether with `ae version install 0.912.0` and `ae version use 0.912.0`;
+  check `ae version` confirms matching `ae`/`aetherc`. Use the version manager
+  for upgrades rather than manually downloading toolchain archives. If aeb picks
+  an older private compiler, pass `AETHER=/absolute/path/to/selected/ae`.
 - **Not on `PATH`** in a fresh shell — it's at `~/.local/bin/aeb`. Prefix
   `export PATH="$HOME/.local/bin:$PATH"` or call it by full path.
 - A build leaf is a **dot-prefixed `.ae`** with the Shape A ("b-free")
@@ -625,6 +629,12 @@ newlines survive parsing.
 
 ## Shared test tools and release verification
 
+`pretty_xml` and `pretty_json` format both recorded bodies and imply request
+matching on playback. Shared `.xml.ae` / `.json.ae` contract tests are deps of
+`.fixtures.ae`. JSON matching uses exact decimal tokens, never float getters;
+keep the spelling-preserving stable-order `json_canonical` separate. See
+`docs/pretty-xml.md` and `docs/pretty-json.md`.
+
 Generic tooling is Aether. `core_tests/.fixtures.ae` builds the shared HTTP
 redaction/secret/diagnostic drivers, configurable Lua upstream and Selenium
 port helper under `target/test-tools/`; every binding's `.tests.ae` depends on
@@ -787,7 +797,10 @@ process launchers; the shared fixture itself stays language-neutral.
   ignored; array order significant) before it's a `BodyDiff`. Off by default —
   libservirtium_vcr stays byte-exact — and a **non-JSON body always falls back to the
   byte-exact verdict**, so enabling it never loosens non-JSON matching. Logic is
-  `json_deep_equal` / `json_bodies_equal` in `core/vcr.ae` (via `std.json`); the
+  `json_body_canonicalize` / `json_request_bodies_equal` in `core/vcr.ae`:
+  exact decimal tokens, decoded strings, stable duplicate-key handling, and
+  the same canonical forms in diagnostics. `pretty_json` implies this matcher;
+  the recorded request is indented too. The
   `core_tests/test_vcr_json_body_match.ae` proves off→reject / on→match /
   on+non-JSON→reject. Modelled on Vcr.HttpRecorder's `RulesMatcher.ByJsonContent`
   (portions © Giannis Georgopoulos, MIT — see the `LICENSE` attribution line).
@@ -796,9 +809,9 @@ process launchers; the shared fixture itself stays language-neutral.
   expose `strict_headers`: python/rust/java/ruby/javascript/php/dart/go/nim/zig/
   lua/haskell/elixir/dotnet/pharo, plus the shared BEAM NIF; kotlin/scala/groovy/
   clojure inherit it free from the Java `PlaybackBuilder`. **erlang's and gleam's
-  idiomatic wrappers deliberately don't surface it** — they stage no playback
-  config at all (no `strict_headers` either), so parity means not adding it;
-  it's still reachable via `servirtium_nif:set_match_json_body/2`.
+  idiomatic wrappers surface the shared setting as `set_pretty_json`**;
+  the matching-only alias remains reachable via
+  `servirtium_nif:set_match_json_body/2`.
 - **Two more opt-in matchers, same libservirtium_vcr home + rollout as the JSON one.**
   `set_match_multiple(h,1)` — **MatchMultiple**: playback searches ALL
   interactions for one that fits (not just the cursor) and replays it WITHOUT

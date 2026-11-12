@@ -428,10 +428,13 @@ func (b *PlaybackBuilder) StrictHeaders() *PlaybackBuilder { b.strictHeaders = t
 // fall back to byte-exact.
 func (b *PlaybackBuilder) MatchJSONBody() *PlaybackBuilder { b.matchJSONBody = true; return b }
 
-// MatchXMLBody opts in to matching request bodies by semantic XML equality
-// (attribute order / insignificant whitespace ignored; element order
-// significant) instead of byte-for-byte — the SOAP/XML twin of MatchJSONBody.
-// Non-XML bodies fall back to byte-exact.
+// PrettyJSON matches JSON requests by canonical form; tape responses are served as written.
+func (b *PlaybackBuilder) PrettyJSON(indent int) *PlaybackBuilder { b.matchJSONBody = indent > 0; return b }
+
+// PrettyXML matches XML requests by canonical form; tape responses are served as written.
+func (b *PlaybackBuilder) PrettyXML(indent int) *PlaybackBuilder { b.matchXMLBody = indent > 0; return b }
+
+// MatchXMLBody is the matching-only alias; malformed bodies stay byte-exact.
 func (b *PlaybackBuilder) MatchXMLBody() *PlaybackBuilder { b.matchXMLBody = true; return b }
 
 // IgnoreVolatileHeaders drops the per-request volatile headers modern clients
@@ -844,10 +847,10 @@ func (b *RecordBuilder) IndentCodeBlocks() *RecordBuilder { b.indentCodeBlocks =
 // EmphasizeHTTPVerbs emits the HTTP method emphasized (e.g. *GET*) in headings.
 func (b *RecordBuilder) EmphasizeHTTPVerbs() *RecordBuilder { b.emphasizeHTTPVerb = true; return b }
 
-// PrettyXML: Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+// PrettyXML: Pretty-print recorded XML request and response bodies (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
 func (b *RecordBuilder) PrettyXML(indent int) *RecordBuilder { b.prettyXML = indent; return b }
 
-// PrettyJSON pretty-prints recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+// PrettyJSON formats recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout.
 func (b *RecordBuilder) PrettyJSON(indent int) *RecordBuilder { b.prettyJSON = indent; return b }
 
 // SortJSONKeys is the opt-in stable order for JSON object keys: they are sorted

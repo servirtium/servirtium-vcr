@@ -89,7 +89,9 @@ def test_records_and_replays_a_post_with_a_body(upstream):
 
 
 def test_pretty_xml_records_indented_and_replays(upstream):
-    compact = "<Env><Body><R id=\"1\"><N>Ann</N></R></Body></Env>"
+    compact = '<Env><Body><R id="1"><N>Ann</N></R></Body></Env>'
+    request = "<Q><A> Line one\nLine two \n</A><Captcha>token</Captcha></Q>"
+    pretty = '<Env>\n  <Body>\n    <R id="1">\n      <N>Ann</N>\n    </R>\n  </Body>\n</Env>'
     upstream.response_body = compact
     upstream.response_content_type = "text/xml; charset=utf-8"
     path = _tape_path()
@@ -97,22 +99,71 @@ def test_pretty_xml_records_indented_and_replays(upstream):
         with (servirtium.record(path, upstream.base_url).port(0)
               .pretty_xml(2).start()) as rec:
             status, body = http_request(
-                rec.base_url, "POST", "/soap", body="<Q><A>1</A></Q>",
-                headers={"Content-Type": "application/xml"})
-            assert body == compact  # the SUT gets the upstream bytes
-
-        tape = open(path).read()
-        assert "\n      <N>Ann</N>\n" in tape
-        assert "<Q><A>1</A></Q>" in tape  # request body is left byte-exact
-        assert compact not in tape
-
-        with servirtium.playback(path).port(0).start() as play:
-            status, body = http_request(
-                play.base_url, "POST", "/soap", body="<Q><A>1</A></Q>",
+                rec.base_url, "POST", "/soap", body=request,
                 headers={"Content-Type": "application/xml"})
             assert status == 200
-            assert "<N>Ann</N>" in body and "\n" in body
-            assert play.last_kind is servirtium.Outcome.OK
+            assert body == compact  # the SUT gets the upstream bytes
+            assert upstream.last_body == request
+
+        with open(path) as recorded:
+            tape = recorded.read()
+        assert pretty in tape
+        assert "<Q>\n  <A> Line one\nLine two \n</A>\n  <Captcha>token</Captcha>\n</Q>" in tape
+        assert compact not in tape
+
+        for edited, expected in (
+            (tape, pretty),
+            (tape.replace("\n  <", "\n       <"), pretty.replace("\n  <", "\n       <")),
+            (tape.replace("\n", "\r\n"), pretty),
+        ):
+            with open(path, "w", newline="") as output:
+                output.write(edited)
+            with servirtium.playback(path).port(0).pretty_xml(2).start() as play:
+                status, body = http_request(
+                    play.base_url, "POST", "/soap", body=request,
+                    headers={"Content-Type": "application/xml"})
+                assert status == 200
+                assert body == expected
+                assert play.last_kind is servirtium.Outcome.OK
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_pretty_json_records_query_and_replays_hand_edited_tapes(upstream):
+    request = '{"z":1.0,"text":" Line one\\nLine two \\n","big":123456789012345678901234567890,"items":[2,1]}'
+    response = '{"z":1.0,"a":{"text":" Line one\\nLine two \\n","big":123456789012345678901234567890}}'
+    pretty_request = '{\n  "z": 1.0,\n  "text": " Line one\\nLine two \\n",\n  "big": 123456789012345678901234567890,\n  "items": [\n    2,\n    1\n  ]\n}'
+    pretty_response = '{\n  "z": 1.0,\n  "a": {\n    "text": " Line one\\nLine two \\n",\n    "big": 123456789012345678901234567890\n  }\n}'
+    upstream.response_body = response
+    upstream.response_content_type = "application/json"
+    path = _tape_path()
+    try:
+        with servirtium.record(path, upstream.base_url).pretty_json(2).port(0).start() as rec:
+            status, body = http_request(rec.base_url, "QUERY", "/search", body=request,
+                                        headers={"Content-Type": "application/json"})
+            assert status == 200
+            assert body == response
+            assert upstream.last_method == "QUERY"
+            assert upstream.last_body == request
+        with open(path) as recorded:
+            tape = recorded.read()
+        assert "## Interaction 0: QUERY /search" in tape
+        assert pretty_request in tape
+        assert pretty_response in tape
+        for edited, expected in (
+            (tape, pretty_response),
+            (tape.replace('\n  "', '\n       "'), pretty_response.replace('\n  "', '\n       "')),
+            (tape.replace("\n", "\r\n"), pretty_response),
+        ):
+            with open(path, "w", newline="") as output:
+                output.write(edited)
+            with servirtium.playback(path).pretty_json(2).port(0).start() as play:
+                status, body = http_request(play.base_url, "QUERY", "/search", body=request,
+                                            headers={"Content-Type": "application/json"})
+                assert status == 200
+                assert body == expected
+                assert play.last_kind is servirtium.Outcome.OK
     finally:
         if os.path.exists(path):
             os.remove(path)

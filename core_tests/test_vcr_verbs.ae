@@ -94,6 +94,9 @@ run_matrix(base_url: string) -> string {
                      202, "PATCH:patch-body", "X-Verb: PATCH", "")
     if err != "" { return err }
 
+    err = drive_case(base_url, "QUERY", "query-body", "text/plain",
+                     200, "QUERY:query-body", "X-Verb: QUERY", "")
+    if err != "" { return err }
     return ""
 }
 
@@ -150,6 +153,10 @@ main() {
     record_err = record_case(vh, "PATCH", "patch-body", 202, "text/plain",
                              "PATCH:patch-body",
                              "Content-Type: text/plain\nX-Verb: PATCH\n")
+    if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
+
+    record_err = record_case(vh, "QUERY", "query-body", 200, "text/plain",
+                             "QUERY:query-body", "Content-Type: text/plain\nX-Verb: QUERY\n")
     if record_err != "" { println("FAIL: ${record_err}"); exit(1) }
 
     flush_err = vcr.flush_h(vh, TAPE_PATH)

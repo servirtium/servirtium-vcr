@@ -116,6 +116,41 @@ public class RecordTests : IDisposable
         Assert.Contains("SortHeaderValue", ex.Message);
     }
 
+    [Fact]
+    public async Task PrettyXml_formats_both_tape_bodies_and_matches_compact_requests()
+    {
+        const string request = "<CaseData><C> Line one\nLine two \n</C><Captcha>token</Captcha></CaseData>";
+        const string response = "<Result><C> Line one\nLine two \n</C><Ok>yes</Ok></Result>";
+        using var up = new FakeUpstream { ResponseBody = response, ResponseContentType = "application/xml" };
+        using (var rec = Vcr.Record(_tapePath, up.BaseUrl).Port(0).PrettyXml(2).Start())
+        using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
+        using (var content = new StringContent(request, System.Text.Encoding.UTF8, "application/xml"))
+        using (var result = await client.PostAsync("/case", content))
+        {
+            Assert.Equal(response, await result.Content.ReadAsStringAsync());
+            Assert.Equal(request, up.LastBody);
+        }
+        string tape = File.ReadAllText(_tapePath);
+        Assert.Contains("\n  <Captcha>token</Captcha>\n", tape);
+        Assert.Contains("\n  <Ok>yes</Ok>\n", tape);
+        Assert.Contains("<C> Line one\nLine two \n</C>", tape);
+        for (int variant = 0; variant < 3; variant++)
+        {
+            string edited = variant == 1 ? tape.Replace("\n  <", "\n       <")
+                : variant == 2 ? tape.Replace("\n", "\r\n") : tape;
+            File.WriteAllText(_tapePath, edited);
+            using var play = Vcr.Playback(_tapePath).Port(0).PrettyXml(2).Start();
+            using var client = new HttpClient { BaseAddress = new Uri(play.BaseUrl) };
+            using var content = new StringContent(request, System.Text.Encoding.UTF8, "application/xml");
+            using var result = await client.PostAsync("/case", content);
+            Assert.Equal(HttpStatusCode.OK, result.StatusCode);
+            Assert.Equal(VcrOutcome.Ok, play.LastKind);
+            string body = await result.Content.ReadAsStringAsync();
+            Assert.Contains("<C> Line one\nLine two \n</C>", body);
+            Assert.Contains(variant == 1 ? "\n       <Ok>yes</Ok>" : "\n  <Ok>yes</Ok>", body);
+        }
+    }
+
     private void ServeUpstream()
     {
         try

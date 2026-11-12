@@ -63,14 +63,14 @@ Add the package (dub needs `dub.sdl` at the repo root; it points at `d/src`;
 
 ```sdl
 // dub.sdl of your project
-dependency "servirtium" version="~>2.0.0-alpha.15"
+dependency "servirtium" version="~>2.0.0-alpha.16"
 ```
 
 or `dub add servirtium` once the package is registered. Until then, from a clone:
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.15                      # a release tag from the releases page; nothing else to edit
+TAG=v2.0.0-alpha.16                      # a release tag from the releases page; nothing else to edit
 case "$(uname -s)" in
   Linux)  OS=linux;  EXT=so;    ldd --version 2>&1 | grep -qi musl && LIBC=-musl || LIBC= ;;
   Darwin) OS=macos;  EXT=dylib; LIBC= ;;
@@ -83,7 +83,7 @@ mkdir -p "$SERVIRTIUM_VCR_LIB_DIR"
 curl -fsSL -o "$SERVIRTIUM_VCR_LIB_DIR/libservirtium_vcr.$EXT" \
   "https://github.com/servirtium/servirtium-vcr/releases/download/$TAG/libservirtium_vcr-$TAG-$OS-$ARCH${LIBC}.$EXT"
 git clone --depth 1 https://github.com/servirtium/servirtium-vcr "$HOME/.servirtium-vcr/src-$TAG"
-dub add-local "$HOME/.servirtium-vcr/src-$TAG" 2.0.0-alpha.15   # a clone at the repo root, not d/
+dub add-local "$HOME/.servirtium-vcr/src-$TAG" 2.0.0-alpha.16   # a clone at the repo root, not d/
 dub build           # SERVIRTIUM_VCR_LIB_DIR must be exported for build, run and test
 
 # check: links, loads, and reports the missing tape (prints "servirtium linked and loaded: ...")
@@ -141,9 +141,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.15/libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.15/libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.16/libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.16/libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so.sha256   # -> OK
 ```
 
 **Build the package locally**
@@ -153,9 +153,9 @@ drop the downloaded library at the package-relative path below, then consume it
 from source (a path/local dub dependency).
 
 ```sh
-# from the d binding directory, with libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so downloaded:
+# from the d binding directory, with libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so downloaded:
 mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so native/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so native/libservirtium_vcr.so
 # the package now carries the native library; consume it from source (see this README's usage/examples).
 ```
 
@@ -170,7 +170,7 @@ directory in the build commands below) — so the linker resolves it:
 
 ```sh
 mkdir -p ../core/native
-mv libservirtium_vcr-v2.0.0-alpha.15-linux-x86_64.so ../core/native/libservirtium_vcr.so
+mv libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so ../core/native/libservirtium_vcr.so
 ```
 
 Contributors can instead build libservirtium_vcr from `core/` (needs the Aether

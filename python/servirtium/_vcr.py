@@ -277,6 +277,14 @@ class PlaybackBuilder(_BuilderBase):
         self._match_json_body = on
         return self
 
+    def pretty_json(self, indent: int = 2):
+        """Match JSON requests by canonical form; serve tape responses as written."""
+        return self.match_json_body(indent > 0)
+
+    def pretty_xml(self, indent: int = 2):
+        """Match XML requests using the same canonicalizer as recording."""
+        return self.match_xml_body(indent > 0)
+
     def match_xml_body(self, on: bool = True):
         """Opt in to matching request bodies by *semantic* XML equality
         (attribute order and insignificant whitespace ignored; element order
@@ -453,12 +461,12 @@ class RecordBuilder(_BuilderBase):
         return self
 
     def pretty_xml(self, indent: int = 2):
-        """Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML."""
+        """Pretty-print recorded XML request and response bodies (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML."""
         self._pretty_xml = indent
         return self
 
     def pretty_json(self, indent: int = 2):
-        """Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed."""
+        """Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout."""
         self._pretty_json = indent
         return self
 

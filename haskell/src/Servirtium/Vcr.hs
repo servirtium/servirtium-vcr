@@ -158,6 +158,10 @@ data PlaybackOptions = PlaybackOptions
     -- ^ Opt in to matching request bodies by semantic JSON equality (key order
     -- \/ whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall
     -- back to byte-exact (default 'False').
+  , pbPrettyJson     :: Int
+    -- ^ Shared JSON layout setting (0 off, positive on).
+  , pbPrettyXml      :: Int
+    -- ^ Shared XML layout setting (0 off, positive on).
   , pbMatchXmlBody   :: Bool
     -- ^ Opt in to matching request bodies by semantic XML equality (attribute
     -- order \/ insignificant whitespace ignored; element order significant)
@@ -278,9 +282,9 @@ data RecordOptions = RecordOptions
   , recEmphasizeHttpVerbs :: Bool
     -- ^ Emit the HTTP method emphasized (e.g. @*GET*@) in headings.
   , recPrettyXml          :: Int
-    -- ^ Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. Default 0.
+    -- ^ Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML. Default 0.
   , recPrettyJson         :: Int
-    -- ^ Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed. Default 0.
+    -- ^ Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout. Default 0.
   , recUpstreamCafile     :: Maybe FilePath
     -- ^ Verify an @https:\/\/@ upstream against this PEM CA file (default 'Nothing').
   , recLicenseNotice      :: Maybe String
@@ -331,6 +335,8 @@ playbackOptions tape = PlaybackOptions
   , pbLabel         = ""
   , pbStrictHeaders = False
   , pbMatchJsonBody = False
+  , pbPrettyJson    = 0
+  , pbPrettyXml     = 0
   , pbMatchXmlBody  = False
   , pbIgnoreVolatileHeaders = False
   , pbRemoveTransportHeaders = False
@@ -568,6 +574,8 @@ startPlayback opts = do
                N.aether_vcr_embed_set_playback_range handle (fromIntegral from) (fromIntegral to))
             (pbPlaybackRange opts)
       when (pbMatchJsonBody opts) $ N.aether_vcr_embed_set_match_json_body handle 1
+      when (pbPrettyJson opts > 0) $ N.aether_vcr_embed_set_pretty_json handle (fromIntegral (pbPrettyJson opts))
+      when (pbPrettyXml opts > 0) $ N.aether_vcr_embed_set_pretty_xml handle (fromIntegral (pbPrettyXml opts))
       when (pbMatchXmlBody opts) $ N.aether_vcr_embed_set_match_xml_body handle 1
       when (pbMatchMultiple opts) $ N.aether_vcr_embed_set_match_multiple handle 1
       mapM_ (\name ->

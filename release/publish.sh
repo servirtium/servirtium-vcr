@@ -117,6 +117,13 @@ Built from a single Linux host via \`ae build --target\` (zig cc), so every
 artifact is the same deterministic bytes a target would build. See
 \`release/README.md\` for the build-here / attest-on-hardware model."
 
+version_notes="$ROOT/release/notes/${TAG#v2.0.0-}.md"
+if [ -f "$version_notes" ]; then
+  notes="$notes
+
+$(cat "$version_notes")"
+fi
+
 printf 'publish: creating release %s (tag -> %s) with %d asset(s)%s …\n' \
   "$TAG" "${COMMIT:0:9}" "${#assets[@]}" "$([ "${#GH_FLAGS[@]}" -gt 0 ] && echo " (${GH_FLAGS[*]})")"
 

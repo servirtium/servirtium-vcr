@@ -13,7 +13,7 @@
 // to its directory. dub cannot default an unset variable, so for THIS root
 // package the variable is REQUIRED (for in-tree work use d/dub.json instead).
 name "servirtium"
-version "2.0.0-alpha.15"
+version "2.0.0-alpha.16"
 description "Record/replay for HTTP service tests in the Servirtium markdown tape format - a thin D binding over libservirtium_vcr."
 authors "Paul Hammant"
 license "MIT"

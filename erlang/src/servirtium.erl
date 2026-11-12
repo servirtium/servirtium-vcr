@@ -27,7 +27,7 @@
     redact_query_param/2, redact_query_param/4,
     redact_json_field/2, redact_json_field/4,
     add_license_notice/2,
-    set_pretty_json/2,
+    set_pretty_xml/2, set_pretty_json/2,
     remove_transport_headers/1,
     remove_cloud_headers/2,
     redact_credentials/1,
@@ -232,8 +232,11 @@ redact_json_field(#{handle := H}, Name, Replacement, Field) ->
 add_license_notice(#{handle := H}, Text) ->
     str_result(servirtium_nif:add_license_notice(H, unicode:characters_to_binary(Text))).
 
-%% Record mode: pretty-print recorded JSON response bodies (indent 1..16;
-%% 0 = off); request bodies are never changed.
+%% Shared XML layout setting: format both recorded bodies and match XML requests.
+set_pretty_xml(#{handle := H}, Indent) when is_integer(Indent) ->
+    servirtium_nif:set_pretty_xml(H, Indent).
+
+%% Shared JSON layout setting: format both recorded bodies and match JSON requests.
 set_pretty_json(#{handle := H}, Indent) when is_integer(Indent) ->
     servirtium_nif:set_pretty_json(H, Indent).
 

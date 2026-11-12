@@ -68,13 +68,15 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
         return this;
     }
 
-    /**
-     * Opt in to matching request bodies by <em>semantic</em> XML equality
-     * (attribute order and insignificant whitespace ignored, element order
-     * significant) instead of byte-for-byte — the SOAP/XML twin of
-     * {@link #matchJsonBody()}. Non-XML bodies fall back to the byte-exact
-     * comparison, so this never loosens matching for non-XML payloads.
-     */
+    /** Match JSON requests by canonical form; serve tape responses as written. */
+    public PlaybackBuilder prettyJson() { return prettyJson(2); }
+    public PlaybackBuilder prettyJson(int indent) { return matchJsonBody(indent > 0); }
+
+    /** Match XML requests by canonical form; serve tape responses as written. */
+    public PlaybackBuilder prettyXml() { return prettyXml(2); }
+    public PlaybackBuilder prettyXml(int indent) { return matchXmlBody(indent > 0); }
+
+    /** Compatibility alias for XML layout matching; malformed bodies stay byte-exact. */
     public PlaybackBuilder matchXmlBody() {
         return matchXmlBody(true);
     }

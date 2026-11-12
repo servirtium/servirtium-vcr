@@ -325,6 +325,13 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         return this;
     }
 
+    /// <summary>Match JSON requests by their shared canonical forms; serve tape responses as written.</summary>
+    public PlaybackBuilder PrettyJson(int indent = 2) => MatchJsonBody(indent > 0);
+
+    /// <summary>Match XML request bodies using the shared layout canonicalizer.
+    /// Responses are served exactly as written in the tape.</summary>
+    public PlaybackBuilder PrettyXml(int indent = 2) => MatchXmlBody(indent > 0);
+
     /// <summary>
     /// Opt in to matching request bodies by semantic XML equality (attribute
     /// order and insignificant whitespace ignored; element order significant)
@@ -608,14 +615,14 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         return this;
     }
 
-    /// <summary>Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.</summary>
+    /// <summary>Pretty-print recorded XML request and response bodies (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.</summary>
     public RecordBuilder PrettyXml(int indent = 2)
     {
         _prettyXml = indent;
         return this;
     }
 
-    /// <summary>Pretty-print recorded JSON response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't valid JSON.</summary>
+    /// <summary>Format recorded JSON request and response bodies (indent 1..16; 0 = off); playback matches JSON request layout. Falls back to byte-exact if the body isn't valid JSON.</summary>
     public RecordBuilder PrettyJson(int indent = 2)
     {
         _prettyJson = indent;

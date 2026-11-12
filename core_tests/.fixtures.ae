@@ -6,6 +6,8 @@ import std.fs
 
 aeb(cap) {
     bldr.build() {
+        dep("core_tests/.xml.ae")
+        dep("core_tests/.json.ae")
         root = _get("root"); td = _get("target_dir")
         err = fs.mkdir_p("${root}/target/test-tools")
         if err != "" { bldr.fail(err); return 1 }

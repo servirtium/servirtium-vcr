@@ -118,6 +118,7 @@ import std.zlib
 import std.regex
 import std.bytes
 import std.json
+import std.bignum
 import std.xml
 import std.encoding
 
@@ -141,10 +142,10 @@ exports (
     add_license_notice_h, normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
     normalize_whole_tape_described_h, redact_whole_tape_described_h, static_content_h, untaped_h,
     set_strict_headers_h, set_match_json_body_h, set_rules_footer_h, get_rules_footer_h,
-    RULES_FOOTER_HEADING, set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
+    RULES_FOOTER_HEADING, xml_canonicalize, set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
     set_pretty_json_h, get_pretty_json_h, sort_json_keys_h, get_sort_json_keys_h, sort_json_array_h,
     sort_json_array_at_h, sort_response_headers_h, get_sort_response_headers_h, sort_header_value_h,
-    clear_stable_order_h, json_canonical, set_tls_h, set_tls_pem_h, tls_enabled_h,
+    clear_stable_order_h, json_canonical, json_body_canonicalize, set_tls_h, set_tls_pem_h, tls_enabled_h,
     last_tls_protocol_h, set_upstream_cafile_h, set_forward_host_h, substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h, indent_code_blocks_h,
     emphasize_http_verbs_h, clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
@@ -205,6 +206,8 @@ struct Interaction {
     note_body: string
     req_headers: string
     req_body: string
+    req_json: string          // canonical request prepared on load; raw tape kept
+    req_xml: string           // canonical request prepared on load; raw tape kept
     resp_headers: string
     used: int                 // 1 once this interaction has been replayed at
                               // least once (ordered OR MatchMultiple), for
@@ -791,7 +794,10 @@ vcr_get_strict_headers_k(vc: *Vcr) -> int { return vc.settings.strict }
 vcr_set_match_json_body_k(vc: *Vcr, on: int) {
     if on != 0 { vc.settings.match_json_body = 1 } else { vc.settings.match_json_body = 0 }
 }
-vcr_get_match_json_body_k(vc: *Vcr) -> int { return vc.settings.match_json_body }
+vcr_get_match_json_body_k(vc: *Vcr) -> int {
+    if vc.settings.pretty_json > 0 { return 1 }
+    return vc.settings.match_json_body
+}
 
 // XML-semantic request-body matching (field report #10), the twin of the JSON
 // matcher above and off by default on the same terms: a byte-differing request
@@ -802,7 +808,10 @@ vcr_get_match_json_body_k(vc: *Vcr) -> int { return vc.settings.match_json_body 
 vcr_set_match_xml_body_k(vc: *Vcr, on: int) {
     if on != 0 { vc.settings.match_xml_body = 1 } else { vc.settings.match_xml_body = 0 }
 }
-vcr_get_match_xml_body_k(vc: *Vcr) -> int { return vc.settings.match_xml_body }
+vcr_get_match_xml_body_k(vc: *Vcr) -> int {
+    if vc.settings.pretty_xml > 0 { return 1 }
+    return vc.settings.match_xml_body
+}
 
 // Opt-in: when on, playback matches by SEARCHING all recorded interactions for
 // one that fits the request (method/path + any enabled header/body rules) rather
@@ -825,7 +834,8 @@ vcr_set_emphasize_http_verbs_k(vc: *Vcr, on: int) {
 vcr_get_indent_code_blocks_k(vc: *Vcr) -> int { return vc.rules.indent }
 vcr_get_emphasize_http_verbs_k(vc: *Vcr) -> int { return vc.rules.emph }
 
-// Opt-in pretty-printing of recorded XML bodies (record side only). The value
+// Shared XML layout setting: format both recorded bodies and match requests.
+// The value
 // is the indent width: 0 = off (default), 1..16 = spaces per level; anything
 // above 16 is clamped to 16, anything below 0 is off. See pretty_xml_body_k.
 vcr_set_pretty_xml_k(vc: *Vcr, indent: int) {
@@ -915,6 +925,8 @@ tape_append_k(vc: *Vcr, method: string, path: string, status: int, body: string,
     e.has_content_type = has_ct
     e.req_headers = string.copy(req_headers)
     e.req_body = string.copy(req_body)
+    e.req_json = json_body_canonicalize(req_body)
+    e.req_xml = xml_canonicalize(req_body)
     e.resp_headers = string.copy("")
     e.used = 0
     // Drain this server's pending note onto this interaction.
@@ -2117,147 +2129,284 @@ vcr_decode_base64_body_raw(body: string) -> string {
     return decoded
 }
 
-// ---- JSON-semantic request-body matching (opt-in) ----
-//
-// Deep structural equality over two parsed JSON trees. Objects compare
-// key-by-key regardless of key order; arrays compare element-by-element in
-// order (JSON array order is significant). Numbers compare by value, so
-// 1 == 1.0. Mirrors the intent of Vcr.HttpRecorder's RulesMatcher.ByJsonContent.
-// (Portions copyright Giannis Georgopoulos — MIT.)
-json_deep_equal(a: ptr, b: ptr) -> int {
-    ta = json.json_type(a)
-    tb = json.json_type(b)
-    if ta != tb { return 0 }
-    if ta == 0 { return 1 }                                    // JSON_NULL
-    if ta == 1 {                                               // JSON_BOOL
-        if json.json_get_bool(a) == json.json_get_bool(b) { return 1 }
-        return 0
-    }
-    if ta == 2 {                                               // JSON_NUMBER
-        if json.json_get_number(a) == json.json_get_number(b) { return 1 }
-        return 0
-    }
-    if ta == 3 {                                               // JSON_STRING
-        return string.equals(json.json_get_string_raw(a), json.json_get_string_raw(b))
-    }
-    if ta == 4 {                                               // JSON_ARRAY
-        na = json.json_array_size(a)
-        nb = json.json_array_size(b)
-        if na != nb { return 0 }
-        i = 0
-        while i < na {
-            if json_deep_equal(json.json_array_get_raw(a, i), json.json_array_get_raw(b, i)) == 0 {
-                return 0
-            }
-            i = i + 1
-        }
-        return 1
-    }
-    if ta == 5 {                                               // JSON_OBJECT
-        na = json.json_object_size_raw(a)
-        nb = json.json_object_size_raw(b)
-        if na != nb { return 0 }
-        i = 0
-        while i < na {
-            k = json.json_object_key_at(a, i)
-            if json.json_object_has(b, k) == 0 { return 0 }
-            if json_deep_equal(json.json_object_get_raw(a, k), json.json_object_get_raw(b, k)) == 0 {
-                return 0
-            }
-            i = i + 1
-        }
-        return 1
-    }
-    return 0
-}
-
-// Parse both bodies as JSON and compare semantically. Returns 1 only if BOTH
-// parse and are deep-equal; 0 otherwise (including when either side isn't valid
-// JSON), so the caller safely falls back to the byte-exact verdict.
-json_bodies_equal(live: string, recorded: string) -> int {
-    va, _ = json.parse(live)
-    if va == null { return 0 }
-    vb, _ = json.parse(recorded)
-    if vb == null {
-        json.json_free(va)
-        return 0
-    }
-    result = json_deep_equal(va, vb)
-    json.json_free(va)
-    json.json_free(vb)
-    return result
-}
-
-// Canonicalise an XML document into a normalised event-stream string, or ""
-// if it doesn't parse. The normalisation is what makes two SOAP envelopes
-// "semantically equal" (field report #10): element nesting and order are kept
-// (order IS significant in XML), attributes are sorted by name so their source
-// order doesn't matter, and whitespace-only text between elements is dropped
-// while text inside an element is trimmed. It does NOT ignore a chosen volatile
-// element (e.g. a WS-Addressing MessageID) — the caller makes those
-// deterministic with redact_whole_tape / a fixed clock, as before; this closes
-// the key-order / indentation / insignificant-whitespace gap that bytewise
-// matching trips on. On any parse error it returns "", so xml_bodies_equal
-// falls back to the byte-exact verdict and never loosens non-XML matching.
-xml_canonicalize(src: string) -> string {
-    p = xml.parser(src)
-    if p == null { return "" }
-    out = string.copy("")
-    ok = 1
-    done = 0
-    while done == 0 {
-        ev = xml.next(p)
-        if ev == xml.EVENT_EOF { break }
-        if ev == xml.EVENT_ERROR { ok = 0; break }
-        if ev == xml.EVENT_START {
-            out = string_concat(out, string_concat("<", xml.name(p)))
-            // Sort attribute (name=value) pairs so source order is irrelevant.
-            // Build a \n-joined blob and reuse sort_lines (same insertion sort
-            // the recorded-header normaliser uses); the sorted blob keeps its
-            // trailing \n, which we fold into the canonical form unchanged.
-            nattr = xml.attr_count(p)
-            if nattr > 0 {
-                blob = string.copy("")
-                i = 0
-                while i < nattr {
-                    an = xml.attr_name(p, i)
-                    av = xml.attr_value(p, i)
-                    blob = string_concat(blob, string_concat(an, string_concat("=", av)))
-                    blob = string_concat(blob, "\n")
-                    i = i + 1
-                }
-                out = string_concat(out, string_concat(" ", sort_lines(blob)))
-            }
-            out = string_concat(out, ">")
-        } else {
-            if ev == xml.EVENT_END {
-                out = string_concat(out, string_concat("</", string_concat(xml.name(p), ">")))
-            } else {
-                if ev == xml.EVENT_TEXT {
-                    t = rtrim(trim_leading_ws(xml.text(p)))
-                    if string.length(t) > 0 {
-                        out = string_concat(out, string_concat("#", string_concat(t, "#")))
-                    }
-                }
-            }
-        }
-    }
-    xml.free(p)
-    if ok == 0 { return "" }
+// ---- JSON request layout canonicalization (shared by every binding) ----
+// Validate with std.json; walk the original tokens so numbers never pass
+// through binary floating point and duplicate object members are not lost.
+// This is separate from json_canonical, whose spelling-preserving contract
+// belongs to the stable-order recording rules.
+json_body_string(token: string) -> string {
+    value, err = json.parse(token)
+    if err != "" { return "" }
+    out, err = json.encode(value)
+    json.json_free(value)
+    if err != "" { return "" }
     return out
 }
 
-// Parse both bodies as XML and compare semantically. Returns 1 only if BOTH
-// canonicalise (parse) and their canonical forms are equal; 0 otherwise
-// (including when either side isn't valid XML), so the caller safely falls
-// back to the byte-exact verdict.
-xml_bodies_equal(live: string, recorded: string) -> int {
+// Exact decimal equality: signed coefficient * 10^exponent. A bignum holds
+// only the exponent, avoiding expansion of 1e1000000 into a million zeros.
+// 1, 1.0 and 10e-1 agree; adjacent large integers and tiny decimals stay distinct.
+json_body_number(token: string) -> string {
+    sign = ""
+    if string.starts_with(token, "-") == 1 {
+        sign = "-"
+        token = string.substring(token, 1, string.length(token))
+    }
+    exponent = "0"
+    e = string.index_of(token, "e")
+    if e < 0 { e = string.index_of(token, "E") }
+    if e >= 0 {
+        exponent = string.substring(token, e + 1, string.length(token))
+        if string.starts_with(exponent, "+") == 1 { exponent = string.substring(exponent, 1, string.length(exponent)) }
+        token = string.substring(token, 0, e)
+    }
+    fraction = 0
+    dot = string.index_of(token, ".")
+    if dot >= 0 { fraction = string.length(token) - dot - 1 }
+    digits = str_replace_all(token, ".", "")
+    start = 0
+    end = string.length(digits)
+    while start < end && string.char_at(digits, start) == 48 { start = start + 1 }
+    if start == end { return "0" }
+    while end > start && string.char_at(digits, end - 1) == 48 { end = end - 1 }
+    shift = string.length(digits) - end - fraction
+    power, err = bignum.from_decimal(exponent)
+    if err != "" { return "" }
+    adjustment = bignum.from_int(shift)
+    adjusted = bignum.add(power, adjustment)
+    exp = bignum.to_decimal(adjusted)
+    bignum.free(power); bignum.free(adjustment); bignum.free(adjusted)
+    coefficient = string.substring(digits, start, end)
+    if exp == "0" { return "${sign}${coefficient}" }
+    return "${sign}${coefficient}e${exp}"
+}
+
+json_body_value(s: string, start: int) -> (string, int) {
+    c = string.char_at(s, start)
+    if c == 123 || c == 91 {
+        object = c == 123
+        close = 93
+        out = "["
+        if object { close = 125; out = "{" }
+        i = start + 1
+        string[] keys = []
+        string[] values = []
+        while string.char_at(s, i) != close {
+            key = ""
+            if object {
+                end = json_string_end(s, i)
+                key = json_body_string(string.substring(s, i, end))
+                i = end + 1 // colon, then value; input is validated and compact
+            }
+            value, end = json_body_value(s, i)
+            keys.push(key); values.push(value)
+            i = end
+            if string.char_at(s, i) == 44 { i = i + 1 }
+        }
+        // Stable sort: retain the order of repeated occurrences of one key.
+        if object {
+            a = 1
+            while a < keys.len {
+                key = keys[a]; value = values[a]; b = a - 1
+                while b >= 0 && string.compare(keys[b], key) > 0 {
+                    keys[b + 1] = keys[b]; values[b + 1] = values[b]; b = b - 1
+                }
+                keys[b + 1] = key; values[b + 1] = value; a = a + 1
+            }
+        }
+        k = 0
+        while k < values.len {
+            if k > 0 { out = string_concat(out, ",") }
+            if object { out = string_concat(out, "${keys[k]}:") }
+            out = string_concat(out, values[k]); k = k + 1
+        }
+        if object { return string_concat(out, "}"), i + 1 }
+        return string_concat(out, "]"), i + 1
+    }
+    end = json_value_end(s, start)
+    token = string.substring(s, start, end)
+    if c == 34 { return json_body_string(token), end }
+    if c == 45 || (c >= 48 && c <= 57) { return json_body_number(token), end }
+    return token, end // true, false, null
+}
+
+// Deterministic, idempotent, valid JSON. Empty means invalid input: callers
+// keep byte-exact matching and diagnostics if either body cannot be parsed.
+json_body_canonicalize(src: string) -> string {
+    compact, err = json.pretty(src, 0)
+    if err != "" || compact == "" { return "" }
+    canonical, _end = json_body_value(compact, 0)
+    formatted, err = json.pretty(canonical, 2)
+    if err != "" { return "" }
+    return formatted
+}
+
+json_request_bodies_equal(e: *Interaction, live: string, recorded: string) -> int {
+    ca = json_body_canonicalize(live)
+    cb = e.req_json
+    if string.equals(recorded, e.req_body) == 0 { cb = json_body_canonicalize(recorded) }
+    if ca == "" || cb == "" { return 0 }
+    return string.equals(ca, cb)
+}
+
+// XML 1.0 line-end and literal attribute whitespace normalization must run
+// BEFORE entity decoding: &#10; in an attribute remains a newline, not a space.
+xml_normalize_source(src: string) -> string {
+    src = str_replace_all(str_replace_all(src, "\r\n", "\n"), "\r", "\n")
+    out = string.copy("")
+    i = 0
+    span = 0
+    tag = 0
+    quote = 0
+    while i < string.length(src) {
+        c = string.char_at(src, i)
+        if tag == 0 && c == 60 {
+            probe_end = i + 9
+            if probe_end > string.length(src) { probe_end = string.length(src) }
+            prefix = string.substring(src, i, probe_end)
+            closing = ""
+            if string.starts_with(prefix, "<!--") == 1 { closing = "-->" }
+            if string.starts_with(prefix, "<![CDATA[") == 1 { closing = "]]>" }
+            if string.starts_with(prefix, "<?") == 1 { closing = "?>" }
+            if closing != "" {
+                n = string.index_of_from(src, closing, i)
+                if n < 0 { return src }
+                i = n + string.length(closing)
+                continue
+            }
+            tag = 1
+        } else {
+            if tag == 1 {
+                if quote != 0 {
+                    if c == quote { quote = 0 } else {
+                        if c == 9 || c == 10 { c = 32 }
+                    }
+                } else {
+                    if c == 34 || c == 39 { quote = c }
+                    if c == 62 { tag = 0 }
+                }
+            }
+        }
+        if c == 32 && string.char_at(src, i) != 32 {
+            out = string_concat(out, string.substring(src, span, i))
+            out = string_concat(out, " ")
+            span = i + 1
+        }
+        i = i + 1
+    }
+    return string_concat(out, string.substring(src, span, string.length(src)))
+}
+
+xml_escape_value(s: string, attribute: int) -> string {
+    s = str_replace_all(s, "&", "&amp;")
+    s = str_replace_all(s, "<", "&lt;")
+    s = str_replace_all(s, ">", "&gt;")
+    // Encode CR introduced by character references so re-parsing preserves it.
+    s = str_replace_all(s, "\r", "&#13;")
+    if attribute == 1 {
+        s = str_replace_all(s, "\"", "&quot;")
+        s = str_replace_all(s, "\t", "&#9;")
+        s = str_replace_all(s, "\n", "&#10;")
+    }
+    return s
+}
+
+struct XmlCanonicalPart { value: string; element: int }
+
+// Called at START; consumes through END. Keep all leaf text, including a
+// whitespace-only leaf. Only parents containing elements discard layout nodes.
+xml_canonical_element(p: ptr) -> string {
+    name = string.copy(xml.name(p))
+    string[] attrs = []
+    i = 0
+    while i < xml.attr_count(p) {
+        key = xml.attr_name(p, i)
+        value = xml_escape_value(xml.attr_value(p, i), 1)
+        attrs.push("${key}=\"${value}\"")
+        i = i + 1
+    }
+    // XML names are case-sensitive. Never reuse the HTTP header sorter.
+    i = 1
+    while i < attrs.len {
+        current = attrs[i]
+        j = i - 1
+        while j >= 0 && string.compare(attrs[j], current) > 0 {
+            attrs[j + 1] = attrs[j]
+            j = j - 1
+        }
+        attrs[j + 1] = current
+        i = i + 1
+    }
+    out = "<${name}"
+    i = 0
+    while i < attrs.len { out = string_concat(out, " ${attrs[i]}"); i = i + 1 }
+    out = string_concat(out, ">")
+    parts = list_new()
+    children = 0
+    ok = 1
+    while true {
+        ev = xml.next(p)
+        if ev == xml.EVENT_END { break }
+        if ev == xml.EVENT_ERROR || ev == xml.EVENT_EOF { ok = 0; break }
+        part = malloc(sizeof(XmlCanonicalPart)) as *XmlCanonicalPart
+        part.element = 0
+        part.value = ""
+        if ev == xml.EVENT_START {
+            children = 1
+            part.element = 1
+            part.value = xml_canonical_element(p)
+            if part.value == "" { free(part); ok = 0; break }
+        } else {
+            if ev == xml.EVENT_TEXT { part.value = string.copy(xml.text(p)) }
+        }
+        list_add_raw(parts, part as ptr)
+    }
+    i = 0
+    while i < list_size(parts) {
+        part = list_get_raw(parts, i) as *XmlCanonicalPart
+        if part.element == 1 { out = string_concat(out, part.value) } else {
+            if children == 0 || is_blank(part.value) == 0 {
+                out = string_concat(out, xml_escape_value(part.value, 0))
+            }
+        }
+        free(part)
+        i = i + 1
+    }
+    list_free(parts)
+    if ok == 0 { return "" }
+    return string_concat(out, "</${name}>")
+}
+
+// A parseable, deterministic and idempotent XML form. Shared by recording,
+// matching and diagnostics in every binding. Empty means invalid XML.
+xml_canonicalize(src: string) -> string {
+    p = xml.parser(xml_normalize_source(src))
+    if p == null { return "" }
+    out = ""
+    while true {
+        ev = xml.next(p)
+        if ev == xml.EVENT_ERROR { out = ""; break }
+        if ev == xml.EVENT_EOF { break }
+        if ev == xml.EVENT_START {
+            out = xml_canonical_element(p)
+            if out == "" { break }
+        }
+    }
+    xml.free(p)
+    if out == "" { return "" }
+    formatted, err = xml.pretty(out, 2)
+    if err != "" { return "" }
+    return string.substring(formatted, 0, string.length(formatted) - 1)
+}
+
+// Use the load-time canonical form unless playback unredactions changed the
+// expectation. Keep the tape's original request and response bytes intact.
+xml_request_bodies_equal(e: *Interaction, live: string, recorded: string) -> int {
     ca = xml_canonicalize(live)
-    if string.length(ca) == 0 { return 0 }
-    cb = xml_canonicalize(recorded)
-    if string.length(cb) == 0 { return 0 }
-    if string.equals(ca, cb) == 1 { return 1 }
-    return 0
+    cb = e.req_xml
+    if string.equals(recorded, e.req_body) == 0 { cb = xml_canonicalize(recorded) }
+    if ca == "" || cb == "" { return 0 }
+    return string.equals(ca, cb)
 }
 
 // ---- error helper for record dispatch ----
@@ -2653,10 +2802,10 @@ interaction_matches_pre(vc: *Vcr, index: int, e: *Interaction, req: ptr, got_met
         canonical_body = secret_canonical_live_k(vc, index, FIELD_REQUEST_BODY, live_body)
         bm = string.equals(canonical_body, expected_req_body)
         if bm == 0 && vcr_get_match_json_body_k(vc) == 1 {
-            bm = json_bodies_equal(live_body, expected_req_body)
+            bm = json_request_bodies_equal(e, canonical_body, expected_req_body)
         }
         if bm == 0 && vcr_get_match_xml_body_k(vc) == 1 {
-            bm = xml_bodies_equal(live_body, expected_req_body)
+            bm = xml_request_bodies_equal(e, canonical_body, expected_req_body)
         }
         if bm == 0 { return 0 }
     }
@@ -2885,10 +3034,10 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
         canonical_body = secret_canonical_live_k(vc, cur, FIELD_REQUEST_BODY, live_body)
         bodies_match = string.equals(canonical_body, expected_req_body)
         if bodies_match == 0 && vcr_get_match_json_body_k(vc) == 1 {
-            bodies_match = json_bodies_equal(live_body, expected_req_body)
+            bodies_match = json_request_bodies_equal(e, canonical_body, expected_req_body)
         }
         if bodies_match == 0 && vcr_get_match_xml_body_k(vc) == 1 {
-            bodies_match = xml_bodies_equal(live_body, expected_req_body)
+            bodies_match = xml_request_bodies_equal(e, canonical_body, expected_req_body)
         }
         if bodies_match == 0 {
             rlen = string.length(expected_req_body)
@@ -5012,29 +5161,16 @@ content_type_is_xml(ctype: string) -> int {
     return 0
 }
 
-// Reformat a RESPONSE `body` with xml.pretty when pretty_xml is on and `ctype`
-// is XML. Called LAST in emit_one_interaction_k, after redactions, secret
-// patches and normalizations, so those all act on the raw bytes the SUT
-// exchanged and a secret cannot slip through by being split across the added
-// line breaks. Any xml.pretty error (malformed XML, ...) keeps the body
-// byte-exact: the recording is never failed and a body is never partially
-// rewritten. REQUEST bodies are deliberately never touched: default
-// request-body matching is byte-exact, so a re-indented recorded request
-// would no longer match the SUT's live (usually compact) request.
+// Format both tape bodies last, after redactions and normalizations. Invalid
+// XML and non-XML media types stay byte-exact; the recording client sees raw bytes.
 pretty_xml_body_k(vc: *Vcr, ctype: string, body: string) -> string {
     indent = vcr_get_pretty_xml_k(vc)
-    if indent <= 0 { return body }
-    if string.length(body) == 0 { return body }
-    if content_type_is_xml(ctype) == 0 { return body }
-    formatted, err = xml.pretty(body, indent)
-    if err != "" || string.length(formatted) == 0 { return body }
-    // xml.pretty ends its output with a newline; don't add one the original
-    // body didn't have (the tape block would gain a stray blank line).
-    flen = string.length(formatted)
-    if string.char_at(formatted, flen - 1) == 10 && string.char_at(body, string.length(body) - 1) != 10 {
-        return string.substring(formatted, 0, flen - 1)
-    }
-    return formatted
+    if indent <= 0 || content_type_is_xml(ctype) == 0 { return body }
+    canonical = xml_canonicalize(body)
+    if canonical == "" { return body }
+    formatted, err = xml.pretty(canonical, indent)
+    if err != "" { return body }
+    return string.substring(formatted, 0, string.length(formatted) - 1)
 }
 
 // ---- Opt-in JSON pretty-printing at record time (pretty_json) --------
@@ -5055,12 +5191,12 @@ content_type_is_json(ctype: string) -> int {
     return 0
 }
 
-// Reformat a RESPONSE `body` with json.pretty when pretty_json is on and
+// Reformat a response `body` with json.pretty when pretty_json is on and
 // the body is JSON (response_body_is_json_k: its `ctype` says so, or a
 // sort_json_array_at rule names its request path `req_path`), under the same
 // rules as pretty_xml_body_k: last, after redactions, secret patches and
 // normalizations, so they act on the raw bytes; any json.pretty error keeps
-// the body byte-exact; request bodies are never touched. json.pretty
+// the body byte-exact. Request formatting uses its own Content-Type below. json.pretty
 // re-indents the text itself, so key order and number spellings stay as the
 // service sent them (or as stable order wrote them).
 pretty_json_body_k(vc: *Vcr, req_path: string, ctype: string, body: string) -> string {
@@ -5070,6 +5206,17 @@ pretty_json_body_k(vc: *Vcr, req_path: string, ctype: string, body: string) -> s
     formatted, err = json.pretty(body, indent)
     if err != "" || string.length(formatted) == 0 { return body }
     // Keep a trailing newline the original body had (json.pretty writes none).
+    if string.char_at(body, string.length(body) - 1) == 10 { return string_concat(formatted, "\n") }
+    return formatted
+}
+
+// Requests use only their media type; response-only stable-order path rules
+// must never opt a text/plain request into JSON rewriting.
+pretty_json_request_k(vc: *Vcr, ctype: string, body: string) -> string {
+    indent = vcr_get_pretty_json_k(vc)
+    if indent <= 0 || content_type_is_json(ctype) == 0 { return body }
+    formatted, err = json.pretty(body, indent)
+    if err != "" || formatted == "" { return body }
     if string.char_at(body, string.length(body) - 1) == 10 { return string_concat(formatted, "\n") }
     return formatted
 }
@@ -5988,6 +6135,11 @@ emit_one_interaction_k(vc: *Vcr, i: int) -> string {
         if string.length(ctype) == 0 { ctype = header_value_in_block(resp_h, "Content-Type") }
         if string.length(ctype) == 0 { ctype = "application/octet-stream" }
         ctype = "${ctype} base64 below"
+    }
+    if req_bin == 0 {
+        req_ct = header_value_in_block(req_h, "Content-Type")
+        req_b_out = pretty_xml_body_k(vc, req_ct, req_b_out)
+        req_b_out = pretty_json_request_k(vc, req_ct, req_b_out)
     }
     req_b_heading = ""
     if req_bin == 1 {
@@ -7226,6 +7378,24 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
         n = string.length(expected.req_body)
         e.expected_body = "[binary body: ${n} bytes]"
     }
+    if expected != null && vcr_get_match_json_body_k(vc) == 1 {
+        recorded_json = json_body_canonicalize(e.expected_body)
+        live_json = json_body_canonicalize(e.actual_body)
+        if recorded_json != "" && live_json != "" {
+            e.expected_body = diagnostic_safe_k(vc, recorded_json, FIELD_REQUEST_BODY)
+            e.actual_body = diagnostic_safe_k(vc, live_json, FIELD_REQUEST_BODY)
+        }
+    }
+    if expected != null && vcr_get_match_xml_body_k(vc) == 1 {
+        // Mask before XML escaping, which could otherwise change a secret's
+        // spelling and prevent diagnostic_safe from recognizing it.
+        recorded_xml = xml_canonicalize(e.expected_body)
+        live_xml = xml_canonicalize(e.actual_body)
+        if recorded_xml != "" && live_xml != "" {
+            e.expected_body = diagnostic_safe_k(vc, recorded_xml, FIELD_REQUEST_BODY)
+            e.actual_body = diagnostic_safe_k(vc, live_xml, FIELD_REQUEST_BODY)
+        }
+    }
     detail = string.copy("")
     if expected == null {
         detail = "no expected interaction available\n"
@@ -7618,6 +7788,8 @@ secret_finish_h(h: ptr) -> string {
             e.path = secret_patch_k(key, i, FIELD_PATH, e.path)
             e.req_headers = secret_patch_k(key, i, FIELD_REQUEST_HEADERS, e.req_headers)
             e.req_body = secret_patch_k(key, i, FIELD_REQUEST_BODY, e.req_body)
+            e.req_json = json_body_canonicalize(e.req_body)
+            e.req_xml = xml_canonicalize(e.req_body)
             e.resp_headers = secret_patch_k(key, i, FIELD_RESPONSE_HEADERS, e.resp_headers)
             e.body = secret_patch_k(key, i, FIELD_RESPONSE_BODY, e.body)
             i = i + 1

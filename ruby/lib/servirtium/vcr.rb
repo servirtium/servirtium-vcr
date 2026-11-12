@@ -240,10 +240,17 @@ module Servirtium
       self
     end
 
-    # Opt in to matching request bodies by semantic XML equality (attribute
-    # order / insignificant whitespace ignored; element order significant)
-    # instead of byte-for-byte — the SOAP/XML twin of {#match_json_body}.
-    # Non-XML bodies fall back to byte-exact.
+    # Match JSON requests by canonical form; serve tape responses as written.
+    def pretty_json(indent = 2)
+      match_json_body(on: indent > 0)
+    end
+
+    # Match XML requests by canonical form; serve tape responses as written.
+    def pretty_xml(indent = 2)
+      match_xml_body(on: indent > 0)
+    end
+
+    # Compatibility alias for XML layout matching; malformed bodies stay byte-exact.
     def match_xml_body(on: true)
       @match_xml_body = on
       self
@@ -353,7 +360,7 @@ module Servirtium
       @fail_if_changed = false
     end
 
-    # Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    # Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout.
     def pretty_json(indent = 2)
       @pretty_json = indent
       self
@@ -411,7 +418,7 @@ module Servirtium
       self
     end
 
-    # Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    # Pretty-print recorded XML request and response bodies (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
     def pretty_xml(indent = 2)
       @pretty_xml = indent
       self

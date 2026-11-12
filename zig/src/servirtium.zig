@@ -718,6 +718,19 @@ pub const Playback = struct {
     /// order / insignificant whitespace ignored; element order significant)
     /// instead of byte-for-byte — the SOAP/XML twin of matchJsonBody. Non-XML
     /// bodies fall back to byte-exact.
+    /// Match XML layout using the shared recording canonicalizer.
+    pub fn prettyJson(self: Playback, indent: c_int) Playback {
+        var b = self;
+        b.match_json_body = indent > 0;
+        return b;
+    }
+
+    pub fn prettyXml(self: Playback, indent: c_int) Playback {
+        var b = self;
+        b.match_xml_body = indent > 0;
+        return b;
+    }
+
     pub fn matchXmlBody(self: Playback) Playback {
         var b = self;
         b.match_xml_body = true;
@@ -1049,14 +1062,14 @@ pub const Record = struct {
         return b;
     }
 
-    /// Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    /// Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
     pub fn prettyXml(self: Record, indent: c_int) Record {
         var b = self;
         b.pretty_xml = indent;
         return b;
     }
 
-    /// Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    /// Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout.
     pub fn prettyJson(self: Record, indent: c_int) Record {
         var b = self;
         b.pretty_json = indent;

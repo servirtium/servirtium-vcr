@@ -12,7 +12,7 @@
 # release page, name it libservirtium_vcr.<ext> and set SERVIRTIUM_VCR_LIB_DIR
 # to its directory when compiling; otherwise crystal/native/ is used.
 name: servirtium
-version: 2.0.0-alpha.15
+version: 2.0.0-alpha.16
 description: |
   Record/replay for HTTP service tests in the Servirtium markdown tape format —
   a thin Crystal binding over libservirtium_vcr.

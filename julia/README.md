@@ -55,7 +55,7 @@ release; `ccall` loads it through `SERVIRTIUM_VCR_LIB`. In your own project/envi
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.15                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.16                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
@@ -94,7 +94,7 @@ end'
 
 `Project.toml` records the package as a `[deps]` entry (`Servirtium = "9b1c4d3e-5a82-4f6b-8d31-7e2a6c4f1b93"`) and
 `Manifest.toml` pins the tag's commit (`repo-url`, `repo-rev`, `repo-subdir`). The future registry form
-is `Pkg.add(name="Servirtium", version="2.0.0-alpha.15")`; it does not resolve today.
+is `Pkg.add(name="Servirtium", version="2.0.0-alpha.16")`; it does not resolve today.
 
 ### Notes for coding agents
 
@@ -111,7 +111,7 @@ is `Pkg.add(name="Servirtium", version="2.0.0-alpha.15")`; it does not resolve t
   library older than the binding reports an error naming the missing `aether_vcr_embed_...` symbol.
 - Without the variable the module falls back to a bundled `native/libservirtium_vcr.so`
   (absent in a git checkout) and then the bare name via the OS loader; on macOS only the variable works.
-- The version `2.0.0-alpha.15` is valid Julia semver as written; no respelling is needed.
+- The version `2.0.0-alpha.16` is valid Julia semver as written; no respelling is needed.
 - Windows: use the `.dll` asset and its full path.
 
 ## Stable ordering and playback range

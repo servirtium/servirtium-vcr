@@ -1,25 +1,4 @@
-// Opt-in pretty_xml recording option: record-time indentation of XML bodies.
-//
-// Drives the record-side emitter directly (vcr.record_full + vcr.flush, no
-// upstream needed), reads the tape back, then replays the written tape over
-// real HTTP. Cases:
-//
-//   1. pretty_xml(2) on: XML response body is indented in the tape; an XML
-//      request body is indented too when match_xml_body is on.
-//   2. Replay: the SUT's original compact request still matches (xml-semantic
-//      matching), the prettified response is served as recorded, and the
-//      Content-Length the client sees equals the bytes actually served.
-//   3. Request body is left byte-exact when match_xml_body is OFF (default
-//      byte-exact matching would otherwise reject the live request).
-//   4. Option off (default): tape byte-exact as before.
-//   5. Malformed XML with the option on: body recorded byte-exact, no failure.
-//   6. Non-XML content type: untouched.
-//   7. application/soap+xml with "; charset=utf-8": prettified.
-//   8. Redaction acts on the RAW body first: a secret that spans two
-//      elements (and would be split by the added line break) is still redacted.
-//   9. clear_format_options turns the option off again.
-//  10. Indent width 4 and the 16 clamp.
-
+// Shared record/playback XML contract, including real upstream round trips.
 import core.vcr
 import std.http
 import std.http.client
@@ -67,27 +46,98 @@ record_and_read(vh: ptr, path: string, st: int, ctype: string, resp: string, req
     return t
 }
 
+extern http_server_stop(server: ptr)
+const ROUND_REQ = "<CaseData><C> Line one\nLine two \n</C><Captcha>token</Captcha></CaseData>"
+const ROUND_RESP = "<Result><C> Line one\nLine two \n</C><Ok>yes</Ok></Result>"
+var received_request = ""
+xml_upstream(req: ptr, res: ptr, _ud: ptr) {
+    received_request = string.copy(http.request_body(req))
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/xml")
+    http.response_set_body(res, ROUND_RESP)
+}
+xml_rules(h: ptr) {
+    vcr.set_pretty_xml_h(h, 2)
+    vcr.strict_ignore_common_headers_h(h)
+    vcr.remove_transport_headers_h(h)
+}
+round_post(port: int, want: string) {
+    req = client.request("POST", "http://127.0.0.1:${port}/case")
+    err = client.set_body(req, string.bytes(ROUND_REQ), "application/xml")
+    if err != "" { fail(err) }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail(err) }
+    if client.response_status(resp) != 200 { fail("roundtrip status ${client.response_status(resp)}") }
+    if string.equals(client.response_body(resp), want) == 0 { fail("roundtrip changed response data") }
+    len = string.length(want)
+    if client.response_header(resp, "Content-Length") != "${len}" { fail("roundtrip length") }
+    client.response_free(resp)
+}
+real_roundtrip() {
+    println("Test 11: real upstream, unchanged client bytes, hand indentation, whole-file CRLF")
+    upstream = http.server_create(18180)
+    http.server_post(upstream, "/*", xml_upstream, null)
+    if http.server_start_background(upstream) != "" { fail("upstream start") }
+    path = "${flush_out_path()}.roundtrip"
+    recorder, err = vcr.open_record(path, "http://127.0.0.1:18180", 18181)
+    if err != "" { fail(err) }
+    xml_rules(recorder)
+    if vcr.start_background_h(recorder, 10000) != 0 { fail("recorder start") }
+    round_post(18181, ROUND_RESP)
+    if string.equals(received_request, ROUND_REQ) == 0 { fail("upstream request rewritten") }
+    err = vcr.stop_and_flush_h(recorder, path)
+    if err != "" { fail(err) }
+    vcr.destroy_h(recorder)
+    http_server_stop(upstream)
+    tape, err = fs.read(path)
+    if err != "" { fail(err) }
+    assert_contains(tape, "  <C> Line one\nLine two \n</C>", "leaf data lost")
+    assert_contains(tape, "  <Captcha>token</Captcha>", "request not pretty")
+    assert_contains(tape, "  <Ok>yes</Ok>", "response not pretty")
+    for variant in 0..3 {
+        edited = tape
+        want = vcr.xml_canonicalize(ROUND_RESP)
+        if variant == 1 {
+            edited = vcr.str_replace_all(tape, "\n  <", "\n       <")
+            want = vcr.str_replace_all(want, "\n  <", "\n       <")
+        }
+        if variant == 2 { edited = vcr.str_replace_all(tape, "\n", "\r\n") }
+        err = fs.write(path, edited)
+        if err != "" { fail(err) }
+        playback, err = vcr.open_playback(path, 18182)
+        if err != "" { fail(err) }
+        xml_rules(playback)
+        if vcr.start_background_h(playback, 10000) != 0 { fail("roundtrip playback start") }
+        round_post(18182, want)
+        if vcr.last_kind_h(playback) != 0 { fail("roundtrip mismatch") }
+        vcr.destroy_h(playback)
+    }
+    println("  PASS real recording + three playback variants")
+}
+
 main() {
     println("=== VCR pretty_xml recording option ===\n")
     OUT = flush_out_path()
 
     // ---- 1. on + match_xml_body: both bodies indented ----
-    println("Test 1: pretty_xml(2) indents the XML response, leaves the request byte-exact")
+    println("Test 1: pretty_xml(2) indents XML request and response bodies")
     vh = vcr.open_offline()
     vcr.set_pretty_xml_h(vh, 2)
     t1 = record_and_read(vh, OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t1, "\n  <Body>\n", "response body not indented")
     assert_contains(t1, "\n    <Result id=\"1\">", "response nesting not indented")
     assert_contains(t1, "      <Name>Ann</Name>", "response leaf not indented")
-    assert_contains(t1, COMPACT_REQ, "request body must stay byte-exact")
+    assert_contains(t1, "      <Who>Bob</Who>", "request body not indented")
     assert_contains(t1, "</Envelope>\n```", "no stray trailing blank line")
     assert_not_contains(t1, COMPACT_RESP, "compact response survived")
         println("  PASS")
 
     // ---- 2. replay the prettified tape ----
-    println("Test 2: replay serves the prettified response; the SUT's compact request still matches byte-exactly")
+    println("Test 2: replay serves the prettified response; the SUT's compact request matches with the single setting")
     raw, raw_oerr = vcr.open_playback(OUT, PORT)
     if raw == null { fail("vcr.load") }
+    vcr.set_pretty_xml_h(raw, 2)
     if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
 
     creq = client.request("POST", "http://127.0.0.1:${PORT}/x")
@@ -110,10 +160,10 @@ main() {
     vcr.destroy_h(raw)
     println("  PASS: 200, Content-Length '${cl2}' vs ${blen} bytes served")
 
-    // ---- 3. request XML body never prettified, even with XML matching on ----
-    println("Test 3: request body untouched even with a request Content-Type of XML")
+    // ---- 3. request XML uses the same formatter as the response ----
+    println("Test 3: request body indented with a request Content-Type of XML")
     t3 = record_and_read(vh, OUT, 200, "application/xml", COMPACT_RESP, COMPACT_REQ)
-    assert_contains(t3, COMPACT_REQ, "request body must stay byte-exact")
+    assert_contains(t3, "      <Who>Bob</Who>", "request body not indented")
     assert_not_contains(t3, COMPACT_RESP, "response should still be prettified")
     println("  PASS")
 
@@ -182,6 +232,8 @@ main() {
     vcr.clear_format_options_h(vh)
     println("  PASS")
 
+    real_roundtrip()
+    vcr.destroy_h(vh)
     println("\n=== All pretty_xml tests passed ===")
     exit(0)
 }

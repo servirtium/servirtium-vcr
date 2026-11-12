@@ -16,7 +16,7 @@
 # no compiler), keyword enums, options structs, `with-*` macros that always
 # stop the server, caller-owned-string handling, and structured errors.
 
-(def version "2.0.0-alpha.15")
+(def version "2.0.0-alpha.16")
 
 # ---- locating and loading the native library -------------------------------
 
@@ -469,8 +469,8 @@
   (c "set_rules_footer" (live srv "set_rules_footer") (flag on)) nil)
 
 (defn set-pretty-xml
-  "Pretty-print recorded XML response bodies (indent 1..16; 0 = off). Request
-  bodies are never changed; a body that is not well-formed XML stays byte-exact."
+  "Format recorded XML request and response bodies and match XML requests on
+  playback (indent 1..16; 0 = off); a body that is not well-formed XML stays byte-exact."
   [srv &opt indent]
   (default indent 2)
   (c "set_pretty_xml" (live srv "set_pretty_xml") indent) nil)
@@ -479,8 +479,8 @@
   (c "get_pretty_xml" (any-handle srv "get_pretty_xml")))
 
 (defn set-pretty-json
-  "Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping
-  key order and number spellings. Request bodies are never changed."
+  "Format recorded JSON request and response bodies (indent 1..16; 0 = off),
+  keeping key order and number spellings; match JSON requests on playback."
   [srv &opt indent]
   (default indent 2)
   (c "set_pretty_json" (live srv "set_pretty_json") indent) nil)

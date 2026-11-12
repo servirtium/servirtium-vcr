@@ -160,7 +160,7 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
         return this;
     }
 
-    /** Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML. */
+    /** Pretty-print recorded XML request and response bodies (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML. */
     public RecordBuilder prettyXml() {
         return prettyXml(2);
     }
@@ -170,7 +170,7 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
         return this;
     }
 
-    /** Pretty-print recorded JSON response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't valid JSON. */
+    /** Format recorded JSON request and response bodies (indent 1..16; 0 = off); playback matches JSON request layout. Falls back to byte-exact if the body isn't valid JSON. */
     public RecordBuilder prettyJson() {
         return prettyJson(2);
     }

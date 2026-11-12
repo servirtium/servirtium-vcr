@@ -54,7 +54,9 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
-# 2026-11-08 (latest): ae 0.897.0 -> 0.898.0 and aeb v0.343 -> v0.344, REQUIRED
+# 2026-11-12: Aether 0.912.0 for the alpha.16 XML work. Validation scope:
+# pure-Aether nodes and Python; other SDK/platform lanes remain separate.
+# 2026-11-08: ae 0.897.0 -> 0.898.0 and aeb v0.343 -> v0.344, REQUIRED
 # on FreeBSD: older Aether spawned `sh -c -- CMD` (FreeBSD's sh runs a command
 # named `--`), its FreeBSD release had no regex engine, and serve_file double-
 # sent responses (aether#3624). aeb v0.344 is the first aeb built with 0.898.0.
@@ -123,8 +125,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.898.0"
-AE_FETCH="v0.898.0"
+AE_PIN="0.912.0"
+AE_FETCH="v0.912.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
@@ -565,7 +567,7 @@ fi
 # build, `make install` a current aeb.)
 # shellcheck disable=SC2086  # word-splitting the sniffed target list is intentional
 say "aeb $targets"
-if ! aeb $targets; then
+if ! AETHER="${AETHER:-$(command -v ae)}" aeb $targets; then
     cat >&2 <<EOF
 
 aeb reported a failure above. Common causes:

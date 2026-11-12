@@ -57,6 +57,7 @@ class FakeUpstream:
 
             do_GET = _serve
             do_POST = _serve
+            do_QUERY = _serve
             do_PUT = _serve
             do_DELETE = _serve
 

@@ -1,0 +1,127 @@
+// Shared alpha.16 JSON layout contract; every binding runs this via .fixtures.
+import core.vcr
+import std.http.client
+import std.string
+import std.fs
+import std.json
+extern exit(code: int)
+const TAPE = "/tmp/svcr-json-matrix.md"
+const RESPONSE = "{\n    \"response\": [1, 2]\n}"
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+check(row: int, recorded: string, live: string, matches: int, enabled: int, multiple: int) {
+    h = vcr.open_offline()
+    err = vcr.record_full_h(h, "QUERY", "/json", 200, "application/json", RESPONSE, "", recorded)
+    if err != "" { fail(err) }
+    err = vcr.flush_h(h, TAPE)
+    vcr.destroy_h(h)
+    if err != "" { fail(err) }
+    p, err = vcr.open_playback(TAPE, 18183)
+    if err != "" { fail(err) }
+    if enabled == 1 { vcr.set_pretty_json_h(p, 2) }
+    if enabled == 2 { vcr.set_match_json_body_h(p, 1) }
+    vcr.set_match_multiple_h(p, multiple)
+    if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
+    req = client.request("QUERY", "http://127.0.0.1:18183/json")
+    // Matching is independent of the live media type.
+    err = client.set_body(req, string.bytes(live), "text/plain")
+    if err != "" { fail(err) }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail(err) }
+    status = client.response_status(resp)
+    want = 599
+    if matches == 1 { want = 200 }
+    if status != want { fail("row ${row}, multiple ${multiple}: got ${status}, want ${want}: ${vcr.last_error_h(p)}") }
+    if matches == 1 {
+        if vcr.last_kind_h(p) != 0 { fail("row ${row}: outcome") }
+        if string.equals(client.response_body(resp), RESPONSE) == 0 { fail("response was reformatted") }
+        len = string.length(RESPONSE)
+        if client.response_header(resp, "Content-Length") != "${len}" { fail("Content-Length") }
+    } else {
+        if vcr.last_kind_h(p) == 0 { fail("row ${row}: missing mismatch") }
+        diagnostics = vcr.diagnostics_json_h(p, 1)
+        expected = vcr.json_body_canonicalize(recorded)
+        actual = vcr.json_body_canonicalize(live)
+        if enabled != 0 && expected != "" && actual != "" {
+            // Structured diagnostics contain the very forms used by the matcher.
+            // Compare the decoded fields below, avoiding JSON escaping ambiguities.
+            check_diagnostics(diagnostics, expected, actual)
+        }
+    }
+    client.response_free(resp)
+    vcr.destroy_h(p)
+    if enabled != 0 {
+        canonical = vcr.json_body_canonicalize(recorded)
+        if canonical != "" && string.equals(vcr.json_body_canonicalize(canonical), canonical) == 0 { fail("row ${row}: idempotency") }
+    }
+}
+check_diagnostics(blob: string, expected: string, actual: string) {
+    value, err = json.parse(blob)
+    if err != "" { fail(err) }
+    // The response is a JSON array of retained events.
+    event = json.json_array_get_raw(value, 0)
+    want = json.json_object_get_raw(event, "expected")
+    got = json.json_object_get_raw(event, "actual")
+    eb, err = json.get_string(json.json_object_get_raw(want, "body"))
+    ab, err = json.get_string(json.json_object_get_raw(got, "body"))
+    if string.equals(eb, expected) == 0 || string.equals(ab, actual) == 0 { fail("diagnostics are not canonical: ${blob}") }
+    json.json_free(value)
+}
+main() {
+    for multiple in 0..2 {
+        check(1, "{\"x\":1}", "{\"x\":1}", 1, 0, multiple)
+        check(2, "{\n \"x\":1\n}", "{\"x\":1}", 0, 0, multiple)
+        check(3, "{\n \"x\":1\n}", "{\"x\":1}", 1, 1, multiple)
+        check(4, "{\"x\":1}", "{\r\n\t\"x\" : 1\r\n}", 1, 1, multiple)
+        check(5, "{\"a\":1,\"b\":{\"x\":2,\"y\":3}}", "{\"b\":{\"y\":3,\"x\":2},\"a\":1}", 1, 1, multiple)
+        check(6, "{\"a\":1}", "{\"a\":2}", 0, 1, multiple)
+        check(7, "{\"s\":\" Line one \"}", "{\"s\":\"Line one\"}", 0, 1, multiple)
+        check(8, "{\"s\":\"one  two\"}", "{\"s\":\"one two\"}", 0, 1, multiple)
+        check(9, "{\"s\":\"one\\ntwo\"}", "{\"s\":\"one two\"}", 0, 1, multiple)
+        check(10, "{\"s\":\"one\\ntwo\"}", "{\"s\":\"one\\r\\ntwo\"}", 0, 1, multiple)
+        check(11, "{\"s\":\"one\\n\"}", "{\"s\":\"one\"}", 0, 1, multiple)
+        check(12, "{\"s\":\" \"}", "{\"s\":\"\"}", 0, 1, multiple)
+        check(13, "{\"s\":\"\\u0061\\/b\"}", "{\"s\":\"a/b\"}", 1, 1, multiple)
+        check(14, "{\"\\u0061\":1}", "{\"a\":1}", 1, 1, multiple)
+        check(15, "{\"s\":\"a\\u0000b\"}", "{\"s\":\"a\\u0000c\"}", 0, 1, multiple)
+        check(16, "{\"a\\u0000b\":1}", "{\"a\\u0000c\":1}", 0, 1, multiple)
+        check(17, "{\"s\":\"\\uD83D\\uDE00\"}", "{\"s\":\"😀\"}", 1, 1, multiple)
+        check(18, "{\"s\":\"\\t\"}", "{\"s\":\" \"}", 0, 1, multiple)
+        check(19, "{\"x\":1}", "{\"x\":1.0}", 1, 1, multiple)
+        check(20, "{\"x\":1.0}", "{\"x\":10e-1}", 1, 1, multiple)
+        check(21, "{\"x\":0}", "{\"x\":-0.00e+99}", 1, 1, multiple)
+        check(22, "{\"x\":9007199254740992}", "{\"x\":9007199254740993}", 0, 1, multiple)
+        check(23, "{\"x\":123456789012345678901234567890}", "{\"x\":123456789012345678901234567891}", 0, 1, multiple)
+        check(24, "{\"x\":0.123456789012345678901}", "{\"x\":0.123456789012345678902}", 0, 1, multiple)
+        check(25, "{\"x\":1e9999}", "{\"x\":2e9999}", 0, 1, multiple)
+        check(26, "{\"x\":1e-9999}", "{\"x\":2e-9999}", 0, 1, multiple)
+        check(27, "{\"x\":1e9999}", "{\"x\":10e9998}", 1, 1, multiple)
+        check(28, "{\"x\":1e-9999}", "{\"x\":10e-10000}", 1, 1, multiple)
+        check(29, "{\"x\":1e99999999999999999999999}", "{\"x\":10e99999999999999999999998}", 1, 1, multiple)
+        check(30, "{\"x\":1e-99999999999999999999999}", "{\"x\":10e-100000000000000000000000}", 1, 1, multiple)
+        check(31, "[1,2,3]", "[1,3,2]", 0, 1, multiple)
+        check(32, "{\"x\":true}", "{\"x\":1}", 0, 1, multiple)
+        check(33, "{\"x\":null}", "{}", 0, 1, multiple)
+        check(34, "{\"x\":\"1\"}", "{\"x\":1}", 0, 1, multiple)
+        check(35, "{\"a\":1}", "{\"A\":1}", 0, 1, multiple)
+        check(36, "null", " null ", 1, 1, multiple)
+        check(37, "true", "false", 0, 1, multiple)
+        check(38, "\"text\"", " \"text\" ", 1, 1, multiple)
+        check(39, "1", "1.0", 1, 1, multiple)
+        check(40, "[]", "[ ]", 1, 1, multiple)
+        check(41, "{}", "{ }", 1, 1, multiple)
+        check(42, "{\"x\":1,\"x\":2}", "{\"x\":1}", 0, 1, multiple)
+        check(43, "{\"x\":1,\"x\":2}", "{\"x\":2,\"x\":1}", 0, 1, multiple)
+        check(44, "{\"b\":0,\"x\":1,\"x\":2}", "{\"x\":1,\"x\":2,\"b\":0}", 1, 1, multiple)
+        check(45, "{\"a\":1,\"\\u0061\":2}", "{\"a\":1,\"a\":2}", 1, 1, multiple)
+        check(46, "not JSON", "not JSON", 1, 1, multiple)
+        check(47, "not JSON", "not  JSON", 0, 1, multiple)
+        check(48, "{\"x\":}", "{\"x\":}", 1, 1, multiple)
+        check(49, "{\"x\":}", "{ \"x\":}", 0, 1, multiple)
+        check(50, "{\"x\":01}", "{\"x\":1}", 0, 1, multiple)
+        check(51, "{\"x\":1} trailing", "{\"x\":1}", 0, 1, multiple)
+        check(52, "{\"s\":\"literal\nnewline\"}", "{\"s\":\"literal\\nnewline\"}", 0, 1, multiple)
+        check(53, "{\"x\":1}", "{\"x\":1.0}", 1, 2, multiple)
+    }
+    println("PASS JSON matrix: QUERY bodies, exact data, ordered + reusable, canonical diagnostics, idempotency")
+}

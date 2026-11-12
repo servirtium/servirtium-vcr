@@ -74,7 +74,7 @@ subdirectory of this repo, so cabal pulls it with a `source-repository-package` 
 cabal its absolute path. Run this in an empty directory (or adapt it to your project):
 
 ```sh
-VER=v2.0.0-alpha.15                      # a release tag of servirtium-vcr
+VER=v2.0.0-alpha.16                      # a release tag of servirtium-vcr
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$VER
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$VER/haskell/example
 

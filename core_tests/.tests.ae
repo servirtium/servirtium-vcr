@@ -9,6 +9,8 @@ aeb(cap) {
         dep("core_tests/.tls.ae")
         dep("core_tests/.substitute.ae")
         dep("core_tests/.names.ae")
+        dep("core_tests/.xml.ae")
+        dep("core_tests/.json.ae")
         root = _get("root")
         rc = os.system("cd \"${root}/core_tests\" && ./run-tests.sh")
         if rc != 0 { println("core_tests: libservirtium_vcr tests failed"); return 1 }

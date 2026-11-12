@@ -348,9 +348,9 @@ public:
 
     void indent_code_blocks() { sv_indent_code_blocks(vcr_); }
     void emphasize_http_verbs() { sv_emphasize_http_verbs(vcr_); }
-    // Pretty-print recorded XML response bodies (indent 1..16; 0 = off); request bodies are never changed. Falls back to byte-exact if the body isn't well-formed XML.
+    // Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
     void pretty_xml(int indent = 2) { sv_set_pretty_xml(vcr_, indent); }
-    // Pretty-print recorded JSON response bodies (indent 1..16; 0 = off), keeping key order and number spellings; request bodies are never changed.
+    // Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout.
     void pretty_json(int indent = 2) { sv_set_pretty_json(vcr_, indent); }
     // Current pretty-JSON indent (0 = off).
     int get_pretty_json() const { return sv_get_pretty_json(vcr_); }

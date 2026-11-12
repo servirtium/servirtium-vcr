@@ -66,12 +66,19 @@ final class PlaybackBuilder extends VcrBuilderBase
         return $this;
     }
 
-    /**
-     * Opt in to matching request bodies by semantic XML equality (attribute
-     * order / insignificant whitespace ignored; element order significant)
-     * instead of byte-for-byte — the SOAP/XML twin of matchJsonBody(). Non-XML
-     * bodies fall back to byte-exact.
-     */
+    /** Match JSON requests by canonical form; serve tape responses as written. */
+    public function prettyJson(int $indent = 2): static
+    {
+        return $this->matchJsonBody($indent > 0);
+    }
+
+    /** Match XML requests by canonical form; serve tape responses as written. */
+    public function prettyXml(int $indent = 2): static
+    {
+        return $this->matchXmlBody($indent > 0);
+    }
+
+    /** Compatibility alias for XML layout matching; malformed bodies stay byte-exact. */
     public function matchXmlBody(bool $on = true): static
     {
         $this->matchXmlBodyOn = $on;

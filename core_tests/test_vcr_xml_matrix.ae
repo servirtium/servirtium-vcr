@@ -1,0 +1,102 @@
+// Alpha.16 consumer probe matrix. The shared fixture DAG runs this suite
+// for every language binding; all bindings use this exact core implementation.
+import core.vcr
+import std.http.client
+import std.string
+import std.fs
+extern exit(code: int)
+const TAPE = "/tmp/svcr-xml-matrix.md"
+const RESPONSE = "<R>\n  <C>response</C>\n</R>"
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+check(row: int, recorded: string, live: string, matches: int, enabled: int, multiple: int) {
+    h = vcr.open_offline()
+    err = vcr.record_full_h(h, "POST", "/xml", 200, "application/xml", RESPONSE, "", recorded)
+    if err != "" { fail(err) }
+    err = vcr.flush_h(h, TAPE)
+    vcr.destroy_h(h)
+    if err != "" { fail(err) }
+    p, err = vcr.open_playback(TAPE, 18179)
+    if err != "" { fail(err) }
+    if enabled == 1 { vcr.set_pretty_xml_h(p, 2) }
+    if enabled == 2 { vcr.set_match_xml_body_h(p, 1) }
+    vcr.set_match_multiple_h(p, multiple)
+    if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
+    url = "http://127.0.0.1:18179"
+    req = client.request("POST", "${url}/xml")
+    ctype = "application/xml"
+    if row == 18 { ctype = "text/plain" }
+    err = client.set_body(req, string.bytes(live), ctype)
+    if err != "" { fail(err) }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail(err) }
+    status = client.response_status(resp)
+    want = 599
+    if matches == 1 { want = 200 }
+    if status != want { fail("row ${row}: status ${status}, expected ${want}: ${vcr.last_error_h(p)}") }
+    if matches == 1 {
+        if vcr.last_kind_h(p) != 0 { fail("row ${row}: outcome") }
+        if string.equals(client.response_body(resp), RESPONSE) == 0 { fail("row 21: response rewritten") }
+        len = string.length(RESPONSE)
+        if client.response_header(resp, "Content-Length") != "${len}" { fail("row 21: Content-Length") }
+    } else {
+        if multiple == 0 && vcr.last_kind_h(p) != 6 { fail("row ${row}: expected BodyDiff") }
+        if vcr.last_kind_h(p) == 0 { fail("row ${row}: mismatch missing") }
+        diagnostic = vcr.diagnostics_json_h(p, 1)
+        if row == 4 && string.contains(diagnostic, "<Captcha>changed</Captcha>") == 0 { fail("canonical diagnostic missing") }
+    }
+    client.response_free(resp)
+    vcr.destroy_h(p)
+    if enabled != 0 {
+        canon = vcr.xml_canonicalize(recorded)
+        if canon != "" && string.equals(vcr.xml_canonicalize(canon), canon) == 0 { fail("row ${row}: idempotency") }
+    }
+}
+main() {
+    for multiple in 0..2 {
+        check(1, "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", 1, 0, multiple)
+        check(2, "<CaseData>\n  <C>Line one</C>\n  <Captcha>token</Captcha>\n</CaseData>", "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", 0, 0, multiple)
+        check(3, "<CaseData>\n  <C>Line one</C>\n  <Captcha>token</Captcha>\n</CaseData>", "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", 1, 1, multiple)
+        check(4, "<CaseData>\n  <C>Line one</C>\n  <Captcha>token</Captcha>\n</CaseData>", "<CaseData><C>Line one</C><Captcha>changed</Captcha></CaseData>", 0, 1, multiple)
+        check(5, "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", "<CaseData>\n  <C>Line one</C>\n  <Captcha>token</Captcha>\n</CaseData>", 1, 1, multiple)
+        check(6, "<CaseData>\n    <C>Line one</C>\n    <Captcha>token</Captcha>\n</CaseData>", "<CaseData>\n  <C>Line one</C>\n  <Captcha>token</Captcha>\n</CaseData>", 1, 1, multiple)
+        check(7, "<CaseData>\n\t<C>Line one</C>\n\t<Captcha>token</Captcha>\n</CaseData>", "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", 1, 1, multiple)
+        check(8, "<C>one\ntwo</C>", "<C>one\ntwo</C>", 1, 1, multiple)
+        check(9, "<C>one\ntwo</C>", "<C>one two</C>", 0, 1, multiple)
+        check(10, "<C>one\ntwo</C>", "<C>one\r\ntwo</C>", 1, 1, multiple)
+        check(11, "<C> Line one </C>", "<C>Line one</C>", 0, 1, multiple)
+        check(12, "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", "<CaseData><C>Line two</C><Captcha>token</Captcha></CaseData>", 0, 1, multiple)
+        check(13, "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", "<CaseData><Captcha>token</Captcha><C>Line one</C></CaseData>", 0, 1, multiple)
+        check(14, "<C a=\"1\" b=\"2\"/>", "<C b=\"2\" a=\"1\"/>", 1, 1, multiple)
+        check(15, "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", "<?xml version=\"1.0\"?><CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", 1, 1, multiple)
+        check(16, "<x/>", "<x></x>", 1, 1, multiple)
+        check(17, "<C>one&#10;two</C>", "<C>one\ntwo</C>", 1, 1, multiple)
+        check(18, "<CaseData>\n  <C>Line one</C>\n  <Captcha>token</Captcha>\n</CaseData>", "<CaseData><C>Line one</C><Captcha>token</Captcha></CaseData>", 1, 1, multiple)
+        check(19, "not XML", "not XML", 1, 1, multiple)
+        check(20, "not XML", "not  XML", 0, 1, multiple)
+        check(22, "<C a=\"x  y\"/>", "<C a=\"x y\"/>", 0, 1, multiple)
+        check(23, "<C a=\" x \"/>", "<C a=\"x\"/>", 0, 1, multiple)
+        check(24, "<C a=\"x\"/>", "<C a=\"y\"/>", 0, 1, multiple)
+        check(25, "<C a=\"x\ny\"/>", "<C a=\"x y\"/>", 1, 1, multiple)
+        check(26, "<C>Line  one</C>", "<C>Line one</C>", 0, 1, multiple)
+        check(27, "<C> </C>", "<C></C>", 0, 1, multiple)
+        check(28, "<C>one\n</C>", "<C>one</C>", 0, 1, multiple)
+        check(29, "<C>one\rtwo</C>", "<C>one\ntwo</C>", 1, 1, multiple)
+        check(30, "<p><b>a</b> <i>b</i></p>", "<p><b>a</b><i>b</i></p>", 1, 1, multiple)
+        check(31, "<C><![CDATA[a & b]]></C>", "<C>a &amp; b</C>", 1, 1, multiple)
+        check(32, "<a:C xmlns:a=\"urn:x\"/>", "<b:C xmlns:b=\"urn:x\"/>", 0, 1, multiple)
+        check(33, "<C a=\"x\ty\"/>", "<C a=\"x y\"/>", 1, 1, multiple)
+        check(34, "<C a=\"x&#10;y\"/>", "<C a=\"x y\"/>", 0, 1, multiple)
+        check(35, "<C>\t</C>", "<C> </C>", 0, 1, multiple)
+        check(36, "<C> a <![CDATA[ & b ]]></C>", "<C> a  &amp; b </C>", 1, 1, multiple)
+        check(41, "<C a=\"same\" A=\"same\"/>", "<C A=\"same\" a=\"same\"/>", 1, 1, multiple)
+        check(42, "<C a=\"x\"/>", "<C A=\"x\"/>", 0, 1, multiple)
+        check(38, "<C><bad></C>", "<C><bad></C>", 1, 1, multiple)
+        check(39, "<C a=\"x&#9;y\"/>", "<C a=\"x y\"/>", 0, 1, multiple)
+        check(40, "<C>x&#13;y</C>", "<C>x\ry</C>", 0, 1, multiple)
+        check(37, "<C><bad></C>", "<C> <bad></C>", 0, 1, multiple)
+    }
+    // Legacy switch uses the identical canonicalizer.
+    check(10, "<C>one\ntwo</C>", "<C>one\r\ntwo</C>", 1, 2, 0)
+    println("PASS alpha.16 XML matrix: ordered + reusable, response bytes, idempotency")
+}

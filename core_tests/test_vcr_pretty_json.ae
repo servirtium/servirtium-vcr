@@ -1,5 +1,5 @@
 // Opt-in pretty_json recording option: record-time indentation of JSON
-// response bodies, the counterpart of pretty_xml.
+// request and response bodies, the counterpart of pretty_xml.
 //
 // Drives the record-side emitter directly (vcr.record_full + vcr.flush, no
 // upstream needed), reads the tape back, then replays the written tape over
@@ -7,7 +7,7 @@
 //
 //   1. pretty_json(2): the JSON response body is indented in the tape; key
 //      order and number spellings (1.0, a 20-digit integer) are kept; the
-//      request body stays byte-exact.
+//      request body is pretty-printed too.
 //   2. Replay: the SUT's compact request still matches, the prettified
 //      response is served as recorded, and the Content-Length the client
 //      sees equals the bytes served.
@@ -25,6 +25,7 @@ import std.http.client
 import std.fs
 import std.string
 import std.io
+import std.json
 
 extern exit(code: int)
 
@@ -66,22 +67,104 @@ record_and_read(vh: ptr, path: string, st: int, ctype: string, resp: string, req
     return t
 }
 
+extern http_server_stop(server: ptr)
+const ROUND_REQ = "{\"z\":1.0,\"text\":\" Line one\\nLine two \\n\",\"big\":123456789012345678901234567890,\"items\":[2,1]}"
+const ROUND_RESP = "{\"z\":1.0,\"a\":{\"text\":\" Line one\\nLine two \\n\",\"big\":123456789012345678901234567890}}"
+var received_request = ""
+var received_method = ""
+json_upstream(req: ptr, res: ptr, _ud: ptr) {
+    received_method = string.copy(http.request_method(req))
+    received_request = string.copy(http.request_body(req))
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/json")
+    http.response_set_header(res, "Allow", "QUERY")
+    http.response_set_header(res, "Accept-Query", "application/json")
+    http.response_set_body(res, ROUND_RESP)
+}
+json_rules(h: ptr) {
+    vcr.set_pretty_json_h(h, 2)
+    vcr.strict_ignore_common_headers_h(h)
+    vcr.remove_transport_headers_h(h)
+}
+round_query(port: int, want: string) {
+    req = client.request("QUERY", "http://127.0.0.1:${port}/case")
+    err = client.set_body(req, string.bytes(ROUND_REQ), "application/json")
+    if err != "" { fail(err) }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail(err) }
+    if client.response_status(resp) != 200 { fail("QUERY roundtrip status ${client.response_status(resp)}") }
+    if string.equals(client.response_body(resp), want) == 0 { fail("QUERY roundtrip changed response") }
+    len = string.length(want)
+    if client.response_header(resp, "Content-Length") != "${len}" { fail("QUERY roundtrip length") }
+    if client.response_header(resp, "Allow") != "QUERY" { fail("QUERY Allow header lost") }
+    if client.response_header(resp, "Accept-Query") != "application/json" { fail("Accept-Query header lost") }
+    client.response_free(resp)
+}
+real_roundtrip() {
+    println("Test 10: real QUERY upstream, unchanged live bytes, hand indentation, whole-file CRLF")
+    upstream = http.server_create(18184)
+    http.server_add_route(upstream, "QUERY", "/*", json_upstream, null)
+    if http.server_start_background(upstream) != "" { fail("upstream start") }
+    path = "${flush_out_path()}.roundtrip"
+    recorder, err = vcr.open_record(path, "http://127.0.0.1:18184", 18185)
+    if err != "" { fail(err) }
+    json_rules(recorder)
+    if vcr.start_background_h(recorder, 10000) != 0 { fail("recorder start") }
+    round_query(18185, ROUND_RESP)
+    if received_method != "QUERY" { fail("upstream method rewritten") }
+    if string.equals(received_request, ROUND_REQ) == 0 { fail("upstream request rewritten") }
+    err = vcr.stop_and_flush_h(recorder, path)
+    if err != "" { fail(err) }
+    vcr.destroy_h(recorder)
+    http_server_stop(upstream)
+    tape, err = fs.read(path)
+    if err != "" { fail(err) }
+    expected_req, err = json.pretty(ROUND_REQ, 2)
+    if err != "" { fail(err) }
+    expected_resp, err = json.pretty(ROUND_RESP, 2)
+    if err != "" { fail(err) }
+    assert_contains(tape, expected_req, "request not pretty or data changed")
+    assert_contains(tape, expected_resp, "response not pretty or data changed")
+    assert_contains(tape, "## Interaction 0: QUERY /case", "QUERY tape method lost")
+    for variant in 0..3 {
+        edited = tape
+        want = expected_resp
+        if variant == 1 {
+            edited = vcr.str_replace_all(tape, "\n  \"", "\n       \"")
+            want = vcr.str_replace_all(want, "\n  \"", "\n       \"")
+        }
+        if variant == 2 { edited = vcr.str_replace_all(tape, "\n", "\r\n") }
+        err = fs.write(path, edited)
+        if err != "" { fail(err) }
+        playback, err = vcr.open_playback(path, 18186)
+        if err != "" { fail(err) }
+        json_rules(playback)
+        if vcr.start_background_h(playback, 10000) != 0 { fail("QUERY playback start") }
+        round_query(18186, want)
+        if vcr.last_kind_h(playback) != 0 { fail("QUERY roundtrip mismatch") }
+        vcr.destroy_h(playback)
+    }
+    println("  PASS real QUERY recording + three playback variants")
+}
+
 main() {
     println("=== VCR pretty_json recording option ===\n")
     OUT = flush_out_path()
 
-    println("Test 1: pretty_json(2) indents the JSON response, keeps its bytes, leaves the request alone")
+    println("Test 1: pretty_json(2) indents the JSON response, keeps its values, and indents the request")
     vh = vcr.open_offline()
     vcr.set_pretty_json_h(vh, 2)
     t1 = record_and_read(vh, OUT, 200, "application/json", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t1, "{\n  \"z\": 1,\n  \"a\": {\n    \"price\": 1.0,\n    \"big\": 12345678901234567890,\n    \"tags\": [\n      \"x\",\n      \"y\"\n    ]\n  },\n  \"empty\": {}\n}\n```", "response not laid out as expected")
-    assert_contains(t1, COMPACT_REQ, "request body must stay byte-exact")
+    assert_contains(t1, "{\n  \"who\": \"Bob\",\n  \"n\": 2\n}", "request body not pretty")
     assert_not_contains(t1, COMPACT_RESP, "compact response survived")
     println("  PASS")
 
     println("Test 2: replay serves the prettified response; the compact request still matches")
     raw, raw_oerr = vcr.open_playback(OUT, PORT)
     if raw == null { fail("vcr.load") }
+    vcr.set_pretty_json_h(raw, 2)
     if vcr.start_background_h(raw, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(raw)}"); exit(1) }
     creq = client.request("POST", "http://127.0.0.1:${PORT}/x")
     client.set_header(creq, "Content-Type", "application/json")
@@ -107,12 +190,14 @@ main() {
     vcr.set_pretty_json_h(vh, 0)
     t3 = record_and_read(vh, OUT, 200, "application/json", COMPACT_RESP, COMPACT_REQ)
     assert_contains(t3, COMPACT_RESP, "response not byte-exact")
+    assert_contains(t3, COMPACT_REQ, "request not byte-exact")
     println("  PASS")
 
     println("Test 4: malformed JSON recorded byte-exact, recording does not fail")
     vcr.set_pretty_json_h(vh, 2)
-    t4 = record_and_read(vh, OUT, 200, "application/json", BAD_JSON, COMPACT_REQ)
-    assert_contains(t4, BAD_JSON, "malformed body must be byte-exact")
+    t4 = record_and_read(vh, OUT, 200, "application/json", BAD_JSON, BAD_JSON)
+    assert_contains(t4, "### Request body recorded for playback ():\n\n```\n${BAD_JSON}\n```", "malformed request must be byte-exact")
+    assert_contains(t4, BAD_JSON, "malformed response must be byte-exact")
     println("  PASS")
 
     println("Test 5: non-JSON content types untouched")
@@ -134,7 +219,9 @@ main() {
     vcr.clear_redactions_h(vh)
     rr = vcr.redact_h(vh, vcr.FIELD_RESPONSE_BODY, SECRET, "\"token\":\"X\",\"user\":\"ann\"")
     if rr != "" { fail("redact: ${rr}") }
-    t7 = record_and_read(vh, OUT, 200, "application/json", "{\"a\":{\"token\":\"s3cr3t\",\"user\":\"ann\"}}", COMPACT_REQ)
+    rr = vcr.redact_h(vh, vcr.FIELD_REQUEST_BODY, SECRET, "\"token\":\"X\",\"user\":\"ann\"")
+    if rr != "" { fail("request redact: ${rr}") }
+    t7 = record_and_read(vh, OUT, 200, "application/json", "{\"a\":{\"token\":\"s3cr3t\",\"user\":\"ann\"}}", "{\"a\":{\"token\":\"s3cr3t\",\"user\":\"ann\"}}")
     assert_not_contains(t7, "s3cr3t", "secret leaked")
     assert_contains(t7, "    \"token\": \"X\",", "redacted value should be indented")
     vcr.clear_redactions_h(vh)
@@ -158,6 +245,8 @@ main() {
     vcr.clear_format_options_h(vh)
     println("  PASS")
 
+    real_roundtrip()
+    vcr.destroy_h(vh)
     fs.delete(OUT)
     println("\n=== All pretty_json tests passed ===")
     exit(0)
