@@ -1,0 +1,95 @@
+// A HEAD response keeps its Content-Length, in record mode's answer and on
+// playback.
+//
+// Found by the Azure SDK harness (sdk_harnesses/azure-sdk-for-net): a blob's
+// size is the Content-Length of its properties HEAD. The recorder and the
+// playback server both framed their own (empty) body, so the client read 0
+// (PageBlobClientTests.ResizeAsync: "Expected: 8192 But was: 0"). The
+// server sends no body for HEAD either way; the header now says what a GET
+// would send, as the service said it.
+
+import core.vcr
+import std.http.client
+import std.http
+import std.fs
+import std.io
+import std.string
+
+extern exit(code: int)
+extern http_server_stop(server: ptr)
+
+const UPSTREAM_PORT = 18380
+const RECORD_PORT   = 18381
+const PLAYBACK_PORT = 18382
+
+fail(msg: string) {
+    println("FAIL: ${msg}")
+    exit(1)
+}
+
+// GET (and so HEAD, which the server answers from the GET route without the
+// body): 8192 bytes.
+handle(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/octet-stream")
+    body = "xxxxxxxxxxxxxxxx"
+    i = 0
+    while i < 9 {
+        body = string_concat(body, body)
+        i = i + 1
+    }
+    http.response_set_body(res, body)
+}
+
+head_length(port: int) -> (int, string) {
+    req = client.request("HEAD", "http://127.0.0.1:${port}/blob")
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err }
+    st = client.response_status(resp)
+    cl = string.copy(client.response_header(resp, "Content-Length"))
+    client.response_free(resp)
+    return st, cl
+}
+
+main() {
+    println("=== VCR keeps a HEAD response's Content-Length ===")
+    tmp = io.getenv("TMPDIR")
+    if tmp == 0 { tmp = "/tmp" }
+    TAPE_PATH = "${tmp}/vcr_head_content_length.tape"
+    fs.delete(TAPE_PATH)
+
+    upstream = http.server_create(UPSTREAM_PORT)
+    if upstream == 0 { fail("upstream server_create") }
+    http.server_get(upstream, "/*", handle, null)
+    if http.server_start_background(upstream) != "" { fail("upstream start") }
+    sleep(250)
+    st0, cl0 = head_length(UPSTREAM_PORT)
+    if st0 != 200 || string.equals(cl0, "8192") != 1 { fail("the upstream itself answered HEAD ${st0} Content-Length '${cl0}'") }
+
+    rec, _e = vcr.open_record(TAPE_PATH, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if rec == null { fail("open_record") }
+    if http.server_start_background(vcr.server_of(rec)) != "" { fail("recorder start") }
+    sleep(250)
+    st1, cl1 = head_length(RECORD_PORT)
+    if st1 != 200 || string.equals(cl1, "8192") != 1 { fail("record answered HEAD ${st1} Content-Length '${cl1}'") }
+    ferr = vcr.stop_and_flush_h(rec, TAPE_PATH)
+    if ferr != "" { fail("stop_and_flush ${ferr}") }
+    vcr.destroy_h(rec)
+    println("  PASS record passes the HEAD's Content-Length through")
+
+    pb, _pe = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT)
+    if pb == null { fail("open_playback") }
+    if http.server_start_background(vcr.server_of(pb)) != "" { fail("playback start") }
+    sleep(250)
+    st2, cl2 = head_length(PLAYBACK_PORT)
+    if st2 != 200 || string.equals(cl2, "8192") != 1 { fail("playback answered HEAD ${st2} Content-Length '${cl2}'; ${vcr.last_error_h(pb)}") }
+    println("  PASS playback answers the HEAD with the recorded Content-Length")
+
+    vcr.destroy_h(pb)
+    http_server_stop(upstream)
+    fs.delete(TAPE_PATH)
+    println("PASS")
+    exit(0)
+}

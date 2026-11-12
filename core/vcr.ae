@@ -2506,6 +2506,7 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
     http_response_set_status(res, http_response_status(cresp))
     emit_recorded_headers_to_response(res, caller_headers)
     http_response_set_body_n(res, string.bytes(body), resp_body_len)
+    head_content_length(req, res, resp_headers)
 
     set_outcome_k(vc, "", KIND_OK, rec_index)
 
@@ -2601,6 +2602,17 @@ emit_playback_response(vc: *Vcr, e: *Interaction, req: ptr, res: ptr) {
             http_response_set_body(res, resp_body)
         }
     }
+    head_content_length(req, res, resp_headers)
+}
+
+// A HEAD response says the size of what a GET would send: its recorded
+// Content-Length, not the length of the (empty) body this server frames.
+// Clients read it (Azure Storage's blob properties: a blob's size is the
+// HEAD's Content-Length). The server sends no body for HEAD either way.
+head_content_length(req: ptr, res: ptr, recorded_headers: string) {
+    if string.equals(http_request_method(req), "HEAD") == 0 { return }
+    cl = response_header_value_from_block(recorded_headers, "Content-Length")
+    if string.length(cl) > 0 { http_response_set_header(res, "Content-Length", cl) }
 }
 
 // Boolean "does this interaction satisfy the request?" — the same method/path
