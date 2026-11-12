@@ -1,0 +1,17 @@
+// Build and check all four Swift static-library variants without a Swift SDK.
+// The release build uses the same script, so these checks precede publication.
+import bldr
+import std.fs
+import std.os
+import std.string
+aeb(cap) {
+    bldr.build() {
+        root = _get("root")
+        td = _get("target_dir")
+        tag = string.trim(fs.read("${root}/SERVIRTIUM_VCR_VERSION")!)
+        rc = os.system("bash \"${root}/release/swift-bundle.sh\" \"${tag}\" \"${td}/dist\"")
+        if rc != 0 { bldr.fail("Swift static bundle checks failed"); return 1 }
+        println("Swift bundle: all four static consumers linked; host tape/Bruno checks passed")
+        return 0
+    }
+}

@@ -69,6 +69,16 @@ The flow, with no tag ever moved:
    bare tag's commit (skipped with a warning if the runner's Swift is older
    than 6.2).
 
+Before the bundle is zipped, `swift-bundle.sh` links a C ABI consumer against
+each of its four variants and runs the matching host consumer (tape loading
+and Bruno conversion). This catches missing native dependencies before the
+publication step, without requiring a Swift SDK. Run the same build/checks
+locally with `aeb release/.swiftBundle.ae` using the pinned Aether and Zig.
+Aether 0.912.0's static archive omits module `@source` files, so the script
+adds QuickJS, including its amalgamation, from the selected toolchain alongside
+the string bridge. Alpha.16 lacked this object and its Swift consumer could
+not link; the shared libraries were unaffected.
+
 Never create the bare tag by hand at the `v` tag's commit: its manifest has
 no checksum. If a step after publishing fails (for example a GitHub download
 504 in step 5), start a manual run for the same tag:

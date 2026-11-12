@@ -659,6 +659,10 @@ reuses host-library bytes for foreign fixture slots; it does not cross-build or
 claim to execute those platforms. `bruno_import_demo/.build.ae` builds both
 CLI and Aether widget service; its `.tests.ae` hydrates/lints/replays the demo.
 Python binding tests, packaging and Python-specific browser examples stay Python.
+`aeb release/.swiftBundle.ae` builds all four Swift static variants and checks
+consumer linking before publication. With Aether 0.912.0, static archives omit
+module `@source` dependencies: `swift-bundle.sh` must add QuickJS as well as the
+string bridge. The host check also loads a tape and runs Bruno conversion.
 Nim's `execCmdEx` capture pipe leaves extra writers inherited by detached
 children: waiting for EOF then waits for the upstream to exit. Its fixture
 commands capture stdout/stderr through a temporary file and wait for the

@@ -25,10 +25,11 @@
 #
 # HOW: `ae build --emit=staticlib --target <triple>` (zig cc; the cross path is
 # the only one that emits a static archive) archives the program and the whole
-# Aether runtime into one .a. It does NOT include --extra C files (ae 0.897.0:
-# the staticlib path archives only the program object and the runtime objects),
-# so core/_embed_strdup.c is compiled with zig cc for the same triple and added
-# with zig ar. Each variant is checked for that member before the bundle is zipped.
+# Aether runtime into one .a. Through ae 0.912.0 this omits --extra C files
+# AND module @source dependencies. Compile both the string bridge and QuickJS
+# (the Bruno converter's @source, including its pinned amalgamation) for the
+# same target and add them with zig ar. Link a real C ABI consumer for EVERY
+# variant before zipping; execute the matching host consumer too.
 #
 # The zip is not bit-reproducible (the archives carry build paths), so its
 # checksum is only known once it is built. The release workflow therefore writes
@@ -52,6 +53,17 @@ command -v ae  >/dev/null || die "ae not on PATH"
 command -v zig >/dev/null || die "zig not on PATH"
 command -v zip >/dev/null || command -v python3 >/dev/null || die "zip (or python3) not on PATH"
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
+
+# Follow the installed toolchain's layout, including ae version manager's
+# current/ directory. Never borrow QuickJS from an unrelated source checkout.
+QUICKJS_SOURCE=""
+for toolroot in "${AETHER_HOME:-$HOME/.aether}/current" "${AETHER_HOME:-$HOME/.aether}" "$(dirname "$(command -v ae)")/.."; do
+  candidate="$toolroot/share/aether/contrib/quickjs/aether_quickjs.c"
+  if [ -f "$candidate" ]; then QUICKJS_SOURCE="$candidate"; break; fi
+done
+[ -n "$QUICKJS_SOURCE" ] || die "cannot find contrib.quickjs in the selected Aether toolchain (set AETHER_HOME)"
+[ -f "$(dirname "$QUICKJS_SOURCE")/amalgamation/quickjs-amalgam.c" ] \
+  || die "the selected Aether toolchain has no QuickJS amalgamation"
 
 SEMVER="${TAG#v}"
 NAME="servirtium-vcr-swift-${TAG}.artifactbundle.zip"
@@ -106,7 +118,10 @@ while read -r aet zt dir triple; do
     || { echo FAILED; tail -30 "$log" >&2; die "static build failed for $aet"; }
   zig cc -target "$zt" -Os -fPIC -c "$ROOT/core/_embed_strdup.c" -o "$WORK/$dir-embed_strdup.o" \
     || die "compiling the string bridge for $zt failed"
-  zig ar rs "$lib" "$WORK/$dir-embed_strdup.o" || die "adding the string bridge for $aet failed"
+  zig cc -target "$zt" -Os -fPIC -c "$QUICKJS_SOURCE" -o "$WORK/$dir-quickjs.o" >"$WORK/$dir-quickjs.log" 2>&1 \
+    || { cat "$WORK/$dir-quickjs.log" >&2; die "compiling QuickJS for $zt failed"; }
+  zig ar rs "$lib" "$WORK/$dir-embed_strdup.o" "$WORK/$dir-quickjs.o" \
+    || die "adding the string bridge and QuickJS for $aet failed"
   # The bridge object must be a member now, and the C ABI in the archive's
   # symbol index (portable checks: zig ar lists members, and the index is text).
   zig ar t "$lib" | grep -qx "$dir-embed_strdup.o" \
@@ -114,6 +129,7 @@ while read -r aet zt dir triple; do
   LC_ALL=C grep -aq aether_vcr_embed_open_playback "$lib" \
     || { echo FAILED; die "$dir: the C ABI is not in the archive"; }
   echo ok
+  bash "$ROOT/release/check-static-library.sh" "$aet" "$zt" "$lib" "$WORK/$dir-check"
   [ -n "$json_variants" ] && json_variants="$json_variants,"
   json_variants="$json_variants
         {
