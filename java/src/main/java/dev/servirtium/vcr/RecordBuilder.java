@@ -91,11 +91,10 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
 
     /**
      * Collapse every whole-tape match of {@code pattern} (a regex) to the
-     * constant {@code replacement}, across all fields and interactions. The
-     * companion to {@link #volatileValues}: use it for a volatile value you
-     * never correlate and whose number of distinct values can vary run to run —
-     * a {@code Date} response header, a request id — where a per-value token
-     * would itself not be byte-stable. Example:
+     * constant {@code replacement}, across all fields and interactions: a
+     * regex redaction, for a value nobody correlates that a client must still
+     * parse. Values that recur and must correlate are volatile values
+     * ({@code volatileRule}, docs/volatile-values.md). Example:
      * {@code redactWholeTape("Date: .+ GMT", "Date: <DATE>")}.
      *
      * @param pattern     a regular expression matching the volatile value

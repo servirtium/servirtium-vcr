@@ -19,6 +19,8 @@ import (
 // skips it — recording needs the live container + the fixed port. The leaf
 // integration/todobackend/.go_record.ae brings the SUT up, sets the env, runs
 // this, and tears the container down.
+const todoID = `(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`
+
 func TestRecordTheCrudSuiteAgainstTheLiveSut(t *testing.T) {
 	upstream := os.Getenv("TODOBACKEND_UPSTREAM")
 	if upstream == "" {
@@ -28,15 +30,14 @@ func TestRecordTheCrudSuiteAgainstTheLiveSut(t *testing.T) {
 	vcr, err := servirtium.Record(tapePath(), upstream).
 		StaticContent("/suite", suiteDir()).
 		Untaped("/favicon.ico").
-		// Whole-tape normalization so a re-record is byte-identical (the tape
-		// stays git-clean; drift detection then fires only on real changes):
-		//   - the server-minted todo UUID is CORRELATED (POST response body/url,
-		//     then echoed in later GET/PATCH/DELETE request paths), so it gets a
-		//     stable {{id-N}} token that round-trips on playback;
-		//   - the Date response header is uncorrelated + variable-cardinality, so
-		//     it's COLLAPSED to one constant.
-		NormalizeWholeTape(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, "id").
-		RedactWholeTape(`Date: .+ GMT`, "Date: <DATE>").
+		// Volatile values (docs/volatile-values.md) so a re-record is
+		// byte-identical: the server-minted todo UUID becomes a correlated
+		// {{id-N}} token wherever it appears (path, headers, bodies), and the
+		// Date response header a {{serverDate-N}} token.
+		VolatileRule("request path", todoID, "regex").
+		VolatileRule("headers", todoID, "regex").
+		VolatileRule("body", todoID, "regex").
+		VolatileRule("response headers", "Date: {{serverDate}}").
 		Port(vcrPort).
 		Start()
 	if err != nil {
