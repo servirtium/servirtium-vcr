@@ -147,3 +147,19 @@ enabled). A failing test fails the build.
 - **[../java/docs](../java/docs)** — the binding semantics (playback, record,
   redaction, whole-tape normalization, drift, diagnostics) all apply; this
   module only adds Clojure syntax over the same API.
+
+## Volatile values
+
+```clojure
+(with-open [server (vcr/playback "tape.md"
+                     {:volatile-rules [["response headers" "Date: {{serverDate}}"]]
+                      :bind {"serverDate" "Fri, 13 Nov 2026 09:41:07 GMT"}})]
+  (println (vcr/volatile-report server)))
+```
+
+`:volatile-rules` is a seq of `[scope pattern]` or `[scope pattern kind]`;
+`:volatile-profile` a path (or seq); `:volatile-markers` one of `:mustache`,
+`:dollar-curly`, `:wikilink`. Playback also takes `:pretty-xml`.
+
+Templates with `{{placeholder}}`s are compiled in the core and apply to `record` and `playback` alike; `bind(name, value)` binds a real value to a token, `:volatile-markers` picks the marker style. See [docs/volatile-values.md](../docs/volatile-values.md).
+

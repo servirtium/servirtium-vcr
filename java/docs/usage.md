@@ -81,21 +81,23 @@ fresh ids or timestamps.
 
 ```java
 Vcr.record(tape, upstream)
-    // Correlated, server-generated value that recurs (a created entity's id
-    // echoed back in a later request path): every distinct match becomes a
-    // stable {{order-N}} token, and the SAME value maps to the SAME token
-    // everywhere — so it round-trips on playback.
-    .normalizeWholeTape("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "order")
-    // Uncorrelated volatile you never match against (a Date header, a request
-    // id): collapse every match to one constant.
-    .redactWholeTape("Date: .+ GMT", "Date: <DATE>")
+    // A volatile id: the template's {{order}} placeholder captures it, the
+    // tape holds the token {{order-1}}, and the same value gets the same
+    // token everywhere, so it round-trips on playback.
+    .volatileRule("request path", "/orders/{{order}}/items")
+    .volatileRule("response headers", "Date: {{serverDate}}")
     .start();
 ```
 
-- `normalizeWholeTape(pattern, name)` mints the replacement for you — each
-  distinct match across the tape, in first-appearance order, becomes
-  `{{name-1}}`, `{{name-2}}`, … Use it when the value is correlated (recurs in
-  a later request) so it must map consistently and round-trip on playback.
+- `volatileRule(scope, pattern)` takes a template (or, with a third `"regex"`
+  argument, a PCRE2 pattern with named groups). Each captured value becomes a
+  token `{{name-1}}`, `{{name-2}}`, … in first-appearance order. It is on
+  `Vcr.playback(...)` too. `volatileProfile(path)` loads a profile file,
+  `bind(nameOrToken, value)` binds a real value to a token before start,
+  `volatileMarkers(VolatileMarkers.DOLLAR_CURLY)` changes the marker style
+  (call-order independent: it is applied first), and `server.volatileReport()`
+  says what was bound. Rule errors fail `start()`. (Not `volatile`: a Java
+  keyword.) See `docs/volatile-values.md`.
 - `redactWholeTape(pattern, replacement)` collapses every match to the literal
   `replacement`. Use it when the value is uncorrelated and the number of
   distinct values can vary run to run, where a per-value token wouldn't be

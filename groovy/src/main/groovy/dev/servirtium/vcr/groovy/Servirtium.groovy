@@ -38,7 +38,7 @@ class Servirtium {
     /**
      * Start a record VCR forwarding to {@code upstreamBase} and writing
      * {@code tapePath} on close; {@code configure} the RecordBuilder (port,
-     * redact, normalizeWholeTape, failIfChanged, ...) in the trailing closure.
+     * redact, volatileValues, failIfChanged, ...) in the trailing closure.
      */
     static VcrServer record(String tapePath, String upstreamBase, Closure configure = null) {
         def builder = Vcr.record(tapePath, upstreamBase)

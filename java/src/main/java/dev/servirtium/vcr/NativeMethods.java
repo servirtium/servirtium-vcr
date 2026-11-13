@@ -157,9 +157,11 @@ final class NativeMethods {
             "aether_vcr_embed_remove_header",
             FunctionDescriptor.of(C_STR, C_PTR, C_INT, C_PTR));
 
-    static final MethodHandle NORMALIZE_WHOLE_TAPE = down(
-            "aether_vcr_embed_normalize_whole_tape",
-            FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
+    static final MethodHandle VOLATILE_RULE = down("aether_vcr_embed_volatile_rule", FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR, C_PTR));
+    static final MethodHandle VOLATILE_BIND = down("aether_vcr_embed_volatile_bind", FunctionDescriptor.of(C_STR, C_PTR, C_PTR, C_PTR));
+    static final MethodHandle SET_VOLATILE_MARKERS = down("aether_vcr_embed_set_volatile_markers", FunctionDescriptor.of(C_STR, C_PTR, C_INT));
+    static final MethodHandle VOLATILE_PROFILE = down("aether_vcr_embed_volatile_profile", FunctionDescriptor.of(C_STR, C_PTR, C_PTR));
+    static final MethodHandle VOLATILE_REPORT = down("aether_vcr_embed_volatile_report", FunctionDescriptor.of(C_STR, C_PTR));
 
     static final MethodHandle REDACT_WHOLE_TAPE = down(
             "aether_vcr_embed_redact_whole_tape",

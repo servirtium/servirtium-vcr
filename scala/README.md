@@ -143,3 +143,15 @@ binding jar, and runs the Scala test (`mvn test`). Standalone:
 - **[../java/docs](../java/docs)** — the binding semantics (playback, record,
   redaction, whole-tape normalization, drift, diagnostics) all apply; this
   module only adds Scala syntax over the same API.
+
+## Volatile values
+
+```scala
+Servirtium.playback("tape.md")(b => {
+  b.volatileRule("response headers", "Date: {{serverDate}}")
+  b.bind("serverDate", "Fri, 13 Nov 2026 09:41:07 GMT")
+})  // server.volatileReport() says what was bound
+```
+
+Templates with `{{placeholder}}`s are compiled in the core and apply to `record` and `playback` alike; `bind(name, value)` binds a real value to a token, `volatileMarkers` picks the marker style. See [docs/volatile-values.md](../docs/volatile-values.md).
+

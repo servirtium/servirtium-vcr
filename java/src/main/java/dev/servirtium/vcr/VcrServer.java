@@ -84,6 +84,13 @@ public final class VcrServer implements AutoCloseable {
         } catch (Throwable t) { throw VcrBuilderBase.rethrow("lastError", t); }
     }
 
+    /** What the volatile-value rules bound and warned about (see docs/volatile-values.md). */
+    public String volatileReport() {
+        try {
+            return NativeMethods.takeString((MemorySegment) NativeMethods.VOLATILE_REPORT.invokeExact(handle()));
+        } catch (Throwable t) { throw VcrBuilderBase.rethrow("volatileReport", t); }
+    }
+
     public String diagnosticsJson() { return diagnosticsJson(false); }
     public String diagnosticsJson(boolean consume) {
         try {

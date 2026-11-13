@@ -27,6 +27,11 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     private final List<HeaderRemoval> headerRemovals = new ArrayList<>();
     private final List<StaticMount> staticContent = new ArrayList<>();
     private final List<String> untaped = new ArrayList<>();
+    /** A volatile-value step; {@code op} is "rule", "bind" or "profile". */
+    private record VolatileConfig(String op, String a, String b, String c) {
+    }
+    private final List<VolatileConfig> volatileConfigs = new ArrayList<>();
+    private VolatileMarkers volatileMarkers = VolatileMarkers.MUSTACHE;
     private boolean ignoreVolatileHeaders;
     private boolean removeTransportHeaders;
     private boolean redactCredentials;
@@ -42,6 +47,42 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     }
 
     abstract S self();
+
+    /**
+     * Marker style for placeholders and tokens (default {@link VolatileMarkers#MUSTACHE}).
+     * Applied before any rule.
+     */
+    public S volatileMarkers(VolatileMarkers style) {
+        this.volatileMarkers = style;
+        return self();
+    }
+
+    /**
+     * A volatile-value rule: a template with {@code {{name}}} placeholders (see
+     * docs/volatile-values.md). {@code scope} is e.g. "request body". Not named
+     * {@code volatile}: that is a Java keyword. A bad rule fails {@code start()}.
+     */
+    public S volatileRule(String scope, String pattern) {
+        return volatileRule(scope, pattern, "template");
+    }
+
+    /** As {@link #volatileRule(String, String)}, with kind "template" or "regex". */
+    public S volatileRule(String scope, String pattern, String kind) {
+        volatileConfigs.add(new VolatileConfig("rule", scope, kind, pattern));
+        return self();
+    }
+
+    /** Bind a real value to a token ({@code name-N}) or to every unbound token of {@code name}. */
+    public S bind(String nameOrToken, String value) {
+        volatileConfigs.add(new VolatileConfig("bind", nameOrToken, value, null));
+        return self();
+    }
+
+    /** Load a volatile-values profile file (its rules merge with the others). */
+    public S volatileProfile(String path) {
+        volatileConfigs.add(new VolatileConfig("profile", path, null, null));
+        return self();
+    }
 
     /**
      * Pin an explicit path to libservirtium_vcr library for this run — the
@@ -184,6 +225,25 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
      * serving starts. Subclasses extend this.
      */
     void applyConfig(Arena arena, MemorySegment handle) {
+        try {
+            if (volatileMarkers != VolatileMarkers.MUSTACHE) { // the core's default; leave it unset
+                check((MemorySegment) NativeMethods.SET_VOLATILE_MARKERS.invokeExact(handle, volatileMarkers.code()), "volatileMarkers");
+            }
+            for (VolatileConfig v : volatileConfigs) {
+                MemorySegment r;
+                switch (v.op()) {
+                    case "rule" -> r = (MemorySegment) NativeMethods.VOLATILE_RULE.invokeExact(handle,
+                            NativeMethods.cString(arena, v.a()), NativeMethods.cString(arena, v.b()), NativeMethods.cString(arena, v.c()));
+                    case "bind" -> r = (MemorySegment) NativeMethods.VOLATILE_BIND.invokeExact(handle,
+                            NativeMethods.cString(arena, v.a()), NativeMethods.cString(arena, v.b()));
+                    default -> r = (MemorySegment) NativeMethods.VOLATILE_PROFILE.invokeExact(handle,
+                            NativeMethods.cString(arena, v.a()));
+                }
+                check(r, "volatile " + v.op());
+            }
+        } catch (Throwable t) {
+            throw rethrow("volatile", t);
+        }
         for (HeaderRemoval h : headerRemovals) {
             try {
                 MemorySegment r = (MemorySegment) NativeMethods.REMOVE_HEADER.invokeExact(

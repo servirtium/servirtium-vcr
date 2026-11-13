@@ -15,7 +15,7 @@
 
       (with-open [vcr (playback \"tapes/x.md\" {:port 0})]
         (= Outcome/OK (.lastKind vcr)))"
-  (:import [dev.servirtium.vcr Field Vcr VcrServer]))
+  (:import [dev.servirtium.vcr Field Vcr VcrServer VolatileMarkers]))
 
 (defn- apply-opts
   "Apply common builder opts (currently :port) to a PlaybackBuilder or
@@ -28,6 +28,16 @@
   (when (:redact-credentials _opts) (.redactCredentials builder))
   (doseq [name (:redact-credential-header _opts)] (.redactCredentialHeader builder name))
   (doseq [name (:remove-request-header _opts)] (.removeHeader builder Field/REQUEST_HEADERS name))
+  ;; Volatile values (docs/volatile-values.md). Markers first, before any rule.
+  (when-let [m (:volatile-markers _opts)]
+    (.volatileMarkers builder (case m
+                                :mustache VolatileMarkers/MUSTACHE
+                                :dollar-curly VolatileMarkers/DOLLAR_CURLY
+                                :wikilink VolatileMarkers/WIKILINK)))
+  (doseq [p (let [v (:volatile-profile _opts)] (if (string? v) [v] v))] (.volatileProfile builder p))
+  (doseq [[scope pattern kind] (:volatile-rules _opts)]
+    (.volatileRule builder scope pattern (or kind "template")))
+  (doseq [[name value] (:bind _opts)] (.bind builder name value))
   (when-let [callback (:secret-redactor _opts)]
     (.secretRedactor builder (reify java.util.function.BiFunction
       (apply [_ key request] (callback key request)))))
@@ -50,6 +60,9 @@
          (when-let [range (:playback-range opts)]
            (let [[from to] (if (sequential? range) range [range -1])]
              (.playbackRange builder (int from) (int (or to -1)))))
+         ;; :pretty-xml is an indent, or true for 2.
+         (when-let [indent (:pretty-xml opts)]
+           (.prettyXml builder (int (if (true? indent) 2 indent))))
          builder)
        (apply-opts opts)
        (.start))))
@@ -95,6 +108,7 @@
 (defn diagnostics-json
   ([server] (.diagnosticsJson server false))
   ([server consume] (.diagnosticsJson server (boolean consume))))
+(defn volatile-report [server] (.volatileReport server))
 (defn assert-no-mismatches [server] (.assertNoMismatches server))
 (defn test-context [server name source-file source-line]
   (.testContext server name source-file (int source-line)))

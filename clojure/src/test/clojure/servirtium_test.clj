@@ -189,3 +189,62 @@
 (deftest playback-range-with-a-bad-range-fails-start
   (is (thrown-with-msg? dev.servirtium.vcr.VcrException #"playbackRange"
         (vcr/playback range-tape {:port 0 :playback-range [99 -1]}))))
+
+
+;; Volatile values (docs/volatile-values.md): the rules live in the core.
+(def ^:private vdir "core_tests/volatile/")
+
+(defn- vdriver [mode base-url]
+  (.waitFor (-> (ProcessBuilder. ^java.util.List ["target/test-tools/volatile_fixture" mode base-url])
+                (.inheritIO) (.start))))
+
+(defn- start-error [tape opts]
+  (try (.close (vcr/playback (str vdir tape) opts)) nil
+       (catch dev.servirtium.vcr.VcrException e (.getMessage e))))
+
+(deftest volatile-tape-block-rules-and-report
+  (with-open [server (vcr/playback (str vdir "wcf.md") {:pretty-xml 2})]
+    (is (= 0 (vdriver "wcf" (.baseUrl server))))
+    (is (.contains (vcr/volatile-report server) "binding: {{messageId-1}} = "))))
+
+(deftest volatile-profile-file
+  (let [profile (.toString (.normalize (.toAbsolutePath (java.nio.file.Path/of (str vdir "profile.md") (make-array String 0)))))]
+    (with-open [server (vcr/playback (str vdir "wcf_plain.md") {:pretty-xml 2 :volatile-profile profile})]
+      (is (= 0 (vdriver "wcf" (.baseUrl server)))))))
+
+(deftest volatile-rules-in-code
+  (with-open [server (vcr/playback (str vdir "wcf_plain.md")
+                       {:pretty-xml 2
+                        :volatile-rules [["request body" "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"]
+                                         ["request body" "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/"]
+                                         ["request body" "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;"]
+                                         ["response body" "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>"]]})]
+    (is (= 0 (vdriver "wcf" (.baseUrl server))))))
+
+(deftest volatile-markers
+  (with-open [server (vcr/playback (str vdir "wcf_dollar.md") {:pretty-xml 2 :volatile-markers :dollar-curly})]
+    (is (= 0 (vdriver "wcf" (.baseUrl server)))))
+  (let [e (start-error "wcf_dollar.md" {:pretty-xml 2})]
+    (is (and e (.contains e "DollarCurly")))))
+
+(deftest volatile-cases-and-mismatch
+  (with-open [server (vcr/playback (str vdir "cases.md"))]
+    (is (= 0 (vdriver "cases" (.baseUrl server))))
+    (.resetCursor server)
+    (is (= 0 (vdriver "cases-mismatch" (.baseUrl server))))
+    (is (.contains (vcr/last-error server false) "{{caseId-1}} = 42"))
+    (vcr/last-error server true)))
+
+(deftest volatile-bind
+  (let [e (start-error "cases_recorded.md" {})]
+    (is (and e (.contains e "caseId"))))
+  (with-open [server (vcr/playback (str vdir "cases_recorded.md") {:bind {"caseId" "42"}})]
+    (is (= 0 (vdriver "cases" (.baseUrl server))))))
+
+(deftest volatile-rule-errors-fail-start
+  (let [e1 (start-error "cases.md" {:volatile-rules [["request body" "no placeholder"]]})
+        e2 (start-error "cases.md" {:volatile-rules [["response body" "\"caseId\":\"{{id}}\""]]})
+        e3 (start-error "cases.md" {:volatile-rules [["x" "a {{b}}" "regex"]]})]
+    (is (and e1 (.contains e1 "needs at least one placeholder")))
+    (is (and e2 (.contains e2 "conflicts with") (.contains e2 "(tape)")))
+    (is (some? e3))))

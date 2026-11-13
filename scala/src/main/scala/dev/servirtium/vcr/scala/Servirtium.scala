@@ -29,7 +29,7 @@ object Servirtium:
 
   /**
    * Start a record VCR forwarding to `upstreamBase` and writing `tapePath` on
-   * close; `configure` the [[RecordBuilder]] (port, redact, normalizeWholeTape,
+   * close; `configure` the [[RecordBuilder]] (port, redact, volatileValues,
    * failIfChanged, …).
    */
   def record(tapePath: String, upstreamBase: String)(configure: RecordBuilder => Unit = _ => ()): VcrServer =
