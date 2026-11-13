@@ -228,3 +228,48 @@ let ``playbackRange skips early interactions and serves a later one`` () =
     let bad = Assert.Throws<VcrException>(fun () -> start 99 |> ignore)
     Assert.Contains("PlaybackRange", bad.Message)
 
+
+// Volatile values (docs/volatile-values.md), driven by the shared
+// target/test-tools/volatile_fixture against core_tests/volatile/.
+let private volatileRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../.."))
+let private volatileTape (name: string) = System.IO.Path.Combine(volatileRoot, "core_tests/volatile", name)
+let private drive (scenario: string) (server: VcrServer) =
+    let info = System.Diagnostics.ProcessStartInfo(System.IO.Path.Combine(volatileRoot, "target/test-tools/volatile_fixture"))
+    info.ArgumentList.Add(scenario)
+    info.ArgumentList.Add(server.BaseUrl)
+    use driver = System.Diagnostics.Process.Start(info)
+    driver.WaitForExit()
+    Assert.True((driver.ExitCode = 0), scenario + ": " + Servirtium.lastErrorWith false server)
+
+[<Fact>]
+let ``volatile: the tape's own rules, a profile, and rules in code`` () =
+    do
+        use server = (Vcr.Playback(volatileTape "wcf.md")).PrettyXml(2).Start()
+        drive "wcf" server
+        Assert.Contains("binding: {{messageId-1}} = ", Servirtium.volatileReport server)
+    do
+        use server = (Vcr.Playback(volatileTape "wcf_plain.md").PrettyXml(2) |> Servirtium.volatileProfileOnPlayback (volatileTape "profile.md")).Start()
+        drive "wcf" server
+    do
+        use server =
+            (Vcr.Playback(volatileTape "wcf_dollar.md").PrettyXml(2)
+             |> Servirtium.volatileMarkersOnPlayback VolatileMarkers.DollarCurly).Start()
+        drive "wcf" server
+
+[<Fact>]
+let ``volatile: correlation, bind and errors`` () =
+    do
+        use server = Vcr.Playback(volatileTape "cases.md").Start()
+        drive "cases" server
+        Servirtium.resetCursor server
+        drive "cases-mismatch" server
+        Assert.Contains("{{caseId-1}} = 42", Servirtium.lastErrorWith true server)
+    do
+        use server = (Vcr.Playback(volatileTape "cases_recorded.md") |> Servirtium.bind "caseId" "42").Start()
+        drive "cases" server
+    let unbound = Assert.Throws<VcrException>(fun () -> Vcr.Playback(volatileTape "cases_recorded.md").Start() |> ignore)
+    Assert.Contains("caseId", unbound.Message)
+    let conflict =
+        Assert.Throws<VcrException>(fun () ->
+            (Vcr.Playback(volatileTape "cases.md") |> Servirtium.volatileRuleOnPlayback "response body" "\"caseId\":\"{{id}}\"" "template").Start() |> ignore)
+    Assert.Contains("conflicts with", conflict.Message)

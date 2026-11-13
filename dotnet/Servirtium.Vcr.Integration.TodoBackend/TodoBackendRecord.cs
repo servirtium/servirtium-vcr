@@ -28,6 +28,8 @@ namespace Servirtium.Vcr.Integration.TodoBackend;
 /// </summary>
 public class TodoBackendRecord
 {
+    private const string Uuid = "(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
+
     [EnvFact("TODOBACKEND_UPSTREAM")]
     public void RecordTheCrudSuiteAgainstTheLiveSut()
     {
@@ -36,8 +38,10 @@ public class TodoBackendRecord
         using (var vcr = Vcr.Record(TodoBackendBrowser.Tape, upstream)
             .StaticContent("/suite", TodoBackendBrowser.SuiteDir)
             .Untaped("/favicon.ico")
-            .NormalizeWholeTape("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "id")
-            .RedactWholeTape("Date: .+ GMT", "Date: <DATE>")
+            .VolatileRule("request path", Uuid, "regex")
+            .VolatileRule("headers", Uuid, "regex")
+            .VolatileRule("body", Uuid, "regex")
+            .VolatileRule("response headers", "Date: {{serverDate}}")
             .Port(TodoBackendBrowser.VcrPort)
             .Start())
         {

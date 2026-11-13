@@ -67,6 +67,8 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     private readonly List<string> _credentialHeaders = new();
     private (string cert, string key)? _tls;
     private (string certPem, string keyPem)? _tlsPem;
+    private VolatileMarkers? _volatileMarkers;
+    private readonly List<(string op, string a, string b, string c)> _volatile = new();
 
     private protected VcrBuilderBase(string tapePath) => TapePath = tapePath;
 
@@ -212,6 +214,47 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     }
 
     /// <summary>
+    /// A volatile-value rule (docs/volatile-values.md). <paramref name="scope"/>:
+    /// <c>request path</c>, <c>request headers</c>, <c>response headers</c>,
+    /// <c>headers</c>, <c>request body</c>, <c>response body</c> or <c>body</c>.
+    /// <paramref name="kind"/> <c>"template"</c> (literal text with
+    /// <c>{{name}}</c> / <c>{{name:pattern}}</c> placeholders) or <c>"regex"</c>
+    /// (named groups are placeholders). Recording writes each captured value as
+    /// a token, <c>{{name-1}}</c>; playback matches any live value there and
+    /// binds it. Errors (here, a conflict with the tape's rules, an unbound
+    /// response token) throw from <c>Start()</c>.
+    /// </summary>
+    public TSelf VolatileRule(string scope, string pattern, string kind = "template")
+    {
+        _volatile.Add(("rule", scope, kind, pattern));
+        return Self;
+    }
+
+    /// <summary>
+    /// Bind a real value: <c>Bind("serverDate", "...")</c> binds every token of
+    /// the name nothing else bound, <c>Bind("serverDate-2", "...")</c> one token.
+    /// </summary>
+    public TSelf Bind(string nameOrToken, string value)
+    {
+        _volatile.Add(("bind", nameOrToken, value, ""));
+        return Self;
+    }
+
+    /// <summary>Volatile-value rules from a profile file.</summary>
+    public TSelf VolatileProfile(string path)
+    {
+        _volatile.Add(("profile", path, "", ""));
+        return Self;
+    }
+
+    /// <summary>The marker style of placeholders and tokens (default Mustache).</summary>
+    public TSelf VolatileMarkers(VolatileMarkers style)
+    {
+        _volatileMarkers = style;
+        return Self;
+    }
+
+    /// <summary>
     /// Apply this builder's accumulated config to the opened handle, before
     /// serving starts. Subclasses extend this.
     /// </summary>
@@ -248,6 +291,16 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
         foreach (string name in _credentialHeaders)
         {
             Check(NativeMethods.RedactCredentialHeader(handle, name), nameof(RedactCredentialHeader));
+        }
+        if (_volatileMarkers is { } markers)
+        {
+            Check(NativeMethods.SetVolatileMarkers(handle, (int)markers), nameof(VolatileMarkers));
+        }
+        foreach ((string op, string a, string b, string c) in _volatile)
+        {
+            if (op == "rule") Check(NativeMethods.VolatileRule(handle, a, b, c), nameof(VolatileRule));
+            else if (op == "bind") Check(NativeMethods.VolatileBind(handle, a, b), nameof(Bind));
+            else Check(NativeMethods.VolatileProfile(handle, a), nameof(VolatileProfile));
         }
         if (_tlsPem is (string certPem, string keyPem))
         {
@@ -336,10 +389,9 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     /// Opt in to matching request bodies by semantic XML equality (attribute
     /// order and insignificant whitespace ignored; element order significant)
     /// instead of byte-for-byte — the SOAP/XML twin of <see cref="MatchJsonBody"/>.
-    /// Non-XML bodies fall back to byte-exact. It does NOT ignore a chosen
-    /// volatile element (e.g. a WS-Addressing MessageID); make those
-    /// deterministic with <see cref="RecordBuilder.RedactWholeTape"/> / a fixed
-    /// clock as before — this closes the key-order / indentation gap.
+    /// Non-XML bodies fall back to byte-exact. A chosen volatile element (a
+    /// WS-Addressing MessageID) is a <see cref="VcrBuilderBase{TSelf}.VolatileRule"/>
+    /// rule; this closes the key-order / indentation gap.
     /// </summary>
     public PlaybackBuilder MatchXmlBody(bool on = true)
     {
@@ -515,7 +567,6 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     public RecordBuilder SecretRedactor(Func<string, SecretRequest, string?> callback) { _secretRedactor = callback; return this; }
     private readonly string _upstreamBase;
     private readonly List<(Func<IntPtr, int, string, string, IntPtr> operation, VcrField field, string pattern, string replacement)> _redactions = new();
-    private readonly List<(string pattern, string name)> _normalizeWholeTape = new();
     private readonly List<(string pattern, string replacement)> _redactWholeTape = new();
     private (string title, string body)? _note;
     private bool _indentCodeBlocks;
@@ -566,23 +617,10 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     }
 
     /// <summary>
-    /// Normalize every distinct regex match across the WHOLE tape (all fields
-    /// and interactions, in first-appearance order) to a stable
-    /// <c>{{name-N}}</c> token. Use for correlated, recurring volatile ids
-    /// (e.g. a UUID minted in one response that reappears in later request
-    /// paths) so the same value maps to the same token everywhere.
-    /// </summary>
-    public RecordBuilder NormalizeWholeTape(string pattern, string name)
-    {
-        _normalizeWholeTape.Add((pattern, name));
-        return this;
-    }
-
-    /// <summary>
     /// Redact every regex match across the WHOLE tape (all fields and
-    /// interactions) to the constant <paramref name="replacement"/>. Use for
-    /// uncorrelated volatiles where the value never needs to round-trip
-    /// (e.g. a <c>Date</c> header).
+    /// interactions) to the constant <paramref name="replacement"/>: values
+    /// nobody correlates that a client must still parse. Values that recur
+    /// and must correlate are <see cref="VcrBuilderBase{TSelf}.VolatileRule"/>.
     /// </summary>
     public RecordBuilder RedactWholeTape(string pattern, string replacement)
     {
@@ -802,10 +840,6 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         {
             Check(operation(handle, (int)field, pattern, replacement), nameof(Redact));
         }
-        foreach ((string pattern, string name) in _normalizeWholeTape)
-        {
-            Check(NativeMethods.NormalizeWholeTape(handle, pattern, name), nameof(NormalizeWholeTape));
-        }
         foreach ((string pattern, string replacement) in _redactWholeTape)
         {
             Check(NativeMethods.RedactWholeTape(handle, pattern, replacement), nameof(RedactWholeTape));
@@ -891,6 +925,13 @@ public sealed class VcrServer : IDisposable
     /// <summary>Read the latest retained diagnostic; false observes without acknowledging.</summary>
     public string ReadLastError(bool consume = true) => NativeMethods.TakeString(NativeMethods.LastErrorEx(Handle, consume ? 1 : 0));
     public string DiagnosticsJson(bool consume = false) => NativeMethods.TakeString(NativeMethods.DiagnosticsJson(Handle, consume ? 1 : 0));
+
+    /// <summary>
+    /// The volatile-value rules in force, what the test bound, the current
+    /// bindings and any warning, one per line (<c>rule: …</c>, <c>bind: …</c>,
+    /// <c>binding: …</c>, <c>warning: …</c>).
+    /// </summary>
+    public string VolatileReport() => NativeMethods.TakeString(NativeMethods.VolatileReport(Handle));
     public void AssertNoMismatches()
     {
         string error = NativeMethods.TakeString(NativeMethods.AssertNoMismatches(Handle));
@@ -1148,6 +1189,17 @@ public sealed class VcrServer : IDisposable
 }
 
 /// <summary>Thrown when the VCR fails to start, or a record-mode flush detects drift.</summary>
+/// <summary>The marker style of volatile-value placeholders and tokens.</summary>
+public enum VolatileMarkers
+{
+    /// <summary><c>{{name}}</c>, the default.</summary>
+    Mustache = 0,
+    /// <summary><c>${name}</c>.</summary>
+    DollarCurly = 1,
+    /// <summary><c>[[name]]</c>.</summary>
+    Wikilink = 2,
+}
+
 public sealed class VcrException : Exception
 {
     public VcrException(string message) : base(message) { }

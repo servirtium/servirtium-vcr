@@ -63,31 +63,34 @@ Vcr.Record(tape, upstream)
 `VcrField` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`, or
 `ResponseHeaders`.
 
-### Whole-tape rewrites (deterministic re-record)
+### Volatile values (deterministic re-record, replay with fresh ids)
 
-`Redact` targets one field of each interaction. For volatility that spans
-the **whole tape** — values that recur across fields and interactions —
-there are two tape-wide verbs, applied at flush time. The payoff is a
-**byte-identical re-record**: a tape that scrubs its non-determinism this
-way records the same bytes every run, so `git diff` stays clean.
+Volatile values ([docs/volatile-values.md](../../docs/volatile-values.md))
+give one rule set to recording, playback and drift detection. The payoff
+is a **byte-identical re-record**, and a tape that replays against a client
+that mints fresh ids and timestamps every run.
 
 ```csharp
+// Recording: each placeholder's value becomes a token ({{messageId-1}}),
+// and the rules are written into the tape.
 Vcr.Record(tape, upstream)
-    // Correlated ids: a UUID minted in a POST response that reappears in
-    // later request paths. Each distinct match becomes a stable {{id-N}}
-    // token (numbered in first-appearance order), so the same value maps to
-    // the same token everywhere — and round-trips on playback.
-    .NormalizeWholeTape(@"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "id")
-    // Uncorrelated volatiles that never need to round-trip (e.g. the Date
-    // header, whose match count can vary run to run). Every match collapses
-    // to one constant.
-    .RedactWholeTape(@"[A-Z][a-z][a-z], \d{2} [A-Z][a-z][a-z] \d{4} \d{2}:\d{2}:\d{2} GMT", "{{date}}")
+    .PrettyXml(2)
+    .VolatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+    .VolatileRule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
+    .VolatileRule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
+    .VolatileRule("response headers", "Date: {{serverDate}}")
     .Start();
+
+// Playback: the tape's own "## Volatile values" block applies; the test binds
+// what no request carries (the server's Date), as a string it formatted.
+using var vcr = Vcr.Playback(tape).PrettyXml(2)
+    .Bind("serverDate", DateTime.UtcNow.ToString("R"))
+    .Start();
+Console.WriteLine(vcr.VolatileReport());   // rules, binds, bindings, warnings
 ```
 
-Use `NormalizeWholeTape` when the value must stay correlated (the same id
-in request and response); use `RedactWholeTape` when it just needs to
-disappear consistently.
+`RedactWholeTape(pattern, constant)` remains for values nobody correlates
+that a client must still parse: every regex match becomes the constant.
 
 ## Replaying a scrubbed tape (unredaction)
 

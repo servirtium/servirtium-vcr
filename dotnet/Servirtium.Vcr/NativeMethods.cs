@@ -171,8 +171,21 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_redact", CharSet = CharSet.Ansi)]
     internal static extern IntPtr Redact(IntPtr server, int field, string pattern, string replacement);
 
-    [DllImport(Lib, EntryPoint = "aether_vcr_embed_normalize_whole_tape", CharSet = CharSet.Ansi)]
-    internal static extern IntPtr NormalizeWholeTape(IntPtr server, string pattern, string name);
+    // Volatile values (docs/volatile-values.md): plain strings in, "" or an error out.
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_volatile_rule", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr VolatileRule(IntPtr server, string scope, string kind, string pattern);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_volatile_bind", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr VolatileBind(IntPtr server, string nameOrToken, string value);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_volatile_profile", CharSet = CharSet.Ansi)]
+    internal static extern IntPtr VolatileProfile(IntPtr server, string path);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_set_volatile_markers")]
+    internal static extern IntPtr SetVolatileMarkers(IntPtr server, int style);
+
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_volatile_report")]
+    internal static extern IntPtr VolatileReport(IntPtr server);
 
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_redact_whole_tape", CharSet = CharSet.Ansi)]
     internal static extern IntPtr RedactWholeTape(IntPtr server, string pattern, string replacement);

@@ -115,6 +115,35 @@ module Servirtium =
     let redactCredentialHeaderOnPlayback (name: string) (builder: PlaybackBuilder) : PlaybackBuilder =
         builder.RedactCredentialHeader(name)
 
+    /// A volatile-value rule (docs/volatile-values.md): scope, then a template
+    /// with {{name}} placeholders ("template") or a regex with named groups ("regex").
+    let volatileRule (scope: string) (pattern: string) (kind: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.VolatileRule(scope, pattern, kind)
+
+    /// A volatile-value rule on the playback builder.
+    let volatileRuleOnPlayback (scope: string) (pattern: string) (kind: string) (builder: PlaybackBuilder) : PlaybackBuilder =
+        builder.VolatileRule(scope, pattern, kind)
+
+    /// Bind a real value to every token of a placeholder name, or to one token (name-N).
+    let bind (nameOrToken: string) (value: string) (builder: PlaybackBuilder) : PlaybackBuilder =
+        builder.Bind(nameOrToken, value)
+
+    /// Volatile-value rules from a profile file.
+    let volatileProfile (path: string) (builder: RecordBuilder) : RecordBuilder =
+        builder.VolatileProfile(path)
+
+    /// Volatile-value rules from a profile file, on the playback builder.
+    let volatileProfileOnPlayback (path: string) (builder: PlaybackBuilder) : PlaybackBuilder =
+        builder.VolatileProfile(path)
+
+    /// The marker style of placeholders and tokens.
+    let volatileMarkers (style: VolatileMarkers) (builder: RecordBuilder) : RecordBuilder =
+        builder.VolatileMarkers(style)
+
+    /// The marker style, on the playback builder.
+    let volatileMarkersOnPlayback (style: VolatileMarkers) (builder: PlaybackBuilder) : PlaybackBuilder =
+        builder.VolatileMarkers(style)
+
     /// Return None to leave a field alone; Some token names the playback secret.
     let secretRedactor (callback: string -> SecretRequest -> string option) (builder: RecordBuilder) =
         builder.SecretRedactor(System.Func<string, SecretRequest, string>(fun key request ->
@@ -180,3 +209,4 @@ module Servirtium =
     let diagnosticsJson (consume: bool) (server: VcrServer) = server.DiagnosticsJson(consume)
     let assertNoMismatches (server: VcrServer) = server.AssertNoMismatches()
     let testContext (name: string) (file: string) (line: int) (server: VcrServer) = server.TestContext(name, file, line)
+    let volatileReport (server: VcrServer) = server.VolatileReport()

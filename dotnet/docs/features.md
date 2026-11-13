@@ -12,8 +12,8 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.Redact(field, …)` | ✅ |
-| Whole-tape normalize (correlated ids → `{{name-N}}`) | ✅ | ✅ | `.NormalizeWholeTape(pattern, name)` | — |
-| Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `.RedactWholeTape(pattern, replacement)` | — |
+| Volatile values (tokens for ids, times, ports; record, playback, drift) | ✅ | ✅ | `.VolatileRule(scope, pattern, kind)`, `.Bind(nameOrToken, value)`, `.VolatileProfile(path)`, `.VolatileMarkers(style)`, `server.VolatileReport()` | — |
+| Whole-tape redact (regex → constant) | ✅ | ✅ | `.RedactWholeTape(pattern, replacement)` | — |
 | Unredactions | ✅ | ✅ | `.Unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `.RemoveHeader(field, name)` | ✅ |
 | Notes | ✅ | ✅ | `.Note(…)` / `VcrServer.Note` | ✅ |
