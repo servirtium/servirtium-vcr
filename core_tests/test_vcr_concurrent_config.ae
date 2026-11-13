@@ -12,7 +12,7 @@
 // times, every worker its own distinct rules, then (single-threaded, after
 // the join) checks that each handle holds exactly the rules its own worker
 // gave it: one header removal, one redaction from redact_h plus one from
-// redact_header_h, one unredaction, one normalization (and a staged note), all
+// redact_header_h, one unredaction, one volatile rule (and a staged note), all
 // naming the same worker, and the indent flag only on even workers.
 
 import core.vcr
@@ -38,7 +38,7 @@ configure(h: ptr, i: int) {
     e1 = vcr.remove_header_h(h, vcr.FIELD_REQUEST_HEADERS, "X-Noise-${w}")
     e2 = vcr.redact_h(h, vcr.FIELD_RESPONSE_BODY, "secret-${w}", "R-${w}")
     e3 = vcr.unredact_h(h, vcr.FIELD_RESPONSE_BODY, "U-${w}", "plain-${w}")
-    e4 = vcr.normalize_whole_tape_h(h, "tok-${w}-[0-9]+", "tok-${w}")
+    e4 = vcr.volatile_h(h, "anywhere, regex `tok-${w}-[0-9]+`: tok-${w}")
     e5 = vcr.note_h(h, "title-${w}", "body-${w}")
     e6 = vcr.redact_header_h(h, vcr.FIELD_REQUEST_HEADERS, "X-Secret-${w}", "S-${w}")
     if i % 2 == 0 { vcr.indent_code_blocks_h(h) }
@@ -64,9 +64,8 @@ check(h: ptr, i: int) -> string {
     nun = vcr.get_unredaction_count_h(h)
     if nun != 1 { return "${w}: ${nun} unredactions (want 1)" }
     if vcr.get_unredaction_replacement_h(h, 0) != "plain-${w}" { return "${w}: unredaction ${vcr.get_unredaction_replacement_h(h, 0)}" }
-    nn = vcr.get_normalization_count_h(h)
-    if nn != 1 { return "${w}: ${nn} normalizations (want 1)" }
-    if vcr.get_normalization_name_h(h, 0) != "tok-${w}" { return "${w}: normalization ${vcr.get_normalization_name_h(h, 0)}" }
+    vr = vcr.volatile_report_h(h)
+    if vr != "rule: anywhere, regex `tok-${w}-[0-9]+`: tok-${w}\n" { return "${w}: volatile rules ${vr}" }
     want_indent = 0
     if i % 2 == 0 { want_indent = 1 }
     if vcr.get_indent_code_blocks_h(h) != want_indent { return "${w}: indent ${vcr.get_indent_code_blocks_h(h)} (want ${want_indent})" }

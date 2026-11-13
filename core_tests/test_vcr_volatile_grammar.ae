@@ -1,0 +1,234 @@
+// Volatile values, the pure parts (core/volatile.ae): the rule grammar and
+// its errors, code spans, presets, every token class's shape check and
+// stand-in, the token syntax and its escape, and each selector kind finding
+// its values. docs/volatile-values.md.
+import core.volatile
+import std.string
+import std.list
+
+extern exit(code: int)
+
+
+check(ok: int, what: string) {
+    if ok != 1 {
+        println("FAIL: ${what}")
+        exit(1)
+    }
+}
+eq(got: string, want: string, what: string) {
+    if got != want {
+        println("FAIL: ${what}\n  got:  [${got}]\n  want: [${want}]")
+        exit(1)
+    }
+}
+
+parse_one(line: string) -> (ptr, string) {
+    l = list_new()
+    err = volatile.parse_rules(line, l, 0, "")
+    return l, err
+}
+
+// The values `rules` select in `text` for `field`, joined by "|".
+picked(rules_text: string, field: int, text: string) -> string {
+    l, err = parse_one(rules_text)
+    if err != "" { println("FAIL: parse ${rules_text}: ${err}"); exit(1) }
+    res = volatile.find_spans(l, field, text)
+    out = ""
+    i = 0
+    while i < volatile.span_count(res) {
+        if i > 0 { out = string_concat(out, "|") }
+        out = string_concat(out, string.substring(text, volatile.span_start(res, i), volatile.span_end(res, i)))
+        i = i + 1
+    }
+    return out
+}
+
+core_of(k: string, v: string) -> string {
+    s, e = volatile.shape_core(k, v)
+    if s < 0 { return "-" }
+    return string.substring(v, s, e)
+}
+
+main() {
+    WSA = "http://www.w3.org/2005/08/addressing"
+
+    // ---- grammar: canonical lines round-trip ----
+    lines = [
+        "request body, XML `{${WSA}}MessageID`: uuid",
+        "response headers, `Date`: date",
+        "request path, query `id`: int",
+        "request path, regex `/cases/([0-9]+)`: case-id",
+        "request body, JSON `requestId`: uuid",
+        "response body, JSON `/items/*/id`: int",
+        "response body, XML `{urn:x}Case/@id`: int",
+        "response body, XML `*/@{urn:y}stamp`: timestamp",
+        "request body, XML `{${WSA}}To` regex `:([0-9]+)(?:/|$)`: port",
+        "anywhere, regex `[0-9a-f]{40}`: sha",
+        "response headers, `ETag`: etag",
+        "request body, regex ``a`b``: named-thing",
+        "request body, regex `` `x ``: x"
+    ]
+    i = 0
+    while i < lines.len {
+        l, err = parse_one(lines[i])
+        eq(err, "", "parses: ${lines[i]}")
+        eq(volatile.rule_line(l, 0), lines[i], "canonical line")
+        i = i + 1
+    }
+
+    // The "- " prefix and a heading are optional in the API, required in a block.
+    l1, e1 = parse_one("## Volatile values\n\n- response headers, `Date`: date\nrequest body, JSON `a`: int\n")
+    eq(e1, "", "API text with heading and mixed prefixes")
+    check(list_size(l1) == 2, "two rules")
+    l2 = list_new()
+    e2 = volatile.parse_rules("## Volatile values\n\nresponse headers, `Date`: date\n", l2, 1, "")
+    check(string.contains(e2, "starts with \"- \"") == 1, "strict block needs \"- \": ${e2}")
+    l3 = list_new()
+    e3 = volatile.parse_rules("## Volatile values (v2)\n", l3, 1, "")
+    check(string.contains(e3, "unknown grammar version") == 1, "v2 refused: ${e3}")
+    l4 = list_new()
+    eq(volatile.parse_rules("## Volatile values (v1)\n\n- response headers, `Date`: date\n", l4, 1, ""), "", "(v1) accepted")
+
+    // ---- grammar errors ----
+    bad = [
+        "request bodies, JSON `a`: int",
+        "request body, `Date`: date",
+        "response headers, query `a`: int",
+        "request path, JSON `a`: int",
+        "request headers, XML `{u}a`: int",
+        "anywhere, JSON `a`: int",
+        "request body, XML `a:MessageID`: uuid",
+        "request body, regex `(`: x",
+        "request body, JSON `a`: Uuid",
+        "request body, JSON `a`: case-1",
+        "request body, JSON `a` uuid",
+        "request body, JSON `a: uuid",
+        "request body, frob `a`: uuid",
+        "request body, regex `a` regex `b`: x"
+    ]
+    i = 0
+    while i < bad.len {
+        lb, eb = parse_one(bad[i])
+        check(eb != "", "refused: ${bad[i]}")
+        i = i + 1
+    }
+
+    // ---- merge and conflicts ----
+    lm = list_new()
+    eq(volatile.parse_rules("response headers, `Date`: date", lm, 0, ""), "", "first")
+    eq(volatile.parse_rules("response headers, `Date`: date", lm, 0, ""), "", "same rule twice is one")
+    check(list_size(lm) == 1, "deduplicated")
+    ec = volatile.parse_rules("response headers, `Date`: timestamp", lm, 0, " (code)")
+    check(string.contains(ec, "conflicts with `response headers, `Date`: date`") == 1, "conflict names both: ${ec}")
+    // header names compare as written in the key; a different selector is not a conflict
+    eq(volatile.parse_rules("response headers, `Date` regex `([0-9]+)`: int", lm, 0, ""), "", "narrowed selector is another rule")
+
+    // ---- presets ----
+    names = ["ws-addressing", "http-dates", "trace-headers"]
+    i = 0
+    while i < names.len {
+        lp = list_new()
+        eq(volatile.parse_rules(volatile.preset(names[i]), lp, 0, ""), "", "preset ${names[i]} parses")
+        check(list_size(lp) > 2, "preset ${names[i]} has rules")
+        i = i + 1
+    }
+    eq(volatile.preset("nope"), "", "unknown preset")
+
+    // ---- render_block: sorted, deterministic ----
+    lr = list_new()
+    volatile.parse_rules("response headers, `Date`: date\nrequest body, JSON `a`: int\n", lr, 0, "")
+    eq(volatile.render_block(lr), "## Volatile values\n\n- request body, JSON `a`: int\n- response headers, `Date`: date\n\n", "block render")
+    lr2 = list_new()
+    eq(volatile.parse_rules(volatile.render_block(lr), lr2, 1, ""), "", "rendered block parses strictly")
+    eq(volatile.block_in("LICENSE\n\n## Volatile values\n\n- a\n\n## Interaction 0: GET /\n"), "## Volatile values\n\n- a\n\n", "block_in")
+    eq(volatile.block_in("## Interaction 0: GET /\n"), "", "no block")
+
+    // ---- shapes ----
+    eq(core_of("uuid", "5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13"), "5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13", "uuid")
+    eq(core_of("uuid", "urn:uuid:5F1D0C6E-2A8B-4C3E-9D41-7B6A0F2E8C13"), "5F1D0C6E-2A8B-4C3E-9D41-7B6A0F2E8C13", "urn:uuid prefix stays literal")
+    eq(core_of("uuid", "42"), "-", "uuid refuses 42")
+    eq(core_of("uuid", "5f1d0c6e2a8b4c3e9d417b6a0f2e8c13"), "-", "uuid needs hyphens")
+    eq(core_of("timestamp", "2026-11-13T09:41:07"), "2026-11-13T09:41:07", "timestamp")
+    eq(core_of("timestamp", "2026-11-13T09:41:07.123456Z"), "2026-11-13T09:41:07.123456Z", "timestamp fraction Z")
+    eq(core_of("timestamp", "2026-11-13 09:41+01:00"), "2026-11-13 09:41+01:00", "timestamp space, minutes, offset")
+    eq(core_of("timestamp", "2026-11-13"), "-", "a date alone is not a timestamp")
+    eq(core_of("timestamp", "2026-11-13T09:41:07Zx"), "-", "trailing junk")
+    eq(core_of("date", "Fri, 13 Nov 2026 09:41:07 GMT"), "Fri, 13 Nov 2026 09:41:07 GMT", "date")
+    eq(core_of("date", "Fri, 13 Nov 2026 09:41:07 UTC"), "-", "date must be GMT")
+    eq(core_of("date", "-1"), "-", "Expires: -1 is not a date")
+    eq(core_of("epoch", "1763026867"), "1763026867", "epoch seconds")
+    eq(core_of("epoch", "1763026867123"), "1763026867123", "epoch ms")
+    eq(core_of("epoch", "17630268"), "-", "epoch too short")
+    eq(core_of("int", "-42"), "-42", "int")
+    eq(core_of("int", "4.2"), "-", "int not decimal")
+    eq(core_of("hex", "deadBEEF"), "deadBEEF", "hex")
+    eq(core_of("hex", "xyz"), "-", "hex refuses")
+    eq(core_of("etag", "\"abc\""), "abc", "etag core")
+    eq(core_of("etag", "W/\"abc\""), "abc", "weak etag core")
+    eq(core_of("etag", "abc"), "-", "etag needs quotes")
+    eq(core_of("case-id", "C-1"), "C-1", "named: anything")
+    eq(core_of("case-id", ""), "-", "named: not empty")
+    eq(core_of("case-id", "a\nb"), "-", "named: one line")
+
+    check(volatile.per_occurrence("date") == 1 && volatile.per_occurrence("timestamp") == 1 && volatile.per_occurrence("epoch") == 1, "time classes per occurrence")
+    check(volatile.per_occurrence("uuid") == 0 && volatile.per_occurrence("case-id") == 0, "others per value")
+
+    // ---- stand-ins have their class's shape ----
+    classes = ["uuid", "timestamp", "date", "epoch", "int", "hex"]
+    i = 0
+    while i < classes.len {
+        sv = volatile.standin(classes[i], 7)
+        check(core_of(classes[i], sv) != "-", "stand-in for ${classes[i]} has its shape: ${sv}")
+        i = i + 1
+    }
+    eq(volatile.standin("uuid", 3), "00000000-0000-4000-8000-000000000003", "uuid stand-in")
+    eq(volatile.standin("date", 61), "Sat, 01 Jan 2000 00:01:01 GMT", "date stand-in")
+    eq(volatile.standin("case-id", 2), "{{case-id-2}}", "named stand-in is the token")
+
+    // ---- tokens ----
+    t = "x{{case-id-12}}y"
+    check(volatile.token_end(t, 1) == 15, "token end")
+    eq(volatile.token_class(t, 1), "case-id", "token class")
+    check(volatile.token_number(t, 1) == 12, "token number")
+    check(volatile.token_end("{{uuid-0}}", 0) < 0, "no token 0")
+    check(volatile.token_end("{{uuid-01}}", 0) < 0, "no leading zero")
+    check(volatile.token_end("{{request.host}}", 0) < 0, "placeholders are not tokens")
+    check(volatile.token_end("{{baseUrl}}", 0) < 0, "no number, no token")
+    check(volatile.token_end("{{a-1-2}}", 0) < 0, "class words start with a letter")
+
+    // ---- the escape ----
+    eq(volatile.escape("say {{uuid-1}} now"), "say {{{{}}uuid-1}} now", "escape a token-shaped literal")
+    eq(volatile.escape("{{request.host}} {{x}}"), "{{request.host}} {{x}}", "placeholders untouched")
+    eq(volatile.escape("{{{{}}"), "{{{{}}{{}}", "escape the escape")
+    raw = ["say {{uuid-1}} now", "{{{{}}", "{{{uuid-1}}", "{{{{uuid-2}}}}", "plain", "{{", "a{{date-3}}{{date-4}}"]
+    i = 0
+    while i < raw.len {
+        eq(volatile.unescape(volatile.escape(raw[i])), raw[i], "escape round trip: ${raw[i]}")
+        i = i + 1
+    }
+
+    // ---- selectors ----
+    hdrs = "Content-Type: text/xml\nDATE: Fri, 13 Nov 2026 09:41:07 GMT\nX-Other: 1\n"
+    eq(picked("response headers, `Date`: date", volatile.VFIELD_RESPONSE_HEADERS, hdrs), "Fri, 13 Nov 2026 09:41:07 GMT", "header, case-insensitive")
+    eq(picked("response headers, `Date`: date", volatile.VFIELD_REQUEST_HEADERS, hdrs), "", "field scoping")
+    eq(picked("request path, query `id`: int", volatile.VFIELD_PATH, "/a?x=1&id=42&i%64=7#f"), "42|7", "query, decoded names")
+    eq(picked("request path, regex `/cases/([0-9]+)`: int", volatile.VFIELD_PATH, "/cases/42/documents"), "42", "regex group 1")
+    eq(picked("anywhere, regex `[0-9]{3}`: int", volatile.VFIELD_RESPONSE_BODY, "a 123 b 456"), "123|456", "anywhere, whole matches")
+    json = "{\"requestId\": \"abc\", \"n\": {\"requestId\": 42}, \"items\": [{\"id\": 1}, {\"id\": {{int-2}}}], \"s\": \"requestId\"}"
+    eq(picked("request body, JSON `requestId`: uuid", volatile.VFIELD_REQUEST_BODY, json), "abc|42", "JSON key at any depth, strings and numbers")
+    eq(picked("request body, JSON `/items/*/id`: int", volatile.VFIELD_REQUEST_BODY, json), "1|{{int-2}}", "JSON pointer with *, bare token")
+    eq(picked("request body, JSON `n`: int", volatile.VFIELD_REQUEST_BODY, json), "", "objects are never selected")
+    eq(picked("request body, JSON `a`: int", volatile.VFIELD_REQUEST_BODY, "{\"a\": 1"), "", "not JSON, nothing")
+    soap = "<s:Envelope xmlns:s=\"urn:s\" xmlns:a=\"${WSA}\"><s:Header><a:MessageID>urn:uuid:5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13</a:MessageID><b:MessageID xmlns:b=\"urn:other\">x</b:MessageID><a:To s:mustUnderstand=\"1\">https://h.invalid:53187/Svc</a:To></s:Header><s:Body><C xmlns=\"urn:x\" id=\"7\"><Sub>  2026-11-13T09:41:07  </Sub><caseData>&lt;SubmissionDate&gt;2026-11-13T09:41:07&lt;/SubmissionDate&gt;</caseData></C></s:Body></s:Envelope>"
+    eq(picked("request body, XML `{${WSA}}MessageID`: uuid", volatile.VFIELD_REQUEST_BODY, soap), "urn:uuid:5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13", "XML by namespace, not prefix")
+    eq(picked("request body, XML `{urn:x}Sub`: timestamp", volatile.VFIELD_REQUEST_BODY, soap), "2026-11-13T09:41:07", "XML default namespace, trimmed text")
+    eq(picked("request body, XML `{urn:x}C/@{}id`: int", volatile.VFIELD_REQUEST_BODY, soap), "7", "XML attribute, no namespace")
+    eq(picked("request body, XML `{urn:x}C`: int", volatile.VFIELD_REQUEST_BODY, soap), "", "elements with children are never selected")
+    eq(picked("request body, XML `{urn:x}SubmissionDate`: timestamp", volatile.VFIELD_REQUEST_BODY, soap), "", "selectors do not reach into escaped XML")
+    eq(picked("request body, regex `&lt;SubmissionDate&gt;([^&]+)&lt;`: timestamp", volatile.VFIELD_REQUEST_BODY, soap), "2026-11-13T09:41:07", "regex fallback for escaped XML")
+    eq(picked(volatile.preset("ws-addressing"), volatile.VFIELD_REQUEST_BODY, soap), "urn:uuid:5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13|53187", "ws-addressing: MessageID and the port in To")
+    eq(picked("request body, regex `[0-9]+`: int\nrequest body, regex `[0-9]{2}`: int", volatile.VFIELD_REQUEST_BODY, "a 12345 b"), "12345", "overlaps: earlier start, earlier rule wins")
+
+    println("volatile grammar: all checks passed")
+    exit(0)
+}

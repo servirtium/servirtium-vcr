@@ -383,33 +383,40 @@ vcr_embed_remove_header(s: ptr, field: int, name: string) -> ptr {
     return vcr_embed_dup(vcr.remove_header_h(s, field, name))
 }
 
-// Register a whole-tape normalization rule: every distinct match of `pattern`
-// (regex, scanned across all fields and interactions) is rewritten to a
-// stable {{name-N}} token on flush. Server-minted values that recur — a
-// created entity's id echoed back in later request paths — collapse to one
-// token, so a re-record comes out byte-identical and drift detection
-// (fail_if_changed) only fires on real changes. Configure before start.
-vcr_embed_normalize_whole_tape(s: ptr, pattern: string, name: string) -> ptr {
+// Volatile values (docs/volatile-values.md): one or more rule lines, in the
+// grammar of a tape's "## Volatile values" block ("- " and the heading
+// optional). "" or the error (a grammar error with its line, or a conflict).
+// Configure after open, before start, on a playback or a record handle.
+vcr_embed_volatile(s: ptr, rules: string) -> ptr {
     if s == null { return vcr_embed_dup("") }
-    return vcr_embed_dup(vcr.normalize_whole_tape_h(s, pattern, name))
+    return vcr_embed_dup(vcr.volatile_h(s, rules))
 }
 
-// Collapse every whole-tape match of `pattern` to the constant `replacement`.
-// The companion to normalize for volatile-but-uncorrelated values (Date
-// headers, nonces): a value whose distinct-count varies per run, so a
-// correlated token would not be byte-stable. Configure before start.
+// Volatile rules from a preset (ws-addressing, http-dates, trace-headers)
+// or a profile file's "## Volatile values" block. "" or the error.
+vcr_embed_volatile_profile(s: ptr, name_or_path: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
+    return vcr_embed_dup(vcr.volatile_profile_h(s, name_or_path))
+}
+
+// The rules, the current bindings and every shape warning, one per line
+// ("rule: …", "binding: …", "shape: …"). Caller frees.
+vcr_embed_volatile_report(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
+    return vcr_embed_dup(vcr.volatile_report_h(s))
+}
+
+// Whole-tape redaction: every match of the regex `pattern`, in every field,
+// is written as the constant `replacement` (values the test never sends
+// back; values that must correlate are volatile values). Configure before
+// start.
 vcr_embed_redact_whole_tape(s: ptr, pattern: string, replacement: string) -> ptr {
     if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_whole_tape_h(s, pattern, replacement))
 }
 
-// normalize / redact_whole_tape with a description the recording-rules
-// footer shows in place of the pattern (a pattern holding a per-run value,
-// such as a mapped port, would make the footer differ run to run).
-vcr_embed_normalize_whole_tape_described(s: ptr, pattern: string, name: string, description: string) -> ptr {
-    if s == null { return vcr_embed_dup("") }
-    return vcr_embed_dup(vcr.normalize_whole_tape_described_h(s, pattern, name, description))
-}
+// redact_whole_tape with a description the recording-rules footer shows in
+// place of the pattern (a pattern holding a per-run value, a mapped port).
 vcr_embed_redact_whole_tape_described(s: ptr, pattern: string, replacement: string, description: string) -> ptr {
     if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_whole_tape_described_h(s, pattern, replacement, description))
@@ -499,7 +506,7 @@ vcr_embed_set_strict_headers(s: ptr, on: int) {
 
 // Opt-in: write a "## [Recording rules]" footer after the last interaction,
 // listing what the test left out or rewrote (removed headers, redactions,
-// normalizations) and where. Playback does not read it.
+// volatile values) and where. Playback does not read it.
 vcr_embed_set_rules_footer(s: ptr, on: int) {
     if s == null { return }
     vcr.set_rules_footer_h(s, on)
@@ -661,11 +668,6 @@ vcr_embed_emphasize_http_verbs(s: ptr) {
 vcr_embed_clear_redactions(s: ptr) {
     if s == null { return }
     vcr.clear_redactions_h(s)
-}
-
-vcr_embed_clear_normalizations(s: ptr) {
-    if s == null { return }
-    vcr.clear_normalizations_h(s)
 }
 
 vcr_embed_clear_unredactions(s: ptr) {

@@ -1,0 +1,63 @@
+// Drive the volatile-values conformance scenarios (docs/volatile-values.md)
+// against a binding's playback server, without depending on the binding's
+// own HTTP client. Tapes: core_tests/volatile/. Exit 0 = as expected.
+//
+//   volatile_fixture wcf <base_url>            a SOAP request with a fresh
+//       MessageID, port and SubmissionDate; the reply's RelatesTo must be
+//       that MessageID (wcf.md, or wcf_plain.md with a profile or preset)
+//   volatile_fixture cases <base_url>          POST /cases hands out 42, and
+//       GET /cases/42/documents matches (cases.md)
+//   volatile_fixture cases-mismatch <base_url> after a reset: POST /cases,
+//       then GET /cases/99/documents is a mismatch naming the binding
+import core_tests.fixture_support
+import std.http.client
+import std.os
+import std.string
+import std.uuid
+import std.time
+
+const WSA = "http://www.w3.org/2005/08/addressing"
+
+exchange(method: string, url: string, body: string, mime: string) -> (int, string) {
+    req = client.request(method, url)
+    defer client.request_free(req)
+    client.set_timeout(req, 10s)
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), mime) }
+    response = client.send_request(req)!
+    defer client.response_free(response)
+    return client.response_status(response), string.copy(client.response_body(response))
+}
+
+wcf(base: string) {
+    id, err = uuid.v4()
+    fixture_support.check(err == "", "uuid")
+    port = 1024 + (time.now_ms() % 60000)
+    soap = "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:a=\"${WSA}\"><s:Header><a:Action s:mustUnderstand=\"1\">http://services.example.test/case/ICaseService/CreateCase</a:Action><a:MessageID>urn:uuid:${id}</a:MessageID><a:ReplyTo><a:Address>${WSA}/anonymous</a:Address></a:ReplyTo><a:To s:mustUnderstand=\"1\">https://workpro--not-real.invalid:${port}/Services/CaseService.svc</a:To></s:Header><s:Body><CreateCase xmlns=\"http://services.example.test/case\"><caseData>&lt;CaseData&gt;&lt;Title&gt;Water leak&lt;/Title&gt;&lt;SubmissionDate&gt;2026-11-13T09:41:07&lt;/SubmissionDate&gt;&lt;/CaseData&gt;</caseData></CreateCase></s:Body></s:Envelope>"
+    status, body = exchange("POST", "${base}/Services/CaseService.svc", soap, "application/soap+xml; charset=utf-8")
+    fixture_support.check(status == 200, "WCF request matched (status ${status}): ${body}")
+    fixture_support.check(string.contains(body, "<a:RelatesTo>urn:uuid:${id}</a:RelatesTo>") == 1, "RelatesTo carries the request's MessageID: ${body}")
+}
+
+cases(base: string) {
+    s1, b1 = exchange("POST", "${base}/cases", "", "")
+    fixture_support.check(s1 == 201 && b1 == "{\"caseId\":\"42\"}", "POST /cases hands out 42 (${s1} ${b1})")
+    s2, b2 = exchange("GET", "${base}/cases/42/documents", "", "")
+    fixture_support.check(s2 == 200 && b2 == "the documents of case 42", "the handed-out id matches (${s2} ${b2})")
+}
+
+cases_mismatch(base: string) {
+    s1, _b1 = exchange("POST", "${base}/cases", "", "")
+    fixture_support.check(s1 == 201, "POST /cases (${s1})")
+    s2, b2 = exchange("GET", "${base}/cases/99/documents", "", "")
+    fixture_support.check(s2 == 599, "another id is a mismatch (${s2})")
+    fixture_support.check(string.contains(b2, "{{case-id-1}} = 42") == 1, "the mismatch names the binding: ${b2}")
+}
+
+main() {
+    scenario = os.args_get(1)
+    base = os.args_get(2)
+    if scenario == "wcf" { wcf(base) }
+    else if scenario == "cases" { cases(base) }
+    else if scenario == "cases-mismatch" { cases_mismatch(base) }
+    else { fixture_support.check(false, "unknown scenario ${scenario}") }
+}

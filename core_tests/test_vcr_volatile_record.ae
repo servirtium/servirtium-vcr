@@ -1,0 +1,256 @@
+// Volatile values when recording and in drift detection
+// (docs/volatile-values.md): tokens numbered per class in document order,
+// per value or per occurrence; the "## Volatile values" block; shape
+// warnings; escapes; redaction first; the regex limits; and the nightly TCK
+// case against a real local upstream that mints new ids, timestamps, Date
+// headers and request ids on every run: unchanged API -> byte-identical tape
+// and fail_if_changed passes; a renamed element -> it fails, and the diff is
+// that one line.
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+import std.io
+import std.time
+
+extern exit(code: int)
+extern malloc(n: int) -> ptr
+
+const UPSTREAM_PORT = 18341
+const RECORD_PORT = 18342
+
+eq(got: string, want: string, what: string) {
+    if got != want {
+        println("FAIL: ${what}\n--- got\n${got}\n--- want\n${want}")
+        exit(1)
+    }
+}
+has(text: string, part: string, what: string) {
+    if string.contains(text, part) != 1 {
+        println("FAIL: ${what}: no [${part}] in\n${text}")
+        exit(1)
+    }
+}
+hasnt(text: string, part: string, what: string) {
+    if string.contains(text, part) == 1 {
+        println("FAIL: ${what}: [${part}] in\n${text}")
+        exit(1)
+    }
+}
+ok(err: string, what: string) {
+    if err != "" { println("FAIL: ${what}: ${err}"); exit(1) }
+}
+
+tmp_dir() -> string {
+    t = io.getenv("TMPDIR")
+    if t == 0 { t = "/tmp" }
+    return t
+}
+
+uuid_for(n: int) -> string {
+    d = string.from_int(n)
+    while string.length(d) < 12 { d = string_concat("0", d) }
+    return "5f1d0c6e-2a8b-4c3e-9d41-${d}"
+}
+
+const RULES = "request headers, `X-Request-Id`: uuid\nrequest body, JSON `requestId`: uuid\nresponse body, JSON `id`: uuid\nresponse body, JSON `created`: timestamp\nresponse headers, `Date`: date\nrequest path, regex `/cases/([0-9a-f-]{36})`: uuid\n"
+
+// One conversation, as night `n` sees it: every volatile value differs per
+// night; `extra` adds a field (a real API change).
+night(n: int, extra: int) -> ptr {
+    h = vcr.open_offline()
+    ok(vcr.volatile_h(h, RULES), "rules")
+    a = uuid_for(n * 10 + 1)
+    b = uuid_for(n * 10 + 2)
+    created = "2026-11-${string.from_int(10 + n)}T09:41:0${string.from_int(n)}Z"
+    date = "Fri, 13 Nov 2026 09:41:0${string.from_int(n)} GMT"
+    body0 = "{\"id\":\"${b}\",\"created\":\"${created}\"}"
+    if extra == 1 { body0 = "{\"id\":\"${b}\",\"created\":\"${created}\",\"priority\":\"high\"}" }
+    ok(vcr.record_full_response_h(h, "POST", "/cases", 201, "application/json", body0,
+        "Content-Type: application/json\nX-Request-Id: ${a}\n", "{\"requestId\":\"${a}\"}",
+        "Content-Type: application/json\nDate: ${date}\n"), "record 0")
+    ok(vcr.record_full_response_h(h, "GET", "/cases/${b}", 200, "application/json",
+        "{\"id\":\"${b}\",\"created\":\"${created}\",\"log\":{\"created\":\"${created}\"}}",
+        "X-Request-Id: ${uuid_for(n * 10 + 3)}\n", "",
+        "Content-Type: application/json\nDate: ${date}\n"), "record 1")
+    return h
+}
+
+diff_lines(a: string, b: string) -> string {
+    la = string.split(string.copy(a), "\n")
+    lb = string.split(string.copy(b), "\n")
+    out = ""
+    i = 0
+    na = string.array_size(la)
+    nb = string.array_size(lb)
+    while i < na || i < nb {
+        x = ""
+        y = ""
+        if i < na { x = string.array_get(la, i) }
+        if i < nb { y = string.array_get(lb, i) }
+        if x != y { out = string_concat(out, "- ${x}\n+ ${y}\n") }
+        i = i + 1
+    }
+    return out
+}
+
+// ---- the real upstream: a QA environment redeployed every night ----
+
+struct Env { night: int; renamed: int }
+
+handle_case(req: ptr, res: ptr, ud: ptr) {
+    env = ud as *Env
+    n = env.night
+    id = uuid_for(n * 100 + 7)
+    name = "id"
+    if env.renamed == 1 { name = "caseId" }
+    http.response_set_status(res, 201)
+    http.response_set_header(res, "Content-Type", "application/json")
+    http.response_set_header(res, "Date", "Fri, 13 Nov 2026 0${string.from_int(n)}:00:00 GMT")
+    http.response_set_header(res, "X-Request-Id", uuid_for(n * 100 + 8))
+    http.response_set_body(res, "{\"${name}\":\"${id}\",\"created\":\"2026-11-1${string.from_int(n)}T09:00:00Z\",\"status\":\"open\"}")
+}
+
+post_case(port: int) -> int {
+    req = client.request("POST", "http://127.0.0.1:${port}/cases")
+    client.set_header(req, "Content-Type", "application/json")
+    client.set_body(req, string.bytes("{\"title\":\"leak\"}"), "application/json")
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1 }
+    st = client.response_status(resp)
+    client.response_free(resp)
+    return st
+}
+
+record_night(env: *Env, n: int, renamed: int, tape: string) -> string {
+    env.night = n
+    env.renamed = renamed
+    rec, oerr = vcr.open_record(tape, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if rec == null { println("FAIL: open_record ${oerr}"); exit(1) }
+    vcr.remove_transport_headers_h(rec)
+    vcr.strict_ignore_common_headers_h(rec)
+    ok(vcr.volatile_profile_h(rec, "http-dates"), "http-dates")
+    ok(vcr.volatile_h(rec, "response headers, `X-Request-Id`: uuid\nresponse body, JSON `id`: uuid\nresponse body, JSON `caseId`: uuid\nresponse body, JSON `created`: timestamp"), "rules")
+    if vcr.start_background_h(rec, 10000) != 0 { println("FAIL: start recorder"); exit(1) }
+    st = post_case(RECORD_PORT)
+    if st != 201 { println("FAIL: record POST ${st}: ${vcr.last_error_h(rec)}"); exit(1) }
+    err = vcr.stop_and_flush_fail_if_changed_h(rec, tape)
+    vcr.destroy_h(rec)
+    return err
+}
+
+main() {
+    println("=== volatile values: recording and drift ===")
+
+    // ---- numbering, per class, per value / per occurrence ----
+    h1 = night(1, 0)
+    t1 = vcr.emit_tape_h(h1)
+    has(t1, "## Volatile values\n\n- request body, JSON `requestId`: uuid\n- request headers, `X-Request-Id`: uuid\n- request path, regex `/cases/([0-9a-f-]{36})`: uuid\n- response body, JSON `created`: timestamp\n- response body, JSON `id`: uuid\n- response headers, `Date`: date\n\n## Interaction 0", "sorted block before the first interaction")
+    has(t1, "X-Request-Id: {{uuid-1}}", "request id")
+    has(t1, "{\"requestId\":\"{{uuid-1}}\"}", "the same value, the same token")
+    has(t1, "Date: {{date-1}}", "first date")
+    has(t1, "{\"id\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\"}", "server-minted id and time")
+    has(t1, "## Interaction 1: GET /cases/{{uuid-2}}", "the id in the next request's path: correlated")
+    has(t1, "X-Request-Id: {{uuid-3}}", "a new value, the next number")
+    has(t1, "\"created\":\"{{timestamp-2}}\",\"log\":{\"created\":\"{{timestamp-3}}\"}", "times are per occurrence even when equal")
+    has(t1, "Date: {{date-2}}", "an equal Date is its own token")
+    hasnt(t1, "5f1d0c6e", "no raw uuid left")
+    eq(vcr.volatile_report_h(h1), "rule: request headers, `X-Request-Id`: uuid\nrule: request body, JSON `requestId`: uuid\nrule: response body, JSON `id`: uuid\nrule: response body, JSON `created`: timestamp\nrule: response headers, `Date`: date\nrule: request path, regex `/cases/([0-9a-f-]{36})`: uuid\n", "report: rules, no warnings")
+
+    // ---- test 4 offline: another night, the same tape ----
+    h2 = night(2, 0)
+    eq(vcr.emit_tape_h(h2), t1, "a second night's conversation writes the same bytes")
+    // ---- test 5 offline: a real change is that change only ----
+    h3 = night(3, 1)
+    eq(diff_lines(t1, vcr.emit_tape_h(h3)), "- {\"id\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\"}\n+ {\"id\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\",\"priority\":\"high\"}\n", "an added field is the only diff; no renumbering")
+
+    // ---- shape guard: an id that stops being a UUID ----
+    h4 = vcr.open_offline()
+    ok(vcr.volatile_h(h4, "response body, JSON `id`: uuid"), "rule")
+    ok(vcr.record_full_response_h(h4, "GET", "/c", 200, "application/json", "{\"id\":42,\"other\":\"${uuid_for(1)}\"}", "", "", "Content-Type: application/json\n"), "record")
+    t4 = vcr.emit_tape_h(h4)
+    has(t4, "{\"id\":42,", "a value without the shape stays as it is")
+    has(vcr.volatile_report_h(h4), "shape: interaction 0, response body: `response body, JSON `id`: uuid` found `42`, which is not a uuid", "and is reported")
+    drift_tape = "${tmp_dir()}/vcr_volatile_drift.tape"
+    fs.delete(drift_tape)
+    ok(vcr.flush_h(h1, drift_tape), "flush night 1")
+    fe = vcr.flush_and_fail_if_changed_h(h4, drift_tape)
+    has(fe, "tape mismatch", "drift")
+    has(fe, "which is not a uuid", "drift names the format change")
+
+    // ---- escapes: a literal token in a body ----
+    h5 = vcr.open_offline()
+    ok(vcr.record_full_response_h(h5, "GET", "/t", 200, "text/plain", "template {{uuid-1}} and {{{{}}", "", "", ""), "record")
+    has(vcr.emit_tape_h(h5), "template {{{{}}uuid-1}} and {{{{}}{{}}", "escaped even without rules")
+
+    // ---- redaction first: a rule never sees a redacted secret ----
+    h6 = vcr.open_offline()
+    secret = uuid_for(999)
+    ok(vcr.redact_h(h6, vcr.FIELD_REQUEST_BODY, secret, "[REDACTED]"), "redact")
+    ok(vcr.volatile_h(h6, "request body, JSON `apiKey`: uuid"), "rule")
+    ok(vcr.record_full_response_h(h6, "POST", "/k", 200, "text/plain", "ok", "Content-Type: application/json\n", "{\"apiKey\":\"${secret}\"}", ""), "record")
+    t6 = vcr.emit_tape_h(h6)
+    has(t6, "{\"apiKey\":\"[REDACTED]\"}", "redacted, not tokenized")
+    r6 = vcr.volatile_report_h(h6)
+    has(r6, "found `[REDACTED]`", "the warning shows the redacted text")
+    hasnt(r6, secret, "never the secret")
+
+    // ---- the recording-rules footer lists each rule ----
+    vcr.set_rules_footer_h(h1, 1)
+    has(vcr.emit_tape_h(h1), "| volatile | response headers | `Date` | `{{date-N}}` | 0, 1 |", "footer row")
+
+    // ---- test 9: a pathological regex is bounded ----
+    h7 = vcr.open_offline()
+    ok(vcr.volatile_h(h7, "response body, regex `(a+)+$`: x"), "rule")
+    big = string.copy("a")
+    while string.length(big) < 65536 { big = string_concat(big, big) }
+    big = string_concat(big, "!")
+    ok(vcr.record_full_response_h(h7, "GET", "/big", 200, "text/plain", big, "", "", ""), "record")
+    t0 = time.now_ms()
+    _t7 = vcr.emit_tape_h(h7)
+    took = time.now_ms() - t0
+    if took > 5000 { println("FAIL: the regex limit did not bound the match: ${took} ms"); exit(1) }
+    has(vcr.volatile_report_h(h7), "match limit", "the limit is reported")
+    println("  ok: (a+)+$ on 64 KiB stopped by the match limit in ${took} ms")
+
+    // ---- recording over a tape keeps the rules it declares ----
+    keep_tape = "${tmp_dir()}/vcr_volatile_keep.tape"
+    ok(fs.write(keep_tape, "## Volatile values\n\n- response headers, `Date`: date\n\n## Interaction 0: GET /x\n\n### Request headers recorded for playback:\n\n```\n```\n### Request body recorded for playback ():\n\n```\n```\n### Response headers recorded for playback:\n\n```\n```\n### Response body recorded for playback (200: text/plain):\n\n```\nx\n```\n\n"), "write")
+    kr, kerr = vcr.open_record(keep_tape, "http://127.0.0.1:1", 0)
+    if kr == null { println("FAIL: open_record ${kerr}"); exit(1) }
+    eq(vcr.volatile_report_h(kr), "rule: response headers, `Date`: date\n", "the tape's rules")
+    ce = vcr.volatile_h(kr, "response headers, `Date`: timestamp")
+    has(ce, "conflicts with `response headers, `Date`: date` (tape)", "test 7: a code rule contradicting the tape's")
+    vcr.destroy_h(kr)
+
+    // ---- tests 4 and 5 against a real upstream ----
+    env = malloc(sizeof(Env)) as *Env
+    env.night = 1
+    env.renamed = 0
+    upstream = http.server_create(UPSTREAM_PORT)
+    http.server_post(upstream, "/cases", handle_case, env as ptr)
+    serr = http.server_start_background(upstream)
+    if serr != "" { println("FAIL: upstream ${serr}"); exit(1) }
+    sleep(200)
+    tape = "${tmp_dir()}/vcr_volatile_nightly.tape"
+    fs.delete(tape)
+    ok(record_night(env, 1, 0, tape), "night 1 (first recording)")
+    first, _ = fs.read(tape)
+    has(first, "\"id\":\"{{uuid-2}}\"", "the minted id")
+    has(first, "X-Request-Id: {{uuid-1}}", "the request id")
+    has(first, "Date: {{date-1}}", "the Date")
+    ok(record_night(env, 2, 0, tape), "night 2: nothing changed, fail_if_changed passes")
+    second, _ = fs.read(tape)
+    eq(second, first, "night 2's tape is byte-identical")
+    e3 = record_night(env, 3, 1, tape)
+    has(e3, "tape mismatch", "night 3: the vendor renamed id")
+    third, _ = fs.read(tape)
+    eq(diff_lines(first, third), "- {\"id\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\",\"status\":\"open\"}\n+ {\"caseId\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\",\"status\":\"open\"}\n", "the diff is the rename")
+    http.server_stop(upstream)
+
+    println("=== volatile values: recording and drift passed ===")
+    exit(0)
+}

@@ -68,6 +68,7 @@
 //   import std.http.server.vcr
 //   import std.http
 import secret_fields
+import volatile
 import std.io
 //   import std.http.client
 //
@@ -139,8 +140,8 @@ exports (
     redact_json_field_h, redact_h, unredact_h, remove_header_h, note_h, remove_transport_headers_h,
     remove_cloud_headers_h, CLOUD_VENDORS, strict_ignore_common_headers_h,
     ignore_volatile_headers_h, redact_credentials_h, redact_credential_header_h,
-    add_license_notice_h, normalize_whole_tape_h, redact_whole_tape_h, clear_normalizations_h,
-    normalize_whole_tape_described_h, redact_whole_tape_described_h, static_content_h, untaped_h,
+    add_license_notice_h, volatile_h, volatile_profile_h, volatile_report_h, clear_volatile_h,
+    redact_whole_tape_h, redact_whole_tape_described_h, clear_collapses_h, static_content_h, untaped_h,
     set_strict_headers_h, set_match_json_body_h, set_rules_footer_h, get_rules_footer_h,
     RULES_FOOTER_HEADING, xml_canonicalize, set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
     set_pretty_json_h, get_pretty_json_h, sort_json_keys_h, get_sort_json_keys_h, sort_json_array_h,
@@ -161,8 +162,7 @@ exports (
     apply_redactions_for_h, get_indent_code_blocks_h, get_emphasize_http_verbs_h,
     get_strict_headers_h, get_match_multiple_h, get_body_h, get_content_type_h,
     get_header_removal_count_h, get_header_removal_field_h, get_header_removal_name_h, get_method_h,
-    get_normalization_count_h, get_normalization_name_h, get_normalization_pattern_h,
-    get_normalization_replacement_h, get_note_body_h, get_note_present_h, get_note_title_h,
+    get_note_body_h, get_note_present_h, get_note_title_h,
     get_path_h, get_redaction_count_h, get_redaction_field_h, get_redaction_pattern_h,
     get_redaction_replacement_h, get_req_body_h, get_req_headers_h, get_resp_headers_h,
     get_status_h, get_unredaction_count_h, get_unredaction_field_h, get_unredaction_pattern_h,
@@ -209,6 +209,13 @@ struct Interaction {
     req_json: string          // canonical request prepared on load; raw tape kept
     req_xml: string           // canonical request prepared on load; raw tape kept
     resp_headers: string
+    v_path: string            // volatile values: the tokenized expectation
+    v_req_headers: string     // prepared at start (vol_prepare_k); v_ready
+    v_req_body: string        // says it is
+    v_body_mode: int          // the body canonicalizer: 1 JSON, 2 XML, 0 bytes
+    v_resp_headers: string
+    v_body: string
+    v_ready: int
     used: int                 // 1 once this interaction has been replayed at
                               // least once (ordered OR MatchMultiple), for
                               // assert_all_consumed. Reset by reset_cursor.
@@ -228,29 +235,14 @@ struct Redaction {
                               // exercise. Substitutions only; redact/unredact = 1.
 }
 
-// A whole-tape rewrite rule applied across ALL fields and interactions. Two
-// modes, distinguished by which slot is set:
-//
-//   correlate (replacement == "", name set) — every DISTINCT match becomes a
-//     stable {{name-N}} token, N by order of first appearance. libservirtium_vcr
-//     mints the token, so a server-generated value that recurs (a created
-//     entity's id echoed back in a later request path) collapses to the SAME
-//     token everywhere — identity preserved, so it round-trips on playback.
-//     Set via normalize_whole_tape().
-//
-//   collapse (replacement set, name == "") — every match becomes the one
-//     constant you supply (a plain regex replace_all over the whole tape).
-//     Identity erased — use it for volatile values you never correlate, like
-//     Date headers, where the COUNT of distinct values varies per run and
-//     correlated tokens would therefore NOT be byte-stable. Set via
-//     redact_whole_tape().
-//
-// Either way the point is the same: re-recording the same suite yields a
-// byte-identical tape, so drift detection fires only on real changes. See
-// build_normalization_map / apply_normalizations.
-struct Normalization {
+// A whole-tape redaction (redact_whole_tape): every match of `pattern`, in
+// every field of every interaction, is written as the one constant
+// `replacement`. For values the test never sends back and a client must
+// still parse on playback (a version, a count, a time in a body nobody
+// correlates). It is a redaction: a constant, run with the others, before
+// volatile values. Values that recur and must correlate are volatile values.
+struct Collapse {
     pattern: string
-    name: string
     replacement: string
     description: string      // shown in the recording-rules footer in place of
                               // the pattern, when set (a pattern holding a
@@ -258,8 +250,7 @@ struct Normalization {
                               // differ run to run)
 }
 
-// One resolved value->token mapping, built fresh per emit by
-// build_normalization_map() and consumed by apply_normalizations().
+// A value -> token pair (credential presets).
 struct NormToken {
     value: string
     token: string
@@ -408,8 +399,8 @@ struct Rules {
     redactions: ptr          // *Redaction (record side: written to the tape redacted)
     unredactions: ptr        // *Redaction (playback side: restored before serving)
     substitutions: ptr       // *Redaction (playback response rewrites)
-    normalizations: ptr      // *Normalization (whole-tape rules)
-    normtokens: ptr          // *NormToken, rebuilt on each emit from normalizations
+    volatile: ptr            // *VRule (core/volatile.ae): volatile-value rules
+    collapses: ptr           // *Collapse (redact_whole_tape)
     header_removals: ptr     // *HeaderRemoval
     credheaders: ptr         // *CredHeader (credential presets)
     credtokens: ptr          // credential value -> token, per recording
@@ -451,6 +442,13 @@ struct Tape {
     cursor: int              // next interaction for ordered playback
     so_mask: string          // emitter scratch: array rules that apply to this body
     emit_error: string       // why the last emit refused ("" = none)
+    vmint: ptr               // emitter scratch: volatile numbering (*VMint)
+    vwarn: string            // volatile shape warnings, one per line
+    vbinds: ptr              // playback: *VBind, this conversation's bindings
+    vpending: ptr            // playback: bindings the request being matched proposes
+    vminted: ptr             // playback: *VBind, tokens a hand-written tape's values became
+    vfail: string            // playback: why the last match broke a binding
+    vreqwarn: string         // playback: shape warnings of the request being matched
 }
 
 struct Outcome {
@@ -506,8 +504,8 @@ new_rules() -> *Rules {
     r.redactions = list_new()
     r.unredactions = list_new()
     r.substitutions = list_new()
-    r.normalizations = list_new()
-    r.normtokens = list_new()
+    r.volatile = list_new()
+    r.collapses = list_new()
     r.header_removals = list_new()
     r.credheaders = list_new()
     r.credtokens = list_new()
@@ -551,6 +549,13 @@ new_tape() -> *Tape {
     t.cursor = 0
     t.so_mask = ""
     t.emit_error = ""
+    t.vmint = null
+    t.vwarn = ""
+    t.vbinds = list_new()
+    t.vpending = list_new()
+    t.vminted = list_new()
+    t.vfail = ""
+    t.vreqwarn = ""
     return t
 }
 
@@ -611,8 +616,8 @@ free_vcr(vc: *Vcr) {
     list_free(r.redactions)
     list_free(r.unredactions)
     list_free(r.substitutions)
-    list_free(r.normalizations)
-    list_free(r.normtokens)
+    list_free(r.volatile)
+    list_free(r.collapses)
     list_free(r.header_removals)
     list_free(r.credheaders)
     list_free(r.credtokens)
@@ -657,8 +662,6 @@ tape_list_k(vc: *Vcr) -> ptr        { return vc.tape.interactions }
 redactions_k(vc: *Vcr) -> ptr       { return vc.rules.redactions }
 substitutions_k(vc: *Vcr) -> ptr    { return vc.rules.substitutions }
 unredactions_k(vc: *Vcr) -> ptr     { return vc.rules.unredactions }
-normalizations_k(vc: *Vcr) -> ptr   { return vc.rules.normalizations }
-normtokens_k(vc: *Vcr) -> ptr       { return vc.rules.normtokens }
 header_removals_k(vc: *Vcr) -> ptr  { return vc.rules.header_removals }
 credheaders_k(vc: *Vcr) -> ptr      { return vc.rules.credheaders }
 credtokens_k(vc: *Vcr) -> ptr       { return vc.rules.credtokens }
@@ -875,6 +878,9 @@ vcr_reset_cursor_k(vc: *Vcr) {
         e.used = 0
         i = i + 1
     }
+    // Bindings are per conversation; a reset starts a new one.
+    vc.tape.vbinds = list_new()
+    vc.tape.vpending = list_new()
     lock_give(vc.tape.lock)
     set_outcome_k(vc, "", KIND_OK, -1)
 }
@@ -928,6 +934,13 @@ tape_append_k(vc: *Vcr, method: string, path: string, status: int, body: string,
     e.req_json = json_body_canonicalize(req_body)
     e.req_xml = xml_canonicalize(req_body)
     e.resp_headers = string.copy("")
+    e.v_path = ""
+    e.v_req_headers = ""
+    e.v_req_body = ""
+    e.v_body_mode = 0
+    e.v_resp_headers = ""
+    e.v_body = ""
+    e.v_ready = 0
     e.used = 0
     // Drain this server's pending note onto this interaction.
     if pending_note_present_k(vc) == 1 {
@@ -1123,184 +1136,6 @@ get_unredaction_replacement_h(h: ptr, i: int) -> string {
     return (list_get_raw(unredactions_k(vc), i) as *Redaction).replacement
 }
 
-// ---- whole-tape normalization storage ----
-
-// Register a whole-tape rule. The pattern is validated by compiling it once
-// here so a bad regex fails at config time (returns 0 + load_err) rather than
-// silently no-op'ing at flush. Correlate mode passes name + replacement="";
-// collapse mode passes name="" + the constant replacement.
-add_normalization_k(vc: *Vcr, pattern: string, name: string, replacement: string) -> string {
-    re, err = regex.compile(pattern)
-    if err != "" {
-        return string_concat("invalid normalize pattern: ", err)
-    }
-    regex.free(re)
-    r = malloc(sizeof(Normalization)) as *Normalization
-    r.pattern = string.copy(pattern)
-    r.name = string.copy(name)
-    r.replacement = string.copy(replacement)
-    r.description = string.copy("")
-    rule_add_k(vc, vc.rules.normalizations, r)
-    return ""
-}
-
-// Describe the whole-tape rule added last, for the recording-rules footer.
-describe_last_normalization_k(vc: *Vcr, description: string) {
-    l = normalizations_k(vc)
-    n = list_size(l)
-    if n == 0 { return }
-    r = list_get_raw(l, n - 1) as *Normalization
-    r.description = string.copy(description)
-}
-clear_normalizations_k(vc: *Vcr) { vc.rules.normalizations = list_new() }
-get_normalization_count_h(h: ptr) -> int { vc = key_for(h); return list_size(normalizations_k(vc)) }
-get_normalization_pattern_h(h: ptr, i: int) -> string {
-    vc = key_for(h)
-    if i < 0 || i >= list_size(normalizations_k(vc)) { return "" }
-    return (list_get_raw(normalizations_k(vc), i) as *Normalization).pattern
-}
-get_normalization_name_h(h: ptr, i: int) -> string {
-    vc = key_for(h)
-    if i < 0 || i >= list_size(normalizations_k(vc)) { return "" }
-    return (list_get_raw(normalizations_k(vc), i) as *Normalization).name
-}
-get_normalization_replacement_h(h: ptr, i: int) -> string {
-    vc = key_for(h)
-    if i < 0 || i >= list_size(normalizations_k(vc)) { return "" }
-    return (list_get_raw(normalizations_k(vc), i) as *Normalization).replacement
-}
-
-// Look up the token already assigned to `val` this emit, or "" if none yet.
-norm_token_for_k(vc: *Vcr, val: string) -> string {
-    l = normtokens_k(vc)
-    nt = list_size(l)
-    i = 0
-    while i < nt {
-        e = list_get_raw(l, i) as *NormToken
-        if e.value == val { return e.token }
-        i = i + 1
-    }
-    return ""
-}
-
-norm_token_add_k(vc: *Vcr, value: string, token: string) {
-    e = malloc(sizeof(NormToken)) as *NormToken
-    e.value = string.copy(value)
-    e.token = string.copy(token)
-    list_add_raw(normtokens_k(vc), e)
-}
-
-// Scan one field string for every match of `re`, assigning a fresh
-// {{name-N}} token to each value not seen before this emit. `counter` is the
-// running per-rule index; returns it advanced past any tokens minted here.
-scan_field_for_norm_k(vc: *Vcr, re: ptr, name: string, s: string, counter: int) -> int {
-    if string.length(s) == 0 { return counter }
-    fa, ferr = regex.find_all(re, s)
-    if ferr != "" { return counter }
-    m = regex.find_all_count(fa)
-    c = counter
-    i = 0
-    while i < m {
-        st = regex.find_all_start(fa, i)
-        en = regex.find_all_end(fa, i)
-        val = string.substring(s, st, en)
-        if norm_token_for_k(vc, val) == "" {
-            c = c + 1
-            tok = string_concat("{{", name)
-            tok = string_concat(tok, "-")
-            tok = string_concat(tok, string.from_int(c))
-            tok = string_concat(tok, "}}")
-            norm_token_add_k(vc, val, tok)
-        }
-        i = i + 1
-    }
-    regex.find_all_free(fa)
-    return c
-}
-
-// Build the per-emit value->token table by walking interactions in document
-// order and, within each, fields in canonical order (path, request headers,
-// request body, response headers, response body). First appearance wins the
-// next token index, so the table — and therefore the flushed tape — is
-// deterministic across re-records regardless of the live values seen.
-build_normalization_map_k(vc: *Vcr) {
-    vc.rules.normtokens = list_new()
-    norms = normalizations_k(vc)
-    nr = list_size(norms)
-    if nr == 0 { return }
-    n = list_size(tape_list_k(vc))
-    ri = 0
-    while ri < nr {
-        r = list_get_raw(norms, ri) as *Normalization
-        pattern = string.copy(r.pattern)
-        name = string.copy(r.name)
-        repl = r.replacement
-        // Collapse rules (replacement set) need no token table — they're a
-        // straight regex replace_all in apply_normalizations. Only correlate
-        // rules build first-appearance tokens here.
-        if string.length(repl) > 0 {
-            ri = ri + 1
-        } else {
-        re, err = regex.compile(pattern)
-        if err == "" {
-            counter = 0
-            ii = 0
-            while ii < n {
-                e = tape_get_k(vc, ii)
-                counter = scan_field_for_norm_k(vc, re, name, string.copy(e.path), counter)
-                counter = scan_field_for_norm_k(vc, re, name, string.copy(e.req_headers), counter)
-                counter = scan_field_for_norm_k(vc, re, name, string.copy(e.req_body), counter)
-                // The ordered fields, so tokens are numbered in the order the
-                // tape writes them (stable order, when registered).
-                counter = scan_field_for_norm_k(vc, re, name, string.copy(ordered_field_k(vc, e, FIELD_RESPONSE_HEADERS)), counter)
-                counter = scan_field_for_norm_k(vc, re, name, string.copy(ordered_field_k(vc, e, FIELD_RESPONSE_BODY)), counter)
-                ii = ii + 1
-            }
-            regex.free(re)
-        }
-        ri = ri + 1
-        }
-    }
-}
-
-// Apply the built value->token table to one field string. Substitution is a
-// literal replace of each captured value (the regex already ran in the build
-// pass). Tokens are applied in first-appearance order; this assumes captured
-// values are not substrings of one another (true for ids/uuids/etags) — the
-// common Servirtium normalization shapes.
-apply_normalizations_k(vc: *Vcr, s: string) -> string {
-    out = s
-
-    // Collapse rules first: regex replace_all every match to its constant.
-    norms = normalizations_k(vc)
-    nr = list_size(norms)
-    i = 0
-    while i < nr {
-        r = list_get_raw(norms, i) as *Normalization
-        repl = r.replacement
-        if string.length(repl) > 0 {
-            re, err = regex.compile(string.copy(r.pattern))
-            if err == "" {
-                rep, rerr = regex.replace_all(re, out, repl)
-                if rerr == "" { out = rep }
-                regex.free(re)
-            }
-        }
-        i = i + 1
-    }
-
-    // Correlate rules: literal replace of each captured value with its token.
-    l = normtokens_k(vc)
-    nt = list_size(l)
-    j = 0
-    while j < nt {
-        e = list_get_raw(l, j) as *NormToken
-        out = str_replace_all(out, e.value, e.token)
-        j = j + 1
-    }
-    return out
-}
-
 valid_header_removal_field(field: int) -> int {
     if field == FIELD_REQUEST_HEADERS { return 1 }
     if field == FIELD_RESPONSE_HEADERS { return 1 }
@@ -1390,7 +1225,7 @@ header_value_in_block(block: string, name: string) -> string {
 // registered), else a diagnostic naming the first mismatch. A header the tape
 // didn't record reads as "" — so a request that carries it won't match, exactly
 // like matching on any other recorded value.
-match_headers_diff_k(vc: *Vcr, block: string, req: ptr) -> string {
+match_headers_diff_k(vc: *Vcr, block: string, req: ptr, index: int, vol: int) -> string {
     l = match_headers_k(vc)
     n = list_size(l)
     i = 0
@@ -1398,7 +1233,9 @@ match_headers_diff_k(vc: *Vcr, block: string, req: ptr) -> string {
         name = (list_get_raw(l, i) as *MatchHeaderName).name
         recorded_v = header_value_in_block(block, name)
         live_v = request_header_value(req, name)
-        if string.equals(recorded_v, live_v) == 0 {
+        same = string.equals(recorded_v, live_v)
+        if vol == 1 { same = vol_match_k(vc, FIELD_REQUEST_HEADERS, "${name}: ${recorded_v}", "${name}: ${live_v}", index) }
+        if same == 0 {
             return "request header '${name}' differs — recorded '${recorded_v}', live '${live_v}'"
         }
         i = i + 1
@@ -2668,17 +2505,27 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
 // with the base64/gzip handling) onto `res`. Shared by the ordered and the
 // match-multiple playback paths. Does NOT touch cursor / last_* — the caller
 // owns those.
-emit_playback_response(vc: *Vcr, e: *Interaction, req: ptr, res: ptr) {
+emit_playback_response(vc: *Vcr, e: *Interaction, req: ptr, res: ptr, index: int) {
     http_response_set_status(res, e.status)
     http_response_clear_headers(res)
+    tape_resp_headers = e.resp_headers
+    tape_body = e.body
+    if vol_ready_k(vc, e) == 1 {
+        tape_resp_headers = e.v_resp_headers
+        tape_body = e.v_body
+    }
 
     // Response-side substitution (playback-only): fill {{request.host}}/
     // {{request.scheme}}/{{baseUrl}} from the live request and apply any
     // registered (pattern -> replacement) rules, so taped nextLink/id/absolute
     // URLs resolve against the test's own host. Done once here into locals;
     // the loops below read these instead of the raw e.* fields.
-    resp_headers = apply_substitutions_k(vc, req, e.resp_headers, FIELD_RESPONSE_HEADERS)
-    resp_body = apply_substitutions_k(vc, req, e.body, FIELD_RESPONSE_BODY)
+    resp_headers = apply_substitutions_k(vc, req, tape_resp_headers, FIELD_RESPONSE_HEADERS)
+    resp_body = apply_substitutions_k(vc, req, tape_body, FIELD_RESPONSE_BODY)
+    // Volatile-value tokens: filled from the bindings (or a stand-in), and
+    // escapes unescaped (docs/volatile-values.md, "Playback").
+    resp_headers = vol_fill_k(vc, resp_headers, index)
+    if ascii_ci_contains(e.content_type, "base64 below") == 0 { resp_body = vol_fill_k(vc, resp_body, index) }
 
     // Record any {{...}} placeholder left UNFILLED in what we're about to send
     // (a typo like {{valut}}, or a placeholder no rule covers — it would reach
@@ -2777,31 +2624,39 @@ head_content_length(req: ptr, res: ptr, recorded_headers: string) {
 interaction_matches_pre(vc: *Vcr, index: int, e: *Interaction, req: ptr, got_method: string,
                         got_path_plain: string, got_path_q: string,
                         live_headers: string, live_body: string) -> int {
-    expected_path = rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH)
+    vol = vol_ready_k(vc, e)
+    vol_begin_request_k(vc)
+    expected_path = volatile.unescape(rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH))
     got_path = got_path_plain
-    if expected_path_includes_query(expected_path) == 1 { got_path = got_path_q }
+    if expected_path_includes_query(e.path) == 1 { got_path = got_path_q }
     got_path = secret_canonical_live_k(vc, index, FIELD_PATH, got_path)
     if string.equals(got_method, e.method) == 0 { return 0 }
-    if string.length(got_path) == 0 || request_paths_equal(got_path, expected_path) == 0 { return 0 }
+    if string.length(got_path) == 0 { return 0 }
+    if vol == 1 {
+        if vol_match_k(vc, FIELD_PATH, e.v_path, uri_canonical(got_path), index) == 0 { return 0 }
+    } else if request_paths_equal(got_path, expected_path) == 0 { return 0 }
 
-    expected_req_headers = rt_apply_unredactions_for_k(vc, e.req_headers, FIELD_REQUEST_HEADERS)
-    expected_req_headers = remove_headers_from_block_k(vc, expected_req_headers, FIELD_REQUEST_HEADERS)
-    expected_req_headers = strip_transport_headers(expected_req_headers)
-    expected_req_headers = cred_mask_block_k(vc, expected_req_headers)
+    expected_req_headers = volatile.unescape(expected_req_headers_k(vc, e))
+    if vol == 1 { expected_req_headers = e.v_req_headers }
     // Full-block header match applies when strict is on, or when the tape
     // carries request headers AND the fixture didn't opt into surgical ByHeader
     // matching (which matches only the named headers, ignoring the rest).
     have_by_header = list_size(match_headers_k(vc)) > 0
     if vcr_get_strict_headers_k(vc) == 1 || (is_blank(expected_req_headers) == 0 && have_by_header == 0) {
-        if string.equals(live_headers, expected_req_headers) == 0 { return 0 }
+        if vol == 1 {
+            if vol_match_k(vc, FIELD_REQUEST_HEADERS, expected_req_headers, live_headers, index) == 0 { return 0 }
+        } else if string.equals(live_headers, expected_req_headers) == 0 { return 0 }
     }
-    if match_headers_diff_k(vc, expected_req_headers, req) != "" { return 0 }
+    if match_headers_diff_k(vc, expected_req_headers, req, index, vol) != "" { return 0 }
 
-    expected_req_body = rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY)
+    expected_req_body = volatile.unescape(rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY))
+    if vol == 1 { expected_req_body = e.v_req_body }
     if is_blank(expected_req_body) == 0 {
         canonical_body = secret_canonical_live_k(vc, index, FIELD_REQUEST_BODY, live_body)
         bm = string.equals(canonical_body, expected_req_body)
-        if bm == 0 && vcr_get_match_json_body_k(vc) == 1 {
+        if vol == 1 {
+            bm = vol_match_k(vc, FIELD_REQUEST_BODY, expected_req_body, vol_canonical_body(e.v_body_mode, canonical_body, 0), index)
+        } else if bm == 0 && vcr_get_match_json_body_k(vc) == 1 {
             bm = json_request_bodies_equal(e, canonical_body, expected_req_body)
         }
         if bm == 0 && vcr_get_match_xml_body_k(vc) == 1 {
@@ -2862,7 +2717,8 @@ do_playback_multiple(vc: *Vcr, req: ptr, res: ptr) {
 
     e2 = tape_get_k(vc, found)
     e2.used = 1
-    emit_playback_response(vc, e2, req, res)
+    if vol_ready_k(vc, e2) == 1 { vol_commit_k(vc, found) }
+    emit_playback_response(vc, e2, req, res, found)
     set_outcome_k(vc, "", KIND_OK, found)
     // Deliberately no cursor advance — the interaction stays available.
 }
@@ -2909,26 +2765,35 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
         return
     }
     e = tape_get_k(vc, cur)
-    expected_path = rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH)
-    expected_req_headers = rt_apply_unredactions_for_k(vc, e.req_headers, FIELD_REQUEST_HEADERS)
-    expected_req_body = rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY)
-    expected_req_headers = remove_headers_from_block_k(vc, expected_req_headers, FIELD_REQUEST_HEADERS)
-    expected_req_headers = strip_transport_headers(expected_req_headers)
-    expected_req_headers = cred_mask_block_k(vc, expected_req_headers)
+    vol = vol_ready_k(vc, e)
+    vol_begin_request_k(vc)
+    expected_path = volatile.unescape(rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH))
+    expected_req_body = volatile.unescape(rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY))
+    expected_req_headers = volatile.unescape(expected_req_headers_k(vc, e))
+    if vol == 1 {
+        expected_path = e.v_path
+        expected_req_headers = e.v_req_headers
+        expected_req_body = e.v_req_body
+    }
 
     got_method = http_request_method(req)
     got_path = http_request_path(req)
-    if expected_path_includes_query(expected_path) == 1 {
+    if expected_path_includes_query(e.path) == 1 {
         got_path = build_recorded_path(req)
     }
     got_path = secret_canonical_live_k(vc, cur, FIELD_PATH, got_path)
-    if string.length(got_method) == 0 || string.equals(got_method, e.method) == 0 ||
-       string.length(got_path) == 0 || request_paths_equal(got_path, expected_path) == 0 {
+    path_ok = 0
+    if string.length(got_path) > 0 {
+        if vol == 1 { path_ok = vol_match_k(vc, FIELD_PATH, expected_path, uri_canonical(got_path), cur) }
+        else { path_ok = request_paths_equal(got_path, expected_path) }
+    }
+    if string.length(got_method) == 0 || string.equals(got_method, e.method) == 0 || path_ok == 0 {
         gm = got_method
         if string.length(gm) == 0 { gm = "(null)" }
         gp = got_path
         if string.length(gp) == 0 { gp = "(null)" }
         msg = "tape mismatch at interaction ${cur}: expected ${e.method} ${expected_path}, got ${gm} ${gp}"
+        if vc.tape.vfail != "" { msg = "${msg}; ${vc.tape.vfail}" }
         set_outcome_k(vc, msg, KIND_PATH_OR_METHOD_DIFF, cur)
         retain_replay_mismatch_k(vc, KIND_PATH_OR_METHOD_DIFF, cur, e, req, read_full_request_body(req), 0)
         emit_mismatch_response(res, msg, KIND_PATH_OR_METHOD_DIFF)
@@ -2937,7 +2802,7 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
 
     // ByHeader: opt-in match on specific named request headers (independent of
     // strict-header mode).
-    bh_diff = match_headers_diff_k(vc, expected_req_headers, req)
+    bh_diff = match_headers_diff_k(vc, expected_req_headers, req, cur, vol)
     if bh_diff != "" {
         msg = "interaction ${cur}: ${bh_diff}"
         set_outcome_k(vc, msg, KIND_HEADER_VALUE_DIFF, cur)
@@ -2950,7 +2815,13 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
     have_by_header = list_size(match_headers_k(vc)) > 0
     if strict == 1 || (is_blank(expected_req_headers) == 0 && have_by_header == 0) {
         live = normalize_live_headers_k(vc, req)
-        if string.equals(live, expected_req_headers) == 0 {
+        headers_ok = string.equals(live, expected_req_headers)
+        if vol == 1 {
+            headers_ok = vol_match_k(vc, FIELD_REQUEST_HEADERS, expected_req_headers, live, cur)
+            // The sweep below names the first differing line of the normalized forms.
+            if headers_ok == 0 { live = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, live, cur) }
+        }
+        if headers_ok == 0 {
             diag_ok = 0
             kind = KIND_HEADER_MISSING
             msg = ""
@@ -3019,6 +2890,7 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
                 msg = "interaction ${cur}: request headers differ — recorded:\n${expected_req_headers}\nlive:\n${live}"
                 kind = KIND_HEADER_MISSING
             }
+            if vc.tape.vfail != "" { msg = "${msg}; ${vc.tape.vfail}" }
             set_outcome_k(vc, msg, kind, cur)
             retain_replay_mismatch_k(vc, kind, cur, e, req, read_full_request_body(req), 0)
             emit_mismatch_response(res, msg, kind)
@@ -3033,7 +2905,9 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
         live_body = read_full_request_body(req)
         canonical_body = secret_canonical_live_k(vc, cur, FIELD_REQUEST_BODY, live_body)
         bodies_match = string.equals(canonical_body, expected_req_body)
-        if bodies_match == 0 && vcr_get_match_json_body_k(vc) == 1 {
+        if vol == 1 {
+            bodies_match = vol_match_k(vc, FIELD_REQUEST_BODY, expected_req_body, vol_canonical_body(e.v_body_mode, canonical_body, 0), cur)
+        } else if bodies_match == 0 && vcr_get_match_json_body_k(vc) == 1 {
             bodies_match = json_request_bodies_equal(e, canonical_body, expected_req_body)
         }
         if bodies_match == 0 && vcr_get_match_xml_body_k(vc) == 1 {
@@ -3043,6 +2917,7 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
             rlen = string.length(expected_req_body)
             llen = string.length(live_body)
             msg = "interaction ${cur}: request body different to expectation — recorded=${rlen} bytes, live=${llen} bytes"
+            if vc.tape.vfail != "" { msg = "${msg}; ${vc.tape.vfail}" }
             set_outcome_k(vc, msg, KIND_BODY_DIFF, cur)
             retain_replay_mismatch_k(vc, KIND_BODY_DIFF, cur, e, req, live_body, 0)
             emit_mismatch_response(res, msg, KIND_BODY_DIFF)
@@ -3051,7 +2926,8 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
     }
 
     e.used = 1
-    emit_playback_response(vc, e, req, res)
+    if vol == 1 { vol_commit_k(vc, cur) }
+    emit_playback_response(vc, e, req, res, cur)
 
     set_outcome_k(vc, "", KIND_OK, cur)
     set_cursor_k(vc, cur + 1)
@@ -3313,6 +3189,12 @@ start_background_h(server: ptr, timeout_ms: int) -> int {
         set_last_error_k(key_for(server), rerr)
         return -1
     }
+    if string.equals(mode_k(key_for(server)), "record") == 0 {
+        vc0 = key_for(server)
+        lock_take(vc0.tape.lock)
+        vol_prepare_k(vc0)
+        lock_give(vc0.tape.lock)
+    }
     terr = apply_tls_h(server)
     if terr != "" {
         set_last_error_k(key_for(server), string_concat("tls: ", terr))
@@ -3443,27 +3325,47 @@ fill_request_header_tokens(text: string, req: ptr) -> string {
     return out
 }
 
-normalize_whole_tape_h(server: ptr, pattern: string, name: string) -> string {
-    return add_normalization_k(key_for(server), pattern, name, "")
-}
 redact_whole_tape_h(server: ptr, pattern: string, replacement: string) -> string {
-    return add_normalization_k(key_for(server), pattern, "", replacement)
+    re, err = regex.compile(pattern)
+    if err != "" { return string_concat("invalid redact_whole_tape pattern: ", err) }
+    regex.free(re)
+    vc = key_for(server)
+    c = malloc(sizeof(Collapse)) as *Collapse
+    c.pattern = string.copy(pattern)
+    c.replacement = string.copy(replacement)
+    c.description = string.copy("")
+    rule_add_k(vc, vc.rules.collapses, c)
+    return ""
 }
-// The same two, with a description the recording-rules footer shows in place
-// of the pattern: for a pattern that holds a per-run value (a mapped port),
-// which would otherwise make the footer differ run to run, or one a reader
-// is better told in words.
-normalize_whole_tape_described_h(server: ptr, pattern: string, name: string, description: string) -> string {
-    err = normalize_whole_tape_h(server, pattern, name)
-    if err == "" { describe_last_normalization_k(key_for(server), description) }
-    return err
-}
+// The same, with a description the recording-rules footer shows in place of
+// the pattern: for a pattern that holds a per-run value (a mapped port).
 redact_whole_tape_described_h(server: ptr, pattern: string, replacement: string, description: string) -> string {
     err = redact_whole_tape_h(server, pattern, replacement)
-    if err == "" { describe_last_normalization_k(key_for(server), description) }
-    return err
+    if err != "" { return err }
+    l = key_for(server).rules.collapses
+    (list_get_raw(l, list_size(l) - 1) as *Collapse).description = string.copy(description)
+    return ""
 }
-clear_normalizations_h(server: ptr) { clear_normalizations_k(key_for(server)) }
+clear_collapses_h(server: ptr) { key_for(server).rules.collapses = list_new() }
+
+// Every whole-tape redaction applied to one field's text.
+apply_collapses_k(vc: *Vcr, s: string) -> string {
+    out = s
+    l = vc.rules.collapses
+    i = 0
+    while i < list_size(l) {
+        c = list_get_raw(l, i) as *Collapse
+        re, err = regex.compile(c.pattern)
+        if err == "" {
+            rep_s, rerr = regex.replace_all(re, out, c.replacement)
+            if rerr == "" { out = rep_s }
+            regex.free(re)
+        }
+        i = i + 1
+    }
+    return out
+}
+
 remove_header_h(server: ptr, field: int, name: string) -> string {
     return add_header_removal_k(key_for(server), field, name)
 }
@@ -4126,6 +4028,12 @@ open_record(tape_path: string, upstream_base: string, port: int) -> (ptr, string
     h = vc as ptr
     diagnostic_open_h(h, tape_path, tape_path)
     vcr_aether_clear_tape_k(vc)
+    // Recording over a tape keeps the volatile-value rules it declares.
+    existing, xerr = fs.read(tape_path)
+    if xerr == "" {
+        berr = vol_load_tape_block_k(vc, normalize_tape_bytes(existing), tape_path)
+        if berr != "" { return open_fail(raw, vc, "vcr.load_record: ${berr}") }
+    }
 
     ok = vcr_register_record_routes(h, upstream_base)
     if ok == 0 { return open_fail(raw, vc, "vcr.load_record: ${vcr_load_err_k(vc)}") }
@@ -4600,7 +4508,7 @@ flush_or_check_k(vc: *Vcr, tape_path: string) -> string {
     // where to look. The .actual sibling stays on disk.
     expected_len = string.length(existing)
     actual_len   = string.length(blob)
-    return "tape mismatch: expected=${expected_len} bytes, actual=${actual_len} bytes; .actual sibling left at ${actual_path}"
+    return string_concat("tape mismatch: expected=${expected_len} bytes, actual=${actual_len} bytes; .actual sibling left at ${actual_path}", vol_drift_note_k(vc))
 }
 
 // Servirtium-style re-record check. Unlike flush_or_check(), this
@@ -4628,7 +4536,7 @@ flush_and_fail_if_changed_k(vc: *Vcr, tape_path: string) -> string {
 
     expected_len = string.length(existing)
     actual_len   = string.length(blob)
-    return "tape mismatch: expected=${expected_len} bytes, actual=${actual_len} bytes; updated tape written to ${tape_path}"
+    return string_concat("tape mismatch: expected=${expected_len} bytes, actual=${actual_len} bytes; updated tape written to ${tape_path}", vol_drift_note_k(vc))
 }
 
 // ---- Mutation mode (Servirtium roadmap step 8) -----------------------
@@ -6115,14 +6023,12 @@ emit_one_interaction_k(vc: *Vcr, i: int) -> string {
     resp_h_out = secret_emission_field_k(vc, i, FIELD_RESPONSE_HEADERS, resp_h_out)
     body_out = secret_emission_field_k(vc, i, FIELD_RESPONSE_BODY, body_out)
 
-    // Whole-tape normalization runs last, on the post-redaction text, so the
-    // value->token table (built across the whole tape in emit_tape) collapses
-    // every recurrence of a server-minted value to one stable token.
-    path_out   = apply_normalizations_k(vc, path_out)
-    body_out   = apply_normalizations_k(vc, body_out)
-    req_h_out  = apply_normalizations_k(vc, req_h_out)
-    req_b_out  = apply_normalizations_k(vc, req_b_out)
-    resp_h_out = apply_normalizations_k(vc, resp_h_out)
+    // Whole-tape redactions (redact_whole_tape), after the others.
+    path_out   = apply_collapses_k(vc, path_out)
+    body_out   = apply_collapses_k(vc, body_out)
+    req_h_out  = apply_collapses_k(vc, req_h_out)
+    req_b_out  = apply_collapses_k(vc, req_b_out)
+    resp_h_out = apply_collapses_k(vc, resp_h_out)
 
     // Pretty-print the response body last (opt-in; see pretty_xml_body_k).
     resp_ct = ctype
@@ -6148,6 +6054,21 @@ emit_one_interaction_k(vc: *Vcr, i: int) -> string {
         if string.length(req_ct) == 0 { req_ct = "application/octet-stream" }
         req_b_heading = "${req_ct} base64 below"
     }
+
+    // Volatile values last (docs/volatile-values.md): after redactions, so
+    // a rule never sees a secret, and after pretty-printing, so selectors see
+    // the formatted body. Tokens are numbered in document order across the
+    // tape (the emit's VMint); every literal token-shaped "{{" is escaped.
+    m = vc.tape.vmint as *VMint
+    if m == null {
+        m = vol_mint_new(list_size(tape_list_k(vc)))
+        vc.tape.vmint = m as ptr
+    }
+    path_out = vol_rewrite_k(vc, FIELD_PATH, path_out, i, m, 0)
+    req_h_out = vol_rewrite_k(vc, FIELD_REQUEST_HEADERS, req_h_out, i, m, 0)
+    if req_bin == 0 { req_b_out = vol_rewrite_k(vc, FIELD_REQUEST_BODY, req_b_out, i, m, 0) }
+    resp_h_out = vol_rewrite_k(vc, FIELD_RESPONSE_HEADERS, resp_h_out, i, m, 0)
+    if ascii_ci_contains(ctype, "base64 below") == 0 { body_out = vol_rewrite_k(vc, FIELD_RESPONSE_BODY, body_out, i, m, 0) }
 
     // A Content-Length on the tape describes the body the tape holds: when a
     // redaction, normalization or pretty-print changed a body, its recorded
@@ -6234,12 +6155,14 @@ emit_tape_k(vc: *Vcr) -> string {
         vc.tape.emit_error = string.copy(so_err)
         return ""
     }
-    build_normalization_map_k(vc)
     build_credential_map_k(vc)
     n = list_size(tape_list_k(vc))
+    vc.tape.vmint = vol_mint_new(n) as ptr
+    vc.tape.vwarn = ""
     out = string.copy("")
     lic = vc.settings.license_notice
     if string.length(lic) > 0 { out = "${LICENSE_NOTICE_HEADING}\n\n${lic}\n\n" }
+    out = string_concat(out, volatile.render_block(volatile_rules_k(vc)))
     i = 0
     while i < n {
         chunk = emit_one_interaction_k(vc, i)
@@ -6430,10 +6353,10 @@ emit_rules_footer_k(vc: *Vcr) -> string {
         di = di + 1
     }
 
-    nl = normalizations_k(vc)
+    nl = vc.rules.collapses
     ni = 0
     while ni < list_size(nl) {
-        nrm = list_get_raw(nl, ni) as *Normalization
+        nrm = list_get_raw(nl, ni) as *Collapse
         hits = ""
         re, cerr = regex.compile(nrm.pattern)
         ii = 0
@@ -6453,16 +6376,26 @@ emit_rules_footer_k(vc: *Vcr) -> string {
             ii = ii + 1
         }
         if cerr == "" { regex.free(re) }
-        label = "collapsed"
-        written = md_cell_code(nrm.replacement)
-        if string.length(nrm.replacement) == 0 {
-            label = "normalized"
-            written = md_cell_code("{{${nrm.name}-N}}")
-        }
         matching = md_cell_code(nrm.pattern)
         if string.length(nrm.description) > 0 { matching = "*${replace_all(nrm.description, "|", "\\|")}*" }
-        rows = string_concat(rows, "| ${label} | whole recording | ${matching} | ${written} | ${interaction_ranges(hits)} |\n")
+        rows = string_concat(rows, "| collapsed | whole recording | ${matching} | ${md_cell_code(nrm.replacement)} | ${interaction_ranges(hits)} |\n")
         ni = ni + 1
+    }
+
+    vr = volatile_rules_k(vc)
+    vi = 0
+    while vi < list_size(vr) {
+        line = volatile.rule_line(vr, vi)
+        klass = volatile.rule_class(vr, vi)
+        fname = volatile.field_name(volatile.rule_field(vr, vi))
+        sel = string.substring(line, string.length(fname) + 2, string.length(line) - string.length(klass) - 2)
+        hits = mint_hits_for(vc.tape.vmint as *VMint, line)
+        if hits == "" {
+            ii = 0
+            while ii < n { hits = string_concat(hits, "0"); ii = ii + 1 }
+        }
+        rows = string_concat(rows, "| volatile | ${fname} | ${replace_all(sel, "|", "\\|")} | ${md_cell_code("{{${klass}-N}}")} | ${interaction_ranges(hits)} |\n")
+        vi = vi + 1
     }
 
     rows = string_concat(rows, stable_order_footer_rows_k(vc))
@@ -7038,6 +6971,12 @@ strip_rules_footer(contents: string) -> string {
 parse_tape_text_append(vc: *Vcr, label: string, contents0: string) -> string {
     contents = strip_rules_footer(normalize_tape_bytes(contents0))
     start_count = list_size(tape_list_k(vc))
+    // The tape's own volatile-value rules (docs/volatile-values.md).
+    berr = vol_load_tape_block_k(vc, contents, label)
+    if berr != "" {
+        set_load_err_k(vc, berr)
+        return berr
+    }
 
     delim = "\n## Interaction "
     cursor = 0
@@ -7137,6 +7076,7 @@ struct ReplayDiagnostic {
     actual_headers: string
     actual_body: string
     detail: string
+    volatile: string         // the volatile-values section ("" without rules)
     candidate: int
 }
 // VCR `vc`'s replay diagnostics. The list belongs to its Outcome: read or
@@ -7318,6 +7258,7 @@ replay_diagnostic_json(e: *ReplayDiagnostic, server_key: string) -> ptr {
     json.set(obj, "expected", expected)
     json.set(obj, "actual", actual)
     json.set(obj, "diff", json.str(e.detail))
+    json.set(obj, "volatile", json.str(e.volatile))
     return obj
 }
 diagnostic_headers_k(vc: *Vcr, block: string) -> string {
@@ -7422,6 +7363,14 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
         actual_size = string.length(actual_body)
         summary = "request body different to expectation — recorded=${expected_size} bytes, live=${actual_size} bytes\n"
         detail = string_concat(summary, detail)
+    }
+    e.volatile = ""
+    if expected != null && vol_ready_k(vc, expected) == 1 {
+        vpath = http_request_path(req)
+        if expected_path_includes_query(expected.path) == 1 { vpath = build_recorded_path(req) }
+        vtext = vol_diagnostic_k(vc, expected, index, vpath, normalize_live_headers_k(vc, req), actual_body)
+        e.volatile = diagnostic_text(diagnostic_safe_k(vc, vtext, 0), 8192)
+        detail = string_concat(detail, e.volatile)
     }
     e.detail = string.copy(detail)
     e.expected_path = diagnostic_text(e.expected_path, 4096)
@@ -8082,4 +8031,742 @@ range_multiple_miss_k(vc: *Vcr, req: ptr, res: ptr) -> int {
     msg = "unexpected request ${method} ${path}: interaction ${j} is outside the playback range ${rtext}"
     range_fail_k(vc, req, res, KIND_PATH_OR_METHOD_DIFF, msg, -1, null)
     return 1
+}
+
+// ---- volatile values (docs/volatile-values.md) ----------------------
+//
+// The rules (Rules.volatile, *VRule from core/volatile.ae) are evaluated
+// here, against this VCR's tape: recording writes tokens (vol_rewrite_k,
+// mode 0), playback prepares a tokenized expectation per interaction at
+// start (vol_prepare_k: mode 1, which also tokenizes the real values a
+// hand-written tape holds), matches live requests slot by token
+// (vol_match_k), binds, and fills response tokens (vol_fill_k). Bindings and
+// all other per-conversation state live in the Tape, under its lock.
+
+struct VBind {
+    token: string
+    klass: string
+    value: string
+    source: int              // the interaction that bound it (-1: the tape)
+}
+
+// Numbering for one pass over a tape (an emit, or the playback prepare).
+struct VMint {
+    counts: ptr              // *VBind: klass, source = the last number used
+    values: ptr              // *VBind: klass, value -> token (per-value classes)
+    hits: ptr                // *VBind: token = rule line, value = '0'/'1' per interaction
+    n: int                   // interactions in the tape
+}
+
+volatile_rules_k(vc: *Vcr) -> ptr { return vc.rules.volatile }
+vol_on_k(vc: *Vcr) -> int {
+    if list_size(vc.rules.volatile) > 0 { return 1 }
+    return 0
+}
+
+new_vbind(token: string, klass: string, value: string, source: int) -> *VBind {
+    b = malloc(sizeof(VBind)) as *VBind
+    b.token = string.copy(token)
+    b.klass = string.copy(klass)
+    b.value = string.copy(value)
+    b.source = source
+    return b
+}
+
+vol_mint_new(n: int) -> *VMint {
+    m = malloc(sizeof(VMint)) as *VMint
+    m.counts = list_new()
+    m.values = list_new()
+    m.hits = list_new()
+    m.n = n
+    return m
+}
+mint_counter(m: *VMint, klass: string) -> *VBind {
+    i = 0
+    while i < list_size(m.counts) {
+        c = list_get_raw(m.counts, i) as *VBind
+        if c.klass == klass { return c }
+        i = i + 1
+    }
+    c = new_vbind("", klass, "", 0)
+    list_add_raw(m.counts, c)
+    return c
+}
+mint_reserve(m: *VMint, klass: string, n: int) {
+    c = mint_counter(m, klass)
+    if n > c.source { c.source = n }
+}
+// The token for `value` of class `klass`: per value, the one it already has
+// (fresh = 0); otherwise the next number (fresh = 1).
+mint_token(m: *VMint, klass: string, value: string) -> (string, int) {
+    if volatile.per_occurrence(klass) == 0 {
+        i = 0
+        while i < list_size(m.values) {
+            v = list_get_raw(m.values, i) as *VBind
+            if v.klass == klass && v.value == value { return v.token, 0 }
+            i = i + 1
+        }
+    }
+    c = mint_counter(m, klass)
+    c.source = c.source + 1
+    tok = volatile.token_text(klass, c.source)
+    list_add_raw(m.values, new_vbind(tok, klass, value, -1))
+    return tok, 1
+}
+mint_hit(m: *VMint, line: string, index: int) {
+    if index < 0 || index >= m.n { return }
+    h = null as *VBind
+    i = 0
+    while i < list_size(m.hits) {
+        x = list_get_raw(m.hits, i) as *VBind
+        if x.token == line { h = x; break }
+        i = i + 1
+    }
+    if h == null {
+        flags = string.copy("")
+        j = 0
+        while j < m.n { flags = string_concat(flags, "0"); j = j + 1 }
+        h = new_vbind(line, "", flags, 0)
+        list_add_raw(m.hits, h)
+    }
+    if string.char_at(h.value, index) == 48 {
+        h.value = string_concat(string_concat(string.substring(h.value, 0, index), "1"), string.substring(h.value, index + 1, string.length(h.value)))
+    }
+}
+// '0'/'1' per interaction for the rule with this line ("" when it never ran).
+mint_hits_for(m: *VMint, line: string) -> string {
+    if m == null { return "" }
+    i = 0
+    while i < list_size(m.hits) {
+        x = list_get_raw(m.hits, i) as *VBind
+        if x.token == line { return x.value }
+        i = i + 1
+    }
+    return ""
+}
+
+vol_field_label(field: int) -> string { return volatile.field_name(field) }
+vol_excerpt(v: string) -> string {
+    if string.length(v) > 80 { return string_concat(string.substring(v, 0, 77), "...") }
+    return v
+}
+vol_warn_k(vc: *Vcr, msg: string) {
+    if string.index_of(vc.tape.vwarn, msg) >= 0 { return }
+    vc.tape.vwarn = string_concat(vc.tape.vwarn, "${msg}\n")
+}
+
+// Rewrite one field's text with the rules. mode 0 (recording): values
+// become tokens and every other literal "{{" that would read as a token is
+// escaped. mode 1 (a loaded tape): tokens and escapes are kept as written,
+// real values of a rule's shape become tokens, and the value each such
+// token stands for is kept (Tape.vminted) for replay.
+vol_rewrite_k(vc: *Vcr, field: int, text: string, index: int, m: *VMint, mode: int) -> string {
+    rules = volatile_rules_k(vc)
+    if string.length(text) == 0 || list_size(rules) == 0 {
+        if mode == 0 { return volatile.escape(text) }
+        return text
+    }
+    res = volatile.find_spans(rules, field, text)
+    w = volatile.span_warnings(res)
+    if w != "" { vol_warn_k(vc, "interaction ${index}, ${vol_field_label(field)}: ${rtrim(w)}") }
+    out = string.copy("")
+    pos = 0
+    k = 0
+    while k < volatile.span_count(res) {
+        st = volatile.span_start(res, k)
+        en = volatile.span_end(res, k)
+        ri = volatile.span_rule(res, k)
+        klass = volatile.rule_class(rules, ri)
+        line = volatile.rule_line(rules, ri)
+        seg = string.substring(text, pos, st)
+        if mode == 0 { seg = volatile.escape(seg) }
+        out = string_concat(out, seg)
+        v = string.substring(text, st, en)
+        mint_hit(m, line, index)
+        if volatile.token_end(v, 0) == string.length(v) && volatile.token_class(v, 0) == klass {
+            out = string_concat(out, v)
+        } else {
+            cs, ce = volatile.shape_core(klass, v)
+            if cs >= 0 {
+                core_v = string.substring(v, cs, ce)
+                tok, fresh = mint_token(m, klass, core_v)
+                if mode == 1 && fresh == 1 { list_add_raw(vc.tape.vminted, new_vbind(tok, klass, core_v, -1)) }
+                pre = string.substring(v, 0, cs)
+                post = string.substring(v, ce, string.length(v))
+                if mode == 0 { pre = volatile.escape(pre); post = volatile.escape(post) }
+                out = string_concat(out, string_concat(string_concat(pre, tok), post))
+            } else {
+                vol_warn_k(vc, "interaction ${index}, ${vol_field_label(field)}: `${line}` found `${vol_excerpt(v)}`, which is not a ${klass}")
+                if mode == 0 { v = volatile.escape(v) }
+                out = string_concat(out, v)
+            }
+        }
+        pos = en
+        k = k + 1
+    }
+    rest = string.substring(text, pos, string.length(text))
+    if mode == 0 { rest = volatile.escape(rest) }
+    return string_concat(out, rest)
+}
+
+// The highest number each class's tokens already have in `s`.
+vol_reserve_tokens(m: *VMint, s: string) {
+    i = string.index_of(s, "{{")
+    while i >= 0 {
+        if string.starts_with(string.substring(s, i, i + 6), volatile.ESCAPE) == 1 {
+            i = string.index_of_from(s, "{{", i + 6)
+            continue
+        }
+        if volatile.token_end(s, i) > 0 { mint_reserve(m, volatile.token_class(s, i), volatile.token_number(s, i)) }
+        i = string.index_of_from(s, "{{", i + 2)
+    }
+}
+
+// JSON canonicalization for a tape body that may hold bare tokens (a number
+// written as {{int-1}}): each bare token becomes a marked string first, and
+// comes back bare after.
+const VOL_BARE = "#servirtium-bare-token"
+vol_json_canonical(s: string) -> string {
+    if string.index_of(s, "{{") < 0 { return json_body_canonicalize(s) }
+    out = string.copy("")
+    span = 0
+    in_str = 0
+    i = 0
+    n = string.length(s)
+    while i < n {
+        c = string.char_at(s, i)
+        if in_str == 1 {
+            if c == 92 { i = i + 2; continue }
+            if c == 34 { in_str = 0 }
+            i = i + 1
+            continue
+        }
+        if c == 34 { in_str = 1; i = i + 1; continue }
+        if c == 123 {
+            te = volatile.token_end(s, i)
+            if te > 0 {
+                out = string_concat(out, string.substring(s, span, i))
+                out = string_concat(out, "\"${string.substring(s, i, te)}${VOL_BARE}\"")
+                span = te
+                i = te
+                continue
+            }
+        }
+        i = i + 1
+    }
+    out = string_concat(out, string.substring(s, span, n))
+    cj = json_body_canonicalize(out)
+    if cj == "" { return "" }
+    // Unmark: "\"{{x-1}}#…\"" -> {{x-1}}
+    res = string.copy("")
+    span = 0
+    at = string.index_of(cj, "${VOL_BARE}\"")
+    while at >= 0 {
+        q = at - 1
+        while q >= 0 && string.char_at(cj, q) != 34 { q = q - 1 }
+        if q < 0 { return "" }
+        res = string_concat(res, string.substring(cj, span, q))
+        res = string_concat(res, string.substring(cj, q + 1, at))
+        span = at + string.length(VOL_BARE) + 1
+        at = string.index_of_from(cj, "${VOL_BARE}\"", span)
+    }
+    return string_concat(res, string.substring(cj, span, string.length(cj)))
+}
+
+// The body canonicalizers matching uses: 1 JSON, 2 XML, 0 the bytes.
+vol_canonical_body(mode: int, s: string, tape: int) -> string {
+    if mode == 1 {
+        c = ""
+        if tape == 1 { c = vol_json_canonical(s) } else { c = json_body_canonicalize(s) }
+        if c != "" { return c }
+    }
+    if mode == 2 {
+        c2 = xml_canonicalize(s)
+        if c2 != "" { return c2 }
+    }
+    return s
+}
+
+// The expected request headers as matching compares them (unredacted,
+// removals applied, transport headers dropped, credentials masked).
+expected_req_headers_k(vc: *Vcr, e: *Interaction) -> string {
+    h = rt_apply_unredactions_for_k(vc, e.req_headers, FIELD_REQUEST_HEADERS)
+    h = remove_headers_from_block_k(vc, h, FIELD_REQUEST_HEADERS)
+    h = strip_transport_headers(h)
+    return cred_mask_block_k(vc, h)
+}
+
+// At start, on a playback handle with rules: every interaction's tokenized
+// expectation, numbered across the whole tape in document order.
+vol_prepare_k(vc: *Vcr) {
+    vc.tape.vbinds = list_new()
+    vc.tape.vpending = list_new()
+    vc.tape.vminted = list_new()
+    vc.tape.vwarn = ""
+    if vol_on_k(vc) == 0 { return }
+    n = list_size(tape_list_k(vc))
+    m = vol_mint_new(n)
+    i = 0
+    while i < n {
+        e = tape_get_k(vc, i)
+        vol_reserve_tokens(m, e.path)
+        vol_reserve_tokens(m, e.req_headers)
+        vol_reserve_tokens(m, e.req_body)
+        vol_reserve_tokens(m, e.resp_headers)
+        vol_reserve_tokens(m, e.body)
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        e = tape_get_k(vc, i)
+        e.v_path = vol_rewrite_k(vc, FIELD_PATH, uri_canonical(rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH)), i, m, 1)
+        e.v_req_headers = vol_rewrite_k(vc, FIELD_REQUEST_HEADERS, expected_req_headers_k(vc, e), i, m, 1)
+        body = rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY)
+        mode = 0
+        if body_is_binary(body) == 0 && is_blank(body) == 0 {
+            if vcr_get_match_json_body_k(vc) == 1 && vol_json_canonical(body) != "" { mode = 1 }
+            else if vcr_get_match_xml_body_k(vc) == 1 && xml_canonicalize(body) != "" { mode = 2 }
+            body = vol_rewrite_k(vc, FIELD_REQUEST_BODY, vol_canonical_body(mode, body, 1), i, m, 1)
+        }
+        e.v_body_mode = mode
+        e.v_req_body = body
+        e.v_resp_headers = vol_rewrite_k(vc, FIELD_RESPONSE_HEADERS, e.resp_headers, i, m, 1)
+        if ascii_ci_contains(e.content_type, "base64 below") == 1 { e.v_body = e.body }
+        else { e.v_body = vol_rewrite_k(vc, FIELD_RESPONSE_BODY, e.body, i, m, 1) }
+        e.v_ready = 1
+        i = i + 1
+    }
+}
+
+vol_ready_k(vc: *Vcr, e: *Interaction) -> int {
+    if e == null { return 0 }
+    if vol_on_k(vc) == 1 && e.v_ready == 1 { return 1 }
+    return 0
+}
+
+// A new request: forget the bindings an unfinished match proposed.
+vol_begin_request_k(vc: *Vcr) {
+    vc.tape.vpending = list_new()
+    vc.tape.vfail = ""
+    vc.tape.vreqwarn = ""
+}
+
+// The value `token` is bound to: pending first, then committed, ignoring
+// what interaction `index` bound itself (it rebinds when replayed again).
+vol_bound(vc: *Vcr, token: string, index: int) -> (string, int, int) {
+    l = vc.tape.vpending
+    i = 0
+    while i < list_size(l) {
+        b = list_get_raw(l, i) as *VBind
+        if b.token == token { return b.value, b.source, 1 }
+        i = i + 1
+    }
+    l = vc.tape.vbinds
+    i = 0
+    while i < list_size(l) {
+        b = list_get_raw(l, i) as *VBind
+        if b.token == token && b.source != index { return b.value, b.source, 1 }
+        i = i + 1
+    }
+    return "", -1, 0
+}
+// The token of class `klass` already standing for `value`, or "".
+vol_reverse(vc: *Vcr, klass: string, value: string, index: int) -> string {
+    l = vc.tape.vpending
+    i = 0
+    while i < list_size(l) {
+        b = list_get_raw(l, i) as *VBind
+        if b.klass == klass && b.value == value { return b.token }
+        i = i + 1
+    }
+    l = vc.tape.vbinds
+    i = 0
+    while i < list_size(l) {
+        b = list_get_raw(l, i) as *VBind
+        if b.klass == klass && b.value == value && b.source != index { return b.token }
+        i = i + 1
+    }
+    return ""
+}
+
+// Interaction `index` matched: it releases what it bound before, and binds
+// what this request proposed.
+vol_commit_k(vc: *Vcr, index: int) {
+    kept = list_new()
+    l = vc.tape.vbinds
+    i = 0
+    while i < list_size(l) {
+        b = list_get_raw(l, i) as *VBind
+        if b.source != index { list_add_raw(kept, b) }
+        i = i + 1
+    }
+    l = vc.tape.vpending
+    i = 0
+    while i < list_size(l) {
+        b = list_get_raw(l, i) as *VBind
+        b.source = index
+        list_add_raw(kept, b)
+        i = i + 1
+    }
+    vc.tape.vbinds = kept
+    vc.tape.vpending = list_new()
+}
+
+struct VSlot { start: int; end: int; klass: string; value: string; literal: int }
+
+vol_slot(l: ptr, start: int, end: int, klass: string, value: string, literal: int) {
+    s = malloc(sizeof(VSlot)) as *VSlot
+    s.start = start; s.end = end; s.klass = string.copy(klass); s.value = string.copy(value); s.literal = literal
+    list_add_raw(l, s)
+}
+// Literal token text in s[from, to) (a token the client sends as it is).
+vol_literal_tokens(s: string, from: int, to: int, out: ptr) {
+    i = string.index_of_from(s, "{{", from)
+    while i >= 0 && i < to {
+        te = volatile.token_end(s, i)
+        if te > 0 && te <= to {
+            vol_slot(out, i, te, volatile.token_class(s, i), string.substring(s, i, te), 1)
+            i = string.index_of_from(s, "{{", te)
+        } else { i = string.index_of_from(s, "{{", i + 1) }
+    }
+}
+// The live text's slots: every selected value of its rule's shape, and
+// every literal token.
+vol_live_slots_k(vc: *Vcr, field: int, live: string, index: int) -> ptr {
+    rules = volatile_rules_k(vc)
+    slots = list_new()
+    res = volatile.find_spans(rules, field, live)
+    w = volatile.span_warnings(res)
+    if w != "" { vc.tape.vreqwarn = string_concat(vc.tape.vreqwarn, "${vol_field_label(field)}: ${w}") }
+    pos = 0
+    k = 0
+    while k < volatile.span_count(res) {
+        st = volatile.span_start(res, k)
+        en = volatile.span_end(res, k)
+        ri = volatile.span_rule(res, k)
+        klass = volatile.rule_class(rules, ri)
+        vol_literal_tokens(live, pos, st, slots)
+        v = string.substring(live, st, en)
+        if volatile.token_end(v, 0) == string.length(v) {
+            vol_slot(slots, st, en, volatile.token_class(v, 0), v, 1)
+        } else {
+            cs, ce = volatile.shape_core(klass, v)
+            if cs >= 0 { vol_slot(slots, st + cs, st + ce, klass, string.substring(v, cs, ce), 0) }
+            else {
+                wl = "${vol_field_label(field)}: `${volatile.rule_line(rules, ri)}` found `${vol_excerpt(v)}`, which is not a ${klass}\n"
+                if string.index_of(vc.tape.vreqwarn, wl) < 0 { vc.tape.vreqwarn = string_concat(vc.tape.vreqwarn, wl) }
+                vol_literal_tokens(live, st, en, slots)
+            }
+        }
+        pos = en
+        k = k + 1
+    }
+    vol_literal_tokens(live, pos, string.length(live), slots)
+    return slots
+}
+
+// Text with each slot replaced by \x01.
+vol_live_skeleton(live: string, slots: ptr) -> string {
+    out = string.copy("")
+    pos = 0
+    i = 0
+    while i < list_size(slots) {
+        s = list_get_raw(slots, i) as *VSlot
+        out = string_concat(out, string.substring(live, pos, s.start))
+        out = string_concat(out, "\x01")
+        pos = s.end
+        i = i + 1
+    }
+    return string_concat(out, string.substring(live, pos, string.length(live)))
+}
+// The expectation with each token replaced by \x01 (tokens appended to
+// `tokens` as *VSlot, value = the token) and escapes unescaped.
+vol_expected_skeleton(s: string, tokens: ptr) -> string {
+    out = string.copy("")
+    span = 0
+    i = string.index_of(s, "{{")
+    while i >= 0 {
+        if string.starts_with(string.substring(s, i, i + 6), volatile.ESCAPE) == 1 {
+            out = string_concat(out, string.substring(s, span, i + 2))
+            span = i + 6
+            i = string.index_of_from(s, "{{", span)
+            continue
+        }
+        te = volatile.token_end(s, i)
+        if te > 0 {
+            out = string_concat(out, string.substring(s, span, i))
+            out = string_concat(out, "\x01")
+            vol_slot(tokens, i, te, volatile.token_class(s, i), string.substring(s, i, te), 1)
+            span = te
+            i = string.index_of_from(s, "{{", te)
+            continue
+        }
+        i = string.index_of_from(s, "{{", i + 1)
+    }
+    return string_concat(out, string.substring(s, span, string.length(s)))
+}
+
+// 1 when `live` matches the tokenized expectation of interaction `index`,
+// proposing (pending) bindings; else 0, with the reason in Tape.vfail when
+// it was a binding.
+vol_match_k(vc: *Vcr, field: int, expected: string, live: string, index: int) -> int {
+    if string.index_of(expected, "\x01") >= 0 || string.index_of(live, "\x01") >= 0 {
+        return string.equals(volatile.unescape(expected), live)
+    }
+    slots = vol_live_slots_k(vc, field, live, index)
+    tokens = list_new()
+    if string.equals(vol_expected_skeleton(expected, tokens), vol_live_skeleton(live, slots)) == 0 { return 0 }
+    proposed = list_new()
+    i = 0
+    while i < list_size(tokens) {
+        t = list_get_raw(tokens, i) as *VSlot
+        s = list_get_raw(slots, i) as *VSlot
+        if s.literal == 1 {
+            if s.value != t.value { return 0 }
+        } else {
+            if s.klass != t.klass { return 0 }
+            bv, bsrc, found = vol_bound(vc, t.value, index)
+            if found == 0 {
+                j = 0
+                while j < list_size(proposed) {
+                    p = list_get_raw(proposed, j) as *VBind
+                    if p.token == t.value { bv = p.value; bsrc = index; found = 1 }
+                    j = j + 1
+                }
+            }
+            if found == 1 {
+                if bv != s.value {
+                    where = "the tape"
+                    if bsrc >= 0 { where = "interaction ${bsrc}" }
+                    vc.tape.vfail = "${t.value} = ${bv} (bound by ${where}), but this request has ${s.value}"
+                    return 0
+                }
+            } else {
+                if volatile.per_occurrence(t.klass) == 0 {
+                    other = vol_reverse(vc, t.klass, s.value, index)
+                    if other == "" {
+                        j = 0
+                        while j < list_size(proposed) {
+                            p = list_get_raw(proposed, j) as *VBind
+                            if p.klass == t.klass && p.value == s.value && p.token != t.value { other = p.token }
+                            j = j + 1
+                        }
+                    }
+                    if other != "" && other != t.value {
+                        vc.tape.vfail = "${s.value} is already ${other}, but the tape expects ${t.value} here"
+                        return 0
+                    }
+                }
+                list_add_raw(proposed, new_vbind(t.value, t.klass, s.value, index))
+            }
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < list_size(proposed) { list_add_raw(vc.tape.vpending, list_get_raw(proposed, i)); i = i + 1 }
+    return 1
+}
+
+// The live text as normalized, for diagnostics: each slot shown as the
+// token it stands for, or {{class-?}} when it stands for none yet.
+vol_render_live_k(vc: *Vcr, field: int, live: string, index: int) -> string {
+    slots = vol_live_slots_k(vc, field, live, index)
+    out = string.copy("")
+    pos = 0
+    i = 0
+    while i < list_size(slots) {
+        s = list_get_raw(slots, i) as *VSlot
+        out = string_concat(out, string.substring(live, pos, s.start))
+        if s.literal == 1 { out = string_concat(out, s.value) }
+        else {
+            t = vol_reverse(vc, s.klass, s.value, -2)
+            if t == "" { t = "{{${s.klass}-?}}" }
+            out = string_concat(out, t)
+        }
+        pos = s.end
+        i = i + 1
+    }
+    return string_concat(out, string.substring(live, pos, string.length(live)))
+}
+
+// A response's tokens filled: a bound token by its value, an unbound one by
+// the value a hand-written tape held there, else by its class's stand-in,
+// which it is then bound to. Escapes become "{{".
+vol_fill_k(vc: *Vcr, text: string, index: int) -> string {
+    if string.index_of(text, "{{") < 0 { return text }
+    out = string.copy("")
+    span = 0
+    i = string.index_of(text, "{{")
+    while i >= 0 {
+        if string.starts_with(string.substring(text, i, i + 6), volatile.ESCAPE) == 1 {
+            out = string_concat(out, string.substring(text, span, i + 2))
+            span = i + 6
+            i = string.index_of_from(text, "{{", span)
+            continue
+        }
+        te = volatile.token_end(text, i)
+        if te > 0 && vol_on_k(vc) == 1 {
+            tok = string.substring(text, i, te)
+            klass = volatile.token_class(text, i)
+            v, _src, found = vol_bound(vc, tok, -2)
+            if found == 0 {
+                j = 0
+                while j < list_size(vc.tape.vminted) {
+                    mb = list_get_raw(vc.tape.vminted, j) as *VBind
+                    if mb.token == tok { v = mb.value; found = 1; break }
+                    j = j + 1
+                }
+                if found == 0 { v = volatile.standin(klass, volatile.token_number(text, i)) }
+                list_add_raw(vc.tape.vbinds, new_vbind(tok, klass, v, index))
+            }
+            out = string_concat(out, string.substring(text, span, i))
+            out = string_concat(out, v)
+            span = te
+            i = string.index_of_from(text, "{{", te)
+            continue
+        }
+        i = string.index_of_from(text, "{{", i + 1)
+    }
+    return string_concat(out, string.substring(text, span, string.length(text)))
+}
+
+vol_bindings_text_k(vc: *Vcr) -> string {
+    out = string.copy("")
+    l = vc.tape.vbinds
+    i = 0
+    while i < list_size(l) {
+        b = list_get_raw(l, i) as *VBind
+        out = string_concat(out, "  ${b.token} = ${vol_excerpt(b.value)} (interaction ${b.source})\n")
+        i = i + 1
+    }
+    return out
+}
+
+// The volatile-values part of a playback mismatch diagnostic.
+vol_diagnostic_k(vc: *Vcr, e: *Interaction, index: int, live_path: string, live_headers: string, live_body: string) -> string {
+    out = "volatile values:\n"
+    if vc.tape.vfail != "" { out = string_concat(out, "binding: ${vc.tape.vfail}\n") }
+    lp = vol_render_live_k(vc, FIELD_PATH, uri_canonical(live_path), index)
+    out = string_concat(out, diagnostic_diff("normalized path", e.v_path, lp))
+    if is_blank(e.v_req_headers) == 0 || vcr_get_strict_headers_k(vc) == 1 {
+        lh = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, live_headers, index)
+        out = string_concat(out, diagnostic_diff("normalized request headers", e.v_req_headers, lh))
+    }
+    if is_blank(e.v_req_body) == 0 {
+        lb = vol_render_live_k(vc, FIELD_REQUEST_BODY, vol_canonical_body(e.v_body_mode, live_body, 0), index)
+        out = string_concat(out, diagnostic_diff("normalized request body", e.v_req_body, lb))
+    }
+    rules = volatile_rules_k(vc)
+    fired = ""
+    fields = [FIELD_PATH, FIELD_REQUEST_HEADERS, FIELD_REQUEST_BODY]
+    texts = [uri_canonical(live_path), live_headers, live_body]
+    string[] where = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+    fi = 0
+    while fi < 3 {
+        res = volatile.find_spans(rules, fields[fi], texts[fi])
+        k = 0
+        while k < volatile.span_count(res) {
+            ri = volatile.span_rule(res, k)
+            label = vol_field_label(fields[fi])
+            if ri < 16 && string.index_of(where[ri], label) < 0 {
+                if where[ri] != "" { where[ri] = string_concat(where[ri], ", ") }
+                where[ri] = string_concat(where[ri], label)
+            }
+            k = k + 1
+        }
+        fi = fi + 1
+    }
+    ri = 0
+    while ri < list_size(rules) && ri < 16 {
+        if where[ri] != "" { fired = string_concat(fired, "  ${volatile.rule_line(rules, ri)} (${where[ri]})\n") }
+        ri = ri + 1
+    }
+    if fired != "" { out = string_concat(out, "rules fired:\n${fired}") }
+    b = vol_bindings_text_k(vc)
+    if b != "" { out = string_concat(out, "bindings:\n${b}") } else { out = string_concat(out, "bindings: none yet\n") }
+    if vc.tape.vreqwarn != "" { out = string_concat(out, "shape warnings:\n${vc.tape.vreqwarn}") }
+    return out
+}
+
+// ---- the handle surface ----
+
+// Drop every volatile rule (Aether callers; the ABI has no reset).
+clear_volatile_h(server: ptr) { key_for(server).rules.volatile = list_new() }
+
+volatile_h(server: ptr, rules: string) -> string {
+    vc = key_for(server)
+    lock_take(vc.rules.lock)
+    err = volatile.parse_rules(rules, vc.rules.volatile, 0, "")
+    lock_give(vc.rules.lock)
+    if err != "" { return "volatile: ${err}" }
+    return ""
+}
+
+volatile_profile_h(server: ptr, name_or_path: string) -> string {
+    text = volatile.preset(name_or_path)
+    if text != "" { return volatile_h(server, text) }
+    contents, rerr = fs.read(name_or_path)
+    if rerr != "" {
+        return "volatile profile `${name_or_path}`: not a preset (ws-addressing, http-dates, trace-headers) and not readable: ${rerr}"
+    }
+    block = volatile.block_in(normalize_tape_bytes(contents))
+    if block == "" { return "volatile profile `${name_or_path}`: no `${volatile.HEADING}` heading" }
+    vc = key_for(server)
+    lock_take(vc.rules.lock)
+    err = volatile.parse_rules(block, vc.rules.volatile, 1, " (profile ${name_or_path})")
+    lock_give(vc.rules.lock)
+    if err != "" { return "volatile profile `${name_or_path}`: ${err}" }
+    return ""
+}
+
+// A tape's own block, read when it is opened (playback) or recorded over.
+vol_load_tape_block_k(vc: *Vcr, contents: string, label: string) -> string {
+    first = string.index_of(contents, "## Interaction ")
+    pre = contents
+    if first >= 0 { pre = string.substring(contents, 0, first) }
+    block = volatile.block_in(pre)
+    if block == "" { return "" }
+    err = volatile.parse_rules(block, vc.rules.volatile, 1, " (tape)")
+    if err != "" { return "tape (${label}) ${volatile.HEADING}: ${err}" }
+    return ""
+}
+
+// The rules, the current bindings and every shape warning, one per line.
+volatile_report_h(server: ptr) -> string {
+    vc = key_for(server)
+    out = string.copy("")
+    rules = volatile_rules_k(vc)
+    i = 0
+    while i < list_size(rules) {
+        out = string_concat(out, "rule: ${volatile.rule_line(rules, i)}\n")
+        i = i + 1
+    }
+    lock_take(vc.tape.lock)
+    l = vc.tape.vbinds
+    i = 0
+    while i < list_size(l) {
+        b = list_get_raw(l, i) as *VBind
+        out = string_concat(out, "binding: ${b.token} = ${b.value} (interaction ${b.source})\n")
+        i = i + 1
+    }
+    w = vc.tape.vwarn
+    lock_give(vc.tape.lock)
+    if w != "" {
+        ws_lines = string.split(string.copy(w), "\n")
+        j = 0
+        while j < string.array_size(ws_lines) {
+            x = string.array_get(ws_lines, j)
+            if string.length(x) > 0 { out = string_concat(out, "shape: ${x}\n") }
+            j = j + 1
+        }
+        string.array_free(ws_lines)
+    }
+    return out
+}
+
+// The shape warnings of the recording, for a drift failure's message.
+vol_drift_note_k(vc: *Vcr) -> string {
+    w = vc.tape.vwarn
+    if w == "" { return "" }
+    return "\nvolatile values that did not have their class's shape (a format change?):\n${rtrim(w)}"
 }

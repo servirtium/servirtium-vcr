@@ -1,0 +1,226 @@
+// Volatile values on playback (docs/volatile-values.md): a tape's tokens
+// match live values of their shape and bind them; a response's tokens are
+// filled from the bindings, the hand-written tape's values, or a stand-in;
+// correlation is guarded; shape mismatches are mismatches with a named
+// warning; the tape's own block applies with no code rules, a profile file
+// gives the same; canonical forms are compared (an indented tape, a compact
+// request); match_multiple rebinds; escapes come back as text; a literal
+// token from the client matches.
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+import std.io
+
+extern exit(code: int)
+
+const PORT = 18351
+const WSA = "http://www.w3.org/2005/08/addressing"
+
+has(text: string, part: string, what: string) {
+    if string.contains(text, part) != 1 {
+        println("FAIL: ${what}: no [${part}] in\n${text}")
+        exit(1)
+    }
+}
+eq(got: string, want: string, what: string) {
+    if got != want {
+        println("FAIL: ${what}\n--- got\n${got}\n--- want\n${want}")
+        exit(1)
+    }
+}
+ok(err: string, what: string) {
+    if err != "" { println("FAIL: ${what}: ${err}"); exit(1) }
+}
+tmp_dir() -> string {
+    t = io.getenv("TMPDIR")
+    if t == 0 { t = "/tmp" }
+    return t
+}
+
+interaction(i: int, method: string, path: string, req_body_type: string, req_body: string, status: int, resp_type: string, resp_headers: string, resp_body: string) -> string {
+    fence = "```"
+    return "## Interaction ${i}: ${method} ${path}\n\n### Request headers recorded for playback:\n\n${fence}\n${fence}\n### Request body recorded for playback (${req_body_type}):\n\n${fence}\n${req_body}\n${fence}\n### Response headers recorded for playback:\n\n${fence}\n${resp_headers}\n${fence}\n### Response body recorded for playback (${status}: ${resp_type}):\n\n${fence}\n${resp_body}\n${fence}\n\n"
+}
+
+write_tape(name: string, text: string) -> string {
+    p = "${tmp_dir()}/vcr_volatile_${name}.tape"
+    ok(fs.write(p, text), "write ${name}")
+    return p
+}
+
+hit(method: string, path: string, body: string, ctype: string) -> (int, string) {
+    req = client.request(method, "http://127.0.0.1:${PORT}${path}")
+    if string.length(body) > 0 { client.set_body(req, string.bytes(body), ctype) }
+    client.set_timeout(req, 5s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { return -1, err }
+    st = client.response_status(resp)
+    b = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return st, b
+}
+
+start(tape: string) -> ptr {
+    h, err = vcr.open_playback(tape, PORT)
+    if h == null { println("FAIL: open ${tape}: ${err}"); exit(1) }
+    return h
+}
+go(h: ptr) {
+    if vcr.start_background_h(h, 10000) != 0 { println("FAIL: start: ${vcr.last_error_h(h)}"); exit(1) }
+}
+done(h: ptr) {
+    vcr.eject(h)
+    vcr.destroy_h(h)
+}
+
+// A WCF request as the client sends it: compact, fresh ids.
+soap(message_id: string, port: int, stamp: string) -> string {
+    return "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:a=\"${WSA}\"><s:Header><a:Action s:mustUnderstand=\"1\">http://services.example.test/case/ICaseService/CreateCase</a:Action><a:MessageID>urn:uuid:${message_id}</a:MessageID><a:ReplyTo><a:Address>${WSA}/anonymous</a:Address></a:ReplyTo><a:To s:mustUnderstand=\"1\">https://workpro--not-real.invalid:${string.from_int(port)}/Services/CaseService.svc</a:To></s:Header><s:Body><CreateCase xmlns=\"http://services.example.test/case\"><caseData>&lt;CaseData&gt;&lt;SubmissionDate&gt;${stamp}&lt;/SubmissionDate&gt;&lt;/CaseData&gt;</caseData></CreateCase></s:Body></s:Envelope>"
+}
+
+const WCF_RULES = "- request body, XML `{http://www.w3.org/2005/08/addressing}MessageID`: uuid\n- request body, XML `{http://www.w3.org/2005/08/addressing}To` regex `:([0-9]+)(?:/|$)`: port\n- request body, regex `&lt;SubmissionDate&gt;([^&]+)&lt;/SubmissionDate&gt;`: timestamp\n- response body, XML `{http://www.w3.org/2005/08/addressing}MessageID`: uuid\n- response body, XML `{http://www.w3.org/2005/08/addressing}RelatesTo`: uuid\n"
+
+wcf_interactions() -> string {
+    // The recorded tape: indented (pretty_xml 2), tokens in place.
+    req = "<s:Envelope xmlns:a=\"${WSA}\" xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\">\n  <s:Header>\n    <a:Action s:mustUnderstand=\"1\">http://services.example.test/case/ICaseService/CreateCase</a:Action>\n    <a:MessageID>urn:uuid:{{uuid-1}}</a:MessageID>\n    <a:ReplyTo>\n      <a:Address>${WSA}/anonymous</a:Address>\n    </a:ReplyTo>\n    <a:To s:mustUnderstand=\"1\">https://workpro--not-real.invalid:{{port-1}}/Services/CaseService.svc</a:To>\n  </s:Header>\n  <s:Body>\n    <CreateCase xmlns=\"http://services.example.test/case\">\n      <caseData>&lt;CaseData&gt;&lt;SubmissionDate&gt;{{timestamp-1}}&lt;/SubmissionDate&gt;&lt;/CaseData&gt;</caseData>\n    </CreateCase>\n  </s:Body>\n</s:Envelope>"
+    resp = "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:a=\"${WSA}\">\n  <s:Header>\n    <a:RelatesTo>urn:uuid:{{uuid-1}}</a:RelatesTo>\n  </s:Header>\n  <s:Body>\n    <CreateCaseResponse xmlns=\"http://services.example.test/case\">\n      <CaseId>CAS-1</CaseId>\n    </CreateCaseResponse>\n  </s:Body>\n</s:Envelope>"
+    return interaction(0, "POST", "/Services/CaseService.svc", "application/soap+xml", req, 200, "application/soap+xml", "Content-Type: application/soap+xml; charset=utf-8", resp)
+}
+
+wcf_round_trip(h: ptr, id: string, port: int, what: string) {
+    vcr.reset_cursor_h(h)
+    st, body = hit("POST", "/Services/CaseService.svc", soap(id, port, "2026-11-13T09:41:07"), "application/soap+xml")
+    if st != 200 { println("FAIL: ${what}: ${st} ${body}\n${vcr.last_error_h(h)}"); exit(1) }
+    has(body, "<a:RelatesTo>urn:uuid:${id}</a:RelatesTo>", "${what}: RelatesTo is the request's own MessageID")
+}
+
+main() {
+    println("=== volatile values: playback ===")
+
+    // ---- tests 1, 6, 8: the WCF tape declares its rules; no code rules ----
+    wcf = write_tape("wcf", "## Volatile values\n\n${WCF_RULES}\n${wcf_interactions()}")
+    h = start(wcf)
+    vcr.set_pretty_xml_h(h, 2)
+    go(h)
+    wcf_round_trip(h, "5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13", 53187, "WCF run 1")
+    wcf_round_trip(h, "0b6c35a3-7f2e-4f5f-8b2a-1d6e4c9a2f70", 41234, "WCF run 2: another id, another port")
+    has(vcr.volatile_report_h(h), "binding: {{uuid-1}} = 0b6c35a3-7f2e-4f5f-8b2a-1d6e4c9a2f70 (interaction 0)", "the binding is reported")
+    // A request whose element changed is still a mismatch.
+    vcr.reset_cursor_h(h)
+    st0, _b0 = hit("POST", "/Services/CaseService.svc", string.replace_all(soap("5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13", 1, "2026-11-13T09:41:07"), "CreateCase", "OpenCase"), "application/soap+xml")
+    if st0 != 599 { println("FAIL: a renamed element must not match (${st0})"); exit(1) }
+    done(h)
+
+    // ---- test 6: the same tape without its block, plus a profile file ----
+    profile = write_tape("profile", "A vendor's profile.\n\n## Volatile values\n\n${WCF_RULES}")
+    plain = write_tape("wcf_plain", wcf_interactions())
+    h = start(plain)
+    vcr.set_pretty_xml_h(h, 2)
+    ok(vcr.volatile_profile_h(h, profile), "load the profile")
+    go(h)
+    wcf_round_trip(h, "5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13", 53187, "profile run")
+    done(h)
+    // ... and the preset plus one rule (docs: "Worked example: WCF").
+    h = start(plain)
+    vcr.set_pretty_xml_h(h, 2)
+    ok(vcr.volatile_profile_h(h, "ws-addressing"), "preset")
+    ok(vcr.volatile_h(h, "request body, regex `&lt;SubmissionDate&gt;([^&]+)&lt;/SubmissionDate&gt;`: timestamp"), "one rule")
+    go(h)
+    wcf_round_trip(h, "5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13", 53187, "preset run")
+    done(h)
+    // Without rules the same request is a body mismatch.
+    h = start(plain)
+    vcr.set_pretty_xml_h(h, 2)
+    go(h)
+    stn, _bn = hit("POST", "/Services/CaseService.svc", soap("5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13", 53187, "2026-11-13T09:41:07"), "application/soap+xml")
+    if stn != 599 { println("FAIL: no rules, no match (${stn})"); exit(1) }
+    done(h)
+
+    // ---- test 2: a response mints an id, the next request uses it ----
+    // Hand-written: the tape holds the real id the service minted (42).
+    cases = write_tape("cases", string_concat("## Volatile values\n\n- request path, regex `/cases/([0-9]+)`: case-id\n- response body, JSON `caseId`: case-id\n\n", string_concat(interaction(0, "POST", "/cases", "", "", 201, "application/json", "Content-Type: application/json", "{\"caseId\":\"42\"}"), interaction(1, "GET", "/cases/42/documents", "", "", 200, "text/plain", "Content-Type: text/plain", "docs of 42"))))
+    h = start(cases)
+    go(h)
+    s1, b1 = hit("POST", "/cases", "", "")
+    eq(b1, "{\"caseId\":\"42\"}", "an unbound token replays the hand-written value")
+    s2, b2 = hit("GET", "/cases/42/documents", "", "")
+    if s2 != 200 { println("FAIL: the minted id matches (${s2} ${b2})"); exit(1) }
+    vcr.reset_cursor_h(h)
+    vcr.clear_last_error_h(h)
+    hit("POST", "/cases", "", "")
+    s3, b3 = hit("GET", "/cases/99/documents", "", "")
+    if s3 != 599 { println("FAIL: another id must not match (${s3})"); exit(1) }
+    has(b3, "{{case-id-1}} = 42 (bound by interaction 0), but this request has 99", "the mismatch names the binding")
+    dj = vcr.diagnostics_json_h(h, 1)
+    has(dj, "\"volatile\":", "diagnostics carry the volatile section")
+    has(dj, "normalized path", "both normalized forms")
+    has(dj, "{{case-id-1}} = 42 (interaction 0)", "the bindings")
+    done(h)
+    // Recorded form: the token itself; a typed class replays its stand-in.
+    minted = write_tape("minted", string_concat("## Volatile values\n\n- request path, regex `/cases/([0-9a-f-]{36})`: uuid\n- response body, JSON `id`: uuid\n\n", string_concat(interaction(0, "POST", "/cases", "", "", 201, "application/json", "Content-Type: application/json", "{\"id\":\"{{uuid-1}}\"}"), interaction(1, "GET", "/cases/{{uuid-1}}", "", "", 200, "text/plain", "Content-Type: text/plain", "case {{uuid-1}}"))))
+    h = start(minted)
+    go(h)
+    _m1, mb1 = hit("POST", "/cases", "", "")
+    eq(mb1, "{\"id\":\"00000000-0000-4000-8000-000000000001\"}", "a uuid stand-in a typed client can parse")
+    m2, mb2 = hit("GET", "/cases/00000000-0000-4000-8000-000000000001", "", "")
+    if m2 != 200 { println("FAIL: the stand-in comes back (${m2} ${mb2})"); exit(1) }
+    eq(mb2, "case 00000000-0000-4000-8000-000000000001", "and fills the response")
+    // A client that sends the token text itself (a skipped interaction's value).
+    vcr.reset_cursor_h(h)
+    hit("POST", "/cases", "", "")
+    m3, _mb3 = hit("GET", "/cases/{{uuid-1}}", "", "")
+    if m3 != 200 { println("FAIL: a literal token matches (${m3})"); exit(1) }
+    done(h)
+
+    // ---- test 3: the shape guard ----
+    shape = write_tape("shape", string_concat("## Volatile values\n\n- request body, JSON `requestId`: uuid\n\n", interaction(0, "POST", "/r", "application/json", "{\"requestId\":\"{{uuid-1}}\"}", 200, "text/plain", "Content-Type: text/plain", "ok")))
+    h = start(shape)
+    vcr.set_pretty_json_h(h, 2)
+    go(h)
+    sa, _ba = hit("POST", "/r", "{\"requestId\":\"0b6c35a3-7f2e-4f5f-8b2a-1d6e4c9a2f70\"}", "application/json")
+    if sa != 200 { println("FAIL: a uuid matches (${sa}): ${vcr.last_error_h(h)}"); exit(1) }
+    vcr.reset_cursor_h(h)
+    vcr.clear_last_error_h(h)
+    sb, _bb = hit("POST", "/r", "{\"requestId\":\"42\"}", "application/json")
+    if sb != 599 { println("FAIL: 42 is not a uuid (${sb})"); exit(1) }
+    has(vcr.last_error_ex_h(h, 0), "`request body, JSON `requestId`: uuid` found `42`, which is not a uuid", "the shape warning")
+    has(vcr.last_error_ex_h(h, 0), "normalized request body", "normalized forms")
+    done(h)
+
+    // ---- test 7: a code rule contradicting the tape's ----
+    h = start(shape)
+    ce = vcr.volatile_h(h, "request body, JSON `requestId`: int")
+    has(ce, "conflicts with `request body, JSON `requestId`: uuid` (tape)", "conflict")
+    done(h)
+
+    // ---- match_multiple: an interaction replayed again rebinds ----
+    h = start(wcf)
+    vcr.set_pretty_xml_h(h, 2)
+    vcr.set_match_multiple_h(h, 1)
+    go(h)
+    wcf_round_trip(h, "11111111-2a8b-4c3e-9d41-7b6a0f2e8c13", 1, "poll 1")
+    wcf_round_trip(h, "22222222-2a8b-4c3e-9d41-7b6a0f2e8c13", 2, "poll 2")
+    done(h)
+
+    // ---- escapes: literal braces stay text, tokens are filled ----
+    esc = write_tape("escape", string_concat("## Volatile values\n\n- request headers, `X-Id`: uuid\n\n", interaction(0, "GET", "/e", "", "", 200, "text/plain", "Content-Type: text/plain", "literal {{{{}}uuid-1}}, value {{uuid-1}}")))
+    eh, eerr = vcr.open_playback(esc, PORT)
+    if eh == null { println("FAIL: ${eerr}"); exit(1) }
+    vcr.set_strict_headers_h(eh, 0)
+    go(eh)
+    _es, eb = hit("GET", "/e", "", "")
+    eq(eb, "literal {{uuid-1}}, value 00000000-0000-4000-8000-000000000001", "escape and token")
+    done(eh)
+
+    // ---- the block's grammar is checked when the tape is opened ----
+    bad = write_tape("bad", string_concat("## Volatile values\n\n- request body, JSON `a`: Uuid\n\n", interaction(0, "GET", "/", "", "", 200, "text/plain", "", "x")))
+    bh, berr = vcr.open_playback(bad, PORT)
+    if bh != null { println("FAIL: a bad block must refuse the tape"); exit(1) }
+    has(berr, "line 3", "the error names the line")
+
+    println("=== volatile values: playback passed ===")
+    exit(0)
+}

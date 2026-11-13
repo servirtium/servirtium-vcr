@@ -83,7 +83,8 @@ rec(vh: ptr, path: string, ctype: string, body: string, resp_h: string, req_b: s
 
 reset_all(vh: ptr) {
     vcr.clear_format_options_h(vh)
-    vcr.clear_normalizations_h(vh)
+    vcr.clear_collapses_h(vh)
+    vcr.clear_volatile_h(vh)
 }
 
 // reset_all, then pretty_json on: the JSON sort rules need it.
@@ -161,7 +162,7 @@ stable_rules(h: ptr) {
     vcr.sort_response_headers_h(h, 1)
     e = vcr.sort_header_value_h(h, "Allow")
     if e == "" { e = vcr.sort_json_array_h(h, "/value", "name") }
-    if e == "" { e = vcr.normalize_whole_tape_h(h, "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "uuid") }
+    if e == "" { e = vcr.volatile_h(h, "response body, JSON `id`: uuid") }
     if e != "" { fail("rule: ${e}") }
     if e == "" { e = vcr.remove_header_h(h, vcr.FIELD_RESPONSE_HEADERS, "Date") }
     // Matches the sorted body only (the upstream's first order has "value"
@@ -297,7 +298,7 @@ main() {
     A = "{\"id\":\"7d444840-9dc0-11d1-b245-5ffdce74fad2\",\"at\":3}"
     B = "{\"id\":\"0e4b3a1c-1111-4222-8333-944455556666\",\"at\":1}"
     reset_pretty(vh)
-    e = vcr.normalize_whole_tape_h(vh, UUID_RE, "uuid")
+    e = vcr.volatile_h(vh, "anywhere, regex `${UUID_RE}`: uuid")
     if e == "" { e = vcr.sort_json_array_h(vh, "", "at") }
     if e != "" { fail(e) }
     t5a = rec(vh, OUT, "application/json", "[${A},${B}]", "", "")
@@ -432,7 +433,8 @@ main() {
     sleep(250)
     st, b, cl = get_list(PLAYBACK_PORT)
     if st != 200 { fail("playback: ${st} ${vcr.last_error_h(playback)}") }
-    if string.equals(b, SORTED) != 1 { fail("playback serves the sorted order, pretty-printed; got:\n${b}") }
+    PLAYED = string.replace_all(string.replace_all(SORTED, "{{uuid-1}}", "00000000-0000-4000-8000-000000000001"), "{{uuid-2}}", "00000000-0000-4000-8000-000000000002")
+    if string.equals(b, PLAYED) != 1 { fail("playback serves the sorted order, pretty-printed; got:\n${b}") }
     if string.length(cl) > 0 && string.equals(cl, "${string.length(b)}") != 1 { fail("Content-Length ${cl} != ${string.length(b)} bytes served") }
     vcr.destroy_h(playback)
     http_server_stop(upstream)
