@@ -63,14 +63,10 @@ record = do
         { recPort          = vcrPort
         , recStaticContent = [("/suite", suiteDir)]
         , recUntaped       = ["/favicon.ico"]
-        -- Volatile values so a re-record is byte-identical (the tape stays
-        -- git-clean; drift detection then fires only on real changes): the
-        -- server-minted todo UUID (POST response, then echoed in later
-        -- request paths) gets a stable {{id-N}} token that round-trips on
-        -- playback, and the Date response header is a template rule.
-        , recVolatileRules =
-            [ ("request path", uuid, "regex"), ("headers", uuid, "regex"), ("body", uuid, "regex")
-            , volatileRule "response headers" "Date: {{serverDate}}" ]
+        -- The Date response header is redacted to one constant; server-minted
+        -- todo ids stay literal (a volatile token the browser suite reads
+        -- and echoes would need a test-side bind, docs/volatile-values.md).
+        , recRedactWholeTape    = [("Date: .+ GMT", "Date: <DATE>")]
         } $ \vcr -> do
         base <- baseUrl vcr
         (passes, failures, msgs) <- runSuite base
@@ -81,7 +77,3 @@ record = do
             putStrLn "record: suite did not pass against the live SUT; tape NOT trustworthy"
             exitFailure
           else putStrLn ("record: wrote " ++ tapePath)
-
--- | The server-minted todo id: a named group, so every occurrence is one token.
-uuid :: String
-uuid = "(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"

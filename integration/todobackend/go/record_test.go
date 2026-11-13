@@ -19,8 +19,6 @@ import (
 // skips it — recording needs the live container + the fixed port. The leaf
 // integration/todobackend/.go_record.ae brings the SUT up, sets the env, runs
 // this, and tears the container down.
-const todoID = `(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`
-
 func TestRecordTheCrudSuiteAgainstTheLiveSut(t *testing.T) {
 	upstream := os.Getenv("TODOBACKEND_UPSTREAM")
 	if upstream == "" {
@@ -30,14 +28,12 @@ func TestRecordTheCrudSuiteAgainstTheLiveSut(t *testing.T) {
 	vcr, err := servirtium.Record(tapePath(), upstream).
 		StaticContent("/suite", suiteDir()).
 		Untaped("/favicon.ico").
-		// Volatile values (docs/volatile-values.md) so a re-record is
-		// byte-identical: the server-minted todo UUID becomes a correlated
-		// {{id-N}} token wherever it appears (path, headers, bodies), and the
-		// Date response header a {{serverDate-N}} token.
-		VolatileRule("request path", todoID, "regex").
-		VolatileRule("headers", todoID, "regex").
-		VolatileRule("body", todoID, "regex").
-		VolatileRule("response headers", "Date: {{serverDate}}").
+		// The Date response header varies on every run, so it is redacted to
+		// one constant. The server-minted todo ids stay literal: the browser
+		// suite reads them from responses and sends them back, and a
+		// volatile-value token a response hands out must be bound by the test
+		// (docs/volatile-values.md), which a browser-driven suite cannot do.
+		RedactWholeTape(`Date: .+ GMT`, "Date: <DATE>").
 		Port(vcrPort).
 		Start()
 	if err != nil {

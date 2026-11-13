@@ -26,11 +26,8 @@ Future<int> _main() async {
     return 2;
   }
 
-  final vcr = Vcr.record(tape, upstream)
-      .volatileRule('request path', r'(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'regex')
-      .volatileRule('headers', r'(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'regex')
-      .volatileRule('body', r'(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'regex')
-      .volatileRule('response headers', 'Date: {{serverDate}}')
+  final vcr = (Vcr.record(tape, upstream)
+        ..redactWholeTape(r'Date: .+ GMT', 'Date: <DATE>'))
       .staticContent('/suite', suiteDir)
       .untaped('/favicon.ico')
       .port(vcrPort)
