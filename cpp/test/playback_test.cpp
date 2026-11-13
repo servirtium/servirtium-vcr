@@ -201,6 +201,70 @@ int main(int argc, char** argv) {
         ck("new test empty", server.diagnostics_json() == "[]");
     }
 
+    // ---- volatile values (docs/volatile-values.md), shared core_tests/volatile ----
+    {
+        const auto root = std::filesystem::path(tape).parent_path().parent_path().parent_path();
+        const auto vol = root / "core_tests/volatile";
+        const auto fixture = "'" + (root / "target/test-tools/volatile_fixture").string() + "' ";
+        auto errtext = [](auto&& f) { try { f(); return std::string(); } catch (const servirtium::Error& e) { return std::string(e.what()); } };
+        auto has = [](const std::string& s, const char* n) { return s.find(n) != std::string::npos; };
+
+        {   // spec tests 1+6: the tape's own block, no rules in code
+            auto v = servirtium::Vcr::playback((vol / "wcf.md").string());
+            v.pretty_xml(2);
+            ck("volatile wcf driver", std::system((fixture + "wcf '" + v.base_url() + "'").c_str()) == 0);
+            ck("volatile report has binding", has(v.volatile_report(), "binding: {{messageId-1}} = "));
+        }
+        {   // spec test 6: a profile file
+            auto v = servirtium::Vcr::playback((vol / "wcf_plain.md").string());
+            v.pretty_xml(2);
+            v.volatile_profile((vol / "profile.md").string());
+            ck("volatile profile-file driver", std::system((fixture + "wcf '" + v.base_url() + "'").c_str()) == 0);
+        }
+        {   // rules in code
+            auto v = servirtium::Vcr::playback((vol / "wcf_plain.md").string());
+            v.pretty_xml(2);
+            v.volatile_rule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>");
+            v.volatile_rule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/");
+            v.volatile_rule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;");
+            v.volatile_rule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>");
+            ck("volatile rules driver", std::system((fixture + "wcf '" + v.base_url() + "'").c_str()) == 0);
+        }
+        {   // markers
+            auto v = servirtium::Vcr::playback_unstarted((vol / "wcf_dollar.md").string());
+            v.pretty_xml(2);
+            v.volatile_markers(servirtium::VolatileMarkers::DollarCurly);
+            v.start();
+            ck("volatile dollar driver", std::system((fixture + "wcf '" + v.base_url() + "'").c_str()) == 0);
+            ck("default markers fail start", has(errtext([&] { servirtium::Vcr::playback((vol / "wcf_dollar.md").string()); }), "DollarCurly"));
+        }
+        {   // spec test 2
+            auto v = servirtium::Vcr::playback((vol / "cases.md").string());
+            ck("volatile cases driver", std::system((fixture + "cases '" + v.base_url() + "'").c_str()) == 0);
+            v.reset_cursor();
+            ck("volatile cases-mismatch driver", std::system((fixture + "cases-mismatch '" + v.base_url() + "'").c_str()) == 0);
+            ck("volatile last error shows binding", has(v.last_error(false), "{{caseId-1}} = 42"));
+            v.last_error();
+        }
+        {   // bind
+            auto path = (vol / "cases_recorded.md").string();
+            auto v = servirtium::Vcr::playback_unstarted(path);
+            ck("start without a bind fails", has(errtext([&] { v.start(); }), "caseId"));
+            v.bind("caseId", "42");
+            v.start();
+            ck("volatile bind driver", std::system((fixture + "cases '" + v.base_url() + "'").c_str()) == 0);
+        }
+        {   // errors
+            auto v = servirtium::Vcr::playback((vol / "cases.md").string());
+            ck("no placeholder", has(errtext([&] { v.volatile_rule("request body", "no placeholder"); }), "needs at least one placeholder"));
+            auto v2 = servirtium::Vcr::playback((vol / "cases.md").string());  // a bad rule is kept: fresh VCR per error
+            auto w = errtext([&] { v2.volatile_rule("response body", "\"caseId\":\"{{id}}\""); });
+            ck("conflicts with (tape)", has(w, "conflicts with") && has(w, "(tape)"));
+            auto v3 = servirtium::Vcr::playback((vol / "cases.md").string());
+            ck("bad regex rule fails", !errtext([&] { v3.volatile_rule("x", "a {{b}}", "regex"); }).empty());
+        }
+    }
+
     {
         char pattern[] = "/tmp/vcr-secrets-cpp-XXXXXX";
         const std::string directory = mkdtemp(pattern);

@@ -60,6 +60,13 @@ enum class Field {
     ResponseHeaders = SV_FIELD_RESPONSE_HEADERS,
 };
 
+// Token markers for volatile values; set BEFORE any rule.
+enum class VolatileMarkers {
+    Mustache = SV_MARKERS_MUSTACHE,
+    DollarCurly = SV_MARKERS_DOLLAR_CURLY,
+    Wikilink = SV_MARKERS_WIKILINK,
+};
+
 // Per-dispatch outcome. Anything but Ok is a mismatch.
 enum class Outcome {
     Ok = SV_OK,
@@ -130,6 +137,17 @@ public:
         sv_vcr* h = sv_playback(tape_path.c_str(), &err);
         return Vcr(opened(h, err, "playback"));
     }
+
+    // Open a playback VCR WITHOUT starting it; give rules and bind() first, then
+    // start() (a response token no request binds needs a bind before start).
+    static Vcr playback_unstarted(const std::string& tape_path) {
+        sv_str err{nullptr, 0};
+        sv_vcr* h = sv_playback_unstarted(tape_path.c_str(), &err);
+        return Vcr(opened(h, err, "playback"));
+    }
+    // Start an unstarted VCR; throws Error with the core's reason (the tape-wide
+    // volatile checks run here).
+    void start() { detail::check(sv_start(vcr_), "start"); }
 
     // Replay a tape bound to a specific host/port. port 0 = OS-assigned.
     static Vcr playback_on(const std::string& tape_path, const std::string& host,
@@ -245,12 +263,26 @@ public:
                       "unredact");
     }
 
-    // Correlate every match into {{name-N}} tokens (things that recur and must
-    // stay consistent across the whole tape — UUIDs, CSRF tokens).
-    void normalize_whole_tape(const std::string& pattern, const std::string& name) {
-        detail::check(sv_normalize_whole_tape(vcr_, pattern.c_str(), name.c_str()),
-                      "normalize_whole_tape");
+    // Volatile values (docs/volatile-values.md). A rule names a scope and a
+    // pattern holding {{name}} placeholders; the tape holds tokens {{name-N}}.
+    // Each throws Error with the core's message.
+    void volatile_markers(VolatileMarkers style) {
+        detail::check(sv_volatile_markers(vcr_, static_cast<sv_markers>(style)), "volatile_markers");
     }
+    void volatile_rule(const std::string& scope, const std::string& pattern,
+                       const std::string& kind = "template") {
+        detail::check(sv_volatile_rule_kind(vcr_, scope.c_str(), pattern.c_str(), kind.c_str()), "volatile_rule");
+    }
+    // Attach a real value to a placeholder name or a token.
+    void bind(const std::string& name_or_token, const std::string& value) {
+        detail::check(sv_bind(vcr_, name_or_token.c_str(), value.c_str()), "bind");
+    }
+    // Load the rules of a profile file.
+    void volatile_profile(const std::string& path) {
+        detail::check(sv_volatile_profile(vcr_, path.c_str()), "volatile_profile");
+    }
+    // The rules in force, the token bindings seen and any warnings.
+    std::string volatile_report() const { return detail::take(sv_volatile_report(vcr_)); }
 
     // Collapse every match to one constant (variable-cardinality noise — dates).
     void redact_whole_tape(const std::string& pattern, const std::string& replacement) {
@@ -401,7 +433,6 @@ public:
     int get_playback_range_to() const { return sv_get_playback_range_to(vcr_); }
     void clear_redactions() { sv_clear_redactions(vcr_); }
     void clear_unredactions() { sv_clear_unredactions(vcr_); }
-    void clear_normalizations() { sv_clear_normalizations(vcr_); }
     void clear_header_removals() { sv_clear_header_removals(vcr_); }
     void clear_match_headers() { sv_clear_match_headers(vcr_); }
     void clear_static_content() { sv_clear_static_content(vcr_); }

@@ -52,7 +52,7 @@ This header is **also** the substrate the C++ client (`cpp/`) wraps in RAII.
 
 - `include/servirtium.h` — the public header: `sv_playback`, `sv_playback_on`,
   `sv_playback_url`, `sv_record`, `sv_record_on`, the introspection and
-  diagnostic calls, the full config surface (redactions, normalizations,
+  diagnostic calls, the full config surface (redactions, volatile values,
   header removals, the three opt-in matchers, notes, static content, untaped
   paths), the three flush variants, and the HAR converters.
 - `src/servirtium.c` — the implementation: forwards to libservirtium_vcr, converts
@@ -140,6 +140,30 @@ Both are opt-in and one call each; strings come back `""` on success, else the r
   tape's `## Interaction N` headings `from`..`to` (0-based, inclusive; `to < 0` = through the last);
   a record handle or a bad range is refused. `sv_clear_playback_range`,
   `sv_get_playback_range_from` / `_to` (-1 when none).
+
+## Volatile values
+
+Values that change on every run (ids, timestamps, `Date` headers) are named by
+rules holding `{{name}}` placeholders; the core records them as tokens
+(`{{name-N}}`) and matches and replays them on playback. Each call returns ""
+or the core's message; free it with `sv_free`:
+
+```c
+sv_str e = sv_volatile_rule(vcr, "request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>");
+sv_free(e);
+e = sv_volatile_profile(vcr, "profile.md");   /* a file of rules */
+sv_free(e);
+sv_str report = sv_volatile_report(vcr);       /* "binding: {{messageId-1}} = ..." */
+sv_free(report);
+```
+
+`sv_volatile_rule_kind` takes a kind (`"template"`, `"regex"`); `sv_volatile_markers`
+picks `SV_MARKERS_DOLLAR_CURLY` or `SV_MARKERS_WIKILINK` (before any rule).
+A response token that no request binds must be bound by the test, before
+start: open with `sv_playback_unstarted`, call `sv_bind(vcr, "caseId", "42")`,
+then `sv_start(vcr)` (an error string, "" on success).
+
+See [docs/volatile-values.md](../docs/volatile-values.md) for the rule grammar.
 
 ## Building and testing
 

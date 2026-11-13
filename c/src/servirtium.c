@@ -54,7 +54,11 @@ extern char *aether_vcr_embed_redact_header(sv_handle h, int field, const char *
 extern char *aether_vcr_embed_redact_query_param(sv_handle h, int field, const char *pat, const char *repl);
 extern char *aether_vcr_embed_redact_json_field(sv_handle h, int field, const char *pat, const char *repl);
 extern char *aether_vcr_embed_unredact(sv_handle h, int field, const char *pat, const char *repl);
-extern char *aether_vcr_embed_normalize_whole_tape(sv_handle h, const char *pat, const char *name);
+extern char *aether_vcr_embed_volatile_rule(sv_handle h, const char *scope, const char *kind, const char *pattern);
+extern char *aether_vcr_embed_volatile_bind(sv_handle h, const char *name_or_token, const char *value);
+extern char *aether_vcr_embed_set_volatile_markers(sv_handle h, int style);
+extern char *aether_vcr_embed_volatile_profile(sv_handle h, const char *path);
+extern char *aether_vcr_embed_volatile_report(sv_handle h);
 extern char *aether_vcr_embed_redact_whole_tape(sv_handle h, const char *pat, const char *repl);
 extern char *aether_vcr_embed_remove_header(sv_handle h, int field, const char *name);
 extern char *aether_vcr_embed_note(sv_handle h, const char *k, const char *v);
@@ -92,7 +96,6 @@ extern int   aether_vcr_embed_get_playback_range_from(sv_handle h);
 extern int   aether_vcr_embed_get_playback_range_to(sv_handle h);
 extern void  aether_vcr_embed_clear_redactions(sv_handle h);
 extern void  aether_vcr_embed_clear_unredactions(sv_handle h);
-extern void  aether_vcr_embed_clear_normalizations(sv_handle h);
 extern void  aether_vcr_embed_clear_header_removals(sv_handle h);
 extern void  aether_vcr_embed_clear_match_headers(sv_handle h);
 extern void  aether_vcr_embed_clear_static_content(sv_handle h);
@@ -228,29 +231,19 @@ void sv_secret_redactor(sv_vcr *vcr, sv_secret_redactor_fn callback, void *conte
     if (vcr) { vcr->secret_redactor = callback; vcr->secret_context = context; }
 }
 
-/* Wrap an opened handle: start it, and on success own a copy of host + tape.
- * On any failure the handle is destroyed and NULL returned, with the reason in
- * *error, so a caller never has to clean up after a failed open. */
-static sv_vcr *wrap_started(sv_handle h, const char *host, const char *tape,
-                            const char *fail_msg, sv_str *error) {
+static void free_wrapper(struct sv_vcr *vcr);
+
+/* Wrap an opened handle WITHOUT starting it, owning a copy of host + tape. On
+ * any failure the handle is destroyed and NULL returned, with the reason in
+ * *error. */
+static sv_vcr *wrap_unstarted(sv_handle h, const char *host, const char *tape,
+                              const char *fail_msg, sv_str *error) {
     struct sv_vcr *vcr;
 
     if (!open_ok(h, error, fail_msg)) return NULL;
-    if (aether_vcr_embed_start(h) < 0) {
-        char *why = aether_vcr_embed_last_error(h);
-        if (why != NULL && why[0] != '\0') {
-            set_error(error, why);
-        } else {
-            if (why != NULL) aether_vcr_embed_free_string(why);
-            set_error_msg(error, fail_msg);
-        }
-        aether_vcr_embed_destroy(h);
-        return NULL;
-    }
     vcr = (struct sv_vcr *)calloc(1, sizeof(*vcr));
     if (vcr == NULL) {
         set_error_msg(error, "out of memory");
-        aether_vcr_embed_stop(h);
         aether_vcr_embed_destroy(h);
         return NULL;
     }
@@ -258,6 +251,40 @@ static sv_vcr *wrap_started(sv_handle h, const char *host, const char *tape,
     vcr->host = dup_string(host);
     vcr->tape = dup_string(tape);
     return vcr;
+}
+
+/* Start serving; "" on success, else the core's reason (last_error). */
+sv_str sv_start(sv_vcr *vcr) {
+    char *why;
+    if (vcr == NULL) return empty_str();
+    if (aether_vcr_embed_start(vcr->h) >= 0) return empty_str();
+    why = aether_vcr_embed_last_error(vcr->h);
+    if (why != NULL && why[0] != '\0') return adopt(why);
+    if (why != NULL) aether_vcr_embed_free_string(why);
+    return adopt(dup_string("start failed"));
+}
+
+/* Wrap an opened handle: start it, and on success own a copy of host + tape.
+ * On any failure the handle is destroyed and NULL returned, with the reason in
+ * *error, so a caller never has to clean up after a failed open. */
+static sv_vcr *wrap_started(sv_handle h, const char *host, const char *tape,
+                            const char *fail_msg, sv_str *error) {
+    sv_vcr *vcr = wrap_unstarted(h, host, tape, fail_msg, error);
+    sv_str why;
+    if (vcr == NULL) return NULL;
+    why = sv_start(vcr);
+    if (why.len > 0) {
+        set_error(error, why.ptr);
+        free_wrapper(vcr);
+        return NULL;
+    }
+    sv_free(why);
+    return vcr;
+}
+
+sv_vcr *sv_playback_unstarted(const char *tape_path, sv_str *error) {
+    sv_handle h = aether_vcr_embed_open_playback("", tape_path, "127.0.0.1", 0);
+    return wrap_unstarted(h, "127.0.0.1", tape_path, "playback open failed", error);
 }
 
 sv_vcr *sv_playback_on(const char *tape_path, const char *host, int port, sv_str *error) {
@@ -397,9 +424,33 @@ sv_str sv_unredact(sv_vcr *vcr, sv_field field, const char *pattern,
     return adopt(aether_vcr_embed_unredact(vcr->h, (int)field, pattern, replacement));
 }
 
-sv_str sv_normalize_whole_tape(sv_vcr *vcr, const char *pattern, const char *name) {
+sv_str sv_volatile_markers(sv_vcr *vcr, sv_markers style) {
     if (vcr == NULL) return empty_str();
-    return adopt(aether_vcr_embed_normalize_whole_tape(vcr->h, pattern, name));
+    return adopt(aether_vcr_embed_set_volatile_markers(vcr->h, (int)style));
+}
+
+sv_str sv_volatile_rule(sv_vcr *vcr, const char *scope, const char *pattern) {
+    return sv_volatile_rule_kind(vcr, scope, pattern, "template");
+}
+
+sv_str sv_volatile_rule_kind(sv_vcr *vcr, const char *scope, const char *pattern, const char *kind) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_volatile_rule(vcr->h, scope, kind, pattern));
+}
+
+sv_str sv_bind(sv_vcr *vcr, const char *name_or_token, const char *value) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_volatile_bind(vcr->h, name_or_token, value));
+}
+
+sv_str sv_volatile_profile(sv_vcr *vcr, const char *path) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_volatile_profile(vcr->h, path));
+}
+
+sv_str sv_volatile_report(sv_vcr *vcr) {
+    if (vcr == NULL) return empty_str();
+    return adopt(aether_vcr_embed_volatile_report(vcr->h));
 }
 
 sv_str sv_redact_whole_tape(sv_vcr *vcr, const char *pattern, const char *replacement) {
@@ -564,10 +615,6 @@ void sv_clear_redactions(sv_vcr *vcr) {
 
 void sv_clear_unredactions(sv_vcr *vcr) {
     if (vcr != NULL) aether_vcr_embed_clear_unredactions(vcr->h);
-}
-
-void sv_clear_normalizations(sv_vcr *vcr) {
-    if (vcr != NULL) aether_vcr_embed_clear_normalizations(vcr->h);
 }
 
 void sv_clear_header_removals(sv_vcr *vcr) {

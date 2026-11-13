@@ -131,6 +131,25 @@ Both are opt-in; a refusal throws `servirtium::Error` (the reason is its message
   a record handle or a bad range throws. `clear_playback_range()`,
   `get_playback_range_from()` / `get_playback_range_to()` (-1 when none).
 
+## Volatile values
+
+Values that change on every run (ids, timestamps, `Date` headers) are named by
+rules holding `{{name}}` placeholders; the core records them as tokens
+(`{{name-N}}`) and matches and replays them on playback. Each call throws
+`servirtium::Error` with the core's message:
+
+```cpp
+vcr.volatile_rule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>");
+vcr.volatile_profile("profile.md");            // a file of rules
+vcr.volatile_markers(servirtium::VolatileMarkers::DollarCurly);  // before any rule
+std::string report = vcr.volatile_report();    // "binding: {{messageId-1}} = ..."
+```
+
+A response token that no request binds must be bound by the test before
+start: `auto v = Vcr::playback_unstarted(tape); v.bind("caseId", "42"); v.start();`.
+
+See [docs/volatile-values.md](../docs/volatile-values.md) for the rule grammar.
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

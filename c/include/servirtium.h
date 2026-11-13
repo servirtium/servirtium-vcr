@@ -97,6 +97,14 @@ sv_vcr *sv_playback_with_secrets(const char *tape, const char *host, int port,
                                  sv_str *error);
 void sv_secret_redactor(sv_vcr *, sv_secret_redactor_fn, void *context);
 
+/* Open a playback VCR WITHOUT starting it, so rules, binds and other config can
+ * be given first (volatile binds that the tape's response tokens need must
+ * precede start). Then call sv_start. NULL if the tape can't be opened. */
+sv_vcr *sv_playback_unstarted(const char *tape_path, sv_str *error);
+/* Start serving an unstarted VCR. EMPTY on success, else the core's reason
+ * (the tape-wide volatile checks run here); the VCR is still to be closed. */
+sv_str sv_start(sv_vcr *vcr);
+
 /* Replay a tape bound to a specific host/port. port 0 = OS-assigned. */
 sv_vcr *sv_playback_on(const char *tape_path, const char *host, int port,
                        sv_str *error);
@@ -164,10 +172,25 @@ sv_str sv_redact_json_field(sv_vcr *vcr, const char *name);
 sv_str sv_redact_json_field_with(sv_vcr *vcr, sv_field field, const char *name, const char *replacement);
 sv_str sv_unredact(sv_vcr *vcr, sv_field field, const char *pattern,
                    const char *replacement);
-/* Correlate every match into {{name-N}} tokens (UUIDs, CSRF tokens — things
- * that recur and must stay consistent across the whole tape). */
-sv_str sv_normalize_whole_tape(sv_vcr *vcr, const char *pattern,
-                               const char *name);
+/* Volatile values (docs/volatile-values.md). A rule is a template, regex or
+ * json rule over one scope ("request path", "request headers", "request body",
+ * "response headers", "response body", "headers", "body", ...) holding
+ * {{name}} placeholders; the tape holds tokens ({{name-N}}). Each call
+ * returns the core's error text, EMPTY on success. Apply after the open call;
+ * a rule the core rejects is reported here (it would also fail start). */
+typedef enum { SV_MARKERS_MUSTACHE = 0, SV_MARKERS_DOLLAR_CURLY = 1, SV_MARKERS_WIKILINK = 2 } sv_markers;
+/* Choose the token markers; BEFORE any rule. */
+sv_str sv_volatile_markers(sv_vcr *vcr, sv_markers style);
+/* A template rule. */
+sv_str sv_volatile_rule(sv_vcr *vcr, const char *scope, const char *pattern);
+/* A rule of another kind ("template", "regex", "json"). */
+sv_str sv_volatile_rule_kind(sv_vcr *vcr, const char *scope, const char *pattern, const char *kind);
+/* Bind a real value to a placeholder name or a token. */
+sv_str sv_bind(sv_vcr *vcr, const char *name_or_token, const char *value);
+/* Load the rules of a profile file. */
+sv_str sv_volatile_profile(sv_vcr *vcr, const char *path);
+/* Rules in force, token bindings seen, warnings (one per line). */
+sv_str sv_volatile_report(sv_vcr *vcr);
 /* Collapse every match to one constant (variable-cardinality noise — dates). */
 sv_str sv_redact_whole_tape(sv_vcr *vcr, const char *pattern,
                             const char *replacement);
@@ -259,7 +282,6 @@ int sv_get_playback_range_from(sv_vcr *vcr);
 int sv_get_playback_range_to(sv_vcr *vcr);
 void sv_clear_redactions(sv_vcr *vcr);
 void sv_clear_unredactions(sv_vcr *vcr);
-void sv_clear_normalizations(sv_vcr *vcr);
 void sv_clear_header_removals(sv_vcr *vcr);
 void sv_clear_match_headers(sv_vcr *vcr);
 void sv_clear_static_content(sv_vcr *vcr);

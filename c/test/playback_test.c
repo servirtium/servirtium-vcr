@@ -202,6 +202,155 @@ static void stable_order_and_range(const char *tape) {
     { char cmd[8192]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir); (void)system(cmd); }
 }
 
+/* Volatile values (docs/volatile-values.md) through the shared
+ * core_tests/volatile tapes and the volatile_fixture driver. */
+static int run_fixture(const char *root, const char *mode, const char *base) {
+    char cmd[16384];
+    snprintf(cmd, sizeof cmd, "'%s/target/test-tools/volatile_fixture' %s '%s'", root, mode, base);
+    return system(cmd);
+}
+
+static const char *volatile_path_buf(const char *root, const char *tape) {
+    static char path[8192];
+    snprintf(path, sizeof path, "%s/core_tests/volatile/%s", root, tape);
+    return path;
+}
+
+static sv_vcr *volatile_open(const char *root, const char *tape) {
+    char path[8192];
+    snprintf(path, sizeof path, "%s/core_tests/volatile/%s", root, tape);
+    return sv_playback(path, NULL);
+}
+
+static int has(sv_str s, const char *needle) { int r = s.ptr != NULL && strstr(s.ptr, needle) != NULL; sv_free(s); return r; }
+
+static void volatile_values_tests(const char *tape) {
+    char root[4096], profile[8192];
+    char *part; int i; sv_vcr *v; sv_str b, e;
+    snprintf(root, sizeof root, "%s", tape);
+    for (i=0; i<3; ++i) { part = strrchr(root, '/'); if (part) *part = '\0'; }
+    snprintf(profile, sizeof profile, "%s/core_tests/volatile/profile.md", root);
+
+    /* 1. spec tests 1+6: the tape's own block, pretty_xml, no rules in code */
+    v = volatile_open(root, "wcf.md");
+    ck("volatile wcf open", v != NULL);
+    if (v) {
+        sv_set_pretty_xml(v, 2);
+        b = sv_base_url(v);
+        ck("volatile wcf driver", run_fixture(root, "wcf", b.ptr) == 0);
+        sv_free(b);
+        ck("volatile report has binding", has(sv_volatile_report(v), "binding: {{messageId-1}} = "));
+        sv_close(v);
+    }
+
+    /* 2. spec test 6: a profile file */
+    v = volatile_open(root, "wcf_plain.md");
+    ck("volatile plain open", v != NULL);
+    if (v) {
+        sv_set_pretty_xml(v, 2);
+        e = sv_volatile_profile(v, profile);
+        ck("volatile_profile file ok", e.len == 0); sv_free(e);
+        b = sv_base_url(v);
+        ck("volatile profile-file driver", run_fixture(root, "wcf", b.ptr) == 0);
+        sv_free(b);
+        sv_close(v);
+    }
+
+    /* 3. rules in code */
+    v = volatile_open(root, "wcf_plain.md");
+    ck("volatile rules open", v != NULL);
+    if (v) {
+        sv_set_pretty_xml(v, 2);
+        e = sv_volatile_rule(v, "request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"); ck("rule 1 ok", e.len == 0); sv_free(e);
+        e = sv_volatile_rule(v, "request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/"); ck("rule 2 ok", e.len == 0); sv_free(e);
+        e = sv_volatile_rule(v, "request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;"); ck("rule 3 ok", e.len == 0); sv_free(e);
+        e = sv_volatile_rule(v, "response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>"); ck("rule 4 ok", e.len == 0); sv_free(e);
+        b = sv_base_url(v);
+        ck("volatile rules driver", run_fixture(root, "wcf", b.ptr) == 0);
+        sv_free(b);
+        sv_close(v);
+    }
+
+    /* 4. markers */
+    v = sv_playback_unstarted(volatile_path_buf(root, "wcf_dollar.md"), NULL);
+    ck("volatile dollar open", v != NULL);
+    if (v) {
+        sv_set_pretty_xml(v, 2);
+        e = sv_volatile_markers(v, SV_MARKERS_DOLLAR_CURLY); ck("markers ok", e.len == 0); sv_free(e);
+        e = sv_start(v); ck("dollar start", e.len == 0); if (e.len) printf("  start: %s\n", e.ptr); sv_free(e);
+        b = sv_base_url(v);
+        ck("volatile dollar driver", run_fixture(root, "wcf", b.ptr) == 0);
+        sv_free(b);
+        sv_close(v);
+    }
+    {   /* the same tape with the default markers fails start */
+        char path[8192]; sv_str err = {0};
+        snprintf(path, sizeof path, "%s/core_tests/volatile/wcf_dollar.md", root);
+        v = sv_playback(path, &err);
+        ck("default markers on a DollarCurly tape fail start", v == NULL && err.ptr != NULL && strstr(err.ptr, "DollarCurly") != NULL);
+        if (!(v == NULL && err.ptr != NULL && strstr(err.ptr, "DollarCurly") != NULL)) printf("  got: %s\n", err.ptr ? err.ptr : "(none)");
+        sv_free(err);
+        if (v) sv_close(v);
+    }
+
+    /* 5. spec test 2 */
+    v = volatile_open(root, "cases.md");
+    ck("volatile cases open", v != NULL);
+    if (v) {
+        b = sv_base_url(v);
+        ck("volatile cases driver", run_fixture(root, "cases", b.ptr) == 0);
+        sv_reset_cursor(v);
+        ck("volatile cases-mismatch driver", run_fixture(root, "cases-mismatch", b.ptr) == 0);
+        sv_free(b);
+        ck("volatile last error shows binding", has(sv_last_error_ex(v, 0), "{{caseId-1}} = 42"));
+        sv_free(sv_last_error_ex(v, 1));
+        sv_close(v);
+    }
+
+    /* 6. bind */
+    {
+        char path[8192]; sv_str err = {0};
+        snprintf(path, sizeof path, "%s/core_tests/volatile/cases_recorded.md", root);
+        v = sv_playback(path, &err);
+        ck("cases_recorded without a bind fails start", v == NULL && err.ptr != NULL && strstr(err.ptr, "caseId") != NULL);
+        sv_free(err);
+        if (v) sv_close(v);
+    }
+    v = sv_playback_unstarted(volatile_path_buf(root, "cases_recorded.md"), NULL);
+    ck("cases_recorded opens unstarted", v != NULL);
+    if (v) {
+        e = sv_start(v);
+        ck("start without a bind fails", e.len > 0 && strstr(e.ptr, "caseId") != NULL); sv_free(e);
+        e = sv_bind(v, "caseId", "42"); ck("bind ok", e.len == 0); sv_free(e);
+        e = sv_start(v); ck("start with a bind", e.len == 0); sv_free(e);
+        b = sv_base_url(v);
+        ck("volatile bind driver", run_fixture(root, "cases", b.ptr) == 0);
+        sv_free(b);
+        sv_close(v);
+    }
+
+    /* 7. errors: a setter returns the start-time error itself */
+    v = volatile_open(root, "cases.md");
+    ck("volatile errors open", v != NULL);
+    if (v) {
+        ck("no placeholder", has(sv_volatile_rule(v, "request body", "no placeholder"), "needs at least one placeholder"));
+        sv_close(v);
+    }
+    v = volatile_open(root, "cases.md");
+    if (v) {
+        e = sv_volatile_rule(v, "response body", "\"caseId\":\"{{id}}\"");
+        ck("conflicts with (tape)", e.ptr != NULL && strstr(e.ptr, "conflicts with") != NULL && strstr(e.ptr, "(tape)") != NULL);
+        sv_free(e);
+        sv_close(v);
+    }
+    v = volatile_open(root, "cases.md");
+    if (v) {
+        e = sv_volatile_rule_kind(v, "x", "a {{b}}", "regex");
+        ck("bad regex rule fails", e.len > 0); sv_free(e);
+        sv_close(v);
+    }
+}
+
 int main(int argc, char **argv) {
     const char *tape = (argc > 1 && argv[1][0] != '\0')
                            ? argv[1]
@@ -374,6 +523,7 @@ int main(int argc, char **argv) {
 
     stable_order_and_range(tape);
     named_secrets(tape);
+    volatile_values_tests(tape);
 
     if (failures == 0) {
         printf("PASS: c servirtium playback\n");

@@ -89,7 +89,11 @@ private extern (C) nothrow @nogc {
     char* aether_vcr_embed_redact_query_param(void* h, int field, const(char)* pat, const(char)* repl);
     char* aether_vcr_embed_redact_json_field(void* h, int field, const(char)* pat, const(char)* repl);
     char* aether_vcr_embed_unredact(void* h, int field, const(char)* pat, const(char)* repl);
-    char* aether_vcr_embed_normalize_whole_tape(void* h, const(char)* pat, const(char)* name);
+    char* aether_vcr_embed_volatile_rule(void* h, const(char)* scope_, const(char)* kind, const(char)* pattern);
+    char* aether_vcr_embed_volatile_bind(void* h, const(char)* name_or_token, const(char)* value);
+    char* aether_vcr_embed_volatile_profile(void* h, const(char)* path);
+    char* aether_vcr_embed_set_volatile_markers(void* h, int style);
+    char* aether_vcr_embed_volatile_report(void* h);
     char* aether_vcr_embed_redact_whole_tape(void* h, const(char)* pat, const(char)* repl);
     char* aether_vcr_embed_remove_header(void* h, int field, const(char)* name);
     char* aether_vcr_embed_match_header(void* h, const(char)* name);
@@ -127,7 +131,6 @@ private extern (C) nothrow @nogc {
     int   aether_vcr_embed_get_playback_range_to(void* h);
     void  aether_vcr_embed_clear_redactions(void* h);
     void  aether_vcr_embed_clear_unredactions(void* h);
-    void  aether_vcr_embed_clear_normalizations(void* h);
     void  aether_vcr_embed_clear_header_removals(void* h);
     void  aether_vcr_embed_clear_match_headers(void* h);
     void  aether_vcr_embed_clear_static_content(void* h);
@@ -161,6 +164,13 @@ enum Field : int {
     requestHeaders = 3,
     requestBody = 4,
     responseHeaders = 5,
+}
+
+/// Token markers for volatile values; set BEFORE any rule.
+enum VolatileMarkers : int {
+    mustache = 0,
+    dollarCurly = 1,
+    wikilink = 2,
 }
 
 /// Per-dispatch outcome. Anything but `ok` is a mismatch. Values mirror the
@@ -250,6 +260,29 @@ struct Vcr {
         auto h = aether_vcr_embed_open_playback("", tapePath.toStringz,
                                                 host.toStringz, port);
         return Vcr(started(h, "playback open failed: " ~ tapePath, secretResolver), host, tapePath);
+    }
+
+    /// Open a playback VCR WITHOUT starting it: give rules and `bind` first, then
+    /// `start()` (a response token no request binds needs a bind before start).
+    static Vcr playbackUnstarted(string tapePath, string host = "127.0.0.1", int port = 0) {
+        auto h = aether_vcr_embed_open_playback("", tapePath.toStringz,
+                                                host.toStringz, port);
+        if (h is null) throw new VcrException("playback open failed: out of memory");
+        const why = takeString(aether_vcr_embed_open_error(h));
+        if (why.length) {
+            aether_vcr_embed_destroy(h);
+            throw new VcrException("playback open failed: " ~ why);
+        }
+        return Vcr(h, host, tapePath);
+    }
+
+    /// Start an unstarted VCR; throws VcrException with the core's reason (the
+    /// tape-wide volatile checks run here). The VCR is still to be closed.
+    void start() {
+        if (aether_vcr_embed_start(handle) < 0) {
+            const detail = takeString(aether_vcr_embed_last_error(handle));
+            throw new VcrException(detail.length ? "start: " ~ detail : "start failed");
+        }
     }
 
     /// Replay a tape fetched from a URL rather than the filesystem.
@@ -350,13 +383,31 @@ struct Vcr {
                                         replacement.toStringz), "unredact");
     }
 
-    /// Correlate every match into {{name-N}} tokens (things that recur and must
-    /// stay consistent across the whole tape — UUIDs, CSRF tokens).
-    void normalizeWholeTape(string pattern, string name) {
-        check(aether_vcr_embed_normalize_whole_tape(handle, pattern.toStringz,
-                                                    name.toStringz),
-              "normalizeWholeTape");
+    /// Volatile values (docs/volatile-values.md). A rule names a scope and a
+    /// pattern holding {{name}} placeholders; the tape holds tokens {{name-N}}.
+    /// Each throws VcrException with the core's message. (Not `volatile`: a D
+    /// keyword.)
+    void volatileMarkers(VolatileMarkers style) {
+        check(aether_vcr_embed_set_volatile_markers(handle, style), "volatileMarkers");
     }
+
+    /// `kind` is "template" (default) or "regex".
+    void volatileRule(string scope_, string pattern, string kind = "template") {
+        check(aether_vcr_embed_volatile_rule(handle, scope_.toStringz, kind.toStringz, pattern.toStringz), "volatileRule");
+    }
+
+    /// Attach a real value to a placeholder name or a token.
+    void bind(string nameOrToken, string value) {
+        check(aether_vcr_embed_volatile_bind(handle, nameOrToken.toStringz, value.toStringz), "bind");
+    }
+
+    /// Load the rules of a profile file.
+    void volatileProfile(string path) {
+        check(aether_vcr_embed_volatile_profile(handle, path.toStringz), "volatileProfile");
+    }
+
+    /// The rules in force, the token bindings seen and any warnings.
+    string volatileReport() { return takeString(aether_vcr_embed_volatile_report(handle)); }
 
     /// Collapse every match to one constant (variable-cardinality noise — dates).
     void redactWholeTape(string pattern, string replacement) {
@@ -530,7 +581,6 @@ struct Vcr {
     int getPlaybackRangeTo() { return aether_vcr_embed_get_playback_range_to(handle); }
     void clearRedactions() { aether_vcr_embed_clear_redactions(handle); }
     void clearUnredactions() { aether_vcr_embed_clear_unredactions(handle); }
-    void clearNormalizations() { aether_vcr_embed_clear_normalizations(handle); }
     void clearHeaderRemovals() { aether_vcr_embed_clear_header_removals(handle); }
     void clearMatchHeaders() { aether_vcr_embed_clear_match_headers(handle); }
     void clearStaticContent() { aether_vcr_embed_clear_static_content(handle); }

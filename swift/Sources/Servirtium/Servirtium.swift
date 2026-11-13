@@ -21,6 +21,13 @@
 import CServirtiumVcr
 import Foundation
 
+/// Token markers for volatile values; set BEFORE any rule.
+public enum VolatileMarkers: Int32 {
+    case mustache = 0
+    case dollarCurly = 1
+    case wikilink = 2
+}
+
 /// Field selector for redactions / unredactions / header removals. Values
 /// mirror the FIELD_* constants in core/vcr.ae.
 public enum Field: Int32 {
@@ -125,6 +132,29 @@ public final class Vcr {
         let h = aether_vcr_embed_open_playback("", tapePath, host, port)
         return Vcr(handle: try started(h, "playback open failed: \(tapePath)", resolver: secretResolver),
                    host: host, tape: tapePath)
+    }
+
+    /// Open a playback VCR WITHOUT starting it: give rules and `bind` first, then
+    /// `start()` (a response token no request binds needs a bind before start).
+    public static func playbackUnstarted(_ tapePath: String, host: String = "127.0.0.1",
+                                         port: Int32 = 0) throws -> Vcr {
+        let h = aether_vcr_embed_open_playback("", tapePath, host, port)
+        guard let handle = h else { throw VcrError("playback open failed: \(tapePath): out of memory") }
+        let openErr = take(aether_vcr_embed_open_error(handle))
+        if !openErr.isEmpty {
+            aether_vcr_embed_destroy(handle)
+            throw VcrError("playback open failed: \(tapePath): \(openErr)")
+        }
+        return Vcr(handle: handle, host: host, tape: tapePath)
+    }
+
+    /// Start an unstarted VCR; throws VcrError with the core's reason (the
+    /// tape-wide volatile checks run here). The VCR is still to be closed.
+    public func start() throws {
+        if aether_vcr_embed_start(handle) < 0 {
+            let detail = take(aether_vcr_embed_last_error(handle))
+            throw VcrError(detail.isEmpty ? "start failed" : "start: \(detail)")
+        }
     }
 
     /// Replay a tape fetched from a URL rather than the filesystem.
@@ -261,12 +291,30 @@ public final class Vcr {
                   "unredact")
     }
 
-    /// Correlate every match into {{name-N}} tokens (things that recur and must
-    /// stay consistent across the whole tape — UUIDs, CSRF tokens).
-    public func normalizeWholeTape(_ pattern: String, _ name: String) throws {
-        try check(aether_vcr_embed_normalize_whole_tape(handle, pattern, name),
-                  "normalizeWholeTape")
+    /// Volatile values (docs/volatile-values.md). A rule names a scope and a
+    /// pattern holding {{name}} placeholders; the tape holds tokens {{name-N}}.
+    /// Each throws VcrError with the core's message.
+    public func volatileMarkers(_ style: VolatileMarkers) throws {
+        try check(aether_vcr_embed_set_volatile_markers(handle, style.rawValue), "volatileMarkers")
     }
+
+    /// `kind` is "template" (default) or "regex".
+    public func volatileRule(_ scope: String, _ pattern: String, kind: String = "template") throws {
+        try check(aether_vcr_embed_volatile_rule(handle, scope, kind, pattern), "volatileRule")
+    }
+
+    /// Attach a real value to a placeholder name or a token.
+    public func bind(_ nameOrToken: String, _ value: String) throws {
+        try check(aether_vcr_embed_volatile_bind(handle, nameOrToken, value), "bind")
+    }
+
+    /// Load the rules of a profile file.
+    public func volatileProfile(_ path: String) throws {
+        try check(aether_vcr_embed_volatile_profile(handle, path), "volatileProfile")
+    }
+
+    /// The rules in force, the token bindings seen and any warnings.
+    public func volatileReport() -> String { take(aether_vcr_embed_volatile_report(handle)) }
 
     /// Collapse every match to one constant (variable-cardinality noise — dates).
     public func redactWholeTape(_ pattern: String, _ replacement: String) throws {
@@ -442,7 +490,6 @@ public final class Vcr {
 
     public func clearRedactions() { aether_vcr_embed_clear_redactions(handle) }
     public func clearUnredactions() { aether_vcr_embed_clear_unredactions(handle) }
-    public func clearNormalizations() { aether_vcr_embed_clear_normalizations(handle) }
     public func clearHeaderRemovals() { aether_vcr_embed_clear_header_removals(handle) }
     public func clearMatchHeaders() { aether_vcr_embed_clear_match_headers(handle) }
     public func clearStaticContent() { aether_vcr_embed_clear_static_content(handle) }

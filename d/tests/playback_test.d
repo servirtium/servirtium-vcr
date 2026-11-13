@@ -116,6 +116,81 @@ int main() {
         ck("new test empty", server.diagnosticsJson() == "[]");
     }
 
+    // ---- volatile values (docs/volatile-values.md), shared core_tests/volatile ----
+    {
+        import std.process : execute;
+        const root = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "../..");
+        const vol = buildNormalizedPath(root, "core_tests/volatile");
+        const fixture = buildNormalizedPath(root, "target/test-tools/volatile_fixture");
+
+        { // spec tests 1+6: the tape's own block, no rules in code
+            auto v = Vcr.playback(buildNormalizedPath(vol, "wcf.md"));
+            scope (exit) v.close();
+            v.prettyXml(2);
+            ck("volatile wcf driver", execute([fixture, "wcf", v.baseUrl()]).status == 0);
+            ck("volatile report has binding", v.volatileReport().canFind("binding: {{messageId-1}} = "));
+        }
+        { // spec test 6: a profile file
+            auto v = Vcr.playback(buildNormalizedPath(vol, "wcf_plain.md"));
+            scope (exit) v.close();
+            v.prettyXml(2);
+            v.volatileProfile(buildNormalizedPath(vol, "profile.md"));
+            ck("volatile profile-file driver", execute([fixture, "wcf", v.baseUrl()]).status == 0);
+        }
+        { // rules in code
+            auto v = Vcr.playback(buildNormalizedPath(vol, "wcf_plain.md"));
+            scope (exit) v.close();
+            v.prettyXml(2);
+            v.volatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>");
+            v.volatileRule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/");
+            v.volatileRule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;");
+            v.volatileRule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>");
+            ck("volatile rules driver", execute([fixture, "wcf", v.baseUrl()]).status == 0);
+        }
+        { // markers
+            auto v = Vcr.playbackUnstarted(buildNormalizedPath(vol, "wcf_dollar.md"));
+            scope (exit) v.close();
+            v.prettyXml(2);
+            v.volatileMarkers(VolatileMarkers.dollarCurly);
+            v.start();
+            ck("volatile dollar driver", execute([fixture, "wcf", v.baseUrl()]).status == 0);
+            const m = collectExceptionMsg!VcrException(Vcr.playback(buildNormalizedPath(vol, "wcf_dollar.md")));
+            ck("default markers fail start", m !is null && m.canFind("DollarCurly"));
+        }
+        { // spec test 2
+            auto v = Vcr.playback(buildNormalizedPath(vol, "cases.md"));
+            scope (exit) v.close();
+            ck("volatile cases driver", execute([fixture, "cases", v.baseUrl()]).status == 0);
+            v.resetCursor();
+            ck("volatile cases-mismatch driver", execute([fixture, "cases-mismatch", v.baseUrl()]).status == 0);
+            ck("volatile last error shows binding", v.lastError(false).canFind("{{caseId-1}} = 42"));
+            v.lastError();
+        }
+        { // bind
+            auto v = Vcr.playbackUnstarted(buildNormalizedPath(vol, "cases_recorded.md"));
+            scope (exit) v.close();
+            const m = collectExceptionMsg!VcrException(v.start());
+            ck("start without a bind fails", m !is null && m.canFind("caseId"));
+            v.bind("caseId", "42");
+            v.start();
+            ck("volatile bind driver", execute([fixture, "cases", v.baseUrl()]).status == 0);
+        }
+        { // errors
+            auto v = Vcr.playback(buildNormalizedPath(vol, "cases.md"));
+            scope (exit) v.close();
+            const a = collectExceptionMsg!VcrException(v.volatileRule("request body", "no placeholder"));
+            ck("no placeholder", a !is null && a.canFind("needs at least one placeholder"));
+            auto v2 = Vcr.playback(buildNormalizedPath(vol, "cases.md"));  // a bad rule is kept: fresh VCR per error
+            scope (exit) v2.close();
+            const c = collectExceptionMsg!VcrException(v2.volatileRule("response body", "\"caseId\":\"{{id}}\""));
+            ck("conflicts with (tape)", c !is null && c.canFind("conflicts with") && c.canFind("(tape)"));
+            auto v3 = Vcr.playback(buildNormalizedPath(vol, "cases.md"));
+            scope (exit) v3.close();
+            const r = collectExceptionMsg!VcrException(v3.volatileRule("x", "a {{b}}", "regex"));
+            ck("bad regex rule fails", r !is null);
+        }
+    }
+
     // ---- stable ordering and playback range, through the shared core_tests tapes ----
     {
         import std.file : tempDir, mkdirRecurse, exists, readText;

@@ -163,6 +163,98 @@ final class PlaybackTests: XCTestCase {
         }
     }
 
+    // MARK: volatile values (docs/volatile-values.md), shared core_tests/volatile
+
+    private func volatileRoot() -> URL {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    private func volatileFixture(_ mode: String, _ vcr: Vcr) -> Int32 {
+        runFixture([volatileRoot().appendingPathComponent("target/test-tools/volatile_fixture").path, mode, vcr.baseUrl]).status
+    }
+
+    private func volatileTape(_ name: String) -> String {
+        volatileRoot().appendingPathComponent("core_tests/volatile/\(name)").path
+    }
+
+    func testVolatileTapeBlockWithPrettyXml() throws {
+        try Vcr.withPlayback(volatileTape("wcf.md")) { v in
+            v.prettyXml(2)
+            XCTAssertEqual(volatileFixture("wcf", v), 0)
+            XCTAssertTrue(v.volatileReport().contains("binding: {{messageId-1}} = "))
+        }
+    }
+
+    func testVolatileProfileFile() throws {
+        try Vcr.withPlayback(volatileTape("wcf_plain.md")) { v in
+            v.prettyXml(2)
+            try v.volatileProfile(volatileTape("profile.md"))
+            XCTAssertEqual(volatileFixture("wcf", v), 0)
+        }
+    }
+
+    func testVolatileRulesInCode() throws {
+        try Vcr.withPlayback(volatileTape("wcf_plain.md")) { v in
+            v.prettyXml(2)
+            try v.volatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+            try v.volatileRule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
+            try v.volatileRule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
+            try v.volatileRule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
+            XCTAssertEqual(volatileFixture("wcf", v), 0)
+        }
+    }
+
+    func testVolatileMarkers() throws {
+        let v = try Vcr.playbackUnstarted(volatileTape("wcf_dollar.md"))
+        defer { v.close() }
+        v.prettyXml(2)
+        try v.volatileMarkers(.dollarCurly)
+        try v.start()
+        XCTAssertEqual(volatileFixture("wcf", v), 0)
+        XCTAssertThrowsError(try Vcr.playback(volatileTape("wcf_dollar.md"))) { error in
+            XCTAssertTrue("\(error)".contains("DollarCurly"))
+        }
+    }
+
+    func testVolatileBindingsSurviveRewindAndShowInLastError() throws {
+        try Vcr.withPlayback(volatileTape("cases.md")) { v in
+            XCTAssertEqual(volatileFixture("cases", v), 0)
+            v.resetCursor()
+            XCTAssertEqual(volatileFixture("cases-mismatch", v), 0)
+            XCTAssertTrue(v.readLastError(consume: false).contains("{{caseId-1}} = 42"))
+            _ = v.readLastError()
+        }
+    }
+
+    func testVolatileBind() throws {
+        let v = try Vcr.playbackUnstarted(volatileTape("cases_recorded.md"))
+        defer { v.close() }
+        XCTAssertThrowsError(try v.start()) { error in
+            XCTAssertTrue("\(error)".contains("caseId"))
+        }
+        try v.bind("caseId", "42")
+        try v.start()
+        XCTAssertEqual(volatileFixture("cases", v), 0)
+    }
+
+    func testVolatileRuleErrors() throws {
+        try Vcr.withPlayback(volatileTape("cases.md")) { v in
+            XCTAssertThrowsError(try v.volatileRule("request body", "no placeholder")) { error in
+                XCTAssertTrue("\(error)".contains("needs at least one placeholder"))
+            }
+        }
+        // a bad rule is kept by the core: a fresh VCR per error
+        try Vcr.withPlayback(volatileTape("cases.md")) { v in
+            XCTAssertThrowsError(try v.volatileRule("response body", "\"caseId\":\"{{id}}\"")) { error in
+                XCTAssertTrue("\(error)".contains("conflicts with") && "\(error)".contains("(tape)"))
+            }
+        }
+        try Vcr.withPlayback(volatileTape("cases.md")) { v in
+            XCTAssertThrowsError(try v.volatileRule("x", "a {{b}}", kind: "regex"))
+        }
+    }
+
     func testReplaysTheCanonicalTapeBody() throws {
         try Vcr.withPlayback(tape) { vcr in
             XCTAssertEqual(try httpGet(vcr.baseUrl + "/ok"), "ok-body")

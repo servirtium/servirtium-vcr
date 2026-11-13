@@ -131,6 +131,25 @@ Both are opt-in; a refused rule or range raises `Servirtium::Error` (the reason 
   a record handle or a bad range raises. `clear_playback_range`,
   `playback_range_from` / `playback_range_to` (-1 when none).
 
+## Volatile values
+
+Values that change on every run (ids, timestamps, `Date` headers) are named by
+rules holding `{{name}}` placeholders; the core records them as tokens
+(`{{name-N}}`) and matches and replays them on playback. Each call raises
+`Servirtium::Error` with the core's message:
+
+```crystal
+vcr.volatile_rule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+vcr.volatile_profile("profile.md")                              # a file of rules
+vcr.volatile_markers(Servirtium::VolatileMarkers::DollarCurly)  # before any rule
+vcr.volatile_report   # "binding: {{messageId-1}} = ..."
+```
+
+A response token that no request binds must be bound by the test before
+start: `v = Servirtium.playback_unstarted(tape); v.bind("caseId", "42"); v.start`.
+
+See [docs/volatile-values.md](../docs/volatile-values.md) for the rule grammar.
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

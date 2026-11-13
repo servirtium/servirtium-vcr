@@ -133,6 +133,26 @@ Both are opt-in; a refused rule or range throws `VcrException` (the reason is it
   a record handle or a bad range throws. `clearPlaybackRange()`,
   `getPlaybackRangeFrom()` / `getPlaybackRangeTo()` (-1 when none).
 
+## Volatile values
+
+Values that change on every run (ids, timestamps, `Date` headers) are named by
+rules holding `{{name}}` placeholders; the core records them as tokens
+(`{{name-N}}`) and matches and replays them on playback. Each call throws
+`VcrException` with the core's message (the method is not `volatile`, a D
+keyword):
+
+```d
+vcr.volatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>");
+vcr.volatileProfile("profile.md");                    // a file of rules
+vcr.volatileMarkers(VolatileMarkers.dollarCurly);     // before any rule
+string report = vcr.volatileReport();                 // "binding: {{messageId-1}} = ..."
+```
+
+A response token that no request binds must be bound by the test before
+start: `auto v = Vcr.playbackUnstarted(tape); v.bind("caseId", "42"); v.start();`.
+
+See [docs/volatile-values.md](../docs/volatile-values.md) for the rule grammar.
+
 ## Building and testing
 
 **Get the native library** (`libservirtium_vcr`) for your OS/arch from the

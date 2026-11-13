@@ -73,7 +73,11 @@ lib LibVcr
   fun redact_query_param = aether_vcr_embed_redact_query_param(h : Void*, field : LibC::Int, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
   fun redact_json_field = aether_vcr_embed_redact_json_field(h : Void*, field : LibC::Int, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
   fun unredact = aether_vcr_embed_unredact(h : Void*, field : LibC::Int, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
-  fun normalize_whole_tape = aether_vcr_embed_normalize_whole_tape(h : Void*, pat : LibC::Char*, name : LibC::Char*) : LibC::Char*
+  fun volatile_rule = aether_vcr_embed_volatile_rule(h : Void*, scope : LibC::Char*, kind : LibC::Char*, pattern : LibC::Char*) : LibC::Char*
+  fun volatile_bind = aether_vcr_embed_volatile_bind(h : Void*, name_or_token : LibC::Char*, value : LibC::Char*) : LibC::Char*
+  fun volatile_profile = aether_vcr_embed_volatile_profile(h : Void*, path : LibC::Char*) : LibC::Char*
+  fun set_volatile_markers = aether_vcr_embed_set_volatile_markers(h : Void*, style : LibC::Int) : LibC::Char*
+  fun volatile_report = aether_vcr_embed_volatile_report(h : Void*) : LibC::Char*
   fun redact_whole_tape = aether_vcr_embed_redact_whole_tape(h : Void*, pat : LibC::Char*, repl : LibC::Char*) : LibC::Char*
   fun remove_header = aether_vcr_embed_remove_header(h : Void*, field : LibC::Int, name : LibC::Char*) : LibC::Char*
   fun match_header = aether_vcr_embed_match_header(h : Void*, name : LibC::Char*) : LibC::Char*
@@ -111,7 +115,6 @@ lib LibVcr
   fun get_playback_range_to = aether_vcr_embed_get_playback_range_to(h : Void*) : LibC::Int
   fun clear_redactions = aether_vcr_embed_clear_redactions(h : Void*) : Void
   fun clear_unredactions = aether_vcr_embed_clear_unredactions(h : Void*) : Void
-  fun clear_normalizations = aether_vcr_embed_clear_normalizations(h : Void*) : Void
   fun clear_header_removals = aether_vcr_embed_clear_header_removals(h : Void*) : Void
   fun clear_match_headers = aether_vcr_embed_clear_match_headers(h : Void*) : Void
   fun clear_static_content = aether_vcr_embed_clear_static_content(h : Void*) : Void
@@ -138,6 +141,13 @@ module Servirtium
     RequestHeaders  = 3
     RequestBody     = 4
     ResponseHeaders = 5
+  end
+
+  # Token markers for volatile values; set BEFORE any rule.
+  enum VolatileMarkers
+    Mustache    = 0
+    DollarCurly = 1
+    Wikilink    = 2
   end
 
   # Per-dispatch outcome. Anything but `Ok` is a mismatch.
@@ -214,6 +224,19 @@ module Servirtium
     ensure
       vcr.close
     end
+  end
+
+  # Open a playback VCR WITHOUT starting it: give rules and `#bind` first, then
+  # `#start` (a response token no request binds needs a bind before start).
+  def self.playback_unstarted(tape_path : String, host : String = "127.0.0.1", port : Int32 = 0) : Vcr
+    handle = LibVcr.open_playback("", tape_path, host, port)
+    raise Error.new("playback open failed: #{tape_path}: out of memory") if handle.null?
+    why = take(LibVcr.open_error(handle))
+    unless why.empty?
+      LibVcr.destroy(handle)
+      raise Error.new("playback open failed: #{tape_path}: #{why}")
+    end
+    Vcr.new(handle, host, tape_path)
   end
 
   # Replay a tape fetched from a URL rather than the filesystem.
@@ -375,10 +398,40 @@ module Servirtium
       check LibVcr.unredact(@handle, field.value, pattern, replacement), "unredact"
     end
 
-    # Correlate every match into {{name-N}} tokens (things that recur and must
-    # stay consistent across the whole tape — UUIDs, CSRF tokens).
-    def normalize_whole_tape(pattern : String, name : String) : Nil
-      check LibVcr.normalize_whole_tape(@handle, pattern, name), "normalize_whole_tape"
+    # Start an unstarted VCR; raises Error with the core's reason (the tape-wide
+    # volatile checks run here). The VCR is still to be closed.
+    def start : Nil
+      if LibVcr.start(@handle) < 0
+        detail = Servirtium.take(LibVcr.last_error(@handle))
+        raise Error.new(detail.empty? ? "start failed" : "start: #{detail}")
+      end
+    end
+
+    # Volatile values (docs/volatile-values.md). A rule names a scope and a
+    # pattern holding {{name}} placeholders; the tape holds tokens {{name-N}}.
+    # Each raises Error with the core's message.
+    def volatile_markers(style : VolatileMarkers) : Nil
+      check LibVcr.set_volatile_markers(@handle, style.value), "volatile_markers"
+    end
+
+    # `kind` is "template" (default) or "regex".
+    def volatile_rule(scope : String, pattern : String, kind : String = "template") : Nil
+      check LibVcr.volatile_rule(@handle, scope, kind, pattern), "volatile_rule"
+    end
+
+    # Attach a real value to a placeholder name or a token.
+    def bind(name_or_token : String, value : String) : Nil
+      check LibVcr.volatile_bind(@handle, name_or_token, value), "bind"
+    end
+
+    # Load the rules of a profile file.
+    def volatile_profile(path : String) : Nil
+      check LibVcr.volatile_profile(@handle, path), "volatile_profile"
+    end
+
+    # The rules in force, the token bindings seen and any warnings.
+    def volatile_report : String
+      Servirtium.take(LibVcr.volatile_report(@handle))
     end
 
     # Collapse every match to one constant (variable-cardinality noise — dates).
@@ -584,10 +637,6 @@ module Servirtium
 
     def clear_unredactions : Nil
       LibVcr.clear_unredactions(@handle)
-    end
-
-    def clear_normalizations : Nil
-      LibVcr.clear_normalizations(@handle)
     end
 
     def clear_header_removals : Nil

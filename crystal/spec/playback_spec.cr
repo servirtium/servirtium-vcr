@@ -154,6 +154,87 @@ describe "Retained replay diagnostics" do
   end
 end
 
+describe "volatile values" do
+  root = File.expand_path("../..", __DIR__)
+  vol = File.join(root, "core_tests/volatile")
+  fixture = File.join(root, "target/test-tools/volatile_fixture")
+
+  it "uses the tape's own block with pretty_xml and no rules in code" do
+    Servirtium.playback(File.join(vol, "wcf.md")) do |v|
+      v.pretty_xml(2)
+      Process.run(fixture, ["wcf", v.base_url]).success?.should be_true
+      v.volatile_report.should contain("binding: {{messageId-1}} = ")
+    end
+  end
+
+  it "applies a profile file" do
+    Servirtium.playback(File.join(vol, "wcf_plain.md")) do |v|
+      v.pretty_xml(2)
+      v.volatile_profile(File.join(vol, "profile.md"))
+      Process.run(fixture, ["wcf", v.base_url]).success?.should be_true
+    end
+  end
+
+  it "applies rules given in code" do
+    Servirtium.playback(File.join(vol, "wcf_plain.md")) do |v|
+      v.pretty_xml(2)
+      v.volatile_rule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+      v.volatile_rule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
+      v.volatile_rule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
+      v.volatile_rule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
+      Process.run(fixture, ["wcf", v.base_url]).success?.should be_true
+    end
+  end
+
+  it "honours the token markers" do
+    v = Servirtium.playback_unstarted(File.join(vol, "wcf_dollar.md"))
+    begin
+      v.pretty_xml(2)
+      v.volatile_markers(Servirtium::VolatileMarkers::DollarCurly)
+      v.start
+      Process.run(fixture, ["wcf", v.base_url]).success?.should be_true
+    ensure
+      v.close
+    end
+    expect_raises(Servirtium::Error, /DollarCurly/) { Servirtium.playback(File.join(vol, "wcf_dollar.md")) }
+  end
+
+  it "keeps bindings across a rewound cursor and shows them in the last error" do
+    Servirtium.playback(File.join(vol, "cases.md")) do |v|
+      Process.run(fixture, ["cases", v.base_url]).success?.should be_true
+      v.reset_cursor
+      Process.run(fixture, ["cases-mismatch", v.base_url]).success?.should be_true
+      v.last_error(false).should contain("{{caseId-1}} = 42")
+      v.last_error
+    end
+  end
+
+  it "needs a bind for a response token no request binds" do
+    v = Servirtium.playback_unstarted(File.join(vol, "cases_recorded.md"))
+    begin
+      expect_raises(Servirtium::Error, /caseId/) { v.start }
+      v.bind("caseId", "42")
+      v.start
+      Process.run(fixture, ["cases", v.base_url]).success?.should be_true
+    ensure
+      v.close
+    end
+  end
+
+  it "reports rule errors" do
+    # a bad rule is kept by the core: a fresh VCR per error
+    Servirtium.playback(File.join(vol, "cases.md")) do |v|
+      expect_raises(Servirtium::Error, /needs at least one placeholder/) { v.volatile_rule("request body", "no placeholder") }
+    end
+    Servirtium.playback(File.join(vol, "cases.md")) do |v|
+      expect_raises(Servirtium::Error, /conflicts with.*\(tape\)/m) { v.volatile_rule("response body", "\"caseId\":\"{{id}}\"") }
+    end
+    Servirtium.playback(File.join(vol, "cases.md")) do |v|
+      expect_raises(Servirtium::Error) { v.volatile_rule("x", "a {{b}}", "regex") }
+    end
+  end
+end
+
 describe "named secrets" do
   it "redacts at emission and resolves four services" do
     directory = File.tempname("vcr-secrets-")
