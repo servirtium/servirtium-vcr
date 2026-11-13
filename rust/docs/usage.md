@@ -72,22 +72,29 @@ Vcr::record(tape, upstream)
 `Field` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`, or
 `ResponseHeaders`.
 
-### Whole-tape normalization (correlated ids)
+### Volatile values
 
-`redact` works per field; `normalize_whole_tape` scans the **whole tape** (all
-fields and interactions, in first-appearance order) and tokenizes every
-distinct regex match to a stable `{{name-N}}` placeholder. Use it for a
-correlated id that the server mints in one response and the SUT echoes in a
-later request path — the same value gets the same token everywhere, so the
-link survives, and the token round-trips back to the captured value on
-playback:
+`redact` works per field; volatile-value rules declare values that change on
+every run. A **placeholder** `{{name}}` in a rule becomes a **token**
+`{{name-N}}` in the tape, the same token wherever the same value recurs, and
+playback lets the token match whatever the live request carries and puts the
+value back in responses:
 
 ```rust
 Vcr::record(tape, upstream)
-    .normalize_whole_tape(r"sess-[0-9a-f]{16}", "session")
+    .volatile_rule("request path", "/cases/{{caseId}}/documents")
+    .volatile_rule("response headers", "Date: {{serverDate}}")
     .start()?;
-// every distinct sess-… match → {{session-1}}, {{session-2}}, …
+// a regex rule: .volatile_rule_kind("body", r"(?<id>[0-9a-f]{32})", "regex")
+// a rule file:  .volatile_profile("cas-profile.md")
+// a recorded value from the environment: .bind("caseId", "42")
+// other marker style (before any rule): .volatile_markers(VolatileMarkers::DollarCurly)
+// vcr.volatile_report() lists the bindings made so far
 ```
+
+A bad rule fails `start()` with the core's message. Rules are written into
+the tape, so playback needs none. See
+[`docs/volatile-values.md`](../../docs/volatile-values.md).
 
 For **uncorrelated** volatiles — a `Date` header, a request timestamp — where
 each match should just collapse to one fixed string, use `redact_whole_tape`:

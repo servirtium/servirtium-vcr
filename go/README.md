@@ -133,7 +133,7 @@ Both are opt-in builder options; a refused rule or range comes back as an `error
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,
-  unredactions, header removal, whole-tape normalization, notes, strict
+  unredactions, header removal, volatile values, notes, strict
   matching, static content, drift, diagnostics — with code.
 - **[docs/architecture.md](docs/architecture.md)** — how the FFI layering
   works (Go → cgo → `core/embed.ae` → `core/vcr.ae`), and the one-server-per-port

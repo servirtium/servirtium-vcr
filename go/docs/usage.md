@@ -125,31 +125,33 @@ servirtium.Record(tape, upstream).
 `Field` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`, or
 `ResponseHeaders`.
 
-## Whole-tape normalization (deterministic re-records)
+## Volatile values (deterministic re-records)
 
-`Redact` targets one field of each interaction. Two companion record-mode
-verbs instead sweep the **whole tape** — every field of every interaction — so
-a value the server mints anew on each run stops dirtying the diff. The payoff:
+`Redact` targets one field of each interaction. Volatile-value rules instead
+say where values that change on every run sit, across the **whole tape**, so a
+value the server mints anew on each run stops dirtying the diff. The payoff:
 a re-record is **byte-identical**, so `FailIfChanged` drift detection fires
 only on a real upstream change.
 
 ```go
 servirtium.Record(tape, upstream).
-    // CORRELATED value (an entity id echoed back in later request paths):
-    // each distinct match becomes a stable {{order-N}} token, minted in
-    // first-appearance order across the whole tape — identity preserved, so
-    // it still round-trips on playback.
-    NormalizeWholeTape(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, "order").
-    // UNCORRELATED, variable-cardinality volatile (a Date header): collapse
-    // every match to one constant — a per-value token would not be byte-stable
-    // when the number of distinct values varies run to run.
-    RedactWholeTape(`Date: .+ GMT`, "Date: <DATE>").
+    // A placeholder {{caseId}} becomes a token {{caseId-N}} in the tape: the
+    // same token wherever the same value recurs, so the link survives.
+    VolatileRule("request path", "/cases/{{caseId}}/documents").
+    VolatileRule("response headers", "Date: {{serverDate}}").
+    // A regex rule: named groups are placeholders.
+    VolatileRule("body", `(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`, "regex").
     Start()
 ```
 
-Use `NormalizeWholeTape(pattern, name)` for a value that recurs and must stay
-self-consistent (the same id in the POST response and a later GET path);
-use `RedactWholeTape(pattern, replacement)` for a volatile you never correlate.
+`VolatileProfile(path)` loads a rule file, `Bind(nameOrToken, value)` attaches
+a real value to a placeholder or token, `VolatileMarkers(servirtium.MarkersDollarCurly)`
+changes the marker style (apply it before any rule), and
+`Server.VolatileReport()` lists the bindings made. A bad rule fails `Start`
+with the core's message. The rules are written into the tape, so playback
+needs none. See [`docs/volatile-values.md`](../../docs/volatile-values.md).
+`RedactWholeTape(pattern, replacement)` remains for a volatile you never
+correlate.
 
 ## Replaying a scrubbed tape (unredaction)
 

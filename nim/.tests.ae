@@ -27,6 +27,7 @@ aeb(cap) {
             test_file("tests/playback_test.nim")
             test_file("tests/record_test.nim")
             test_file("tests/mutation_test.nim")
+            test_file("tests/volatile_test.nim")
         }
     }
 }

@@ -15,7 +15,7 @@ library, unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Redactions | ✅ | ✅ | `redact(field, …)` | ✅ |
 | Unredactions | ✅ | ✅ | `unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `removeHeader(field, name)` | ✅ |
-| Whole-tape normalize (correlated values → `{{name-N}}`) | ✅ | ✅ | `normalizeWholeTape(pattern, name)` | ✅ core probe |
+| Volatile values (placeholders → tokens `{{name-N}}`) | ✅ | ✅ | `volatileRule(scope, pattern, kind)` / `volatileBind(name, value)` / `volatileProfile(path)` / `volatileMarkers(style)` / `volatileReport()` | ✅ |
 | Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `redactWholeTape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `note(title, body)` (builder + running server) | ✅ |
 | Strict request matching | ✅ | ✅ | `setStrictHeaders(true)` | ✅ pass + fail |
@@ -38,9 +38,8 @@ library, unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Dynamic (OS-assigned) port | ✅ | ✅ | `playback(...).port == 0` default → `port()` | ✅ |
 | One server per port (N servers / process) | ✅ | ✅ | (each `start` owns its handle) | ✅ |
 
-The two whole-tape rewrites are bound on the Nim surface
-(`normalizeWholeTape` / `redactWholeTape`) and proven at libservirtium_vcr
-level (`core_tests/normalize_probe.ae`); the "one server per port" guarantee is
+Whole-tape redact is bound as `redactWholeTape`; volatile values are described in
+[`docs/volatile-values.md`](../../docs/volatile-values.md). The "one server per port" guarantee is
 exercised directly by this binding (`tests/playback_test.nim`: two playback
 servers alive at once on two ports) and by `core_tests/.concurrent.ae`.
 

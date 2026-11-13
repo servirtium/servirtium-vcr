@@ -12,7 +12,7 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
-| Whole-tape normalize (correlated ids → `{{name-N}}`) | ✅ | ✅ | `.normalize_whole_tape(pattern, name)` | — |
+| Volatile values (placeholders → tokens `{{name-N}}`) | ✅ | ✅ | `.volatile_rule(scope, pattern)` / `.volatile_rule_kind(…, kind)` / `.bind(name, value)` / `.volatile_profile(path)` / `.volatile_markers(style)` / `vcr.volatile_report()` | — |
 | Whole-tape redact (volatiles → one constant) | ✅ | ✅ | `.redact_whole_tape(pattern, replacement)` | — |
 | Unredactions | ✅ | ✅ | `.unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `.remove_header(field, name)` | ✅ |

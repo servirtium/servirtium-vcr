@@ -174,7 +174,6 @@ impl Vcr {
             upstream_base: upstream_base.into(),
             secret_redactor: None,
             redactions: Vec::new(),
-            normalize_whole_tape: Vec::new(),
             redact_whole_tape: Vec::new(),
             note: None,
             indent_code_blocks: false,
@@ -193,6 +192,20 @@ impl Vcr {
 }
 
 /// Shared bind options for both builders.
+/// How a placeholder / token is written: `{{name}}` (default), `${name}` or `[[name]]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VolatileMarkers {
+    Mustache = 0,
+    DollarCurly = 1,
+    Wikilink = 2,
+}
+
+enum VolatileOp {
+    Rule(String, String, String),
+    Bind(String, String),
+    Profile(String),
+}
+
 struct Common {
     tape_path: String,
     host: String,
@@ -200,6 +213,10 @@ struct Common {
     label: String,
     native_lib: Option<String>,
     header_removals: Vec<(Field, String)>,
+    /// Volatile-value markers (applied before any rule).
+    volatile_markers: Option<VolatileMarkers>,
+    /// Rules, binds and profiles, applied in call order.
+    volatile: Vec<VolatileOp>,
     ignore_volatile_headers: bool,
     remove_transport_headers: bool,
     cloud_vendors: Vec<String>,
@@ -220,6 +237,8 @@ impl Common {
             label: String::new(),
             native_lib: None,
             header_removals: Vec::new(),
+            volatile_markers: None,
+            volatile: Vec::new(),
             ignore_volatile_headers: false,
             remove_transport_headers: false,
             cloud_vendors: Vec::new(),
@@ -238,6 +257,26 @@ impl Common {
     fn apply_shared(&self, n: &Native, h: Handle) -> Result<(), VcrError> {
         for (field, name) in &self.header_removals {
             check(n, unsafe { (n.remove_header)(h, *field as c_int, cstr(name)?.as_ptr()) }, "remove_header")?;
+        }
+        if let Some(style) = self.volatile_markers {
+            check(n, unsafe { (n.set_volatile_markers)(h, style as c_int) }, "set_volatile_markers")?;
+        }
+        for op in &self.volatile {
+            match op {
+                VolatileOp::Rule(scope, kind, pattern) => check(
+                    n,
+                    unsafe { (n.volatile_rule)(h, cstr(scope)?.as_ptr(), cstr(kind)?.as_ptr(), cstr(pattern)?.as_ptr()) },
+                    "volatile_rule",
+                )?,
+                VolatileOp::Bind(name, value) => check(
+                    n,
+                    unsafe { (n.volatile_bind)(h, cstr(name)?.as_ptr(), cstr(value)?.as_ptr()) },
+                    "volatile_bind",
+                )?,
+                VolatileOp::Profile(path) => {
+                    check(n, unsafe { (n.volatile_profile)(h, cstr(path)?.as_ptr()) }, "volatile_profile")?
+                }
+            }
         }
         if self.ignore_volatile_headers {
             check(n, unsafe { (n.ignore_volatile_headers)(h) }, "ignore_volatile_headers")?;
@@ -325,6 +364,39 @@ impl PlaybackBuilder {
     /// Remove a header by name from the given block (case-insensitive).
     pub fn remove_header(mut self, field: Field, name: impl Into<String>) -> Self {
         self.common.header_removals.push((field, name.into()));
+        self
+    }
+    /// Declare a volatile-value rule (see `docs/volatile-values.md`): `scope`
+    /// names the part of the message, `pattern` is text with `{{name}}`
+    /// placeholders; `kind` defaults to "template" (see
+    /// [`volatile_rule_kind`](Self::volatile_rule_kind)). May be called
+    /// repeatedly; a bad rule fails `start()` with the core's message.
+    pub fn volatile_rule(self, scope: impl Into<String>, pattern: impl Into<String>) -> Self {
+        self.volatile_rule_kind(scope, pattern, "template")
+    }
+    /// As [`volatile_rule`](Self::volatile_rule) with an explicit kind (e.g. "regex").
+    pub fn volatile_rule_kind(
+        mut self,
+        scope: impl Into<String>,
+        pattern: impl Into<String>,
+        kind: impl Into<String>,
+    ) -> Self {
+        self.common.volatile.push(VolatileOp::Rule(scope.into(), kind.into(), pattern.into()));
+        self
+    }
+    /// Bind a real value to a placeholder name or a token (`{{name-N}}`).
+    pub fn bind(mut self, name_or_token: impl Into<String>, value: impl Into<String>) -> Self {
+        self.common.volatile.push(VolatileOp::Bind(name_or_token.into(), value.into()));
+        self
+    }
+    /// Load a volatile-value profile file.
+    pub fn volatile_profile(mut self, path: impl Into<String>) -> Self {
+        self.common.volatile.push(VolatileOp::Profile(path.into()));
+        self
+    }
+    /// Choose the marker style; applied before any rule.
+    pub fn volatile_markers(mut self, style: VolatileMarkers) -> Self {
+        self.common.volatile_markers = Some(style);
         self
     }
     /// Drop the per-request volatile headers modern clients inject on every
@@ -562,7 +634,6 @@ pub struct RecordBuilder {
     common: Common,
     upstream_base: String,
     redactions: Vec<(&'static str, Field, String, String)>,
-    normalize_whole_tape: Vec<(String, String)>,
     redact_whole_tape: Vec<(String, String)>,
     note: Option<(String, String)>,
     indent_code_blocks: bool,
@@ -608,6 +679,39 @@ impl RecordBuilder {
     /// Remove a header by name from the given block (case-insensitive).
     pub fn remove_header(mut self, field: Field, name: impl Into<String>) -> Self {
         self.common.header_removals.push((field, name.into()));
+        self
+    }
+    /// Declare a volatile-value rule (see `docs/volatile-values.md`): `scope`
+    /// names the part of the message, `pattern` is text with `{{name}}`
+    /// placeholders; `kind` defaults to "template" (see
+    /// [`volatile_rule_kind`](Self::volatile_rule_kind)). May be called
+    /// repeatedly; a bad rule fails `start()` with the core's message.
+    pub fn volatile_rule(self, scope: impl Into<String>, pattern: impl Into<String>) -> Self {
+        self.volatile_rule_kind(scope, pattern, "template")
+    }
+    /// As [`volatile_rule`](Self::volatile_rule) with an explicit kind (e.g. "regex").
+    pub fn volatile_rule_kind(
+        mut self,
+        scope: impl Into<String>,
+        pattern: impl Into<String>,
+        kind: impl Into<String>,
+    ) -> Self {
+        self.common.volatile.push(VolatileOp::Rule(scope.into(), kind.into(), pattern.into()));
+        self
+    }
+    /// Bind a real value to a placeholder name or a token (`{{name-N}}`).
+    pub fn bind(mut self, name_or_token: impl Into<String>, value: impl Into<String>) -> Self {
+        self.common.volatile.push(VolatileOp::Bind(name_or_token.into(), value.into()));
+        self
+    }
+    /// Load a volatile-value profile file.
+    pub fn volatile_profile(mut self, path: impl Into<String>) -> Self {
+        self.common.volatile.push(VolatileOp::Profile(path.into()));
+        self
+    }
+    /// Choose the marker style; applied before any rule.
+    pub fn volatile_markers(mut self, style: VolatileMarkers) -> Self {
+        self.common.volatile_markers = Some(style);
         self
     }
     /// Drop the per-request volatile headers modern clients inject on every
@@ -702,18 +806,6 @@ impl RecordBuilder {
     }
     pub fn redact_json_field_with(mut self, name: impl Into<String>, replacement: impl Into<String>, field: Field) -> Self {
         self.redactions.push(("json_field", field, name.into(), replacement.into()));
-        self
-    }
-    /// Tokenize every distinct regex match across the WHOLE tape (all fields
-    /// and interactions, in first-appearance order) into a stable `{{name-N}}`
-    /// placeholder. Use this for correlated ids that recur in later request
-    /// paths, so the scrubbed value stays linkable across interactions.
-    pub fn normalize_whole_tape(
-        mut self,
-        pattern: impl Into<String>,
-        name: impl Into<String>,
-    ) -> Self {
-        self.normalize_whole_tape.push((pattern.into(), name.into()));
         self
     }
     /// Collapse every regex match across the WHOLE tape to the constant
@@ -895,15 +987,6 @@ impl RecordBuilder {
                 "redact",
             )?;
         }
-        for (pattern, name) in &self.normalize_whole_tape {
-            check(
-                n,
-                unsafe {
-                    (n.normalize_whole_tape)(handle, cstr(pattern)?.as_ptr(), cstr(name)?.as_ptr())
-                },
-                "normalize_whole_tape",
-            )?;
-        }
         for (pattern, replacement) in &self.redact_whole_tape {
             check(
                 n,
@@ -1053,6 +1136,10 @@ impl VcrServer {
     /// False permits a monitor to observe without acknowledging the event.
     pub fn last_error_with(&self, consume: bool) -> String {
         take_string(self.n, unsafe { (self.n.last_error_ex)(self.handle, consume as c_int) })
+    }
+    /// Report of the volatile-value bindings made so far (`{{name-N}} = value`).
+    pub fn volatile_report(&self) -> String {
+        take_string(self.n, unsafe { (self.n.volatile_report)(self.handle) })
     }
     pub fn diagnostics_json(&self, consume: bool) -> String {
         take_string(self.n, unsafe { (self.n.diagnostics_json)(self.handle, consume as c_int) })

@@ -257,8 +257,33 @@ proc assertNoUnfilledPlaceholders*(s: VcrServer) =
 proc removeHeader*(s: VcrServer; field: Field; name: string): string {.discardable.} =
   takeString(native.remove_header(s.handle, cint(field), cstring(name)))
 
-proc normalizeWholeTape*(s: VcrServer; pattern, name: string): string {.discardable.} =
-  takeString(native.normalize_whole_tape(s.handle, cstring(pattern), cstring(name)))
+proc volatileRule*(s: VcrServer; scope, pattern: string; kind = "template"): string {.discardable.} =
+  ## Declare a volatile-value rule (docs/volatile-values.md): `scope` names the
+  ## part of the message, `pattern` is text with `{{name}}` placeholders; `kind`
+  ## is "template" (default) or "regex". Repeatable. Returns "" on success, or
+  ## the core's message (a bad rule also makes `start` fail; see `lastError`).
+  takeString(native.volatile_rule(s.handle, cstring(scope), cstring(kind), cstring(pattern)))
+
+proc volatileBind*(s: VcrServer; nameOrToken, value: string): string {.discardable.} =
+  ## Attach a real value to a placeholder name or a token (`{{name-N}}`).
+  ## (Named `volatileBind`: `bind` is a Nim keyword.)
+  takeString(native.volatile_bind(s.handle, cstring(nameOrToken), cstring(value)))
+
+proc volatileProfile*(s: VcrServer; path: string): string {.discardable.} =
+  ## Load a volatile-value profile file. Returns "" on success, or the error.
+  takeString(native.volatile_profile(s.handle, cstring(path)))
+
+type VolatileMarkers* = enum
+  ## How a placeholder / token is written: `{{name}}`, `${name}` or `[[name]]`.
+  Mustache = 0, DollarCurly = 1, Wikilink = 2
+
+proc volatileMarkers*(s: VcrServer; style: VolatileMarkers): string {.discardable.} =
+  ## Choose the marker style; call it before any rule.
+  takeString(native.set_volatile_markers(s.handle, cint(ord(style))))
+
+proc volatileReport*(s: VcrServer): string =
+  ## The volatile-value bindings made so far (`binding: {{name-N}} = value`).
+  takeString(native.volatile_report(s.handle))
 
 proc redactWholeTape*(s: VcrServer; pattern, replacement: string): string {.discardable.} =
   takeString(native.redact_whole_tape(s.handle, cstring(pattern), cstring(replacement)))

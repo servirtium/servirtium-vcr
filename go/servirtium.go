@@ -79,7 +79,11 @@ char*  aether_vcr_embed_redact_query_param(void* server, int field, const char* 
 char*  aether_vcr_embed_redact_json_field(void* server, int field, const char* pattern, const char* replacement);
 char*  aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement);
 char*  aether_vcr_embed_remove_header(void* server, int field, const char* name);
-char*  aether_vcr_embed_normalize_whole_tape(void* server, const char* pattern, const char* name);
+char*  aether_vcr_embed_volatile_rule(void* server, const char* scope, const char* kind, const char* pattern);
+char*  aether_vcr_embed_volatile_bind(void* server, const char* name_or_token, const char* value);
+char*  aether_vcr_embed_volatile_profile(void* server, const char* path);
+char*  aether_vcr_embed_set_volatile_markers(void* server, int style);
+char*  aether_vcr_embed_volatile_report(void* server);
 char*  aether_vcr_embed_redact_whole_tape(void* server, const char* pattern, const char* replacement);
 char*  aether_vcr_embed_strict_ignore_common_headers(void* server);
 char*  aether_vcr_embed_ignore_volatile_headers(void* server);
@@ -226,12 +230,31 @@ type replacement struct {
 	optional          bool // substitutions only: true = not reported by AssertAllRedactionsUsed
 }
 
+// VolatileMarkers is how a placeholder / token is written: {{name}} (default),
+// ${name} or [[name]].
+type VolatileMarkers int
+
+const (
+	MarkersMustache    VolatileMarkers = 0
+	MarkersDollarCurly VolatileMarkers = 1
+	MarkersWikilink    VolatileMarkers = 2
+)
+
+// volatileItem is one rule ("rule": a, b, c = scope, kind, pattern), bind
+// ("bind": a, b = name, value) or profile ("profile": a = path).
+type volatileItem struct {
+	op      string
+	a, b, c string
+}
+
 type baseBuilder struct {
 	tapePath               string
 	host                   string
 	port                   int
 	label                  string
 	headerRemovals         []headerRemoval
+	volatileConfig         []volatileItem // rules, binds and profiles, in call order
+	volatileMarkers        *VolatileMarkers
 	ignoreVolatileHeaders  bool
 	removeTransportHeaders bool
 	cloudVendors           []string
@@ -255,6 +278,32 @@ func (b *baseBuilder) applyBase(handle unsafe.Pointer) error {
 		res := C.aether_vcr_embed_remove_header(handle, C.int(hr.field), cName)
 		C.free(unsafe.Pointer(cName))
 		if err := checkErr(res, "RemoveHeader"); err != nil {
+			return err
+		}
+	}
+	if b.volatileMarkers != nil {
+		if err := checkErr(C.aether_vcr_embed_set_volatile_markers(handle, C.int(*b.volatileMarkers)), "VolatileMarkers"); err != nil {
+			return err
+		}
+	}
+	for _, v := range b.volatileConfig {
+		ca, cb, cc := C.CString(v.a), C.CString(v.b), C.CString(v.c)
+		var res *C.char
+		op := "VolatileRule"
+		switch v.op {
+		case "bind":
+			op = "Bind"
+			res = C.aether_vcr_embed_volatile_bind(handle, ca, cb)
+		case "profile":
+			op = "VolatileProfile"
+			res = C.aether_vcr_embed_volatile_profile(handle, ca)
+		default:
+			res = C.aether_vcr_embed_volatile_rule(handle, ca, cb, cc)
+		}
+		C.free(unsafe.Pointer(ca))
+		C.free(unsafe.Pointer(cb))
+		C.free(unsafe.Pointer(cc))
+		if err := checkErr(res, op); err != nil {
 			return err
 		}
 	}
@@ -505,6 +554,37 @@ func (b *PlaybackBuilder) RemoveHeader(field Field, name string) *PlaybackBuilde
 	return b
 }
 
+// VolatileRule declares a volatile-value rule (docs/volatile-values.md): scope
+// names the part of the message, pattern is text with {{name}} placeholders.
+// kind defaults to "template"; pass "regex" for the escape hatch. May be called
+// repeatedly; a bad rule fails Start with the core's message.
+func (b *PlaybackBuilder) VolatileRule(scope, pattern string, kind ...string) *PlaybackBuilder {
+	k := "template"
+	if len(kind) > 0 {
+		k = kind[0]
+	}
+	b.volatileConfig = append(b.volatileConfig, volatileItem{"rule", scope, k, pattern})
+	return b
+}
+
+// Bind attaches a real value to a placeholder name or a token ({{name-N}}).
+func (b *PlaybackBuilder) Bind(nameOrToken, value string) *PlaybackBuilder {
+	b.volatileConfig = append(b.volatileConfig, volatileItem{"bind", nameOrToken, value, ""})
+	return b
+}
+
+// VolatileProfile loads a volatile-value profile file.
+func (b *PlaybackBuilder) VolatileProfile(path string) *PlaybackBuilder {
+	b.volatileConfig = append(b.volatileConfig, volatileItem{"profile", path, "", ""})
+	return b
+}
+
+// VolatileMarkers chooses the marker style; applied before any rule.
+func (b *PlaybackBuilder) VolatileMarkers(style VolatileMarkers) *PlaybackBuilder {
+	b.volatileMarkers = &style
+	return b
+}
+
 // Unredact replaces a redacted placeholder in the recorded expectation with
 // the real value the live SUT sends, so a committed (scrubbed) tape still
 // matches.
@@ -664,7 +744,6 @@ type RecordBuilder struct {
 	baseBuilder
 	upstreamBase        string
 	redactions          []recordRule
-	normalizations      []struct{ pattern, name string }
 	wholeTapeRedactions []struct{ pattern, repl string }
 	note                *struct{ title, body string }
 	indentCodeBlocks    bool
@@ -697,6 +776,37 @@ func (b *RecordBuilder) Label(label string) *RecordBuilder { b.label = label; re
 // RemoveHeader removes a header by name from the given block (case-insensitive).
 func (b *RecordBuilder) RemoveHeader(field Field, name string) *RecordBuilder {
 	b.headerRemovals = append(b.headerRemovals, headerRemoval{field, name})
+	return b
+}
+
+// VolatileRule declares a volatile-value rule (docs/volatile-values.md): scope
+// names the part of the message, pattern is text with {{name}} placeholders.
+// kind defaults to "template"; pass "regex" for the escape hatch. May be called
+// repeatedly; a bad rule fails Start with the core's message.
+func (b *RecordBuilder) VolatileRule(scope, pattern string, kind ...string) *RecordBuilder {
+	k := "template"
+	if len(kind) > 0 {
+		k = kind[0]
+	}
+	b.volatileConfig = append(b.volatileConfig, volatileItem{"rule", scope, k, pattern})
+	return b
+}
+
+// Bind attaches a real value to a placeholder name or a token ({{name-N}}).
+func (b *RecordBuilder) Bind(nameOrToken, value string) *RecordBuilder {
+	b.volatileConfig = append(b.volatileConfig, volatileItem{"bind", nameOrToken, value, ""})
+	return b
+}
+
+// VolatileProfile loads a volatile-value profile file.
+func (b *RecordBuilder) VolatileProfile(path string) *RecordBuilder {
+	b.volatileConfig = append(b.volatileConfig, volatileItem{"profile", path, "", ""})
+	return b
+}
+
+// VolatileMarkers chooses the marker style; applied before any rule.
+func (b *RecordBuilder) VolatileMarkers(style VolatileMarkers) *RecordBuilder {
+	b.volatileMarkers = &style
 	return b
 }
 
@@ -779,24 +889,10 @@ func (b *RecordBuilder) RedactJSONFieldWith(name, replacement string, field Fiel
 	return b
 }
 
-// NormalizeWholeTape rewrites every distinct match of pattern (a regex),
-// scanned across all fields and interactions in first-appearance order, to a
-// stable {{name-N}} token. libservirtium_vcr mints the token, so a server-generated
-// value that recurs — a created entity's id echoed back in a later request
-// path — collapses to one token everywhere it appears (identity preserved, so
-// it round-trips on playback). Use it for correlated dynamic values; the
-// payoff is a byte-identical re-record so FailIfChanged drift detection fires
-// only on real upstream changes.
-func (b *RecordBuilder) NormalizeWholeTape(pattern, name string) *RecordBuilder {
-	b.normalizations = append(b.normalizations, struct{ pattern, name string }{pattern, name})
-	return b
-}
-
 // RedactWholeTape collapses every match of pattern (a regex) to the constant
-// repl, across all fields and interactions. The companion to
-// NormalizeWholeTape for a volatile value you never correlate and whose number
+// repl, across all fields and interactions, for a volatile value whose number
 // of distinct values can vary run to run — a Date response header — where a
-// per-value token would not itself be byte-stable. E.g.
+// per-value token would not itself be byte-stable (a VolatileRule on "response headers" covers dates). E.g.
 // RedactWholeTape(`Date: .+ GMT`, "Date: <DATE>").
 func (b *RecordBuilder) RedactWholeTape(pattern, repl string) *RecordBuilder {
 	b.wholeTapeRedactions = append(b.wholeTapeRedactions, struct{ pattern, repl string }{pattern, repl})
@@ -985,15 +1081,6 @@ func (b *RecordBuilder) applyConfig(handle unsafe.Pointer) error {
 			return err
 		}
 	}
-	for _, n := range b.normalizations {
-		cPat, cName := C.CString(n.pattern), C.CString(n.name)
-		res := C.aether_vcr_embed_normalize_whole_tape(handle, cPat, cName)
-		C.free(unsafe.Pointer(cPat))
-		C.free(unsafe.Pointer(cName))
-		if err := checkErr(res, "NormalizeWholeTape"); err != nil {
-			return err
-		}
-	}
 	for _, w := range b.wholeTapeRedactions {
 		cPat, cRep := C.CString(w.pattern), C.CString(w.repl)
 		res := C.aether_vcr_embed_redact_whole_tape(handle, cPat, cRep)
@@ -1106,6 +1193,12 @@ func (s *Server) LastError(consume ...bool) string {
 		flag = 0
 	}
 	return takeString(C.aether_vcr_embed_last_error_ex(s.handle, C.int(flag)))
+}
+
+// VolatileReport lists the volatile-value bindings made so far
+// ("binding: {{name-N}} = value").
+func (s *Server) VolatileReport() string {
+	return takeString(C.aether_vcr_embed_volatile_report(s.handle))
 }
 func (s *Server) DiagnosticsJSON(consume bool) string {
 	flag := 0

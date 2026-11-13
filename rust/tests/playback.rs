@@ -228,3 +228,111 @@ fn opens_starts_and_finishes_many_times() {
         vcr.finish().unwrap(); // finish stops + destroys; the Drop that follows is a no-op
     }
 }
+
+// ---- volatile values (docs/volatile-values.md) ----
+
+fn volatile_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+}
+
+fn volatile_tape(name: &str) -> String {
+    volatile_root().join("core_tests/volatile").join(name).to_str().unwrap().to_string()
+}
+
+fn volatile_driver(mode: &str, base: &str) {
+    let output = std::process::Command::new(volatile_root().join("target/test-tools/volatile_fixture"))
+        .arg(mode)
+        .arg(base)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "volatile_fixture {mode}: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn volatile_tape_block_drives_wcf_playback_and_reports_bindings() {
+    let vcr = Vcr::playback(volatile_tape("wcf.md")).pretty_xml(2).start().unwrap();
+    volatile_driver("wcf", &vcr.base_url());
+    assert!(vcr.volatile_report().contains("binding: {{messageId-1}} = "));
+}
+
+#[test]
+fn volatile_profile_file_drives_wcf_playback() {
+    let vcr = Vcr::playback(volatile_tape("wcf_plain.md"))
+        .pretty_xml(2)
+        .volatile_profile(volatile_tape("profile.md"))
+        .start()
+        .unwrap();
+    volatile_driver("wcf", &vcr.base_url());
+}
+
+#[test]
+fn volatile_rules_in_code_drive_wcf_playback() {
+    let vcr = Vcr::playback(volatile_tape("wcf_plain.md"))
+        .pretty_xml(2)
+        .volatile_rule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+        .volatile_rule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
+        .volatile_rule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
+        .volatile_rule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
+        .start()
+        .unwrap();
+    volatile_driver("wcf", &vcr.base_url());
+}
+
+#[test]
+fn volatile_markers_dollar_curly() {
+    let vcr = Vcr::playback(volatile_tape("wcf_dollar.md"))
+        .pretty_xml(2)
+        .volatile_markers(servirtium::VolatileMarkers::DollarCurly)
+        .start()
+        .unwrap();
+    volatile_driver("wcf", &vcr.base_url());
+    let msg = Vcr::playback(volatile_tape("wcf_dollar.md")).pretty_xml(2).start().err().expect("start must fail").to_string();
+    assert!(msg.contains("DollarCurly"), "{msg}");
+}
+
+#[test]
+fn volatile_cases_bind_then_mismatch_reports_token() {
+    let vcr = Vcr::playback(volatile_tape("cases.md")).start().unwrap();
+    volatile_driver("cases", &vcr.base_url());
+    vcr.reset_cursor();
+    volatile_driver("cases-mismatch", &vcr.base_url());
+    assert!(vcr.last_error_with(false).contains("{{caseId-1}} = 42"));
+    let _ = vcr.last_error(); // consuming read: nothing unretrieved at close
+}
+
+#[test]
+fn volatile_bind_supplies_a_recorded_value() {
+    let msg = Vcr::playback(volatile_tape("cases_recorded.md")).start().err().expect("start must fail").to_string();
+    assert!(msg.contains("caseId"), "{msg}");
+    let vcr = Vcr::playback(volatile_tape("cases_recorded.md")).bind("caseId", "42").start().unwrap();
+    volatile_driver("cases", &vcr.base_url());
+}
+
+#[test]
+fn volatile_config_errors_fail_start_with_the_core_message() {
+    let msg = Vcr::playback(volatile_tape("cases.md"))
+        .volatile_rule("request body", "no placeholder")
+        .start()
+        .err()
+        .expect("start must fail")
+        .to_string();
+    assert!(msg.contains("needs at least one placeholder"), "{msg}");
+
+    let msg = Vcr::playback(volatile_tape("cases.md"))
+        .volatile_rule("response body", "\"caseId\":\"{{id}}\"")
+        .start()
+        .err()
+        .expect("start must fail")
+        .to_string();
+    assert!(msg.contains("conflicts with") && msg.contains("(tape)"), "{msg}");
+
+    assert!(Vcr::playback(volatile_tape("cases.md"))
+        .volatile_rule_kind("x", "a {{b}}", "regex")
+        .start()
+        .is_err());
+}

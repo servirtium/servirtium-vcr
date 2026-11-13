@@ -15,7 +15,7 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Redactions | ✅ | ✅ | `.Redact(field, …)` | ✅ |
 | Unredactions | ✅ | ✅ | `.Unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `.RemoveHeader(field, name)` | ✅ |
-| Whole-tape normalize (correlated values → `{{name-N}}`) | ✅ | ✅ | `.NormalizeWholeTape(pattern, name)` | ✅ core probe |
+| Volatile values (placeholders → tokens `{{name-N}}`) | ✅ | ✅ | `.VolatileRule(scope, pattern[, kind])` / `.Bind(name, value)` / `.VolatileProfile(path)` / `.VolatileMarkers(style)` / `Server.VolatileReport()` | ✅ |
 | Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `.RedactWholeTape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `.Note(…)` / `Server.Note` | ✅ |
 | Header presets (transport / cloud vendor) | ✅ | ✅ | `.RemoveTransportHeaders()` / `.RemoveCloudHeaders(vendor)` | ✅ |
@@ -36,10 +36,11 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Dynamic (OS-assigned) port | ✅ | ✅ | `.Port(0)` → `Server.Port()` | ✅ |
 | One server per port (N servers / process) | ✅ | ✅ | (each `Start()` owns its handle) | ✅ core probe |
 
-The two whole-tape rewrites and one server per port are proven at the
-shared-libservirtium_vcr level: `core_tests/normalize_probe.ae` (whole-tape) and
-`core_tests/.concurrent.ae` (two playback VCRs in one process on two ports,
-each replaying its own tape with independent cursors/diagnostics).
+Whole-tape redact and one server per port are proven at the
+shared-libservirtium_vcr level: `core_tests/.concurrent.ae` runs two playback
+VCRs in one process on two ports, each replaying its own tape with independent
+cursors/diagnostics. Volatile values are described in
+[`docs/volatile-values.md`](../../docs/volatile-values.md).
 
 ## In the C-ABI, not yet on the Go surface
 

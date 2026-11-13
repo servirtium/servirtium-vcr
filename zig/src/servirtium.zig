@@ -68,7 +68,11 @@ pub extern "c" fn aether_vcr_embed_redact(handle: Handle, field: c_int, pat: [*c
 pub extern "c" fn aether_vcr_embed_redact_header(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_redact_query_param(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_redact_json_field(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
-pub extern "c" fn aether_vcr_embed_normalize_whole_tape(handle: Handle, pat: [*c]const u8, name: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_volatile_rule(handle: Handle, scope: [*c]const u8, kind: [*c]const u8, pattern: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_volatile_bind(handle: Handle, name_or_token: [*c]const u8, value: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_volatile_profile(handle: Handle, path: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_set_volatile_markers(handle: Handle, style: c_int) [*c]u8;
+pub extern "c" fn aether_vcr_embed_volatile_report(handle: Handle) [*c]u8;
 pub extern "c" fn aether_vcr_embed_redact_whole_tape(handle: Handle, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_unredact(handle: Handle, field: c_int, pat: [*c]const u8, repl: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_remove_header(handle: Handle, field: c_int, name: [*c]const u8) [*c]u8;
@@ -106,7 +110,6 @@ pub extern "c" fn aether_vcr_embed_clear_playback_range(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_get_playback_range_from(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_get_playback_range_to(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_clear_redactions(handle: Handle) void;
-pub extern "c" fn aether_vcr_embed_clear_normalizations(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_unredactions(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_header_removals(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_clear_static_content(handle: Handle) void;
@@ -358,9 +361,30 @@ pub const Vcr = struct {
         return takeString(self.allocator, aether_vcr_embed_redact_json_field(self.handle, @intFromEnum(field), name.ptr, replacement.ptr));
     }
 
-    /// Whole-tape normalization: replace `pat` with a stable `name`.
-    pub fn normalizeWholeTape(self: *Vcr, pat: [:0]const u8, name: [:0]const u8) ![]u8 {
-        return takeString(self.allocator, aether_vcr_embed_normalize_whole_tape(self.handle, pat.ptr, name.ptr));
+    /// A volatile-value rule (docs/volatile-values.md); `kind` is "template"
+    /// or "regex". Returns "" or the core's error text. Caller frees.
+    pub fn volatileRule(self: *Vcr, scope: [:0]const u8, pattern: [:0]const u8, kind: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_volatile_rule(self.handle, scope.ptr, kind.ptr, pattern.ptr));
+    }
+
+    /// Bind a real value to a placeholder name or a token. Caller frees.
+    pub fn volatileBind(self: *Vcr, name_or_token: [:0]const u8, value: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_volatile_bind(self.handle, name_or_token.ptr, value.ptr));
+    }
+
+    /// Load a volatile-value profile file. Caller frees.
+    pub fn volatileProfile(self: *Vcr, path: [:0]const u8) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_volatile_profile(self.handle, path.ptr));
+    }
+
+    /// Choose the marker style (before any rule). Caller frees.
+    pub fn volatileMarkers(self: *Vcr, style: VolatileMarkers) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_set_volatile_markers(self.handle, @intFromEnum(style)));
+    }
+
+    /// The volatile-value bindings made so far. Caller frees.
+    pub fn volatileReport(self: *Vcr) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_volatile_report(self.handle));
     }
 
     /// Whole-tape redaction: replace `pat` with `repl` across the tape.
@@ -499,9 +523,42 @@ pub const Vcr = struct {
 // Fluent builder API (mirrors the Go binding).
 // ===========================================================================
 
+/// How a placeholder / token is written: `{{name}}`, `${name}` or `[[name]]`.
+pub const VolatileMarkers = enum(c_int) { mustache = 0, dollar_curly = 1, wikilink = 2 };
+
+const VolatileItem = union(enum) {
+    rule: struct { scope: [:0]const u8, pattern: [:0]const u8, kind: [:0]const u8 },
+    bind: struct { name: [:0]const u8, value: [:0]const u8 },
+    profile: [:0]const u8,
+};
+
+/// Fail the start on a non-empty core message, leaving it in `diag`.
+fn volatileResult(allocator: std.mem.Allocator, ptr: [*c]u8, diag: ?*OpenDiagnostics) !void {
+    const msg = try takeString(allocator, ptr);
+    if (msg.len == 0) {
+        allocator.free(msg);
+        return;
+    }
+    if (diag) |d| d.set(allocator, msg) else allocator.free(msg);
+    return Error.VcrError;
+}
+
+/// Apply markers first, then rules/binds/profiles in call order; a non-empty
+/// core message fails the start (`error.VcrError`) and is left in `diag`.
+fn applyVolatile(allocator: std.mem.Allocator, handle: Handle, markers: ?VolatileMarkers, items: []const VolatileItem, diag: ?*OpenDiagnostics) !void {
+    if (markers) |m| try volatileResult(allocator, aether_vcr_embed_set_volatile_markers(handle, @intFromEnum(m)), diag);
+    for (items) |v| {
+        const ptr = switch (v) {
+            .rule => |r| aether_vcr_embed_volatile_rule(handle, r.scope.ptr, r.kind.ptr, r.pattern.ptr),
+            .bind => |b| aether_vcr_embed_volatile_bind(handle, b.name.ptr, b.value.ptr),
+            .profile => |p| aether_vcr_embed_volatile_profile(handle, p.ptr),
+        };
+        try volatileResult(allocator, ptr, diag);
+    }
+}
+
 const HeaderRemoval = struct { field: Field, name: [:0]const u8 };
 const Replacement = struct { operation: enum { literal, header, query_param, json_field } = .literal, field: Field, pattern: [:0]const u8, repl: [:0]const u8, required: bool = true };
-const PatName = struct { pattern: [:0]const u8, name: [:0]const u8 };
 const PatRepl = struct { pattern: [:0]const u8, repl: [:0]const u8 };
 const Mount = struct { mount: [:0]const u8, dir: [:0]const u8 };
 const TlsPaths = struct { cert: [:0]const u8, key: [:0]const u8 };
@@ -573,6 +630,8 @@ pub const Playback = struct {
     redact_credentials: bool = false,
     credential_headers: std.ArrayList([:0]const u8) = .empty,
     header_removals: std.ArrayList(HeaderRemoval) = .empty,
+    volatile_items: std.ArrayList(VolatileItem) = .empty,
+    volatile_markers: ?VolatileMarkers = null,
     static_content: std.ArrayList(Mount) = .empty,
     untaped_paths: std.ArrayList([:0]const u8) = .empty,
     unredactions: std.ArrayList(Replacement) = .empty,
@@ -616,6 +675,38 @@ pub const Playback = struct {
     pub fn removeHeader(self: Playback, field: Field, name: [:0]const u8) Playback {
         var b = self;
         b.header_removals.append(b.allocator, .{ .field = field, .name = name }) catch {};
+        return b;
+    }
+    /// A volatile-value rule (docs/volatile-values.md): `scope` names the part
+    /// of the message, `pattern` is text with `{{name}}` placeholders;
+    /// `kind` is "template" or "regex". Repeatable. A bad rule fails `start`
+    /// with `error.VcrError` (the core's message is left in `startDiagnosed`'s
+    /// `OpenDiagnostics`).
+    pub fn volatileRuleKind(self: Playback, scope: [:0]const u8, pattern: [:0]const u8, kind: [:0]const u8) Playback {
+        var b = self;
+        b.volatile_items.append(b.allocator, .{ .rule = .{ .scope = scope, .pattern = pattern, .kind = kind } }) catch {};
+        return b;
+    }
+    /// A template rule (`volatileRuleKind` with kind "template").
+    pub fn volatileRule(self: Playback, scope: [:0]const u8, pattern: [:0]const u8) Playback {
+        return self.volatileRuleKind(scope, pattern, "template");
+    }
+    /// Bind a real value to a placeholder name or a token (`{{name-N}}`).
+    pub fn bind(self: Playback, name_or_token: [:0]const u8, value: [:0]const u8) Playback {
+        var b = self;
+        b.volatile_items.append(b.allocator, .{ .bind = .{ .name = name_or_token, .value = value } }) catch {};
+        return b;
+    }
+    /// Load a volatile-value profile file.
+    pub fn volatileProfile(self: Playback, path: [:0]const u8) Playback {
+        var b = self;
+        b.volatile_items.append(b.allocator, .{ .profile = path }) catch {};
+        return b;
+    }
+    /// Choose the marker style; applied before any rule.
+    pub fn volatileMarkers(self: Playback, style: VolatileMarkers) Playback {
+        var b = self;
+        b.volatile_markers = style;
         return b;
     }
     /// Serve `dir` at the URL prefix `mount`, bypassing the tape.
@@ -688,6 +779,7 @@ pub const Playback = struct {
 
     fn deinit(self: *Playback) void {
         self.header_removals.deinit(self.allocator);
+        self.volatile_items.deinit(self.allocator);
         self.static_content.deinit(self.allocator);
         self.untaped_paths.deinit(self.allocator);
         self.cloud_vendors.deinit(self.allocator);
@@ -803,6 +895,7 @@ pub const Playback = struct {
         errdefer aether_vcr_embed_destroy(handle);
 
         try applyBase(self.allocator, handle, self.header_removals.items, self.ignore_volatile_headers, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
+        try applyVolatile(self.allocator, handle, self.volatile_markers, self.volatile_items.items, diag);
         try applyPresets(self.allocator, handle, self.remove_transport_headers, self.cloud_vendors.items, self.redact_credentials, self.credential_headers.items);
         if (self.strict_headers) aether_vcr_embed_set_strict_headers(handle, 1);
         if (self.match_json_body) aether_vcr_embed_set_match_json_body(handle, 1);
@@ -854,6 +947,8 @@ pub const Record = struct {
     listen_port: c_int = 0,
     label_str: [:0]const u8 = "",
     header_removals: std.ArrayList(HeaderRemoval) = .empty,
+    volatile_items: std.ArrayList(VolatileItem) = .empty,
+    volatile_markers: ?VolatileMarkers = null,
     ignore_volatile_headers: bool = false,
     remove_transport_headers: bool = false,
     cloud_vendors: std.ArrayList([:0]const u8) = .empty,
@@ -864,7 +959,6 @@ pub const Record = struct {
     redactions: std.ArrayList(Replacement) = .empty,
     tls_paths: ?TlsPaths = null,
     tls_pem: ?TlsPaths = null,
-    normalizations: std.ArrayList(PatName) = .empty,
     whole_tape_redactions: std.ArrayList(PatRepl) = .empty,
     note_text: ?NoteText = null,
     indent_code_blocks: bool = false,
@@ -912,6 +1006,38 @@ pub const Record = struct {
     pub fn removeHeader(self: Record, field: Field, name: [:0]const u8) Record {
         var b = self;
         b.header_removals.append(b.allocator, .{ .field = field, .name = name }) catch {};
+        return b;
+    }
+    /// A volatile-value rule (docs/volatile-values.md): `scope` names the part
+    /// of the message, `pattern` is text with `{{name}}` placeholders;
+    /// `kind` is "template" or "regex". Repeatable. A bad rule fails `start`
+    /// with `error.VcrError` (the core's message is left in `startDiagnosed`'s
+    /// `OpenDiagnostics`).
+    pub fn volatileRuleKind(self: Record, scope: [:0]const u8, pattern: [:0]const u8, kind: [:0]const u8) Record {
+        var b = self;
+        b.volatile_items.append(b.allocator, .{ .rule = .{ .scope = scope, .pattern = pattern, .kind = kind } }) catch {};
+        return b;
+    }
+    /// A template rule (`volatileRuleKind` with kind "template").
+    pub fn volatileRule(self: Record, scope: [:0]const u8, pattern: [:0]const u8) Record {
+        return self.volatileRuleKind(scope, pattern, "template");
+    }
+    /// Bind a real value to a placeholder name or a token (`{{name-N}}`).
+    pub fn bind(self: Record, name_or_token: [:0]const u8, value: [:0]const u8) Record {
+        var b = self;
+        b.volatile_items.append(b.allocator, .{ .bind = .{ .name = name_or_token, .value = value } }) catch {};
+        return b;
+    }
+    /// Load a volatile-value profile file.
+    pub fn volatileProfile(self: Record, path: [:0]const u8) Record {
+        var b = self;
+        b.volatile_items.append(b.allocator, .{ .profile = path }) catch {};
+        return b;
+    }
+    /// Choose the marker style; applied before any rule.
+    pub fn volatileMarkers(self: Record, style: VolatileMarkers) Record {
+        var b = self;
+        b.volatile_markers = style;
         return b;
     }
     /// Drop the per-request volatile headers modern clients inject on every
@@ -980,6 +1106,7 @@ pub const Record = struct {
 
     fn deinit(self: *Record) void {
         self.header_removals.deinit(self.allocator);
+        self.volatile_items.deinit(self.allocator);
         self.static_content.deinit(self.allocator);
         self.untaped_paths.deinit(self.allocator);
         self.sort_json_arrays.deinit(self.allocator);
@@ -987,7 +1114,6 @@ pub const Record = struct {
         self.cloud_vendors.deinit(self.allocator);
         self.credential_headers.deinit(self.allocator);
         self.redactions.deinit(self.allocator);
-        self.normalizations.deinit(self.allocator);
         self.whole_tape_redactions.deinit(self.allocator);
     }
 
@@ -1022,14 +1148,6 @@ pub const Record = struct {
     pub fn redactJsonFieldWith(self: Record, name: [:0]const u8, replacement: [:0]const u8, field: Field) Record {
         var b = self;
         b.redactions.append(b.allocator, .{ .operation = .json_field, .field = field, .pattern = name, .repl = replacement }) catch @panic("redaction allocation failed");
-        return b;
-    }
-
-    /// Rewrite every distinct match of `pattern` to a stable `{{name-N}}`
-    /// token across the whole tape (for correlated dynamic values).
-    pub fn normalizeWholeTape(self: Record, pattern: [:0]const u8, name: [:0]const u8) Record {
-        var b = self;
-        b.normalizations.append(b.allocator, .{ .pattern = pattern, .name = name }) catch {};
         return b;
     }
 
@@ -1164,6 +1282,7 @@ pub const Record = struct {
         errdefer aether_vcr_embed_destroy(handle);
 
         try applyBase(self.allocator, handle, self.header_removals.items, self.ignore_volatile_headers, self.static_content.items, self.untaped_paths.items, self.tls_paths, self.tls_pem);
+        try applyVolatile(self.allocator, handle, self.volatile_markers, self.volatile_items.items, diag);
         try applyPresets(self.allocator, handle, self.remove_transport_headers, self.cloud_vendors.items, self.redact_credentials, self.credential_headers.items);
         if (self.indent_code_blocks) aether_vcr_embed_indent_code_blocks(handle);
         if (self.emphasize_http_verbs) aether_vcr_embed_emphasize_http_verbs(handle);
@@ -1189,9 +1308,6 @@ pub const Record = struct {
                 .query_param => aether_vcr_embed_redact_query_param(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr),
                 .json_field => aether_vcr_embed_redact_json_field(handle, @intFromEnum(r.field), r.pattern.ptr, r.repl.ptr),
             });
-        }
-        for (self.normalizations.items) |n| {
-            try checkErr(self.allocator, aether_vcr_embed_normalize_whole_tape(handle, n.pattern.ptr, n.name.ptr));
         }
         for (self.whole_tape_redactions.items) |w| {
             try checkErr(self.allocator, aether_vcr_embed_redact_whole_tape(handle, w.pattern.ptr, w.repl.ptr));
@@ -1344,6 +1460,12 @@ pub const Server = struct {
         const from = aether_vcr_embed_get_playback_range_from(self.handle);
         if (from < 0) return null;
         return .{ from, aether_vcr_embed_get_playback_range_to(self.handle) };
+    }
+
+    /// The volatile-value bindings made so far (`binding: {{name-N}} = value`).
+    /// Caller frees.
+    pub fn volatileReport(self: *Server) ![]u8 {
+        return takeString(self.allocator, aether_vcr_embed_volatile_report(self.handle));
     }
 
     /// Rewind the replay cursor to interaction 0 and clear the last-* slots.

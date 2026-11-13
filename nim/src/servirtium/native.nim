@@ -100,8 +100,16 @@ proc unredact*(h: Handle, field: cint, pattern, replacement: cstring): cstring
   {.importc: "aether_vcr_embed_unredact", cdecl.}
 proc remove_header*(h: Handle, field: cint, name: cstring): cstring
   {.importc: "aether_vcr_embed_remove_header", cdecl.}
-proc normalize_whole_tape*(h: Handle, pattern, name: cstring): cstring
-  {.importc: "aether_vcr_embed_normalize_whole_tape", cdecl.}
+proc volatile_rule*(h: Handle, scope, kind, pattern: cstring): cstring
+  {.importc: "aether_vcr_embed_volatile_rule", cdecl.}
+proc volatile_bind*(h: Handle, nameOrToken, value: cstring): cstring
+  {.importc: "aether_vcr_embed_volatile_bind", cdecl.}
+proc set_volatile_markers*(h: Handle, style: cint): cstring
+  {.importc: "aether_vcr_embed_set_volatile_markers", cdecl.}
+proc volatile_profile*(h: Handle, path: cstring): cstring
+  {.importc: "aether_vcr_embed_volatile_profile", cdecl.}
+proc volatile_report*(h: Handle): cstring
+  {.importc: "aether_vcr_embed_volatile_report", cdecl.}
 proc redact_whole_tape*(h: Handle, pattern, replacement: cstring): cstring
   {.importc: "aether_vcr_embed_redact_whole_tape", cdecl.}
 proc strict_ignore_common_headers*(h: Handle): cstring

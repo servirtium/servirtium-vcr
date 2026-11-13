@@ -14,7 +14,7 @@ noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
 | Unredactions | ✅ | ✅ | `.unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `.removeHeader(field, name)` | ✅ |
-| Whole-tape normalize (correlated → `{{name-N}}`) | ✅ | ✅ | `.normalizeWholeTape(pattern, name)` | ✅ core probe |
+| Volatile values (placeholders → tokens `{{name-N}}`) | ✅ | ✅ | `.volatileRule(scope, pattern)` / `.volatileRuleKind(…, kind)` / `.bind(name, value)` / `.volatileProfile(path)` / `.volatileMarkers(style)` / `server.volatileReport()` | ✅ |
 | Whole-tape redact (uncorrelated → constant) | ✅ | ✅ | `.redactWholeTape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `.note(…)` / `Server.note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.strictHeaders()` | ✅ pass + fail |

@@ -37,7 +37,7 @@ reimplement Servirtium in Nim.
   a `VcrServer` configured open → set → `start`, with `baseUrl`, `port`,
   `tapeLength`, `lastKind`/`lastError`/`lastIndex`, `resetCursor`,
   `clearLastError`, `close`, plus the full mutation/format set (`redact`,
-  `unredact`, `removeHeader`, `normalizeWholeTape`, `redactWholeTape`,
+  `unredact`, `removeHeader`, `volatileRule`, `volatileBind`, `volatileProfile`, `volatileMarkers`, `volatileReport`, `redactWholeTape`,
   `staticContent`, `untaped`, `note`, `setStrictHeaders`, `setMatchJsonBody`,
   `setMatchMultiple`, `matchHeader`, `setSortJsonKeys`, `sortJsonArray`, `setPlaybackRange`,
   `indentCodeBlocks`,

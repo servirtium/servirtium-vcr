@@ -15,6 +15,7 @@ comptime {
     _ = @import("playback_test.zig");
     _ = @import("record_test.zig");
     _ = @import("mutation_test.zig");
+    _ = @import("volatile_test.zig");
     // Force semantic analysis of the whole public binding surface (including
     // the low-level `Vcr` wrapper the tests don't otherwise reference) so the
     // documented API can't silently rot.

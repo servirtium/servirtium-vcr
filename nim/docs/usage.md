@@ -74,31 +74,34 @@ doAssert srv.start()
 `Field` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`, or
 `ResponseHeaders`.
 
-## Whole-tape normalization (deterministic re-records)
+## Volatile values (deterministic re-records)
 
-`redact` targets one field of each interaction. Two companion record-mode verbs
-instead sweep the **whole tape** — every field of every interaction — so a value
+`redact` targets one field of each interaction. Volatile-value rules say where
+values that change on every run sit, across the **whole tape**, so a value
 the server mints anew on each run stops dirtying the diff. The payoff: a
 re-record is **byte-identical**, so `failIfChanged()` drift detection fires only
 on a real upstream change.
 
 ```nim
 let srv = record(tape, upstream)
-# CORRELATED value (an entity id echoed back in later request paths): each
-# distinct match becomes a stable {{order-N}} token, minted in first-appearance
-# order across the whole tape — identity preserved, so it still round-trips.
-srv.normalizeWholeTape(
-  "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "order")
-# UNCORRELATED, variable-cardinality volatile (a Date header): collapse every
-# match to one constant — a per-value token would not be byte-stable when the
-# number of distinct values varies run to run.
-srv.redactWholeTape("Date: .+ GMT", "Date: <DATE>")
+srv.volatileRule("request path", "/cases/{{caseId}}/documents")
+srv.volatileRule("response headers", "Date: {{serverDate}}")
+# a regex rule: named groups are placeholders
+srv.volatileRule("body", "(?<id>[0-9a-f]{32})", "regex")
 doAssert srv.start()
 ```
 
-Use `normalizeWholeTape(pattern, name)` for a value that recurs and must stay
-self-consistent; use `redactWholeTape(pattern, replacement)` for a volatile you
-never correlate.
+A **placeholder** `{{name}}` in a rule becomes a **token** `{{name-N}}` in the
+tape, the same token wherever the same value recurs. Each setter returns `""`
+or the core's message (a bad rule also makes `start()` fail, with the same
+message in `lastError()`). `volatileProfile(path)` loads a rule file,
+`volatileBind(nameOrToken, value)` attaches a real value,
+`volatileMarkers(DollarCurly)` changes the marker style (call it first), and
+`volatileReport()` lists the bindings made. The rules are written into the
+tape, so playback needs none. See
+[`docs/volatile-values.md`](../../docs/volatile-values.md).
+`redactWholeTape(pattern, replacement)` remains for a volatile you never
+correlate.
 
 ## Replaying a scrubbed tape (unredaction)
 

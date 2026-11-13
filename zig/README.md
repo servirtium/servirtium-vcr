@@ -50,12 +50,12 @@ same across all bindings, so existing tapes replay as-is.
 - a thin low-level **`Vcr`** handle wrapper.
 
 **Playback** builder: `init(alloc, tape)`, `.host`, `.port`, `.label`,
-`.strictHeaders`, `.matchJsonBody`, `.matchMultiple`, `.matchHeader(name)`, `.removeHeader(field, name)`, `.unredact(field, pat, repl)`,
+`.strictHeaders`, `.matchJsonBody`, `.matchMultiple`, `.matchHeader(name)`, `.removeHeader(field, name)`, `.volatileRule(scope, pattern)` / `.volatileRuleKind(…, kind)`, `.bind(name, value)`, `.volatileProfile(path)`, `.volatileMarkers(style)`, `.unredact(field, pat, repl)`,
 `.staticContent(mount, dir)`, `.untaped(path)`, `.start`.
 
 **Record** builder: `init(alloc, tape, upstream)`, `.host`, `.port`, `.label`,
 `.removeHeader`, `.redact(field, pat, repl)`,
-`.normalizeWholeTape(pat, name)`, `.redactWholeTape(pat, repl)`,
+`.volatileRule(scope, pattern)` / `.volatileRuleKind(…, kind)`, `.bind(name, value)`, `.volatileProfile(path)`, `.volatileMarkers(style)`, `.redactWholeTape(pat, repl)`,
 `.staticContent`, `.untaped`, `.note(title, body)`, `.indentCodeBlocks`,
 `.emphasizeHttpVerbs`, `.failIfChanged`, `.start`.
 

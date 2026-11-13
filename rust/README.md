@@ -131,7 +131,7 @@ Both are opt-in builder options; a refused rule or range comes back as a `VcrErr
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,
-  whole-tape normalize/redact, unredactions, header removal, notes, strict
+  volatile values, whole-tape redact, unredactions, header removal, notes, strict
   matching, static content, drift, diagnostics — with code.
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix
   and what's covered by tests.

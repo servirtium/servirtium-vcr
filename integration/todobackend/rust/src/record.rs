@@ -15,6 +15,8 @@ use todobackend_rust_integration::{run_suite, suite_dir, tape_path, VCR_PORT};
 
 use servirtium::Vcr;
 
+const UUID_RULE: &str = "(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> std::process::ExitCode {
     let upstream = match std::env::var("TODOBACKEND_UPSTREAM") {
@@ -28,11 +30,10 @@ async fn main() -> std::process::ExitCode {
     let vcr = Vcr::record(tape_path(), upstream)
         .static_content("/suite", suite_dir())
         .untaped("/favicon.ico")
-        .normalize_whole_tape(
-            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-            "id",
-        )
-        .redact_whole_tape(r"Date: .+ GMT", "Date: <DATE>")
+        .volatile_rule("request path", UUID_RULE, "regex")
+        .volatile_rule("headers", UUID_RULE, "regex")
+        .volatile_rule("body", UUID_RULE, "regex")
+        .volatile_rule("response headers", "Date: {{serverDate}}")
         .port(VCR_PORT)
         .start()
         .expect("record VCR should start on the fixed port");

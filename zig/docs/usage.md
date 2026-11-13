@@ -84,20 +84,29 @@ _ = servirtium.Record.init(allocator, tape, upstream)
 `Field` is `.path`, `.response_body`, `.request_headers`, `.request_body`, or
 `.response_headers`.
 
-## Whole-tape normalization (deterministic re-records)
+## Volatile values (deterministic re-records)
 
-`redact` targets one field of each interaction. Two companion record-mode verbs
-sweep the **whole tape** so a value the server mints anew each run stops
-dirtying the diff:
+`redact` targets one field of each interaction. Volatile-value rules say where
+values that change on every run sit, across the **whole tape**. A
+**placeholder** `{{name}}` in a rule becomes a **token** `{{name-N}}` in the
+tape, the same token wherever the same value recurs:
 
 ```zig
 _ = servirtium.Record.init(allocator, tape, upstream)
-    // CORRELATED value (an id echoed back in later request paths): each
-    // distinct match becomes a stable {{order-N}} token (identity preserved).
-    .normalizeWholeTape("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "order")
-    // UNCORRELATED volatile (a Date header): collapse every match to one constant.
-    .redactWholeTape("Date: .+ GMT", "Date: <DATE>");
+    .volatileRule("request path", "/cases/{{caseId}}/documents")
+    .volatileRule("response headers", "Date: {{serverDate}}")
+    // a regex rule: named groups are placeholders
+    .volatileRuleKind("body", "(?<id>[0-9a-f]{32})", "regex");
 ```
+
+`.volatileProfile(path)` loads a rule file, `.bind(nameOrToken, value)`
+attaches a real value, `.volatileMarkers(.dollar_curly)` changes the marker
+style (applied before any rule), and `server.volatileReport()` lists the
+bindings made. A bad rule fails `start` with `error.VcrError`; use
+`startDiagnosed(&diag)` to read the core's message from `diag.message`. The
+rules are written into the tape, so playback needs none. See
+[`docs/volatile-values.md`](../../docs/volatile-values.md).
+`redactWholeTape(pat, repl)` remains for a volatile you never correlate.
 
 ## Replaying a scrubbed tape (unredaction)
 
