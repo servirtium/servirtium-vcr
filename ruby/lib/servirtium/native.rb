@@ -115,7 +115,11 @@ module Servirtium
       [:redact_query_param, 'aether_vcr_embed_redact_query_param', VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
       [:redact_json_field, 'aether_vcr_embed_redact_json_field', VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
 
-      [:normalize_whole_tape, 'aether_vcr_embed_normalize_whole_tape', VOIDP, [VOIDP, VOIDP, VOIDP]],
+      [:volatile_rule,        'aether_vcr_embed_volatile_rule',        VOIDP, [VOIDP, VOIDP, VOIDP, VOIDP]],
+      [:volatile_bind,        'aether_vcr_embed_volatile_bind',        VOIDP, [VOIDP, VOIDP, VOIDP]],
+      [:volatile_profile,     'aether_vcr_embed_volatile_profile',     VOIDP, [VOIDP, VOIDP]],
+      [:set_volatile_markers, 'aether_vcr_embed_set_volatile_markers', VOIDP, [VOIDP, INT]],
+      [:volatile_report,      'aether_vcr_embed_volatile_report',      VOIDP, [VOIDP]],
       [:redact_whole_tape,    'aether_vcr_embed_redact_whole_tape',    VOIDP, [VOIDP, VOIDP, VOIDP]],
       [:unredact,       'aether_vcr_embed_unredact',       VOIDP, [VOIDP, INT, VOIDP, VOIDP]],
       [:remove_header,  'aether_vcr_embed_remove_header',  VOIDP, [VOIDP, INT, VOIDP]],

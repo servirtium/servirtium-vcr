@@ -5,6 +5,7 @@ export {
   RecordBuilder,
   VcrField,
   VcrOutcome,
+  VolatileMarkers,
   VcrError,
   convertBru,
 } from './vcr'

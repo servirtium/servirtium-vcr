@@ -36,6 +36,13 @@ export enum VcrField {
  * Per-dispatch outcome. Values mirror the VCR_KIND_* constants in the Aether
  * core. Read after a request to assert what the dispatcher decided.
  */
+/** How placeholders and tokens are written: `{{name}}`, `${name}`, `[[name]]`. */
+export enum VolatileMarkers {
+  Mustache = 0,
+  DollarCurly = 1,
+  Wikilink = 2,
+}
+
 export enum VcrOutcome {
   Ok = 0,
   PathOrMethodDiff = 1,
@@ -84,6 +91,8 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   protected readonly untapedPaths: string[] = []
   protected tlsPair?: { cert: string; key: string }
   protected tlsPemPair?: { cert: string; key: string }
+  protected volatileMarkersStyle: VolatileMarkers | null = null
+  protected readonly volatileCalls: Array<{ op: 'rule' | 'bind' | 'profile'; a: string; b: string; c: string }> = []
 
   protected constructor(protected readonly tapePath: string) {}
 
@@ -205,10 +214,48 @@ abstract class VcrBuilderBase<TSelf extends VcrBuilderBase<TSelf>> {
   }
 
   /**
+   * How placeholders and tokens are written: `VolatileMarkers.Mustache`
+   * (default, `{{name}}`), `DollarCurly` or `Wikilink`. Applied before any rule.
+   */
+  volatileMarkers(style: VolatileMarkers): TSelf {
+    this.volatileMarkersStyle = style
+    return this.self()
+  }
+
+  /**
+   * Declare a volatile-value rule: a `scope` (`'request body'`, `'response
+   * headers'`, ...) and a `pattern` holding one or more `{{placeholder}}`s.
+   * `kind` is `'template'` (default) or `'regex'`. May be called repeatedly; a
+   * bad rule throws `VcrError` at `start()`. See docs/volatile-values.md.
+   */
+  volatileRule(scope: string, pattern: string, kind = 'template'): TSelf {
+    this.volatileCalls.push({ op: 'rule', a: scope, b: kind, c: pattern })
+    return this.self()
+  }
+
+  /** Bind a real value to a token (`'serverDate-2'`) or to every token of a placeholder name (`'serverDate'`). */
+  bind(nameOrToken: string, value: string): TSelf {
+    this.volatileCalls.push({ op: 'bind', a: nameOrToken, b: value, c: '' })
+    return this.self()
+  }
+
+  /** Load volatile-value rules from a profile file (`## Volatile values`). */
+  volatileProfile(path: string): TSelf {
+    this.volatileCalls.push({ op: 'profile', a: path, b: '', c: '' })
+    return this.self()
+  }
+
+  /**
    * Apply this builder's accumulated config to the opened handle, before
    * serving starts. Subclasses extend this.
    */
   protected applyConfig(handle: unknown): void {
+    if (this.volatileMarkersStyle !== null) check(N.setVolatileMarkers(handle, this.volatileMarkersStyle), 'volatileMarkers')
+    for (const { op, a, b, c } of this.volatileCalls) {
+      if (op === 'rule') check(N.volatileRule(handle, a, b, c), 'volatileRule')
+      else if (op === 'bind') check(N.volatileBind(handle, a, b), 'bind')
+      else check(N.volatileProfile(handle, a), 'volatileProfile')
+    }
     for (const { field, name } of this.headerRemovals) {
       check(N.removeHeader(handle, field, name), 'removeHeader')
     }
@@ -413,7 +460,6 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   private secretRedactorValue?: SecretRedactor
   secretRedactor(callback: SecretRedactor): this { this.secretRedactorValue = callback; return this }
   private readonly redactions: Array<{ operation: typeof N.redact; field: VcrField; pattern: string; replacement: string }> = []
-  private readonly wholeTapeNormalizations: Array<{ pattern: string; name: string }> = []
   private readonly wholeTapeRedactions: Array<{ pattern: string; replacement: string }> = []
   private pendingNote: { title: string; body: string } | null = null
   private indentCodeBlocksOn = false
@@ -457,18 +503,6 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   /** Redact a named json field when emitting the tape. */
   redactJsonField(name: string, replacement = '[REDACTED]', field = VcrField.RequestBody): RecordBuilder {
     this.redactions.push({ operation: N.redactJsonField, field, pattern: name, replacement })
-    return this
-  }
-
-  /**
-   * Tokenize every distinct match of `pattern` across the WHOLE tape (all
-   * fields and interactions, in first-appearance order) into a stable
-   * `{{name-N}}` token. Use for correlated volatiles — e.g. a server-minted id
-   * that appears in a response body and then recurs in later request paths —
-   * so the same value maps to the same token everywhere it occurs.
-   */
-  normalizeWholeTape(pattern: string, name: string): RecordBuilder {
-    this.wholeTapeNormalizations.push({ pattern, name })
     return this
   }
 
@@ -601,9 +635,6 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     }
     for (const { operation, field, pattern, replacement } of this.redactions) {
       check(operation(handle, field, pattern, replacement), 'redact')
-    }
-    for (const { pattern, name } of this.wholeTapeNormalizations) {
-      check(N.normalizeWholeTape(handle, pattern, name), 'normalizeWholeTape')
     }
     for (const { pattern, replacement } of this.wholeTapeRedactions) {
       check(N.redactWholeTape(handle, pattern, replacement), 'redactWholeTape')
@@ -779,6 +810,11 @@ export class VcrServer {
   note(title: string, body: string): void {
     const err = N.takeString(N.note(this.requireHandle(), title, body))
     if (err) throw new VcrError(err)
+  }
+
+  /** Text report of the volatile-value rules, binds, bindings (`{{name-N}} = value`) and warnings. */
+  volatileReport(): string {
+    return N.takeString(N.volatileReport(this.requireHandle()))
   }
 
   /** Rewind the replay cursor to interaction 0 and clear last-* slots. */

@@ -203,9 +203,17 @@ export const redact = lazy(
   'void* aether_vcr_embed_redact(void* server, int field, const char* pattern, const char* replacement)',
 )
 
-export const normalizeWholeTape = lazy(
-  'void* aether_vcr_embed_normalize_whole_tape(void* server, const char* pattern, const char* name)',
+export const volatileRule = lazy(
+  'void* aether_vcr_embed_volatile_rule(void* server, const char* scope, const char* kind, const char* pattern)',
 )
+
+export const volatileBind = lazy('void* aether_vcr_embed_volatile_bind(void* server, const char* name_or_token, const char* value)')
+
+export const volatileProfile = lazy('void* aether_vcr_embed_volatile_profile(void* server, const char* path)')
+
+export const setVolatileMarkers = lazy('void* aether_vcr_embed_set_volatile_markers(void* server, int style)')
+
+export const volatileReport = lazy('void* aether_vcr_embed_volatile_report(void* server)')
 
 export const redactWholeTape = lazy(
   'void* aether_vcr_embed_redact_whole_tape(void* server, const char* pattern, const char* replacement)',

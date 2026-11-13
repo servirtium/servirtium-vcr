@@ -28,6 +28,8 @@ module Servirtium
       @untaped = []
       @tls = nil
       @tls_pem = nil
+      @volatile = []
+      @volatile_markers = nil
     end
 
     # Pin an explicit path to libservirtium_vcr library for this run — the
@@ -134,11 +136,51 @@ module Servirtium
       self
     end
 
+    VOLATILE_MARKERS = { mustache: 0, dollar_curly: 1, wikilink: 2 }.freeze
+
+    # How placeholders and tokens are written: +:mustache+ (default,
+    # <code>{{name}}</code>), +:dollar_curly+ (<code>${name}</code>) or
+    # +:wikilink+ (<code>[[name]]</code>). Applied before any rule.
+    def volatile_markers(style)
+      @volatile_markers = VOLATILE_MARKERS.fetch(style) do
+        raise ArgumentError, "volatile_markers: #{style.inspect} is not one of #{VOLATILE_MARKERS.keys.inspect}"
+      end
+      self
+    end
+
+    # Declare a volatile-value rule: a +scope+ (+'request body'+,
+    # +'response headers'+, ...) and a +pattern+ holding one or more
+    # <code>{{placeholder}}</code>s. +kind+ is +'template'+ (default) or
+    # +'regex'+. May be called repeatedly; a bad rule makes +start+ raise
+    # {Servirtium::Error} with the core's message. On the shared base: the same
+    # on playback and record. See docs/volatile-values.md.
+    def volatile_rule(scope, pattern, kind = 'template')
+      @volatile << [:volatile_rule, scope, kind, pattern]
+      self
+    end
+
+    # Bind a real value to a token (+'serverDate-2'+) or to every token of a
+    # placeholder name (+'serverDate'+).
+    def bind(name_or_token, value)
+      @volatile << [:volatile_bind, name_or_token, value]
+      self
+    end
+
+    # Load volatile-value rules from a profile file (+## Volatile values+).
+    def volatile_profile(path)
+      @volatile << [:volatile_profile, path.to_s]
+      self
+    end
+
     private
 
     # Apply config common to both builders to the opened handle, before
     # serving starts. Subclasses extend this.
     def apply_config(handle)
+      check(Native.call(:set_volatile_markers, handle, @volatile_markers), 'volatile_markers') if @volatile_markers
+      @volatile.each do |operation, *arguments|
+        check(Native.call(operation, handle, *arguments), operation.to_s)
+      end
       @header_removals.each do |field, name|
         check(Native.call(:remove_header, handle, field, name), 'remove_header')
       end
@@ -344,7 +386,6 @@ module Servirtium
       super(tape_path)
       @upstream_base = upstream_base
       @redactions = []
-      @normalize_whole_tape = []
       @redact_whole_tape = []
       @note = nil
       @indent_code_blocks = false
@@ -453,11 +494,6 @@ module Servirtium
       self
     end
 
-    def normalize_whole_tape(pattern, name)
-      @normalize_whole_tape << [pattern, name]
-      self
-    end
-
     # Collapse every regex match across the WHOLE tape to a constant
     # +replacement+ — for uncorrelated volatiles like a Date header.
     def redact_whole_tape(pattern, replacement)
@@ -541,9 +577,6 @@ module Servirtium
       end
       @redactions.each do |operation, field, pattern, replacement|
         check(Native.call(operation, handle, field, pattern, replacement), 'redact')
-      end
-      @normalize_whole_tape.each do |pattern, name|
-        check(Native.call(:normalize_whole_tape, handle, pattern, name), 'normalize_whole_tape')
       end
       @redact_whole_tape.each do |pattern, replacement|
         check(Native.call(:redact_whole_tape, handle, pattern, replacement), 'redact_whole_tape')

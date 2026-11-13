@@ -24,9 +24,6 @@ final class RecordBuilder extends VcrBuilderBase
     private array $redactions = [];
 
     /** @var list<array{0: string, 1: string}> */
-    private array $normalizeWholeTapes = [];
-
-    /** @var list<array{0: string, 1: string}> */
     private array $redactWholeTapes = [];
 
     /** @var array{0: string, 1: string}|null */
@@ -75,20 +72,6 @@ final class RecordBuilder extends VcrBuilderBase
     public function redactJsonField(string $name, string $replacement = '[REDACTED]', VcrField $field = VcrField::RequestBody): static
     {
         $this->redactions[] = ['aether_vcr_embed_redact_json_field', $field, $name, $replacement];
-        return $this;
-    }
-
-    /**
-     * Whole-tape normalization: every distinct regex match across the WHOLE
-     * tape (all fields/interactions, in first-appearance order) becomes a
-     * stable `{{name-N}}` token. Use for CORRELATED volatiles — ids minted in
-     * one interaction that recur in later request paths — so they round-trip
-     * on playback and a re-record stays byte-identical.
-     */
-    public function normalizeWholeTape(string $pattern, string $name): self
-    {
-        $this->normalizeWholeTapes[] = [$pattern, $name];
-
         return $this;
     }
 
@@ -270,9 +253,6 @@ final class RecordBuilder extends VcrBuilderBase
         }
         foreach ($this->redactions as [$operation, $field, $pattern, $replacement]) {
             self::check($lib->$operation($handle, $field->value, $pattern, $replacement), 'redact');
-        }
-        foreach ($this->normalizeWholeTapes as [$pattern, $name]) {
-            self::check($lib->aether_vcr_embed_normalize_whole_tape($handle, $pattern, $name), 'normalizeWholeTape');
         }
         foreach ($this->redactWholeTapes as [$pattern, $replacement]) {
             self::check($lib->aether_vcr_embed_redact_whole_tape($handle, $pattern, $replacement), 'redactWholeTape');

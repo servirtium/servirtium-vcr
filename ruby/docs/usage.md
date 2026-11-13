@@ -76,32 +76,40 @@ Servirtium.record(tape, upstream)
 `Servirtium::Field` is `PATH`, `RESPONSE_BODY`, `REQUEST_HEADERS`,
 `REQUEST_BODY`, or `RESPONSE_HEADERS`.
 
-## Whole-tape normalization (byte-identical re-records)
+## Volatile values (byte-identical re-records)
 
-`redact` targets one field of one interaction. The whole-tape mutations instead
-sweep **every** regex match across the entire tape — all fields, all
-interactions — so a server that hands back fresh ids or timestamps on each run
-still re-records to byte-identical output (and `fail_if_changed` only fires on
-real upstream changes):
+`redact` targets one field of one interaction. When a value changes on every
+run (an id, a timestamp, the port a test picked), declare a **rule** with a
+`{{placeholder}}` where it sits. Recording writes each captured value as a
+**token** (`{{messageId-1}}`), so a re-record is byte-identical; playback lets a
+token match whatever live value arrives, and puts it back in later responses.
+Rules work on the playback and the record builder:
 
 ```ruby
-Servirtium.record(tape, upstream)
-          # Correlated ids: each distinct match becomes a stable {{order-N}}
-          # token, numbered in first-appearance order. The same value reused in
-          # a later request path gets the same token, and the token round-trips
-          # back to the captured value on playback.
-          .normalize_whole_tape('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'order')
-          # Uncorrelated volatiles: collapse every match to one constant.
-          .redact_whole_tape('[A-Z][a-z]{2}, \d\d [A-Z][a-z]{2} \d{4} [\d:]{8} GMT', 'Mon, 01 Jan 2024 00:00:00 GMT')
+Servirtium.playback(tape)
+          .pretty_xml(2)
+          .volatile_rule('request body', '<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>')
+          .volatile_rule('response body', '<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>')
+          .bind('serverDate', Time.now.httpdate)
           .start { |s| ... }
 ```
 
-Use `normalize_whole_tape(pattern, name)` when the value is **correlated** — an
-id minted in one response and echoed back in a later request path — because the
-`{{name-N}}` token preserves that linkage and replays it. Use
-`redact_whole_tape(pattern, replacement)` when the value is **uncorrelated**
-volatile noise (a `Date` header, a request id) that just needs to be constant
-on the tape.
+- `volatile_rule(scope, pattern, kind = 'template')`: `kind` is `'template'` or
+  `'regex'`. May be called repeatedly.
+- `bind(name_or_token, value)`: bind a real value to a token (`'serverDate-2'`)
+  or to every token of a placeholder name (`'serverDate'`).
+- `volatile_profile(path)`: load rules from a profile file, such as one a
+  vendor publishes.
+- `volatile_markers(:dollar_curly)`: write placeholders and tokens as `${name}`
+  (`:wikilink` for `[[name]]`; default `:mustache`). Set before any rule; the
+  builder applies it first whatever the call order.
+- `server.volatile_report`: rules, binds, bindings (`{{messageId-1}} = ...`) and
+  warnings; handy in a spec when a replay does not match.
+- A bad rule makes `start` raise `Servirtium::Error` with the core's message.
+- `redact_whole_tape(pattern, replacement)` stays for **uncorrelated** noise
+  that only needs to be one constant on the tape.
+
+The spec: [docs/volatile-values.md](../../docs/volatile-values.md).
 
 ## Replaying a scrubbed tape (unredaction)
 

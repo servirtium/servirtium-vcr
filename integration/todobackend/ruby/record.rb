@@ -29,8 +29,10 @@ def main
   vcr = Servirtium.record(TAPE, upstream)
                   .static_content('/suite', SUITE_DIR)
                   .untaped('/favicon.ico')
-                  .normalize_whole_tape('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'id')
-                  .redact_whole_tape('Date: .+ GMT', 'Date: <DATE>')
+                  .volatile_rule('request path', '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'regex')
+                  .volatile_rule('headers', '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'regex')
+                  .volatile_rule('body', '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'regex')
+                  .volatile_rule('response headers', 'Date: {{serverDate}}')
                   .port(VCR_PORT)
                   .start
   begin

@@ -27,7 +27,7 @@ against the real native library.
 | Stable order (record, opt-in; needs pretty JSON for JSON) | ✅ | — | `.sortJsonKeys()` / `.sortJsonArray(path, by)` / `.sortJsonArrayAt(requestRegex, path, by)` / `.sortResponseHeaders()` / `.sortHeaderValue(name)` | ✅ |
 | Playback range (replay interactions `from`..`to` by number) | — | ✅ | `.playbackRange(from, to = -1)` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indentCodeBlocks()` / `.emphasizeHttpVerbs()` / `.prettyXml(n)` | — |
-| Whole-tape normalization (correlated) | ✅ | ✅ | `.normalizeWholeTape(pattern, name)` | — |
+| Volatile values (placeholders, tokens, bind) | ✅ | ✅ | `.volatileRule(scope, pattern)`, `.bind(name, value)`, `.volatileProfile(path)`, `.volatileMarkers(style)`, `server.volatileReport()` | — |
 | Whole-tape redaction (uncorrelated) | ✅ | ✅ | `.redactWholeTape(pattern, replacement)` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `lastError`/`lastKind`/`lastIndex` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |

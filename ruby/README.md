@@ -180,7 +180,7 @@ closes and flushes the recorder even if an assertion raises.
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,
-  unredactions, whole-tape normalization, header removal, notes, strict
+  unredactions, volatile values, header removal, notes, strict
   matching, static content, drift, diagnostics — with code.
 - **[docs/features.md](docs/features.md)** — capability matrix mapping each
   Servirtium feature to the Ruby API and its test.

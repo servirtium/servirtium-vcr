@@ -29,10 +29,14 @@ def main() -> int:
         servirtium.record(str(TAPE), upstream)
         .static_content("/suite", str(SUITE_DIR))
         .untaped("/favicon.ico")
-        .normalize_whole_tape(
-            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "id"
+        .volatile_rule(
+            "request path",
+            "(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+            "regex",
         )
-        .redact_whole_tape(r"Date: .+ GMT", "Date: <DATE>")
+        .volatile_rule("headers", "(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", "regex")
+        .volatile_rule("body", "(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", "regex")
+        .volatile_rule("response headers", "Date: {{serverDate}}")
         .port(VCR_PORT)
         .start()
     )

@@ -9,7 +9,7 @@ exercised by the PHPUnit suite against the real native library.
 | Record → flush tape | ✅ | `Vcr::record` | ✅ |
 | Custom HTTP verbs | ✅ | (automatic) | — |
 | Redactions | ✅ | `->redact(field, …)` | ✅ |
-| Whole-tape normalize (correlated → `{{name-N}}`) | ✅ | `->normalizeWholeTape(pattern, name)` | — |
+| Volatile values (placeholders, tokens, bind) | ✅ | `->volatileRule(scope, pattern)`, `->bind(name, value)`, `->volatileProfile(path)`, `->volatileMarkers(style)`, `$server->volatileReport()` | ✅ |
 | Whole-tape redact (uncorrelated → constant) | ✅ | `->redactWholeTape(pattern, replacement)` | — |
 | Unredactions | ✅ | `->unredact(field, …)` | — |
 | Header removal | ✅ | `->removeHeader(field, name)` | — |

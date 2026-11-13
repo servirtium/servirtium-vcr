@@ -148,6 +148,12 @@ final class VcrServer
         }
     }
 
+    /** Text report of the volatile-value rules, binds, bindings (`{{name-N}} = value`) and warnings. */
+    public function volatileReport(): string
+    {
+        return Native::takeString(Native::lib()->aether_vcr_embed_volatile_report($this->requireHandle()));
+    }
+
     /** Rewind the replay cursor to interaction 0 and clear last-* slots. */
     public function resetCursor(): void
     {

@@ -12,7 +12,7 @@ the real native library.
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
-| Whole-tape normalization (correlated ids → `{{name-N}}`) | ✅ | ✅ | `.normalize_whole_tape(pattern, name)` | — |
+| Volatile values (placeholders → `{{name-N}}` tokens) | ✅ | ✅ | `.volatile_rule(scope, pattern)`, `.bind(name, value)`, `.volatile_profile(path)`, `.volatile_markers(style)`, `server.volatile_report()` | ✅ |
 | Whole-tape redaction (collapse to one constant) | ✅ | ✅ | `.redact_whole_tape(pattern, replacement)` | — |
 | Unredactions | ✅ | ✅ | `.unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `.remove_header(field, name)` | ✅ |

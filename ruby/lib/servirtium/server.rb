@@ -101,6 +101,12 @@ module Servirtium
       raise Servirtium::Error, err unless err.empty?
     end
 
+    # Text report of the volatile-value rules, binds, bindings
+    # (<code>{{name-N}} = value</code>) and warnings.
+    def volatile_report
+      Native.take_string(Native.call(:volatile_report, handle))
+    end
+
     # Rewind the replay cursor to interaction 0 and clear last-* slots.
     def reset_cursor
       Native.call(:reset_cursor, handle)

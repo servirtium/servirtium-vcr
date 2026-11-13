@@ -44,6 +44,11 @@ abstract class VcrBuilderBase
     private ?array $tls = null;
     private ?array $tlsPem = null;
 
+    private ?VolatileMarkers $volatileMarkersStyle = null;
+
+    /** @var list<array{0: string, 1: list<string>}> [operation, arguments] in call order */
+    private array $volatileCalls = [];
+
     protected function __construct(string $tapePath)
     {
         $this->tapePath = $tapePath;
@@ -196,12 +201,62 @@ abstract class VcrBuilderBase
     }
 
     /**
+     * How placeholders and tokens are written: VolatileMarkers::Mustache
+     * (default, `{{name}}`), DollarCurly or Wikilink. Applied before any rule.
+     */
+    public function volatileMarkers(VolatileMarkers $style): static
+    {
+        $this->volatileMarkersStyle = $style;
+
+        return $this;
+    }
+
+    /**
+     * Declare a volatile-value rule: a $scope ('request body', 'response
+     * headers', ...) and a $pattern holding one or more `{{placeholder}}`s.
+     * $kind is 'template' (default) or 'regex'. May be called repeatedly; a bad
+     * rule throws VcrException at start(). See docs/volatile-values.md.
+     */
+    public function volatileRule(string $scope, string $pattern, string $kind = 'template'): static
+    {
+        $this->volatileCalls[] = ['rule', [$scope, $kind, $pattern]];
+
+        return $this;
+    }
+
+    /** Bind a real value to a token ('serverDate-2') or to every token of a placeholder name ('serverDate'). */
+    public function bind(string $nameOrToken, string $value): static
+    {
+        $this->volatileCalls[] = ['bind', [$nameOrToken, $value]];
+
+        return $this;
+    }
+
+    /** Load volatile-value rules from a profile file (`## Volatile values`). */
+    public function volatileProfile(string $path): static
+    {
+        $this->volatileCalls[] = ['profile', [$path]];
+
+        return $this;
+    }
+
+    /**
      * Apply this builder's accumulated config to the opened handle, before
      * serving starts. Subclasses extend this.
      */
     protected function applyConfig(CData $handle): void
     {
         $lib = Native::lib();
+        if ($this->volatileMarkersStyle !== null) {
+            self::check($lib->aether_vcr_embed_set_volatile_markers($handle, $this->volatileMarkersStyle->value), 'volatileMarkers');
+        }
+        foreach ($this->volatileCalls as [$operation, $args]) {
+            match ($operation) {
+                'rule' => self::check($lib->aether_vcr_embed_volatile_rule($handle, ...$args), 'volatileRule'),
+                'bind' => self::check($lib->aether_vcr_embed_volatile_bind($handle, ...$args), 'bind'),
+                'profile' => self::check($lib->aether_vcr_embed_volatile_profile($handle, ...$args), 'volatileProfile'),
+            };
+        }
         foreach ($this->headerRemovals as [$field, $name]) {
             self::check($lib->aether_vcr_embed_remove_header($handle, $field->value, $name), 'removeHeader');
         }

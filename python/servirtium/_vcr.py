@@ -52,6 +52,14 @@ class Outcome(enum.IntEnum):
     RECORD_ERROR = 7
 
 
+class VolatileMarkers(enum.IntEnum):
+    """How placeholders and tokens are written: ``{{name}}``, ``${name}``, ``[[name]]``."""
+
+    MUSTACHE = 0
+    DOLLAR_CURLY = 1
+    WIKILINK = 2
+
+
 class VcrError(Exception):
     """Raised when the VCR fails to start, a mutation is rejected, or a
     record-mode flush detects drift."""
@@ -83,6 +91,8 @@ class _BuilderBase:
         self._untaped: list[str] = []
         self._tls: tuple[str, str] | None = None
         self._tls_pem: tuple[str, str] | None = None
+        self._volatile: list[tuple[str, tuple[str, ...]]] = []
+        self._volatile_markers: "VolatileMarkers | None" = None
 
     def native_lib(self, path: str):
         """Pin an explicit path to libservirtium_vcr library for this run.
@@ -177,11 +187,42 @@ class _BuilderBase:
         self._tls_pem = (cert_pem, key_pem)
         return self
 
+    def volatile_markers(self, style: "VolatileMarkers"):
+        """Marker style for placeholders and tokens: ``VolatileMarkers.MUSTACHE``
+        (default, ``{{name}}``), ``DOLLAR_CURLY`` or ``WIKILINK``. Applied before
+        any rule."""
+        self._volatile_markers = VolatileMarkers(style)
+        return self
+
+    def volatile_rule(self, scope: str, pattern: str, kind: str = "template"):
+        """Declare a volatile-value rule: ``scope`` (e.g. ``"request body"``) and a
+        ``pattern`` holding one or more ``{{placeholder}}``s; ``kind`` is
+        ``"template"`` (default) or ``"regex"``. May be called repeatedly; a bad
+        rule fails :meth:`start` with the core's message. See
+        ``docs/volatile-values.md``."""
+        self._volatile.append(("volatile_rule", (scope, kind, pattern)))
+        return self
+
+    def bind(self, name_or_token: str, value: str):
+        """Bind a real value to a token (``"serverDate-2"``) or to every token of a
+        placeholder name (``"serverDate"``)."""
+        self._volatile.append(("volatile_bind", (name_or_token, value)))
+        return self
+
+    def volatile_profile(self, path: str):
+        """Load volatile-value rules from a profile file (``## Volatile values``)."""
+        self._volatile.append(("volatile_profile", (path,)))
+        return self
+
     def _apply_config(self, handle) -> None:
         """Apply accumulated config to the opened handle, before start.
 
         Subclasses extend this.
         """
+        if self._volatile_markers is not None:
+            _check(N.set_volatile_markers(handle, int(self._volatile_markers)), "volatile_markers")
+        for operation, args in self._volatile:
+            _check(getattr(N, operation)(handle, *(N.encode(a) for a in args)), operation)
         for field, name in self._header_removals:
             _check(N.remove_header(handle, int(field), N.encode(name)), "remove_header")
         if self._ignore_volatile_headers:
@@ -390,7 +431,6 @@ class RecordBuilder(_BuilderBase):
         self._upstream_base = upstream_base
         self._redactions: list[tuple[str, Field, str, str]] = []
         self._secret_redactor = None
-        self._normalize_whole_tape: list[tuple[str, str]] = []
         self._redact_whole_tape: list[tuple[str, str]] = []
         self._note: tuple[str, str] | None = None
         self._indent_code_blocks = False
@@ -428,14 +468,6 @@ class RecordBuilder(_BuilderBase):
     def redact_json_field(self, name: str, replacement: str = "[REDACTED]", *, field: Field = Field.REQUEST_BODY):
         """Redact the named json field when writing the tape; upstream is unchanged."""
         self._redactions.append(("redact_json_field", field, name, replacement))
-        return self
-
-    def normalize_whole_tape(self, pattern: str, name: str):
-        """Rewrite every distinct regex match across the WHOLE tape (all fields,
-        all interactions, in first-appearance order) to a stable ``{{name-N}}``
-        token. Use for correlated server-minted values like entity ids that
-        recur in later request paths."""
-        self._normalize_whole_tape.append((pattern, name))
         return self
 
     def redact_whole_tape(self, pattern: str, replacement: str):
@@ -553,11 +585,6 @@ class RecordBuilder(_BuilderBase):
             _check(
                 getattr(N, operation)(handle, int(field), N.encode(pattern), N.encode(replacement)),
                 "redact",
-            )
-        for pattern, name in self._normalize_whole_tape:
-            _check(
-                N.normalize_whole_tape(handle, N.encode(pattern), N.encode(name)),
-                "normalize_whole_tape",
             )
         for pattern, replacement in self._redact_whole_tape:
             _check(
@@ -718,6 +745,11 @@ class VcrServer:
     def note(self, title: str, body: str) -> None:
         """Stage a note (record mode) for the *next* interaction to be captured."""
         _check(N.note(self._require_handle(), N.encode(title), N.encode(body)), "note")
+
+    def volatile_report(self) -> str:
+        """Text report of the volatile-value rules, binds, bindings
+        (``{{name-N}} = value``) and warnings."""
+        return N.take_string(N.volatile_report(self._require_handle()))
 
     def reset_cursor(self) -> None:
         """Rewind the replay cursor to interaction 0 and clear last-* slots."""

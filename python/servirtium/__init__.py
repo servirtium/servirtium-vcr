@@ -21,6 +21,7 @@ from ._vcr import (
     VcrError,
     SecretRequest,
     VcrServer,
+    VolatileMarkers,
     playback,
     record,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "RecordBuilder",
     "Field",
     "Outcome",
+    "VolatileMarkers",
     "VcrError",
     "SecretRequest",
 ]

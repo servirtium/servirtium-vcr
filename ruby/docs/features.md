@@ -1,7 +1,7 @@
 # Feature matrix
 
 Servirtium capability checklist (record, playback, redaction/mutation,
-whole-tape normalization, header removal, notes, drift, static bypass, strict
+volatile values, header removal, notes, drift, static bypass, strict
 matching, markdown interop, diagnostics, one server per port), mapped
 through the stack. "Test" = exercised by `spec/` against the real native
 library.
@@ -13,7 +13,7 @@ library.
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
-| Normalize whole tape (correlated `{{id-N}}`) | ✅ | ✅ | `.normalize_whole_tape(pattern, name)` | — |
+| Volatile values (placeholders → `{{name-N}}` tokens) | ✅ | ✅ | `.volatile_rule(scope, pattern)`, `.bind(name, value)`, `.volatile_profile(path)`, `.volatile_markers(style)`, `server.volatile_report` | — |
 | Redact whole tape (collapse to constant) | ✅ | ✅ | `.redact_whole_tape(pattern, replacement)` | — |
 | Unredactions | ✅ | ✅ | `.unredact(field, …)` | — |
 | Header removal | ✅ | ✅ | `.remove_header(field, name)` | ✅ |
@@ -54,7 +54,7 @@ the Ruby API. Both are small `embed.ae` additions if wanted:
   rather than a per-interaction `ServiceInteractionMonitor` callback.
   Equivalent for assertions.
 - **No in-process transform pipeline classes.** Mutations are the redact /
-  unredact / whole-tape / remove-header / note primitives above, applied by the
+  unredact / volatile-values / remove-header / note primitives above, applied by the
   core, not pluggable Ruby transforms.
 
 ## Known limitations (inherited from the core)

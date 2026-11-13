@@ -116,7 +116,7 @@ loader wants is `servirtium_vcr.dll`.
 ## Docs
 
 - **[docs/usage.md](docs/usage.md)** — playback, record, redactions,
-  unredactions, whole-tape normalization, header removal, notes, strict
+  unredactions, volatile values, header removal, notes, strict
   matching, static content, drift, diagnostics — with code.
 - **[docs/features.md](docs/features.md)** — Servirtium capability matrix and
   what's covered by tests.

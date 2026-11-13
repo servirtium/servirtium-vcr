@@ -186,9 +186,13 @@ def _ensure_loaded() -> None:
     g["redact_header"] = _decl("aether_vcr_embed_redact_header", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
     g["redact_query_param"] = _decl("aether_vcr_embed_redact_query_param", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
     g["redact_json_field"] = _decl("aether_vcr_embed_redact_json_field", _CSTR, [_HANDLE, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p])
-    g["normalize_whole_tape"] = _decl(
-        "aether_vcr_embed_normalize_whole_tape", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p]
+    g["volatile_rule"] = _decl(
+        "aether_vcr_embed_volatile_rule", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
     )
+    g["volatile_bind"] = _decl("aether_vcr_embed_volatile_bind", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p])
+    g["volatile_profile"] = _decl("aether_vcr_embed_volatile_profile", _CSTR, [_HANDLE, ctypes.c_char_p])
+    g["set_volatile_markers"] = _decl("aether_vcr_embed_set_volatile_markers", _CSTR, [_HANDLE, ctypes.c_int])
+    g["volatile_report"] = _decl("aether_vcr_embed_volatile_report", _CSTR, [_HANDLE])
     g["redact_whole_tape"] = _decl(
         "aether_vcr_embed_redact_whole_tape", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p]
     )

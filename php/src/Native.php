@@ -63,7 +63,11 @@ final class Native
         char*  aether_vcr_embed_redact_header(void* server, int field, const char* pattern, const char* replacement);
         char*  aether_vcr_embed_redact_query_param(void* server, int field, const char* pattern, const char* replacement);
         char*  aether_vcr_embed_redact_json_field(void* server, int field, const char* pattern, const char* replacement);
-        char*  aether_vcr_embed_normalize_whole_tape(void* server, const char* pattern, const char* name);
+        char*  aether_vcr_embed_volatile_rule(void* server, const char* scope, const char* kind, const char* pattern);
+        char*  aether_vcr_embed_volatile_bind(void* server, const char* name_or_token, const char* value);
+        char*  aether_vcr_embed_volatile_profile(void* server, const char* path);
+        char*  aether_vcr_embed_set_volatile_markers(void* server, int style);
+        char*  aether_vcr_embed_volatile_report(void* server);
         char*  aether_vcr_embed_redact_whole_tape(void* server, const char* pattern, const char* replacement);
         char*  aether_vcr_embed_unredact(void* server, int field, const char* pattern, const char* replacement);
         char*  aether_vcr_embed_remove_header(void* server, int field, const char* name);

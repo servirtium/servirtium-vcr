@@ -34,15 +34,17 @@ function main(): int
     $vcr = Vcr::record(TAPE, $upstream)
         ->staticContent('/suite', SUITE_DIR)
         ->untaped('/favicon.ico')
-        // Whole-tape normalization so a re-record is byte-identical (the tape
+        // Volatile values so a re-record is byte-identical (the tape
         // stays git-clean; drift detection then fires only on real changes):
         //   - the server-minted todo UUID is CORRELATED (POST response body/url,
         //     then echoed in later GET/PATCH/DELETE request paths), so it gets a
         //     stable {{id-N}} token that round-trips on playback;
         //   - the Date response header is uncorrelated + variable-cardinality, so
-        //     it's COLLAPSED to one constant.
-        ->normalizeWholeTape('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'id')
-        ->redactWholeTape('Date: .+ GMT', 'Date: <DATE>')
+        //     it's a {{serverDate}} rule on the response headers.
+        ->volatileRule('request path', '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'regex')
+        ->volatileRule('headers', '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'regex')
+        ->volatileRule('body', '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'regex')
+        ->volatileRule('response headers', 'Date: {{serverDate}}')
         ->port(VCR_PORT)
         ->start();
     try {

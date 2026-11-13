@@ -55,30 +55,37 @@ Vcr::record($tape, $upstream)
 `VcrField` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`,
 `ResponseHeaders`.
 
-### Whole-tape normalization (volatiles that must round-trip)
+### Volatile values (volatiles that must round-trip)
 
-`redact(...)` rewrites one field per match. For volatiles that span the **whole
-tape** — server-minted ids, timestamps — two record-time rules make a re-record
-byte-identical:
+`redact(...)` rewrites one field per match. When a value changes on every run
+(an id, a timestamp, the port a test picked), declare a **rule** with a
+`{{placeholder}}` where it sits. Recording writes each captured value as a
+**token** (`{{messageId-1}}`), so a re-record is byte-identical; playback lets a
+token match whatever live value arrives and puts it back in later responses.
+Rules work on the playback and the record builder:
 
 ```php
-Vcr::record($tape, $upstream)
-    // CORRELATED: a server-minted id that recurs in later request paths.
-    // Every distinct match across the whole tape gets a stable {{order-N}}
-    // token, so the same id maps to the same token wherever it appears and
-    // round-trips on playback.
-    ->normalizeWholeTape('/orders/([0-9a-f-]{36})', 'order')
-    // UNCORRELATED: a volatile that just needs to be constant. Every match
-    // collapses to the one replacement (no per-match numbering).
-    ->redactWholeTape('Date: .*GMT', 'Date: <NORMALIZED>')
+Vcr::playback($tape)
+    ->prettyXml(2)
+    ->volatileRule('request body', '<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>')
+    ->volatileRule('response body', '<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>')
+    ->bind('serverDate', gmdate('D, d M Y H:i:s') . ' GMT')
     ->start();
 ```
 
-Use `normalizeWholeTape($pattern, $name)` when the value is generated in one
-interaction and reused in a later request (it must correlate, so playback can
-substitute it back); use `redactWholeTape($pattern, $replacement)` for
-uncorrelated volatiles (e.g. the `Date` response header) that only need to be
-pinned to a constant.
+- `volatileRule($scope, $pattern, $kind = 'template')`: `$kind` is `'template'`
+  or `'regex'`; may be called repeatedly.
+- `bind($nameOrToken, $value)`: bind a real value to a token (`'serverDate-2'`)
+  or to every token of a placeholder name.
+- `volatileProfile($path)`: load rules from a profile file.
+- `volatileMarkers(VolatileMarkers::DollarCurly)`: write placeholders and tokens
+  as `${name}` (`Wikilink`: `[[name]]`); applied before any rule.
+- `$server->volatileReport()`: rules, binds, bindings and warnings.
+- A bad rule throws `VcrException` at `start()` with the core's message.
+- `redactWholeTape($pattern, $replacement)` stays for uncorrelated noise that
+  only needs to be one constant.
+
+The spec: [docs/volatile-values.md](../../docs/volatile-values.md).
 
 ## Replaying a scrubbed tape (unredaction)
 

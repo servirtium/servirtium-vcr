@@ -77,29 +77,35 @@ Vcr.record(tape, upstream)
 
 ### Whole-tape scrubbing (across every field and interaction)
 
-`redact` works field-by-field on one value. For volatiles that move *across*
-the tape, two whole-tape mutations scan all fields and interactions at flush
-time — the payoff is a **byte-identical re-record** afterwards.
+`redact` works field-by-field on one value. When a value changes on every run
+(an id, a timestamp, the port a test picked), declare a **rule** with a
+`{{placeholder}}` where it sits. Recording writes each captured value as a
+**token** (`{{messageId-1}}`), so a re-record is **byte-identical**; playback
+lets a token match whatever live value arrives and puts it back in later
+responses. Rules work on the playback and the record builder:
 
 ```ts
-Vcr.record(tape, upstream)
-  // Correlated: a server-minted id that appears in a response body and then
-  // recurs in later request paths. Every distinct match (in first-appearance
-  // order) becomes a stable {{order-N}} token, so the same value maps to the
-  // same token everywhere — and it round-trips back on playback.
-  .normalizeWholeTape('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'order')
-  // Uncorrelated: each occurrence is independent (e.g. a Date header). Every
-  // match collapses to one constant so it never churns the committed tape.
-  .redactWholeTape('[A-Z][a-z]{2}, \\d{2} [A-Z][a-z]{2} \\d{4} [0-9:]{8} GMT', 'Mon, 01 Jan 2024 00:00:00 GMT')
+Vcr.playback(tape)
+  .prettyXml(2)
+  .volatileRule('request body', '<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>')
+  .volatileRule('response body', '<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>')
+  .bind('serverDate', new Date().toUTCString())
   .start()
 ```
 
-- **`normalizeWholeTape(pattern, name)`** — every *distinct* match across the
-  whole tape gets its own `{{name-N}}` token (`{{order-1}}`, `{{order-2}}`, …),
-  correlated so a value recurring in a later request path tokenizes the same;
-  the token round-trips on playback.
-- **`redactWholeTape(pattern, replacement)`** — *every* match collapses to the
-  single constant `replacement`, for uncorrelated volatiles.
+- **`volatileRule(scope, pattern, kind = 'template')`**: `kind` is `'template'`
+  or `'regex'`; may be called repeatedly.
+- **`bind(nameOrToken, value)`**: bind a real value to a token (`'serverDate-2'`)
+  or to every token of a placeholder name.
+- **`volatileProfile(path)`**: load rules from a profile file.
+- **`volatileMarkers(VolatileMarkers.DollarCurly)`**: write placeholders and
+  tokens as `${name}` (`Wikilink`: `[[name]]`); applied before any rule.
+- **`server.volatileReport()`**: rules, binds, bindings and warnings.
+- A bad rule throws `VcrError` at `start()` with the core's message.
+- **`redactWholeTape(pattern, replacement)`**: every match collapses to the
+  single constant `replacement`, for uncorrelated noise.
+
+The spec: [docs/volatile-values.md](../../docs/volatile-values.md).
 
 ## Replaying a scrubbed tape (unredaction)
 

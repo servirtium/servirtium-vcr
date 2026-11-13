@@ -1,5 +1,5 @@
 import * as path from 'path'
-import { Vcr, VcrField, VcrOutcome } from './index'
+import { Vcr, VcrField, VcrOutcome, VolatileMarkers } from './index'
 import * as N from './native'
 
 const tape = (name: string) => path.join(__dirname, '..', 'tapes', name)
@@ -132,5 +132,87 @@ describe('playback range', () => {
     } finally {
       rec.discard()
     }
+  })
+})
+
+describe('volatile values (docs/volatile-values.md)', () => {
+  const path = require('path')
+  const { spawnSync } = require('child_process')
+  const root = path.resolve(__dirname, '../..')
+  const volatile = (name: string) => path.join(root, 'core_tests/volatile', name)
+  const fixture = (scenario: string, server: { baseUrl: string }) =>
+    spawnSync(path.join(root, 'target/test-tools/volatile_fixture'), [scenario, server.baseUrl], { encoding: 'utf8' })
+  const wcfRules = (b: any) =>
+    b
+      .volatileRule('request body', '<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>')
+      .volatileRule('request body', '<a:To s:mustUnderstand="1">{{endpoint}}/Services/')
+      .volatileRule('request body', '&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;')
+      .volatileRule('response body', '<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>')
+
+  it("lets a tape's own rules carry a WCF conversation and reports the binding", () => {
+    const server = Vcr.playback(volatile('wcf.md')).prettyXml(2).start()
+    try {
+      expect(fixture('wcf', server).status).toBe(0)
+      expect(server.volatileReport()).toContain('binding: {{messageId-1}} = ')
+    } finally { server.close() }
+  })
+
+  it('applies a profile file to a tape with no rules', () => {
+    const server = Vcr.playback(volatile('wcf_plain.md')).prettyXml(2).volatileProfile(volatile('profile.md')).start()
+    try {
+      expect(fixture('wcf', server).status).toBe(0)
+    } finally { server.close() }
+  })
+
+  it('takes the rules in code', () => {
+    const server = wcfRules(Vcr.playback(volatile('wcf_plain.md')).prettyXml(2)).start()
+    try {
+      expect(fixture('wcf', server).status).toBe(0)
+    } finally { server.close() }
+  })
+
+  it('reads a ${name} tape with DollarCurly markers and refuses it with the default', () => {
+    const server = Vcr.playback(volatile('wcf_dollar.md')).prettyXml(2).volatileMarkers(VolatileMarkers.DollarCurly).start()
+    try {
+      expect(fixture('wcf', server).status).toBe(0)
+    } finally { server.close() }
+    expect(() => Vcr.playback(volatile('wcf_dollar.md')).prettyXml(2).start()).toThrow('DollarCurly')
+  })
+
+  it('names the binding in a mismatch', () => {
+    const server = Vcr.playback(volatile('cases.md')).start()
+    try {
+      expect(fixture('cases', server).status).toBe(0)
+      server.resetCursor()
+      expect(fixture('cases-mismatch', server).status).toBe(0)
+      expect(server.readLastError(false)).toContain('{{caseId-1}} = 42')
+      server.readLastError(true)
+    } finally { server.close() }
+  })
+
+  it('needs a bind for a token nothing binds', () => {
+    expect(() => Vcr.playback(volatile('cases_recorded.md')).start()).toThrow('caseId')
+    const server = Vcr.playback(volatile('cases_recorded.md')).bind('caseId', '42').start()
+    try {
+      expect(fixture('cases', server).status).toBe(0)
+    } finally { server.close() }
+  })
+
+  it('fails start on a rule without a placeholder', () => {
+    expect(() => Vcr.playback(volatile('cases.md')).volatileRule('request body', 'no placeholder').start())
+      .toThrow('needs at least one placeholder')
+  })
+
+  it('fails start on a rule that conflicts with the tape', () => {
+    let message = ''
+    try {
+      Vcr.playback(volatile('cases.md')).volatileRule('response body', '"caseId":"{{id}}"').start().close()
+    } catch (e: any) { message = e.message }
+    expect(message).toContain('conflicts with')
+    expect(message).toContain('(tape)')
+  })
+
+  it('fails start on a regex rule written with a template placeholder', () => {
+    expect(() => Vcr.playback(volatile('cases.md')).volatileRule('x', 'a {{b}}', 'regex').start()).toThrow()
   })
 })
