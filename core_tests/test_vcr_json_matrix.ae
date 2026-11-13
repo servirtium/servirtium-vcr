@@ -3,25 +3,28 @@ import core.vcr
 import std.http.client
 import std.string
 import std.fs
+import std.os
 import std.json
 extern exit(code: int)
-const TAPE = "/tmp/svcr-json-matrix.md"
+// Per process, so trees running core_tests on one host at once do not collide.
+tape_path() -> string { return "/tmp/svcr-json-matrix-${os.getpid()}.md" }
+port_for() -> int { return 30000 + os.getpid() % 20000 }
 const RESPONSE = "{\n    \"response\": [1, 2]\n}"
 fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
 check(row: int, recorded: string, live: string, matches: int, enabled: int, multiple: int) {
     h = vcr.open_offline()
     err = vcr.record_full_h(h, "QUERY", "/json", 200, "application/json", RESPONSE, "", recorded)
     if err != "" { fail(err) }
-    err = vcr.flush_h(h, TAPE)
+    err = vcr.flush_h(h, tape_path())
     vcr.destroy_h(h)
     if err != "" { fail(err) }
-    p, err = vcr.open_playback(TAPE, 18183)
+    p, err = vcr.open_playback(tape_path(), port_for())
     if err != "" { fail(err) }
     if enabled == 1 { vcr.set_pretty_json_h(p, 2) }
     if enabled == 2 { vcr.set_match_json_body_h(p, 1) }
     vcr.set_match_multiple_h(p, multiple)
     if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
-    req = client.request("QUERY", "http://127.0.0.1:18183/json")
+    req = client.request("QUERY", "http://127.0.0.1:${port_for()}/json")
     // Matching is independent of the live media type.
     err = client.set_body(req, string.bytes(live), "text/plain")
     if err != "" { fail(err) }
