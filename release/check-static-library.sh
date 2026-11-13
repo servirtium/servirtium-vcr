@@ -17,7 +17,7 @@ case "$AE_TARGET" in
 esac
 if ! zig cc -target "$ZIG_TARGET" -O2 \
     -I "$ROOT/swift/Sources/CServirtiumVcr/include" \
-    "$ROOT/release/static-consumer.c" "$ARCHIVE" "${libraries[@]}" \
+    "$ROOT/release/static-consumer.c" "$ARCHIVE" ${libraries[@]+"${libraries[@]}"} \
     -o "$WORK/consumer" > "$WORK/link.log" 2>&1; then
   cat "$WORK/link.log" >&2
   echo "static consumer: $AE_TARGET failed to link" >&2
