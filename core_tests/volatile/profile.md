@@ -1,9 +1,9 @@
-The volatile values of the case service, by contract. A hand-written fixture with obviously fake hosts.
+Markers: Mustache
+The case service's volatile values, by contract. A hand-written fixture with obviously fake hosts.
 
 ## Volatile values
 
-- request body, XML `{http://www.w3.org/2005/08/addressing}MessageID`: uuid
-- request body, XML `{http://www.w3.org/2005/08/addressing}To` regex `:([0-9]+)(?:/|$)`: port
-- request body, regex `&lt;SubmissionDate&gt;([^&]+)&lt;/SubmissionDate&gt;`: timestamp
-- response body, XML `{http://www.w3.org/2005/08/addressing}MessageID`: uuid
-- response body, XML `{http://www.w3.org/2005/08/addressing}RelatesTo`: uuid
+- request body: `<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>`
+- request body: `<a:To s:mustUnderstand="1">{{endpoint}}/Services/`
+- request body: `&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;`
+- response body: `<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>`

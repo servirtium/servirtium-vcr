@@ -38,7 +38,7 @@ configure(h: ptr, i: int) {
     e1 = vcr.remove_header_h(h, vcr.FIELD_REQUEST_HEADERS, "X-Noise-${w}")
     e2 = vcr.redact_h(h, vcr.FIELD_RESPONSE_BODY, "secret-${w}", "R-${w}")
     e3 = vcr.unredact_h(h, vcr.FIELD_RESPONSE_BODY, "U-${w}", "plain-${w}")
-    e4 = vcr.volatile_h(h, "anywhere, regex `tok-${w}-[0-9]+`: tok-${w}")
+    e4 = vcr.volatile_rule_h(h, "body", "regex", "(?<tok_${w}>tok-${w}-[0-9]+)")
     e5 = vcr.note_h(h, "title-${w}", "body-${w}")
     e6 = vcr.redact_header_h(h, vcr.FIELD_REQUEST_HEADERS, "X-Secret-${w}", "S-${w}")
     if i % 2 == 0 { vcr.indent_code_blocks_h(h) }
@@ -65,7 +65,7 @@ check(h: ptr, i: int) -> string {
     if nun != 1 { return "${w}: ${nun} unredactions (want 1)" }
     if vcr.get_unredaction_replacement_h(h, 0) != "plain-${w}" { return "${w}: unredaction ${vcr.get_unredaction_replacement_h(h, 0)}" }
     vr = vcr.volatile_report_h(h)
-    if vr != "rule: anywhere, regex `tok-${w}-[0-9]+`: tok-${w}\n" { return "${w}: volatile rules ${vr}" }
+    if vr != "rule: body regex: `(?<tok_${w}>tok-${w}-[0-9]+)`\n" { return "${w}: volatile rules ${vr}" }
     want_indent = 0
     if i % 2 == 0 { want_indent = 1 }
     if vcr.get_indent_code_blocks_h(h) != want_indent { return "${w}: indent ${vcr.get_indent_code_blocks_h(h)} (want ${want_indent})" }

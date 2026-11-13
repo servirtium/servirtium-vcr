@@ -1,10 +1,9 @@
 ## Volatile values
 
-- request body, XML `{http://www.w3.org/2005/08/addressing}MessageID`: uuid
-- request body, XML `{http://www.w3.org/2005/08/addressing}To` regex `:([0-9]+)(?:/|$)`: port
-- request body, regex `&lt;SubmissionDate&gt;([^&]+)&lt;/SubmissionDate&gt;`: timestamp
-- response body, XML `{http://www.w3.org/2005/08/addressing}MessageID`: uuid
-- response body, XML `{http://www.w3.org/2005/08/addressing}RelatesTo`: uuid
+- request body: `<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>`
+- request body: `<a:To s:mustUnderstand="1">{{endpoint}}/Services/`
+- request body: `&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;`
+- response body: `<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>`
 
 ## Interaction 0: POST /Services/CaseService.svc
 
@@ -18,15 +17,15 @@
 <s:Envelope xmlns:a="http://www.w3.org/2005/08/addressing" xmlns:s="http://www.w3.org/2003/05/soap-envelope">
   <s:Header>
     <a:Action s:mustUnderstand="1">http://services.example.test/case/ICaseService/CreateCase</a:Action>
-    <a:MessageID>urn:uuid:{{uuid-1}}</a:MessageID>
+    <a:MessageID>urn:uuid:{{messageId-1}}</a:MessageID>
     <a:ReplyTo>
       <a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>
     </a:ReplyTo>
-    <a:To s:mustUnderstand="1">https://workpro--not-real.invalid:{{port-1}}/Services/CaseService.svc</a:To>
+    <a:To s:mustUnderstand="1">{{endpoint-1}}/Services/CaseService.svc</a:To>
   </s:Header>
   <s:Body>
     <CreateCase xmlns="http://services.example.test/case">
-      <caseData>&lt;CaseData&gt;&lt;Title&gt;Water leak&lt;/Title&gt;&lt;SubmissionDate&gt;{{timestamp-1}}&lt;/SubmissionDate&gt;&lt;/CaseData&gt;</caseData>
+      <caseData>&lt;CaseData&gt;&lt;Title&gt;Water leak&lt;/Title&gt;&lt;SubmissionDate&gt;{{submitted-1}}&lt;/SubmissionDate&gt;&lt;/CaseData&gt;</caseData>
     </CreateCase>
   </s:Body>
 </s:Envelope>
@@ -42,7 +41,7 @@ Content-Type: application/soap+xml; charset=utf-8
 <s:Envelope xmlns:a="http://www.w3.org/2005/08/addressing" xmlns:s="http://www.w3.org/2003/05/soap-envelope">
   <s:Header>
     <a:Action s:mustUnderstand="1">http://services.example.test/case/ICaseService/CreateCaseResponse</a:Action>
-    <a:RelatesTo>urn:uuid:{{uuid-1}}</a:RelatesTo>
+    <a:RelatesTo>urn:uuid:{{messageId-1}}</a:RelatesTo>
   </s:Header>
   <s:Body>
     <CreateCaseResponse xmlns="http://services.example.test/case">

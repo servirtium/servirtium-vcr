@@ -383,24 +383,42 @@ vcr_embed_remove_header(s: ptr, field: int, name: string) -> ptr {
     return vcr_embed_dup(vcr.remove_header_h(s, field, name))
 }
 
-// Volatile values (docs/volatile-values.md): one or more rule lines, in the
-// grammar of a tape's "## Volatile values" block ("- " and the heading
-// optional). "" or the error (a grammar error with its line, or a conflict).
-// Configure after open, before start, on a playback or a record handle.
-vcr_embed_volatile(s: ptr, rules: string) -> ptr {
+// Volatile values (docs/volatile-values.md). Plain strings throughout; each
+// returns "" or the error, caller-owned. Configure after open, before start
+// (a later call re-prepares a started playback VCR).
+//
+// One rule: scope (request path, request headers, response headers,
+// headers, request body, response body, body), kind ("template" or
+// "regex"), pattern (a template with {{name}} / {{name:regex}}
+// placeholders, or a PCRE2 regex whose named groups are placeholders).
+vcr_embed_volatile_rule(s: ptr, scope: string, kind: string, pattern: string) -> ptr {
     if s == null { return vcr_embed_dup("") }
-    return vcr_embed_dup(vcr.volatile_h(s, rules))
+    return vcr_embed_dup(vcr.volatile_rule_h(s, scope, kind, pattern))
 }
 
-// Volatile rules from a preset (ws-addressing, http-dates, trace-headers)
-// or a profile file's "## Volatile values" block. "" or the error.
-vcr_embed_volatile_profile(s: ptr, name_or_path: string) -> ptr {
+// Bind a real value to a placeholder's tokens: "name" binds every token of
+// the name that nothing else bound, "name-N" that one token.
+vcr_embed_volatile_bind(s: ptr, name_or_token: string, value: string) -> ptr {
     if s == null { return vcr_embed_dup("") }
-    return vcr_embed_dup(vcr.volatile_profile_h(s, name_or_path))
+    return vcr_embed_dup(vcr.volatile_bind_h(s, name_or_token, value))
 }
 
-// The rules, the current bindings and every shape warning, one per line
-// ("rule: …", "binding: …", "shape: …"). Caller frees.
+// Rules from a profile file (first line "Markers: <style>", then a
+// "## Volatile values" block).
+vcr_embed_volatile_profile(s: ptr, path: string) -> ptr {
+    if s == null { return vcr_embed_dup("") }
+    return vcr_embed_dup(vcr.volatile_profile_h(s, path))
+}
+
+// The marker style: 0 Mustache {{ }} (default), 1 DollarCurly ${ }, 2
+// Wikilink [[ ]]. Set it before any rule.
+vcr_embed_set_volatile_markers(s: ptr, style: int) -> ptr {
+    if s == null { return vcr_embed_dup("") }
+    return vcr_embed_dup(vcr.set_volatile_markers_h(s, style))
+}
+
+// The rules, values, current bindings and warnings, one per line
+// ("rule: …", "bind: …", "binding: …", "warning: …"). Caller frees.
 vcr_embed_volatile_report(s: ptr) -> ptr {
     if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.volatile_report_h(s))

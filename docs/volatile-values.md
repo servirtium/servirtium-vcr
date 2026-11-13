@@ -1,348 +1,380 @@
 # Volatile values
 
 Some values change on every run although nothing meaningful changed: a
-generated id, a timestamp, a `Date` header, a correlation id, a port the test
-picked. Volatile-value rules name where such values sit and what shape they
-have. One rule set serves recording, playback and drift detection:
+generated message id, a timestamp a library adds, a `Date` header, a request
+id, the endpoint a test happened to start on. Volatile-value rules say where
+such values sit. One rule set serves recording, playback and drift detection:
 
-- **Recording** writes each value as a token, `{{uuid-1}}`, so re-recording
-  an unchanged conversation gives a byte-identical tape.
-- **Playback** lets a token in the tape's request match any live value of its
-  shape, remembers that value, and puts it back wherever the token appears
-  in a later response or request.
+- **Recording** writes each value as a **token**, `{{messageId-1}}`, so
+  re-recording an unchanged conversation gives a byte-identical tape.
+- **Playback** lets a token in the tape's request match whatever the live
+  request carries there, remembers that value, and puts it back wherever the
+  same token appears in a response or a later request.
 - **Drift detection** (`stop_and_flush_fail_if_changed`, `_or_check`)
-  compares tokenized tapes, so volatile values never count as drift, and
-  anything else (a renamed element, a new field, `"42"` becoming `42`, an id
-  that stops being a UUID) always does.
+  compares tokenized tapes, so volatile values never count as drift and
+  everything else does.
 
-Rules are parsed and evaluated in the core (`core/volatile.ae`, wired into
-`core/vcr.ae`); every binding passes rule text through unchanged, so all
-languages behave identically. They replace `normalize_whole_tape`: its
-`normalize_whole_tape(pattern, name)` is now the rule
-``anywhere, regex `pattern`: name``. `redact_whole_tape(pattern, constant)`
+Rules, tokens and bound values are plain strings, compiled and evaluated in the
+core (`core/volatile.ae`, wired into `core/vcr.ae`); every binding passes
+them through unchanged, so every language behaves identically. This
+replaces `normalize_whole_tape`. `redact_whole_tape(pattern, constant)`
 stays, as what it always was: a redaction by regex to a constant, for values
-nobody correlates and a client must still parse (it runs with the other
-redactions, before volatile values).
+nobody correlates (it runs with the other redactions, before volatile
+values, so a rule never sees what it replaced).
 
-Its lineage is Servirtium 1's `withReplacementsInPlayback(regex, replacement)`
+Lineage: Servirtium 1's `withReplacementsInPlayback(regex, replacement)`
 (Java `MarkdownReplayer`), which rewrote the live request's body and headers
 but the tape's URL. Here both sides go through the same rules.
 
 ## Three users
 
-**A SOAP client that mints ids (WCF, WS-Addressing 1.0).** Every request
-carries a fresh `<a:MessageID>urn:uuid:…</a:MessageID>`, a `SubmissionDate` of
-"now" added by a library the test does not own, and `<a:To>` with the port the
-test picked. The response echoes the MessageID in `<a:RelatesTo>`. With
-`ws-addressing` and one rule for `SubmissionDate` the tape needs no proxy:
+**A SOAP client that mints ids.** A WCF client (WS-Addressing 1.0) sends a
+fresh `<a:MessageID>urn:uuid:…</a:MessageID>` with every request, a
+`SubmissionDate` of "now" inside an escaped `caseData` string, and the
+endpoint the test started on in `<a:To>`. The response echoes the MessageID
+in `<a:RelatesTo>`. Four rules, and the tape reads:
 
 ```xml
-<a:MessageID>urn:uuid:{{uuid-1}}</a:MessageID>
-…
-<a:RelatesTo>urn:uuid:{{uuid-1}}</a:RelatesTo>
+<a:MessageID>urn:uuid:{{messageId-1}}</a:MessageID>
+<a:To s:mustUnderstand="1">{{endpoint-1}}/Services/CaseService.svc</a:To>
+…&lt;SubmissionDate&gt;{{submitted-1}}&lt;/SubmissionDate&gt;…
+<a:RelatesTo>urn:uuid:{{messageId-1}}</a:RelatesTo>
 ```
 
-`{{uuid-1}}` in the response is the value the request carried, on playback
-too: the client gets its own MessageID back.
+On playback the client gets its own MessageID back in `RelatesTo`.
 
-**Tapes reviewed by people.** A normalised tape reads like documentation: no
-regexes, no raw GUIDs, no timestamps from the day someone recorded it, and
-the same token wherever the same value recurs.
+**Tapes reviewed by people.** A tokenized tape reads like documentation:
+the rules are at its top in the same markdown, and the same token appears
+wherever the same value recurs.
 
-**A TCK across companies, where "the tape didn't change" is the signal.** A
-vendor redeploys a QA environment nightly; a client re-records its
-conversations against it with `fail_if_changed`. Nightly noise (ids,
-timestamps, `Date`, ETags, request ids) must never change a tape, and a real
-API change always must, readably. The vendor publishes its rules once, as a
-profile file, and clients in every language apply the same file.
+**A TCK across companies.** A vendor redeploys a QA environment nightly; a
+client re-records against it with `fail_if_changed`. Nightly noise must never
+change a tape, and a real API change always must. The vendor publishes its
+rules once, as a profile file, and every client, in any language, applies
+the same file.
+
+## Placeholders and tokens
+
+A **placeholder** is `{{name}}` in a rule; a **token** is `{{name-N}}` in a
+tape. A name is an identifier, `[A-Za-z_][A-Za-z0-9_]*`, chosen by whoever
+writes the rule (`messageId`, `serverDate`, `airTempInParis`); the core gives
+no name a meaning. N counts the distinct values of that name in the
+conversation, from 1, in order of first appearance (interactions in tape
+order; within one: path, request headers, request body, response headers,
+response body). The same name and the same value always get the same token:
+that is how correlation shows (`{{messageId-1}}` in MessageID and in
+RelatesTo). Different names never bind each other, and every token comes
+from a rule: there is no implicit echo or search-and-replace elsewhere.
+
+A placeholder `{{name}}` matches one or more characters on one line,
+stopping at the first place the rest of the template matches.
+
+`{{name:pattern}}` gives the placeholder its own PCRE2 pattern:
+`<a:DOB>{{dob:\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])}}</a:DOB>`. The
+first `:` after the name starts the pattern, which ends at the closing marker
+once its braces and brackets are balanced (escaped `\{ \} \[ \]` do not
+count), so `\d{4}` and `[12]` work in every marker style. The surrounding
+literal text anchors it: `^` and `$` are refused rather than silently
+changing meaning. Groups inside the pattern are allowed and produce no
+tokens; a named group inside a placeholder is an error.
+
+**Literal markers.** Text that would read as a token is escaped when a tape
+is written: `{{{{}}` stands for a literal `{{`, so a body holding the text
+`{{messageId-1}}` is written `{{{{}}messageId-1}}` and replayed as written.
+Only an opening marker that begins token-shaped text (or the escape itself)
+is escaped; `{{request.host}}` and the other substitution placeholders are
+not token-shaped and stay as they are.
+
+**Marker styles.** One closed choice per VCR, set in code before any rule:
+`Mustache` `{{name}}` (the default), `DollarCurly` `${name}`, `Wikilink`
+`[[name]]`. Rules in code and in the tape use the VCR's markers; the escape
+is open, open, close (`${${}`, `[[[[]]`). A tape does not declare its style.
+At start, playback scans the tape for tokens of known names in all three
+styles: tokens only in another style, or in two styles at once, fail the
+start with the styles named.
 
 ## Rules
 
-A rule is one line: **where** (field), **which value** (selector), and **what
-it is** (token class).
+Two kinds, both one line:
+
+**Templates** (the ordinary kind): literal text with placeholders. The core
+compiles a template to its own PCRE2 (literal text quoted, each placeholder a
+named group), so a template needs no regex knowledge:
 
 ```text
-request body, XML `{http://www.w3.org/2005/08/addressing}MessageID`: uuid
-response headers, `Date`: date
-request path, regex `/cases/([0-9]+)`: case-id
-anywhere, regex `[0-9a-f]{40}`: sha
+request body: `<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>`
+response headers: `Date: {{serverDate}}`
+request path: `/cases/{{caseId}}/documents`
 ```
 
-The same text goes into the API (`volatile(…)` in every binding), into a
-tape's `## Volatile values` block and into a profile file.
+**Regex** (the escape hatch): a PCRE2 pattern whose **named** groups are
+placeholders, `(?<name>…)` or `(?P<name>…)`; several per rule are fine,
+unnamed groups produce nothing:
 
-### Fields
+```text
+request body regex: `<a:To[^>]*>(?<endpoint>https?://[^/]+)/`
+```
 
-| Field | What it covers |
+### Scopes
+
+| Scope | Fields |
 |---|---|
 | `request path` | the request target, path and query |
-| `request headers` | the request header block |
-| `request body` | the request body |
-| `response headers` | the response header block |
-| `response body` | the response body |
-| `anywhere` | all five (regex selectors only) |
+| `request headers`, `response headers`, `headers` | one header block, or both |
+| `request body`, `response body`, `body` | one body, or both |
 
-### Selectors
+Leaving out the side means both.
 
-Every selector names its value inside a code span (one or more backticks,
-CommonMark style: a value holding a backtick uses a longer run, and a value
-starting or ending with a backtick is padded with one space).
+### What a template matches, exactly
 
-| Selector | Fields | Selects |
-|---|---|---|
-| `` `Name` `` | header fields | every value of that header (case-insensitive name) |
-| ``query `name` `` | `request path` | every value of that query parameter (name compared percent-decoded) |
-| ``JSON `key` `` | bodies | every value of that object key, at any depth |
-| ``JSON `/a/*/b` `` | bodies | the value at that JSON pointer (`*` matches any one segment) |
-| ``XML `{uri}local` `` | bodies | the text of every such element (namespace URI and local name, never the prefix; `{}local` is no namespace; `*` is any element) |
-| ``XML `{uri}local/@name` `` | bodies | that attribute of such elements (`@{uri}name` for a namespaced attribute) |
-| ``regex `pattern` `` | any | each match; capture group 1 if the pattern has one, else the whole match |
-
-Any selector except a regex may be followed by ``regex `pattern` ``, which
-narrows the selected value to the matches inside it:
-
-```text
-request body, XML `{http://www.w3.org/2005/08/addressing}To` regex `:([0-9]+)/`: port
-```
-
-A JSON value is a string's characters (between the quotes) or a number,
-`true`, `false` or `null`; objects and arrays are never selected. An XML
-element is selected only when it holds text and no child elements; leading
-and trailing whitespace is not part of the value.
-
-### Token classes
-
-| Class | Shape | Token covers | Numbered | Replayed when unbound |
-|---|---|---|---|---|
-| `uuid` | 8-4-4-4-12 hex, optionally after `urn:uuid:` | the UUID (a `urn:uuid:` prefix stays literal) | per value | `00000000-0000-4000-8000-00000000000N` |
-| `timestamp` | RFC 3339 / ISO 8601 date-time: `2026-11-13T09:41:07`, optional fraction and zone | the whole value | per occurrence | `2000-01-01T00:00:0NZ` (N seconds) |
-| `date` | RFC 1123: `Fri, 13 Nov 2026 09:41:07 GMT` | the whole value | per occurrence | `Sat, 01 Jan 2000 00:00:0N GMT` |
-| `epoch` | 10 digits (seconds) or 13 (milliseconds) | the whole value | per occurrence | 1000000000 + N |
-| `int` | `-?[0-9]+` | the whole value | per value | `N` |
-| `hex` | `[0-9a-fA-F]+` | the whole value | per value | N in hex, 16 digits |
-| `etag` | `"…"` or `W/"…"` | between the quotes | per value | the token text |
-| any other name | one line, not empty | the whole value | per value | the token text |
-
-A named class (`case-id`, `port`) is lower-case letters and digits in
-hyphen-separated words, each word starting with a letter, so the number
-after the last hyphen is unambiguous: `{{case-id-1}}`.
-
-**The shape is checked.** A value a selector finds that does not have its
-class's shape is left as it is and reported (a *shape warning*): a `uuid` rule
-meeting `42` writes `42` to the tape, so "the id format changed" shows up as
-drift instead of disappearing into a token.
-
-**Numbering.** Tokens are numbered by first appearance within their class:
-interactions in tape order, and within one, path, request headers, request
-body, response headers, response body. `per value` classes give a recurring
-value the same token everywhere (correlation). The time classes are numbered
-**per occurrence**: every timestamp is its own token even when two happen to
-be equal, because whether two `Date` headers fall in the same second differs
-from run to run, and per-value numbering would make the tape differ with it.
-A time value echoed back by a service therefore gets a token of its own;
-give it a named class to correlate it. Numbering per class keeps renumbering
-local: an extra UUID never shifts a `timestamp` token.
-
-## Tokens
-
-A token is `{{class-N}}`, N counting from 1. Literal text that would read as a
-token is escaped when a tape is written: `{{{{}}` stands for a literal `{{`,
-so a body holding the text `{{uuid-1}}` is written `{{{{}}uuid-1}}` and
-replayed as `{{uuid-1}}`. Only a `{{` followed by token-shaped text (or by
-`{{}}`) is escaped; `{{request.host}}` and other placeholders are not
-token-shaped and stay as they are.
+- **The canonical form.** With `pretty_xml`/`match_xml_body` or
+  `pretty_json`/`match_json_body` on, playback canonicalizes both bodies
+  first (`docs/pretty-xml.md`, `docs/pretty-json.md`), then applies the
+  rules, then compares; recording applies them to the formatted body it
+  writes. Write templates as one line of the canonical form shows the text.
+  Paths are compared in their RFC 3986 canonical form.
+- **Escaped text, as written.** A template matches the characters of the
+  field, so XML held as text inside an element is matched escaped:
+  `&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;`.
+- **The literal after a placeholder must not occur inside the value.** The
+  placeholder stops at the first place the rest matches:
+  `<a:To s:mustUnderstand="1">{{endpoint}}/` captures only `https:`,
+  because `/` follows the scheme. Anchor on more of the text
+  (`{{endpoint}}/Services/`), or write a regex rule.
+- **A placeholder at the end of a template** has no following literal: it
+  runs to the end of the line, trailing spaces and tabs excluded
+  (`Date: {{serverDate}}` takes the whole header value).
+- **No shape check.** A placeholder accepts any text: a template is a
+  location, not a type. The cost is the TCK's "the id format changed"
+  signal: a UUID turning into an integer is still tokenized, so the tape
+  does not change. Where the format is part of the contract, say so with an
+  inline pattern, `{{caseId:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}}}`:
+  a value that does not match is not tokenized, so recording writes it as it
+  is (drift), and playback reports a mismatch.
+- A placeholder name appears once per template, and two placeholders need
+  literal text between them.
 
 ## The tape block
 
-A recording with any rule starts with them, after the licence notice and
-before the first interaction:
+A recording with rules starts with them, after the licence notice and before
+the first interaction:
 
 ```markdown
 ## Volatile values
 
-- request body, XML `{http://www.w3.org/2005/08/addressing}MessageID`: uuid
-- request body, regex `&lt;SubmissionDate&gt;([^&]+)&lt;/SubmissionDate&gt;`: timestamp
-- response body, XML `{http://www.w3.org/2005/08/addressing}RelatesTo`: uuid
-- response headers, `Date`: date
+- request body regex: `<a:To[^>]*>(?<endpoint>https?://[^/]+)/`
+- request body: `&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;`
+- request body: `<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>`
+- response body: `<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>`
 ```
 
 Grammar, version 1:
 
 ```text
-block     = "## Volatile values" NL { NL | rule NL }
-rule      = "- " field ", " selector ": " class
-field     = "request path" | "request headers" | "request body"
-          | "response headers" | "response body" | "anywhere"
-selector  = ( span                       ; a header name
-            | "query " span | "JSON " span | "XML " span
-            | "regex " span ) [ " regex " span ]
-span      = CommonMark code span
-class     = word { "-" word }            ; word = [a-z][a-z0-9]*
+block   = "## Volatile values" NL { NL | "- " rule NL }
+rule    = scope [ " regex" ] ": " span
+scope   = "request path" | "request headers" | "response headers" | "headers"
+        | "request body" | "response body" | "body"
+span    = a CommonMark code span (a pattern holding a backtick uses a longer
+          run of backticks; one starting or ending with a backtick is padded
+          with a space)
 ```
 
-The block ends at the next line starting `## `. Anything else in it is an
-error when the tape is opened. Rules are written sorted, one per line, so the
-block is the same whatever order the test registered them in. A later grammar
-will carry its version in the heading (`## Volatile values (v2)`); a reader
-refuses a version it does not know. Readers that predate the block skip it:
-it sits before the first `## Interaction`.
+The block ends at the next line starting `## `; anything else in it fails the
+start, naming the line. Rules are written sorted, so the block is the same
+whatever order a test registered them in. A later grammar will carry its
+version in the heading, `## Volatile values (v2)`; this reader refuses a
+version it does not know. Readers that predate the block skip it: it sits
+before the first `## Interaction`.
 
-**A tape's rules apply on their own.** Playback reads the block, so a tape
-that declares its rules replays with no rules set in code. Recording over an
-existing tape reads its block too, so re-recording keeps them.
+**Where rules come from.** Code, profile files and the tape's own block
+merge into one set: a tape that declares its rules replays with no rules in
+code, and recording over a tape keeps the rules it declares. Not every rule
+has to travel: code rules alone are fine (and are written into the block of
+what they record). The same rule twice counts once. The same text with other
+placeholder names (`{{msgId}}` in code, `{{messageId}}` in the tape) is a
+conflict, and fails the start with both rules and where each came from.
 
-**Profiles.** A profile file is the same block, standalone: any text, then
-the `## Volatile values` heading and rules. `volatile_profile(name_or_path)`
-loads one; the names `ws-addressing`, `http-dates` and `trace-headers` are
-built in (below), anything else is a file path. A vendor publishes one file
-for every client, in every language.
+**Profiles.** A profile file is a vendor's rules for every client: its first
+line names its marker style (`Markers: Mustache`, `Markers: DollarCurly` or
+`Markers: Wikilink`, which must be the VCR's), then any text, then the
+`## Volatile values` block.
 
-**Merging and conflicts.** Code rules, profile rules and tape rules merge
-into one set; a rule given twice counts once. Two rules with the same field
-and selector but different classes are a conflict: the second registration
-fails with an error naming both, so a binding's `start()` fails before
-serving.
+## Bind
 
-## Presets
+Three words: a **placeholder** names a slot in a rule, a **token** is a
+captured value in a tape, and to **bind** is to attach a real value to a
+token. A live request binds the tokens it carries; the test binds the rest,
+before start, with plain strings:
 
-| Name | Rules |
-|---|---|
-| `ws-addressing` | request body `{http://www.w3.org/2005/08/addressing}MessageID`: uuid; response body `{…}RelatesTo`: uuid; request body `{…}To` regex `:([0-9]+)(?:/\|$)`: port |
-| `http-dates` | response headers `Date`, `Last-Modified`, `Expires`: date |
-| `trace-headers` | request and response headers `traceparent`: traceparent, `tracestate`: tracestate, `X-Request-Id`: request-id, `X-Correlation-Id`: correlation-id |
+- `bind("serverDate", "Fri, 13 Nov 2026 09:41:07 GMT")` binds every token of
+  the name that nothing else bound (`serverDate-1`, `serverDate-2`, …);
+- `bind("serverDate-2", "…")` binds that one token.
 
-A preset is shorthand: the rules it adds are written into the tape block in
-full, so a tape never depends on what a preset meant in a later release.
+A response token that nothing binds before it is replayed (a server's
+`Date`, a request id it mints, a case id it creates) must be bound by the
+test, or the start fails listing the names; a hand-written tape holding a
+real value there needs nothing (that value is replayed). When the test bound
+a token and a live request carries it, the request must agree: a different
+value is a mismatch, and the diagnostic names both
+(`{{dob-1}} was bound by the test to 2004-11-16; the request sent 2004-11-17`).
+A placeholder with an inline pattern refuses a bound value that does not
+match it, at start.
+
+The core has no date, UUID or relative-time logic. Computing a value ("22
+years ago next Monday", a fresh UUID, `Time.now.httpdate`) is the test's
+job, in its own language, passed in as a string. Whether to placeholder a
+stable value at all is the team's choice: a birth date the system under test
+derives from "now" is worth one,
+
+```text
+request body: `<a:DOB>{{dob:\d{4}-\d{2}-\d{2}}}</a:DOB>`
+```
+
+```ruby
+vcr.bind("dob", (Date.today.next_occurring(:monday) << 12 * 22).iso8601)
+```
+
+while a fixed customer's birth date is better left as recorded.
 
 ## Playback
 
-1. **Canonicalize.** With `pretty_xml`/`match_xml_body` or
-   `pretty_json`/`match_json_body` on, both the tape's request body and the
-   live one are canonicalized first (`docs/pretty-xml.md`,
-   `docs/pretty-json.md`); paths are compared in their RFC 3986 canonical
-   form. Selectors therefore never depend on whitespace, attribute order or
-   escapes. Regex selectors see the canonical text: write them against
-   values, not layout.
-2. **Normalize.** The tape side: a selected value that is already a token is
-   kept, one of its class's shape becomes a token (a hand-written tape can
-   hold real values), anything else stays as it is. The live side: each
-   selected value of the right shape is a *slot*.
+1. **Canonicalize** (above).
+2. **Normalize.** The tape side: a placeholder's value that is a token stays;
+   a real value (a hand-written tape) becomes a token too, remembering the
+   value. The live side: each value a placeholder captures is a *slot*.
 3. **Compare.** Everything outside tokens and slots must be equal, byte for
-   byte, and each slot must line up with a token of its class. A token then
+   byte; each slot must line up with a token of the same name. A token then
    **binds** the live value. A token already bound must meet the same value
-   again, and for a per-value class a live value already bound to one token
-   cannot stand for another: that is the correlation guard.
-4. **Respond.** Each token in the tape's response is replaced by its bound
-   value; an unbound one by the value a hand-written tape held there, else by
-   its class's stand-in (table above), and is then bound to what was sent. So
-   `/cases/{{int-1}}/documents` matches the case id the replayed response
-   handed out. Escapes are unescaped.
+   again, and a value already bound to one token of a name cannot stand for
+   another of the same name: the correlation guard.
+4. **Respond.** Each token in the response is replaced by its bound value
+   (bound by a request or by the test), else by the hand-written tape's
+   value, and is then bound to what was sent. So a case id a response
+   handed out must come back in the next request's path.
 
-A live request may also carry a token's text literally (`/checkout/{{uuid-1}}`,
-the value of an interaction skipped by a playback range that the test never
-received); that matches the same token without binding it.
+A live request may carry a token's text itself (`/checkout/{{cartId-1}}`,
+the value of an interaction a playback range skipped, which the test never
+received); that matches the token without binding it.
 
-**Bindings are per conversation.** `reset_cursor` clears them. An interaction
-replayed again (`match_multiple`: polling, retries) first releases the tokens
-it bound itself, so each repeat binds afresh while correlation with other
-interactions still holds. Tokens first seen in interactions outside a
-`playback_range` are simply unbound: the first live value binds them.
+**Bindings are per conversation.** `reset_cursor` clears them. An
+interaction replayed again (`match_multiple`: polling, retries) first
+releases what it bound itself, so each repeat binds afresh while correlation
+with other interactions holds. Tokens first seen outside a `playback_range`
+are unbound until a live value binds them.
 
-`match_header`, `strict_headers` and the body matchers compare the normalized
-forms.
+`match_header`, `strict_headers` and the body matchers compare the
+normalized forms.
 
 ## Recording
 
-Rules run last, after ordering, redactions, credential tokens, secret
-callbacks, header removals and pretty-printing, so a redacted value is never
-seen by a rule (redaction keeps priority) and selectors see the formatted
-body. Recorded `Content-Length` values follow the rewritten bodies. The
-upstream and the client see the original bytes. The recording-rules footer,
-when on, lists each rule with the interactions it touched.
+Rules run last: after ordering, redactions (literal, structured,
+`redact_whole_tape`), credential tokens, secret callbacks, header removals
+and pretty-printing. A redacted value is never seen by a rule: redaction
+keeps priority. Recorded `Content-Length` values follow the rewritten
+bodies; the upstream and the client see the original bytes. With the
+recording-rules footer on, each rule is a row with the interactions it
+touched.
 
 ## Diagnostics
 
-A playback mismatch on a handle with rules adds, to the retained diagnostic
-(`last_error`, `diagnostics_json`'s `volatile`, `assert_no_mismatches`):
+A playback mismatch on a VCR with rules adds a `volatile values:` section to
+the retained diagnostic (`last_error`, `assert_no_mismatches`, and
+`diagnostics_json`'s `volatile` member):
 
-- both normalized forms and the first difference between them;
-- the rules that fired and where;
-- the bindings (`{{uuid-1}} = 5f1d0c6e-… (interaction 0)`), including the one
-  a correlation mismatch broke;
-- every shape warning.
+- both normalized forms and the first difference (an unbound slot shows as
+  `{{name-?}}`);
+- the rules that fired, with the value each captured;
+- the bindings (`{{caseId-1}} = 42 (interaction 0)`), and the one a request
+  broke (`{{caseId-1}} = 42 (bound by interaction 0), but this request has 99`);
+- warnings (a regex limit).
 
 Values covered by `unredact`, credential headers and resolved secrets are
-masked exactly as elsewhere in diagnostics. `volatile_report()` returns the
-same rule/binding/shape lines at any time; in record mode it lists the shape
-warnings of the recording, and a failed `fail_if_changed` / `_or_check`
-appends them to its message, so "the id stopped being a UUID" is named.
+masked as everywhere in diagnostics. `volatile_report()` returns the rules,
+binds, bindings and warnings at any time; a failed `fail_if_changed` /
+`_or_check` appends the recording's warnings.
 
-## Regex engine and limits
+## Regex and limits
 
-Regexes are PCRE2 (Perl syntax), the core's `std.regex`, so every binding
-agrees. PCRE2 backtracks; there is no linear-time engine in the toolchain.
-Every rule regex is therefore run with `(*LIMIT_MATCH=1000000)` and
-`(*LIMIT_DEPTH=10000)`, and a field larger than 4 MiB is not searched by
-regex selectors. A rule that hits a limit selects nothing in that field and
-is reported as a shape warning naming the limit; a pathological pattern costs
-milliseconds, never a hung test.
+Patterns are PCRE2 (Perl syntax), the core's `std.regex`, so every binding
+agrees; named groups are `(?<name>…)`, `(?P<name>…)` or `(?'name'…)`, and
+branch reset `(?|…)` is refused. PCRE2 backtracks, and the toolchain has no
+linear-time engine, so every compiled rule runs under
+`(*LIMIT_MATCH=1000000)(*LIMIT_DEPTH=10000)`, a field over 4 MiB is not
+searched, and a rule stops after 10,000 matches in one field. A rule that
+hits a limit selects nothing more in that field and leaves a warning: a
+pathological pattern costs milliseconds, never a hung test. A regex rule
+searches for each next match from where the last ended, so a lookbehind
+cannot see across the previous match.
 
 ## The C ABI
 
 ```c
-char *aether_vcr_embed_volatile(void *h, const char *rules);
-char *aether_vcr_embed_volatile_profile(void *h, const char *name_or_path);
+char *aether_vcr_embed_volatile_rule(void *h, const char *scope, const char *kind, const char *pattern);
+char *aether_vcr_embed_volatile_bind(void *h, const char *name_or_token, const char *value);
+char *aether_vcr_embed_volatile_profile(void *h, const char *path);
+char *aether_vcr_embed_set_volatile_markers(void *h, int style); /* 0 Mustache, 1 DollarCurly, 2 Wikilink */
 char *aether_vcr_embed_volatile_report(void *h);
 ```
 
-Removed with them: `normalize_whole_tape`, `normalize_whole_tape_described`
-and `clear_normalizations`.
+`kind` is `"template"` or `"regex"`. Each returns `""` or the error,
+caller-owned like every string result. Configure after open and before
+start, on a playback or a record handle; set the markers before any rule. A
+rule's syntax is checked when it is given; the tape-wide checks (the tape's
+block, conflicts, marker style, binds) run at start, which then fails with
+the reason in `last_error`. A call after start re-prepares a playback VCR
+(clearing its bindings) and returns any start-time error itself.
 
-`volatile` takes one or more rule lines (the leading `- ` and a
-`## Volatile values` heading are optional); `volatile_profile` a preset name
-or a profile file path. Both return `""` or the error (a grammar error with
-its line, or a conflict), caller-owned like every string result. Configure
-after open, before start, on a playback or a record handle.
+Removed with this: `normalize_whole_tape`, `normalize_whole_tape_described`,
+`clear_normalizations`.
 
 ## Worked example: WCF
 
 ```csharp
 using var vcr = Vcr.Playback("tapes/create_case.md")
     .PrettyXml()
-    .VolatileProfile("ws-addressing")
-    .Volatile("request body, regex `&lt;SubmissionDate&gt;([^&]+)&lt;/SubmissionDate&gt;`: timestamp")
+    .VolatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+    .VolatileRule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
+    .VolatileRule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
+    .VolatileRule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
     .Start();
 ```
 
-`SubmissionDate` sits inside `caseData`, XML escaped as text, so XML
-selectors do not reach it (an element selector never looks inside text); the
-regex does. Recording with the same two lines writes them into the tape's
-block, after which playback needs neither.
+Recording with the same rules writes them into the tape's block, after which
+playback needs none in code.
 
 ## Worked example: a TCK profile
 
 The vendor publishes `cas-profile.md`:
 
 ```markdown
-CAS QA environment, volatile by contract.
+Markers: Mustache
+CAS QA environment: values that change on every redeploy, by contract.
 
 ## Volatile values
 
-- response body, JSON `caseId`: case-id
-- request path, regex `/cases/([0-9]+)`: case-id
-- response headers, `ETag`: etag
-- response headers, `X-Request-Id`: request-id
+- response body: `"caseId":"{{caseId}}"`
+- request path: `/cases/{{caseId}}/`
+- headers: `X-Request-Id: {{requestId}}`
+- response headers: `ETag: {{etag}}`
+- response headers: `Date: {{serverDate}}`
 ```
 
-A Rails client:
+A Rails client records nightly:
 
 ```ruby
 vcr = Servirtium::Vcr.record("spec/tapes/cases.md", ENV["CAS_QA"])
   .volatile_profile("cas-profile.md")
-  .volatile_profile("http-dates")
-  .fail_if_changed
 ```
 
-Every night the tape comes out byte-identical unless CAS changed something.
-When it does change, the diff is that change: per-class numbering means one
-extra interaction renumbers only tokens of the classes it carries.
+and replays, binding what its own tests need:
+
+```ruby
+Servirtium::Vcr.playback("spec/tapes/cases.md")
+  .bind("serverDate", Time.now.httpdate)
+  .bind("requestId", SecureRandom.uuid)
+```
+
+The tape comes out byte-identical every night unless CAS changed something,
+and the diff is that change: numbering is per name, so a new value renumbers
+only tokens of its own name.

@@ -1,313 +1,180 @@
-// Volatile-value rules: the grammar, the presets, the token classes and
-// their shapes, the token syntax and its escape, and the selectors that find
-// a rule's values in one field's text. Pure functions over strings; the VCR
-// state (rule lists, numbering, bindings) lives in core/vcr.ae.
+// Volatile values: the rule grammar, placeholders and their compilation to
+// PCRE2, the token syntax and its escape in each marker style, and finding a
+// rule's values in one field's text. Pure functions over strings; the VCR's
+// state (rules, values, numbering, bindings) lives in core/vcr.ae.
 // docs/volatile-values.md is the specification.
 import std.string
 import std.list
 import std.regex
 exports(
-    FIELD_ANYWHERE, VFIELD_PATH, VFIELD_RESPONSE_BODY, VFIELD_REQUEST_HEADERS, VFIELD_REQUEST_BODY,
-    VFIELD_RESPONSE_HEADERS, HEADING, parse_rules, block_in, rule_line, rule_key, rule_class,
-    rule_field, rule_applies, preset, find_spans, span_count, span_start, span_end, span_rule,
-    span_warnings, shape_core, per_occurrence, standin, valid_class, token_end, token_class,
-    token_number, token_text, escape, unescape, ESCAPE, field_name, render_block
+    SCOPE_PATH, SCOPE_REQUEST_HEADERS, SCOPE_REQUEST_BODY, SCOPE_RESPONSE_HEADERS, SCOPE_RESPONSE_BODY,
+    HEADING, MUSTACHE, DOLLAR_CURLY, WIKILINK, style_name, marker_open, marker_close, escape_marker,
+    add_rule, parse_block, block_in, render_block, profile_style, rule_count, rule_line,
+    rule_applies, rule_names, response_only_names, find_spans, span_count, span_start,
+    span_end, span_rule, span_name, span_warnings, valid_name, token_end, token_name, token_number,
+    token_text, escape, unescape, tokens_in_style, all_names, inline_patterns, value_fits
 )
 extern malloc(n: int) -> ptr
 extern string_concat(a: string, b: string) -> string @heap
 
-const FIELD_ANYWHERE = 0
-const VFIELD_PATH = 1
-const VFIELD_RESPONSE_BODY = 2
-const VFIELD_REQUEST_HEADERS = 3
-const VFIELD_REQUEST_BODY = 4
-const VFIELD_RESPONSE_HEADERS = 5
+// Field bits a rule's scope covers.
+const SCOPE_PATH = 1
+const SCOPE_REQUEST_HEADERS = 2
+const SCOPE_REQUEST_BODY = 4
+const SCOPE_RESPONSE_HEADERS = 8
+const SCOPE_RESPONSE_BODY = 16
+const REQUEST_SIDE = 7
+
 const HEADING = "## Volatile values"
-const ESCAPE = "{{{{}}"
 
-// Selector kinds.
-const SEL_HEADER = 1
-const SEL_QUERY = 2
-const SEL_JSON_KEY = 3
-const SEL_JSON_POINTER = 4
-const SEL_XML_ELEMENT = 5
-const SEL_XML_ATTRIBUTE = 6
-const SEL_REGEX = 7
+// Marker styles: a placeholder is open name close, a token open name-N close.
+const MUSTACHE = 0
+const DOLLAR_CURLY = 1
+const WIKILINK = 2
 
-// A rule regex never runs unbounded (docs/volatile-values.md, "Regex engine").
+// A rule regex never runs unbounded (docs/volatile-values.md, "Limits").
 const REGEX_LIMITS = "(*LIMIT_MATCH=1000000)(*LIMIT_DEPTH=10000)"
 const REGEX_MAX_INPUT = 4194304
+const MAX_MATCHES = 10000
 
 struct VRule {
-    field: int
-    kind: int
-    sel: string          // header / query / key / pointer / regex
-    ns: string           // XML element namespace ("*" any element)
-    local: string
-    attr_ns: string      // XML attribute
-    attr_local: string
-    within: string       // narrowing regex, "" for none
-    klass: string
-    line: string         // canonical text, without the leading "- "
-    key: string          // field and selector: what a conflict compares
-    idx: int             // position in its rule list
+    scope: int           // SCOPE_* bits
+    pattern: string      // as written (template or regex)
+    compiled: string     // the PCRE2 the core runs (limits prepended)
+    names: string        // placeholder names, "|"-separated, capture order
+    inlines: string      // "name=pattern\n" per inline placeholder pattern
+    groups: string       // their capture-group numbers, "|"-separated
+    line: string         // canonical rule line, without the leading "- "
+    key: string          // what a conflict compares: the line, names erased
     origin: string       // " (tape)", " (profile …)" or "" (code)
 }
 
-struct VSpan { start: int; end: int; rule: int }
+struct VSpan { start: int; end: int; rule: int; name: string }
 struct SpanResult { spans: ptr; warnings: string }
 
 char(s: string, i: int) -> int { if i < 0 || i >= string.length(s) { return -1 }; return string.char_at(s, i) }
 is_digit(c: int) -> int { if c >= 48 && c <= 57 { return 1 }; return 0 }
-is_lower(c: int) -> int { if c >= 97 && c <= 122 { return 1 }; return 0 }
-is_hex(c: int) -> int { if is_digit(c) == 1 || (c >= 97 && c <= 102) || (c >= 65 && c <= 70) { return 1 }; return 0 }
+is_alpha_(c: int) -> int { if (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 { return 1 }; return 0 }
 ws(c: int) -> int { if c == 32 || c == 9 || c == 10 || c == 13 { return 1 }; return 0 }
-
-// ---- fields ----
-
-const FIELD_NAMES = "request path|request headers|request body|response headers|response body|anywhere"
-
-field_name(f: int) -> string {
-    if f == VFIELD_PATH { return "request path" }
-    if f == VFIELD_REQUEST_HEADERS { return "request headers" }
-    if f == VFIELD_REQUEST_BODY { return "request body" }
-    if f == VFIELD_RESPONSE_HEADERS { return "response headers" }
-    if f == VFIELD_RESPONSE_BODY { return "response body" }
-    return "anywhere"
-}
-field_order(f: int) -> int {
-    if f == VFIELD_PATH { return 1 }
-    if f == VFIELD_REQUEST_HEADERS { return 2 }
-    if f == VFIELD_REQUEST_BODY { return 3 }
-    if f == VFIELD_RESPONSE_HEADERS { return 4 }
-    if f == VFIELD_RESPONSE_BODY { return 5 }
+at(s: string, i: int, lit: string) -> int {
+    if i < 0 || i + string.length(lit) > string.length(s) { return 0 }
+    if string.substring(s, i, i + string.length(lit)) == lit { return 1 }
     return 0
 }
-is_header_field(f: int) -> int { if f == VFIELD_REQUEST_HEADERS || f == VFIELD_RESPONSE_HEADERS { return 1 }; return 0 }
-is_body_field(f: int) -> int { if f == VFIELD_REQUEST_BODY || f == VFIELD_RESPONSE_BODY { return 1 }; return 0 }
+has_name(names: string, name: string) -> int {
+    if string.index_of("|${names}|", "|${name}|") >= 0 { return 1 }
+    return 0
+}
 
-// ---- token classes ----
+// ---- markers ----
 
-// [a-z][a-z0-9]* words joined by single hyphens.
-valid_class(k: string) -> int {
-    n = string.length(k)
-    if n == 0 { return 0 }
-    i = 0
-    word_start = 1
-    while i < n {
-        c = char(k, i)
-        if word_start == 1 {
-            if is_lower(c) == 0 { return 0 }
-            word_start = 0
-        } else if c == 45 {
-            word_start = 1
-        } else if is_lower(c) == 0 && is_digit(c) == 0 { return 0 }
+marker_open(style: int) -> string {
+    if style == DOLLAR_CURLY { return string_concat(string.from_char(36), "{") }
+    if style == WIKILINK { return "[[" }
+    return "{{"
+}
+marker_close(style: int) -> string {
+    if style == DOLLAR_CURLY { return "}" }
+    if style == WIKILINK { return "]]" }
+    return "}}"
+}
+style_name(style: int) -> string {
+    if style == DOLLAR_CURLY { return "DollarCurly (${marker_open(style)}name})" }
+    if style == WIKILINK { return "Wikilink ([[name]])" }
+    return "Mustache ({{name}})"
+}
+// The escape: a literal opening marker is written open+open+close.
+escape_marker(style: int) -> string {
+    return string_concat(string_concat(marker_open(style), marker_open(style)), marker_close(style))
+}
+
+// [A-Za-z_][A-Za-z0-9_]* (also a PCRE2 group name).
+valid_name(n: string) -> int {
+    if string.length(n) == 0 || is_alpha_(char(n, 0)) == 0 { return 0 }
+    i = 1
+    while i < string.length(n) {
+        c = char(n, i)
+        if is_alpha_(c) == 0 && is_digit(c) == 0 { return 0 }
         i = i + 1
     }
-    if word_start == 1 { return 0 }
     return 1
 }
-
-// The time classes are numbered per occurrence (docs: "Numbering").
-per_occurrence(k: string) -> int {
-    if k == "timestamp" || k == "date" || k == "epoch" { return 1 }
-    return 0
+name_end(s: string, i: int) -> int {
+    if is_alpha_(char(s, i)) == 0 { return i }
+    j = i + 1
+    while is_alpha_(char(s, j)) == 1 || is_digit(char(s, j)) == 1 { j = j + 1 }
+    return j
 }
 
-digits_at(v: string, i: int, n: int) -> int {
-    j = 0
-    while j < n { if is_digit(char(v, i + j)) == 0 { return 0 }; j = j + 1 }
-    return 1
-}
-hex_run(v: string, i: int, n: int) -> int {
-    j = 0
-    while j < n { if is_hex(char(v, i + j)) == 0 { return 0 }; j = j + 1 }
-    return 1
-}
-uuid_at(v: string, i: int) -> int {
-    if string.length(v) - i != 36 { return 0 }
-    if hex_run(v, i, 8) == 0 || char(v, i + 8) != 45 { return 0 }
-    if hex_run(v, i + 9, 4) == 0 || char(v, i + 13) != 45 { return 0 }
-    if hex_run(v, i + 14, 4) == 0 || char(v, i + 18) != 45 { return 0 }
-    if hex_run(v, i + 19, 4) == 0 || char(v, i + 23) != 45 { return 0 }
-    return hex_run(v, i + 24, 12)
-}
-timestamp_ok(v: string) -> int {
-    n = string.length(v)
-    if n < 16 { return 0 }
-    if digits_at(v, 0, 4) == 0 || char(v, 4) != 45 || digits_at(v, 5, 2) == 0 || char(v, 7) != 45 || digits_at(v, 8, 2) == 0 { return 0 }
-    t = char(v, 10)
-    if t != 84 && t != 116 && t != 32 { return 0 }
-    if digits_at(v, 11, 2) == 0 || char(v, 13) != 58 || digits_at(v, 14, 2) == 0 { return 0 }
-    i = 16
-    if char(v, i) == 58 {
-        if digits_at(v, i + 1, 2) == 0 { return 0 }
-        i = i + 3
-        if char(v, i) == 46 || char(v, i) == 44 {
-            j = i + 1
-            while is_digit(char(v, j)) == 1 { j = j + 1 }
-            if j == i + 1 || j - i - 1 > 9 { return 0 }
-            i = j
-        }
-    }
-    if i == n { return 1 }
-    z = char(v, i)
-    if (z == 90 || z == 122) && i + 1 == n { return 1 }
-    if z == 43 || z == 45 {
-        if digits_at(v, i + 1, 2) == 0 { return 0 }
-        if i + 3 == n { return 1 }
-        if char(v, i + 3) == 58 && digits_at(v, i + 4, 2) == 1 && i + 6 == n { return 1 }
-        if digits_at(v, i + 3, 2) == 1 && i + 5 == n { return 1 }
-    }
-    return 0
-}
-date_ok(v: string) -> int {
-    if string.length(v) != 29 { return 0 }
-    day = string.substring(v, 0, 3)
-    if string.index_of("Mon|Tue|Wed|Thu|Fri|Sat|Sun", day) < 0 || char(v, 3) != 44 || char(v, 4) != 32 { return 0 }
-    if digits_at(v, 5, 2) == 0 || char(v, 7) != 32 { return 0 }
-    mon = string.substring(v, 8, 11)
-    if string.index_of("Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec", mon) < 0 || char(v, 11) != 32 { return 0 }
-    if digits_at(v, 12, 4) == 0 || char(v, 16) != 32 { return 0 }
-    if digits_at(v, 17, 2) == 0 || char(v, 19) != 58 || digits_at(v, 20, 2) == 0 || char(v, 22) != 58 || digits_at(v, 23, 2) == 0 { return 0 }
-    if string.substring(v, 25, 29) != " GMT" { return 0 }
-    if string.index_of(day, "|") >= 0 || string.index_of(mon, "|") >= 0 { return 0 }
-    return 1
-}
-
-// The part of `v` a token of class `k` replaces, or (-1, -1) when `v` does
-// not have the class's shape.
-shape_core(k: string, v: string) -> (int, int) {
-    n = string.length(v)
-    if k == "uuid" {
-        p = 0
-        if n == 45 && string.to_lower(string.substring(v, 0, 9)) == "urn:uuid:" { p = 9 }
-        if uuid_at(v, p) == 1 { return p, n }
-        return -1, -1
-    }
-    if k == "timestamp" { if timestamp_ok(v) == 1 { return 0, n }; return -1, -1 }
-    if k == "date" { if date_ok(v) == 1 { return 0, n }; return -1, -1 }
-    if k == "epoch" {
-        if (n == 10 || n == 13) && digits_at(v, 0, n) == 1 { return 0, n }
-        return -1, -1
-    }
-    if k == "int" {
-        p = 0
-        if char(v, 0) == 45 { p = 1 }
-        if n > p && digits_at(v, p, n - p) == 1 { return 0, n }
-        return -1, -1
-    }
-    if k == "hex" { if n > 0 && hex_run(v, 0, n) == 1 { return 0, n }; return -1, -1 }
-    if k == "etag" {
-        p = 0
-        if string.starts_with(v, "W/") == 1 { p = 2 }
-        if n >= p + 2 && char(v, p) == 34 && char(v, n - 1) == 34 && string.index_of(string.substring(v, p + 1, n - 1), "\"") < 0 {
-            return p + 1, n - 1
-        }
-        return -1, -1
-    }
-    if n == 0 || string.index_of(v, "\n") >= 0 || string.index_of(v, "\r") >= 0 { return -1, -1 }
-    return 0, n
-}
-
-pad2(n: int) -> string { if n < 10 { return string_concat("0", string.from_int(n)) }; return string.from_int(n) }
-hms(n: int) -> string {
-    h = (n / 3600) % 24
-    m = (n / 60) % 60
-    s = n % 60
-    return "${pad2(h)}:${pad2(m)}:${pad2(s)}"
-}
-
-// The value an unbound token of class `k` is replayed as.
-standin(k: string, n: int) -> string {
-    if k == "uuid" {
-        d = string.from_int(n)
-        while string.length(d) < 12 { d = string_concat("0", d) }
-        return string_concat("00000000-0000-4000-8000-", d)
-    }
-    if k == "timestamp" { return "2000-01-01T${hms(n)}Z" }
-    if k == "date" { return "Sat, 01 Jan 2000 ${hms(n)} GMT" }
-    if k == "epoch" { return string.from_long(1000000000 + n) }
-    if k == "int" { return string.from_int(n) }
-    if k == "hex" {
-        digits = "0123456789abcdef"
-        out = string.copy("")
-        m = n
-        while string.length(out) < 16 {
-            hd = m % 16
-            out = string_concat(string.substring(digits, hd, hd + 1), out)
-            m = m / 16
-        }
-        return out
-    }
-    return token_text(k, n)
-}
-
-// ---- tokens ----
-
-token_text(k: string, n: int) -> string { return "{{${k}-${string.from_int(n)}}}" }
+// ---- tokens: open name-N close ----
 
 // When a token starts at s[i]: the index after it; else -1.
-token_end(s: string, i: int) -> int {
-    if char(s, i) != 123 || char(s, i + 1) != 123 { return -1 }
-    j = i + 2
-    if is_lower(char(s, j)) == 0 { return -1 }
-    while is_lower(char(s, j)) == 1 || is_digit(char(s, j)) == 1 || char(s, j) == 45 { j = j + 1 }
-    if char(s, j) != 125 || char(s, j + 1) != 125 { return -1 }
-    // The number is the run of digits after the last hyphen.
-    dash = j - 1
-    while dash > i + 2 && is_digit(char(s, dash)) == 1 { dash = dash - 1 }
-    if char(s, dash) != 45 || dash == j - 1 { return -1 }
-    if char(s, dash + 1) == 48 { return -1 }
-    if valid_class(string.substring(s, i + 2, dash)) == 0 { return -1 }
-    return j + 2
+token_end(s: string, i: int, style: int) -> int {
+    o = marker_open(style)
+    if at(s, i, o) == 0 { return -1 }
+    p = i + string.length(o)
+    ne = name_end(s, p)
+    if ne == p || char(s, ne) != 45 { return -1 }
+    d = ne + 1
+    if is_digit(char(s, d)) == 0 || char(s, d) == 48 { return -1 }
+    while is_digit(char(s, d)) == 1 { d = d + 1 }
+    if at(s, d, marker_close(style)) == 0 { return -1 }
+    return d + string.length(marker_close(style))
 }
-token_class(s: string, i: int) -> string {
-    e = token_end(s, i)
-    if e < 0 { return "" }
-    dash = e - 3
-    while is_digit(char(s, dash)) == 1 { dash = dash - 1 }
-    return string.substring(s, i + 2, dash)
+token_name(s: string, i: int, style: int) -> string {
+    p = i + string.length(marker_open(style))
+    return string.substring(s, p, name_end(s, p))
 }
-token_number(s: string, i: int) -> int {
-    e = token_end(s, i)
-    if e < 0 { return 0 }
-    dash = e - 3
-    while is_digit(char(s, dash)) == 1 { dash = dash - 1 }
-    n, _err = string.to_int(string.substring(s, dash + 1, e - 2))
+token_number(s: string, i: int, style: int) -> int {
+    p = name_end(s, i + string.length(marker_open(style))) + 1
+    d = p
+    while is_digit(char(s, d)) == 1 { d = d + 1 }
+    n, _e = string.to_int(string.substring(s, p, d))
     return n
 }
+token_text(name: string, n: int, style: int) -> string {
+    return string_concat(string_concat(marker_open(style), "${name}-${string.from_int(n)}"), marker_close(style))
+}
 
-// Escape every literal "{{" that would read as a token or as the escape.
-escape(s: string) -> string {
-    if string.index_of(s, "{{") < 0 { return s }
+// Escape each literal opening marker that would read as a token or as the escape.
+escape(s: string, style: int) -> string {
+    o = marker_open(style)
+    esc = escape_marker(style)
+    if string.index_of(s, o) < 0 { return s }
     out = string.copy("")
     span = 0
-    i = string.index_of(s, "{{")
+    i = string.index_of(s, o)
     while i >= 0 {
-        if token_end(s, i) >= 0 || string.starts_with(string.substring(s, i, i + 6), ESCAPE) == 1 {
+        if token_end(s, i, style) >= 0 || at(s, i, esc) == 1 {
             out = string_concat(out, string.substring(s, span, i))
-            out = string_concat(out, ESCAPE)
-            span = i + 2
-            i = string.index_of_from(s, "{{", i + 2)
+            out = string_concat(out, esc)
+            span = i + string.length(o)
+            i = string.index_of_from(s, o, span)
         } else {
-            i = string.index_of_from(s, "{{", i + 1)
+            i = string.index_of_from(s, o, i + 1)
         }
     }
     return string_concat(out, string.substring(s, span, string.length(s)))
 }
-unescape(s: string) -> string {
-    if string.index_of(s, ESCAPE) < 0 { return s }
-    out = string.copy("")
-    span = 0
-    i = string.index_of(s, ESCAPE)
+unescape(s: string, style: int) -> string {
+    esc = escape_marker(style)
+    if string.index_of(s, esc) < 0 { return s }
+    return string.replace_all(s, esc, marker_open(style))
+}
+
+// How many tokens of the names in `names` ("|"-separated) `s` holds in `style`.
+tokens_in_style(s: string, style: int, names: string) -> int {
+    o = marker_open(style)
+    n = 0
+    i = string.index_of(s, o)
     while i >= 0 {
-        out = string_concat(out, string.substring(s, span, i))
-        out = string_concat(out, "{{")
-        span = i + 6
-        i = string.index_of_from(s, ESCAPE, span)
+        te = token_end(s, i, style)
+        if te > 0 && has_name(names, token_name(s, i, style)) == 1 {
+            n = n + 1
+            i = string.index_of_from(s, o, te)
+        } else { i = string.index_of_from(s, o, i + 1) }
     }
-    return string_concat(out, string.substring(s, span, string.length(s)))
+    return n
 }
 
 // ---- code spans (CommonMark) ----
@@ -317,10 +184,9 @@ backtick_run(s: string, i: int) -> int {
     while char(s, j) == 96 { j = j + 1 }
     return j - i
 }
-// A code span starting at s[i]: (content, index after it, error).
 code_span(s: string, i: int) -> (string, int, string) {
     n = backtick_run(s, i)
-    if n == 0 { return "", i, "expected a code span (`…`)" }
+    if n == 0 { return "", i, "expected the pattern in backticks" }
     j = i + n
     while j < string.length(s) {
         if char(s, j) == 96 {
@@ -336,7 +202,7 @@ code_span(s: string, i: int) -> (string, int, string) {
             j = j + m
         } else { j = j + 1 }
     }
-    return "", i, "unclosed code span"
+    return "", i, "unclosed backticks"
 }
 render_span(c: string) -> string {
     longest = 0
@@ -357,211 +223,417 @@ render_span(c: string) -> string {
     return "${fence}${c}${fence}"
 }
 
-// ---- rules ----
+// ---- scopes ----
 
-new_rule() -> *VRule {
-    r = malloc(sizeof(VRule)) as *VRule
-    r.field = 0; r.kind = 0
-    r.sel = ""; r.ns = ""; r.local = ""; r.attr_ns = ""; r.attr_local = ""
-    r.within = ""; r.klass = ""; r.line = ""; r.key = ""; r.origin = ""
-    return r
-}
-rule_line(l: ptr, i: int) -> string { return (list_get_raw(l, i) as *VRule).line }
-rule_key(l: ptr, i: int) -> string { return (list_get_raw(l, i) as *VRule).key }
-rule_class(l: ptr, i: int) -> string { return (list_get_raw(l, i) as *VRule).klass }
-rule_field(l: ptr, i: int) -> int { return (list_get_raw(l, i) as *VRule).field }
-rule_applies(l: ptr, i: int, field: int) -> int {
-    f = (list_get_raw(l, i) as *VRule).field
-    if f == field || f == FIELD_ANYWHERE { return 1 }
+scope_bits(word: string) -> int {
+    if word == "request path" { return SCOPE_PATH }
+    if word == "request headers" { return SCOPE_REQUEST_HEADERS }
+    if word == "response headers" { return SCOPE_RESPONSE_HEADERS }
+    if word == "headers" { return SCOPE_REQUEST_HEADERS + SCOPE_RESPONSE_HEADERS }
+    if word == "request body" { return SCOPE_REQUEST_BODY }
+    if word == "response body" { return SCOPE_RESPONSE_BODY }
+    if word == "body" { return SCOPE_REQUEST_BODY + SCOPE_RESPONSE_BODY }
     return 0
+}
+scope_word(bits: int) -> string {
+    if bits == SCOPE_PATH { return "request path" }
+    if bits == SCOPE_REQUEST_HEADERS { return "request headers" }
+    if bits == SCOPE_RESPONSE_HEADERS { return "response headers" }
+    if bits == SCOPE_REQUEST_HEADERS + SCOPE_RESPONSE_HEADERS { return "headers" }
+    if bits == SCOPE_REQUEST_BODY { return "request body" }
+    if bits == SCOPE_RESPONSE_BODY { return "response body" }
+    return "body"
+}
+
+// ---- regex helpers ----
+
+// Every capture group, numbered, with its name when it has one:
+// "1=|2=name|…". Named: (?<n>…), (?P<n>…), (?'n'…). Not captures: (?:…),
+// lookarounds, flags, (*VERB). Branch reset (?|…) is refused.
+capture_groups(p: string) -> (string, string) {
+    out = string.copy("")
+    count = 0
+    in_class = 0
+    i = 0
+    n = string.length(p)
+    while i < n {
+        c = char(p, i)
+        if c == 92 { i = i + 2; continue }
+        if in_class == 1 {
+            if c == 93 { in_class = 0 }
+            i = i + 1
+            continue
+        }
+        if c == 91 {
+            in_class = 1
+            if char(p, i + 1) == 94 { i = i + 1 }
+            if char(p, i + 1) == 93 { i = i + 1 }
+            i = i + 1
+            continue
+        }
+        if c == 40 {
+            d = char(p, i + 1)
+            if d == 42 { i = i + 1; continue }
+            if d != 63 {
+                count = count + 1
+                out = string_concat(out, "${string.from_int(count)}=|")
+                i = i + 1
+                continue
+            }
+            e = char(p, i + 2)
+            if e == 124 { return "", "branch reset (?|…) is not supported" }
+            ns = -1
+            if e == 60 && char(p, i + 3) != 61 && char(p, i + 3) != 33 { ns = i + 3 }
+            if e == 80 && char(p, i + 3) == 60 { ns = i + 4 }
+            if e == 39 { ns = i + 3 }
+            if ns >= 0 {
+                ne = name_end(p, ns)
+                count = count + 1
+                out = string_concat(out, "${string.from_int(count)}=${string.substring(p, ns, ne)}|")
+            }
+        }
+        i = i + 1
+    }
+    return out, ""
 }
 
 check_regex(p: string) -> string {
     re, err = regex.compile(string_concat(REGEX_LIMITS, p))
-    if err != "" { return "invalid regex `${p}`: ${err}" }
+    if err != "" { return err }
     regex.free(re)
     return ""
 }
 
-// "{uri}local", "{}local" or "*" -> (ns, local, error)
-xml_name(s: string, element: int) -> (string, string, string) {
-    if element == 1 && s == "*" { return "*", "*", "" }
-    if char(s, 0) == 123 {
-        close = string.index_of(s, "}")
-        if close < 0 { return "", "", "XML name `${s}`: unclosed {namespace}" }
-        local = string.substring(s, close + 1, string.length(s))
-        if local == "" { return "", "", "XML name `${s}` has no local name" }
-        return string.substring(s, 1, close), local, ""
+regex_quote(s: string) -> string {
+    out = string.copy("")
+    i = 0
+    while i < string.length(s) {
+        c = char(s, i)
+        if string.index_of("\\.^$|?*+()[]{}/", string.from_char(c)) >= 0 { out = string_concat(out, "\\") }
+        out = string_concat(out, string.substring(s, i, i + 1))
+        i = i + 1
     }
-    if element == 0 && s != "" && string.index_of(s, ":") < 0 { return "", s, "" }
-    return "", "", "XML name `${s}` must be {namespace-uri}local ({}local for no namespace)"
+    return out
 }
 
-// One rule line, without its "- ". Appends to `out` unless a rule with the
-// same line is already there; a same-field, same-selector rule with another
-// class is a conflict.
-parse_line(line0: string, out: ptr, origin: string) -> string {
-    line = line0
-    while string.length(line) > 0 && ws(char(line, string.length(line) - 1)) == 1 { line = string.substring(line, 0, string.length(line) - 1) }
-    r = new_rule()
-    field = -1
-    rest = ""
-    names = ["request path", "request headers", "request body", "response headers", "response body", "anywhere"]
-    codes = [VFIELD_PATH, VFIELD_REQUEST_HEADERS, VFIELD_REQUEST_BODY, VFIELD_RESPONSE_HEADERS, VFIELD_RESPONSE_BODY, FIELD_ANYWHERE]
+// An inline placeholder pattern: no anchors, no named groups.
+check_inline(name: string, p: string) -> string {
+    if p == "" { return "placeholder ${name} has an empty pattern" }
+    in_class = 0
     i = 0
-    while i < 6 {
-        p = string_concat(names[i], ", ")
-        if string.starts_with(line, p) == 1 {
-            field = codes[i]
-            rest = string.substring(line, string.length(p), string.length(line))
-            break
+    while i < string.length(p) {
+        c = char(p, i)
+        if c == 92 { i = i + 2; continue }
+        if in_class == 1 {
+            if c == 93 { in_class = 0 }
+        } else {
+            if c == 91 {
+                in_class = 1
+                if char(p, i + 1) == 94 { i = i + 1 }
+                if char(p, i + 1) == 93 { i = i + 1 }
+            }
+            if c == 94 || c == 36 { return "placeholder ${name}: `${p}` holds an anchor (^ or ${string.from_char(36)}); the text around a placeholder anchors it" }
         }
         i = i + 1
     }
-    if field < 0 { return "`${line}`: expected a field (${FIELD_NAMES}) and a comma" }
-    r.field = field
-    pos = 0
-    word = ""
-    if char(rest, 0) != 96 {
-        sp = string.index_of(rest, " ")
-        if sp < 0 { return "`${line}`: expected a selector" }
-        word = string.substring(rest, 0, sp)
-        pos = sp + 1
-    }
-    sel, after, serr = code_span(rest, pos)
-    if serr != "" { return "`${line}`: ${serr}" }
-    if word == "" {
-        r.kind = SEL_HEADER
-        if is_header_field(field) == 0 { return "`${line}`: a header name selects only in request headers or response headers" }
-        if sel == "" || string.index_of(sel, ":") >= 0 { return "`${line}`: not a header name" }
-        r.sel = sel
-        r.key = "${field_name(field)}, ${render_span(sel)}"
-    } else if word == "query" {
-        r.kind = SEL_QUERY
-        if field != VFIELD_PATH { return "`${line}`: query selects only in request path" }
-        r.sel = sel
-    } else if word == "JSON" {
-        if is_body_field(field) == 0 { return "`${line}`: JSON selects only in request body or response body" }
-        r.kind = SEL_JSON_KEY
-        if char(sel, 0) == 47 { r.kind = SEL_JSON_POINTER }
-        r.sel = sel
-    } else if word == "XML" {
-        if is_body_field(field) == 0 { return "`${line}`: XML selects only in request body or response body" }
-        r.kind = SEL_XML_ELEMENT
-        el = sel
-        at = string.index_of(sel, "/@")
-        if at >= 0 {
-            r.kind = SEL_XML_ATTRIBUTE
-            el = string.substring(sel, 0, at)
-            ans, alocal, aerr = xml_name(string.substring(sel, at + 2, string.length(sel)), 0)
-            if aerr != "" { return "`${line}`: ${aerr}" }
-            r.attr_ns = ans; r.attr_local = alocal
+    groups, gerr = capture_groups(p)
+    if gerr != "" { return "placeholder ${name}: ${gerr}" }
+    parts = string.split(string.copy(groups), "|")
+    k = 0
+    while k < string.array_size(parts) {
+        g = string.array_get(parts, k)
+        eqp = string.index_of(g, "=")
+        if eqp >= 0 && eqp < string.length(g) - 1 {
+            string.array_free(parts)
+            return "placeholder ${name}: a named group inside a placeholder (the placeholder is the name)"
         }
-        ens, elocal, eerr = xml_name(el, 1)
-        if eerr != "" { return "`${line}`: ${eerr}" }
-        r.ns = ens; r.local = elocal
-        r.sel = sel
-    } else if word == "regex" {
-        r.kind = SEL_REGEX
-        rerr = check_regex(sel)
-        if rerr != "" { return "`${line}`: ${rerr}" }
-        r.sel = sel
+        k = k + 1
+    }
+    string.array_free(parts)
+    err = check_regex(p)
+    if err != "" { return "placeholder ${name}: invalid pattern `${p}`: ${err}" }
+    return ""
+}
+
+// ---- templates ----
+
+// Compile a template: literal text quoted, each placeholder a named group.
+// (regex, name-erased key text, inline patterns "name=pattern\n", error)
+compile_template(t: string, style: int) -> (string, string, string, string) {
+    o = marker_open(style)
+    cl = marker_close(style)
+    esc = escape_marker(style)
+    rx = string.copy("")
+    names = string.copy("|")
+    inlines = string.copy("")
+    key = string.copy("")
+    lit = string.copy("")
+    prev_placeholder = 0
+    count = 0
+    i = 0
+    n = string.length(t)
+    while i < n {
+        if at(t, i, esc) == 1 {
+            lit = string_concat(lit, o)
+            i = i + string.length(esc)
+            continue
+        }
+        if at(t, i, o) == 1 {
+            p = i + string.length(o)
+            ne = name_end(t, p)
+            name = string.substring(t, p, ne)
+            if name == "" { return "", "", "", "a placeholder needs a name: ${o}name${cl}" }
+            if string.index_of(names, "|${name}|") >= 0 { return "", "", "", "placeholder ${name} appears twice in one template; write a rule for each" }
+            if prev_placeholder == 1 && lit == "" { return "", "", "", "placeholders need literal text between them" }
+            inline = ""
+            if at(t, ne, cl) == 1 {
+                i = ne + string.length(cl)
+            } else if char(t, ne) == 58 {
+                // The pattern runs to the close marker once its braces and
+                // brackets are balanced (escaped ones do not count).
+                depth = 0
+                j = ne + 1
+                found = -1
+                while j < n {
+                    c = char(t, j)
+                    if c == 92 { j = j + 2; continue }
+                    if depth == 0 && at(t, j, cl) == 1 { found = j; break }
+                    if c == 123 || c == 91 { depth = depth + 1 }
+                    if c == 125 || c == 93 { depth = depth - 1 }
+                    if depth < 0 { return "", "", "", "placeholder ${name}: unbalanced braces or brackets in its pattern" }
+                    j = j + 1
+                }
+                if found < 0 { return "", "", "", "placeholder ${name}: no closing ${cl} (are the pattern's braces and brackets balanced?)" }
+                inline = string.substring(t, ne + 1, found)
+                inlines = string_concat(inlines, "${name}=${inline}\n")
+                ierr = check_inline(name, inline)
+                if ierr != "" { return "", "", "", ierr }
+                i = found + string.length(cl)
+            } else {
+                return "", "", "", "placeholder at `${string.substring(t, i, ne + 1)}`: a name is letters, digits and _, then ${cl} or :pattern${cl}"
+            }
+            rx = string_concat(rx, regex_quote(lit))
+            key = string_concat(key, lit)
+            lit = string.copy("")
+            group = "[^\\r\\n]+?"
+            if inline != "" { group = inline }
+            // Last in the template: it runs to the end of the line, trailing
+            // blanks excluded.
+            tail = 1
+            k = i
+            while k < n { if ws(char(t, k)) == 0 { tail = 0 }; k = k + 1 }
+            if inline == "" && tail == 1 { group = "[^\\r\\n]*?[^\\s](?=[ \\t]*(?:\\r|\\n|$))" }
+            rx = string_concat(rx, "(?<${name}>${group})")
+            key = string_concat(key, string_concat(string_concat(o, ":${inline}"), cl))
+            names = string_concat(names, "${name}|")
+            count = count + 1
+            prev_placeholder = 1
+            continue
+        }
+        lit = string_concat(lit, string.substring(t, i, i + 1))
+        i = i + 1
+    }
+    rx = string_concat(rx, regex_quote(lit))
+    key = string_concat(key, lit)
+    if count == 0 { return "", "", "", "a template needs at least one placeholder, ${o}name${cl}" }
+    return rx, key, inlines, ""
+}
+
+// ---- rules ----
+
+new_rule() -> *VRule {
+    r = malloc(sizeof(VRule)) as *VRule
+    r.scope = 0
+    r.pattern = ""; r.compiled = ""; r.names = ""; r.groups = ""
+    r.line = ""; r.key = ""; r.origin = ""; r.inlines = ""
+    return r
+}
+rule_at(l: ptr, i: int) -> *VRule { return list_get_raw(l, i) as *VRule }
+rule_count(l: ptr) -> int { return list_size(l) }
+rule_line(l: ptr, i: int) -> string { return rule_at(l, i).line }
+rule_names(l: ptr, i: int) -> string { return rule_at(l, i).names }
+rule_applies(l: ptr, i: int, field_bit: int) -> int {
+    if (rule_at(l, i).scope / field_bit) % 2 == 1 { return 1 }
+    return 0
+}
+// Every placeholder name of every rule, "|"-separated.
+all_names(l: ptr) -> string {
+    out = string.copy("")
+    i = 0
+    while i < list_size(l) {
+        out = string_concat(out, "|${rule_at(l, i).names}")
+        i = i + 1
+    }
+    return out
+}
+// Names no request-side rule has: a token of one is never bound by a
+// request, so its replay value must be supplied ("|"-separated).
+response_only_names(l: ptr) -> string {
+    request_names = string.copy("")
+    i = 0
+    while i < list_size(l) {
+        r = rule_at(l, i)
+        if r.scope % 8 != 0 { request_names = string_concat(request_names, "|${r.names}") }
+        i = i + 1
+    }
+    out = string.copy("")
+    i = 0
+    while i < list_size(l) {
+        parts = string.split(string.copy(rule_at(l, i).names), "|")
+        k = 0
+        while k < string.array_size(parts) {
+            nm = string.array_get(parts, k)
+            if has_name(request_names, nm) == 0 && has_name(out, nm) == 0 {
+                if out != "" { out = string_concat(out, "|") }
+                out = string_concat(out, nm)
+            }
+            k = k + 1
+        }
+        string.array_free(parts)
+        i = i + 1
+    }
+    return out
+}
+
+// Add one rule (scope words, kind "template" or "regex", pattern) to `out`.
+// "" or the error. The same rule twice counts once; the same text with other
+// placeholder names is a conflict.
+add_rule(out: ptr, scope: string, kind: string, pattern: string, style: int, origin: string) -> string {
+    bits = scope_bits(scope)
+    if bits == 0 { return "volatile rule scope `${scope}`: expected request path, request headers, response headers, headers, request body, response body or body" }
+    r = new_rule()
+    r.scope = bits
+    r.pattern = string.copy(pattern)
+    r.origin = string.copy(origin)
+    sw = scope_word(bits)
+    if kind == "template" {
+        rx, key, inl, err = compile_template(pattern, style)
+        if err != "" { return "volatile rule `${sw}: ${render_span(pattern)}`: ${err}" }
+        r.compiled = rx
+        r.inlines = inl
+        r.key = "${sw}: ${key}"
+        r.line = "${sw}: ${render_span(pattern)}"
+    } else if kind == "regex" {
+        err = check_regex(pattern)
+        if err != "" { return "volatile rule `${sw} regex: ${render_span(pattern)}`: invalid regex: ${err}" }
+        r.compiled = pattern
+        r.key = "${sw} regex: ${pattern}"
+        r.line = "${sw} regex: ${render_span(pattern)}"
     } else {
-        return "`${line}`: unknown selector `${word}` (query, JSON, XML, regex or a header name)"
+        return "volatile rule kind `${kind}`: expected template or regex"
     }
-    if field == FIELD_ANYWHERE && r.kind != SEL_REGEX { return "`${line}`: anywhere takes only a regex" }
-    if r.kind != SEL_HEADER { r.key = "${field_name(field)}, ${word} ${render_span(sel)}" }
-    tail = string.substring(rest, after, string.length(rest))
-    if string.starts_with(tail, " regex ") == 1 {
-        if r.kind == SEL_REGEX { return "`${line}`: a regex is narrowed by its own capture group, not a second regex" }
-        w, after2, werr = code_span(tail, 7)
-        if werr != "" { return "`${line}`: ${werr}" }
-        rerr2 = check_regex(w)
-        if rerr2 != "" { return "`${line}`: ${rerr2}" }
-        r.within = w
-        r.key = "${r.key} regex ${render_span(w)}"
-        tail = string.substring(tail, after2, string.length(tail))
+    groups, gerr = capture_groups(r.compiled)
+    if gerr != "" { return "volatile rule `${r.line}`: ${gerr}" }
+    names = string.copy("")
+    nums = string.copy("")
+    parts = string.split(string.copy(groups), "|")
+    k = 0
+    while k < string.array_size(parts) {
+        g = string.array_get(parts, k)
+        eqp = string.index_of(g, "=")
+        if eqp > 0 && eqp < string.length(g) - 1 {
+            nm = string.substring(g, eqp + 1, string.length(g))
+            if valid_name(nm) == 0 { return "volatile rule `${r.line}`: group name ${nm} is not a placeholder name ([A-Za-z_][A-Za-z0-9_]*)" }
+            if names != "" { names = string_concat(names, "|"); nums = string_concat(nums, "|") }
+            names = string_concat(names, nm)
+            nums = string_concat(nums, string.substring(g, 0, eqp))
+        }
+        k = k + 1
     }
-    if string.starts_with(tail, ": ") == 0 { return "`${line}`: expected `: class` after the selector" }
-    k = string.substring(tail, 2, string.length(tail))
-    if valid_class(k) == 0 { return "`${line}`: `${k}` is not a token class (lower-case words joined by hyphens, each starting with a letter)" }
-    r.klass = k
-    r.line = "${r.key}: ${k}"
+    string.array_free(parts)
+    if names == "" { return "volatile rule `${r.line}`: a regex rule needs a named group, (?<name>…)" }
+    r.names = names
+    r.groups = nums
+    r.compiled = string_concat(REGEX_LIMITS, r.compiled)
     j = 0
     while j < list_size(out) {
-        o = list_get_raw(out, j) as *VRule
+        o = rule_at(out, j)
+        if o.line == r.line { return "" }
         if o.key == r.key {
-            if o.klass == r.klass { return "" }
-            return "volatile rule `${r.line}`${origin} conflicts with `${o.line}`${o.origin}: one value, two classes"
+            return "volatile rule `${r.line}`${origin} conflicts with `${o.line}`${o.origin}: the same text, other placeholder names"
         }
         j = j + 1
     }
-    r.idx = list_size(out)
-    r.origin = origin
     list_add_raw(out, r)
     return ""
 }
 
-// Parse rule text into `out`. strict = 1 (a tape or profile block): every
-// non-blank line is "- rule". strict = 0 (the API): the "- " is optional.
-// A "## Volatile values" heading is allowed first; "(v1)" is this grammar.
-parse_rules(text: string, out: ptr, strict: int, origin: string) -> string {
+// One rule line: scope: `template`, or scope regex: `regex`.
+parse_line(line: string, out: ptr, style: int, origin: string) -> string {
+    colon = string.index_of(line, ": ")
+    if colon < 0 { return "`${line}`: expected scope: `pattern`" }
+    head = string.substring(line, 0, colon)
+    kind = "template"
+    if string.ends_with(head, " regex") == 1 {
+        kind = "regex"
+        head = string.substring(head, 0, string.length(head) - 6)
+    }
+    p, after, err = code_span(line, colon + 2)
+    if err != "" { return "`${line}`: ${err}" }
+    if string.length(string.trim(string.substring(line, after, string.length(line)))) > 0 { return "`${line}`: text after the pattern" }
+    return add_rule(out, head, kind, p, style, origin)
+}
+
+// A "## Volatile values" block (its heading, blank lines, "- rule" lines)
+// into `out`. Errors name the line.
+parse_block(text: string, out: ptr, style: int, origin: string) -> string {
     lines = string.split(string.copy(text), "\n")
     n = string.array_size(lines)
     i = 0
     while i < n {
-        raw = string.array_get(lines, i)
-        line = raw
+        line = string.array_get(lines, i)
         if string.ends_with(line, "\r") == 1 { line = string.substring(line, 0, string.length(line) - 1) }
         num = i + 1
-        if string.length(string.trim(line)) == 0 {
-            i = i + 1
+        i = i + 1
+        if string.length(string.trim(line)) == 0 { continue }
+        if string.starts_with(line, HEADING) == 1 {
+            v = string.trim(string.substring(line, string.length(HEADING), string.length(line)))
+            if v != "" && v != "(v1)" { return "line ${num}: `${line}`: unknown grammar version (this reader knows v1)" }
             continue
         }
-        if string.starts_with(line, "## ") == 1 {
-            if string.starts_with(line, HEADING) == 1 {
-                v = string.trim(string.substring(line, string.length(HEADING), string.length(line)))
-                if v != "" && v != "(v1)" { return "line ${num}: `${line}`: unknown grammar version (this reader knows v1)" }
-                i = i + 1
-                continue
-            }
-            return "line ${num}: `${line}`: not a volatile rule"
-        }
-        body = line
-        if string.starts_with(line, "- ") == 1 { body = string.substring(line, 2, string.length(line)) }
-        else if strict == 1 { return "line ${num}: `${line}`: a rule line starts with \"- \"" }
-        err = parse_line(body, out, origin)
+        if string.starts_with(line, "- ") == 0 { return "line ${num}: `${line}`: a rule line starts with \"- \"" }
+        err = parse_line(string.substring(line, 2, string.length(line)), out, style, origin)
         if err != "" { return "line ${num}: ${err}" }
-        i = i + 1
     }
     string.array_free(lines)
     return ""
 }
 
-// The "## Volatile values" block in `text` (from its heading to the next
-// "## " heading or the end), or "" when there is none.
+// The block in `text` (its heading to the next "## " or the end), or "".
 block_in(text: string) -> string {
-    at = -1
-    if string.starts_with(text, HEADING) == 1 { at = 0 }
+    first = -1
+    if string.starts_with(text, HEADING) == 1 { first = 0 }
     else {
         p = string.index_of(text, string_concat("\n", HEADING))
-        if p >= 0 { at = p + 1 }
+        if p >= 0 { first = p + 1 }
     }
-    if at < 0 { return "" }
-    nl = string.index_of_from(text, "\n", at)
-    if nl < 0 { return string.substring(text, at, string.length(text)) }
+    if first < 0 { return "" }
+    nl = string.index_of_from(text, "\n", first)
+    if nl < 0 { return string.substring(text, first, string.length(text)) }
     next = string.index_of_from(text, "\n## ", nl)
-    if next < 0 { return string.substring(text, at, string.length(text)) }
-    return string.substring(text, at, next + 1)
+    if next < 0 { return string.substring(text, first, string.length(text)) }
+    return string.substring(text, first, next + 1)
 }
 
-// The block for `rules`, lines sorted; "" for no rules.
+// A profile's marker style, from its first line: "Markers: Mustache",
+// "Markers: DollarCurly" or "Markers: Wikilink"; -1 when it has none.
+profile_style(text: string) -> int {
+    nl = string.index_of(text, "\n")
+    first = text
+    if nl >= 0 { first = string.substring(text, 0, nl) }
+    first = string.trim(first)
+    if first == "Markers: Mustache" { return MUSTACHE }
+    if first == "Markers: DollarCurly" { return DOLLAR_CURLY }
+    if first == "Markers: Wikilink" { return WIKILINK }
+    return -1
+}
+
 render_block(rules: ptr) -> string {
     n = list_size(rules)
     if n == 0 { return "" }
     string[] lines = []
     i = 0
-    while i < n { lines.push((list_get_raw(rules, i) as *VRule).line); i = i + 1 }
+    while i < n { lines.push(rule_at(rules, i).line); i = i + 1 }
     i = 1
     while i < lines.len {
         cur = lines[i]
@@ -576,34 +648,11 @@ render_block(rules: ptr) -> string {
     return string_concat(out, "\n")
 }
 
-const WSA = "http://www.w3.org/2005/08/addressing"
+// ---- finding values ----
 
-preset(name: string) -> string {
-    if name == "ws-addressing" {
-        return "request body, XML `{${WSA}}MessageID`: uuid\nresponse body, XML `{${WSA}}MessageID`: uuid\nresponse body, XML `{${WSA}}RelatesTo`: uuid\nrequest body, XML `{${WSA}}To` regex `:([0-9]+)(?:/|$)`: port\n"
-    }
-    if name == "http-dates" {
-        return "response headers, `Date`: date\nresponse headers, `Last-Modified`: date\nresponse headers, `Expires`: date\n"
-    }
-    if name == "trace-headers" {
-        out = string.copy("")
-        fields = ["request headers", "response headers"]
-        i = 0
-        while i < 2 {
-            f = fields[i]
-            out = string_concat(out, "${f}, `traceparent`: traceparent\n${f}, `tracestate`: tracestate\n${f}, `X-Request-Id`: request-id\n${f}, `X-Correlation-Id`: correlation-id\n")
-            i = i + 1
-        }
-        return out
-    }
-    return ""
-}
-
-// ---- selectors: where a field's text holds each rule's values ----
-
-span_add(l: ptr, start: int, end: int, rule: int) {
+span_add(l: ptr, start: int, end: int, rule: int, name: string) {
     s = malloc(sizeof(VSpan)) as *VSpan
-    s.start = start; s.end = end; s.rule = rule
+    s.start = start; s.end = end; s.rule = rule; s.name = string.copy(name)
     list_add_raw(l, s)
 }
 span_at(res: ptr, i: int) -> *VSpan { return list_get_raw((res as *SpanResult).spans, i) as *VSpan }
@@ -611,456 +660,83 @@ span_count(res: ptr) -> int { return list_size((res as *SpanResult).spans) }
 span_start(res: ptr, i: int) -> int { return span_at(res, i).start }
 span_end(res: ptr, i: int) -> int { return span_at(res, i).end }
 span_rule(res: ptr, i: int) -> int { return span_at(res, i).rule }
-
-// The warnings a find_spans call produced, one per line (a regex limit).
+span_name(res: ptr, i: int) -> string { return span_at(res, i).name }
 span_warnings(res: ptr) -> string { return (res as *SpanResult).warnings }
 
-regex_spans(pattern: string, s: string, base: int, from: int, to: int, rule: int, out: ptr) -> string {
-    if to - from > REGEX_MAX_INPUT { return "regex `${pattern}` not run: the value is larger than 4 MiB" }
-    re, err = regex.compile(string_concat(REGEX_LIMITS, pattern))
-    if err != "" { return "regex `${pattern}`: ${err}" }
-    text = string.substring(s, from, to)
-    fa, ferr = regex.find_all(re, text)
-    lerr = regex.last_error()
-    if ferr != "" || lerr != "" {
-        if fa != null { regex.find_all_free(fa) }
-        regex.free(re)
-        e = ferr
-        if e == "" { e = lerr }
-        return "regex `${pattern}` stopped: ${e} (match limit reached; nothing selected)"
-    }
-    m = regex.find_all_count(fa)
-    i = 0
-    while i < m {
-        ms = regex.find_all_start(fa, i)
-        me = regex.find_all_end(fa, i)
-        vs = ms
-        ve = me
-        caps, _cerr = regex.captures(re, string.substring(text, ms, me))
-        if caps != null {
-            if regex.capture_count(caps) > 1 && regex.capture_start(caps, 1) >= 0 {
-                vs = ms + regex.capture_start(caps, 1)
-                ve = ms + regex.capture_end(caps, 1)
-            }
-            regex.captures_free(caps)
+// One rule's named-group values in `s`, match after match, each search
+// starting where the last match ended. "" or a warning (a limit).
+rule_spans(r: *VRule, ri: int, s: string, out: ptr) -> string {
+    if string.length(s) > REGEX_MAX_INPUT { return "`${r.line}` not run: the field is larger than 4 MiB" }
+    re, err = regex.compile(r.compiled)
+    if err != "" { return "`${r.line}`: ${err}" }
+    names = string.split(string.copy(r.names), "|")
+    nums = string.split(string.copy(r.groups), "|")
+    k = string.array_size(names)
+    pos = 0
+    count = 0
+    warn = ""
+    while pos <= string.length(s) && count < MAX_MATCHES {
+        regex.clear_last_error()
+        caps, cerr = regex.captures(re, string.substring(s, pos, string.length(s)))
+        if caps == null {
+            e = cerr
+            if e == "" { e = regex.last_error() }
+            if e != "" { warn = "`${r.line}` stopped: ${e} (the match limit; nothing more selected in this field)" }
+            break
         }
-        span_add(out, base + from + vs, base + from + ve, rule)
-        i = i + 1
+        g = 0
+        while g < k {
+            gi, _e2 = string.to_int(string.array_get(nums, g))
+            gs = regex.capture_start(caps, gi)
+            ge = regex.capture_end(caps, gi)
+            if gs >= 0 && ge > gs { span_add(out, pos + gs, pos + ge, ri, string.array_get(names, g)) }
+            g = g + 1
+        }
+        ms = regex.capture_start(caps, 0)
+        me = regex.capture_end(caps, 0)
+        regex.captures_free(caps)
+        if me <= ms { pos = pos + me + 1 } else { pos = pos + me }
+        count = count + 1
     }
-    regex.find_all_free(fa)
+    string.array_free(names)
+    string.array_free(nums)
     regex.free(re)
-    return ""
+    return warn
 }
 
-icase_eq(a: string, b: string) -> int {
-    if string.to_lower(a) == string.to_lower(b) { return 1 }
-    return 0
-}
-
-header_spans(r: *VRule, s: string, rule: int, out: ptr) {
-    i = 0
-    n = string.length(s)
-    while i < n {
-        e = string.index_of_from(s, "\n", i)
-        if e < 0 { e = n }
-        colon = string.index_of_from(s, ":", i)
-        if colon > i && colon < e && icase_eq(string.substring(s, i, colon), r.sel) == 1 {
-            vs = colon + 1
-            while vs < e && (char(s, vs) == 32 || char(s, vs) == 9) { vs = vs + 1 }
-            ve = e
-            while ve > vs && ws(char(s, ve - 1)) == 1 { ve = ve - 1 }
-            span_add(out, vs, ve, rule)
-        }
-        i = e + 1
-    }
-}
-
-hexv(c: int) -> int { if c >= 48 && c <= 57 { return c - 48 }; if c >= 65 && c <= 70 { return c - 55 }; if c >= 97 && c <= 102 { return c - 87 }; return -1 }
-pct_decode(s: string) -> string {
-    if string.index_of(s, "%") < 0 && string.index_of(s, "+") < 0 { return s }
-    out = string.copy("")
-    i = 0
-    while i < string.length(s) {
-        c = char(s, i)
-        if c == 43 { out = string_concat(out, " ") }
-        else if c == 37 && hexv(char(s, i + 1)) >= 0 && hexv(char(s, i + 2)) >= 0 {
-            out = string_concat(out, string.from_char(hexv(char(s, i + 1)) * 16 + hexv(char(s, i + 2))))
-            i = i + 2
-        } else { out = string_concat(out, string.substring(s, i, i + 1)) }
-        i = i + 1
-    }
-    return out
-}
-
-query_spans(r: *VRule, s: string, rule: int, out: ptr) {
-    q = string.index_of(s, "?")
-    if q < 0 { return }
-    end = string.index_of_from(s, "#", q)
-    if end < 0 { end = string.length(s) }
-    i = q + 1
-    while i <= end {
-        amp = string.index_of_from(s, "&", i)
-        if amp < 0 || amp > end { amp = end }
-        eq = string.index_of_from(s, "=", i)
-        if eq >= 0 && eq < amp && pct_decode(string.substring(s, i, eq)) == r.sel {
-            span_add(out, eq + 1, amp, rule)
-        }
-        i = amp + 1
-    }
-}
-
-// ---- JSON: every scalar value, with its key and pointer ----
-
-json_skip(s: string, i: int) -> int { p = i; while ws(char(s, p)) == 1 { p = p + 1 }; return p }
-json_string_close(s: string, i: int) -> int {
-    j = i + 1
-    while j < string.length(s) {
-        c = char(s, j)
-        if c == 92 { j = j + 2 }
-        else if c == 34 { return j }
-        else { j = j + 1 }
-    }
-    return -1
-}
-json_unescape(s: string) -> string {
-    if string.index_of(s, "\\") < 0 { return s }
-    out = string.copy("")
-    i = 0
-    while i < string.length(s) {
-        c = char(s, i)
-        if c == 92 {
-            d = char(s, i + 1)
-            if d == 117 && hexv(char(s, i + 2)) >= 0 && hexv(char(s, i + 3)) >= 0 && hexv(char(s, i + 4)) >= 0 && hexv(char(s, i + 5)) >= 0 {
-                v = hexv(char(s, i + 2)) * 4096 + hexv(char(s, i + 3)) * 256 + hexv(char(s, i + 4)) * 16 + hexv(char(s, i + 5))
-                if v < 128 { out = string_concat(out, string.from_char(v)) }
-                else { out = string_concat(out, string.substring(s, i, i + 6)) }
-                i = i + 6
-                continue
-            }
-            if d == 110 { out = string_concat(out, "\n") }
-            else if d == 116 { out = string_concat(out, "\t") }
-            else if d == 114 { out = string_concat(out, "\r") }
-            else { out = string_concat(out, string.substring(s, i + 1, i + 2)) }
-            i = i + 2
-        } else {
-            out = string_concat(out, string.substring(s, i, i + 1))
-            i = i + 1
-        }
-    }
-    return out
-}
-pointer_segment(k: string) -> string {
-    return string.replace_all(string.replace_all(k, "~", "~0"), "/", "~1")
-}
-pointer_matches(rule: string, path: string) -> int {
-    if rule == path { return 1 }
-    if string.index_of(rule, "*") < 0 { return 0 }
-    a = string.split(string.copy(rule), "/")
-    b = string.split(string.copy(path), "/")
-    na = string.array_size(a)
-    nb = string.array_size(b)
-    ok = 1
-    if na != nb { ok = 0 }
-    i = 0
-    while ok == 1 && i < na {
-        x = string.array_get(a, i)
-        if x != "*" && x != string.array_get(b, i) { ok = 0 }
-        i = i + 1
-    }
-    string.array_free(a)
-    string.array_free(b)
-    return ok
-}
-
-json_scalar(rules: ptr, picks: ptr, key: string, path: string, start: int, end: int, out: ptr) {
-    i = 0
-    while i < list_size(picks) {
-        r = list_get_raw(picks, i) as *VRule
-        ri = r.idx
-        if (r.kind == SEL_JSON_KEY && key == r.sel) || (r.kind == SEL_JSON_POINTER && pointer_matches(r.sel, path) == 1) {
-            span_add(out, start, end, ri)
-        }
-        i = i + 1
-    }
-}
-
-// One JSON value at s[start]: the index after it, or -1 (not JSON). A bare
-// token stands for a scalar (a tape's tokenized number).
-json_walk(s: string, start: int, key: string, path: string, rules: ptr, picks: ptr, out: ptr, depth: int) -> int {
-    if depth > 256 { return -1 }
-    i = json_skip(s, start)
-    c = char(s, i)
-    te = token_end(s, i)
-    if te > 0 {
-        json_scalar(rules, picks, key, path, i, te, out)
-        return te
-    }
-    if c == 123 {
-        i = json_skip(s, i + 1)
-        if char(s, i) == 125 { return i + 1 }
-        while true {
-            if char(s, i) != 34 { return -1 }
-            ke = json_string_close(s, i)
-            if ke < 0 { return -1 }
-            name = json_unescape(string.substring(s, i + 1, ke))
-            i = json_skip(s, ke + 1)
-            if char(s, i) != 58 { return -1 }
-            i = json_walk(s, i + 1, name, "${path}/${pointer_segment(name)}", rules, picks, out, depth + 1)
-            if i < 0 { return -1 }
-            i = json_skip(s, i)
-            if char(s, i) == 44 { i = json_skip(s, i + 1); continue }
-            if char(s, i) == 125 { return i + 1 }
-            return -1
-        }
-    }
-    if c == 91 {
-        i = json_skip(s, i + 1)
-        if char(s, i) == 93 { return i + 1 }
-        idx = 0
-        while true {
-            i = json_walk(s, i, "", "${path}/${string.from_int(idx)}", rules, picks, out, depth + 1)
-            if i < 0 { return -1 }
-            idx = idx + 1
-            i = json_skip(s, i)
-            if char(s, i) == 44 { i = json_skip(s, i + 1); continue }
-            if char(s, i) == 93 { return i + 1 }
-            return -1
-        }
-    }
-    if c == 34 {
-        e = json_string_close(s, i)
-        if e < 0 { return -1 }
-        json_scalar(rules, picks, key, path, i + 1, e, out)
-        return e + 1
-    }
-    j = i
-    while true {
-        d = char(s, j)
-        if is_digit(d) == 1 || is_lower(d) == 1 || d == 45 || d == 43 || d == 46 || d == 69 { j = j + 1 } else { break }
-    }
-    if j == i { return -1 }
-    json_scalar(rules, picks, key, path, i, j, out)
-    return j
-}
-
-// ---- XML: element text and attribute values, by expanded name ----
-
-struct XmlNs { prefix: string; uri: string; depth: int }
-struct XmlFrame { ns: string; local: string; text_start: int; child: int }
-
-ns_lookup(nss: ptr, prefix: string) -> string {
-    i = list_size(nss) - 1
-    while i >= 0 {
-        b = list_get_raw(nss, i) as *XmlNs
-        if b.prefix == prefix { return b.uri }
-        i = i - 1
-    }
-    if prefix == "xml" { return "http://www.w3.org/XML/1998/namespace" }
-    return ""
-}
-name_char(c: int) -> int {
-    if c < 0 || ws(c) == 1 || c == 47 || c == 62 || c == 61 || c == 60 || c == 34 || c == 39 { return 0 }
-    return 1
-}
-xml_element_matches(r: *VRule, ns: string, local: string) -> int {
-    if r.ns == "*" { return 1 }
-    if r.ns == ns && r.local == local { return 1 }
-    return 0
-}
-
-xml_spans(s: string, rules: ptr, picks: ptr, out: ptr) {
-    nss = list_new()
-    frames = list_new()
-    n = string.length(s)
-    i = string.index_of(s, "<")
-    while i >= 0 && i < n {
-        if string.starts_with(string.substring(s, i, i + 4), "<!--") == 1 {
-            e = string.index_of_from(s, "-->", i)
-            if e < 0 { return }
-            i = string.index_of_from(s, "<", e + 3)
-            continue
-        }
-        if string.starts_with(string.substring(s, i, i + 9), "<![CDATA[") == 1 {
-            e = string.index_of_from(s, "]]>", i)
-            if e < 0 { return }
-            i = string.index_of_from(s, "<", e + 3)
-            continue
-        }
-        if char(s, i + 1) == 63 || char(s, i + 1) == 33 {
-            e = string.index_of_from(s, ">", i)
-            if e < 0 { return }
-            i = string.index_of_from(s, "<", e + 1)
-            continue
-        }
-        if char(s, i + 1) == 47 {
-            e = string.index_of_from(s, ">", i)
-            if e < 0 { return }
-            depth = list_size(frames)
-            if depth == 0 { return }
-            f = list_get_raw(frames, depth - 1) as *XmlFrame
-            if f.child == 0 {
-                vs = f.text_start
-                ve = i
-                while vs < ve && ws(char(s, vs)) == 1 { vs = vs + 1 }
-                while ve > vs && ws(char(s, ve - 1)) == 1 { ve = ve - 1 }
-                k = 0
-                while k < list_size(picks) {
-                    r = list_get_raw(picks, k) as *VRule
-                    ri = r.idx
-                    if r.kind == SEL_XML_ELEMENT && xml_element_matches(r, f.ns, f.local) == 1 { span_add(out, vs, ve, ri) }
-                    k = k + 1
-                }
-            }
-            list_remove(frames, list_size(frames) - 1)
-            while list_size(nss) > 0 && (list_get_raw(nss, list_size(nss) - 1) as *XmlNs).depth >= depth { list_remove(nss, list_size(nss) - 1) }
-            i = string.index_of_from(s, "<", e + 1)
-            continue
-        }
-        // A start tag: name, then attributes.
-        j = i + 1
-        while name_char(char(s, j)) == 1 { j = j + 1 }
-        qname = string.substring(s, i + 1, j)
-        if qname == "" { return }
-        depth = list_size(frames) + 1
-        // Attributes, collected first: xmlns declarations scope the names.
-        string[] an = []
-        int[] avs = []
-        int[] ave = []
-        closed = 0
-        while true {
-            j = json_skip(s, j)
-            c = char(s, j)
-            if c < 0 { return }
-            if c == 62 { j = j + 1; break }
-            if c == 47 && char(s, j + 1) == 62 { closed = 1; j = j + 2; break }
-            a0 = j
-            while name_char(char(s, j)) == 1 { j = j + 1 }
-            if j == a0 { return }
-            aname = string.substring(s, a0, j)
-            j = json_skip(s, j)
-            if char(s, j) != 61 { return }
-            j = json_skip(s, j + 1)
-            q = char(s, j)
-            if q != 34 && q != 39 { return }
-            close = string.index_of_from(s, string.from_char(q), j + 1)
-            if close < 0 { return }
-            if aname == "xmlns" || string.starts_with(aname, "xmlns:") == 1 {
-                b = malloc(sizeof(XmlNs)) as *XmlNs
-                b.prefix = ""
-                if aname != "xmlns" { b.prefix = string.substring(aname, 6, string.length(aname)) }
-                b.uri = string.substring(s, j + 1, close)
-                b.depth = depth
-                list_add_raw(nss, b)
-            } else {
-                an.push(aname)
-                avs.push(j + 1)
-                ave.push(close)
-            }
-            j = close + 1
-        }
-        colon = string.index_of(qname, ":")
-        prefix = ""
-        local = qname
-        if colon >= 0 { prefix = string.substring(qname, 0, colon); local = string.substring(qname, colon + 1, string.length(qname)) }
-        ns = ns_lookup(nss, prefix)
-        if list_size(frames) > 0 { (list_get_raw(frames, list_size(frames) - 1) as *XmlFrame).child = 1 }
-        k = 0
-        while k < list_size(picks) {
-            r = list_get_raw(picks, k) as *VRule
-            ri = r.idx
-            if xml_element_matches(r, ns, local) == 1 {
-                if r.kind == SEL_XML_ATTRIBUTE {
-                    a = 0
-                    while a < an.len {
-                        nm = an[a]
-                        ac = string.index_of(nm, ":")
-                        ans = ""
-                        alocal = nm
-                        if ac >= 0 { ans = ns_lookup(nss, string.substring(nm, 0, ac)); alocal = string.substring(nm, ac + 1, string.length(nm)) }
-                        if ans == r.attr_ns && alocal == r.attr_local { span_add(out, avs[a], ave[a], ri) }
-                        a = a + 1
-                    }
-                }
-            }
-            k = k + 1
-        }
-        if closed == 0 {
-            f = malloc(sizeof(XmlFrame)) as *XmlFrame
-            f.ns = ns; f.local = local; f.text_start = j; f.child = 0
-            list_add_raw(frames, f)
-        } else {
-            while list_size(nss) > 0 && (list_get_raw(nss, list_size(nss) - 1) as *XmlNs).depth >= depth { list_remove(nss, list_size(nss) - 1) }
-        }
-        i = string.index_of_from(s, "<", j)
-    }
-}
-
-// Every value the rules select in one field's text, in text order, with
+// Every value the rules select in one field's text, in text order;
 // overlaps dropped (the earlier start wins; at one start, the earlier rule).
-// Returns a result handle: span_* read it, span_warnings its warnings.
-find_spans(rules: ptr, field: int, s: string) -> ptr {
+find_spans(rules: ptr, field_bit: int, s: string) -> ptr {
     raw = list_new()
     warnings = string.copy("")
-    json_picks = list_new()
-    xml_picks = list_new()
     i = 0
     while i < list_size(rules) {
-        r = list_get_raw(rules, i) as *VRule
-        if r.field == field || r.field == FIELD_ANYWHERE {
-            if r.kind == SEL_HEADER { header_spans(r, s, i, raw) }
-            if r.kind == SEL_QUERY { query_spans(r, s, i, raw) }
-            if r.kind == SEL_JSON_KEY || r.kind == SEL_JSON_POINTER { list_add_raw(json_picks, r) }
-            if r.kind == SEL_XML_ELEMENT || r.kind == SEL_XML_ATTRIBUTE { list_add_raw(xml_picks, r) }
-            if r.kind == SEL_REGEX {
-                w = regex_spans(r.sel, s, 0, 0, string.length(s), i, raw)
-                if w != "" { warnings = string_concat(warnings, "${r.line}: ${w}\n") }
-            }
+        if rule_applies(rules, i, field_bit) == 1 {
+            w = rule_spans(rule_at(rules, i), i, s, raw)
+            if w != "" { warnings = string_concat(warnings, "${w}\n") }
         }
         i = i + 1
     }
-    if list_size(json_picks) > 0 {
-        jl = list_new()
-        e = json_walk(s, 0, "", "", rules, json_picks, jl, 0)
-        if e >= 0 && json_skip(s, e) == string.length(s) {
-            k = 0
-            while k < list_size(jl) { list_add_raw(raw, list_get_raw(jl, k)); k = k + 1 }
-        }
-    }
-    if list_size(xml_picks) > 0 && string.index_of(s, "<") >= 0 { xml_spans(s, rules, xml_picks, raw) }
-    // Narrow by each rule's `regex` refinement.
-    narrowed = list_new()
-    i = 0
-    while i < list_size(raw) {
-        sp = list_get_raw(raw, i) as *VSpan
-        r = list_get_raw(rules, sp.rule) as *VRule
-        if r.within == "" { list_add_raw(narrowed, sp) }
-        else {
-            w = regex_spans(r.within, s, 0, sp.start, sp.end, sp.rule, narrowed)
-            if w != "" { warnings = string_concat(warnings, "${r.line}: ${w}\n") }
-        }
-        i = i + 1
-    }
-    // Sort by (start, rule), then drop overlaps.
-    n = list_size(narrowed)
+    n = list_size(raw)
     i = 1
     while i < n {
-        cur = list_get_raw(narrowed, i) as *VSpan
+        cur = list_get_raw(raw, i) as *VSpan
         j = i - 1
         while j >= 0 {
-            prev = list_get_raw(narrowed, j) as *VSpan
+            prev = list_get_raw(raw, j) as *VSpan
             if prev.start > cur.start || (prev.start == cur.start && prev.rule > cur.rule) {
-                list_set(narrowed, j + 1, prev)
+                list_set(raw, j + 1, prev)
                 j = j - 1
             } else { break }
         }
-        list_set(narrowed, j + 1, cur)
+        list_set(raw, j + 1, cur)
         i = i + 1
     }
     kept = list_new()
     last_end = -1
     i = 0
     while i < n {
-        sp = list_get_raw(narrowed, i) as *VSpan
+        sp = list_get_raw(raw, i) as *VSpan
         if sp.start >= last_end {
             list_add_raw(kept, sp)
             last_end = sp.end
@@ -1071,4 +747,30 @@ find_spans(rules: ptr, field: int, s: string) -> ptr {
     res.spans = kept
     res.warnings = warnings
     return res as ptr
+}
+
+// The inline patterns rules give placeholder `name` ("\n"-separated).
+inline_patterns(l: ptr, name: string) -> string {
+    out = string.copy("")
+    i = 0
+    while i < list_size(l) {
+        lines = string.split(string.copy(rule_at(l, i).inlines), "\n")
+        k = 0
+        while k < string.array_size(lines) {
+            x = string.array_get(lines, k)
+            if string.starts_with(x, "${name}=") == 1 { out = string_concat(out, "${string.substring(x, string.length(name) + 1, string.length(x))}\n") }
+            k = k + 1
+        }
+        string.array_free(lines)
+        i = i + 1
+    }
+    return out
+}
+// 1 when `value` matches the whole of `pattern`.
+value_fits(pattern: string, value: string) -> int {
+    re, err = regex.compile(string_concat(REGEX_LIMITS, "^(?:${pattern})\\z"))
+    if err != "" { return 0 }
+    ok = regex.matches(re, value)
+    regex.free(re)
+    return ok
 }

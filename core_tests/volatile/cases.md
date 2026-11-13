@@ -1,7 +1,7 @@
 ## Volatile values
 
-- request path, regex `/cases/([0-9]+)`: case-id
-- response body, JSON `caseId`: case-id
+- request path: `/cases/{{caseId}}/documents`
+- response body: `"caseId":"{{caseId}}"`
 
 ## Interaction 0: POST /cases
 

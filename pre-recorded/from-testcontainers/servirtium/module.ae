@@ -214,7 +214,8 @@ tape_path(suite: string, case_: string) -> string {
 
 // Every distinct match of the regex becomes a stable {{name-N}} token, the
 // same token wherever the value recurs (ids a server mints and the test sends
-// back), so it round-trips on playback.
+// back): a volatile-value regex rule over every field (docs/volatile-values.md;
+// a hyphen in the name becomes _).
 normalize(pattern: string, name: string) {
     add_rule(RULE_NORMALIZE, 0, pattern, name)
 }
@@ -499,7 +500,15 @@ fn apply_rules(h: ptr, m: int, upstream_url: string, own_host: string) -> string
         if k == RULE_TRANSPORT { errs = "${errs}${vcr.remove_transport_headers_h(h)}" }
         if k == RULE_PRETTY_JSON { vcr.set_pretty_json_h(h, rule_field[i]) }
         if m != MODE_PLAYBACK {
-            if k == RULE_NORMALIZE { errs = "${errs}${vcr.normalize_whole_tape_h(h, rule_a[i], rule_b[i])}" }
+            if k == RULE_NORMALIZE {
+                // A volatile-value regex rule over every field; its named
+                // group is the placeholder (names are identifiers).
+                gname = string.replace_all(rule_b[i], "-", "_")
+                vre = "(?<${gname}>${rule_a[i]})"
+                errs = "${errs}${vcr.volatile_rule_h(h, "request path", "regex", vre)}"
+                errs = "${errs}${vcr.volatile_rule_h(h, "headers", "regex", vre)}"
+                errs = "${errs}${vcr.volatile_rule_h(h, "body", "regex", vre)}"
+            }
             if k == RULE_COLLAPSE { errs = "${errs}${vcr.redact_whole_tape_h(h, rule_a[i], rule_b[i])}" }
             if k == RULE_REDACT { errs = "${errs}${vcr.redact_h(h, rule_field[i], rule_a[i], rule_b[i])}" }
             if k == RULE_LICENSE_NOTICE { errs = "${errs}${vcr.add_license_notice_h(h, rule_a[i])}" }

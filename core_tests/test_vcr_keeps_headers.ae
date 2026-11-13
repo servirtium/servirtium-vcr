@@ -25,7 +25,7 @@ const RECORD_PORT   = 18285
 const PLAYBACK_PORT = 18286
 const BODY          = "{\"answer\":42}"
 const STAMP_BODY    = "stamp 2026-11-06T12:00:00.123456Z"
-const STAMP_TAPED   = "stamp {{timestamp-1}}"
+const STAMP_TAPED   = "stamp {{stamp-1}}"
 const STAMP_PLAYED  = "stamp 2000-01-01T00:00:01Z"
 
 tape_path() -> {
@@ -126,8 +126,8 @@ main() {
     if recorder == null { println("FAIL: load_record"); exit(1) }
     rerr = vcr.remove_header_h(recorder, vcr.FIELD_RESPONSE_HEADERS, "X-Amz-Cf-Id")
     if rerr != "" { println("FAIL: remove_header_h ${rerr}"); exit(1) }
-    cerr = vcr.volatile_h(recorder, "response body, regex `^stamp (.+)$`: timestamp")
-    if cerr != "" { println("FAIL: volatile_h ${cerr}"); exit(1) }
+    cerr = vcr.volatile_rule_h(recorder, "response body", "template", "stamp {{stamp}}")
+    if cerr != "" { println("FAIL: volatile_rule_h ${cerr}"); exit(1) }
     serr2 = http.server_start_background(vcr.server_of(recorder))
     if serr2 != "" { println("FAIL: recorder start ${serr2}"); exit(1) }
     sleep(250)
@@ -177,7 +177,10 @@ main() {
     // Playback on another port: the Host differs from the recorded one.
     playback, playback_oerr = vcr.open_playback(TAPE_PATH, PLAYBACK_PORT)
     if playback == null { println("FAIL: load playback"); exit(1) }
-    serr3 = http.server_start_background(vcr.server_of(playback))
+    berr = vcr.volatile_bind_h(playback, "stamp", "2000-01-01T00:00:01Z")
+    if berr != "" { println("FAIL: bind ${berr}"); exit(1) }
+    serr3 = ""
+    if vcr.start_background_h(playback, 10000) != 0 { serr3 = vcr.last_error_h(playback) }
     if serr3 != "" { println("FAIL: playback start ${serr3}"); exit(1) }
     sleep(250)
 

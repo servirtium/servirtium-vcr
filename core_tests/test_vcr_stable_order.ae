@@ -162,7 +162,7 @@ stable_rules(h: ptr) {
     vcr.sort_response_headers_h(h, 1)
     e = vcr.sort_header_value_h(h, "Allow")
     if e == "" { e = vcr.sort_json_array_h(h, "/value", "name") }
-    if e == "" { e = vcr.volatile_h(h, "response body, JSON `id`: uuid") }
+    if e == "" { e = vcr.volatile_rule_h(h, "response body", "template", "\"id\": \"{{id}}\"") }
     if e != "" { fail("rule: ${e}") }
     if e == "" { e = vcr.remove_header_h(h, vcr.FIELD_RESPONSE_HEADERS, "Date") }
     // Matches the sorted body only (the upstream's first order has "value"
@@ -298,7 +298,7 @@ main() {
     A = "{\"id\":\"7d444840-9dc0-11d1-b245-5ffdce74fad2\",\"at\":3}"
     B = "{\"id\":\"0e4b3a1c-1111-4222-8333-944455556666\",\"at\":1}"
     reset_pretty(vh)
-    e = vcr.volatile_h(vh, "anywhere, regex `${UUID_RE}`: uuid")
+    e = vcr.volatile_rule_h(vh, "body", "regex", "(?<uuid>${UUID_RE})")
     if e == "" { e = vcr.sort_json_array_h(vh, "", "at") }
     if e != "" { fail(e) }
     t5a = rec(vh, OUT, "application/json", "[${A},${B}]", "", "")
@@ -410,7 +410,7 @@ main() {
     r1 = record_once(P1, RECORD_PORT)
     r2 = record_once(P2, RECORD_PORT)
     if string.equals(r1, r2) != 1 { fail("two recordings differ:\n${r1}\n---\n${r2}") }
-    SORTED = pj("{\"count\":2,\"value\":[{\"id\":\"{{uuid-1}}\",\"name\":\"a\"},{\"id\":\"{{uuid-2}}\",\"name\":\"b\"}]}")
+    SORTED = pj("{\"count\":2,\"value\":[{\"id\":\"{{id-1}}\",\"name\":\"a\"},{\"id\":\"{{id-2}}\",\"name\":\"b\"}]}")
     need(r1, "```\n${SORTED}\n```", "sorted and pretty-printed body, tokens in sorted order")
     need(r1, "Allow: DELETE, GET, PUT\n", "Allow's items sorted")
     need(r1, "| collapsed | whole recording | `\"count\":2,\"value\"` | `\"count\":2,\"value\"` | 0 |", "footer: a collapse sees the sorted body")
@@ -428,12 +428,15 @@ main() {
 
     playback, playback_oerr = vcr.open_playback(P1, PLAYBACK_PORT)
     if playback == null { fail("load playback: ${playback_oerr}") }
-    perr = http.server_start_background(vcr.server_of(playback))
+    vcr.volatile_bind_h(playback, "id-1", "id-of-a")
+    vcr.volatile_bind_h(playback, "id-2", "id-of-b")
+    perr = ""
+    if vcr.start_background_h(playback, 10000) != 0 { perr = vcr.last_error_h(playback) }
     if perr != "" { fail("playback start ${perr}") }
     sleep(250)
     st, b, cl = get_list(PLAYBACK_PORT)
     if st != 200 { fail("playback: ${st} ${vcr.last_error_h(playback)}") }
-    PLAYED = string.replace_all(string.replace_all(SORTED, "{{uuid-1}}", "00000000-0000-4000-8000-000000000001"), "{{uuid-2}}", "00000000-0000-4000-8000-000000000002")
+    PLAYED = string.replace_all(string.replace_all(SORTED, "{{id-1}}", "id-of-a"), "{{id-2}}", "id-of-b")
     if string.equals(b, PLAYED) != 1 { fail("playback serves the sorted order, pretty-printed; got:\n${b}") }
     if string.length(cl) > 0 && string.equals(cl, "${string.length(b)}") != 1 { fail("Content-Length ${cl} != ${string.length(b)} bytes served") }
     vcr.destroy_h(playback)

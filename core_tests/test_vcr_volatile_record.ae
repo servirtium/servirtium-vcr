@@ -54,13 +54,20 @@ uuid_for(n: int) -> string {
     return "5f1d0c6e-2a8b-4c3e-9d41-${d}"
 }
 
-const RULES = "request headers, `X-Request-Id`: uuid\nrequest body, JSON `requestId`: uuid\nresponse body, JSON `id`: uuid\nresponse body, JSON `created`: timestamp\nresponse headers, `Date`: date\nrequest path, regex `/cases/([0-9a-f-]{36})`: uuid\n"
+rules(h: ptr) {
+    ok(vcr.volatile_rule_h(h, "request headers", "template", "X-Request-Id: {{requestId}}"), "rule")
+    ok(vcr.volatile_rule_h(h, "request body", "template", "\"requestId\":\"{{requestId}}\""), "rule")
+    ok(vcr.volatile_rule_h(h, "response body", "template", "\"id\":\"{{caseId}}\""), "rule")
+    ok(vcr.volatile_rule_h(h, "response body", "template", "\"created\":\"{{created}}\""), "rule")
+    ok(vcr.volatile_rule_h(h, "response headers", "template", "Date: {{serverDate}}"), "rule")
+    ok(vcr.volatile_rule_h(h, "request path", "template", "/cases/{{caseId}}"), "rule")
+}
 
 // One conversation, as night `n` sees it: every volatile value differs per
 // night; `extra` adds a field (a real API change).
 night(n: int, extra: int) -> ptr {
     h = vcr.open_offline()
-    ok(vcr.volatile_h(h, RULES), "rules")
+    rules(h)
     a = uuid_for(n * 10 + 1)
     b = uuid_for(n * 10 + 2)
     created = "2026-11-${string.from_int(10 + n)}T09:41:0${string.from_int(n)}Z"
@@ -132,8 +139,10 @@ record_night(env: *Env, n: int, renamed: int, tape: string) -> string {
     if rec == null { println("FAIL: open_record ${oerr}"); exit(1) }
     vcr.remove_transport_headers_h(rec)
     vcr.strict_ignore_common_headers_h(rec)
-    ok(vcr.volatile_profile_h(rec, "http-dates"), "http-dates")
-    ok(vcr.volatile_h(rec, "response headers, `X-Request-Id`: uuid\nresponse body, JSON `id`: uuid\nresponse body, JSON `caseId`: uuid\nresponse body, JSON `created`: timestamp"), "rules")
+    ok(vcr.volatile_rule_h(rec, "response headers", "template", "Date: {{serverDate}}"), "rule")
+    ok(vcr.volatile_rule_h(rec, "response headers", "template", "X-Request-Id: {{requestId}}"), "rule")
+    ok(vcr.volatile_rule_h(rec, "response body", "regex", "\"(?:id|caseId)\":\"(?<caseId>[^\"]+)\""), "rule")
+    ok(vcr.volatile_rule_h(rec, "response body", "template", "\"created\":\"{{created}}\""), "rule")
     if vcr.start_background_h(rec, 10000) != 0 { println("FAIL: start recorder"); exit(1) }
     st = post_case(RECORD_PORT)
     if st != 201 { println("FAIL: record POST ${st}: ${vcr.last_error_h(rec)}"); exit(1) }
@@ -143,68 +152,83 @@ record_night(env: *Env, n: int, renamed: int, tape: string) -> string {
 }
 
 main() {
+    D = string.from_char(36)
     println("=== volatile values: recording and drift ===")
 
     // ---- numbering, per class, per value / per occurrence ----
     h1 = night(1, 0)
     t1 = vcr.emit_tape_h(h1)
-    has(t1, "## Volatile values\n\n- request body, JSON `requestId`: uuid\n- request headers, `X-Request-Id`: uuid\n- request path, regex `/cases/([0-9a-f-]{36})`: uuid\n- response body, JSON `created`: timestamp\n- response body, JSON `id`: uuid\n- response headers, `Date`: date\n\n## Interaction 0", "sorted block before the first interaction")
-    has(t1, "X-Request-Id: {{uuid-1}}", "request id")
-    has(t1, "{\"requestId\":\"{{uuid-1}}\"}", "the same value, the same token")
-    has(t1, "Date: {{date-1}}", "first date")
-    has(t1, "{\"id\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\"}", "server-minted id and time")
-    has(t1, "## Interaction 1: GET /cases/{{uuid-2}}", "the id in the next request's path: correlated")
-    has(t1, "X-Request-Id: {{uuid-3}}", "a new value, the next number")
-    has(t1, "\"created\":\"{{timestamp-2}}\",\"log\":{\"created\":\"{{timestamp-3}}\"}", "times are per occurrence even when equal")
-    has(t1, "Date: {{date-2}}", "an equal Date is its own token")
-    hasnt(t1, "5f1d0c6e", "no raw uuid left")
-    eq(vcr.volatile_report_h(h1), "rule: request headers, `X-Request-Id`: uuid\nrule: request body, JSON `requestId`: uuid\nrule: response body, JSON `id`: uuid\nrule: response body, JSON `created`: timestamp\nrule: response headers, `Date`: date\nrule: request path, regex `/cases/([0-9a-f-]{36})`: uuid\n", "report: rules, no warnings")
+    has(t1, "## Volatile values\n\n- request body: `\"requestId\":\"{{requestId}}\"`\n- request headers: `X-Request-Id: {{requestId}}`\n- request path: `/cases/{{caseId}}`\n- response body: `\"created\":\"{{created}}\"`\n- response body: `\"id\":\"{{caseId}}\"`\n- response headers: `Date: {{serverDate}}`\n\n## Interaction 0", "sorted block before the first interaction")
+    has(t1, "X-Request-Id: {{requestId-1}}", "request id")
+    has(t1, "{\"requestId\":\"{{requestId-1}}\"}", "the same name and value, the same token")
+    has(t1, "Date: {{serverDate-1}}", "first date")
+    has(t1, "{\"id\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\"}", "server-minted id and time")
+    has(t1, "## Interaction 1: GET /cases/{{caseId-1}}", "the id in the next request's path: correlated by name")
+    has(t1, "X-Request-Id: {{requestId-2}}", "a new value, the next number")
+    has(t1, "\"created\":\"{{created-1}}\",\"log\":{\"created\":\"{{created-1}}\"}", "an equal value of one name is one token")
+    has(t1, "Date: {{serverDate-1}}", "per name and value")
+    hasnt(t1, "5f1d0c6e", "no raw id left")
+    eq(vcr.volatile_report_h(h1), "rule: request headers: `X-Request-Id: {{requestId}}`\nrule: request body: `\"requestId\":\"{{requestId}}\"`\nrule: response body: `\"id\":\"{{caseId}}\"`\nrule: response body: `\"created\":\"{{created}}\"`\nrule: response headers: `Date: {{serverDate}}`\nrule: request path: `/cases/{{caseId}}`\n", "report: rules, no warnings")
 
     // ---- test 4 offline: another night, the same tape ----
     h2 = night(2, 0)
     eq(vcr.emit_tape_h(h2), t1, "a second night's conversation writes the same bytes")
     // ---- test 5 offline: a real change is that change only ----
     h3 = night(3, 1)
-    eq(diff_lines(t1, vcr.emit_tape_h(h3)), "- {\"id\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\"}\n+ {\"id\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\",\"priority\":\"high\"}\n", "an added field is the only diff; no renumbering")
+    eq(diff_lines(t1, vcr.emit_tape_h(h3)), "- {\"id\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\"}\n+ {\"id\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\",\"priority\":\"high\"}\n", "an added field is the only diff; no renumbering")
 
-    // ---- shape guard: an id that stops being a UUID ----
+    // ---- a format guard: an inline pattern, and an id that stops being a UUID ----
+    UUIDP = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
     h4 = vcr.open_offline()
-    ok(vcr.volatile_h(h4, "response body, JSON `id`: uuid"), "rule")
-    ok(vcr.record_full_response_h(h4, "GET", "/c", 200, "application/json", "{\"id\":42,\"other\":\"${uuid_for(1)}\"}", "", "", "Content-Type: application/json\n"), "record")
+    ok(vcr.volatile_rule_h(h4, "response body", "template", "\"id\":\"{{caseId:${UUIDP}}}\""), "rule")
+    ok(vcr.record_full_response_h(h4, "GET", "/c", 200, "application/json", "{\"id\":\"42\"}", "", "", "Content-Type: application/json\n"), "record")
     t4 = vcr.emit_tape_h(h4)
-    has(t4, "{\"id\":42,", "a value without the shape stays as it is")
-    has(vcr.volatile_report_h(h4), "shape: interaction 0, response body: `response body, JSON `id`: uuid` found `42`, which is not a uuid", "and is reported")
+    has(t4, "{\"id\":\"42\"}", "a value the pattern refuses stays as it is")
+    h4b = vcr.open_offline()
+    ok(vcr.volatile_rule_h(h4b, "response body", "template", "\"id\":\"{{caseId:${UUIDP}}}\""), "rule")
+    ok(vcr.record_full_response_h(h4b, "GET", "/c", 200, "application/json", "{\"id\":\"${uuid_for(5)}\"}", "", "", "Content-Type: application/json\n"), "record")
+    t4b = vcr.emit_tape_h(h4b)
+    has(t4b, "{\"id\":\"{{caseId-1}}\"}", "a value it accepts is tokenized")
     drift_tape = "${tmp_dir()}/vcr_volatile_drift.tape"
     fs.delete(drift_tape)
-    ok(vcr.flush_h(h1, drift_tape), "flush night 1")
+    ok(vcr.flush_h(h4b, drift_tape), "flush")
     fe = vcr.flush_and_fail_if_changed_h(h4, drift_tape)
-    has(fe, "tape mismatch", "drift")
-    has(fe, "which is not a uuid", "drift names the format change")
+    has(fe, "tape mismatch", "the format change is drift")
+    after, _ae = fs.read(drift_tape)
+    has(after, "{\"id\":\"42\"}", "and the diff shows it")
 
     // ---- escapes: a literal token in a body ----
     h5 = vcr.open_offline()
     ok(vcr.record_full_response_h(h5, "GET", "/t", 200, "text/plain", "template {{uuid-1}} and {{{{}}", "", "", ""), "record")
     has(vcr.emit_tape_h(h5), "template {{{{}}uuid-1}} and {{{{}}{{}}", "escaped even without rules")
+    h5d = vcr.open_offline()
+    ok(vcr.set_volatile_markers_h(h5d, 1), "markers")
+    ok(vcr.volatile_rule_h(h5d, "response body", "template", "id=${D}{id}."), "dollar rule")
+    ok(vcr.record_full_response_h(h5d, "GET", "/t", 200, "text/plain", "id=77. literal ${D}{id-1}", "", "", ""), "record")
+    has(vcr.emit_tape_h(h5d), "id=${D}{id-1}. literal ${D}{${D}{}id-1}", "DollarCurly tokens and escape")
 
     // ---- redaction first: a rule never sees a redacted secret ----
     h6 = vcr.open_offline()
     secret = uuid_for(999)
     ok(vcr.redact_h(h6, vcr.FIELD_REQUEST_BODY, secret, "[REDACTED]"), "redact")
-    ok(vcr.volatile_h(h6, "request body, JSON `apiKey`: uuid"), "rule")
+    ok(vcr.volatile_rule_h(h6, "request body", "template", "\"apiKey\":\"{{apiKey}}\""), "rule")
     ok(vcr.record_full_response_h(h6, "POST", "/k", 200, "text/plain", "ok", "Content-Type: application/json\n", "{\"apiKey\":\"${secret}\"}", ""), "record")
     t6 = vcr.emit_tape_h(h6)
-    has(t6, "{\"apiKey\":\"[REDACTED]\"}", "redacted, not tokenized")
-    r6 = vcr.volatile_report_h(h6)
-    has(r6, "found `[REDACTED]`", "the warning shows the redacted text")
-    hasnt(r6, secret, "never the secret")
+    has(t6, "{\"apiKey\":\"{{apiKey-1}}\"}", "the rule saw the redaction")
+    hasnt(t6, secret, "never the secret")
+    h6b = vcr.open_offline()
+    ok(vcr.redact_h(h6b, vcr.FIELD_REQUEST_BODY, secret, "[REDACTED]"), "redact")
+    ok(vcr.volatile_rule_h(h6b, "request body", "template", "\"apiKey\":\"{{apiKey:[0-9a-f-]{36}}}\""), "rule")
+    ok(vcr.record_full_response_h(h6b, "POST", "/k", 200, "text/plain", "ok", "Content-Type: application/json\n", "{\"apiKey\":\"${secret}\"}", ""), "record")
+    has(vcr.emit_tape_h(h6b), "{\"apiKey\":\"[REDACTED]\"}", "redaction first: a rule never sees the secret")
 
     // ---- the recording-rules footer lists each rule ----
     vcr.set_rules_footer_h(h1, 1)
-    has(vcr.emit_tape_h(h1), "| volatile | response headers | `Date` | `{{date-N}}` | 0, 1 |", "footer row")
+    has(vcr.emit_tape_h(h1), "| volatile | response headers | `Date: {{serverDate}}` | `{{serverDate-1}}` … | 0, 1 |", "footer row")
 
     // ---- test 9: a pathological regex is bounded ----
     h7 = vcr.open_offline()
-    ok(vcr.volatile_h(h7, "response body, regex `(a+)+$`: x"), "rule")
+    ok(vcr.volatile_rule_h(h7, "response body", "regex", "(?<x>(a+)+)$"), "rule")
     big = string.copy("a")
     while string.length(big) < 65536 { big = string_concat(big, big) }
     big = string_concat(big, "!")
@@ -218,12 +242,14 @@ main() {
 
     // ---- recording over a tape keeps the rules it declares ----
     keep_tape = "${tmp_dir()}/vcr_volatile_keep.tape"
-    ok(fs.write(keep_tape, "## Volatile values\n\n- response headers, `Date`: date\n\n## Interaction 0: GET /x\n\n### Request headers recorded for playback:\n\n```\n```\n### Request body recorded for playback ():\n\n```\n```\n### Response headers recorded for playback:\n\n```\n```\n### Response body recorded for playback (200: text/plain):\n\n```\nx\n```\n\n"), "write")
+    ok(fs.write(keep_tape, "## Volatile values\n\n- response headers: `Date: {{serverDate}}`\n\n## Interaction 0: GET /x\n\n### Request headers recorded for playback:\n\n```\n```\n### Request body recorded for playback ():\n\n```\n```\n### Response headers recorded for playback:\n\n```\n```\n### Response body recorded for playback (200: text/plain):\n\n```\nx\n```\n\n"), "write")
     kr, kerr = vcr.open_record(keep_tape, "http://127.0.0.1:1", 0)
     if kr == null { println("FAIL: open_record ${kerr}"); exit(1) }
-    eq(vcr.volatile_report_h(kr), "rule: response headers, `Date`: date\n", "the tape's rules")
-    ce = vcr.volatile_h(kr, "response headers, `Date`: timestamp")
-    has(ce, "conflicts with `response headers, `Date`: date` (tape)", "test 7: a code rule contradicting the tape's")
+    eq(vcr.volatile_report_h(kr), "rule: response headers: `Date: {{serverDate}}`\n", "the tape's rules")
+    ce = vcr.volatile_rule_h(kr, "response headers", "template", "Date: {{date}}")
+    has(ce, "conflicts with `response headers: `Date: {{serverDate}}`` (tape)", "test 7: a code rule contradicting the tape's")
+    if vcr.start_background_h(kr, 10000) == 0 { println("FAIL: start must fail on a conflict"); exit(1) }
+    has(vcr.last_error_h(kr), "conflicts with", "start fails with the conflict")
     vcr.destroy_h(kr)
 
     // ---- tests 4 and 5 against a real upstream ----
@@ -239,16 +265,16 @@ main() {
     fs.delete(tape)
     ok(record_night(env, 1, 0, tape), "night 1 (first recording)")
     first, _ = fs.read(tape)
-    has(first, "\"id\":\"{{uuid-2}}\"", "the minted id")
-    has(first, "X-Request-Id: {{uuid-1}}", "the request id")
-    has(first, "Date: {{date-1}}", "the Date")
+    has(first, "\"id\":\"{{caseId-1}}\"", "the minted id")
+    has(first, "X-Request-Id: {{requestId-1}}", "the request id")
+    has(first, "Date: {{serverDate-1}}", "the Date")
     ok(record_night(env, 2, 0, tape), "night 2: nothing changed, fail_if_changed passes")
     second, _ = fs.read(tape)
     eq(second, first, "night 2's tape is byte-identical")
     e3 = record_night(env, 3, 1, tape)
     has(e3, "tape mismatch", "night 3: the vendor renamed id")
     third, _ = fs.read(tape)
-    eq(diff_lines(first, third), "- {\"id\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\",\"status\":\"open\"}\n+ {\"caseId\":\"{{uuid-2}}\",\"created\":\"{{timestamp-1}}\",\"status\":\"open\"}\n", "the diff is the rename")
+    eq(diff_lines(first, third), "- {\"id\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\",\"status\":\"open\"}\n+ {\"caseId\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\",\"status\":\"open\"}\n", "the diff is the rename")
     http.server_stop(upstream)
 
     println("=== volatile values: recording and drift passed ===")
