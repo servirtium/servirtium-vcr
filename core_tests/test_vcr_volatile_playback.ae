@@ -148,6 +148,7 @@ main() {
     go(h)
     wcf_round_trip(h, A, "https://workpro--not-real.invalid:53187", "DollarCurly tape")
     done(h)
+    refuses(open_tape("${DIR}/wcf_dollar.md"), "the tape's rules use DollarCurly", "a tape whose rules are in another style")
     h = open_tape("${DIR}/wcf_dollar.md")
     vcr.set_volatile_markers_h(h, 1)
     pe = vcr.volatile_profile_h(h, "${DIR}/profile.md")

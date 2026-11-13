@@ -8136,7 +8136,18 @@ vol_compile_k(vc: *Vcr) -> string {
     out = list_new()
     if vc.rules.vtape_block != "" {
         err = volatile.parse_block(vc.rules.vtape_block, out, style, " (tape)")
-        if err != "" { return "the tape's ${volatile.HEADING}, ${err}" }
+        if err != "" {
+            // Written in another marker style? Say so rather than the
+            // symptom (a template with no placeholder of this style).
+            other = 0
+            while other < 3 {
+                if other != style && volatile.parse_block(vc.rules.vtape_block, list_new(), other, "") == "" {
+                    return "the tape's rules use ${volatile.style_name(other)} markers; this VCR uses ${volatile.style_name(style)} (set the marker style to match)"
+                }
+                other = other + 1
+            }
+            return "the tape's ${volatile.HEADING}, ${err}"
+        }
     }
     i = 0
     while i < list_size(vc.rules.vprofiles) {
