@@ -105,7 +105,7 @@ project directory:
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.16                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.17                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
@@ -140,7 +140,7 @@ janet -e '
 ```
 
 In a project of your own, the dependency is a line in `project.janet`:
-`:dependencies [{:url "https://github.com/servirtium/servirtium-vcr.git" :tag "v2.0.0-alpha.16"}]`.
+`:dependencies [{:url "https://github.com/servirtium/servirtium-vcr.git" :tag "v2.0.0-alpha.17"}]`.
 `jpm deps` then installs it, and `JANET_PATH` / `SERVIRTIUM_VCR_LIB` are the only
 other moving parts.
 
@@ -170,7 +170,7 @@ other moving parts.
 - A failing option or call raises a **struct**, so `(string e)` prints
   `<struct 0x...>`; use `(string/format "%q" e)` or read `(e :message)`.
 - The bundle string `git::URL::TAG` is jpm's form for a pinned tag. The version
-  `2.0.0-alpha.16` is accepted by jpm as written; no respelling is needed.
+  `2.0.0-alpha.17` is accepted by jpm as written; no respelling is needed.
 - Windows: use the `.dll` asset and its full path. Untested here.
 
 ## Run the tests

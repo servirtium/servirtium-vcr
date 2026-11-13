@@ -8,7 +8,7 @@
 //   dist/lib/libservirtium_c.so            the C client (this binding)
 //   dist/lib/libservirtium_vcr.so          libservirtium_vcr it links
 //   dist/lib/pkgconfig/servirtium.pc       `pkg-config --cflags --libs servirtium`
-//   ../servirtium-c-2.0.0-alpha.16.tar.gz           the whole prefix, one file
+//   ../servirtium-c-2.0.0-alpha.17.tar.gz           the whole prefix, one file
 //
 // RELOCATABLE, two ways that have to hold together:
 //   * libservirtium_c.so is linked `-Wl,-rpath,$ORIGIN`, so it finds libservirtium_vcr
@@ -34,7 +34,7 @@ aeb(cap) {
         root = _get("root")
         cdir = "${root}/c"
         dist = "${cdir}/dist"
-        tarball = "${cdir}/servirtium-c-2.0.0-alpha.16.tar.gz"
+        tarball = "${cdir}/servirtium-c-2.0.0-alpha.17.tar.gz"
 
         rc = os.system("rm -rf \"${dist}\" \"${tarball}\" && mkdir -p \"${dist}/include\" \"${dist}/lib/pkgconfig\" && cp \"${cdir}/include/servirtium.h\" \"${dist}/include/\" && cp \"${lib}\" \"${dist}/lib/libservirtium_vcr.so\" && cc -O2 -std=c99 -fPIC -shared -I\"${cdir}/include\" \"${cdir}/src/servirtium.c\" -L\"${dist}/lib\" -lservirtium_vcr -Wl,-rpath,'$ORIGIN' -o \"${dist}/lib/libservirtium_c.so\"")
         if rc != 0 {
@@ -65,7 +65,7 @@ aeb(cap) {
 
         publish_artifact("package_dir", "${dist}")
         publish_artifact("tarball", "${tarball}")
-        println("c package: built relocatable prefix (include + lib + pkgconfig) → c/dist, tarball → c/servirtium-c-2.0.0-alpha.16.tar.gz")
+        println("c package: built relocatable prefix (include + lib + pkgconfig) → c/dist, tarball → c/servirtium-c-2.0.0-alpha.17.tar.gz")
         return 0
     }
 }

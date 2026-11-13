@@ -99,9 +99,9 @@ prebuilt shared library per platform, each with a `.sha256` — and (optionally)
 verify it:
 
 ```sh
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.16/libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so
-curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.16/libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so.sha256
-sha256sum -c libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so.sha256   # -> OK
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.17/libservirtium_vcr-v2.0.0-alpha.17-linux-x86_64.so
+curl -LO https://github.com/servirtium/servirtium-vcr/releases/download/v2.0.0-alpha.17/libservirtium_vcr-v2.0.0-alpha.17-linux-x86_64.so.sha256
+sha256sum -c libservirtium_vcr-v2.0.0-alpha.17-linux-x86_64.so.sha256   # -> OK
 ```
 
 **Build the package locally**
@@ -111,9 +111,9 @@ drop the downloaded library at the package-relative path below, then consume it
 from source (a local/path dependency in your `build.zig.zon`).
 
 ```sh
-# from the zig binding directory, with libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so downloaded:
+# from the zig binding directory, with libservirtium_vcr-v2.0.0-alpha.17-linux-x86_64.so downloaded:
 mkdir -p native
-cp libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so native/libservirtium_vcr.so
+cp libservirtium_vcr-v2.0.0-alpha.17-linux-x86_64.so native/libservirtium_vcr.so
 # the package now carries the native library; consume it from source (see this README's usage/examples).
 ```
 
@@ -128,7 +128,7 @@ The lib is resolved at **build/link time** (`addLibraryPath` +
 `SERVIRTIUM_VCR_LIB` at the downloaded lib so the link finds it:
 
 ```sh
-export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.16-linux-x86_64.so
+export SERVIRTIUM_VCR_LIB=$PWD/libservirtium_vcr-v2.0.0-alpha.17-linux-x86_64.so
 ```
 
 Contributors can instead build libservirtium_vcr from `core/` (needs the Aether

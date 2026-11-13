@@ -48,7 +48,7 @@ fetch the native library from the same release; the package finds it through
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.16                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.17                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
@@ -67,7 +67,7 @@ curl -fsSL -o "$LIBDIR/$LIB.sha256" "$REL/$LIB.sha256"
 ( cd "$LIBDIR" && { sha256sum -c "$LIB.sha256" 2>/dev/null || shasum -a 256 -c "$LIB.sha256"; } )
 cp "$LIBDIR/$LIB" "$LIBDIR/libservirtium_vcr.$EXT"     # the loader/linker want the plain name
 
-# 2. the package, in a virtual environment (PEP 440 spelling of the tag: 2.0.0a16)
+# 2. the package, in a virtual environment (PEP 440 spelling of the tag: 2.0.0a17)
 python3 -m venv .venv && . .venv/bin/activate
 python -m pip install "https://github.com/servirtium/servirtium-vcr/archive/refs/tags/$TAG.tar.gz#subdirectory=python"
 
@@ -84,15 +84,15 @@ PY
 ```
 
 The dependency line, for `requirements.txt` / `pyproject.toml`:
-`servirtium @ https://github.com/servirtium/servirtium-vcr/archive/refs/tags/v2.0.0-alpha.16.tar.gz#subdirectory=python`.
-The future registry form is `servirtium==2.0.0a16` (pip also accepts `2.0.0-alpha.16`), and it
+`servirtium @ https://github.com/servirtium/servirtium-vcr/archive/refs/tags/v2.0.0-alpha.17.tar.gz#subdirectory=python`.
+The future registry form is `servirtium==2.0.0a17` (pip also accepts `2.0.0-alpha.17`), and it
 will not resolve to this package until 2.0 is published.
 
 ### Notes for coding agents
 
 - Do **not** `pip install servirtium`: it installs the unrelated 1.x package and
   `import servirtium` then has no `playback` (`AttributeError`). Check `servirtium.__version__`
-  (`2.0.0a16`).
+  (`2.0.0a17`).
 - The version in the install URL and the library must both be the same tag, and the library
   must be at least as new as the Python source: a library older than the binding fails at the
   first call with an error naming a missing `aether_vcr_embed_...` symbol.

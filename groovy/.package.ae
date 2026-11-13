@@ -13,7 +13,7 @@ aeb(cap) {
         // module_dir (groovy/) — no ${root}/groovy hardcode.
         maven.install()
 
-        publish_artifact("maven_gav", "dev.servirtium:vcr-groovy:2.0.0-alpha.16")
+        publish_artifact("maven_gav", "dev.servirtium:vcr-groovy:2.0.0-alpha.17")
         println("groovy package: installed vcr-groovy jar to ~/.m2")
         return 0
     }

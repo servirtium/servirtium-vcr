@@ -78,7 +78,7 @@ needs no `LD_LIBRARY_PATH`. In your own project:
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.16                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.17                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
@@ -116,7 +116,7 @@ nim c -r --hints:off --path:third_party/servirtium-vcr/nim/src servirtium_check.
 ```
 
 In `config.nims` / the command line the dependency is `--path:third_party/servirtium-vcr/nim/src`
-(or `switch("path", ...)`). A future nimble form would be `requires "servirtium >= 2.0.0-alpha.16"`;
+(or `switch("path", ...)`). A future nimble form would be `requires "servirtium >= 2.0.0-alpha.17"`;
 there is none today.
 
 ### Notes for coding agents

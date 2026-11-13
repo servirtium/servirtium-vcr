@@ -52,7 +52,7 @@ checkout of the tag, with the native library placed in that checkout's `php/nati
 Run this in your own PHP project:
 
 ```sh
-VER=v2.0.0-alpha.16                      # a release tag of servirtium-vcr
+VER=v2.0.0-alpha.17                      # a release tag of servirtium-vcr
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$VER
 
 # 1. a checkout of that tag (only php/ is used)

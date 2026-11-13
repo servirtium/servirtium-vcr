@@ -39,7 +39,7 @@ same release; `dart:ffi` loads it through `SERVIRTIUM_VCR_LIB`. Run this in your
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.16                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.17                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
@@ -90,11 +90,11 @@ dependencies:
   servirtium:
     git:
       url: https://github.com/servirtium/servirtium-vcr.git
-      ref: v2.0.0-alpha.16
+      ref: v2.0.0-alpha.17
       path: dart
 ```
 
-The future registry form is `servirtium: 2.0.0-alpha.16` (pub treats the prerelease as exact
+The future registry form is `servirtium: 2.0.0-alpha.17` (pub treats the prerelease as exact
 when written that way); it does not resolve today.
 
 ### Notes for coding agents

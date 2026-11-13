@@ -71,11 +71,11 @@ which LFE gives no way to suppress selectively (only `-Werror` and
 Hex package and OTP application: **`servirtium_lfe`** (module `servirtium_lfe`). It calls the
 shared native OTP app **`servirtium_nif`**, which `erlang/build-nif-app.sh` builds from a
 prebuilt release library (needs `erl`, `erlc`, `cc`, `curl`, plus `lfec` for this package; no
-Aether). Nothing is on Hex yet; once published it is `{deps, [{servirtium_lfe, "2.0.0-alpha.16"}]}.`
+Aether). Nothing is on Hex yet; once published it is `{deps, [{servirtium_lfe, "2.0.0-alpha.17"}]}.`
 in `rebar.config`. Until then, in your LFE project:
 
 ```sh
-VER=v2.0.0-alpha.16                      # a release tag of servirtium-vcr
+VER=v2.0.0-alpha.17                      # a release tag of servirtium-vcr
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
 
 # 1. the native app (SRC=main until a release tag contains erlang/build-nif-app.sh)

@@ -47,7 +47,7 @@ module proxy fetches it from GitHub, but the native library does not come with
 it, so you fetch that yourself. Run this in your own Go module:
 
 ```sh
-VER=v2.0.0-alpha.16                      # a release tag of servirtium-vcr
+VER=v2.0.0-alpha.17                      # a release tag of servirtium-vcr
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$VER
 
 # 1. the Go module (resolves the tag go/$VER; use @main before that tag exists)
