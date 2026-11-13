@@ -72,7 +72,15 @@ internal sealed class FakeUpstream : IDisposable
 
     public void Dispose()
     {
-        if (_listener.IsListening) _listener.Stop();
-        ((IDisposable)_listener).Dispose();
+        // Managed HttpListener on Linux re-resolves its endpoint when it
+        // removes a prefix, and throws "Address already in use" if another
+        // process took the freed port meanwhile (a busy lab host). Closing a
+        // test's upstream must not fail the test.
+        try
+        {
+            if (_listener.IsListening) _listener.Stop();
+            ((IDisposable)_listener).Dispose();
+        }
+        catch (HttpListenerException) { }
     }
 }
