@@ -132,9 +132,12 @@
    "redact_json_field" [:ptr :ptr :int32 :string :string]
    "unredact" [:ptr :ptr :int32 :string :string]
    "remove_header" [:ptr :ptr :int32 :string]
-   "normalize_whole_tape" [:ptr :ptr :string :string]
+   "volatile_rule" [:ptr :ptr :string :string :string]
+   "volatile_bind" [:ptr :ptr :string :string]
+   "volatile_profile" [:ptr :ptr :string]
+   "set_volatile_markers" [:ptr :ptr :int32]
+   "volatile_report" [:ptr :ptr]
    "redact_whole_tape" [:ptr :ptr :string :string]
-   "normalize_whole_tape_described" [:ptr :ptr :string :string :string]
    "redact_whole_tape_described" [:ptr :ptr :string :string :string]
    "strict_ignore_common_headers" [:ptr :ptr]
    "ignore_volatile_headers" [:ptr :ptr]
@@ -173,7 +176,6 @@
    "indent_code_blocks" [:void :ptr]
    "emphasize_http_verbs" [:void :ptr]
    "clear_redactions" [:void :ptr]
-   "clear_normalizations" [:void :ptr]
    "clear_unredactions" [:void :ptr]
    "clear_header_removals" [:void :ptr]
    "clear_static_content" [:void :ptr]
@@ -356,19 +358,46 @@
                          (str "substitute" pattern) (str "substitute" replacement)
                          (flag required))))
 
-(defn normalize-whole-tape
-  "Correlate every match of `pattern` into {{name-N}} tokens: values that recur
-  and must stay consistent across the whole tape (UUIDs, CSRF tokens).
-  `description` is shown in the recording-rules footer."
-  [srv pattern name &opt description]
-  (if description
-    (check "normalize_whole_tape"
-           (c "normalize_whole_tape_described" (live srv "normalize_whole_tape")
-              (str "normalize_whole_tape" pattern) (str "normalize_whole_tape" name)
-              (str "normalize_whole_tape" description)))
-    (check "normalize_whole_tape"
-           (c "normalize_whole_tape" (live srv "normalize_whole_tape")
-              (str "normalize_whole_tape" pattern) (str "normalize_whole_tape" name)))))
+(def volatile-marker-styles
+  "Marker styles for placeholders and tokens: :mustache {{x}} (default),
+  :dollar-curly ${x}, :wikilink [[x]]."
+  {:mustache 0 :dollar-curly 1 :wikilink 2})
+
+(defn volatile-markers
+  "Set the marker style (:mustache, :dollar-curly or :wikilink) before any rule."
+  [srv style]
+  (def n (get volatile-marker-styles style))
+  (unless n (fail "volatile_markers" (string "unknown marker style " (string/format "%q" style))))
+  (check "volatile_markers" (c "set_volatile_markers" (live srv "volatile_markers") n)))
+
+(defn volatile-rule
+  ```
+  A volatile-value rule (docs/volatile-values.md): `scope` such as
+  "request body", `pattern` holding {{placeholders}}, `kind` "template"
+  (default) or "regex". Prefer the :volatile-rules option of `playback`/`record`,
+  which applies rules before the server starts so a bad rule fails the open.
+  ```
+  [srv scope pattern &opt kind]
+  (default kind "template")
+  (check "volatile_rule"
+         (c "volatile_rule" (live srv "volatile_rule") (str "volatile_rule" scope)
+            (str "volatile_rule" kind) (str "volatile_rule" pattern))))
+
+(defn bind
+  "Bind a real value to a placeholder name or a token (\"caseId\" or \"{{caseId-1}}\")."
+  [srv name-or-token value]
+  (check "bind" (c "volatile_bind" (live srv "bind") (str "bind" name-or-token) (str "bind" value))))
+
+(defn volatile-profile
+  "Load a volatile-values profile file."
+  [srv path]
+  (check "volatile_profile"
+         (c "volatile_profile" (live srv "volatile_profile") (str "volatile_profile" path))))
+
+(defn volatile-report
+  "The volatile rules and bindings, as text."
+  [srv]
+  (take (c "volatile_report" (live srv "volatile_report"))))
 
 (defn redact-whole-tape
   "Collapse every match of `pattern` to one constant: variable-cardinality
@@ -626,7 +655,6 @@
   (take (c "last_tls_protocol" (any-handle srv "last_tls_protocol"))))
 
 (defn clear-redactions "Forget the redactions registered so far." [srv] (c "clear_redactions" (live srv "clear_redactions")) nil)
-(defn clear-normalizations "Forget the whole-tape normalizations." [srv] (c "clear_normalizations" (live srv "clear_normalizations")) nil)
 (defn clear-unredactions "Forget the unredactions." [srv] (c "clear_unredactions" (live srv "clear_unredactions")) nil)
 (defn clear-header-removals "Forget the header removals." [srv] (c "clear_header_removals" (live srv "clear_header_removals")) nil)
 (defn clear-match-headers "Forget the `match-header` names." [srv] (c "clear_match_headers" (live srv "clear_match_headers")) nil)
@@ -769,7 +797,7 @@
    :strict-ignore-common-headers :ignore-volatile-headers :remove-transport-headers
    :remove-cloud-headers :redact-credentials :redact-credential-headers
    :remove-headers :redact :redact-headers :redact-query-params :redact-json-fields
-   :unredact :substitute :normalize-whole-tape :redact-whole-tape :notes
+   :unredact :substitute :volatile-markers :volatile-profile :volatile-rules :volatile-binds :redact-whole-tape :notes
    :static-content :untaped :indent-code-blocks :emphasize-http-verbs
    :rules-footer :pretty-xml :pretty-json :license-notice :upstream-cafile
    :sort-json-keys :sort-json-arrays :sort-json-arrays-at :sort-response-headers
@@ -809,7 +837,10 @@
                             (redact-json-field srv item)))
     :unredact (apply-all srv key unredact v)
     :substitute (apply-all srv key substitute v)
-    :normalize-whole-tape (apply-all srv key normalize-whole-tape v)
+    :volatile-profile (each n (one-or-many v) (volatile-profile srv n))
+    :volatile-markers (volatile-markers srv v)
+    :volatile-rules (apply-all srv key volatile-rule v)
+    :volatile-binds (apply-all srv key bind v)
     :redact-whole-tape (apply-all srv key redact-whole-tape v)
     :notes (apply-all srv key note v)
     :static-content (apply-all srv key static-content v)

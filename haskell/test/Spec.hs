@@ -10,6 +10,7 @@ import qualified PlaybackSpec
 import qualified RecordSpec
 import qualified SecretSpec
 import qualified RedactionSpec
+import qualified VolatileSpec
 
 main :: IO ()
 main = hspec $ do
@@ -18,3 +19,4 @@ main = hspec $ do
   MismatchSpec.spec
   RecordSpec.spec
   RedactionSpec.spec
+  VolatileSpec.spec

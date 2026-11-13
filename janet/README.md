@@ -71,11 +71,12 @@ signatures are one table (`abi` in `servirtium/init.janet`), copied from
 (servirtium/base-url vcr) (servirtium/port vcr) (servirtium/tape-length vcr)
 (servirtium/last-kind vcr) (servirtium/last-index vcr) (servirtium/last-error vcr)
 (servirtium/matched-cleanly? vcr) (servirtium/reset-cursor vcr)
+(servirtium/volatile-report vcr) # rules and bindings; see docs/volatile-values.md
 (servirtium/diagnostics-json vcr) (servirtium/assert-no-mismatches vcr) (servirtium/test-context vcr "name")
 (servirtium/har-import har tape) (servirtium/har-export tape har)
 # configuration, as options or as functions: redact, unredact, substitute, remove-header,
 # match-header, set-strict-headers, set-match-json-body, set-match-multiple, static-content,
-# untaped, note, normalize-whole-tape, redact-whole-tape, add-license-notice,
+# untaped, note, volatile-rule, bind, volatile-profile, volatile-markers, redact-whole-tape, add-license-notice,
 # set-pretty-json, remove-transport-headers, remove-cloud-headers, redact-credentials,
 # redact-credential-header, set-upstream-cafile, set-tls, set-sort-json-keys, sort-json-array,
 # sort-json-array-at, set-sort-response-headers, sort-header-value, clear-stable-order,
@@ -191,7 +192,7 @@ on two ports, cursor reset, `match-multiple`, substitution with
 `assert-all-consumed`, `playback-url`, structured errors, TLS rejection,
 retained diagnostics) and record (record then replay incl. a chunked upstream
 and a POST, license notice, pretty JSON, header and credential presets,
-redaction, notes, header removal, whole-tape normalize/redact, state not leaking
+redaction, notes, header removal, volatile values, whole-tape redact, state not leaking
 between fixtures, drift with `:fail-if-changed` and `:or-check`, discard,
 HAR round trip, structured redaction and named secrets through the shared
 `core_tests` fixtures). The HTTP client is Janet's own `net/*`; the record

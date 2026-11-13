@@ -15,7 +15,7 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Redactions | ✅ | ✅ | `:redact(field, …)` | ✅ |
 | Unredactions | ✅ | ✅ | `:unredact(field, …)` | ✅ |
 | Header removal | ✅ | ✅ | `:remove_header(field, name)` | ✅ |
-| Whole-tape normalize (correlated values → `{{name-N}}`) | ✅ | ✅ | `:normalize_whole_tape(pattern, name)` | ✅ core probe |
+| Volatile values (ids, timestamps → `{{name-N}}`) | ✅ | ✅ | `:volatile_rule(scope, pattern, kind)` / `:bind(name, value)` / `:volatile_profile(path)` / `:volatile_markers(style)` / `Server:volatile_report()` | ✅ |
 | Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `:redact_whole_tape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `:note(…)` (builder) / `Server:note` | ✅ |
 | Strict request matching | ✅ | ✅ | `:strict_headers()` | ✅ pass + fail |
@@ -38,9 +38,8 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Dynamic (OS-assigned) port | ✅ | ✅ | `:port(0)` → `Server:port()` | ✅ |
 | One server per port (N servers / process) | ✅ | ✅ | (each `:start()` owns its handle) | ✅ |
 
-The two whole-tape rewrites are proven at libservirtium_vcr level
-(`core_tests/normalize_probe.ae`); both are wired on the Lua surface
-(`:normalize_whole_tape` / `:redact_whole_tape`). One-server-per-port is proven
+Volatile values are specified in [`docs/volatile-values.md`](../../docs/volatile-values.md)
+and proven in `tests/playback.lua`; `:redact_whole_tape` is wired too. One-server-per-port is proven
 directly in `tests/playback.lua` (two playback VCRs on two ports, each replaying
 its own tape) and the no-leak guarantee in `tests/mutation.lua`.
 

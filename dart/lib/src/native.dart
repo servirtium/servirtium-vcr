@@ -184,6 +184,13 @@ typedef _SubstituteC = Pointer<Utf8> Function(
 typedef _SubstituteD = Pointer<Utf8> Function(
     Pointer<Void> server, int field, Pointer<Utf8> pattern, Pointer<Utf8> replacement, int required);
 
+typedef _RuleC = Pointer<Utf8> Function(
+    Pointer<Void> server, Pointer<Utf8> scope, Pointer<Utf8> kind, Pointer<Utf8> pattern);
+typedef _RuleD = Pointer<Utf8> Function(
+    Pointer<Void> server, Pointer<Utf8> scope, Pointer<Utf8> kind, Pointer<Utf8> pattern);
+typedef _MarkersC = Pointer<Utf8> Function(Pointer<Void> server, Int32 style);
+typedef _MarkersD = Pointer<Utf8> Function(Pointer<Void> server, int style);
+
 typedef _WholeTapeC = Pointer<Utf8> Function(
     Pointer<Void> server, Pointer<Utf8> pattern, Pointer<Utf8> nameOrReplacement);
 typedef _WholeTapeD = Pointer<Utf8> Function(
@@ -299,8 +306,15 @@ class Native {
   static final redactJsonField = _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_redact_json_field');
   static final unredact =
       _lib.lookupFunction<_RedactC, _RedactD>('aether_vcr_embed_unredact');
-  static final normalizeWholeTape = _lib.lookupFunction<_WholeTapeC, _WholeTapeD>(
-      'aether_vcr_embed_normalize_whole_tape');
+  static final volatileRule = _lib.lookupFunction<_RuleC, _RuleD>('aether_vcr_embed_volatile_rule');
+  static final volatileBind =
+      _lib.lookupFunction<_WholeTapeC, _WholeTapeD>('aether_vcr_embed_volatile_bind');
+  static final volatileProfile =
+      _lib.lookupFunction<_UntapedC, _UntapedD>('aether_vcr_embed_volatile_profile');
+  static final volatileMarkers = _lib.lookupFunction<_MarkersC, _MarkersD>(
+      'aether_vcr_embed_set_volatile_markers');
+  static final volatileReport =
+      _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_volatile_report');
   static final redactWholeTape = _lib.lookupFunction<_WholeTapeC, _WholeTapeD>(
       'aether_vcr_embed_redact_whole_tape');
   static final removeHeader = _lib

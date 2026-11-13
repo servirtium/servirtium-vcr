@@ -129,13 +129,13 @@
         (h/get-body (servirtium/base-url rec) "/x"))
       (h/not-contains (h/read-file tape2) "X-Trace-Id" "removed"))))
 
-(h/testcase "whole-tape normalize and redact"
+(h/testcase "volatile values and whole-tape redact"
   (fn []
     (def up (h/start-upstream {:body "id=123e4567-e89b-12d3-a456-426614174000 at 2026-01-01"}))
     (def tape (h/temp-path "rec.md"))
     (defer (do ((up :close)) (h/rm tape))
       (servirtium/with-record [rec tape (up :base-url)
-                               {:normalize-whole-tape [["[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" "uuid"]]
+                               {:volatile-rules [["response body" "(?<uuid>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})" "regex"]]
                                 :redact-whole-tape [["20[0-9]{2}-[0-9]{2}-[0-9]{2}" "<DATE>"]]}]
         (h/get-body (servirtium/base-url rec) "/x"))
       (def text (h/read-file tape))

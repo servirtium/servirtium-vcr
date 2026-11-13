@@ -24,6 +24,10 @@ Class {
 		'credentialHeaders',
 		'staticContents',
 		'untapedPaths',
+		'volatileMarkers',
+		'volatileProfiles',
+		'volatileRules',
+		'volatileBinds',
 		'tlsCert',
 		'tlsKey',
 		'tlsCertPem',
@@ -53,7 +57,11 @@ ServirtiumBuilder >> initializeTape: aTapePath [
 	redactCredentials := false.
 	credentialHeaders := OrderedCollection new.
 	staticContents := OrderedCollection new.
-	untapedPaths := OrderedCollection new
+	untapedPaths := OrderedCollection new.
+	volatileMarkers := nil.
+	volatileProfiles := OrderedCollection new.
+	volatileRules := OrderedCollection new.
+	volatileBinds := OrderedCollection new
 ]
 
 { #category : 'accessing' }
@@ -165,6 +173,47 @@ ServirtiumBuilder >> untaped: aPath [
 ]
 
 { #category : 'configuring' }
+ServirtiumBuilder >> volatileRule: aScope pattern: aPattern [
+	"A volatile-value rule (docs/volatile-values.md): aScope such as
+	 'request body', aPattern holding {{placeholders}}. A bad rule makes start
+	 signal ServirtiumError with the core's message."
+
+	^ self volatileRule: aScope pattern: aPattern kind: 'template'
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> volatileRule: aScope pattern: aPattern kind: aKind [
+	"As volatileRule:pattern:, with aKind 'template' or 'regex'."
+
+	volatileRules add: { aScope. aKind. aPattern }.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> bind: aNameOrToken value: aValue [
+	"Bind a real value to a placeholder name or a token ('caseId' or '{{caseId-1}}')."
+
+	volatileBinds add: aNameOrToken -> aValue.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> volatileProfile: aPath [
+	"Load a volatile-values profile file."
+
+	volatileProfiles add: aPath.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumBuilder >> volatileMarkers: aStyle [
+	"Marker style: #mustache (default), #dollarCurly or #wikilink. Applied before any rule."
+
+	volatileMarkers := aStyle.
+	^ self
+]
+
+{ #category : 'configuring' }
 ServirtiumBuilder >> tlsCert: aCertPath key: aKeyPath [
 	"Serve https:// using this PEM certificate and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384)."
 
@@ -207,6 +256,18 @@ ServirtiumBuilder >> applyConfig: handle [
 		self
 			check: (self library untaped: handle path: path)
 			op: 'untaped' ].
+	volatileMarkers ifNotNil: [ :style |
+		self
+			check: (self library volatileMarkers: handle style: (#( #mustache #dollarCurly #wikilink ) indexOf: style) - 1)
+			op: 'volatileMarkers' ].
+	volatileProfiles do: [ :path |
+		self check: (self library volatileProfile: handle path: path) op: 'volatileProfile' ].
+	volatileRules do: [ :tuple |
+		self
+			check: (self library volatileRule: handle scope: (tuple at: 1) kind: (tuple at: 2) pattern: (tuple at: 3))
+			op: 'volatileRule' ].
+	volatileBinds do: [ :assoc |
+		self check: (self library volatileBind: handle name: assoc key value: assoc value) op: 'bind' ].
 	tlsCert ifNotNil: [
 		self
 			check: (self library setTls: handle cert: tlsCert key: tlsKey)

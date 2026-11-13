@@ -13,7 +13,7 @@ diagnostics), mapped through the stack. "Test" = exercised by
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `redactField:pattern:replacement:` | ✅ |
-| Whole-tape normalize (correlated ids → `{{name-N}}`) | ✅ | ✅ | `normalizeWholeTape:name:` | — |
+| Volatile values (ids, timestamps → `{{name-N}}`) | ✅ | ✅ | `volatileRule:pattern:` / `bind:value:` / `volatileProfile:` / `volatileMarkers:` / `ServirtiumServer>>volatileReport` | ✅ |
 | Whole-tape redact (volatiles → one constant) | ✅ | ✅ | `redactWholeTape:replacement:` | — |
 | Unredactions | ✅ | ✅ | `unredactField:pattern:replacement:` | ✅ |
 | Header removal | ✅ | ✅ | `removeHeaderField:name:` | ✅ (via strict) |

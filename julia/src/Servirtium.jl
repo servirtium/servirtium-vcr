@@ -31,7 +31,8 @@ export Vcr, VcrError, Field, Outcome,
     diagnostics_json, assert_no_mismatches, test_context,
     last_kind, last_error, last_index, clear_last_error, matched_cleanly,
     redact_header, redact_query_param, redact_json_field,
-    redact, unredact, normalize_whole_tape, redact_whole_tape, remove_header,
+    redact, unredact, VolatileMarkers, Mustache, DollarCurly, Wikilink,
+    volatile_rule, volatile_bind, volatile_profile, volatile_markers, volatile_report, redact_whole_tape, remove_header,
     match_header, note, static_content, untaped,
     strict_ignore_common_headers, ignore_volatile_headers, set_strict_headers,
     set_match_json_body, set_match_xml_body, set_match_multiple,
@@ -90,6 +91,13 @@ the FIELD_* constants in core/vcr.ae.
     RequestHeaders = 3
     RequestBody = 4
     ResponseHeaders = 5
+end
+
+# Marker style for placeholders and tokens in volatile rules and tapes.
+@enum VolatileMarkers begin
+    Mustache = 0
+    DollarCurly = 1
+    Wikilink = 2
 end
 
 """
@@ -212,20 +220,56 @@ function started(handle::Ptr{Cvoid}, failure::AbstractString; stage=nothing)
     return handle
 end
 
+"""A pre-start stage applying markers (first), profiles, rules and binds.
+`rules` is a vector of `(scope, pattern)` or `(scope, pattern, kind)`; `binds`
+a vector of `name => value`; `profiles` a path or vector of paths. `inner` is an
+optional stage to run first."""
+function volatile_stage(rules, binds, profiles, markers, inner=nothing; pretty_xml::Integer=0, pretty_json::Integer=0)
+    (rules === nothing && binds === nothing && profiles === nothing && markers === nothing &&
+        pretty_xml == 0 && pretty_json == 0) && return inner
+    return handle -> begin
+        inner === nothing || inner(handle)
+        # Canonical-form matching must be on before the tape's rules are applied at start.
+        pretty_xml > 0 && ccall((:aether_vcr_embed_set_pretty_xml, LIB), Cvoid, (Ptr{Cvoid}, Cint), handle, pretty_xml)
+        pretty_json > 0 && ccall((:aether_vcr_embed_set_pretty_json, LIB), Cvoid, (Ptr{Cvoid}, Cint), handle, pretty_json)
+        markers === nothing || check(ccall((:aether_vcr_embed_set_volatile_markers, LIB), Ptr{Cchar},
+                                           (Ptr{Cvoid}, Cint), handle, Int(markers)), "volatile_markers")
+        for path in (profiles === nothing ? () : profiles isa AbstractString ? (profiles,) : profiles)
+            check(ccall((:aether_vcr_embed_volatile_profile, LIB), Ptr{Cchar},
+                        (Ptr{Cvoid}, Cstring), handle, path), "volatile_profile")
+        end
+        for r in (rules === nothing ? () : rules)
+            kind = length(r) > 2 ? r[3] : "template"
+            check(ccall((:aether_vcr_embed_volatile_rule, LIB), Ptr{Cchar},
+                        (Ptr{Cvoid}, Cstring, Cstring, Cstring), handle, r[1], kind, r[2]), "volatile_rule")
+        end
+        for (name, value) in (binds === nothing ? () : binds)
+            check(ccall((:aether_vcr_embed_volatile_bind, LIB), Ptr{Cchar},
+                        (Ptr{Cvoid}, Cstring, Cstring), handle, name, value), "volatile_bind")
+        end
+    end
+end
+
 """
-    playback(tape_path; host="127.0.0.1", port=0) -> Vcr
+    playback(tape_path; host="127.0.0.1", port=0, volatile_rules=nothing,
+             volatile_binds=nothing, volatile_profile=nothing, volatile_markers=nothing,
+             pretty_xml=0, pretty_json=0) -> Vcr
     playback(f, tape_path; host="127.0.0.1", port=0)
 
 Replay a Servirtium markdown tape from disk. The do-block form closes the
 server when the block ends, on every path including an exception.
 """
 function playback(tape_path::AbstractString; host::AbstractString="127.0.0.1",
-                  port::Integer=0, secret_resolver=nothing)
+                  port::Integer=0, secret_resolver=nothing,
+                  volatile_rules=nothing, volatile_binds=nothing,
+                  volatile_profile=nothing, volatile_markers=nothing,
+                  pretty_xml::Integer=0, pretty_json::Integer=0)
     h = ccall((:aether_vcr_embed_open_playback, LIB), Ptr{Cvoid},
               (Cstring, Cstring, Cstring, Cint), "", tape_path, host, port)
     failure = "playback open failed: $tape_path"
     opened(h, failure)
     stage = secret_resolver === nothing ? nothing : hh -> secret_stage(hh; resolver=secret_resolver)
+    stage = volatile_stage(volatile_rules, volatile_binds, volatile_profile, volatile_markers, stage; pretty_xml, pretty_json)
     Vcr(started(h, failure; stage), String(host), String(tape_path), false)
 end
 
@@ -257,12 +301,16 @@ ends normally, and DISCARDS it if the block threw — a failed test shouldn't
 overwrite a good tape.
 """
 function record(tape_path::AbstractString, upstream_base::AbstractString;
-                host::AbstractString="127.0.0.1", port::Integer=0)
+                host::AbstractString="127.0.0.1", port::Integer=0,
+                volatile_rules=nothing, volatile_binds=nothing,
+                volatile_profile=nothing, volatile_markers=nothing,
+                pretty_xml::Integer=0, pretty_json::Integer=0)
     h = ccall((:aether_vcr_embed_open_record, LIB), Ptr{Cvoid},
               (Cstring, Cstring, Cstring, Cstring, Cint),
               "", tape_path, upstream_base, host, port)
     failure = "record open failed: $tape_path"
-    Vcr(started(opened(h, failure), failure), String(host), String(tape_path), false)
+    Vcr(started(opened(h, failure), failure; stage=volatile_stage(volatile_rules, volatile_binds, volatile_profile, volatile_markers; pretty_xml, pretty_json)),
+        String(host), String(tape_path), false)
 end
 
 function record(f::Function, tape_path::AbstractString,
@@ -348,12 +396,33 @@ unredact(vcr::Vcr, field::Field, pattern, replacement) =
                 (Ptr{Cvoid}, Cint, Cstring, Cstring),
                 alive(vcr), Int(field), pattern, replacement), "unredact")
 
-"""Correlate every match into {{name-N}} tokens (things that recur and must
-stay consistent across the whole tape — UUIDs, CSRF tokens)."""
-normalize_whole_tape(vcr::Vcr, pattern, name) =
-    check(ccall((:aether_vcr_embed_normalize_whole_tape, LIB), Ptr{Cchar},
-                (Ptr{Cvoid}, Cstring, Cstring), alive(vcr), pattern, name),
-          "normalize_whole_tape")
+"""A volatile-value rule (docs/volatile-values.md): `scope` such as "request body",
+`pattern` holding `{{placeholders}}`, `kind` "template" (default) or "regex".
+Prefer the `volatile_rules` keyword of `playback`/`record`, which applies rules
+before the server starts so a bad rule fails the open with the core's message."""
+volatile_rule(vcr::Vcr, scope, pattern, kind="template") =
+    check(ccall((:aether_vcr_embed_volatile_rule, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring, Cstring, Cstring), alive(vcr), scope, kind, pattern), "volatile_rule")
+
+"""Bind a real value to a placeholder name or a token (`"caseId"` or `"{{caseId-1}}"`).
+Named `volatile_bind` because `bind` collides with `Sockets.bind`."""
+volatile_bind(vcr::Vcr, name_or_token, value) =
+    check(ccall((:aether_vcr_embed_volatile_bind, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring, Cstring), alive(vcr), name_or_token, value), "volatile_bind")
+
+"""Load a volatile-values profile file."""
+volatile_profile(vcr::Vcr, path) =
+    check(ccall((:aether_vcr_embed_volatile_profile, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cstring), alive(vcr), path), "volatile_profile")
+
+"""Marker style (`Mustache`, `DollarCurly`, `Wikilink`); set before any rule."""
+volatile_markers(vcr::Vcr, style::VolatileMarkers) =
+    check(ccall((:aether_vcr_embed_set_volatile_markers, LIB), Ptr{Cchar},
+                (Ptr{Cvoid}, Cint), alive(vcr), Int(style)), "volatile_markers")
+
+"""The volatile rules and bindings, as text."""
+volatile_report(vcr::Vcr) =
+    take(ccall((:aether_vcr_embed_volatile_report, LIB), Ptr{Cchar}, (Ptr{Cvoid},), alive(vcr)))
 
 """Collapse every match to one constant (variable-cardinality noise — dates)."""
 redact_whole_tape(vcr::Vcr, pattern, replacement) =
@@ -566,7 +635,6 @@ function get_playback_range(vcr::Vcr)
 end
 for (fn, sym) in ((:clear_redactions, :aether_vcr_embed_clear_redactions),
                   (:clear_unredactions, :aether_vcr_embed_clear_unredactions),
-                  (:clear_normalizations, :aether_vcr_embed_clear_normalizations),
                   (:clear_header_removals, :aether_vcr_embed_clear_header_removals),
                   (:clear_match_headers, :aether_vcr_embed_clear_match_headers),
                   (:clear_static_content, :aether_vcr_embed_clear_static_content),

@@ -81,8 +81,11 @@ extern char *aether_vcr_embed_unredact(void *h, int field, const char *pat,
 extern char *aether_vcr_embed_remove_header(void *h, int field, const char *name);
 extern void  aether_vcr_embed_match_header(void *h, const char *name);
 extern void  aether_vcr_embed_clear_match_headers(void *h);
-extern char *aether_vcr_embed_normalize_whole_tape(void *h, const char *pat,
-                                                   const char *name);
+extern char *aether_vcr_embed_volatile_rule(void *h, const char *scope, const char *kind, const char *pattern);
+extern char *aether_vcr_embed_volatile_bind(void *h, const char *name_or_token, const char *value);
+extern char *aether_vcr_embed_volatile_profile(void *h, const char *path);
+extern char *aether_vcr_embed_set_volatile_markers(void *h, int style);
+extern char *aether_vcr_embed_volatile_report(void *h);
 extern char *aether_vcr_embed_redact_whole_tape(void *h, const char *pat,
                                                 const char *repl);
 extern char *aether_vcr_embed_strict_ignore_common_headers(void *h);
@@ -433,13 +436,45 @@ static int l_static_content(lua_State *L)
     return push_owned_string(L, aether_vcr_embed_static_content(h, mount, dir));
 }
 
-/* normalize_whole_tape(handle, pat, name) -> string (empty == ok) */
-static int l_normalize_whole_tape(lua_State *L)
+/* volatile_rule(handle, scope, kind, pattern) -> string (empty == ok) */
+static int l_volatile_rule(lua_State *L)
 {
     void *h = check_handle(L, 1);
-    const char *pat  = luaL_checkstring(L, 2);
-    const char *name = luaL_checkstring(L, 3);
-    return push_owned_string(L, aether_vcr_embed_normalize_whole_tape(h, pat, name));
+    const char *scope = luaL_checkstring(L, 2);
+    const char *kind = luaL_checkstring(L, 3);
+    const char *pattern = luaL_checkstring(L, 4);
+    return push_owned_string(L, aether_vcr_embed_volatile_rule(h, scope, kind, pattern));
+}
+
+/* volatile_bind(handle, name_or_token, value) -> string (empty == ok) */
+static int l_volatile_bind(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *name = luaL_checkstring(L, 2);
+    const char *value = luaL_checkstring(L, 3);
+    return push_owned_string(L, aether_vcr_embed_volatile_bind(h, name, value));
+}
+
+/* volatile_profile(handle, path) -> string (empty == ok) */
+static int l_volatile_profile(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    const char *path = luaL_checkstring(L, 2);
+    return push_owned_string(L, aether_vcr_embed_volatile_profile(h, path));
+}
+
+/* set_volatile_markers(handle, style) -> string (empty == ok) */
+static int l_set_volatile_markers(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int style = (int)luaL_checkinteger(L, 2);
+    return push_owned_string(L, aether_vcr_embed_set_volatile_markers(h, style));
+}
+
+/* volatile_report(handle) -> string */
+static int l_volatile_report(lua_State *L)
+{
+    return push_owned_string(L, aether_vcr_embed_volatile_report(check_handle(L, 1)));
 }
 
 /* redact_whole_tape(handle, pat, repl) -> string (empty == ok) */
@@ -802,7 +837,11 @@ static const luaL_Reg servirtium_funcs[] = {
     {"remove_header",                   l_remove_header},
     {"match_header",                    l_match_header},
     {"static_content",                  l_static_content},
-    {"normalize_whole_tape",            l_normalize_whole_tape},
+    {"volatile_rule",                   l_volatile_rule},
+    {"volatile_bind",                   l_volatile_bind},
+    {"set_volatile_markers",            l_set_volatile_markers},
+    {"volatile_profile",                l_volatile_profile},
+    {"volatile_report",                 l_volatile_report},
     {"redact_whole_tape",               l_redact_whole_tape},
     {"note",                            l_note},
     {"untaped",                         l_untaped},

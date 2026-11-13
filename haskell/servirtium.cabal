@@ -75,6 +75,7 @@ test-suite servirtium-test
       RecordSpec
       SecretSpec
       RedactionSpec
+      VolatileSpec
       MismatchSpec
       TestSupport
   hs-source-dirs:

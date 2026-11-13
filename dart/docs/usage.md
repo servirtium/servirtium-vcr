@@ -58,28 +58,36 @@ Vcr.playback(tape)
 `VcrField`: `path`, `responseBody`, `requestHeaders`, `requestBody`,
 `responseHeaders`.
 
-### Whole-tape normalization
+### Volatile values and whole-tape redaction
 
-`.redact()` rewrites one field at a time. The whole-tape pair scans **every
-field of every interaction** so a volatile that surfaces in a response and then
-recurs in a later request path is handled consistently — the payoff is a
-**byte-identical re-record**.
+`.redact()` rewrites one field at a time. A volatile-value rule names where a
+value that changes on every run sits, using a `{{placeholder}}`; the recording
+writes it as a token (`{{id-1}}`), so a re-record is byte-identical, and
+playback matches any live value there. See
+[`docs/volatile-values.md`](../../docs/volatile-values.md).
 
 ```dart
 Vcr.record(tape, upstream)
-    // Correlated volatiles: every distinct match across the whole tape becomes
-    // a stable {{order-N}} token. The same minted id keeps the same token
-    // wherever it reappears, and round-trips on playback.
-    .normalizeWholeTape(r'order-[0-9a-f]{16}', 'order')
-    // Uncorrelated volatiles: every match collapses to one constant.
-    .redactWholeTape(r'\w{3}, \d\d \w{3} \d{4} [\d:]+ GMT', 'Thu, 01 Jan 1970 00:00:00 GMT')
+    .volatileRule('response headers', 'Date: {{serverDate}}')
+    .volatileRule('request path', r'/orders/(?<orderId>[0-9a-f]{16})', 'regex')
+    // A vendor's profile file:
+    .volatileProfile('cas-profile.md')
+    // Uncorrelated values a client must still parse: every match to a constant.
+    .redactWholeTape(r'X-Build: .+', 'X-Build: <BUILD>')
     .start();
+
+final vcr = Vcr.playback(tape)
+    .prettyXml(2)
+    .volatileMarkers(VolatileMarkers.dollarCurly) // before any rule
+    .volatileRule('request body', r'<a:MessageID>urn:uuid:${messageId}</a:MessageID>')
+    .bind('caseId', '42')                         // attach a real value to a placeholder
+    .start();
+print(vcr.volatileReport()); // rules and bindings
 ```
 
-Use `normalizeWholeTape(pattern, name)` when occurrences are correlated (an id
-minted once and referenced again); use `redactWholeTape(pattern, replacement)`
-when each occurrence is independent (e.g. a `Date` header) and a single fixed
-value suffices.
+Both builders take `volatileRule(scope, pattern, [kind])`, `bind(nameOrToken,
+value)`, `volatileProfile(path)` and `volatileMarkers(style)`; a bad rule makes
+`start()` throw `VcrException` with the core's message.
 
 ## Header removal / strict / static / notes / format
 

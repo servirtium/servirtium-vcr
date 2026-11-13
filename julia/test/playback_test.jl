@@ -261,3 +261,68 @@ end
         close!(rec)
     end
 end
+
+# Volatile values (docs/volatile-values.md): conformance against the shared
+# tapes in core_tests/volatile and the volatile_fixture driver.
+@testset "Volatile values" begin
+    ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+    vtape(name) = joinpath(ROOT, "core_tests", "volatile", name)
+    driver(mode, base) = success(pipeline(Cmd([joinpath(ROOT, "target", "test-tools", "volatile_fixture"), mode, base]);
+                                          stdout=devnull, stderr=devnull))
+    failure_of(f) = try; f(); ""; catch err; sprint(showerror, err); end
+
+    @testset "tape-declared rules, no rules in code" begin
+        playback(vtape("wcf.md"); pretty_xml=2) do vcr
+            @test driver("wcf", base_url(vcr))
+            @test occursin("binding: {{messageId-1}} = ", volatile_report(vcr))
+        end
+    end
+
+    @testset "profile file" begin
+        playback(vtape("wcf_plain.md"); pretty_xml=2, volatile_profile=vtape("profile.md")) do vcr
+            @test driver("wcf", base_url(vcr))
+        end
+    end
+
+    @testset "rules in code" begin
+        rules = [("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"),
+                 ("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/"),
+                 ("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;"),
+                 ("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")]
+        playback(vtape("wcf_plain.md"); pretty_xml=2, volatile_rules=rules) do vcr
+            @test driver("wcf", base_url(vcr))
+        end
+    end
+
+    @testset "markers" begin
+        playback(vtape("wcf_dollar.md"); pretty_xml=2, volatile_markers=DollarCurly) do vcr
+            @test driver("wcf", base_url(vcr))
+        end
+        @test occursin("DollarCurly", failure_of(() -> playback(vtape("wcf_dollar.md"); pretty_xml=2)))
+    end
+
+    @testset "cases: correlation, then mismatch diagnostics" begin
+        playback(vtape("cases.md")) do vcr
+            @test driver("cases", base_url(vcr))
+            reset_cursor(vcr)
+            @test driver("cases-mismatch", base_url(vcr))
+            @test occursin("{{caseId-1}} = 42", last_error(vcr; consume=false))
+            last_error(vcr)  # consuming read: nothing left unretrieved at close
+        end
+    end
+
+    @testset "bind" begin
+        @test occursin("caseId", failure_of(() -> playback(vtape("cases_recorded.md"))))
+        playback(vtape("cases_recorded.md"); volatile_binds=["caseId" => "42"]) do vcr
+            @test driver("cases", base_url(vcr))
+        end
+    end
+
+    @testset "bad rules fail the open with the core's message" begin
+        @test occursin("needs at least one placeholder",
+                       failure_of(() -> playback(vtape("cases.md"); volatile_rules=[("request body", "no placeholder")])))
+        msg = failure_of(() -> playback(vtape("cases.md"); volatile_rules=[("response body", "\"caseId\":\"{{id}}\"")]))
+        @test occursin("conflicts with", msg) && occursin("(tape)", msg)
+        @test !isempty(failure_of(() -> playback(vtape("cases.md"); volatile_rules=[("x", "a {{b}}", "regex")])))
+    end
+end

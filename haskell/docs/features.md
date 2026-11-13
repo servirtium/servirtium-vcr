@@ -12,7 +12,7 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `recRedactions` | ✅ |
-| Whole-tape normalize (correlated → `{{name-N}}`) | ✅ | ✅ | `recNormalizeWholeTape` | — |
+| Volatile values (ids, timestamps → `{{name-N}}`) | ✅ | ✅ | `recVolatileRules` / `recVolatileBinds` / `recVolatileProfiles` / `recVolatileMarkers` (and `pb*`) / `volatileReport` | ✅ |
 | Whole-tape redact (uncorrelated → constant) | ✅ | ✅ | `recRedactWholeTape` | — |
 | Unredactions | ✅ | ✅ | `pbUnredactions` | — |
 | Header removal | ✅ | ✅ | `recRemoveHeaders` / `pbRemoveHeaders` | ✅ (record/redaction tests) |

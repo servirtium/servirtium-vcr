@@ -64,32 +64,41 @@ withRecord (recordOptions tape upstream)
 `Field` is `Path`, `ResponseBody`, `RequestHeaders`, `RequestBody`, or
 `ResponseHeaders`.
 
-### Whole-tape normalization (volatiles across the whole tape)
+### Volatile values and whole-tape redaction
 
-`recRedactions` scrubs one field at a time. For volatile values that appear
-**across** the tape — often minted by the server and echoed back into later
-requests — use the two whole-tape passes. Both run a regex over the *entire*
-tape (all fields, all interactions); the payoff is a **byte-identical
-re-record**.
+`recRedactions` scrubs one field at a time. A volatile-value rule names where a
+value that changes on every run sits, using a `{{placeholder}}`; the recording
+writes a token (`{{orderId-1}}`) there, so a re-record is **byte-identical**,
+and playback matches any live value. See
+[`docs/volatile-values.md`](../../docs/volatile-values.md).
 
 ```haskell
 withRecord (recordOptions tape upstream)
-  { -- correlated: a server-minted id seen in a POST response that then recurs
-    -- in later request paths. Each distinct match becomes a stable {{order-N}}
-    -- token, so the same value round-trips on playback.
-    recNormalizeWholeTape = [("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}", "order")]
-    -- uncorrelated: a volatile of variable value (e.g. the Date header) that
-    -- just needs pinning. Every match collapses to one constant.
-  , recRedactWholeTape    = [("Date: .*GMT", "Date: Wed, 01 Jan 2025 00:00:00 GMT")]
+  { recVolatileRules =
+      [ volatileRule "response headers" "Date: {{serverDate}}"
+      , ("request path", "/orders/(?<orderId>[0-9a-f]{16})", "regex") ]
+  , recVolatileProfiles = ["cas-profile.md"]
+    -- uncorrelated: a value that just needs pinning to one constant.
+  , recRedactWholeTape  = [("X-Build: .*", "X-Build: <BUILD>")]
   } $ \vcr -> ...
+
+withPlayback (playbackOptions tape)
+  { pbPrettyXml = 2
+  , pbVolatileMarkers = Just DollarCurly      -- applied before any rule
+  , pbVolatileBinds = [("caseId", "42")]      -- bind a real value
+  } $ \vcr -> volatileReport vcr
 ```
 
-- `recNormalizeWholeTape` — `(pattern, name)`: every distinct match across the
-  whole tape (first-appearance order) → a stable `{{name-N}}` token. Use for
-  **correlated** ids that recur, so they round-trip on playback.
-- `recRedactWholeTape` — `(pattern, replacement)`: every match collapses to the
-  one `replacement` constant. Use for **uncorrelated** volatiles (like `Date`)
-  of variable cardinality.
+- `recVolatileRules` / `pbVolatileRules` - `(scope, pattern, kind)` with kind
+  `"template"` or `"regex"`; `volatileRule scope pattern` builds a template.
+- `recVolatileBinds` / `pbVolatileBinds` - `(name or token, value)`.
+- `recVolatileProfiles` / `pbVolatileProfiles` - profile file paths.
+- `recVolatileMarkers` / `pbVolatileMarkers` - `Mustache` (default),
+  `DollarCurly`, `Wikilink`.
+- A bad rule makes the start throw `VcrException` with the core's message.
+- `volatileReport server` - the rules and bindings, as text.
+- `recRedactWholeTape` - `(pattern, replacement)`: every match collapses to the
+  one `replacement` constant, for values nobody correlates.
 
 ## Replaying a scrubbed tape (unredaction)
 

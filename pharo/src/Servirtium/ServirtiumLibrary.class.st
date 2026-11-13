@@ -219,9 +219,33 @@ ServirtiumLibrary >> redact: server field: field pattern: pattern replacement: r
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> normalizeWholeTape: server pattern: pattern name: name [
+ServirtiumLibrary >> volatileRule: server scope: scope kind: kind pattern: pattern [
 
-	^ self ffiCall: #( void* aether_vcr_embed_normalize_whole_tape ( void* server, String pattern, String name ) )
+	^ self ffiCall: #( void* aether_vcr_embed_volatile_rule ( void* server, String scope, String kind, String pattern ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> volatileBind: server name: name value: value [
+
+	^ self ffiCall: #( void* aether_vcr_embed_volatile_bind ( void* server, String name, String value ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> volatileProfile: server path: path [
+
+	^ self ffiCall: #( void* aether_vcr_embed_volatile_profile ( void* server, String path ) )
+]
+
+{ #category : 'ffi - mutations' }
+ServirtiumLibrary >> volatileMarkers: server style: style [
+
+	^ self ffiCall: #( void* aether_vcr_embed_set_volatile_markers ( void* server, int style ) )
+]
+
+{ #category : 'ffi - diagnostics' }
+ServirtiumLibrary >> volatileReport: server [
+
+	^ self ffiCall: #( void* aether_vcr_embed_volatile_report ( void* server ) )
 ]
 
 { #category : 'ffi - mutations' }

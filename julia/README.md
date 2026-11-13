@@ -114,6 +114,33 @@ is `Pkg.add(name="Servirtium", version="2.0.0-alpha.16")`; it does not resolve t
 - The version `2.0.0-alpha.16` is valid Julia semver as written; no respelling is needed.
 - Windows: use the `.dll` asset and its full path.
 
+## Volatile values
+
+A rule names where a value that changes on every run sits, with a
+`{{placeholder}}`; the tape holds a token (`{{messageId-1}}`) there and
+playback matches any live value. Pass rules, binds, profiles and markers to
+`playback`/`record`, so a bad rule fails the open with the core's message:
+
+```julia
+playback("tapes/create_case.md";
+         pretty_xml=2,
+         volatile_rules=[("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"),
+                         ("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")],
+         volatile_binds=["caseId" => "42"],
+         volatile_profile="cas-profile.md",
+         volatile_markers=DollarCurly) do vcr   # markers apply before any rule
+    # ... drive the SUT ...
+    println(volatile_report(vcr))
+end
+```
+
+A rule is `(scope, pattern)` or `(scope, pattern, "regex")`. On an open handle
+use `volatile_rule(vcr, scope, pattern, kind)`, `volatile_bind(vcr, name, value)`
+(not `bind`: that is `Sockets.bind`), `volatile_profile(vcr, path)` and
+`volatile_markers(vcr, style)`. Tape-declared rules need `pretty_xml` set before
+start, which is why it is a keyword too. Details:
+[`docs/volatile-values.md`](../docs/volatile-values.md).
+
 ## Stable ordering and playback range
 
 Opt-in, off by default. Stable ordering is record side, for a service that sends

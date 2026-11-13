@@ -151,7 +151,7 @@
       (servirtium/set-rules-footer vcr true)
       (servirtium/set-match-xml-body vcr true)
       (servirtium/set-match-json-body vcr true)
-      (each f [servirtium/clear-redactions servirtium/clear-normalizations
+      (each f [servirtium/clear-redactions
                servirtium/clear-unredactions servirtium/clear-header-removals
                servirtium/clear-static-content servirtium/clear-untaped
                servirtium/clear-format-options servirtium/clear-substitutions]
@@ -254,4 +254,66 @@
       (servirtium/stop vcr)
       (servirtium/discard vcr)
       (servirtium/flush-tape vcr))))
+
+# ---- volatile values (docs/volatile-values.md): shared tapes + volatile_fixture ----
+
+(def vol-dir (string h/repo-root "/core_tests/volatile"))
+(defn vtape [name] (string vol-dir "/" name))
+(defn fails-with [opts tape & parts]
+  (def e (h/show (h/raises (fn () (servirtium/playback (vtape tape) opts)))))
+  (each part parts (h/contains e part "start error")))
+
+(h/testcase "volatile: tape-declared rules, none in code"
+  (fn []
+    (servirtium/with-playback [vcr (vtape "wcf.md") {:pretty-xml 2}]
+      (h/run-tool "volatile_fixture" "wcf" (servirtium/base-url vcr))
+      (h/contains (servirtium/volatile-report vcr) "binding: {{messageId-1}} = " "report"))))
+
+(h/testcase "volatile: profile file"
+  (fn []
+    (servirtium/with-playback [vcr (vtape "wcf_plain.md")
+                               {:pretty-xml 2 :volatile-profile (vtape "profile.md")}]
+      (h/run-tool "volatile_fixture" "wcf" (servirtium/base-url vcr)))))
+
+(h/testcase "volatile: rules in code"
+  (fn []
+    (servirtium/with-playback [vcr (vtape "wcf_plain.md")
+                               {:pretty-xml 2
+                                :volatile-rules
+                                [["request body" "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"]
+                                 ["request body" "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/"]
+                                 ["request body" "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;"]
+                                 ["response body" "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>"]]}]
+      (h/run-tool "volatile_fixture" "wcf" (servirtium/base-url vcr)))))
+
+(h/testcase "volatile: markers"
+  (fn []
+    (servirtium/with-playback [vcr (vtape "wcf_dollar.md") {:pretty-xml 2 :volatile-markers :dollar-curly}]
+      (h/run-tool "volatile_fixture" "wcf" (servirtium/base-url vcr)))
+    (fails-with {:pretty-xml 2} "wcf_dollar.md" "DollarCurly")))
+
+(h/testcase "volatile: cases correlation, then mismatch diagnostics"
+  (fn []
+    (servirtium/with-playback [vcr (vtape "cases.md")]
+      (h/run-tool "volatile_fixture" "cases" (servirtium/base-url vcr))
+      (servirtium/reset-cursor vcr)
+      (h/run-tool "volatile_fixture" "cases-mismatch" (servirtium/base-url vcr))
+      (h/contains (servirtium/last-error vcr false) "{{caseId-1}} = 42" "binding named")
+      # consuming read: nothing left unretrieved at close
+      (servirtium/last-error vcr))))
+
+(h/testcase "volatile: bind"
+  (fn []
+    (fails-with {} "cases_recorded.md" "caseId")
+    (servirtium/with-playback [vcr (vtape "cases_recorded.md") {:volatile-binds [["caseId" "42"]]}]
+      (h/run-tool "volatile_fixture" "cases" (servirtium/base-url vcr)))))
+
+(h/testcase "volatile: bad rules fail the open with the core's message"
+  (fn []
+    (fails-with {:volatile-rules [["request body" "no placeholder"]]} "cases.md"
+                "needs at least one placeholder")
+    (fails-with {:volatile-rules [["response body" "\"caseId\":\"{{id}}\""]]} "cases.md"
+                "conflicts with" "(tape)")
+    (h/raises (fn () (servirtium/playback (vtape "cases.md") {:volatile-rules [["x" "a {{b}}" "regex"]]})))))
+
 (h/done "playback")

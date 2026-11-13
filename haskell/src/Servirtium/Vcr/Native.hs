@@ -50,7 +50,11 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_clear_last_error
   , -- * Mutations (set before start; note staged after start_record)
     aether_vcr_embed_redact
-  , aether_vcr_embed_normalize_whole_tape
+  , aether_vcr_embed_volatile_rule
+  , aether_vcr_embed_volatile_bind
+  , aether_vcr_embed_volatile_profile
+  , aether_vcr_embed_set_volatile_markers
+  , aether_vcr_embed_volatile_report
   , aether_vcr_embed_redact_whole_tape
   , aether_vcr_embed_redact_header
   , aether_vcr_embed_redact_query_param
@@ -187,8 +191,20 @@ foreign import ccall unsafe "aether_vcr_embed_clear_last_error"
 foreign import ccall unsafe "aether_vcr_embed_redact"
   aether_vcr_embed_redact :: Handle -> CInt -> CString -> CString -> IO CString
 
-foreign import ccall unsafe "aether_vcr_embed_normalize_whole_tape"
-  aether_vcr_embed_normalize_whole_tape :: Handle -> CString -> CString -> IO CString
+foreign import ccall unsafe "aether_vcr_embed_volatile_rule"
+  aether_vcr_embed_volatile_rule :: Handle -> CString -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_volatile_bind"
+  aether_vcr_embed_volatile_bind :: Handle -> CString -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_set_volatile_markers"
+  aether_vcr_embed_set_volatile_markers :: Handle -> CInt -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_volatile_profile"
+  aether_vcr_embed_volatile_profile :: Handle -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_volatile_report"
+  aether_vcr_embed_volatile_report :: Handle -> IO CString
 
 foreign import ccall unsafe "aether_vcr_embed_redact_whole_tape"
   aether_vcr_embed_redact_whole_tape :: Handle -> CString -> CString -> IO CString

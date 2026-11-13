@@ -82,7 +82,10 @@ typo does not silently do nothing. Every option has an equivalent function
 | `:redact-headers` / `:redact-query-params` / `:redact-json-fields` | `[name or [name replacement] ...]` | `redact-header` / `redact-query-param` / `redact-json-field` |
 | `:unredact` | `[[field pattern replacement] ...]` | `unredact` |
 | `:substitute` | `[[field pattern replacement required?] ...]` | `substitute` |
-| `:normalize-whole-tape` | `[[pattern name description?] ...]` | `normalize-whole-tape` |
+| `:volatile-markers` | `:mustache` (default), `:dollar-curly`, `:wikilink`; applied before any rule | `volatile-markers` |
+| `:volatile-profile` | profile file path or `[paths]` | `volatile-profile` |
+| `:volatile-rules` | `[[scope pattern kind?] ...]` (a bad rule fails the open) | `volatile-rule` |
+| `:volatile-binds` | `[[name-or-token value] ...]` | `bind` |
 | `:redact-whole-tape` | `[[pattern replacement description?] ...]` | `redact-whole-tape` |
 | `:notes` | `[[title body] ...]` | `note` |
 | `:static-content` | `[[mount dir] ...]` | `static-content` |
@@ -228,3 +231,19 @@ Each `playback` / `record` owns its own native handle, with its own tape,
 cursor, mutations and diagnostics, so N servers run concurrently in one process
 without interfering. Open each on port 0 and read the port back with
 `(servirtium/port vcr)` or `(servirtium/base-url vcr)`.
+
+## Volatile values
+
+A rule names where a value that changes on every run sits, with a
+`{{placeholder}}`; the tape holds a token (`{{messageId-1}}`) there and
+playback matches any live value. See [`docs/volatile-values.md`](../../docs/volatile-values.md).
+
+```janet
+(servirtium/with-playback [vcr "tapes/create_case.md"
+                           {:pretty-xml 2
+                            :volatile-rules [["request body" "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"]
+                                             ["response body" "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>"]]
+                            :volatile-binds [["caseId" "42"]]}]
+  # ... drive the SUT ...
+  (print (servirtium/volatile-report vcr)))
+```

@@ -36,6 +36,9 @@ local M = {}
 M.FIELD_PATH             = C.FIELD_PATH
 M.FIELD_RESPONSE_BODY    = C.FIELD_RESPONSE_BODY
 M.FIELD_REQUEST_HEADERS  = C.FIELD_REQUEST_HEADERS
+M.MARKERS_MUSTACHE      = 0
+M.MARKERS_DOLLAR_CURLY  = 1
+M.MARKERS_WIKILINK      = 2
 M.FIELD_REQUEST_BODY     = C.FIELD_REQUEST_BODY
 M.FIELD_RESPONSE_HEADERS = C.FIELD_RESPONSE_HEADERS
 M.FIELD_RESPONSE         = C.FIELD_RESPONSE -- substitution-only: body AND headers
@@ -100,6 +103,11 @@ end
 
 function Server:last_error(consume)
     return C.last_error_ex(self._handle, consume ~= false)
+end
+
+-- Volatile-value rules and bindings, as text (docs/volatile-values.md).
+function Server:volatile_report()
+    return C.volatile_report(self._handle)
 end
 
 function Server:diagnostics_json(consume)
@@ -274,6 +282,18 @@ local function apply_base(b, handle)
     for _, name in ipairs(b._credential_headers) do
         check(C.redact_credential_header(handle, name), "redact_credential_header")
     end
+    if b._volatile_markers then
+        check(C.set_volatile_markers(handle, b._volatile_markers), "volatile_markers")
+    end
+    for _, path in ipairs(b._volatile_profiles) do
+        check(C.volatile_profile(handle, path), "volatile_profile")
+    end
+    for _, r in ipairs(b._volatile_rules) do
+        check(C.volatile_rule(handle, r.scope, r.kind, r.pattern), "volatile_rule")
+    end
+    for _, bd in ipairs(b._volatile_binds) do
+        check(C.volatile_bind(handle, bd.name, bd.value), "bind")
+    end
     for _, sc in ipairs(b._static_content) do
         check(C.static_content(handle, sc.mount, sc.dir), "static_content")
     end
@@ -302,6 +322,10 @@ local function base_builder(tape, host)
         _credential_headers = {},
         _static_content = {},
         _untaped = {},
+        _volatile_rules = {},
+        _volatile_binds = {},
+        _volatile_markers = nil,
+        _volatile_profiles = {},
         _tls = nil,
         _tls_pem = nil,
     }
@@ -448,6 +472,33 @@ function PlaybackBuilder:static_content(mount, dir)
     return self
 end
 
+-- A volatile-value rule (docs/volatile-values.md): scope such as "request body",
+-- a pattern holding {{placeholders}}, kind "template" (default) or "regex". May
+-- be called repeatedly; a bad rule makes start() return nil + the core's message.
+function PlaybackBuilder:volatile_rule(scope, pattern, kind)
+    table.insert(self._volatile_rules, { scope = scope, pattern = pattern, kind = kind or "template" })
+    return self
+end
+
+-- Bind a real value to a placeholder name or a token ("caseId" or "{{caseId-1}}").
+function PlaybackBuilder:bind(name_or_token, value)
+    table.insert(self._volatile_binds, { name = name_or_token, value = value })
+    return self
+end
+
+-- A volatile-values profile file.
+function PlaybackBuilder:volatile_profile(path)
+    table.insert(self._volatile_profiles, path)
+    return self
+end
+
+-- Marker style: servirtium.MARKERS_MUSTACHE (default), MARKERS_DOLLAR_CURLY,
+-- MARKERS_WIKILINK. Applied before any rule.
+function PlaybackBuilder:volatile_markers(style)
+    self._volatile_markers = style
+    return self
+end
+
 function PlaybackBuilder:untaped(path)
     table.insert(self._untaped, path)
     return self
@@ -581,8 +632,30 @@ function RecordBuilder:redact_json_field(name, replacement, field)
     return self
 end
 
-function RecordBuilder:normalize_whole_tape(pattern, name)
-    table.insert(self._normalizations, { pattern = pattern, name = name })
+-- A volatile-value rule (docs/volatile-values.md): scope such as "request body",
+-- a pattern holding {{placeholders}}, kind "template" (default) or "regex". May
+-- be called repeatedly; a bad rule makes start() return nil + the core's message.
+function RecordBuilder:volatile_rule(scope, pattern, kind)
+    table.insert(self._volatile_rules, { scope = scope, pattern = pattern, kind = kind or "template" })
+    return self
+end
+
+-- Bind a real value to a placeholder name or a token ("caseId" or "{{caseId-1}}").
+function RecordBuilder:bind(name_or_token, value)
+    table.insert(self._volatile_binds, { name = name_or_token, value = value })
+    return self
+end
+
+-- A volatile-values profile file.
+function RecordBuilder:volatile_profile(path)
+    table.insert(self._volatile_profiles, path)
+    return self
+end
+
+-- Marker style: servirtium.MARKERS_MUSTACHE (default), MARKERS_DOLLAR_CURLY,
+-- MARKERS_WIKILINK. Applied before any rule.
+function RecordBuilder:volatile_markers(style)
+    self._volatile_markers = style
     return self
 end
 
@@ -744,9 +817,6 @@ function RecordBuilder:start()
         for _, r in ipairs(self._redactions) do
             check(C[r.operation or "redact"](handle, r.field, r.pattern, r.repl), "redact")
         end
-        for _, n in ipairs(self._normalizations) do
-            check(C.normalize_whole_tape(handle, n.pattern, n.name), "normalize_whole_tape")
-        end
         for _, w in ipairs(self._whole_tape_redactions) do
             check(C.redact_whole_tape(handle, w.pattern, w.repl), "redact_whole_tape")
         end
@@ -834,7 +904,6 @@ function M.record(tapePath, upstream, opts)
     local b = base_builder(tapePath, opts and opts.host)
     b._upstream = upstream
     b._redactions = {}
-    b._normalizations = {}
     b._whole_tape_redactions = {}
     b._note = nil
     b._indent_code_blocks = false

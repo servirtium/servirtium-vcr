@@ -95,7 +95,9 @@ servirtium.record(tape, upstream)
     -- CORRELATED value (an entity id echoed back in later request paths): each
     -- distinct match becomes a stable {{order-N}} token, minted in
     -- first-appearance order — identity preserved, so it round-trips on playback.
-    :normalize_whole_tape("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "order")
+    -- Rules: docs/volatile-values.md. Playback has the same two calls.
+    :volatile_rule("request path", "/orders/(?<orderId>[0-9a-f]{16})", "regex")
+    :volatile_rule("response headers", "Date: {{serverDate}}")
     -- UNCORRELATED, variable-cardinality volatile (a Date header): collapse
     -- every match to one constant.
     :redact_whole_tape("Date: .+ GMT", "Date: <DATE>")
@@ -255,3 +257,22 @@ cursor, mutations, static mounts, note, diagnostics — is scoped to that handle
 Nothing is process-global, so N `Server`s can run at once. One fixture's settings
 can never leak into another's. See
 [architecture.md](architecture.md#concurrency-one-server-per-port).
+
+## Volatile values
+
+A rule names where a value that changes on every run sits, with a
+`{{placeholder}}`; the tape holds a token (`{{messageId-1}}`) there and
+playback matches any live value. A bad rule makes `start()` return `nil` and
+the core's message. See [`docs/volatile-values.md`](../../docs/volatile-values.md).
+
+```lua
+local srv = assert(servirtium.playback("tapes/create_case.md")
+    :pretty_xml(2)
+    :volatile_markers(servirtium.MARKERS_DOLLAR_CURLY)   -- before any rule
+    :volatile_rule("request body", "<a:MessageID>urn:uuid:${messageId}</a:MessageID>")
+    :volatile_rule("response body", "<a:RelatesTo>urn:uuid:${messageId}</a:RelatesTo>")
+    :bind("caseId", "42")                                -- attach a real value
+    :volatile_profile("cas-profile.md")
+    :start())
+print(srv:volatile_report())   -- rules and bindings
+```

@@ -58,6 +58,9 @@ module Servirtium.Vcr
   , lastError
   , lastErrorWith
   , diagnosticsJson
+  , volatileReport
+  , volatileRule
+  , VolatileMarkers (..)
   , assertNoMismatches
   , assertAllConsumed
   , assertAllRedactionsUsed
@@ -108,6 +111,10 @@ fieldCode Response        = 6
 -- | Per-dispatch outcome. The 'Enum' values mirror the @KIND_*@ constants in
 -- the core. Read after a request (via 'lastKind') to assert what the
 -- dispatcher decided.
+-- | Marker style for placeholders and tokens in volatile rules and tapes.
+data VolatileMarkers = Mustache | DollarCurly | Wikilink
+  deriving (Eq, Show, Enum, Bounded)
+
 data Outcome
   = Ok               -- ^ Matched cleanly.
   | PathOrMethodDiff -- ^ No interaction matched the method+path.
@@ -160,6 +167,17 @@ data PlaybackOptions = PlaybackOptions
     -- back to byte-exact (default 'False').
   , pbPrettyJson     :: Int
     -- ^ Shared JSON layout setting (0 off, positive on).
+  , pbVolatileMarkers :: Maybe VolatileMarkers
+    -- ^ Marker style for placeholders and tokens; applied before any rule.
+  , pbVolatileProfiles :: [FilePath]
+    -- ^ Volatile-value profile files (@docs\/volatile-values.md@).
+  , pbVolatileRules :: [(String, String, String)]
+    -- ^ @(scope, pattern, kind)@: where a volatile value sits (@\"request body\"@),
+    -- a pattern holding @{{placeholders}}@, and @\"template\"@ or @\"regex\"@
+    -- (see 'volatileRule'). A bad rule makes start throw 'VcrException' with
+    -- the core's message.
+  , pbVolatileBinds :: [(String, String)]
+    -- ^ @(name or token, value)@: bind a real value to a placeholder.
   , pbPrettyXml      :: Int
     -- ^ Shared XML layout setting (0 off, positive on).
   , pbMatchXmlBody   :: Bool
@@ -244,12 +262,17 @@ data RecordOptions = RecordOptions
   , recRedactions        :: [(Field, String, String)]
     -- ^ @(field, pattern, replacement)@: scrub a value before it lands on the
     -- tape (applied at flush time, so the live SUT still sees real bytes).
-  , recNormalizeWholeTape :: [(String, String)]
-    -- ^ @(pattern, name)@: every distinct regex match across the __whole__ tape
-    -- (all fields\/interactions, in first-appearance order) becomes a stable
-    -- @{{name-N}}@ token. Use for __correlated__ volatiles — e.g. a
-    -- server-minted id that appears in a POST response and then recurs in
-    -- later request paths — so the same token round-trips on playback.
+  , recVolatileMarkers :: Maybe VolatileMarkers
+    -- ^ Marker style for placeholders and tokens; applied before any rule.
+  , recVolatileProfiles :: [FilePath]
+    -- ^ Volatile-value profile files (@docs\/volatile-values.md@).
+  , recVolatileRules :: [(String, String, String)]
+    -- ^ @(scope, pattern, kind)@: where a volatile value sits (@\"request body\"@),
+    -- a pattern holding @{{placeholders}}@, and @\"template\"@ or @\"regex\"@
+    -- (see 'volatileRule'). A bad rule makes start throw 'VcrException' with
+    -- the core's message.
+  , recVolatileBinds :: [(String, String)]
+    -- ^ @(name or token, value)@: bind a real value to a placeholder.
   , recRedactWholeTape    :: [(String, String)]
     -- ^ @(pattern, replacement)@: every regex match across the __whole__ tape
     -- collapses to the constant @replacement@. Use for __uncorrelated__
@@ -337,6 +360,10 @@ playbackOptions tape = PlaybackOptions
   , pbMatchJsonBody = False
   , pbPrettyJson    = 0
   , pbPrettyXml     = 0
+  , pbVolatileMarkers = Nothing
+  , pbVolatileProfiles = []
+  , pbVolatileRules = []
+  , pbVolatileBinds = []
   , pbMatchXmlBody  = False
   , pbIgnoreVolatileHeaders = False
   , pbRemoveTransportHeaders = False
@@ -373,7 +400,10 @@ recordOptions tape upstream = RecordOptions
   , recRedactQueryParamWith = []
   , recRedactJsonFieldWith = []
   , recRedactions         = []
-  , recNormalizeWholeTape = []
+  , recVolatileMarkers = Nothing
+  , recVolatileProfiles = []
+  , recVolatileRules = []
+  , recVolatileBinds = []
   , recRedactWholeTape    = []
   , recRemoveHeaders      = []
   , recIgnoreVolatileHeaders = False
@@ -552,6 +582,26 @@ secretStage h redactor resolver = stage `onException` cleanup
 
 -- Starting ------------------------------------------------------------------
 
+-- | Apply volatile-value markers (first), profiles, rules and binds
+-- (docs/volatile-values.md).
+applyVolatile :: N.Handle -> Maybe VolatileMarkers -> [FilePath] -> [(String, String, String)] -> [(String, String)] -> IO ()
+applyVolatile handle markers profiles rules binds = do
+  mapM_ (\m -> check "volatile_markers" $
+           N.aether_vcr_embed_set_volatile_markers handle (fromIntegral (fromEnum m))) markers
+  mapM_ (\p -> check "volatile_profile" $
+           withCString p $ N.aether_vcr_embed_volatile_profile handle) profiles
+  mapM_ (\(scope, pattern, kind) -> check "volatile_rule" $
+           withCString scope $ \cScope -> withCString kind $ \cKind -> withCString pattern $ \cPattern ->
+             N.aether_vcr_embed_volatile_rule handle cScope cKind cPattern) rules
+  mapM_ (\(name, value) -> check "bind" $
+           withCString name $ \cName -> withCString value $ \cValue ->
+             N.aether_vcr_embed_volatile_bind handle cName cValue) binds
+
+-- | A template rule: @volatileRule scope pattern@. For a regex rule write the
+-- triple @(scope, pattern, \"regex\")@.
+volatileRule :: String -> String -> (String, String, String)
+volatileRule scope pattern = (scope, pattern, "template")
+
 -- | Open the playback server, apply the options to its handle, then begin
 -- serving. Throws 'VcrException' on failure. Prefer 'withPlayback', which
 -- auto-stops.
@@ -577,6 +627,7 @@ startPlayback opts = do
       when (pbPrettyJson opts > 0) $ N.aether_vcr_embed_set_pretty_json handle (fromIntegral (pbPrettyJson opts))
       when (pbPrettyXml opts > 0) $ N.aether_vcr_embed_set_pretty_xml handle (fromIntegral (pbPrettyXml opts))
       when (pbMatchXmlBody opts) $ N.aether_vcr_embed_set_match_xml_body handle 1
+      applyVolatile handle (pbVolatileMarkers opts) (pbVolatileProfiles opts) (pbVolatileRules opts) (pbVolatileBinds opts)
       when (pbMatchMultiple opts) $ N.aether_vcr_embed_set_match_multiple handle 1
       mapM_ (\name ->
                 withCString name $ \cName ->
@@ -685,12 +736,7 @@ startRecord opts = do
                     withCString repl $ \cRepl ->
                       N.aether_vcr_embed_redact handle (fieldCode f) cPat cRepl)
             (recRedactions opts)
-      mapM_ (\(pat, name) ->
-                check "normalize_whole_tape" $
-                  withCString pat $ \cPat ->
-                    withCString name $ \cName ->
-                      N.aether_vcr_embed_normalize_whole_tape handle cPat cName)
-            (recNormalizeWholeTape opts)
+      applyVolatile handle (recVolatileMarkers opts) (recVolatileProfiles opts) (recVolatileRules opts) (recVolatileBinds opts)
       mapM_ (\(pat, repl) ->
                 check "redact_whole_tape" $
                   withCString pat $ \cPat ->
@@ -828,6 +874,10 @@ clearLastError server = N.aether_vcr_embed_clear_last_error (vcrHandle server)
 -- | Acknowledge without deleting; False is an observer read.
 lastErrorWith :: Bool -> VcrServer -> IO String
 lastErrorWith consume server = N.takeString =<< N.aether_vcr_embed_last_error_ex (vcrHandle server) (if consume then 1 else 0)
+-- | Volatile-value rules and bindings, as text (docs\/volatile-values.md).
+volatileReport :: VcrServer -> IO String
+volatileReport server = N.takeString =<< N.aether_vcr_embed_volatile_report (vcrHandle server)
+
 diagnosticsJson :: Bool -> VcrServer -> IO String
 diagnosticsJson consume server = N.takeString =<< N.aether_vcr_embed_diagnostics_json (vcrHandle server) (if consume then 1 else 0)
 -- | Throw 'VcrException' unless every recorded interaction was replayed.

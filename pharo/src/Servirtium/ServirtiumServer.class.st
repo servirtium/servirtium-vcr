@@ -234,6 +234,12 @@ ServirtiumServer >> diagnosticsJsonConsume: consume [
     ^ self library takeString: (self library diagnosticsJson: self handle consume: (consume ifTrue: [ 1 ] ifFalse: [ 0 ]))
 ]
 { #category : 'diagnostics' }
+ServirtiumServer >> volatileReport [
+    "The volatile rules and bindings, as text (docs/volatile-values.md)."
+    ^ self library takeString: (self library volatileReport: self handle)
+]
+
+{ #category : 'diagnostics' }
 ServirtiumServer >> assertNoMismatches [
     | diagnostic |
     diagnostic := self library takeString: (self library assertNoMismatches: self handle).

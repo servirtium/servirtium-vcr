@@ -30,6 +30,16 @@ import 'native.dart';
 
 /// Field selector for redactions / unredactions / header removals. Values
 /// mirror the `FIELD_*` constants in `core/vcr.ae`.
+/// Marker style for placeholders and tokens in volatile-value rules and tapes.
+enum VolatileMarkers {
+  mustache(0), // {{name}} (default)
+  dollarCurly(1), // ${name}
+  wikilink(2); // [[name]]
+
+  const VolatileMarkers(this.value);
+  final int value;
+}
+
 enum VcrField {
   path(1),
   responseBody(2),
@@ -188,6 +198,10 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
   final List<String> _credentialHeaders = [];
   final List<(String, String)> _staticContent = [];
   final List<String> _untaped = [];
+  VolatileMarkers? _volatileMarkers;
+  final List<(String, String, String)> _volatileRules = [];
+  final List<(String, String)> _volatileBinds = [];
+  final List<String> _volatileProfiles = [];
   (String, String)? _tls;
   (String, String)? _tlsPem;
 
@@ -284,6 +298,33 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     return _self;
   }
 
+  /// A volatile-value rule (`docs/volatile-values.md`): [scope] such as
+  /// `request body`, and a [pattern] holding `{{name}}` placeholders. [kind] is
+  /// `template` (default) or `regex`. May be called repeatedly. A bad rule makes
+  /// `start()` throw [VcrException] with the core's message.
+  T volatileRule(String scope, String pattern, [String kind = 'template']) {
+    _volatileRules.add((scope, kind, pattern));
+    return _self;
+  }
+
+  /// Attach a real value to a placeholder name or a token (`caseId` or `{{caseId-1}}`).
+  T bind(String nameOrToken, String value) {
+    _volatileBinds.add((nameOrToken, value));
+    return _self;
+  }
+
+  /// Load a volatile-values profile file.
+  T volatileProfile(String path) {
+    _volatileProfiles.add(path);
+    return _self;
+  }
+
+  /// Marker style for placeholders and tokens; applied before any rule.
+  T volatileMarkers(VolatileMarkers style) {
+    _volatileMarkers = style;
+    return _self;
+  }
+
   /// Serve `https://` using this PEM cert and key (PEM cert + key: ECDSA P-256/P-384/P-521, Ed25519, or RSA 2048-16384). Applied at start.
   T tls(String certPath, String keyPath) {
     _tls = (certPath, keyPath);
@@ -323,6 +364,21 @@ abstract class _BuilderBase<T extends _BuilderBase<T>> {
     }
     for (final path in _untaped) {
       withUtf8(path, (p) => _check(Native.untaped(handle, p), 'untaped'));
+    }
+    final markers = _volatileMarkers;
+    if (markers != null) {
+      _check(Native.volatileMarkers(handle, markers.value), 'volatileMarkers');
+    }
+    for (final path in _volatileProfiles) {
+      withUtf8(path, (n) => _check(Native.volatileProfile(handle, n), 'volatileProfile'));
+    }
+    for (final (scope, kind, pattern) in _volatileRules) {
+      withUtf8(scope, (s) => withUtf8(kind, (k) => withUtf8(pattern,
+          (p) => _check(Native.volatileRule(handle, s, k, p), 'volatileRule'))));
+    }
+    for (final (name, value) in _volatileBinds) {
+      withUtf8(name, (n) => withUtf8(value,
+          (v) => _check(Native.volatileBind(handle, n, v), 'bind')));
     }
     final tls = _tls;
     if (tls != null) {
@@ -484,7 +540,6 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
 
   final String _upstreamBase;
   final List<(String, VcrField, String, String)> _redactions = [];
-  final List<(String, String)> _normalizeWholeTape = [];
   final List<(String, String)> _redactWholeTape = [];
   (String, String)? _note;
   bool _indentCodeBlocks = false;
@@ -520,15 +575,6 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
 
   RecordBuilder redactJsonField(String name, {String replacement = '[REDACTED]', VcrField field = VcrField.requestBody}) {
     _redactions.add(('json_field', field, name, replacement));
-    return this;
-  }
-
-  /// Tokenize every distinct match of [pattern] across the WHOLE tape (all
-  /// fields and interactions, in first-appearance order) into a stable
-  /// `{{name-N}}` placeholder. Use for correlated volatiles — an id minted in
-  /// one response that recurs in later request paths keeps the same token.
-  RecordBuilder normalizeWholeTape(String pattern, String name) {
-    _normalizeWholeTape.add((pattern, name));
     return this;
   }
 
@@ -669,10 +715,6 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
       withUtf8(pattern, (p) => withUtf8(replacement,
           (r) => _check(call(handle, field.value, p, r), 'redact')));
     }
-    for (final (pattern, name) in _normalizeWholeTape) {
-      withUtf8(pattern, (p) => withUtf8(name,
-          (n) => _check(Native.normalizeWholeTape(handle, p, n), 'normalizeWholeTape')));
-    }
     for (final (pattern, replacement) in _redactWholeTape) {
       withUtf8(pattern, (p) => withUtf8(replacement,
           (r) => _check(Native.redactWholeTape(handle, p, r), 'redactWholeTape')));
@@ -752,6 +794,8 @@ class VcrServer {
   /// Read the latest retained diagnostic; false observes without acknowledging.
   String readLastError({bool consume = true}) => takeString(Native.lastErrorEx(_requireHandle, consume ? 1 : 0));
   String diagnosticsJson({bool consume = false}) => takeString(Native.diagnosticsJson(_requireHandle, consume ? 1 : 0));
+  /// Volatile-value rules and bindings, as text (`docs/volatile-values.md`).
+  String volatileReport() => takeString(Native.volatileReport(_requireHandle));
   void assertNoMismatches() => _check(Native.assertNoMismatches(_requireHandle), 'assertNoMismatches');
 
   /// TLS protocol negotiated by the listener (`TLSv1.3`), or '' when TLS is off.

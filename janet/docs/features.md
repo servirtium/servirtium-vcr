@@ -16,7 +16,7 @@ the binding's `test/*.janet` suite against the real native library, unless noted
 | Unredactions | yes | yes | `:unredact` / `unredact` | yes |
 | Named secrets (redactor / resolver callbacks) | yes | yes | `:secret-redactor` / `:secret-resolver` | yes |
 | Header removal | yes | yes | `:remove-headers` / `remove-header` | yes |
-| Whole-tape normalize (`{{name-N}}`) / redact | yes | yes | `:normalize-whole-tape` / `:redact-whole-tape` | yes |
+| Volatile values (`{{name-N}}`, [docs](../../docs/volatile-values.md)) / whole-tape redact | yes | yes | `:volatile-rules` `:volatile-binds` `:volatile-profile` `:volatile-markers` / `:redact-whole-tape` | yes |
 | Notes | yes | yes | `:notes` / `note` | yes |
 | Strict request matching | yes | yes | `:strict-headers` + `:strict-ignore-common-headers` | yes pass + fail |
 | JSON / XML request-body matching (semantic, opt-in) | yes | yes | `:match-json-body` / `:match-xml-body` | core probe |

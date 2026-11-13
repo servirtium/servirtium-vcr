@@ -60,34 +60,42 @@ committed tape is clean:
 `ServirtiumField` is `path`, `responseBody`, `requestHeaders`, `requestBody`,
 or `responseHeaders`.
 
-### Whole-tape normalization & redaction (byte-identical re-record)
+### Volatile values & whole-tape redaction (byte-identical re-record)
 
-Two scrubbers operate across the **whole tape** (every field, every
-interaction) by regex, so a value that recurs — a session id minted in one
-response and echoed back in a later request path — is rewritten consistently:
+Volatile-value rules name values that change on every run (ids, timestamps,
+`Date`) and write them to the tape as tokens; playback matches any live value
+of the right shape. Rules and profiles go on both builders; see
+[`docs/volatile-values.md`](../../docs/volatile-values.md).
 
 ```smalltalk
 (Servirtium record: tape upstream: upstream)
-    "Correlated ids: each distinct match → a stable {{session-N}} token,
-     reused everywhere that same value appears, so it round-trips on playback:"
-    normalizeWholeTape: '[0-9a-f]{32}' name: 'session';
-    "Uncorrelated volatiles: collapse every match to one constant:"
-    redactWholeTape: 'Date: .*' replacement: 'Date: {{date}}';
+    volatileRule: 'response headers' pattern: 'Date: {{serverDate}}';
+    volatileRule: 'request path' pattern: '/orders/(?<orderId>[0-9a-f]{16})' kind: 'regex';
+    volatileProfile: 'cas-profile.md';
+    "Uncorrelated values a client must still parse: collapse to one constant:"
+    redactWholeTape: 'X-Build: .*' replacement: 'X-Build: <BUILD>';
     start.
+
+(Servirtium playback: tape)
+    prettyXml;
+    volatileMarkers: #dollarCurly;    "before any rule"
+    volatileRule: 'request body' pattern: '<a:MessageID>urn:uuid:${messageId}</a:MessageID>';
+    bind: 'caseId' value: '42';       "attach a real value to a placeholder"
+    startThenDo: [ :server | ... server volatileReport ... ].
 ```
 
-- `normalizeWholeTape:pattern:name:` — every **distinct** match across the
-  whole tape gets its own stable `{{name-N}}` token (`{{session-1}}`,
-  `{{session-2}}`, …). Because the mapping is by value, a correlated id that
-  reappears in a later request path normalizes to the same token and matches on
-  playback.
-- `redactWholeTape:pattern:replacement:` — collapse **every** match of the
-  pattern to one constant string. Use this for uncorrelated volatiles (a `Date`
-  header, a one-shot nonce) where no two occurrences need to agree.
+- `volatileRule:pattern:` / `volatileRule:pattern:kind:` - scope, a pattern
+  holding `{{placeholders}}`, kind `'template'` (default) or `'regex'`.
+- `bind:value:` - a placeholder name or token and its real value.
+- `volatileProfile:` - a profile file path.
+- `volatileMarkers:` - `#mustache` (default), `#dollarCurly`, `#wikilink`.
+- `ServirtiumServer>>volatileReport` - the rules and bindings.
+- A bad rule makes `start` signal `ServirtiumError` with the core's message.
+- `redactWholeTape:replacement:` - collapse **every** match of the pattern to
+  one constant string, for uncorrelated values.
 
-Both run at flush time, so the live test still sees real bytes. The payoff is a
-**byte-identical re-record**: re-running record over the same traffic produces
-the same tape, so `git diff` stays empty.
+The payoff is a **byte-identical re-record**: re-running record over the same
+traffic produces the same tape, so `git diff` stays empty.
 
 ## Replaying a scrubbed tape (unredaction)
 

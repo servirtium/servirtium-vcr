@@ -156,4 +156,71 @@ do
         srv:close()
     end
 end
+
+-- volatile values (docs/volatile-values.md): shared tapes + volatile_fixture ---
+do
+    local root = h.here .. "/../.."
+    local function vtape(name) return root .. "/core_tests/volatile/" .. name end
+    local function driver(mode, base)
+        return os.execute("'" .. root .. "/target/test-tools/volatile_fixture' '" .. mode .. "' '" .. base .. "'")
+    end
+    local function start_error(builder, ...)
+        local srv, msg = builder:start()
+        if srv then srv:close() end
+        h.truthy(srv == nil, "start fails")
+        for _, part in ipairs({...}) do h.contains(msg or "", part, "start error") end
+    end
+
+    h.case("volatile: tape-declared rules, none in code")
+    local srv = assert(servirtium.playback(vtape("wcf.md")):pretty_xml(2):start())
+    h.truthy(driver("wcf", srv:base_url()), "wcf driver")
+    h.contains(srv:volatile_report(), "binding: {{messageId-1}} = ", "report")
+    srv:close()
+
+    h.case("volatile: profile file")
+    srv = assert(servirtium.playback(vtape("wcf_plain.md")):pretty_xml(2)
+        :volatile_profile(vtape("profile.md")):start())
+    h.truthy(driver("wcf", srv:base_url()), "wcf driver")
+    srv:close()
+
+    h.case("volatile: rules in code")
+    srv = assert(servirtium.playback(vtape("wcf_plain.md")):pretty_xml(2)
+        :volatile_rule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+        :volatile_rule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
+        :volatile_rule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
+        :volatile_rule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
+        :start())
+    h.truthy(driver("wcf", srv:base_url()), "wcf driver")
+    srv:close()
+
+    h.case("volatile: markers")
+    srv = assert(servirtium.playback(vtape("wcf_dollar.md")):pretty_xml(2)
+        :volatile_markers(servirtium.MARKERS_DOLLAR_CURLY):start())
+    h.truthy(driver("wcf", srv:base_url()), "wcf driver")
+    srv:close()
+    start_error(servirtium.playback(vtape("wcf_dollar.md")):pretty_xml(2), "DollarCurly")
+
+    h.case("volatile: cases correlation, then mismatch diagnostics")
+    srv = assert(servirtium.playback(vtape("cases.md")):start())
+    h.truthy(driver("cases", srv:base_url()), "cases driver")
+    srv:reset_cursor()
+    h.truthy(driver("cases-mismatch", srv:base_url()), "cases-mismatch driver")
+    h.contains(srv:last_error(false), "{{caseId-1}} = 42", "binding named")
+    srv:last_error()   -- consuming read: nothing left unretrieved at close
+    srv:close()
+
+    h.case("volatile: bind")
+    start_error(servirtium.playback(vtape("cases_recorded.md")), "caseId")
+    srv = assert(servirtium.playback(vtape("cases_recorded.md")):bind("caseId", "42"):start())
+    h.truthy(driver("cases", srv:base_url()), "cases driver")
+    srv:close()
+
+    h.case("volatile: bad rules fail start with the core's message")
+    start_error(servirtium.playback(vtape("cases.md")):volatile_rule("request body", "no placeholder"),
+        "needs at least one placeholder")
+    start_error(servirtium.playback(vtape("cases.md")):volatile_rule("response body", "\"caseId\":\"{{id}}\""),
+        "conflicts with", "(tape)")
+    start_error(servirtium.playback(vtape("cases.md")):volatile_rule("x", "a {{b}}", "regex"))
+end
+
 h.done("playback")

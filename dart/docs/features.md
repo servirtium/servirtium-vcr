@@ -9,7 +9,7 @@ exercised by `dart test` against the real native library.
 | Record → flush tape | ✅ | `Vcr.record` | ✅ |
 | Custom HTTP verbs | ✅ | (automatic) | — |
 | Redactions | ✅ | `.redact(field, …)` | ✅ |
-| Whole-tape normalize (correlated → `{{name-N}}`) | ✅ | `.normalizeWholeTape(pattern, name)` | — |
+| Volatile values (ids, timestamps → `{{name-N}}`) | ✅ | `.volatileRule(scope, pattern, [kind])` / `.bind(name, value)` / `.volatileProfile(path)` / `.volatileMarkers(style)` / `server.volatileReport()` | [volatile-values](../../docs/volatile-values.md) |
 | Whole-tape redact (uncorrelated → constant) | ✅ | `.redactWholeTape(pattern, replacement)` | — |
 | Unredactions | ✅ | `.unredact(field, …)` | — |
 | Header removal | ✅ | `.removeHeader(field, name)` | — |

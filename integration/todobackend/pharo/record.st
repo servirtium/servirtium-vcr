@@ -25,8 +25,10 @@ upstream isEmpty ifTrue: [
 result := (Servirtium record: tape upstream: upstream)
 	staticContentMount: '/suite' dir: suite;
 	untaped: '/favicon.ico';
-	normalizeWholeTape: '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' name: 'id';
-	redactWholeTape: 'Date: .+ GMT' replacement: 'Date: <DATE>';
+	volatileRule: 'request path' pattern: '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})' kind: 'regex';
+	volatileRule: 'headers' pattern: '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})' kind: 'regex';
+	volatileRule: 'body' pattern: '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})' kind: 'regex';
+	volatileRule: 'response headers' pattern: 'Date: {{serverDate}}';
 	port: 51080;
 	startThenDo: [ :vcr |
 		| pf |
