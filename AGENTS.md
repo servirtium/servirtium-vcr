@@ -114,8 +114,10 @@ Diagnostics (read after a request): `last_kind(h)` (Outcome, below),
 `last_index(h)`, `last_error(h)`, `clear_last_error(h)`.
 
 Config: `redact(h, field, pat, repl)` / `unredact(...)`;
-`normalize_whole_tape(h, pat, name)` vs `redact_whole_tape(h, pat, repl)`
-(see Gotchas); `remove_header(h, field, name)`;
+`redact_whole_tape(h, pat, repl)`; volatile values `volatile_rule(h, scope,
+kind, pattern)`, `volatile_bind(h, name_or_token, value)`,
+`volatile_profile(h, path)`, `set_volatile_markers(h, style)`,
+`volatile_report(h)` (see Gotchas and `docs/volatile-values.md`); `remove_header(h, field, name)`;
 `strict_ignore_common_headers(h)`, `ignore_volatile_headers(h)`,
 `remove_transport_headers(h)`, `remove_cloud_headers(h, vendor)`,
 `redact_credentials(h)`, `redact_credential_header(h, name)` (the opt-in
@@ -1058,12 +1060,25 @@ process launchers; the shared fixture itself stays language-neutral.
   `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
   with "Undefined function 'cryptography.base64_decode'", something reintroduced
   the old import.
-- **Two normalization verbs, don't confuse them.** `normalize_whole_tape(pat,
-  name)` correlates matches into `{{name-N}}` tokens (use for things that recur
-  and must stay consistent — UUIDs, CSRF tokens). `redact_whole_tape(pat, repl)`
-  collapses every match to one constant (use for variable-cardinality noise —
-  dates). Both operate across the *whole* tape (request + response), not one
-  field.
+- **Volatile values vs redact_whole_tape (2026-11-13).** Volatile values
+  (`core/volatile.ae` + the "volatile values" section at the end of
+  `core/vcr.ae`; spec `docs/volatile-values.md`) replaced
+  `normalize_whole_tape`: rules are plain strings (a template with
+  `{{name}}` / `{{name:pattern}}` placeholders, or a regex whose named groups
+  are placeholders), tape tokens are `{{name-N}}` numbered per name by
+  value, playback binds live values and fills responses, the test binds the
+  rest (`volatile_bind`), and the rules travel in the tape's
+  `## Volatile values` block. Three words only: placeholder, token, bind.
+  No token classes, shapes or value generation in the core (Paul's model).
+  `redact_whole_tape(pat, repl)` stays: a regex redaction to one constant,
+  run with the other redactions before volatile values. Rules are compiled
+  at every setter and at start (the marker style can change); playback
+  expectations are prepared in `start_background_h`, and a setter after
+  start re-prepares (`vol_refresh_k`), because several bindings open and
+  start in one call. A VCR started with plain `http.server_start_background`
+  skips that preparation (tokens are then literal text). Conformance tapes
+  and driver for the bindings: `core_tests/volatile/` and
+  `target/test-tools/volatile_fixture`.
 - **At record time, strip volatile request headers** (`remove_header(
   RequestHeaders, …)` for `User-Agent`, `Accept-*`, `sec-ch-*`, `Origin`,
   `Referer`, …) or strict-match playback will reject a real browser's headers.

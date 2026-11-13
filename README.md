@@ -152,10 +152,17 @@ One libservirtium_vcr; every binding exposes the same surface.
 - **Redaction** — scrub a value out of a field before it lands on the tape
   (`redact`), and restore it on playback so a committed tape still matches
   (`unredact`).
-- **Whole-tape normalization** — `normalizeWholeTape` (regex → stable,
-  correlated `{{id-N}}` tokens that round-trip) and `redactWholeTape` (regex →
-  one constant), so a re-record is byte-identical and drift detection fires
-  only on real upstream changes, not on fresh ids or timestamps.
+- **Volatile values** — rules with named placeholders
+  (`request body: <a:MessageID>urn:uuid:{{messageId}}</a:MessageID>`) turn
+  values that change every run (generated ids, timestamps, `Date`, the
+  endpoint a test started on) into tokens, `{{messageId-1}}`: recording
+  writes them, playback matches any live value there and echoes it back
+  where the same token appears, and drift detection ignores them while
+  every real change still shows. Rules travel in the tape's own
+  `## Volatile values` block or a vendor's profile file, and work the same
+  in every binding ([docs/volatile-values.md](docs/volatile-values.md)).
+  `redactWholeTape` (regex → one constant) remains for values nobody
+  correlates.
 - **Header removal · notes · untaped paths** — drop incidental headers, attach
   Servirtium notes, and 404 incidental requests (e.g. `/favicon.ico`) without
   consuming the playback cursor.
