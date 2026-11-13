@@ -159,14 +159,14 @@ main() {
     h1 = night(1, 0)
     t1 = vcr.emit_tape_h(h1)
     has(t1, "## Volatile values\n\n- request body: `\"requestId\":\"{{requestId}}\"`\n- request headers: `X-Request-Id: {{requestId}}`\n- request path: `/cases/{{caseId}}`\n- response body: `\"created\":\"{{created}}\"`\n- response body: `\"id\":\"{{caseId}}\"`\n- response headers: `Date: {{serverDate}}`\n\n## Interaction 0", "sorted block before the first interaction")
-    has(t1, "X-Request-Id: {{requestId-1}}", "request id")
-    has(t1, "{\"requestId\":\"{{requestId-1}}\"}", "the same name and value, the same token")
-    has(t1, "Date: {{serverDate-1}}", "first date")
-    has(t1, "{\"id\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\"}", "server-minted id and time")
+    has(t1, "X-Request-Id: {{requestId}}", "a one-sided name is unnumbered")
+    has(t1, "{\"requestId\":\"{{requestId}}\"}", "request headers and body are one side")
+    has(t1, "Date: {{serverDate}}", "the Date")
+    has(t1, "{\"id\":\"{{caseId-1}}\",\"created\":\"{{created}}\"}", "a two-sided id is numbered, a one-sided time is not")
     has(t1, "## Interaction 1: GET /cases/{{caseId-1}}", "the id in the next request's path: correlated by name")
-    has(t1, "X-Request-Id: {{requestId-2}}", "a new value, the next number")
-    has(t1, "\"created\":\"{{created-1}}\",\"log\":{\"created\":\"{{created-1}}\"}", "an equal value of one name is one token")
-    has(t1, "Date: {{serverDate-1}}", "per name and value")
+    hasnt(t1, "requestId-", "no number on a one-sided name, whatever the value")
+    has(t1, "\"created\":\"{{created}}\",\"log\":{\"created\":\"{{created}}\"}", "every occurrence the same token")
+    hasnt(t1, "serverDate-", "unnumbered")
     hasnt(t1, "5f1d0c6e", "no raw id left")
     eq(vcr.volatile_report_h(h1), "rule: request headers: `X-Request-Id: {{requestId}}`\nrule: request body: `\"requestId\":\"{{requestId}}\"`\nrule: response body: `\"id\":\"{{caseId}}\"`\nrule: response body: `\"created\":\"{{created}}\"`\nrule: response headers: `Date: {{serverDate}}`\nrule: request path: `/cases/{{caseId}}`\n", "report: rules, no warnings")
 
@@ -175,7 +175,7 @@ main() {
     eq(vcr.emit_tape_h(h2), t1, "a second night's conversation writes the same bytes")
     // ---- test 5 offline: a real change is that change only ----
     h3 = night(3, 1)
-    eq(diff_lines(t1, vcr.emit_tape_h(h3)), "- {\"id\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\"}\n+ {\"id\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\",\"priority\":\"high\"}\n", "an added field is the only diff; no renumbering")
+    eq(diff_lines(t1, vcr.emit_tape_h(h3)), "- {\"id\":\"{{caseId-1}}\",\"created\":\"{{created}}\"}\n+ {\"id\":\"{{caseId-1}}\",\"created\":\"{{created}}\",\"priority\":\"high\"}\n", "an added field is the only diff; no renumbering")
 
     // ---- a format guard: an inline pattern, and an id that stops being a UUID ----
     UUIDP = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -188,7 +188,7 @@ main() {
     ok(vcr.volatile_rule_h(h4b, "response body", "template", "\"id\":\"{{caseId:${UUIDP}}}\""), "rule")
     ok(vcr.record_full_response_h(h4b, "GET", "/c", 200, "application/json", "{\"id\":\"${uuid_for(5)}\"}", "", "", "Content-Type: application/json\n"), "record")
     t4b = vcr.emit_tape_h(h4b)
-    has(t4b, "{\"id\":\"{{caseId-1}}\"}", "a value it accepts is tokenized")
+    has(t4b, "{\"id\":\"{{caseId}}\"}", "a value it accepts is tokenized")
     drift_tape = "${tmp_dir()}/vcr_volatile_drift.tape"
     fs.delete(drift_tape)
     ok(vcr.flush_h(h4b, drift_tape), "flush")
@@ -197,15 +197,42 @@ main() {
     after, _ae = fs.read(drift_tape)
     has(after, "{\"id\":\"42\"}", "and the diff shows it")
 
+    // ---- (a) one-sided names never renumber: coinciding vs differing Dates ----
+    hc = vcr.open_offline()
+    hd = vcr.open_offline()
+    ok(vcr.volatile_rule_h(hc, "response headers", "template", "Date: {{serverDate}}"), "rule")
+    ok(vcr.volatile_rule_h(hd, "response headers", "template", "Date: {{serverDate}}"), "rule")
+    di = 0
+    while di < 3 {
+        ok(vcr.record_full_response_h(hc, "GET", "/d${string.from_int(di)}", 200, "text/plain", "x", "", "", "Date: Fri, 13 Nov 2026 09:41:07 GMT\n"), "record")
+        ok(vcr.record_full_response_h(hd, "GET", "/d${string.from_int(di)}", 200, "text/plain", "x", "", "", "Date: Fri, 13 Nov 2026 09:41:0${string.from_int(di)} GMT\n"), "record")
+        di = di + 1
+    }
+    eq(vcr.emit_tape_h(hd), vcr.emit_tape_h(hc), "three equal Dates and three different ones write the same tape")
+
+    // ---- (b) a mixed tape: two-sided messageId, one-sided serverDate and submitted ----
+    hm = vcr.open_offline()
+    ok(vcr.volatile_rule_h(hm, "request body", "template", "<m>{{messageId}}</m>"), "rule")
+    ok(vcr.volatile_rule_h(hm, "response body", "template", "<r>{{messageId}}</r>"), "rule")
+    ok(vcr.volatile_rule_h(hm, "request body", "template", "<s>{{submitted}}</s>"), "rule")
+    ok(vcr.volatile_rule_h(hm, "response headers", "template", "Date: {{serverDate}}"), "rule")
+    ok(vcr.record_full_response_h(hm, "POST", "/m", 200, "text/xml", "<r>A</r>", "Content-Type: text/xml\n", "<x><m>A</m><s>2026-11-13T09:41:07</s></x>", "Date: Fri, 13 Nov 2026 09:41:07 GMT\n"), "record")
+    ok(vcr.record_full_response_h(hm, "POST", "/m", 200, "text/xml", "<r>B</r>", "Content-Type: text/xml\n", "<x><m>B</m><s>2026-11-13T09:41:08</s></x>", "Date: Fri, 13 Nov 2026 09:41:08 GMT\n"), "record")
+    tm = vcr.emit_tape_h(hm)
+    has(tm, "<x><m>{{messageId-1}}</m><s>{{submitted}}</s></x>", "first request")
+    has(tm, "<x><m>{{messageId-2}}</m><s>{{submitted}}</s></x>", "second: a new messageId number, the same submitted token")
+    has(tm, "<r>{{messageId-2}}</r>", "the echo correlates")
+    hasnt(tm, "serverDate-", "the Date is unnumbered")
+
     // ---- escapes: a literal token in a body ----
     h5 = vcr.open_offline()
-    ok(vcr.record_full_response_h(h5, "GET", "/t", 200, "text/plain", "template {{uuid-1}} and {{{{}}", "", "", ""), "record")
-    has(vcr.emit_tape_h(h5), "template {{{{}}uuid-1}} and {{{{}}{{}}", "escaped even without rules")
+    ok(vcr.record_full_response_h(h5, "GET", "/t", 200, "text/plain", "template {{uuid-1}} and \\{{uuid-1}} and C:\\dir\\{x}", "", "", ""), "record")
+    has(vcr.emit_tape_h(h5), "template \\{{uuid-1}} and \\\\\\{{uuid-1}} and C:\\dir\\{x}", "escaped even without rules; other backslashes untouched")
     h5d = vcr.open_offline()
     ok(vcr.set_volatile_markers_h(h5d, 1), "markers")
     ok(vcr.volatile_rule_h(h5d, "response body", "template", "id=${D}{id}."), "dollar rule")
-    ok(vcr.record_full_response_h(h5d, "GET", "/t", 200, "text/plain", "id=77. literal ${D}{id-1}", "", "", ""), "record")
-    has(vcr.emit_tape_h(h5d), "id=${D}{id-1}. literal ${D}{${D}{}id-1}", "DollarCurly tokens and escape")
+    ok(vcr.record_full_response_h(h5d, "GET", "/t", 200, "text/plain", "id=77. literal ${D}{id}", "", "", ""), "record")
+    has(vcr.emit_tape_h(h5d), "id=${D}{id}. literal \\${D}{id}", "DollarCurly: an unnumbered token and an escaped literal")
 
     // ---- redaction first: a rule never sees a redacted secret ----
     h6 = vcr.open_offline()
@@ -214,7 +241,7 @@ main() {
     ok(vcr.volatile_rule_h(h6, "request body", "template", "\"apiKey\":\"{{apiKey}}\""), "rule")
     ok(vcr.record_full_response_h(h6, "POST", "/k", 200, "text/plain", "ok", "Content-Type: application/json\n", "{\"apiKey\":\"${secret}\"}", ""), "record")
     t6 = vcr.emit_tape_h(h6)
-    has(t6, "{\"apiKey\":\"{{apiKey-1}}\"}", "the rule saw the redaction")
+    has(t6, "{\"apiKey\":\"{{apiKey}}\"}", "the rule saw the redaction")
     hasnt(t6, secret, "never the secret")
     h6b = vcr.open_offline()
     ok(vcr.redact_h(h6b, vcr.FIELD_REQUEST_BODY, secret, "[REDACTED]"), "redact")
@@ -224,7 +251,7 @@ main() {
 
     // ---- the recording-rules footer lists each rule ----
     vcr.set_rules_footer_h(h1, 1)
-    has(vcr.emit_tape_h(h1), "| volatile | response headers | `Date: {{serverDate}}` | `{{serverDate-1}}` … | 0, 1 |", "footer row")
+    has(vcr.emit_tape_h(h1), "| volatile | response headers | `Date: {{serverDate}}` | `{{serverDate}}` … | 0, 1 |", "footer row")
 
     // ---- test 9: a pathological regex is bounded ----
     h7 = vcr.open_offline()
@@ -265,16 +292,16 @@ main() {
     fs.delete(tape)
     ok(record_night(env, 1, 0, tape), "night 1 (first recording)")
     first, _ = fs.read(tape)
-    has(first, "\"id\":\"{{caseId-1}}\"", "the minted id")
-    has(first, "X-Request-Id: {{requestId-1}}", "the request id")
-    has(first, "Date: {{serverDate-1}}", "the Date")
+    has(first, "\"id\":\"{{caseId}}\"", "the minted id")
+    has(first, "X-Request-Id: {{requestId}}", "the request id")
+    has(first, "Date: {{serverDate}}", "the Date")
     ok(record_night(env, 2, 0, tape), "night 2: nothing changed, fail_if_changed passes")
     second, _ = fs.read(tape)
     eq(second, first, "night 2's tape is byte-identical")
     e3 = record_night(env, 3, 1, tape)
     has(e3, "tape mismatch", "night 3: the vendor renamed id")
     third, _ = fs.read(tape)
-    eq(diff_lines(first, third), "- {\"id\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\",\"status\":\"open\"}\n+ {\"caseId\":\"{{caseId-1}}\",\"created\":\"{{created-1}}\",\"status\":\"open\"}\n", "the diff is the rename")
+    eq(diff_lines(first, third), "- {\"id\":\"{{caseId}}\",\"created\":\"{{created}}\",\"status\":\"open\"}\n+ {\"caseId\":\"{{caseId}}\",\"created\":\"{{created}}\",\"status\":\"open\"}\n", "the diff is the rename")
     http.server_stop(upstream)
 
     println("=== volatile values: recording and drift passed ===")

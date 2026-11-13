@@ -36,8 +36,8 @@ in `<a:RelatesTo>`. Four rules, and the tape reads:
 
 ```xml
 <a:MessageID>urn:uuid:{{messageId-1}}</a:MessageID>
-<a:To s:mustUnderstand="1">{{endpoint-1}}/Services/CaseService.svc</a:To>
-…&lt;SubmissionDate&gt;{{submitted-1}}&lt;/SubmissionDate&gt;…
+<a:To s:mustUnderstand="1">{{endpoint}}/Services/CaseService.svc</a:To>
+…&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;…
 <a:RelatesTo>urn:uuid:{{messageId-1}}</a:RelatesTo>
 ```
 
@@ -55,16 +55,27 @@ the same file.
 
 ## Placeholders and tokens
 
-A **placeholder** is `{{name}}` in a rule; a **token** is `{{name-N}}` in a
-tape. A name is an identifier, `[A-Za-z_][A-Za-z0-9_]*`, chosen by whoever
-writes the rule (`messageId`, `serverDate`, `airTempInParis`); the core gives
-no name a meaning. N counts the distinct values of that name in the
-conversation, from 1, in order of first appearance (interactions in tape
-order; within one: path, request headers, request body, response headers,
-response body). The same name and the same value always get the same token:
-that is how correlation shows (`{{messageId-1}}` in MessageID and in
-RelatesTo). Different names never bind each other, and every token comes
-from a rule: there is no implicit echo or search-and-replace elsewhere.
+A **placeholder** is `{{name}}` in a rule; a **token** is what a tape holds
+in its place. A name is an identifier, `[A-Za-z_][A-Za-z0-9_]*`, chosen by
+whoever writes the rule (`messageId`, `serverDate`, `airTempInParis`); the
+core gives no name a meaning. Every token comes from a rule: there is no
+implicit echo or search-and-replace elsewhere, and different names never
+bind each other.
+
+**Only names used on both sides are numbered.** A name is *two-sided* when
+the rules (code, profiles and the tape's block together) use it on the
+request side (`request path`, `request headers`, `request body`) and on the
+response side, or in one rule whose scope spans both (`headers`, `body`).
+Its tokens are `{{messageId-1}}`, `{{messageId-2}}`: N counts the distinct
+values of the name in the conversation, from 1, in order of first
+appearance (interactions in tape order; within one: path, request headers,
+request body, response headers, response body). The same value always gets
+the same token, which is how correlation shows (`{{messageId-1}}` in
+MessageID and in RelatesTo). Any other name is *one-sided*, and its token is
+`{{serverDate}}`, without a number, wherever it appears and whatever its
+value. Numbering a one-sided name would only record coincidences: three
+`Date` headers in one second one night and across two the next would change
+the tape with no change to the API.
 
 A placeholder `{{name}}` matches one or more characters on one line,
 stopping at the first place the rest of the template matches.
@@ -78,19 +89,23 @@ literal text anchors it: `^` and `$` are refused rather than silently
 changing meaning. Groups inside the pattern are allowed and produce no
 tokens; a named group inside a placeholder is an error.
 
-**Literal markers.** Text that would read as a token is escaped when a tape
-is written: `{{{{}}` stands for a literal `{{`, so a body holding the text
-`{{messageId-1}}` is written `{{{{}}messageId-1}}` and replayed as written.
-Only an opening marker that begins token-shaped text (or the escape itself)
-is escaped; `{{request.host}}` and the other substitution placeholders are
-not token-shaped and stay as they are.
+**Literal markers.** Text in a body that would read as a token is written
+with a backslash before it: `\{{messageId-1}}` in a tape is the text
+`{{messageId-1}}`, replayed without the backslash. A backslash that really
+precedes token-shaped text is doubled (`\\{{messageId-1}}` is a backslash
+followed by a real token), and an escaped literal after a backslash gets
+both (`\\\{{x-1}}`). Only token-shaped text is escaped: a numbered token of
+any name, or an unnumbered token of a one-sided name. Every other backslash,
+in a JSON escape or a Windows path, is untouched, and `{{request.host}}` and
+the other substitution placeholders stay as they are. A template uses the
+same escape for a literal marker: `\{{` is the text `{{`.
 
 **Marker styles.** One closed choice per VCR, set in code before any rule:
 `Mustache` `{{name}}` (the default), `DollarCurly` `${name}`, `Wikilink`
-`[[name]]`. Rules in code and in the tape use the VCR's markers; the escape
-is open, open, close (`${${}`, `[[[[]]`). A tape does not declare its style.
-At start, playback scans the tape for tokens of known names in all three
-styles: tokens only in another style, or in two styles at once, fail the
+`[[name]]`. Rules in code and in the tape use the VCR's markers, and the escape
+is the same backslash (`\${x-1}`, `\[[x-1]]`). A tape does not declare its style.
+At start, playback scans the tape for its rules' tokens, numbered and
+unnumbered, in all three styles: tokens only in another style, or in two styles at once, fail the
 start with the styles named.
 
 ## Rules
@@ -178,6 +193,13 @@ scope   = "request path" | "request headers" | "response headers" | "headers"
 span    = a CommonMark code span (a pattern holding a backtick uses a longer
           run of backticks; one starting or ending with a backtick is padded
           with a space)
+
+; in the rule's pattern and in the tape's fields:
+placeholder = open name [ ":" pcre ] close
+token       = open name "-" N close        ; a two-sided name
+            | open name close              ; a one-sided name
+escape      = "\" before token-shaped text (a literal), with a run of
+              backslashes before it doubled first
 ```
 
 The block ends at the next line starting `## `; anything else in it fails the
@@ -208,27 +230,34 @@ token. A live request binds the tokens it carries; the test binds the rest,
 before start, with plain strings:
 
 - `bind("serverDate", "Fri, 13 Nov 2026 09:41:07 GMT")` binds every token of
-  the name that nothing else bound (`serverDate-1`, `serverDate-2`, …);
-- `bind("serverDate-2", "…")` binds that one token.
+  the name that nothing else bound: `{{serverDate}}` everywhere, or for a
+  two-sided name `{{caseId-1}}`, `{{caseId-2}}`, …;
+- `bind("caseId-2", "…")` binds that one token of a two-sided name. On a
+  one-sided name it is an error at start, saying the name is unnumbered.
 
 A response token that nothing binds before it is replayed (a server's
 `Date`, a request id it mints, a case id it creates) must be bound by the
 test, or the start fails listing the names; a hand-written tape holding a
-real value there needs nothing (that value is replayed). When the test bound
-a token and a live request carries it, the request must agree: a different
-value is a mismatch, and the diagnostic names both
-(`{{dob-1}} was bound by the test to 2004-11-16; the request sent 2004-11-17`).
-A placeholder with an inline pattern refuses a bound value that does not
-match it, at start.
+real value there needs nothing (that value is replayed as written). A
+one-sided request token matches any value its rule captures (so its inline
+pattern, if any, still applies), and binds and correlates with nothing.
+When the test bound a two-sided token and a live request carries it, the
+request must agree: a different value is a mismatch, and the diagnostic
+names both (`{{messageId-1}} was bound by the test to 5f1d…; the request sent
+0b6c…`). A placeholder with an inline pattern refuses a bound value that
+does not match it, at start.
 
 The core has no date, UUID or relative-time logic. Computing a value ("22
 years ago next Monday", a fresh UUID, `Time.now.httpdate`) is the test's
 job, in its own language, passed in as a string. Whether to placeholder a
-stable value at all is the team's choice: a birth date the system under test
-derives from "now" is worth one,
+stable value at all is the team's choice. A birth date the system under
+test derives from "now", which the service echoes back, is worth one: a rule
+each side makes it two-sided, and the test binds the value it expects, so
+the request is checked against it and the echo replays it:
 
 ```text
 request body: `<a:DOB>{{dob:\d{4}-\d{2}-\d{2}}}</a:DOB>`
+response body: `<Customer><DOB>{{dob}}</DOB>`
 ```
 
 ```ruby
@@ -376,5 +405,8 @@ Servirtium::Vcr.playback("spec/tapes/cases.md")
 ```
 
 The tape comes out byte-identical every night unless CAS changed something,
-and the diff is that change: numbering is per name, so a new value renumbers
-only tokens of its own name.
+and the diff is that change. The one-sided names (`serverDate`, `etag`) are
+never numbered, so coincidences between their values cannot touch the tape;
+the two-sided ones (`caseId`, `requestId`) are numbered by the values the
+conversation actually correlates, and an extra value renumbers only tokens
+of its own name.

@@ -162,7 +162,7 @@ stable_rules(h: ptr) {
     vcr.sort_response_headers_h(h, 1)
     e = vcr.sort_header_value_h(h, "Allow")
     if e == "" { e = vcr.sort_json_array_h(h, "/value", "name") }
-    if e == "" { e = vcr.volatile_rule_h(h, "response body", "template", "\"id\": \"{{id}}\"") }
+    if e == "" { e = vcr.volatile_rule_h(h, "body", "template", "\"id\": \"{{id}}\"") }
     if e != "" { fail("rule: ${e}") }
     if e == "" { e = vcr.remove_header_h(h, vcr.FIELD_RESPONSE_HEADERS, "Date") }
     // Matches the sorted body only (the upstream's first order has "value"

@@ -8,11 +8,13 @@ import std.list
 import std.regex
 exports(
     SCOPE_PATH, SCOPE_REQUEST_HEADERS, SCOPE_REQUEST_BODY, SCOPE_RESPONSE_HEADERS, SCOPE_RESPONSE_BODY,
-    HEADING, MUSTACHE, DOLLAR_CURLY, WIKILINK, style_name, marker_open, marker_close, escape_marker,
+    HEADING, MUSTACHE, DOLLAR_CURLY, WIKILINK, style_name, marker_open, marker_close,
     add_rule, parse_block, block_in, render_block, profile_style, rule_count, rule_line,
     rule_applies, rule_names, response_only_names, find_spans, span_count, span_start,
     span_end, span_rule, span_name, span_warnings, valid_name, token_end, token_name, token_number,
-    token_text, escape, unescape, tokens_in_style, all_names, inline_patterns, value_fits
+    token_text, escape, unescape, tokens_in_style, all_names, inline_patterns, value_fits,
+    shape_end, real_token_end, parts, part_count, part_token, part_text, part_name, part_numbered,
+    two_sided_names, one_sided_names
 )
 extern malloc(n: int) -> ptr
 extern string_concat(a: string, b: string) -> string @heap
@@ -62,6 +64,7 @@ at(s: string, i: int, lit: string) -> int {
     return 0
 }
 has_name(names: string, name: string) -> int {
+    if name == "" { return 0 }
     if string.index_of("|${names}|", "|${name}|") >= 0 { return 1 }
     return 0
 }
@@ -83,11 +86,6 @@ style_name(style: int) -> string {
     if style == WIKILINK { return "Wikilink ([[name]])" }
     return "Mustache ({{name}})"
 }
-// The escape: a literal opening marker is written open+open+close.
-escape_marker(style: int) -> string {
-    return string_concat(string_concat(marker_open(style), marker_open(style)), marker_close(style))
-}
-
 // [A-Za-z_][A-Za-z0-9_]* (also a PCRE2 group name).
 valid_name(n: string) -> int {
     if string.length(n) == 0 || is_alpha_(char(n, 0)) == 0 { return 0 }
@@ -106,9 +104,10 @@ name_end(s: string, i: int) -> int {
     return j
 }
 
-// ---- tokens: open name-N close ----
+// ---- tokens: open name-N close (numbered), open name close (unnumbered) ----
 
-// When a token starts at s[i]: the index after it; else -1.
+// When a numbered token, open name-N close, starts at s[i]: the index after
+// it; else -1. Any name: the shape alone, which is what escaping needs.
 token_end(s: string, i: int, style: int) -> int {
     o = marker_open(style)
     if at(s, i, o) == 0 { return -1 }
@@ -121,60 +120,209 @@ token_end(s: string, i: int, style: int) -> int {
     if at(s, d, marker_close(style)) == 0 { return -1 }
     return d + string.length(marker_close(style))
 }
+// Token-shaped text at s[i]: a numbered token of any name, or an
+// unnumbered one of a name in `one` ("|"-delimited). The index after it,
+// or -1.
+shape_end(s: string, i: int, style: int, one: string) -> int {
+    te = token_end(s, i, style)
+    if te > 0 { return te }
+    o = marker_open(style)
+    if at(s, i, o) == 0 { return -1 }
+    p = i + string.length(o)
+    ne = name_end(s, p)
+    if ne == p || at(s, ne, marker_close(style)) == 0 { return -1 }
+    if has_name(one, string.substring(s, p, ne)) == 0 { return -1 }
+    return ne + string.length(marker_close(style))
+}
+// A real token at s[i] for this rule set: numbered of a name in `two`,
+// unnumbered of a name in `one`. The index after it, or -1.
+real_token_end(s: string, i: int, style: int, two: string, one: string) -> int {
+    te = token_end(s, i, style)
+    if te > 0 {
+        if has_name(two, token_name(s, i, style)) == 1 { return te }
+        return -1
+    }
+    return shape_end(s, i, style, one)
+}
 token_name(s: string, i: int, style: int) -> string {
     p = i + string.length(marker_open(style))
     return string.substring(s, p, name_end(s, p))
 }
 token_number(s: string, i: int, style: int) -> int {
-    p = name_end(s, i + string.length(marker_open(style))) + 1
+    p = name_end(s, i + string.length(marker_open(style)))
+    if char(s, p) != 45 { return 0 }
+    p = p + 1
     d = p
     while is_digit(char(s, d)) == 1 { d = d + 1 }
     n, _e = string.to_int(string.substring(s, p, d))
     return n
 }
+// open name-N close, or open name close for n = 0 (an unnumbered token).
 token_text(name: string, n: int, style: int) -> string {
+    if n == 0 { return string_concat(string_concat(marker_open(style), name), marker_close(style)) }
     return string_concat(string_concat(marker_open(style), "${name}-${string.from_int(n)}"), marker_close(style))
 }
 
-// Escape each literal opening marker that would read as a token or as the escape.
-escape(s: string, style: int) -> string {
-    o = marker_open(style)
-    esc = escape_marker(style)
-    if string.index_of(s, o) < 0 { return s }
+backslashes(n: int) -> string {
     out = string.copy("")
-    span = 0
-    i = string.index_of(s, o)
-    while i >= 0 {
-        if token_end(s, i, style) >= 0 || at(s, i, esc) == 1 {
-            out = string_concat(out, string.substring(s, span, i))
-            out = string_concat(out, esc)
-            span = i + string.length(o)
-            i = string.index_of_from(s, o, span)
-        } else {
-            i = string.index_of_from(s, o, i + 1)
-        }
-    }
-    return string_concat(out, string.substring(s, span, string.length(s)))
+    k = 0
+    while k < n { out = string_concat(out, "\\"); k = k + 1 }
+    return out
 }
-unescape(s: string, style: int) -> string {
-    esc = escape_marker(style)
-    if string.index_of(s, esc) < 0 { return s }
-    return string.replace_all(s, esc, marker_open(style))
+// The run of backslashes ending just before s[i], not reaching back past `from`.
+run_before(s: string, i: int, from: int) -> int {
+    k = 0
+    while i - k - 1 >= from && char(s, i - k - 1) == 92 { k = k + 1 }
+    return k
 }
 
-// How many tokens of the names in `names` ("|"-separated) `s` holds in `style`.
-tokens_in_style(s: string, style: int, names: string) -> int {
+// Escape literal text for a tape: token-shaped text gets a backslash
+// (\{{x-1}}), and a run of backslashes before it is doubled first. With
+// `tail` = 1 the text is followed by a real token, so a run of backslashes
+// it ends with is doubled too. Every other backslash is left alone.
+escape(s: string, style: int, one: string, tail: int) -> string {
+    o = marker_open(style)
+    n = string.length(s)
+    out = string.copy("")
+    pos = 0
+    i = string.index_of(s, o)
+    while i >= 0 {
+        te = shape_end(s, i, style, one)
+        if te < 0 { i = string.index_of_from(s, o, i + 1); continue }
+        k = run_before(s, i, pos)
+        out = string_concat(out, string.substring(s, pos, i - k))
+        out = string_concat(out, backslashes(2 * k + 1))
+        out = string_concat(out, string.substring(s, i, te))
+        pos = te
+        i = string.index_of_from(s, o, te)
+    }
+    if tail == 1 {
+        k2 = run_before(s, n, pos)
+        out = string_concat(out, string.substring(s, pos, n - k2))
+        return string_concat(out, backslashes(2 * k2))
+    }
+    return string_concat(out, string.substring(s, pos, n))
+}
+
+struct VPart { token: int; text: string; name: string; numbered: int }
+part_add(l: ptr, token: int, text: string, name: string, numbered: int) {
+    p = malloc(sizeof(VPart)) as *VPart
+    p.token = token; p.text = string.copy(text); p.name = string.copy(name); p.numbered = numbered
+    list_add_raw(l, p)
+}
+part_count(l: ptr) -> int { return list_size(l) }
+part_token(l: ptr, i: int) -> int { return (list_get_raw(l, i) as *VPart).token }
+part_text(l: ptr, i: int) -> string { return (list_get_raw(l, i) as *VPart).text }
+part_name(l: ptr, i: int) -> string { return (list_get_raw(l, i) as *VPart).name }
+part_numbered(l: ptr, i: int) -> int { return (list_get_raw(l, i) as *VPart).numbered }
+
+// Read tape text: literal parts (escapes undone) and real tokens. Before
+// token-shaped text, a run of k backslashes stands for k/2 backslashes, and
+// an odd run makes the text literal.
+parts(s: string, style: int, two: string, one: string) -> ptr {
+    o = marker_open(style)
+    l = list_new()
+    buf = string.copy("")
+    pos = 0
+    i = string.index_of(s, o)
+    while i >= 0 {
+        te = shape_end(s, i, style, one)
+        if te < 0 { i = string.index_of_from(s, o, i + 1); continue }
+        k = run_before(s, i, pos)
+        buf = string_concat(buf, string.substring(s, pos, i - k))
+        buf = string_concat(buf, backslashes(k / 2))
+        text = string.substring(s, i, te)
+        real = 0
+        if k % 2 == 0 && real_token_end(s, i, style, two, one) == te { real = 1 }
+        if real == 1 {
+            if buf != "" { part_add(l, 0, buf, "", 0) }
+            buf = string.copy("")
+            numbered = 0
+            if token_end(s, i, style) == te { numbered = 1 }
+            part_add(l, 1, text, token_name(s, i, style), numbered)
+        } else {
+            buf = string_concat(buf, text)
+        }
+        pos = te
+        i = string.index_of_from(s, o, te)
+    }
+    buf = string_concat(buf, string.substring(s, pos, string.length(s)))
+    if buf != "" { part_add(l, 0, buf, "", 0) }
+    return l
+}
+
+// The text a tape holds, escapes undone and tokens left as written.
+unescape(s: string, style: int, two: string, one: string) -> string {
+    if string.index_of(s, marker_open(style)) < 0 { return s }
+    l = parts(s, style, two, one)
+    out = string.copy("")
+    i = 0
+    while i < list_size(l) { out = string_concat(out, part_text(l, i)); i = i + 1 }
+    return out
+}
+
+// How many tokens of the rule set `s` holds in `style`.
+tokens_in_style(s: string, style: int, two: string, one: string) -> int {
     o = marker_open(style)
     n = 0
     i = string.index_of(s, o)
     while i >= 0 {
-        te = token_end(s, i, style)
-        if te > 0 && has_name(names, token_name(s, i, style)) == 1 {
+        te = real_token_end(s, i, style, two, one)
+        if te > 0 && run_before(s, i, 0) % 2 == 0 {
             n = n + 1
             i = string.index_of_from(s, o, te)
         } else { i = string.index_of_from(s, o, i + 1) }
     }
     return n
+}
+
+// Names used on both sides (a request-side and a response-side rule, or one
+// rule whose scope spans both): their tokens are numbered. "|a|b|".
+two_sided_names(l: ptr) -> string {
+    req = string.copy("|")
+    resp = string.copy("|")
+    i = 0
+    while i < list_size(l) {
+        r = rule_at(l, i)
+        parts_ = string.split(string.copy(r.names), "|")
+        k = 0
+        while k < string.array_size(parts_) {
+            nm = string.array_get(parts_, k)
+            if r.scope % 8 != 0 && has_name(req, nm) == 0 { req = string_concat(req, "${nm}|") }
+            if r.scope / 8 != 0 && has_name(resp, nm) == 0 { resp = string_concat(resp, "${nm}|") }
+            k = k + 1
+        }
+        string.array_free(parts_)
+        i = i + 1
+    }
+    out = string.copy("|")
+    rs = string.split(string.copy(req), "|")
+    k = 0
+    while k < string.array_size(rs) {
+        nm = string.array_get(rs, k)
+        if nm != "" && has_name(resp, nm) == 1 { out = string_concat(out, "${nm}|") }
+        k = k + 1
+    }
+    string.array_free(rs)
+    return out
+}
+// Names used on one side only: their tokens are unnumbered. "|a|b|".
+one_sided_names(l: ptr) -> string {
+    two = two_sided_names(l)
+    out = string.copy("|")
+    i = 0
+    while i < list_size(l) {
+        ns = string.split(string.copy(rule_at(l, i).names), "|")
+        k = 0
+        while k < string.array_size(ns) {
+            nm = string.array_get(ns, k)
+            if nm != "" && has_name(two, nm) == 0 && has_name(out, nm) == 0 { out = string_concat(out, "${nm}|") }
+            k = k + 1
+        }
+        string.array_free(ns)
+        i = i + 1
+    }
+    return out
 }
 
 // ---- code spans (CommonMark) ----
@@ -362,7 +510,6 @@ check_inline(name: string, p: string) -> string {
 compile_template(t: string, style: int) -> (string, string, string, string) {
     o = marker_open(style)
     cl = marker_close(style)
-    esc = escape_marker(style)
     rx = string.copy("")
     names = string.copy("|")
     inlines = string.copy("")
@@ -373,12 +520,18 @@ compile_template(t: string, style: int) -> (string, string, string, string) {
     i = 0
     n = string.length(t)
     while i < n {
-        if at(t, i, esc) == 1 {
-            lit = string_concat(lit, o)
-            i = i + string.length(esc)
-            continue
-        }
         if at(t, i, o) == 1 {
+            // A run of k backslashes before a marker stands for k/2 of them;
+            // an odd run makes the marker literal.
+            k = run_before(lit, string.length(lit), 0)
+            if k > 0 {
+                lit = string_concat(string.substring(lit, 0, string.length(lit) - k), backslashes(k / 2))
+                if k % 2 == 1 {
+                    lit = string_concat(lit, o)
+                    i = i + string.length(o)
+                    continue
+                }
+            }
             p = i + string.length(o)
             ne = name_end(t, p)
             name = string.substring(t, p, ne)

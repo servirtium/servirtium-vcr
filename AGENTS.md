@@ -1066,7 +1066,8 @@ process launchers; the shared fixture itself stays language-neutral.
   `normalize_whole_tape`: rules are plain strings (a template with
   `{{name}}` / `{{name:pattern}}` placeholders, or a regex whose named groups
   are placeholders), tape tokens are `{{name-N}}` numbered per name by
-  value, playback binds live values and fills responses, the test binds the
+  value for names used on both sides and `{{name}}` for one-sided names,
+  literal token-shaped text is escaped with a backslash, playback binds live values and fills responses, the test binds the
   rest (`volatile_bind`), and the rules travel in the tape's
   `## Volatile values` block. Three words only: placeholder, token, bind.
   No token classes, shapes or value generation in the core (Paul's model).

@@ -406,6 +406,8 @@ struct Rules {
     vvalues: ptr             // *VBind: what the test bound, by name or token
     vtape_block: string      // the tape's own "## Volatile values" block
     vnames: string           // every placeholder name, "|"-delimited
+    vtwo: string             // names used on both sides (numbered tokens)
+    vone: string             // names used on one side (unnumbered tokens)
     collapses: ptr           // *Collapse (redact_whole_tape)
     header_removals: ptr     // *HeaderRemoval
     credheaders: ptr         // *CredHeader (credential presets)
@@ -518,6 +520,8 @@ new_rules() -> *Rules {
     r.vvalues = list_new()
     r.vtape_block = ""
     r.vnames = "|"
+    r.vtwo = "|"
+    r.vone = "|"
     r.collapses = list_new()
     r.header_removals = list_new()
     r.credheaders = list_new()
@@ -6415,7 +6419,10 @@ emit_rules_footer_k(vc: *Vcr) -> string {
         vk = 0
         while vk < string.array_size(vnames) {
             if written != "" { written = string_concat(written, ", ") }
-            written = string_concat(written, md_cell_code(volatile.token_text(string.array_get(vnames, vk), 1, vc.settings.vstyle)))
+            vn = string.array_get(vnames, vk)
+            vnum = 0
+            if string.index_of(vc.rules.vtwo, "|${vn}|") >= 0 { vnum = 1 }
+            written = string_concat(written, md_cell_code(volatile.token_text(vn, vnum, vc.settings.vstyle)))
             vk = vk + 1
         }
         string.array_free(vnames)
@@ -8097,7 +8104,7 @@ vol_on_k(vc: *Vcr) -> int {
     return 0
 }
 vol_style_k(vc: *Vcr) -> int { return vc.settings.vstyle }
-vol_unescape_k(vc: *Vcr, s: string) -> string { return volatile.unescape(s, vc.settings.vstyle) }
+vol_unescape_k(vc: *Vcr, s: string) -> string { return volatile.unescape(s, vc.settings.vstyle, vc.rules.vtwo, vc.rules.vone) }
 field_bit(field: int) -> int {
     if field == FIELD_PATH { return volatile.SCOPE_PATH }
     if field == FIELD_REQUEST_HEADERS { return volatile.SCOPE_REQUEST_HEADERS }
@@ -8114,10 +8121,7 @@ vol_field_label(field: int) -> string {
 }
 // 1 when a token of a known placeholder name starts at s[i].
 vol_token_end_k(vc: *Vcr, s: string, i: int) -> int {
-    te = volatile.token_end(s, i, vc.settings.vstyle)
-    if te < 0 { return -1 }
-    if string.index_of(vc.rules.vnames, "|${volatile.token_name(s, i, vc.settings.vstyle)}|") < 0 { return -1 }
-    return te
+    return volatile.real_token_end(s, i, vc.settings.vstyle, vc.rules.vtwo, vc.rules.vone)
 }
 
 new_vbind(token: string, name: string, value: string, source: int) -> *VBind {
@@ -8170,6 +8174,8 @@ vol_compile_k(vc: *Vcr) -> string {
     }
     vc.rules.volatile = out
     vc.rules.vnames = string_concat(volatile.all_names(out), "|")
+    vc.rules.vtwo = volatile.two_sided_names(out)
+    vc.rules.vone = volatile.one_sided_names(out)
     return ""
 }
 
@@ -8198,7 +8204,8 @@ mint_reserve(m: *VMint, name: string, n: int) {
 }
 // The token for `value` of placeholder `name`: the one it already has
 // (fresh = 0), else the next number (fresh = 1).
-mint_token(m: *VMint, name: string, value: string, style: int) -> (string, int) {
+mint_token(m: *VMint, name: string, value: string, style: int, numbered: int) -> (string, int) {
+    if numbered == 0 { return volatile.token_text(name, 0, style), 0 }
     i = 0
     while i < list_size(m.values) {
         v = list_get_raw(m.values, i) as *VBind
@@ -8258,14 +8265,17 @@ vol_warn_k(vc: *Vcr, msg: string) {
 // value it stands for is kept (Tape.vminted) for replay.
 vol_rewrite_k(vc: *Vcr, field: int, text: string, index: int, m: *VMint, mode: int) -> string {
     style = vc.settings.vstyle
+    one = vc.rules.vone
     rules = volatile_rules_k(vc)
     if string.length(text) == 0 || list_size(rules) == 0 {
-        if mode == 0 { return volatile.escape(text, style) }
+        if mode == 0 { return volatile.escape(text, style, one, 0) }
         return text
     }
     res = volatile.find_spans(rules, field_bit(field), text)
     w = volatile.span_warnings(res)
     if w != "" { vol_warn_k(vc, "interaction ${index}, ${vol_field_label(field)}: ${rtrim(w)}") }
+    response_side = 0
+    if field == FIELD_RESPONSE_HEADERS || field == FIELD_RESPONSE_BODY { response_side = 1 }
     out = string.copy("")
     pos = 0
     k = 0
@@ -8273,39 +8283,48 @@ vol_rewrite_k(vc: *Vcr, field: int, text: string, index: int, m: *VMint, mode: i
         st = volatile.span_start(res, k)
         en = volatile.span_end(res, k)
         name = volatile.span_name(res, k)
+        numbered = 0
+        if string.index_of(vc.rules.vtwo, "|${name}|") >= 0 { numbered = 1 }
         seg = string.substring(text, pos, st)
-        if mode == 0 { seg = volatile.escape(seg, style) }
-        out = string_concat(out, seg)
         v = string.substring(text, st, en)
         mint_hit(m, volatile.rule_line(rules, volatile.span_rule(res, k)), index)
-        if volatile.token_end(v, 0, style) == string.length(v) && volatile.token_name(v, 0, style) == name {
-            out = string_concat(out, v)
-        } else {
-            tok, fresh = mint_token(m, name, v, style)
-            if mode == 1 && fresh == 1 { list_add_raw(vc.tape.vminted, new_vbind(tok, name, v, -1)) }
+        is_token = 0
+        if volatile.real_token_end(v, 0, style, vc.rules.vtwo, one) == string.length(v) && volatile.token_name(v, 0, style) == name { is_token = 1 }
+        if mode == 0 {
+            out = string_concat(out, volatile.escape(seg, style, one, 1))
+            tok, _fresh = mint_token(m, name, v, style, numbered)
             out = string_concat(out, tok)
+        } else {
+            out = string_concat(out, seg)
+            if is_token == 1 {
+                out = string_concat(out, v)
+            } else if numbered == 0 && response_side == 1 {
+                // A hand-written one-sided response value is replayed as written.
+                out = string_concat(out, v)
+            } else {
+                tok, fresh = mint_token(m, name, v, style, numbered)
+                if fresh == 1 { list_add_raw(vc.tape.vminted, new_vbind(tok, name, v, -1)) }
+                out = string_concat(out, tok)
+            }
         }
         pos = en
         k = k + 1
     }
     rest = string.substring(text, pos, string.length(text))
-    if mode == 0 { rest = volatile.escape(rest, style) }
+    if mode == 0 { rest = volatile.escape(rest, style, one, 0) }
     return string_concat(out, rest)
 }
 
 // The highest number each name's tokens already have in `s`.
 vol_reserve_tokens_k(vc: *Vcr, m: *VMint, s: string) {
-    style = vc.settings.vstyle
-    o = volatile.marker_open(style)
-    esc = volatile.escape_marker(style)
-    i = string.index_of(s, o)
-    while i >= 0 {
-        if string.starts_with(string.substring(s, i, i + string.length(esc)), esc) == 1 {
-            i = string.index_of_from(s, o, i + string.length(esc))
-            continue
+    l = volatile.parts(s, vc.settings.vstyle, vc.rules.vtwo, vc.rules.vone)
+    i = 0
+    while i < volatile.part_count(l) {
+        if volatile.part_token(l, i) == 1 && volatile.part_numbered(l, i) == 1 {
+            t = volatile.part_text(l, i)
+            mint_reserve(m, volatile.part_name(l, i), volatile.token_number(t, 0, vc.settings.vstyle))
         }
-        if vol_token_end_k(vc, s, i) > 0 { mint_reserve(m, volatile.token_name(s, i, style), volatile.token_number(s, i, style)) }
-        i = string.index_of_from(s, o, i + 1)
+        i = i + 1
     }
 }
 
@@ -8429,16 +8448,12 @@ vol_prepare_k(vc: *Vcr) {
 }
 
 vol_tokens_of_k(vc: *Vcr, s: string, out: string) -> string {
-    style = vc.settings.vstyle
-    o = volatile.marker_open(style)
     acc = out
-    i = string.index_of(s, o)
-    while i >= 0 {
-        te = vol_token_end_k(vc, s, i)
-        if te > 0 {
-            acc = string_concat(acc, "${string.substring(s, i, te)}|")
-            i = string.index_of_from(s, o, te)
-        } else { i = string.index_of_from(s, o, i + 1) }
+    l = volatile.parts(s, vc.settings.vstyle, vc.rules.vtwo, vc.rules.vone)
+    i = 0
+    while i < volatile.part_count(l) {
+        if volatile.part_token(l, i) == 1 { acc = string_concat(acc, "${volatile.part_text(l, i)}|") }
+        i = i + 1
     }
     return acc
 }
@@ -8483,7 +8498,9 @@ vol_check_tape_k(vc: *Vcr) -> string {
         i = 0
         while i < n {
             e = tape_get_k(vc, i)
-            counts[sty] = counts[sty] + volatile.tokens_in_style(e.path, sty, names) + volatile.tokens_in_style(e.req_headers, sty, names) + volatile.tokens_in_style(e.req_body, sty, names) + volatile.tokens_in_style(e.resp_headers, sty, names) + volatile.tokens_in_style(e.body, sty, names)
+            two = vc.rules.vtwo
+            one = vc.rules.vone
+            counts[sty] = counts[sty] + volatile.tokens_in_style(e.path, sty, two, one) + volatile.tokens_in_style(e.req_headers, sty, two, one) + volatile.tokens_in_style(e.req_body, sty, two, one) + volatile.tokens_in_style(e.resp_headers, sty, two, one) + volatile.tokens_in_style(e.body, sty, two, one)
             i = i + 1
         }
         sty = sty + 1
@@ -8512,7 +8529,9 @@ vol_check_tape_k(vc: *Vcr) -> string {
         k = 0
         while k < string.array_size(parts) {
             tok = string.array_get(parts, k)
-            if tok != "" && string.index_of(seen, "|${tok}|") < 0 {
+            unnumbered = 0
+            if tok != "" && volatile.token_end(tok, 0, style) < 0 { unnumbered = 1 }
+            if tok != "" && (unnumbered == 1 || string.index_of(seen, "|${tok}|") < 0) {
                 _mv, minted = vol_minted_k(vc, tok)
                 nm = volatile.token_name(tok, 0, style)
                 _vv, valued = vol_test_bound_k(vc, tok)
@@ -8538,7 +8557,12 @@ vol_check_binds_k(vc: *Vcr) -> string {
         b = list_get_raw(vc.rules.vvalues, i) as *VBind
         name = b.name
         dash = string.index_of(name, "-")
-        if dash > 0 { name = string.substring(name, 0, dash) }
+        if dash > 0 {
+            name = string.substring(name, 0, dash)
+            if string.index_of(vc.rules.vone, "|${name}|") >= 0 {
+                return "bind(${b.name}, …): ${name} is used on one side only, so its tokens are unnumbered (${volatile.token_text(name, 0, vc.settings.vstyle)}); bind ${name}"
+            }
+        }
         pats = string.split(volatile.inline_patterns(volatile_rules_k(vc), name), "\n")
         k = 0
         while k < string.array_size(pats) {
@@ -8686,7 +8710,7 @@ vol_live_slots_k(vc: *Vcr, field: int, live: string) -> ptr {
         vol_literal_tokens_k(vc, live, pos, st, slots)
         v = string.substring(live, st, en)
         literal = 0
-        if volatile.token_end(v, 0, style) == string.length(v) { literal = 1 }
+        if vol_token_end_k(vc, v, 0) == string.length(v) { literal = 1 }
         vol_slot(slots, st, en, volatile.span_name(res, k), v, literal)
         pos = en
         k = k + 1
@@ -8710,32 +8734,17 @@ vol_live_skeleton(live: string, slots: ptr) -> string {
 // The expectation with each token replaced by \x01 (appended to `tokens`)
 // and escapes unescaped.
 vol_expected_skeleton_k(vc: *Vcr, s: string, tokens: ptr) -> string {
-    style = vc.settings.vstyle
-    o = volatile.marker_open(style)
-    esc = volatile.escape_marker(style)
+    l = volatile.parts(s, vc.settings.vstyle, vc.rules.vtwo, vc.rules.vone)
     out = string.copy("")
-    span = 0
-    i = string.index_of(s, o)
-    while i >= 0 {
-        if string.starts_with(string.substring(s, i, i + string.length(esc)), esc) == 1 {
-            out = string_concat(out, string.substring(s, span, i))
-            out = string_concat(out, o)
-            span = i + string.length(esc)
-            i = string.index_of_from(s, o, span)
-            continue
-        }
-        te = vol_token_end_k(vc, s, i)
-        if te > 0 {
-            out = string_concat(out, string.substring(s, span, i))
+    i = 0
+    while i < volatile.part_count(l) {
+        if volatile.part_token(l, i) == 1 {
             out = string_concat(out, "\x01")
-            vol_slot(tokens, i, te, volatile.token_name(s, i, style), string.substring(s, i, te), 1)
-            span = te
-            i = string.index_of_from(s, o, te)
-            continue
-        }
-        i = string.index_of_from(s, o, i + 1)
+            vol_slot(tokens, 0, 0, volatile.part_name(l, i), volatile.part_text(l, i), volatile.part_numbered(l, i))
+        } else { out = string_concat(out, volatile.part_text(l, i)) }
+        i = i + 1
     }
-    return string_concat(out, string.substring(s, span, string.length(s)))
+    return out
 }
 
 // 1 when `live` matches the tokenized expectation of interaction `index`,
@@ -8755,6 +8764,9 @@ vol_match_k(vc: *Vcr, field: int, expected: string, live: string, index: int) ->
         s = list_get_raw(slots, i) as *VSlot
         if s.literal == 1 {
             if s.value != t.value { return 0 }
+        } else if t.literal == 0 {
+            // An unnumbered (one-sided) token: any value its rule captured.
+            if s.name != t.name { return 0 }
         } else {
             if s.name != t.name { return 0 }
             bv, bsrc, found = vol_bound(vc, t.value, index)
@@ -8806,6 +8818,7 @@ vol_render_live_k(vc: *Vcr, field: int, live: string) -> string {
         if s.literal == 1 { out = string_concat(out, s.value) }
         else {
             t = vol_reverse(vc, s.name, s.value, -2)
+            if string.index_of(vc.rules.vone, "|${s.name}|") >= 0 { t = volatile.token_text(s.name, 0, style) }
             if t == "" { t = string_concat(string_concat(volatile.marker_open(style), "${s.name}-?"), volatile.marker_close(style)) }
             out = string_concat(out, t)
         }
@@ -8821,39 +8834,29 @@ vol_render_live_k(vc: *Vcr, field: int, live: string) -> string {
 // literal opening marker.
 vol_fill_k(vc: *Vcr, text: string, index: int) -> string {
     style = vc.settings.vstyle
-    o = volatile.marker_open(style)
-    esc = volatile.escape_marker(style)
-    if string.index_of(text, o) < 0 { return text }
+    if string.index_of(text, volatile.marker_open(style)) < 0 { return text }
+    l = volatile.parts(text, style, vc.rules.vtwo, vc.rules.vone)
     out = string.copy("")
-    span = 0
-    i = string.index_of(text, o)
-    while i >= 0 {
-        if string.starts_with(string.substring(text, i, i + string.length(esc)), esc) == 1 {
-            out = string_concat(out, string.substring(text, span, i))
-            out = string_concat(out, o)
-            span = i + string.length(esc)
-            i = string.index_of_from(text, o, span)
-            continue
-        }
-        te = vol_token_end_k(vc, text, i)
-        if te > 0 {
-            tok = string.substring(text, i, te)
-            name = volatile.token_name(text, i, style)
-            v, _src, found = vol_bound(vc, tok, -3)
+    i = 0
+    while i < volatile.part_count(l) {
+        t = volatile.part_text(l, i)
+        if volatile.part_token(l, i) == 0 { out = string_concat(out, t) }
+        else if volatile.part_numbered(l, i) == 0 {
+            // One-sided: what the test bound to the name, else the text.
+            v1, f1 = vol_test_bound_k(vc, t)
+            if f1 == 1 { out = string_concat(out, v1) } else { out = string_concat(out, t) }
+        } else {
+            v, _src, found = vol_bound(vc, t, -3)
             if found == 0 {
-                v, found = vol_minted_k(vc, tok)
-                if found == 0 { v = tok }
-                list_add_raw(vc.tape.vbinds, new_vbind(tok, name, v, index))
+                v, found = vol_minted_k(vc, t)
+                if found == 0 { v = t }
+                list_add_raw(vc.tape.vbinds, new_vbind(t, volatile.part_name(l, i), v, index))
             }
-            out = string_concat(out, string.substring(text, span, i))
             out = string_concat(out, v)
-            span = te
-            i = string.index_of_from(text, o, te)
-            continue
         }
-        i = string.index_of_from(text, o, i + 1)
+        i = i + 1
     }
-    return string_concat(out, string.substring(text, span, string.length(text)))
+    return out
 }
 
 vol_bindings_text_k(vc: *Vcr) -> string {

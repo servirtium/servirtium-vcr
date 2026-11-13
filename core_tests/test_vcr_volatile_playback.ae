@@ -155,9 +155,9 @@ main() {
     has(pe, "uses Mustache ({{name}}) markers; this VCR uses DollarCurly", "a profile in another style")
     vcr.destroy_h(h)
     D = string.from_char(36)
-    mixed = tmp_tape("mixed", string.concat("## Volatile values\n\n- request path: `/a/{{x}}/b`\n\n", string.concat(interaction(0, "GET", "/a/{{x-1}}/b", "", 200, "text/plain", "one"), interaction(1, "GET", "/a/${D}{x-1}/b", "", 200, "text/plain", "two"))))
+    mixed = tmp_tape("mixed", string.concat("## Volatile values\n\n- request path: `/a/{{x}}/b`\n\n", string.concat(interaction(0, "GET", "/a/{{x}}/b", "", 200, "text/plain", "one"), interaction(1, "GET", "/a/${D}{x}/b", "", 200, "text/plain", "two"))))
     refuses(open_tape(mixed), "the tape mixes token styles", "mixed styles")
-    dollar_only = tmp_tape("dollar_only", string.concat("## Volatile values\n\n- request path: `/a/{{x}}/b`\n\n", interaction(0, "GET", "/a/${D}{x-1}/b", "", 200, "text/plain", "one")))
+    dollar_only = tmp_tape("dollar_only", string.concat("## Volatile values\n\n- request path: `/a/{{x}}/b`\n\n", interaction(0, "GET", "/a/${D}{x}/b", "", 200, "text/plain", "one")))
     refuses(open_tape(dollar_only), "the tape's tokens are DollarCurly", "tokens in another style")
 
     // ---- test 2: a response hands out an id, the next request uses it ----
@@ -211,14 +211,36 @@ main() {
     // A bound value must fit an inline pattern.
     h = open_tape("${DIR}/wcf_plain.md")
     ok(vcr.volatile_rule_h(h, "request body", "template", "<a:MessageID>urn:uuid:{{messageId:[0-9a-f-]{36}}}</a:MessageID>"), "rule")
-    ok(vcr.volatile_bind_h(h, "messageId-1", "not-a-uuid"), "bind")
-    refuses(h, "bind(messageId-1, not-a-uuid): the value does not match the placeholder's pattern `[0-9a-f-]{36}`", "a bound value checked at start")
+    ok(vcr.volatile_bind_h(h, "messageId", "not-a-uuid"), "bind")
+    refuses(h, "bind(messageId, not-a-uuid): the value does not match the placeholder's pattern `[0-9a-f-]{36}`", "a bound value checked at start")
     hk = open_tape("${DIR}/cases.md")
     has(vcr.volatile_bind_h(hk, "case-id", "1"), "is neither a placeholder name nor a token", "bind key checked")
     vcr.destroy_h(hk)
 
+    // ---- one-sided names: unnumbered tokens, bound by the test ----
+    dated = tmp_tape("dated", string.concat("## Volatile values\n\n- response headers: `Date: {{serverDate}}`\n- request body: `<s>{{submitted:\\d{4}-\\d{2}-\\d{2}}}</s>`\n\n", "## Interaction 0: POST /d\n\n### Request headers recorded for playback:\n\n```\n```\n### Request body recorded for playback ():\n\n```\n<x><s>{{submitted}}</s></x>\n```\n### Response headers recorded for playback:\n\n```\nContent-Type: text/plain\nDate: {{serverDate}}\nX-Echo: {{serverDate}}\n```\n### Response body recorded for playback (200: text/plain):\n\n```\nat {{serverDate}}\n```\n\n"))
+    refuses(open_tape(dated), "bind(name, value)): serverDate", "an unbound one-sided response token")
+    h = open_tape(dated)
+    ok(vcr.volatile_bind_h(h, "serverDate-2", "x"), "bind is checked at start")
+    refuses(h, "serverDate is used on one side only, so its tokens are unnumbered ({{serverDate}}); bind serverDate", "(c) bind(name-N) on a one-sided name")
+    h = open_tape(dated)
+    ok(vcr.volatile_bind_h(h, "serverDate", "Fri, 13 Nov 2026 09:41:07 GMT"), "bind")
+    go(h)
+    sd, bd = hit("POST", "/d", "<x><s>2026-11-13</s></x>", "text/xml")
+    if sd != 200 { println("FAIL: a one-sided request token matches any value (${sd}): ${vcr.last_error_h(h)}"); exit(1) }
+    eq(bd, "at Fri, 13 Nov 2026 09:41:07 GMT", "every occurrence filled from the bind")
+    vcr.reset_cursor_h(h)
+    vcr.clear_last_error_h(h)
+    sd2, _bd2 = hit("POST", "/d", "<x><s>13/11/2026</s></x>", "text/xml")
+    if sd2 != 599 { println("FAIL: (d) the inline pattern refuses a value (${sd2})"); exit(1) }
+    has(vcr.last_error_ex_h(h, 1), "{{submitted}}", "the diagnostic shows the unnumbered token")
+    has(vcr.volatile_report_h(h), "bind: serverDate = Fri", "binds reported")
+    hasnt_binding = string.contains(vcr.volatile_report_h(h), "binding: {{submitted")
+    if hasnt_binding == 1 { println("FAIL: a one-sided request token binds nothing"); exit(1) }
+    done(h)
+
     // ---- a client that sends the token text itself ----
-    lit = tmp_tape("literal", string.concat("## Volatile values\n\n- request path: `/checkout/{{cartId}}/card`\n\n", interaction(0, "GET", "/checkout/{{cartId-1}}/card", "", 200, "text/plain", "card")))
+    lit = tmp_tape("literal", string.concat("## Volatile values\n\n- request path: `/checkout/{{cartId}}/card`\n- response body: `<cart>{{cartId}}</cart>`\n\n", interaction(0, "GET", "/checkout/{{cartId-1}}/card", "", 200, "text/plain", "card")))
     h = open_tape(lit)
     go(h)
     sl, _bl = hit("GET", "/checkout/{{cartId-1}}/card", "", "")
@@ -230,7 +252,7 @@ main() {
 
     // ---- an inline pattern guards the format ----
     UUIDP = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-    guard = tmp_tape("guard", string.concat("## Volatile values\n\n- request body: `\"requestId\": \"{{requestId:${UUIDP}}}\"`\n\n", interaction(0, "POST", "/r", "{\"requestId\":\"{{requestId-1}}\"}", 200, "text/plain", "ok")))
+    guard = tmp_tape("guard", string.concat("## Volatile values\n\n- request body: `\"requestId\": \"{{requestId:${UUIDP}}}\"`\n\n", interaction(0, "POST", "/r", "{\"requestId\":\"{{requestId}}\"}", 200, "text/plain", "ok")))
     h = open_tape(guard)
     vcr.set_pretty_json_h(h, 2)
     go(h)
@@ -263,11 +285,11 @@ main() {
     done(h)
 
     // ---- escapes: a literal marker stays text, a token is filled ----
-    esc = tmp_tape("escape", string.concat("## Volatile values\n\n- request path: `/e/{{id}}`\n\n", interaction(0, "GET", "/e/{{id-1}}", "", 200, "text/plain", "literal {{{{}}id-1}}, value {{id-1}}")))
+    esc = tmp_tape("escape", string.concat("## Volatile values\n\n- request path: `/e/{{id}}`\n- response body: `<id>{{id}}</id>`\n\n", interaction(0, "GET", "/e/{{id-1}}", "", 200, "text/plain", "literal \\{{id-1}}, value {{id-1}}, dir \\\\{{id-1}}, path C:\\x\\{y}")))
     h = open_tape(esc)
     go(h)
     _es, eb2 = hit("GET", "/e/abc", "", "")
-    eq(eb2, "literal {{id-1}}, value abc", "escape and token")
+    eq(eb2, "literal {{id-1}}, value abc, dir \\abc, path C:\\x\\{y}", "escape, token, a backslash before a token, ordinary backslashes")
     done(h)
 
     println("=== volatile values: playback passed ===")

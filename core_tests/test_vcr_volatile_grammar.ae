@@ -150,22 +150,50 @@ main() {
     check(volatile.token_end("{{request.host}}", 0, M) < 0, "placeholders of substitution are not tokens")
     check(volatile.token_end("{{a-b-1}}", 0, M) < 0, "a name has no hyphen")
     check(volatile.token_end("${dollar()}{a-1}", 0, M) < 0, "a dollar-curly token is not a mustache one")
-    eq(volatile.escape("say {{messageId-1}} now", M), "say {{{{}}messageId-1}} now", "escape a token-shaped literal")
-    eq(volatile.escape("{{request.host}} {{x}}", M), "{{request.host}} {{x}}", "placeholders untouched")
-    eq(volatile.escape("say [[a-1]]", W), "say [[[[]]a-1]]", "wikilink escape")
-    eq(volatile.escape("say ${dollar()}{a-1}", D), "say ${dollar()}{${dollar()}{}a-1}", "dollar-curly escape")
+    eq(volatile.token_text("serverDate", 0, M), "{{serverDate}}", "an unnumbered token")
+    check(volatile.shape_end("{{serverDate}}", 0, M, "|serverDate|") == 14, "unnumbered: token-shaped for a one-sided name")
+    check(volatile.shape_end("{{baseUrl}}", 0, M, "|serverDate|") < 0, "other identifiers are not")
+    check(volatile.real_token_end("{{x-1}}", 0, M, "|y|", "|") < 0, "numbered tokens are real only for two-sided names")
+
+    // ---- the backslash escape ----
+    one = "|serverDate|"
+    eq(volatile.escape("say {{messageId-1}} now", M, one, 0), "say \\{{messageId-1}} now", "token-shaped text gets a backslash")
+    eq(volatile.escape("at {{serverDate}}", M, one, 0), "at \\{{serverDate}}", "unnumbered token-shaped text too")
+    eq(volatile.escape("{{request.host}} {{x}} {{baseUrl}}", M, one, 0), "{{request.host}} {{x}} {{baseUrl}}", "substitution placeholders untouched")
+    eq(volatile.escape("say [[a-1]]", W, one, 0), "say \\[[a-1]]", "wikilink escape")
+    eq(volatile.escape("say ${dollar()}{a-1}", D, one, 0), "say \\${dollar()}{a-1}", "dollar-curly escape")
+    eq(volatile.escape("C:\\path\\{{a-1}}", M, one, 0), "C:\\path\\\\\\{{a-1}}", "a backslash before token-shaped text is doubled, then the escape")
+    eq(volatile.escape("dir\\", M, one, 1), "dir\\\\", "before a real token, a trailing backslash is doubled")
+    win = "{\"path\":\"C:\\\\Users\\\\paul\\\\{tmp}\",\"re\":\"\\\\d+\\n\",\"x\":\"a\\\\{b}\"}"
+    eq(volatile.escape(win, M, one, 0), win, "ordinary backslashes come through byte-identical")
+    eq(volatile.escape(win, M, one, 1), win, "even before a token, when the text does not end in a backslash")
+    // \{{ is literal, \\{{ a backslash then a real token.
+    pl = volatile.parts("a \\\\{{x-1}} b \\{{x-1}} c", M, "|x|", "|")
+    check(volatile.part_count(pl) == 3, "three parts")
+    eq(volatile.part_text(pl, 0), "a \\", "a literal backslash before the real token")
+    eq(volatile.part_text(pl, 1), "{{x-1}}", "the real token")
+    eq(volatile.part_text(pl, 2), " b {{x-1}} c", "the escaped one is literal text")
     styles = [M, D, W]
-    raw = ["say {{a-1}} [[a-1]] ${dollar()}{a-1} now", "{{{{}}", "[[[[]]", "${dollar()}{${dollar()}{}", "{{{a-1}}", "plain", "{{"]
+    raw = ["say {{a-1}} [[a-1]] ${dollar()}{a-1} now", "\\{{a-1}}", "\\\\[[a-1]]", "\\${dollar()}{a-1}", "{{{a-1}}", "plain \\ back\\slash", "{{", "at {{serverDate}} \\\\{{serverDate}}"]
     si = 0
     while si < 3 {
         i = 0
         while i < raw.len {
-            eq(volatile.unescape(volatile.escape(raw[i], styles[si]), styles[si]), raw[i], "escape round trip (style ${si}): ${raw[i]}")
+            eq(volatile.unescape(volatile.escape(raw[i], styles[si], one, 0), styles[si], "|a|", one), raw[i], "escape round trip (style ${si}): ${raw[i]}")
             i = i + 1
         }
         si = si + 1
     }
-    check(volatile.tokens_in_style("a {{x-1}} [[x-2]] [[y-1]]", W, "|x|") == 1, "tokens of known names, one style")
+    check(volatile.tokens_in_style("a {{x-1}} [[x-2]] [[y-1]] [[serverDate]] \\[[x-3]]", W, "|x|", "|serverDate|") == 2, "real tokens of the rule set, one style")
+    // A literal marker in a template: \{{ ; \\{{ is a backslash then a placeholder.
+    eq(caught("request body", "template", "lit \\{{x}} {{v}}.", M, RB, "lit {{x}} 7."), "v=7", "a literal marker in a template")
+    eq(caught("request body", "template", "dir \\\\{{v}}.", M, RB, "dir \\7."), "v=7", "a literal backslash before a placeholder")
+
+    // ---- which names are numbered ----
+    ls = list_new()
+    volatile.parse_block("## Volatile values\n\n- request body: `<m>{{messageId}}</m>`\n- response body: `<r>{{messageId}}</r>`\n- response headers: `Date: {{serverDate}}`\n- request body: `<s>{{submitted}}</s>`\n- headers: `X-Id: {{id}}`\n", ls, M, "")
+    eq(volatile.two_sided_names(ls), "|messageId|id|", "two-sided: a rule each side, or one rule spanning both")
+    eq(volatile.one_sided_names(ls), "|serverDate|submitted|", "one-sided")
 
     // ---- the regex limit bounds a pathological pattern ----
     big = string.copy("a")
