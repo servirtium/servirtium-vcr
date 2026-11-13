@@ -220,7 +220,8 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     /// <paramref name="kind"/> <c>"template"</c> (literal text with
     /// <c>{{name}}</c> / <c>{{name:pattern}}</c> placeholders) or <c>"regex"</c>
     /// (named groups are placeholders). Recording writes each captured value as
-    /// a token, <c>{{name-1}}</c>; playback matches any live value there and
+    /// a token (<c>{{name-1}}</c> for a name used on both sides, <c>{{name}}</c>
+    /// for a one-sided one); playback matches any live value there and
     /// binds it. Errors (here, a conflict with the tape's rules, an unbound
     /// response token) throw from <c>Start()</c>.
     /// </summary>

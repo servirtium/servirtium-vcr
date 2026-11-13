@@ -175,7 +175,7 @@ RSpec.describe 'Volatile values' do
                 .port(0).start { |server| fetch(server) }
 
       written = File.read(@tape)
-      expect(written).to include('order {{orderId-1}} accepted')
+      expect(written).to include('order {{orderId}} accepted')
       expect(written).not_to include('5f1d0c6e-2a8b-4c3e-9d41-7b6a0f2e8c13')
       expect(written).to include('## Volatile values')
     end

@@ -139,7 +139,7 @@
                                 :redact-whole-tape [["20[0-9]{2}-[0-9]{2}-[0-9]{2}" "<DATE>"]]}]
         (h/get-body (servirtium/base-url rec) "/x"))
       (def text (h/read-file tape))
-      (h/contains text "{{uuid-1}}" "correlated token")
+      (h/contains text "{{uuid}}" "a one-sided token, unnumbered")
       (h/contains text "<DATE>" "constant")
       (h/not-contains text "123e4567" "uuid gone")
       (h/not-contains text "2026-01-01" "date gone"))))
