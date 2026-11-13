@@ -13,6 +13,7 @@
   (export (main 1)))
 
 (defun main (_args)
+  (volatile-values)
   (open-failure-and-lifecycle)
   (named-secrets)
   (stable-order)
@@ -234,3 +235,73 @@
       ((tuple 'EXIT _) 'ok)
       (_ (erlang:error 'expected_record_range_refusal)))
     (servirtium_lfe:close rec)))
+
+;; Volatile values (docs/volatile-values.md), conformance checks 1-7.
+(defun volatile-driver (mode vcr)
+  (let ((out (os:cmd (++ "../target/test-tools/volatile_fixture " mode " '"
+                         (servirtium_lfe:base_url vcr) "' 2>&1; echo RC:$?"))))
+    (case (string:find out "RC:0")
+      ('nomatch (erlang:error (tuple 'driver_failed mode out)))
+      (_ 'ok))))
+
+;; The core's message from a start that must fail.
+(defun volatile-start-error (tape options)
+  (case (catch (servirtium_lfe:playback_with tape options))
+    ((tuple 'EXIT (tuple (tuple 'servirtium reason) _))
+     (element (tuple_size reason) reason))
+    (other (erlang:error (tuple 'expected_start_failure other)))))
+
+(defun volatile-values ()
+  (let ((tapes "../core_tests/volatile/"))
+    ;; 1: rules in the tape only
+    (let ((s1 (servirtium_lfe:playback_with (++ tapes "wcf.md") (list (tuple 'pretty_xml 2)))))
+      (volatile-driver "wcf" s1)
+      (require-found (servirtium_lfe:volatile_report s1) "binding: {{messageId-1}} = ")
+      (require-ok (servirtium_lfe:close s1)))
+    ;; 2: a profile file
+    (let ((s2 (servirtium_lfe:playback_with (++ tapes "wcf_plain.md")
+                (list (tuple 'pretty_xml 2)
+                      (tuple 'volatile_profile (filename:absname (++ tapes "profile.md")))))))
+      (volatile-driver "wcf" s2)
+      (require-ok (servirtium_lfe:close s2)))
+    ;; 3: rules in code
+    (let ((s3 (servirtium_lfe:playback_with (++ tapes "wcf_plain.md")
+                (list (tuple 'pretty_xml 2)
+                      (tuple 'volatile_rule "request body" "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+                      (tuple 'volatile_rule "request body" "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
+                      (tuple 'volatile_rule "request body" "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
+                      (tuple 'volatile_rule "response body" "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")))))
+      (volatile-driver "wcf" s3)
+      (require-ok (servirtium_lfe:close s3)))
+    ;; 4: markers
+    (let ((s4 (servirtium_lfe:playback_with (++ tapes "wcf_dollar.md")
+                (list (tuple 'pretty_xml 2) (tuple 'volatile_markers 'dollar_curly)))))
+      (volatile-driver "wcf" s4)
+      (require-ok (servirtium_lfe:close s4)))
+    (require-found (volatile-start-error (++ tapes "wcf_dollar.md") (list (tuple 'pretty_xml 2)))
+                   "DollarCurly")
+    ;; 5: correlated rules in the tape, then a mismatch names the token
+    (let ((s5 (servirtium_lfe:playback (++ tapes "cases.md"))))
+      (volatile-driver "cases" s5)
+      (servirtium_lfe:reset_cursor s5)
+      (volatile-driver "cases-mismatch" s5)
+      (require-found (servirtium_lfe:last_error s5 'false) "{{caseId-1}} = 42")
+      (servirtium_lfe:last_error s5 'true)
+      (require-ok (servirtium_lfe:close s5)))
+    ;; 6: bind
+    (require-found (volatile-start-error (++ tapes "cases_recorded.md") (list)) "caseId")
+    (let ((s6 (servirtium_lfe:playback_with (++ tapes "cases_recorded.md")
+                (list (tuple 'bind "caseId" "42")))))
+      (volatile-driver "cases" s6)
+      (require-ok (servirtium_lfe:close s6)))
+    ;; 7: errors fail the start with the core's message
+    (require-found (volatile-start-error (++ tapes "cases.md")
+                     (list (tuple 'volatile_rule "request body" "no placeholder")))
+                   "needs at least one placeholder")
+    (let ((m (volatile-start-error (++ tapes "cases.md")
+               (list (tuple 'volatile_rule "response body" "\"caseId\":\"{{id}}\"")))))
+      (require-found m "conflicts with")
+      (require-found m "(tape)"))
+    (volatile-start-error (++ tapes "cases.md")
+      (list (tuple 'volatile_rule "x" "a {{b}}" "regex")))
+    'ok))

@@ -70,7 +70,11 @@
     assert_all_redactions_used/1,
     assert_no_unfilled_placeholders/1,
     clear_substitutions/1,
-    normalize_whole_tape/3,
+    volatile_rule/4,
+    volatile_bind/3,
+    volatile_profile/2,
+    set_volatile_markers/2,
+    volatile_report/1,
     redact_whole_tape/3,
     remove_header/3,
     match_header/2,
@@ -175,7 +179,11 @@ assert_all_consumed(_Handle) -> erlang:nif_error(not_loaded).
 assert_all_redactions_used(_Handle) -> erlang:nif_error(not_loaded).
 assert_no_unfilled_placeholders(_Handle) -> erlang:nif_error(not_loaded).
 clear_substitutions(_Handle) -> erlang:nif_error(not_loaded).
-normalize_whole_tape(_Handle, _Pattern, _Name) -> erlang:nif_error(not_loaded).
+volatile_rule(_Handle, _Scope, _Kind, _Pattern) -> erlang:nif_error(not_loaded).
+volatile_bind(_Handle, _NameOrToken, _Value) -> erlang:nif_error(not_loaded).
+volatile_profile(_Handle, _Path) -> erlang:nif_error(not_loaded).
+set_volatile_markers(_Handle, _Style) -> erlang:nif_error(not_loaded).
+volatile_report(_Handle) -> erlang:nif_error(not_loaded).
 redact_whole_tape(_Handle, _Pattern, _Replacement) -> erlang:nif_error(not_loaded).
 remove_header(_Handle, _Field, _Name) -> erlang:nif_error(not_loaded).
 match_header(_Handle, _Name) -> erlang:nif_error(not_loaded).

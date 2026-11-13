@@ -50,6 +50,7 @@ main(_) ->
     "[]" = servirtium:diagnostics_json(DiagnosticServer, false),
     ok = servirtium:close(DiagnosticServer),
 
+    volatile_values(),
     open_failure_and_lifecycle(),
     stable_order(),
     playback_range(),
@@ -199,3 +200,66 @@ open_failure_and_lifecycle() ->
         ok = servirtium:close(Vcr),
         ok = servirtium:close(Vcr)
     end, lists:seq(1, 50)).
+
+%% Volatile values (docs/volatile-values.md), conformance checks 1-7.
+volatile_values() ->
+    Tapes = "../core_tests/volatile/",
+    Run = fun(Mode, Server) ->
+        Out = os:cmd("../target/test-tools/volatile_fixture " ++ Mode ++ " '" ++ servirtium:base_url(Server) ++ "' 2>&1; echo RC:$?"),
+        case string:find(Out, "RC:0") of
+            nomatch -> error({driver_failed, Mode, Out});
+            _ -> ok
+        end
+    end,
+    %% 1: rules in the tape only
+    S1 = servirtium:playback_with(Tapes ++ "wcf.md", [{pretty_xml, 2}]),
+    ok = Run("wcf", S1),
+    true = string:find(servirtium:volatile_report(S1), "binding: {{messageId-1}} = ") =/= nomatch,
+    ok = servirtium:close(S1),
+    %% 2: a profile file
+    S2 = servirtium:playback_with(Tapes ++ "wcf_plain.md",
+        [{pretty_xml, 2}, {volatile_profile, filename:absname(Tapes ++ "profile.md")}]),
+    ok = Run("wcf", S2),
+    ok = servirtium:close(S2),
+    %% 3: rules in code
+    S3 = servirtium:playback_with(Tapes ++ "wcf_plain.md",
+        [{pretty_xml, 2},
+         {volatile_rule, "request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"},
+         {volatile_rule, "request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/"},
+         {volatile_rule, "request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;"},
+         {volatile_rule, "response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>"}]),
+    ok = Run("wcf", S3),
+    ok = servirtium:close(S3),
+    %% 4: markers
+    S4 = servirtium:playback_with(Tapes ++ "wcf_dollar.md",
+        [{pretty_xml, 2}, {volatile_markers, dollar_curly}]),
+    ok = Run("wcf", S4),
+    ok = servirtium:close(S4),
+    true = string:find(start_error(Tapes ++ "wcf_dollar.md", [{pretty_xml, 2}]), "DollarCurly") =/= nomatch,
+    %% 5: correlated rules in the tape, then a mismatch names the token
+    S5 = servirtium:playback(Tapes ++ "cases.md"),
+    ok = Run("cases", S5),
+    ok = servirtium:reset_cursor(S5),
+    ok = Run("cases-mismatch", S5),
+    true = string:find(servirtium:last_error(S5, false), "{{caseId-1}} = 42") =/= nomatch,
+    _ = servirtium:last_error(S5, true),
+    ok = servirtium:close(S5),
+    %% 6: bind
+    true = string:find(start_error(Tapes ++ "cases_recorded.md", []), "caseId") =/= nomatch,
+    S6 = servirtium:playback_with(Tapes ++ "cases_recorded.md", [{bind, "caseId", "42"}]),
+    ok = Run("cases", S6),
+    ok = servirtium:close(S6),
+    %% 7: errors fail the start with the core's message
+    true = string:find(start_error(Tapes ++ "cases.md", [{volatile_rule, "request body", "no placeholder"}]),
+                       "needs at least one placeholder") =/= nomatch,
+    M2 = start_error(Tapes ++ "cases.md", [{volatile_rule, "response body", "\"caseId\":\"{{id}}\""}]),
+    true = string:find(M2, "conflicts with") =/= nomatch,
+    true = string:find(M2, "(tape)") =/= nomatch,
+    _ = start_error(Tapes ++ "cases.md", [{volatile_rule, "x", "a {{b}}", "regex"}]),
+    ok.
+
+%% The core's message from a start that must fail.
+start_error(Tape, Opts) ->
+    try servirtium:playback_with(Tape, Opts) of
+        _ -> error(expected_start_failure)
+    catch error:{servirtium, Reason} -> element(tuple_size(Reason), Reason) end.

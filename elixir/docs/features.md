@@ -12,7 +12,7 @@ in `test/` against the real native library.
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `redact:` opt | ✅ |
-| Whole-tape normalization (correlated ids → `{{name-N}}`) | ✅ | ✅ | `normalize_whole_tape:` opt | — |
+| Volatile values (placeholders → `{{name-N}}` tokens, profiles) | ✅ | ✅ | `volatile_rule:` / `bind:` / `volatile_profile:` / `volatile_markers:` opts, `Servirtium.volatile_report/1` | ✅ |
 | Whole-tape redaction (volatile match → constant) | ✅ | ✅ | `redact_whole_tape:` opt | — |
 | Unredactions | ✅ | ✅ | `unredact:` opt | — |
 | Header removal | ✅ | ✅ | `remove_header:` opt | — |

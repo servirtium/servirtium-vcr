@@ -72,6 +72,25 @@ scheduler. See [docs/architecture.md](docs/architecture.md).
   Erlang NIF, and how Elixir loads it.
 - **[MIGRATION.md](MIGRATION.md)** — the 1.x → 2.0 rewrite story.
 
+## Volatile values
+
+Values that change run to run (ids, timestamps) are declared as volatile
+values, in playback and record alike; a bad rule fails the start with the
+core's message.
+
+```elixir
+{:ok, srv} = Servirtium.playback("tapes/create_case.md",
+  pretty_xml: 2,
+  volatile_rule: [
+    {"request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"},
+    {"response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>"}
+  ])
+# ... drive the system under test ...
+IO.puts(Servirtium.volatile_report(srv))   # rules and token bindings
+```
+
+Guide: [`docs/volatile-values.md`](../docs/volatile-values.md).
+
 ## Concurrency: one server per port
 
 The Aether VCR is **one server per port** (handle-based): `Servirtium.playback/2`

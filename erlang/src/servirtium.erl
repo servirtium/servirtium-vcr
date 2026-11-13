@@ -20,9 +20,9 @@
 -module(servirtium).
 
 -export([
-    playback/1, playback/2, playback_with_secrets/2,
+    playback/1, playback/2, playback_with/2, playback_with_secrets/2,
     secret_redactor/2,
-    record/2, record/3,
+    record/2, record/3, record_with/3,
     redact_header/2, redact_header/4,
     redact_query_param/2, redact_query_param/4,
     redact_json_field/2, redact_json_field/4,
@@ -47,6 +47,8 @@
     last_kind/1,
     last_error/1,
     last_index/1,
+    reset_cursor/1,
+    volatile_report/1,
     close/1
 ]).
 
@@ -95,9 +97,25 @@ playback(TapePath) ->
 playback(TapePath, Host) -> playback_open(TapePath, Host, undefined).
 
 playback_with_secrets(TapePath, Resolver) when is_function(Resolver, 1) ->
-    playback_open(TapePath, "127.0.0.1", Resolver).
+    playback_open(TapePath, "127.0.0.1", Resolver, []).
 
-playback_open(TapePath, Host, Resolver) ->
+%% Playback with options applied before the server starts. Options, each
+%% repeatable:
+%%   {pretty_xml, Indent}              XML layout (see set_pretty_xml/2)
+%%   {volatile_markers, Style}         mustache (default) | dollar_curly | wikilink;
+%%                                     always applied first, before any rule
+%%   {volatile_rule, Scope, Pattern}   a placeholder rule ("{{name}}" in Pattern)
+%%   {volatile_rule, Scope, Pattern, Kind}  Kind "template" (default) or "regex"
+%%   {bind, NameOrToken, Value}        attach a real value to a token
+%%   {volatile_profile, Path}          a profile file
+%% A bad option fails the start with the core's message:
+%% error({servirtium, {playback_start_failed, TapePath, Message}}).
+-spec playback_with(string(), list()) -> server().
+playback_with(TapePath, Opts) -> playback_open(TapePath, "127.0.0.1", undefined, Opts).
+
+playback_open(TapePath, Host, Resolver) -> playback_open(TapePath, Host, Resolver, []).
+
+playback_open(TapePath, Host, Resolver, Opts) ->
     Handle = servirtium_nif:open_playback(
         list_to_binary(""),
         list_to_binary(TapePath),
@@ -105,6 +123,7 @@ playback_open(TapePath, Host, Resolver) ->
         0
     ),
     open_checked(Handle, fun(Why) -> {playback_open_failed, TapePath, Why} end),
+    apply_options(Handle, Opts, fun(Why) -> {playback_start_failed, TapePath, Why} end),
     case Resolver of undefined -> ok; _ -> servirtium_nif:secret_stage(Handle, Resolver, true) end,
     case servirtium_nif:start(Handle) of
         Rc when Rc < 0 ->
@@ -116,6 +135,45 @@ playback_open(TapePath, Host, Resolver) ->
             #{handle => Handle, host => Host, mode => playback, tape => TapePath}
     end.
 
+%% Apply start-time options to an opened handle; on the first failure destroy
+%% the handle and raise {servirtium, Err(Message)}.
+apply_options(Handle, Opts, Err) ->
+    {Markers, Rest} = lists:partition(fun(O) -> element(1, O) =:= volatile_markers end, Opts),
+    lists:foreach(
+        fun(Opt) ->
+            Res = case Opt of
+                {pretty_xml, Indent} when is_integer(Indent) ->
+                    servirtium_nif:set_pretty_xml(Handle, Indent), <<>>;
+                {volatile_markers, Style} ->
+                    servirtium_nif:set_volatile_markers(Handle, markers_int(Style));
+                {volatile_rule, Scope, Pattern} ->
+                    volatile_rule_call(Handle, Scope, Pattern, "template");
+                {volatile_rule, Scope, Pattern, Kind} ->
+                    volatile_rule_call(Handle, Scope, Pattern, Kind);
+                {bind, Name, Value} ->
+                    servirtium_nif:volatile_bind(Handle, unicode:characters_to_binary(Name),
+                                                 unicode:characters_to_binary(Value));
+                {volatile_profile, Path} ->
+                    servirtium_nif:volatile_profile(Handle, unicode:characters_to_binary(Path))
+            end,
+            case Res of
+                ok -> ok;
+                <<>> -> ok;
+                Why ->
+                    servirtium_nif:destroy(Handle),
+                    error({servirtium, Err(binary_to_list(Why))})
+            end
+        end, Markers ++ Rest).
+
+volatile_rule_call(Handle, Scope, Pattern, Kind) ->
+    servirtium_nif:volatile_rule(Handle, unicode:characters_to_binary(Scope),
+                                 unicode:characters_to_binary(Kind),
+                                 unicode:characters_to_binary(Pattern)).
+
+markers_int(mustache) -> 0;
+markers_int(dollar_curly) -> 1;
+markers_int(wikilink) -> 2.
+
 %% Record: forward each request to UpstreamBase, capture the exchange, and
 %% write the tape to TapePath on close/1. Binds an OS-chosen free port.
 -spec record(string(), string()) -> server().
@@ -123,7 +181,13 @@ record(TapePath, UpstreamBase) ->
     record(TapePath, UpstreamBase, "127.0.0.1").
 
 -spec record(string(), string(), string()) -> server().
-record(TapePath, UpstreamBase, Host) ->
+record(TapePath, UpstreamBase, Host) -> record_open(TapePath, UpstreamBase, Host, []).
+
+%% Record with the options of playback_with/2 applied before the server starts.
+-spec record_with(string(), string(), list()) -> server().
+record_with(TapePath, UpstreamBase, Opts) -> record_open(TapePath, UpstreamBase, "127.0.0.1", Opts).
+
+record_open(TapePath, UpstreamBase, Host, Opts) ->
     Handle = servirtium_nif:open_record(
         list_to_binary(""),
         list_to_binary(TapePath),
@@ -132,6 +196,7 @@ record(TapePath, UpstreamBase, Host) ->
         0
     ),
     open_checked(Handle, fun(Why) -> {record_open_failed, TapePath, UpstreamBase, Why} end),
+    apply_options(Handle, Opts, fun(Why) -> {record_start_failed, TapePath, Why} end),
     case servirtium_nif:start(Handle) of
         Rc when Rc < 0 ->
             Detail = binary_to_list(servirtium_nif:last_error(Handle)),
@@ -184,6 +249,16 @@ last_error(#{handle := H}) ->
 -spec last_index(server()) -> integer().
 last_index(#{handle := H}) ->
     servirtium_nif:last_index(H).
+
+%% Rewind replay to interaction 0 and clear the last-* diagnostics.
+reset_cursor(#{handle := H}) ->
+    servirtium_nif:reset_cursor(H).
+
+%% The volatile rules in force, the token bindings made so far and any shape
+%% warnings, one per line (docs/volatile-values.md).
+-spec volatile_report(server()) -> string().
+volatile_report(#{handle := H}) ->
+    binary_to_list(servirtium_nif:volatile_report(H)).
 
 %% Stop the server. In record mode this also flushes the captured tape to
 %% disk, then frees the VCR. Returns ok, or {error, Msg} on a record-flush problem.

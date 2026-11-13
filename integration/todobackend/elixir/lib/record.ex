@@ -39,10 +39,12 @@ defmodule TodoBackend.Record do
         port: Browser.vcr_port(),
         static_content: [{"/suite", Browser.suite_dir()}],
         untaped: ["/favicon.ico"],
-        normalize_whole_tape: [
-          {"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "id"}
-        ],
-        redact_whole_tape: [{"Date: .+ GMT", "Date: <DATE>"}]
+        volatile_rule: [
+          {"request path", "(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", "regex"},
+          {"headers", "(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", "regex"},
+          {"body", "(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", "regex"},
+          {"response headers", "Date: {{serverDate}}"}
+        ]
       )
 
     rc =

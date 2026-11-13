@@ -25,6 +25,7 @@
 // Gleam String.
 
 import servirtium_result
+import gleam/list
 import gleam/option.{type Option, None, Some}
 
 /// Opaque reference to a VCR living in the NIF.
@@ -124,7 +125,117 @@ pub fn playback(tape: String) -> Vcr {
 
 /// As `playback`, but bind a specific host.
 pub fn playback_on(tape: String, host: String) -> Vcr {
-  playback_open(tape, host, None)
+  playback_open(tape, host, None, [])
+}
+
+/// Closed choice of marker style for placeholders and tokens.
+pub type Markers {
+  /// `{{name}}` (the default)
+  Mustache
+  /// `${name}`
+  DollarCurly
+  /// `[[name]]`
+  Wikilink
+}
+
+/// A setting applied after the open and before the server starts.
+pub type StartOption {
+  /// XML layout: indent 1..16.
+  PrettyXml(Int)
+  /// Marker style; applied before any rule, whatever its place in the list.
+  VolatileMarkers(Markers)
+  /// A volatile rule (docs/volatile-values.md): scope and a template pattern
+  /// with `{{name}}` placeholders. Repeatable.
+  VolatileRule(scope: String, pattern: String)
+  /// As `VolatileRule`, with a kind ("template" or "regex").
+  VolatileRuleOfKind(scope: String, pattern: String, kind: String)
+  /// Attach a real value to a token (`caseId` or `{{caseId-1}}`).
+  Bind(name_or_token: String, value: String)
+  /// A profile file of rules. Repeatable.
+  VolatileProfile(path: String)
+}
+
+/// As `playback`, with options applied before the server starts. A bad
+/// option panics with the core's message ("servirtium: playback start
+/// failed: ...").
+pub fn playback_with(tape: String, options: List(StartOption)) -> Vcr {
+  playback_open(tape, "127.0.0.1", None, options)
+}
+
+/// As `record`, with options applied before the server starts.
+pub fn record_with(tape: String, upstream: String, options: List(StartOption)) -> Vcr {
+  record_open(tape, upstream, "127.0.0.1", options)
+}
+
+@external(erlang, "servirtium_nif", "volatile_rule")
+fn nif_volatile_rule(handle: Handle, scope: String, kind: String, pattern: String) -> String
+@external(erlang, "servirtium_nif", "volatile_bind")
+fn nif_volatile_bind(handle: Handle, name_or_token: String, value: String) -> String
+@external(erlang, "servirtium_nif", "volatile_profile")
+fn nif_volatile_profile(handle: Handle, path: String) -> String
+@external(erlang, "servirtium_nif", "set_volatile_markers")
+fn nif_set_volatile_markers(handle: Handle, style: Int) -> String
+@external(erlang, "servirtium_nif", "volatile_report")
+fn nif_volatile_report(handle: Handle) -> String
+@external(erlang, "servirtium_nif", "reset_cursor")
+fn nif_reset_cursor(handle: Handle) -> a
+
+fn is_markers(option: StartOption) -> Bool {
+  case option {
+    VolatileMarkers(_) -> True
+    _ -> False
+  }
+}
+
+fn markers_int(style: Markers) -> Int {
+  case style {
+    Mustache -> 0
+    DollarCurly -> 1
+    Wikilink -> 2
+  }
+}
+
+fn apply_options(handle: Handle, options: List(StartOption), what: String) -> Nil {
+  let #(markers, rest) = list.partition(options, is_markers)
+  apply_in_order(handle, list.append(markers, rest), what)
+}
+
+fn apply_in_order(handle: Handle, options: List(StartOption), what: String) -> Nil {
+  case options {
+    [] -> Nil
+    [option, ..rest] -> {
+      let failure = case option {
+        PrettyXml(indent) -> {
+          let _ = nif_set_pretty_xml(handle, indent)
+          ""
+        }
+        VolatileMarkers(style) -> nif_set_volatile_markers(handle, markers_int(style))
+        VolatileRule(scope, pattern) -> nif_volatile_rule(handle, scope, "template", pattern)
+        VolatileRuleOfKind(scope, pattern, kind) -> nif_volatile_rule(handle, scope, kind, pattern)
+        Bind(name_or_token, value) -> nif_volatile_bind(handle, name_or_token, value)
+        VolatileProfile(path) -> nif_volatile_profile(handle, path)
+      }
+      case failure {
+        "" -> apply_in_order(handle, rest, what)
+        message -> {
+          let _ = nif_destroy(handle)
+          panic as { "servirtium: " <> what <> " start failed: " <> message }
+        }
+      }
+    }
+  }
+}
+
+/// The volatile rules in force, the token bindings made so far and any shape
+/// warnings, one per line (docs/volatile-values.md).
+pub fn volatile_report(vcr: Vcr) -> String {
+  nif_volatile_report(vcr.handle)
+}
+
+/// Rewind replay to interaction 0 and clear the last-* diagnostics.
+pub fn reset_cursor(vcr: Vcr) -> Nil {
+  let _ = nif_reset_cursor(vcr.handle)
+  Nil
 }
 
 pub type SecretRequest {
@@ -139,11 +250,12 @@ pub fn secret_redactor(vcr: Vcr, callback: fn(String, SecretRequest) -> Option(S
   Vcr(..vcr, secret_redactor: Some(callback))
 }
 pub fn playback_with_secrets(tape: String, callback: fn(String) -> Option(String)) -> Vcr {
-  playback_open(tape, "127.0.0.1", Some(callback))
+  playback_open(tape, "127.0.0.1", Some(callback), [])
 }
-fn playback_open(tape: String, host: String, resolver: Option(fn(String) -> Option(String))) -> Vcr {
+fn playback_open(tape: String, host: String, resolver: Option(fn(String) -> Option(String)), options: List(StartOption)) -> Vcr {
   let handle = nif_open_playback("", tape, host, 0)
   check_open(handle, "playback")
+  apply_options(handle, options, "playback")
   case resolver { Some(callback) -> stage_resolver(handle, callback, True) None -> Nil }
   case nif_start(handle) {
     rc if rc < 0 -> {
@@ -175,8 +287,13 @@ pub fn record(tape: String, upstream: String) -> Vcr {
 
 /// As `record`, but bind a specific host.
 pub fn record_on(tape: String, upstream: String, host: String) -> Vcr {
+  record_open(tape, upstream, host, [])
+}
+
+fn record_open(tape: String, upstream: String, host: String, options: List(StartOption)) -> Vcr {
   let handle = nif_open_record("", tape, upstream, host, 0)
   check_open(handle, "record")
+  apply_options(handle, options, "record")
   case nif_start(handle) {
     rc if rc < 0 -> {
       let detail = nif_last_error(handle)

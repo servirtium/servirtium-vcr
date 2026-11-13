@@ -74,35 +74,42 @@ Servirtium.record(tape, upstream,
   ])
 ```
 
-## Whole-tape normalization and redaction (byte-identical re-record)
+## Volatile values and whole-tape redaction (byte-identical re-record)
 
-Two record-mode opts scrub volatile values across the **whole** tape (every
-block, request and response) so a re-record produces byte-identical output:
+Values that change run to run (ids, timestamps, dates) are declared as
+*volatile values*, in record and playback alike, so a re-record is
+byte-identical and the recorded id round-trips on playback. Full guide:
+[`docs/volatile-values.md`](../../docs/volatile-values.md).
 
 ```elixir
 Servirtium.record(tape, upstream,
-  # Correlated ids: each distinct regex match becomes a stable {{name-N}}
-  # token, so the same id recurring in a later request path round-trips on
-  # playback.
-  normalize_whole_tape: [
-    {"req_[0-9a-f]{16}", "request_id"}
+  # A rule: the placeholder {{id}} names the value that changes; each distinct
+  # value seen becomes a stable token {{id-N}} in the tape.
+  volatile_rule: [
+    {"response headers", "Date: {{serverDate}}"},
+    {"request path", "/cases/(?<caseId>[0-9]+)", "regex"}
   ],
+  # Or a profile file of rules.
+  volatile_profile: "profiles/cas.md",
   # Uncorrelated volatiles: collapse every regex match to one constant.
   redact_whole_tape: [
-    {"[A-Z][a-z]{2}, \\d{2} [A-Z][a-z]{2} \\d{4} [0-9:]{8} GMT", "Wed, 01 Jan 2025 00:00:00 GMT"}
+    {"X-Build: .+", "X-Build: <BUILD>"}
   ])
 ```
 
-- `:normalize_whole_tape` takes `{pattern, name}` tuples. Every *distinct*
-  match across the whole tape is assigned a stable `{{name-N}}` token; the same
-  value mapped to the same token, so a correlated id that recurs in a later
-  request path still matches on playback.
+- `:volatile_rule` takes `{scope, pattern}` or `{scope, pattern, kind}`
+  tuples; `:volatile_profile` a profile file path (or a list); `:bind` takes
+  `{name_or_token, value}` tuples to attach a real value to a token;
+  `:volatile_markers` picks `:mustache` (default), `:dollar_curly` or
+  `:wikilink`. A bad rule fails the start with the core's message.
+  `Servirtium.volatile_report(srv)` lists the rules and the token bindings
+  made so far.
 - `:redact_whole_tape` takes `{pattern, replacement}` tuples. Every match
-  collapses to the one constant `replacement` — for volatiles like `Date` that
-  don't need to correlate.
+  collapses to the one constant `replacement` — for volatiles that don't need
+  to correlate.
 
-Both run before the server starts and apply at flush time, so the live SUT
-still sees the real bytes while the committed tape is stable.
+All of it is set before the server starts; the live SUT still sees the real
+bytes while the committed tape is stable.
 
 ## Replaying a scrubbed tape (unredaction)
 

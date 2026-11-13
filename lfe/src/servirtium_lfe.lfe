@@ -29,9 +29,9 @@
 (defmodule servirtium_lfe
   (export
    ;; lifecycle
-   (playback 1) (playback 2) (playback_with_secrets 2)
+   (playback 1) (playback 2) (playback_with 2) (playback_with_secrets 2)
    (secret_redactor 2)
-   (record 2) (record 3)
+   (record 2) (record 3) (record_with 3)
    (redact_header 2) (redact_header 4)
    (redact_query_param 2) (redact_query_param 4)
    (redact_json_field 2) (redact_json_field 4)
@@ -59,7 +59,9 @@
    (last_kind 1)
    (last_error 2) (diagnostics_json 2) (assert_no_mismatches 1) (test_context 4)
    (last_error 1)
-   (last_index 1)))
+   (last_index 1)
+   (reset_cursor 1)
+   (volatile_report 1)))
 
 ;; ---- public entry points -------------------------------------------------
 
@@ -322,3 +324,24 @@
 
 (defun set_pretty_xml (vcr indent)
   (servirtium_nif:set_pretty_xml (maps:get 'handle vcr) indent))
+
+;; Playback / record with start-time OPTIONS, a list of tuples (repeatable, in
+;; order): #(pretty_xml INDENT), #(volatile_markers STYLE) (mustache,
+;; dollar_curly or wikilink; applied first), #(volatile_rule SCOPE PATTERN) or
+;; #(volatile_rule SCOPE PATTERN KIND), #(bind NAME-OR-TOKEN VALUE),
+;; #(volatile_profile PATH). A bad option fails the start with the
+;; core's message: #(servirtium #(playback_start_failed TAPE MESSAGE)) (or
+;; record_start_failed). See docs/volatile-values.md.
+(defun playback_with (tape options)
+  (servirtium:playback_with tape options))
+(defun record_with (tape upstream options)
+  (servirtium:record_with tape upstream options))
+
+;; Rewind replay to interaction 0 and clear the last-* diagnostics.
+(defun reset_cursor (vcr)
+  (servirtium_nif:reset_cursor (maps:get 'handle vcr)))
+
+;; The volatile rules in force, the token bindings made so far and any shape
+;; warnings, one per line.
+(defun volatile_report (vcr)
+  (binary_to_list (servirtium_nif:volatile_report (maps:get 'handle vcr))))

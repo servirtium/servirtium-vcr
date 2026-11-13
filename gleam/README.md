@@ -156,6 +156,29 @@ servirtium.clear_playback_range(vcr)
 ```
 
 A record handle refuses a range, so a test cannot overwrite a journey's tape with a slice.
+## Volatile values
+
+Values that change run to run (ids, timestamps) are declared as volatile
+values, in playback and record alike. Options are applied before the server
+starts; a bad rule panics the start with the core's message.
+
+```gleam
+let vcr = servirtium.playback_with("tapes/create_case.md", [
+  servirtium.PrettyXml(2),
+  servirtium.VolatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"),
+  servirtium.VolatileRule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>"),
+])
+// ... drive the system under test ...
+servirtium.volatile_report(vcr)   // rules and token bindings
+```
+
+Other options: `VolatileRuleOfKind(scope, pattern, "regex")`, `Bind("caseId", "42")`
+(attach a real value to a token), `VolatileProfile(path)` and
+`VolatileMarkers(DollarCurly)` (`Mustache`, `DollarCurly` or `Wikilink`; applied first).
+
+`servirtium.record_with` takes the same options. Guide:
+[`docs/volatile-values.md`](../docs/volatile-values.md).
+
 ## Concurrency: one server per port
 
 The Aether VCR runs **one server per port**: each handle owns its own tape,

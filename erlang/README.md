@@ -131,6 +131,30 @@ ERL_LIBS=_build escript test/playback.escript
 The loader resolves the `.so` via `code:priv_dir(servirtium_nif)` (the app on
 the path), or a `SERVIRTIUM_NIF_DIR` override, falling back to `./priv`.
 
+## Volatile values
+
+Values that change run to run (ids, timestamps) are declared as volatile
+values, in playback and record alike. Options are applied before the server
+starts; a bad rule fails the start with the core's message.
+
+```erlang
+Vcr = servirtium:playback_with("tapes/create_case.md", [
+    {pretty_xml, 2},
+    {volatile_rule, "request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"},
+    {volatile_rule, "response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>"}
+]),
+%% ... drive the system under test ...
+io:format("~s", [servirtium:volatile_report(Vcr)]),   % rules and token bindings
+ok = servirtium:close(Vcr).
+```
+
+Other options: `{volatile_rule, Scope, Pattern, "regex"}`, `{bind, "caseId", "42"}`
+(attach a real value to a token), `{volatile_profile, Path}` and
+`{volatile_markers, mustache | dollar_curly | wikilink}` (applied first).
+
+`servirtium:record_with(Tape, Upstream, Opts)` takes the same options. Guide:
+[`docs/volatile-values.md`](../docs/volatile-values.md).
+
 ## Stable ordering and playback range
 
 Opt-in, off by default. Stable ordering is record side, for a service that sends

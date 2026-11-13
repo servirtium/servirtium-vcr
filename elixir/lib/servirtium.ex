@@ -90,11 +90,20 @@ defmodule Servirtium do
     * `:substitute` — list of `{field, pattern, replacement}` applied to replayed
       responses (e.g. swap a tape placeholder for the live base URL)
 
+  Both modes:
+
+    * `:volatile_markers` — `:mustache` (default), `:dollar_curly` or
+      `:wikilink`; applied before any rule
+    * `:volatile_rule` — list of `{scope, pattern}` or `{scope, pattern, kind}`
+      (kind `"template"` by default, or `"regex"`); the placeholders in the
+      pattern (`{{name}}`) name the values that change run to run (see
+      `docs/volatile-values.md`)
+    * `:bind` — list of `{name_or_token, value}` attaching a real value to a token
+    * `:volatile_profile` — profile file path, or a list of them
+
   Record only:
 
     * `:redact` — list of `{field, pattern, replacement}`
-    * `:normalize_whole_tape` — list of `{pattern, name}` applied across the
-      whole tape (record mode, before start)
     * `:redact_whole_tape` — list of `{pattern, replacement}` applied across the
       whole tape (record mode, before start)
     * `:note` — `{title, body}` attached to the first recorded interaction
@@ -328,6 +337,13 @@ defmodule Servirtium do
   @spec last_error(Server.t()) :: String.t()
   def last_error(%Server{handle: h}), do: Native.last_error(h)
 
+  @doc """
+  The volatile rules in force, the token bindings made so far and any shape
+  warnings, one per line (`docs/volatile-values.md`).
+  """
+  @spec volatile_report(Server.t()) :: String.t()
+  def volatile_report(%Server{handle: h}), do: Native.volatile_report(h)
+
   def last_error(%Server{handle: h}, consume) when is_boolean(consume), do: Native.last_error_ex(h, if(consume, do: 1, else: 0))
   def diagnostics_json(%Server{handle: h}, consume \\ false), do: Native.diagnostics_json(h, if(consume, do: 1, else: 0))
   def assert_no_mismatches(%Server{handle: h}), do: check!(Native.assert_no_mismatches(h), "assert_no_mismatches")
@@ -418,6 +434,29 @@ defmodule Servirtium do
   # ---- internals -----------------------------------------------------------
 
   defp apply_shared_config(handle, opts) do
+    case Keyword.get(opts, :volatile_markers) do
+      nil -> :ok
+      style -> check!(Native.set_volatile_markers(handle, markers!(style)), "volatile_markers")
+    end
+
+    for path <- List.wrap(Keyword.get(opts, :volatile_profile, [])) do
+      check!(Native.volatile_profile(handle, path), "volatile_profile")
+    end
+
+    for rule <- Keyword.get(opts, :volatile_rule, []) do
+      {scope, pattern, kind} =
+        case rule do
+          {scope, pattern} -> {scope, pattern, "template"}
+          {scope, pattern, kind} -> {scope, pattern, kind}
+        end
+
+      check!(Native.volatile_rule(handle, scope, kind, pattern), "volatile_rule")
+    end
+
+    for {name, value} <- Keyword.get(opts, :bind, []) do
+      check!(Native.volatile_bind(handle, name, value), "bind")
+    end
+
     for {field, name} <- Keyword.get(opts, :remove_header, []) do
       check!(Native.remove_header(handle, field!(field), name), "remove_header")
     end
@@ -558,10 +597,6 @@ defmodule Servirtium do
       check!(Native.redact_json_field(handle, field!(field), name, replacement), "redact_json_field")
     end
 
-    for {pat, name} <- Keyword.get(opts, :normalize_whole_tape, []) do
-      check!(Native.normalize_whole_tape(handle, pat, name), "normalize_whole_tape")
-    end
-
     for {pat, repl} <- Keyword.get(opts, :redact_whole_tape, []) do
       check!(Native.redact_whole_tape(handle, pat, repl), "redact_whole_tape")
     end
@@ -598,6 +633,10 @@ defmodule Servirtium do
   # "" means success; anything else is an error message.
   defp check(""), do: :ok
   defp check(msg) when is_binary(msg), do: {:error, msg}
+
+  defp markers!(:mustache), do: 0
+  defp markers!(:dollar_curly), do: 1
+  defp markers!(:wikilink), do: 2
 
   defp check!("", _op), do: :ok
   defp check!(msg, op) when is_binary(msg), do: raise(Server.error("vcr #{op} failed: #{msg}"))

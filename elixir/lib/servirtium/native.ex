@@ -79,7 +79,11 @@ defmodule Servirtium.Native do
   defdelegate assert_all_consumed(handle), to: :servirtium_nif
   defdelegate assert_all_redactions_used(handle), to: :servirtium_nif
   defdelegate clear_substitutions(handle), to: :servirtium_nif
-  defdelegate normalize_whole_tape(handle, pattern, name), to: :servirtium_nif
+  defdelegate volatile_rule(handle, scope, kind, pattern), to: :servirtium_nif
+  defdelegate volatile_bind(handle, name_or_token, value), to: :servirtium_nif
+  defdelegate volatile_profile(handle, path), to: :servirtium_nif
+  defdelegate set_volatile_markers(handle, style), to: :servirtium_nif
+  defdelegate volatile_report(handle), to: :servirtium_nif
   defdelegate redact_whole_tape(handle, pattern, replacement), to: :servirtium_nif
   defdelegate remove_header(handle, field, name), to: :servirtium_nif
   defdelegate match_header(handle, name), to: :servirtium_nif

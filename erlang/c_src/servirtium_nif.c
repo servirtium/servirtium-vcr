@@ -70,7 +70,11 @@ extern char *aether_vcr_embed_remove_header(void *server, int field, const char 
 extern void  aether_vcr_embed_match_header(void *server, const char *name);
 extern void  aether_vcr_embed_clear_match_headers(void *server);
 extern char *aether_vcr_embed_strict_ignore_common_headers(void *server);
-extern char *aether_vcr_embed_normalize_whole_tape(void *server, const char *pattern, const char *name);
+extern char *aether_vcr_embed_volatile_rule(void *server, const char *scope, const char *kind, const char *pattern);
+extern char *aether_vcr_embed_volatile_bind(void *server, const char *name_or_token, const char *value);
+extern char *aether_vcr_embed_volatile_profile(void *server, const char *path);
+extern char *aether_vcr_embed_set_volatile_markers(void *server, int style);
+extern char *aether_vcr_embed_volatile_report(void *server);
 extern char *aether_vcr_embed_redact_whole_tape(void *server, const char *pattern, const char *replacement);
 extern char *aether_vcr_embed_note(void *server, const char *title, const char *body);
 extern char *aether_vcr_embed_remove_transport_headers(void *server);
@@ -700,21 +704,61 @@ static ERL_NIF_TERM nif_note(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]
     return take_cstr(env, res);
 }
 
-static ERL_NIF_TERM nif_normalize_whole_tape(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+/* Run fn over the handle and `count` string arguments (argv[1..count]). */
+static ERL_NIF_TERM volatile_strings(ErlNifEnv *env, const ERL_NIF_TERM argv[], int count)
+{
+    void *h;
+    char *t[3] = {NULL, NULL, NULL};
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    for (int i = 0; i < count; i++) {
+        t[i] = term_to_cstr(env, argv[i + 1]);
+        if (!t[i]) {
+            for (int j = 0; j < i; j++) enif_free(t[j]);
+            return enif_make_badarg(env);
+        }
+    }
+    char *res = NULL;
+    if (count == 3)      res = aether_vcr_embed_volatile_rule(h, t[0], t[1], t[2]);
+    else if (count == 2) res = aether_vcr_embed_volatile_bind(h, t[0], t[1]);
+    else                 res = aether_vcr_embed_volatile_profile(h, t[0]);
+    for (int i = 0; i < count; i++) enif_free(t[i]);
+    return take_cstr(env, res);
+}
+
+static ERL_NIF_TERM nif_volatile_rule(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    return volatile_strings(env, argv, 3);
+}
+
+static ERL_NIF_TERM nif_volatile_bind(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    return volatile_strings(env, argv, 2);
+}
+
+static ERL_NIF_TERM nif_volatile_profile(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    return volatile_strings(env, argv, 1);
+}
+
+static ERL_NIF_TERM nif_set_volatile_markers(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    int style;
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &style)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_set_volatile_markers(h, style));
+}
+
+static ERL_NIF_TERM nif_volatile_report(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
     void *h;
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
-    char *pattern = term_to_cstr(env, argv[1]);
-    char *name    = term_to_cstr(env, argv[2]);
-    if (!pattern || !name) {
-        if (pattern) enif_free(pattern);
-        if (name)    enif_free(name);
-        return enif_make_badarg(env);
-    }
-    char *res = aether_vcr_embed_normalize_whole_tape(h, pattern, name);
-    enif_free(pattern); enif_free(name);
-    return take_cstr(env, res);
+    return take_cstr(env, aether_vcr_embed_volatile_report(h));
 }
 
 static ERL_NIF_TERM nif_redact_whole_tape(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
@@ -994,7 +1038,11 @@ static ErlNifFunc nif_funcs[] = {
     {"assert_all_redactions_used", 1, nif_assert_all_redactions_used, 0},
     {"assert_no_unfilled_placeholders", 1, nif_assert_no_unfilled_placeholders, 0},
     {"clear_substitutions", 1, nif_clear_substitutions, 0},
-    {"normalize_whole_tape", 3, nif_normalize_whole_tape, 0},
+    {"volatile_rule", 4, nif_volatile_rule, 0},
+    {"volatile_bind", 3, nif_volatile_bind, 0},
+    {"volatile_profile", 2, nif_volatile_profile, 0},
+    {"set_volatile_markers", 2, nif_set_volatile_markers, 0},
+    {"volatile_report", 1, nif_volatile_report, 0},
     {"redact_whole_tape",    3, nif_redact_whole_tape,    0},
     {"remove_header",  3, nif_remove_header,  0},
     {"match_header",   2, nif_match_header,   0},

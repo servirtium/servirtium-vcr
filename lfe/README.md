@@ -148,6 +148,29 @@ inclusive; `to` < 0 = through the last):
 ```
 
 A record server refuses a range, so a test cannot overwrite a journey's tape with a slice.
+## Volatile values
+
+Values that change run to run (ids, timestamps) are declared as volatile
+values, in playback and record alike. Options are applied before the server
+starts; a bad rule fails the start with the core's message.
+
+```lisp
+(let ((vcr (servirtium_lfe:playback_with "tapes/create_case.md"
+             (list (tuple 'pretty_xml 2)
+                   (tuple 'volatile_rule "request body" "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+                   (tuple 'volatile_rule "response body" "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")))))
+  ;; ... drive the system under test ...
+  (io:format "~s" (list (servirtium_lfe:volatile_report vcr)))   ; rules and token bindings
+  (servirtium_lfe:close vcr))
+```
+
+Other options: `#(volatile_rule scope pattern "regex")`, `#(bind "caseId" "42")`
+(attach a real value to a token), `#(volatile_profile path)` and
+`#(volatile_markers dollar_curly)` (applied first).
+
+`servirtium_lfe:record_with` takes the same options. Guide:
+[`docs/volatile-values.md`](../docs/volatile-values.md).
+
 ## Building and testing
 
 Contributors who want to build the lib from source instead (Aether toolchain

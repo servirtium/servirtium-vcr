@@ -27,6 +27,7 @@ fn io_format(fmt: String, args: List(String)) -> a
 fn panic_message(f: fn() -> a) -> String
 
 pub fn main() {
+  volatile_values_test()
   open_failure_and_lifecycle_test()
   named_secrets_test()
   structured_redaction_test()
@@ -112,6 +113,13 @@ fn command(value: Charlist) -> Charlist
 @external(erlang, "os", "getpid")
 fn getpid() -> Charlist
 type Charlist
+
+@external(erlang, "filename", "absname")
+fn absname_charlist(path: Charlist) -> Charlist
+
+fn absname(path: String) -> String {
+  from_charlist(absname_charlist(to_charlist(path)))
+}
 
 fn shell(cmd: String) -> String {
   from_charlist(command(to_charlist(cmd)))
@@ -243,4 +251,79 @@ pub fn playback_range_test() {
   let rec = servirtium.record("/tmp/vcr-range-refused-gleam-" <> from_charlist(getpid()) <> ".md", "http://127.0.0.1:1")
   servirtium.set_playback_range(rec, 0, -1) |> should.be_error()
   let _ = servirtium.close(rec)
+}
+
+// Volatile values (docs/volatile-values.md), conformance checks 1-5.
+fn volatile_driver(mode: String, vcr: servirtium.Vcr) -> Nil {
+  shell("../target/test-tools/volatile_fixture " <> mode <> " '" <> servirtium.base_url(vcr) <> "' 2>&1 && echo DRIVER_OK")
+  |> string.ends_with("DRIVER_OK\n")
+  |> should.be_true()
+}
+
+pub fn volatile_values_test() {
+  let tapes = "../core_tests/volatile/"
+  // 1: rules in the tape only
+  let s1 = servirtium.playback_with(tapes <> "wcf.md", [servirtium.PrettyXml(2)])
+  volatile_driver("wcf", s1)
+  servirtium.volatile_report(s1) |> string.contains("binding: {{messageId-1}} = ") |> should.be_true()
+  servirtium.close(s1) |> should.equal(servirtium.Closed)
+  // 2: a profile file
+  let s2 = servirtium.playback_with(tapes <> "wcf_plain.md", [
+    servirtium.PrettyXml(2),
+    servirtium.VolatileProfile(absname(tapes <> "profile.md")),
+  ])
+  volatile_driver("wcf", s2)
+  servirtium.close(s2) |> should.equal(servirtium.Closed)
+  // 3: rules in code
+  let s3 = servirtium.playback_with(tapes <> "wcf_plain.md", [
+    servirtium.PrettyXml(2),
+    servirtium.VolatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>"),
+    servirtium.VolatileRule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/"),
+    servirtium.VolatileRule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;"),
+    servirtium.VolatileRule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>"),
+  ])
+  volatile_driver("wcf", s3)
+  servirtium.close(s3) |> should.equal(servirtium.Closed)
+  // 4: markers
+  let s4 = servirtium.playback_with(tapes <> "wcf_dollar.md", [
+    servirtium.PrettyXml(2),
+    servirtium.VolatileMarkers(servirtium.DollarCurly),
+  ])
+  volatile_driver("wcf", s4)
+  servirtium.close(s4) |> should.equal(servirtium.Closed)
+  panic_message(fn() { servirtium.playback_with(tapes <> "wcf_dollar.md", [servirtium.PrettyXml(2)]) })
+  |> string.contains("DollarCurly")
+  |> should.be_true()
+  // 5: correlated rules in the tape, then a mismatch names the token
+  let s5 = servirtium.playback(tapes <> "cases.md")
+  volatile_driver("cases", s5)
+  servirtium.reset_cursor(s5)
+  volatile_driver("cases-mismatch", s5)
+  servirtium.last_error_with(s5, False) |> string.contains("{{caseId-1}} = 42") |> should.be_true()
+  let _ = servirtium.last_error_with(s5, True)
+  servirtium.close(s5) |> should.equal(servirtium.Closed)
+  // 6: bind
+  panic_message(fn() { servirtium.playback(tapes <> "cases_recorded.md") })
+  |> string.contains("caseId")
+  |> should.be_true()
+  let s6 = servirtium.playback_with(tapes <> "cases_recorded.md", [servirtium.Bind("caseId", "42")])
+  volatile_driver("cases", s6)
+  servirtium.close(s6) |> should.equal(servirtium.Closed)
+  // 7: errors fail the start with the core's message
+  panic_message(fn() {
+    servirtium.playback_with(tapes <> "cases.md", [servirtium.VolatileRule("request body", "no placeholder")])
+  })
+  |> string.contains("needs at least one placeholder")
+  |> should.be_true()
+  let conflict = panic_message(fn() {
+    servirtium.playback_with(tapes <> "cases.md", [servirtium.VolatileRule("response body", "\"caseId\":\"{{id}}\"")])
+  })
+  conflict |> string.contains("conflicts with") |> should.be_true()
+  conflict |> string.contains("(tape)") |> should.be_true()
+  panic_message(fn() {
+    servirtium.playback_with(tapes <> "cases.md", [servirtium.VolatileRuleOfKind("x", "a {{b}}", "regex")])
+  })
+  |> string.length
+  |> fn(n) { n > 0 }
+  |> should.be_true()
 }
