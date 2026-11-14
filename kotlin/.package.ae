@@ -16,7 +16,7 @@ aeb(cap) {
         // module_dir (kotlin/) — no ${root}/kotlin hardcode.
         maven.install()
 
-        publish_artifact("maven_gav", "dev.servirtium:vcr-kotlin:2.0.0-alpha.17")
+        publish_artifact("maven_gav", "dev.servirtium:vcr-kotlin:2.0.0-alpha.18")
         println("kotlin package: installed vcr-kotlin jar to ~/.m2")
         return 0
     }

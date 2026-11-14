@@ -45,7 +45,7 @@ VM and image on `PATH`/in `$PHARO_DIR` (the `pharo` launcher below is the VM exe
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.17                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.18                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG
@@ -82,7 +82,7 @@ pharo --headless "$PHARO_IMAGE" eval "
 ```
 
 The Metacello dependency, in your own baseline:
-`spec baseline: 'Servirtium' with: [ spec repository: 'github://servirtium/servirtium-vcr:v2.0.0-alpha.17/pharo/src' ]`.
+`spec baseline: 'Servirtium' with: [ spec repository: 'github://servirtium/servirtium-vcr:v2.0.0-alpha.18/pharo/src' ]`.
 There is no registry or catalog form yet.
 
 ### Notes for coding agents

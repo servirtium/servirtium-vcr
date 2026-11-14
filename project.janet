@@ -9,6 +9,6 @@
   :url "https://github.com/servirtium/servirtium-vcr"
   :repo "git+https://github.com/servirtium/servirtium-vcr.git"
   :license "MIT"
-  :version "2.0.0-alpha.17")
+  :version "2.0.0-alpha.18")
 
 (declare-source :source ["janet/servirtium"])

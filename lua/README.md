@@ -147,7 +147,7 @@ must work; Lua 5.5 or 5.1 will not load a module built for 5.4). In your own pro
 
 ```sh
 set -eu
-TAG=v2.0.0-alpha.17                      # a release tag of servirtium-vcr; nothing else to edit
+TAG=v2.0.0-alpha.18                      # a release tag of servirtium-vcr; nothing else to edit
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$TAG
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr/$TAG
 # 1. the native library for this OS/arch, checksum-verified, into ~/.servirtium-vcr/$TAG

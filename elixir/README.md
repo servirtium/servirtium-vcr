@@ -109,11 +109,11 @@ but that is a property of this suite, not a constraint of libservirtium_vcr.
 Hex package and OTP application: **`servirtium`** (modules `Servirtium.*`). It delegates to the
 shared native OTP app **`servirtium_nif`**, which is built from a prebuilt release library by
 `erlang/build-nif-app.sh` (needs `erl`, `erlc`, `cc`, `curl`; no Aether). Nothing is on Hex
-yet. Once published it is `{:servirtium, "~> 2.0.0-alpha.17", only: :test}` in `mix.exs` deps.
+yet. Once published it is `{:servirtium, "~> 2.0.0-alpha.18", only: :test}` in `mix.exs` deps.
 Until then, in your Mix project:
 
 ```sh
-VER=v2.0.0-alpha.17                      # a release tag of servirtium-vcr
+VER=v2.0.0-alpha.18                      # a release tag of servirtium-vcr
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
 
 # 1. the native app (SRC=main until a release tag contains erlang/build-nif-app.sh)
