@@ -685,6 +685,16 @@ process launchers; the shared fixture itself stays language-neutral.
   stderr fallback live only in core; bindings marshal and raise existing errors.
   Property-based bindings preserve their consuming property and add a boolean
   read method. See `docs/replay-diagnostics.md` and `core_tests/.diagnostics.ae`.
+  Under match_multiple a miss is reported against the closest unused
+  interaction (`cc_rank_k` in `core/vcr.ae`: tier, then body similarity,
+  then index), and every event carries `closestCandidate`, `candidates` and
+  `firstDifference`; the pure, linear helpers (token-aware first
+  difference, prefix+suffix similarity, XML element path, JSON pointer)
+  are `core/closest.ae`. Snippets are cut from whole forms already masked
+  by `diagnostic_safe_k` (so a window never splits a secret), and an
+  escaped XML element made readable is masked again.
+  `core_tests/test_vcr_closest_candidate.ae`, binding fixture
+  `target/test-tools/closest_fixture`.
 
 - **Named credential redaction is shared core logic.** `redact_header`,
   `redact_query_param`, and `redact_json_field` register structured rules in

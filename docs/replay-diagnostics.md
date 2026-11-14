@@ -84,9 +84,158 @@ requests have completed. Separate handles retain separate events.
   and stderr reporting, respectively;
 * `expected` and `actual`, each with `method`, `path`, `headers`, and `body`;
 * `diff`: a plain-text excerpt around the first differing line/byte;
-* `candidate`: `1` when expected values come from a suggested `match_multiple`
-  interaction, rather than an ordered expectation. The candidate is the first
-  interaction with the same method, falling back to the first interaction.
+* `candidate`: `1` when expected values come from the interaction chosen
+  under `match_multiple` (below), rather than an ordered expectation;
+* `closestCandidate`: the interaction the event is about, with `index`,
+  `method`, `path`, `tier`, `score` and `reason` (below); `null` when there
+  is none (the tape is exhausted);
+* `candidates`: under `match_multiple`, the other interactions considered,
+  best first, with the same fields; `[]` otherwise;
+* `firstDifference`: where the request and that interaction first really
+  differ: `section` (`method`, `path`, `headers` or `body`), `offset` (the
+  byte in the normalized expected form), `element` (an XML element path, a
+  JSON pointer or a header name; `""` when there is none), and one line
+  each of `expected` and `actual`, masked; `null` when the normalized forms
+  differ nowhere outside volatile tokens and masked values.
+
+```json
+"closestCandidate": {"index": 3, "method": "POST", "path": "/Services/CaseService.svc",
+                     "tier": 1, "score": 983, "reason": "same method and path"},
+"candidates": [],
+"firstDifference": {"section": "body", "offset": 777,
+                    "element": "/Envelope/Body/CreateCase/caseData/CaseData/SubjectValue",
+                    "expected": "<SubjectValue>Rule 1;Openness;</SubjectValue>",
+                    "actual": "<SubjectValue></SubjectValue>"}
+```
+
+## Which interaction a mismatch is compared with
+
+Ordered playback compares a request with the interaction the cursor expects
+next, and the report is about that one (`reason`: "the next interaction in
+tape order"). Under `match_multiple` nothing matched, so the core chooses
+the interaction the request was most plausibly meant for, and uses it for
+every section of the report (path, headers, body, rules fired, bindings):
+
+1. **Candidates** are the interactions not yet used (in the playback range,
+   if one is set). If every one has been used, all of them are candidates,
+   and the report says so: "every interaction already used; closest is
+   interaction 3, …".
+2. **Tiers**: `1` the same method and normalized path; `2` the same method
+   only (`fallback: same method, another path`); `3` the rest (`fallback:
+   another method`). A request to `CaseService.svc` is never compared with
+   `LookupService.svc` while a `CaseService.svc` candidate exists. A path
+   with volatile tokens is compared by its shape: a token's place takes any
+   value.
+3. **Score**, within a tier: how alike the normalized request bodies are,
+   the common prefix plus the common suffix as a share of the longer body.
+   `score` is in thousandths (`1000` only when equal); the ranking compares
+   the exact fractions. An interaction with no request body scores 1000:
+   matching does not compare one. Two scans, never an alignment: linear in
+   the body's size, so a several-megabyte body costs milliseconds.
+4. **Ties** go to the lowest index, so every run and every language chooses
+   the same.
+
+"Normalized" means what matching compares: playback unredactions applied,
+volatile rules applied with the tokens bound so far, a slot no token
+stands for yet shown as `{{name-?}}` (and matching any unbound token of
+its name), and the canonical forms of `pretty_xml`/`match_xml_body` and
+`pretty_json`/`match_json_body` when those are on.
+
+## The report, section by section
+
+```text
+Servirtium replay mismatch #1 (kind 1)
+test: …
+source: …
+tape: …
+interaction: 3                                     <- the interaction compared with
+closest candidate: interaction 3, POST /Services/CaseService.svc (same method and path; score 0.983)
+request: POST /Services/CaseService.svc
+first difference: request body at /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue
+- <SubjectValue>Rule 1;Openness;</SubjectValue>
++ <SubjectValue></SubjectValue>
+other candidates: none unused (3 already used)
+volatile values:                                   <- the existing sections, about interaction 3
+normalized request body
+…
+rules fired:
+…
+bindings:
+…
+```
+
+* `closest candidate` (match_multiple only): the chosen interaction, its
+  tier's reason and its score.
+* `first difference`: the first section, in matching's order (method,
+  path, request headers, request body), where the normalized forms really
+  differ; tokens and canonicalization never count. For XML (and markup held
+  escaped inside an element, one level deep, as WCF's `caseData` is) it
+  names the element path by local names; for JSON the JSON pointer; for
+  headers the header name. One line each side: an escaped element shown
+  readable; a pretty-printed line when a pretty or XML-matching mode is on;
+  otherwise the element, if short, or a window of its line. Ordered
+  playback gets this line too.
+* `other candidates` (match_multiple only): one line each, best first, at
+  most ten.
+* Then the existing sections. With volatile rules the raw path, header and
+  body diffs are left out (they would differ at every token); the
+  `normalized …` diffs in `volatile values:` start at the first real
+  difference.
+
+Both sides are masked, as described below, before anything is compared,
+cut out or printed, in the text and in `diagnosticsJson`.
+
+### Before and after, for the WCF suite
+
+Three SOAP lookups in any order, then a `CreateCase` whose `SubjectValue`
+is empty where the tape has `Rule 1;Openness;`
+(`core_tests/test_vcr_closest_candidate.ae`, tape
+`core_tests/closest/case.md`). Before, the report compared the create
+with interaction 0, a lookup:
+
+```text
+interaction: 0
+expected values are from a candidate interaction (match_multiple)
+request: POST /Services/CaseService.svc
+path
+--- expected
++++ actual
+@@ line 1, byte 10 @@
+- /Services/LookupService.svc
++ /Services/CaseService.svc
+request body
+--- expected
++++ actual
+@@ line 1, byte 179 @@
+- -envelope" xmlns:a="…"><s:Header><a:Action s:mustUnderstand="1">http://services.example.test/lookup/ILookupService/GetCountries</a:Action><a:MessageID>urn:uuid:{{messageId-1}}</a:MessageID>…
++ -envelope" xmlns:a="…"><s:Header><a:Action s:mustUnderstand="1">http://services.example.test/case/ICaseService/CreateCase</a:Action><a:MessageID>urn:uuid:0b6c35a3-0000-4000-8000-000000000004</a:MessageID>…
+volatile values:
+normalized path
+…
+```
+
+After:
+
+```text
+interaction: 3
+closest candidate: interaction 3, POST /Services/CaseService.svc (same method and path; score 0.983)
+request: POST /Services/CaseService.svc
+first difference: request body at /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue
+- <SubjectValue>Rule 1;Openness;</SubjectValue>
++ <SubjectValue></SubjectValue>
+other candidates: none unused (3 already used)
+volatile values:
+normalized request body
+--- expected
++++ actual
+@@ line 1, byte 777 @@
+- …&lt;SubjectValue&gt;Rule 1;Openness;&lt;/SubjectValue&gt;…
++ …&lt;SubjectValue&gt;&lt;/SubjectValue&gt;…
+rules fired:
+…
+```
+
+## Excerpts and masking
 
 There is no ANSI colour or HTML. Field projections are bounded, and diffs show
 context near the mismatch even when it lies beyond the projected prefix. Binary
