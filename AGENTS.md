@@ -695,6 +695,11 @@ process launchers; the shared fixture itself stays language-neutral.
   escaped XML element made readable is masked again.
   `core_tests/test_vcr_closest_candidate.ae`, binding fixture
   `target/test-tools/closest_fixture`.
+  The request-headers section compares matching's canonical forms
+  (`cc_headers_pair_k`) header by header (`closest.header_difference`),
+  before masking, and shows `request headers: match` or the first
+  differing header (`cc_header_compare_k`, JSON `headersMatch`); the raw
+  blocks are in the JSON only. `core_tests/test_vcr_request_headers_report.ae`.
 
 - **Named credential redaction is shared core logic.** `redact_header`,
   `redact_query_param`, and `redact_json_field` register structured rules in

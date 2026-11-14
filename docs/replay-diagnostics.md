@@ -82,7 +82,10 @@ requests have completed. Separate handles retain separate events.
 * `test`, `source_file`, `source_line`, and `tape`;
 * `retrieved` and `reported`: integer flags (`0`/`1`) for consuming retrieval
   and stderr reporting, respectively;
-* `expected` and `actual`, each with `method`, `path`, `headers`, and `body`;
+* `expected` and `actual`, each with `method`, `path`, `headers`, and `body`
+  (`headers` is the raw block: the tape's as recorded, the request's as
+  normalised for matching; the report's header section uses neither, see
+  below);
 * `diff`: a plain-text excerpt around the first differing line/byte;
 * `candidate`: `1` when expected values come from the interaction chosen
   under `match_multiple` (below), rather than an ordered expectation;
@@ -91,10 +94,14 @@ requests have completed. Separate handles retain separate events.
   is none (the tape is exhausted);
 * `candidates`: under `match_multiple`, the other interactions considered,
   best first, with the same fields; `[]` otherwise;
+* `headersMatch`: `true` when the request headers match the interaction's
+  as matching compares them (or matching does not compare them), `false`
+  when they differ, `null` with no interaction;
 * `firstDifference`: where the request and that interaction first really
   differ: `section` (`method`, `path`, `headers` or `body`), `offset` (the
   byte in the normalized expected form), `element` (an XML element path, a
-  JSON pointer or a header name; `""` when there is none), and one line
+  JSON pointer, or the header name when `section` is `headers`; `""` when
+  there is none), and one line
   each of `expected` and `actual`, masked; `null` when the normalized forms
   differ nowhere outside volatile tokens and masked values.
 
@@ -102,6 +109,7 @@ requests have completed. Separate handles retain separate events.
 "closestCandidate": {"index": 3, "method": "POST", "path": "/Services/CaseService.svc",
                      "tier": 1, "score": 983, "reason": "same method and path, not yet used"},
 "candidates": [],
+"headersMatch": true,
 "firstDifference": {"section": "body", "offset": 777,
                     "element": "/Envelope/Body/CreateCase/caseData/CaseData/SubjectValue",
                     "expected": "<SubjectValue>Rule 1;Openness;</SubjectValue>",
@@ -160,7 +168,8 @@ first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, norm
 - <SubjectValue>Rule 1;Openness;</SubjectValue>
 + <SubjectValue></SubjectValue>
 other candidates: none unused (3 already used)
-request body                                       <- the existing sections, about interaction 3
+request headers: match                             <- the existing sections, about interaction 3
+request body
 …
 volatile values:
 normalized request body
@@ -179,9 +188,9 @@ bindings:
   request headers, request body), where the normalised forms really
   differ; tokens and canonicalisation never count. It names an XML element
   path by local names (also inside markup held escaped in an element, one
-  level deep, as WCF's `caseData` is), a JSON pointer, `request header
-  NAME`, `path`, `request body` or `method`, then the byte offset in the
-  normalised expected form. One line each side: an escaped element shown
+  level deep, as WCF's `caseData` is), a JSON pointer, `path` or
+  `request body`, then the byte offset in the normalised expected form; or
+  `header NAME`, or `method`. One line each side: an escaped element shown
   readable; a pretty-printed line when a pretty or XML-matching mode is on;
   otherwise the element, if short, or a window of its line. Ordered
   playback gets this line too (and no `closest` line: the cursor names the
@@ -191,8 +200,8 @@ bindings:
   (fallback: same method, another path, not yet used)`; or `none unused (N
   already used)`.
 * Then the existing sections, pointed at the chosen interaction. The raw
-  `path`, `request headers` and `request body` diffs are raw by definition
-  and stay as they were. The `normalized …` diffs of `volatile values:`
+  `path` and `request body` diffs are raw by definition and stay as they
+  were. The request headers are a section of their own (below). The `normalized …` diffs of `volatile values:`
   start at the first real difference of the normalised forms, with the same
   comparison as the `first difference` line: an unbound `{{name-?}}` lines
   up with the expected token of its name, so tokens never show as
@@ -200,6 +209,42 @@ bindings:
 
 Both sides are masked, as described below, before anything is compared,
 cut out or printed, in the text and in `diagnosticsJson`.
+
+### The request-headers section
+
+Shown whenever matching compares request headers (the tape records some,
+`strict_headers` is on, or `match_header` names some), in ordered playback
+and under `match_multiple` alike, and for every header mismatch.
+
+* **Both sides in matching's canonical form**: the per-connection headers
+  matching ignores left out (`Host`, `Connection`, `Content-Length`,
+  `Transfer-Encoding` and the other hop-by-hop headers, and
+  `Accept-Encoding`), so are any `remove_header` removed; credential
+  headers as matching has them (`redact_credentials` compares them on
+  presence); volatile-value tokens as in the normalised forms; sorted by
+  name, case-insensitively, whatever order the tape or the request had.
+  Under `match_header` without `strict_headers`, only the named headers.
+* **When they match**: one line, `request headers: match`.
+* **When they differ**: the first differing header by name, one line each
+  side, `(missing)` on the side without it:
+
+  ```text
+  request headers: header Content-Type differs
+  - Content-Type: application/soap+xml; charset=utf-8
+  + Content-Type: text/xml
+  ```
+
+  The tape's headers are taken in order, each paired with the request's
+  header of the same name (as written, else in another case), then any
+  header only the request has. If headers are the first difference, the
+  `first difference:` line reads `first difference: header Content-Type`
+  with the same two lines. Matching compares header lines as written, so a
+  name in another case (`content-type`) is a difference, and the report
+  shows both spellings.
+* Headers are compared before masking (a masked value that differs still
+  counts), then each line shown is masked.
+* The raw blocks are not in the text: `diagnosticsJson`'s
+  `expected.headers` and `actual.headers` carry them.
 
 ### Before and after, for the WCF suite
 
