@@ -662,7 +662,7 @@ add_rule(out: ptr, scope: string, kind: string, pattern: string, style: int, ori
     if kind == "template" {
         rx, key, inl, err = compile_template(pattern, style)
         if err != "" { return "volatile rule `${sw}: ${render_span(pattern)}`: ${err}" }
-        r.compiled = rx
+        r.compiled = header_name_any_case(rx, pattern, bits)
         r.inlines = inl
         r.key = "${sw}: ${key}"
         r.line = "${sw}: ${render_span(pattern)}"
@@ -709,6 +709,27 @@ add_rule(out: ptr, scope: string, kind: string, pattern: string, style: int, ori
     }
     list_add_raw(out, r)
     return ""
+}
+
+// A header-scoped template that starts with a header name ("X-Id: {{id}}")
+// matches that name in any case (RFC 9110: names are case-insensitive), as
+// playback matching and the record-side header rules do. The rest of the
+// template, the value, stays exact.
+header_name_any_case(rx: string, pattern: string, bits: int) -> string {
+    if bits != SCOPE_REQUEST_HEADERS && bits != SCOPE_RESPONSE_HEADERS && bits != SCOPE_REQUEST_HEADERS + SCOPE_RESPONSE_HEADERS { return rx }
+    colon = string.index_of(pattern, ":")
+    if colon <= 0 { return rx }
+    name = string.substring(pattern, 0, colon)
+    k = 0
+    while k < string.length(name) {
+        c = char(name, k)
+        // A header name is a token: no blanks, no marker characters.
+        if ws(c) == 1 || c == 123 || c == 125 || c == 91 || c == 93 || c == 36 || c == 92 { return rx }
+        k = k + 1
+    }
+    q = regex_quote(name)
+    if string.starts_with(rx, q) == 0 { return rx }
+    return "(?i:${q})${string.substring(rx, string.length(q), string.length(rx))}"
 }
 
 // One rule line: scope: `template`, or scope regex: `regex`.

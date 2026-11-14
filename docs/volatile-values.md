@@ -148,6 +148,11 @@ Leaving out the side means both.
   rules, then compares; recording applies them to the formatted body it
   writes. Write templates as one line of the canonical form shows the text.
   Paths are compared in their RFC 3986 canonical form.
+- **Header names in any case.** A `request headers`, `response headers` or
+  `headers` template that starts with a header name (`X-Request-Id:
+  {{requestId}}`) matches that name in any case, since header names are
+  case-insensitive; the value part is exact. A regex rule is as written
+  (use `(?i:…)` yourself).
 - **Escaped text, as written.** A template matches the characters of the
   field, so XML held as text inside an element is matched escaped:
   `&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;`.

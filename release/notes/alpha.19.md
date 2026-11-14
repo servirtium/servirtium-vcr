@@ -17,4 +17,15 @@
   `headers`. The existing fields stay; the raw header blocks are in
   `expected.headers` and `actual.headers` only. See
   [docs/replay-diagnostics.md](../../docs/replay-diagnostics.md).
-- Matching is unchanged: only what is reported.
+
+## Changed
+
+- **Header names match case-insensitively** (RFC 9110); values still
+  compare exactly. A request sending `content-type` now matches a tape
+  recorded with `Content-Type`, in ordered and `match_multiple` playback,
+  with or without `strict_headers`. A header-scoped volatile template
+  (`X-Correlation-Id: {{correlationId}}`) now matches its header name in any
+  case, on record and playback. `match_header`, `remove_header`,
+  `redact_header`, the credential presets and the ignored per-connection
+  headers already looked names up case-insensitively. The report's header
+  section follows: a case-only difference is `request headers: match`.

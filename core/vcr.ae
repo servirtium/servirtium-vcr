@@ -1479,6 +1479,54 @@ set_content_length_in_block(headers: string, n: int) -> string {
 // A recorded request-header block without the headers matching skips (see
 // skip_in_matching), so a tape that records Host, Connection or
 // Content-Length still matches a playback request sent to another address.
+// Header names are case-insensitive (RFC 9110 §5.1), values are not. The
+// request's header block with each name spelled as `expected` (the tape's
+// block) spells it, so matching, which compares blocks line by line, and
+// the volatile rules, written against the tape, see one spelling. Names the
+// tape lacks stay as sent. Both blocks are sorted case-insensitively, so
+// the order holds.
+align_header_names(live: string, expected: string) -> string {
+    if string.length(live) == 0 || string.length(expected) == 0 { return live }
+    out = string.copy("")
+    cursor = 0
+    n = string.length(live)
+    while cursor < n {
+        nl = string.index_of_from(live, "\n", cursor)
+        end = n
+        if nl >= 0 { end = nl }
+        line = string.substring(live, cursor, end)
+        colon = string.index_of(line, ":")
+        if colon > 0 {
+            name = string.substring(line, 0, colon)
+            spelled = expected_header_spelling(expected, name)
+            if spelled != "" && spelled != name { line = string_concat(spelled, string.substring(line, colon, string.length(line))) }
+        }
+        out = string_concat(out, line)
+        if nl >= 0 { out = string_concat(out, "\n") }
+        if nl < 0 { break }
+        cursor = nl + 1
+    }
+    return out
+}
+// How `block` spells header `name` (case-insensitively), or "".
+expected_header_spelling(block: string, name: string) -> string {
+    cursor = 0
+    n = string.length(block)
+    while cursor < n {
+        nl = string.index_of_from(block, "\n", cursor)
+        end = n
+        if nl >= 0 { end = nl }
+        colon = string.index_of_from(block, ":", cursor)
+        if colon > cursor && colon < end {
+            hn = string.substring(block, cursor, colon)
+            if icmp_rt(hn, name) == 0 { return hn }
+        }
+        if nl < 0 { break }
+        cursor = nl + 1
+    }
+    return ""
+}
+
 strip_transport_headers(headers: string) -> string {
     if string.length(headers) == 0 { return string.copy("") }
     out = string.copy("")
@@ -2663,9 +2711,10 @@ interaction_matches_pre(vc: *Vcr, index: int, e: *Interaction, req: ptr, got_met
     // matching (which matches only the named headers, ignoring the rest).
     have_by_header = list_size(match_headers_k(vc)) > 0
     if vcr_get_strict_headers_k(vc) == 1 || (is_blank(expected_req_headers) == 0 && have_by_header == 0) {
+        lh = align_header_names(live_headers, expected_req_headers)
         if vol == 1 {
-            if vol_match_k(vc, FIELD_REQUEST_HEADERS, expected_req_headers, live_headers, index) == 0 { return 0 }
-        } else if string.equals(live_headers, expected_req_headers) == 0 { return 0 }
+            if vol_match_k(vc, FIELD_REQUEST_HEADERS, expected_req_headers, lh, index) == 0 { return 0 }
+        } else if string.equals(lh, expected_req_headers) == 0 { return 0 }
     }
     if match_headers_diff_k(vc, expected_req_headers, req, index, vol) != "" { return 0 }
 
@@ -2838,7 +2887,7 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
     strict = vcr_get_strict_headers_k(vc)
     have_by_header = list_size(match_headers_k(vc)) > 0
     if strict == 1 || (is_blank(expected_req_headers) == 0 && have_by_header == 0) {
-        live = normalize_live_headers_k(vc, req)
+        live = align_header_names(normalize_live_headers_k(vc, req), expected_req_headers)
         headers_ok = string.equals(live, expected_req_headers)
         if vol == 1 {
             headers_ok = vol_match_k(vc, FIELD_REQUEST_HEADERS, expected_req_headers, live, cur)
@@ -7504,10 +7553,10 @@ cc_headers_compared_k(vc: *Vcr, e: *Interaction) -> int {
 // ByHeader matching without strict headers.
 cc_headers_pair_k(vc: *Vcr, e: *Interaction, lv: *LiveView) -> (string, string) {
     exp = vol_unescape_k(vc, expected_req_headers_k(vc, e))
-    live = lv.headers
+    live = align_header_names(lv.headers, exp)
     if vol_ready_k(vc, e) == 1 {
         exp = e.v_req_headers
-        live = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, live)
+        live = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, align_header_names(lv.headers, exp))
     }
     return diagnostic_headers_k(vc, exp), diagnostic_headers_k(vc, live)
 }
@@ -9342,7 +9391,7 @@ vol_diagnostic_k(vc: *Vcr, e: *Interaction, index: int, live_path: string, live_
     lp = vol_render_live_k(vc, FIELD_PATH, uri_canonical(live_path))
     out = string_concat(out, vol_diff_k(vc, "normalized path", e.v_path, lp, index))
     if is_blank(e.v_req_headers) == 0 || vcr_get_strict_headers_k(vc) == 1 {
-        lh = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, live_headers)
+        lh = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, align_header_names(live_headers, e.v_req_headers))
         out = string_concat(out, vol_diff_k(vc, "normalized request headers", e.v_req_headers, lh, index))
     }
     if is_blank(e.v_req_body) == 0 {

@@ -238,9 +238,9 @@ and under `match_multiple` alike, and for every header mismatch.
   header of the same name (as written, else in another case), then any
   header only the request has. If headers are the first difference, the
   `first difference:` line reads `first difference: header Content-Type`
-  with the same two lines. Matching compares header lines as written, so a
-  name in another case (`content-type`) is a difference, and the report
-  shows both spellings.
+  with the same two lines. Header names are case-insensitive, in matching
+  as here (RFC 9110): `content-type` against `Content-Type` is no
+  difference. Values compare exactly.
 * Headers are compared before masking (a masked value that differs still
   counts), then each line shown is masked.
 * The raw blocks are not in the text: `diagnosticsJson`'s

@@ -165,11 +165,14 @@ differences(multiple: int) {
     vcr.reset_cursor_h(h)
     r3 = expect_status(h, "${WCF_HEADERS}X-Extra: one\n", "Rule 1;Openness;", 599, "an extra header")
     has(r3, "first difference: header X-Extra\n- (missing)\n+ X-Extra: one\n", "missing from the tape")
-    // Matching compares header names as written: content-type is another
-    // header line, and the report says which.
+    // Header names are case-insensitive: content-type is Content-Type.
     vcr.reset_cursor_h(h)
-    r4 = expect_status(h, "content-type: application/soap+xml; charset=utf-8\nExpect: 100-continue\n", "Rule 1;Openness;", 599, "a lower-case name")
-    has(r4, "first difference: header Content-Type\n- Content-Type: application/soap+xml; charset=utf-8\n+ content-type: application/soap+xml; charset=utf-8\n", "the name's case")
+    lower = "content-type: application/soap+xml; charset=utf-8\nEXPECT: 100-continue\n"
+    expect_status(h, lower, "Rule 1;Openness;", 200, "names in another case")
+    vcr.reset_cursor_h(h)
+    vcr.clear_last_error_h(h)
+    no_header_difference(expect_status(h, lower, "", 599, "names in another case, the body differs"), "names in another case (multiple ${multiple})")
+    if headers_match(h) != 1 { fail("headersMatch must be true for a case-only difference") }
     done(h)
 }
 

@@ -333,6 +333,16 @@ from the tape:
 Guarded by `core_tests/test_vcr_keeps_headers.ae`. Tapes recorded before this
 (no `Host` etc.) play back unchanged.
 
+**Header names are case-insensitive everywhere (RFC 9110); values are
+not.** Playback spells the request's header names as the tape does
+(`align_header_names`) before the line-by-line block comparison, so
+`content-type` matches a recorded `Content-Type`; `skip_in_matching`,
+`remove_header`, `redact_header`, the credential presets and
+`match_header` look names up case-insensitively, on both record and
+playback; a header-scoped volatile template matches its leading name in any
+case (`header_name_any_case` in `core/volatile.ae`). Guarded by
+`core_tests/test_vcr_header_name_case.ae`.
+
 ## Header presets (opt-in)
 
 Most tests want the same few rules, so each of these is one call that

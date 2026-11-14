@@ -1,0 +1,185 @@
+// Header names are case-insensitive (RFC 9110 §5.1); values are not.
+// Playback matches a request whose header names differ from the tape's only
+// in case, in ordered and match_multiple playback, with strict_headers off
+// and on, under match_header, volatile header rules, remove_header and the
+// credential preset; a different value still mismatches. Recording leaves
+// out, redacts and tokenizes headers whatever the case of their names.
+// Hand-written tapes, fake values, local servers only.
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+import std.io
+
+extern exit(code: int)
+
+const PORT = 18397
+const UPSTREAM_PORT = 18398
+const RECORD_PORT = 18399
+const SECRET = "Bearer s3cret-not-real-31"
+
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+has(text: string, part: string, what: string) {
+    if string.contains(text, part) != 1 { fail("${what}: no [${part}] in\n${text}") }
+}
+hasnt(text: string, part: string, what: string) {
+    if string.contains(text, part) == 1 { fail("${what}: [${part}] must not appear in\n${text}") }
+}
+ok(err: string, what: string) { if err != "" { fail("${what}: ${err}") } }
+tmp_path(name: string) -> string {
+    t = io.getenv("TMPDIR")
+    if t == 0 { t = "/tmp" }
+    return "${t}/vcr_header_case_${name}.tape"
+}
+tmp_tape(name: string, text: string) -> string {
+    p = tmp_path(name)
+    ok(fs.write(p, text), "write ${name}")
+    return p
+}
+tape_text(block: string, headers: string) -> string {
+    F = "```"
+    return "${block}## Interaction 0: POST /h\n\n### Request headers recorded for playback:\n\n${F}\n${headers}${F}\n### Request body recorded for playback (text/plain):\n\n${F}\nhello\n${F}\n### Response headers recorded for playback:\n\n${F}\nContent-Type: text/plain\n${F}\n### Response body recorded for playback (200: text/plain):\n\n${F}\nok\n${F}\n\n"
+}
+// POST /h with these header lines ("Name: value\n"), to `port`.
+post(port: int, headers: string) -> (int, string) {
+    req = client.request("POST", "http://127.0.0.1:${port}/h")
+    client.set_timeout(req, 10s)
+    client.set_body(req, string.bytes("hello"), "")
+    lines = string.split(headers, "\n")
+    k = 0
+    while k < string.array_size(lines) {
+        line = string.array_get(lines, k)
+        c = string.index_of(line, ": ")
+        if c > 0 { client.set_header(req, string.substring(line, 0, c), string.substring(line, c + 2, string.length(line))) }
+        k = k + 1
+    }
+    string.array_free(lines)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail("send: ${err}") }
+    st = client.response_status(resp)
+    b = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return st, b
+}
+
+const TAPE_HEADERS = "Content-Type: application/json\nX-Tenant: acme\n"
+
+// One playback of `tape`, configured by `mode`'s bits: 1 match_multiple,
+// 2 strict_headers. Each request in `cases` ("|"-separated header blocks)
+// must get `want`.
+expect_all(tape: string, mode: int, setup: fn(ptr), cases: string, want: int, what: string) {
+    h, err = vcr.open_playback(tape, PORT)
+    if h == null { fail("open: ${err}") }
+    vcr.set_match_multiple_h(h, mode % 2)
+    vcr.set_strict_headers_h(h, mode / 2)
+    setup(h)
+    if vcr.start_background_h(h, 10000) != 0 { fail("start: ${vcr.last_error_h(h)}") }
+    parts = string.split(cases, "|")
+    k = 0
+    while k < string.array_size(parts) {
+        vcr.reset_cursor_h(h)
+        st, b = post(PORT, string.array_get(parts, k))
+        if st != want { fail("${what} (mode ${mode}, request ${k}): ${st}, want ${want}: ${b}\n${vcr.last_error_ex_h(h, 0)}") }
+        if want == 200 && vcr.last_kind_h(h) != 0 { fail("${what}: last_kind ${vcr.last_kind_h(h)}") }
+        if want == 599 { has(vcr.last_error_ex_h(h, 0), "first difference: header", "${what}: a header is named") }
+        k = k + 1
+    }
+    string.array_free(parts)
+    vcr.assert_no_mismatches_h(h)
+    vcr.eject(h)
+    vcr.destroy_h(h)
+}
+no_setup(h: ptr) {}
+by_header(h: ptr) { vcr.add_match_header_h(h, "Content-Type") }
+noise_removed(h: ptr) { ok(vcr.remove_header_h(h, 3, "X-Noise"), "remove_header") }
+credentials(h: ptr) { ok(vcr.redact_credentials_h(h), "credentials") }
+
+playback() {
+    tape = tmp_tape("plain", tape_text("", TAPE_HEADERS))
+    same = "content-type: application/json\nx-tenant: acme\n|CONTENT-type: application/json\nX-TENANT: acme\n|Content-Type: application/json\nX-Tenant: acme\n"
+    differ = "content-type: application/xml\nx-tenant: acme\n|Content-Type: application/json\nX-Tenant: ACME\n"
+    mode = 0
+    while mode < 4 {
+        expect_all(tape, mode, no_setup, same, 200, "names in another case match")
+        expect_all(tape, mode, no_setup, differ, 599, "values still compare exactly")
+        expect_all(tape, mode, noise_removed, "content-type: application/json\nx-tenant: acme\nx-noise: 1\n", 200, "a removed header in another case")
+        mode = mode + 1
+    }
+    expect_all(tape, 1, by_header, "content-type: application/json\n", 200, "match_header in another case")
+    expect_all(tape, 1, by_header, "content-type: application/xml\n", 599, "match_header, another value")
+    // A volatile header rule and a credential header, in another case.
+    block = "## Volatile values\n\n- request headers: `X-Correlation-Id: {{correlationId}}`\n\n"
+    vt = tmp_tape("volatile", tape_text(block, "Authorization: Bearer AUTHORIZATION_1\nContent-Type: application/json\nX-Correlation-Id: {{correlationId}}\n"))
+    mode = 0
+    while mode < 4 {
+        expect_all(vt, mode, credentials, "content-type: application/json\nauthorization: Bearer live-not-real\nx-correlation-id: corr-77-not-real\n", 200, "volatile and credential headers in another case")
+        mode = mode + 1
+    }
+}
+
+// The report agrees: a case-only difference is a match.
+report_agrees() {
+    h, err = vcr.open_playback(tmp_tape("plain", tape_text("", TAPE_HEADERS)), PORT)
+    if h == null { fail("open: ${err}") }
+    vcr.set_match_multiple_h(h, 1)
+    if vcr.start_background_h(h, 10000) != 0 { fail("start") }
+    req = client.request("POST", "http://127.0.0.1:${PORT}/h")
+    client.set_body(req, string.bytes("goodbye"), "")
+    client.set_header(req, "content-type", "application/json")
+    client.set_header(req, "x-tenant", "acme")
+    resp, _e = client.send_request(req)
+    client.request_free(req)
+    if client.response_status(resp) != 599 { fail("the body differs") }
+    client.response_free(resp)
+    r = vcr.last_error_ex_h(h, 0)
+    has(r, "\nrequest headers: match\n", "a case-only difference is no difference")
+    has(r, "first difference: request body", "the body is")
+    has(vcr.diagnostics_json_h(h, 0), "\"headersMatch\":true", "headersMatch")
+    vcr.assert_no_mismatches_h(h)
+    vcr.eject(h)
+    vcr.destroy_h(h)
+}
+
+handle(req: ptr, res: ptr, ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "text/plain")
+    http.response_set_body(res, "ok")
+}
+// Recording: remove_header, redact_header and a volatile header rule apply
+// to a header whatever the case of its name.
+recording() {
+    up = http.server_create(UPSTREAM_PORT)
+    if up == 0 { fail("upstream") }
+    http.server_post(up, "/h", handle, 0)
+    ok(http.server_start_background(up), "upstream start")
+    tape = tmp_path("recorded")
+    fs.delete(tape)
+    rec, rerr = vcr.open_record(tape, "http://127.0.0.1:${UPSTREAM_PORT}", RECORD_PORT)
+    if rec == null { fail("open_record: ${rerr}") }
+    ok(vcr.remove_header_h(rec, 3, "X-Noise"), "remove_header")
+    ok(vcr.redact_header_h(rec, 3, "Authorization", "Bearer REDACTED"), "redact_header")
+    ok(vcr.volatile_rule_h(rec, "request headers", "template", "X-Correlation-Id: {{correlationId}}"), "rule")
+    if vcr.start_background_h(rec, 10000) != 0 { fail("recorder start: ${vcr.last_error_h(rec)}") }
+    st, _b = post(RECORD_PORT, "content-type: application/json\nauthorization: ${SECRET}\nx-noise: 1\nx-correlation-id: corr-77-not-real\n")
+    if st != 200 { fail("record: ${st} ${vcr.last_error_h(rec)}") }
+    ok(vcr.stop_and_flush_h(rec, tape), "flush")
+    vcr.destroy_h(rec)
+    text, terr = fs.read(tape)
+    ok(terr, "read the tape")
+    hasnt(text, "s3cret-not-real-31", "the redacted credential")
+    has(text, "authorization: Bearer REDACTED", "redacted, the name as sent")
+    hasnt(text, "x-noise", "the removed header")
+    hasnt(text, "corr-77-not-real", "the volatile value")
+    has(text, "x-correlation-id: {{correlationId}}", "tokenized")
+}
+
+main() {
+    println("=== header names are case-insensitive ===")
+    playback()
+    report_agrees()
+    recording()
+    println("=== header names are case-insensitive: passed ===")
+    exit(0)
+}
