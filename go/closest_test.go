@@ -75,3 +75,50 @@ func TestClosestCandidateLeadsWithTheFirstRealDifference(t *testing.T) {
 		t.Fatal("the mismatch is retained")
 	}
 }
+
+// The request-headers section (docs/replay-diagnostics.md): the shared tape
+// core_tests/closest/headers.md, driven by closest_fixture's headers scenario.
+func TestRequestHeadersSectionUsesMatchingsCanonicalForm(t *testing.T) {
+	s, err := servirtium.Playback(filepath.Join(volatileRoot(), "core_tests/closest/headers.md")).MatchMultiple().Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	out, err := exec.Command(filepath.Join(volatileRoot(), "target/test-tools/closest_fixture"), "headers", s.BaseURL()).CombinedOutput()
+	if err != nil {
+		t.Fatalf("closest_fixture: %v: %s", err, out)
+	}
+	var events []struct {
+		HeadersMatch    bool   `json:"headersMatch"`
+		Diff            string `json:"diff"`
+		FirstDifference struct {
+			Section  string `json:"section"`
+			Element  string `json:"element"`
+			Expected string `json:"expected"`
+			Actual   string `json:"actual"`
+		} `json:"firstDifference"`
+	}
+	if err := json.Unmarshal([]byte(s.DiagnosticsJSON(false)), &events); err != nil || len(events) != 2 {
+		t.Fatalf("diagnostics JSON: %v %d", err, len(events))
+	}
+	if !events[0].HeadersMatch || !strings.Contains(events[0].Diff, "request headers: match\n") || events[0].FirstDifference.Section != "body" {
+		t.Fatalf("the body differs, the headers match: %+v", events[0])
+	}
+	d := events[1].FirstDifference
+	if events[1].HeadersMatch || d.Section != "headers" || d.Element != "Content-Type" ||
+		d.Expected != "Content-Type: application/soap+xml; charset=utf-8" || d.Actual != "Content-Type: text/xml" {
+		t.Fatalf("a header differs: %+v", events[1])
+	}
+	report := s.LastError(false)
+	for _, want := range []string{
+		"first difference: header Content-Type\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n",
+		"request headers: header Content-Type differs\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("no %q in\n%s", want, report)
+		}
+	}
+	if s.AssertNoMismatches() == nil {
+		t.Fatal("the mismatches are retained")
+	}
+}

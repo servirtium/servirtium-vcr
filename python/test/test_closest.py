@@ -42,3 +42,33 @@ def test_reports_against_the_closest_candidate_leading_with_the_first_real_diffe
         assert difference["actual"] == "<SubjectValue></SubjectValue>"
         with pytest.raises(servirtium.VcrError, match="SubjectValue"):
             server.assert_no_mismatches()
+
+
+def test_renders_the_request_headers_section_in_matchings_canonical_form():
+    builder = servirtium.playback(str(ROOT / "core_tests/closest/headers.md")).match_multiple()
+    with builder.start() as server:
+        subprocess.run([str(ROOT / "target/test-tools/closest_fixture"), "headers", server.base_url], check=True)
+        events = json.loads(server.diagnostics_json(consume=False))
+        assert len(events) == 2
+        assert events[0]["headersMatch"] is True
+        assert "request headers: match\n" in events[0]["diff"]
+        assert events[0]["firstDifference"]["section"] == "body"
+        assert events[1]["headersMatch"] is False
+        difference = events[1]["firstDifference"]
+        assert difference["section"] == "headers"
+        assert difference["element"] == "Content-Type"
+        assert difference["expected"] == "Content-Type: application/soap+xml; charset=utf-8"
+        assert difference["actual"] == "Content-Type: text/xml"
+        report = server.read_last_error(False)
+        assert (
+            "first difference: header Content-Type\n"
+            "- Content-Type: application/soap+xml; charset=utf-8\n"
+            "+ Content-Type: text/xml\n"
+        ) in report
+        assert (
+            "request headers: header Content-Type differs\n"
+            "- Content-Type: application/soap+xml; charset=utf-8\n"
+            "+ Content-Type: text/xml\n"
+        ) in report
+        with pytest.raises(servirtium.VcrError, match="Content-Type"):
+            server.assert_no_mismatches()

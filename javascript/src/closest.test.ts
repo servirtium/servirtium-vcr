@@ -35,3 +35,24 @@ it('reports a mismatch against the closest unused interaction, leading with the 
     expect(() => server.assertNoMismatches()).toThrow('SubjectValue')
   } finally { server.close() }
 })
+
+it('renders the request-headers section in matching\'s canonical form', () => {
+  const server = Vcr.playback(path.join(root, 'core_tests/closest/headers.md')).matchMultiple().start()
+  try {
+    execFileSync(path.join(root, 'target/test-tools/closest_fixture'), ['headers', server.baseUrl])
+    const events = JSON.parse(server.diagnosticsJson(false))
+    expect(events).toHaveLength(2)
+    expect(events[0].headersMatch).toBe(true)
+    expect(events[0].diff).toContain('request headers: match\n')
+    expect(events[0].firstDifference.section).toBe('body')
+    expect(events[1].headersMatch).toBe(false)
+    expect(events[1].firstDifference).toMatchObject({
+      section: 'headers', element: 'Content-Type',
+      expected: 'Content-Type: application/soap+xml; charset=utf-8', actual: 'Content-Type: text/xml',
+    })
+    const report = server.readLastError(false)
+    expect(report).toContain('first difference: header Content-Type\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n')
+    expect(report).toContain('request headers: header Content-Type differs\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n')
+    expect(() => server.assertNoMismatches()).toThrow('Content-Type')
+  } finally { server.close() }
+})

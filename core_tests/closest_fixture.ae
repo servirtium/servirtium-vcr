@@ -10,10 +10,17 @@
 //
 // Every request carries a fresh MessageID and SubmissionDate (volatile
 // values), so only the SubjectValue really differs.
+//
+//   closest_fixture headers <base_url>   core_tests/closest/headers.md: the
+//       create with WCF's headers in WCF's order (the client adds Host and
+//       Content-Length): as recorded (200), then with an empty SubjectValue
+//       (599: only the body differs), then with Content-Type text/xml (599:
+//       a header differs).
 import core_tests.fixture_support
 import std.os
 import std.string
-exports(lookup_request, create_request, post_soap, lookups, drive)
+import std.json
+exports(lookup_request, create_request, post_soap, lookups, drive, headers_drive)
 
 const WSA = "http://www.w3.org/2005/08/addressing"
 const SOAP = "http://www.w3.org/2003/05/soap-envelope"
@@ -51,9 +58,27 @@ drive(base: string) {
     status, body = post_soap(base, CASE, create_request("0b6c35a3-0000-4000-8000-000000000004", "", "2026-11-14T10:15:00"))
     fixture_support.check(status == 599, "the create differs in SubjectValue (${status}): ${body}")
 }
+// The headers scenario's create: Content-Type `ctype`, then Expect and
+// Accept-Encoding, as WCF sends them.
+headers_create(base: string, ctype: string, subject: string) -> int {
+    body = "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\"><s:Body><CreateCase xmlns=\"http://services.example.test/case/2013/08\"><caseData>&lt;CaseData&gt;&lt;Title&gt;Water leak&lt;/Title&gt;&lt;SubjectValue&gt;${subject}&lt;/SubjectValue&gt;&lt;/CaseData&gt;</caseData></CreateCase></s:Body></s:Envelope>"
+    headers = json.obj()
+    json.set(headers, "Content-Type", json.str(ctype))
+    json.set(headers, "Expect", json.str("100-continue"))
+    json.set(headers, "Accept-Encoding", json.str("gzip, deflate"))
+    status, _body = fixture_support.post_request(base, "/Services/Integration/CaseService.svc", body, "", headers)
+    json.json_free(headers)
+    return status
+}
+headers_drive(base: string) {
+    fixture_support.check(headers_create(base, SOAP_TYPE, "Rule 1;Openness;") == 200, "the create as recorded")
+    fixture_support.check(headers_create(base, SOAP_TYPE, "") == 599, "the body differs")
+    fixture_support.check(headers_create(base, "text/xml", "Rule 1;Openness;") == 599, "a header differs")
+}
 main() {
     scenario = os.args_get(1)
     base = os.args_get(2)
     if scenario == "case" { drive(base) }
+    else if scenario == "headers" { headers_drive(base) }
     else { fixture_support.check(false, "unknown scenario ${scenario}") }
 }
