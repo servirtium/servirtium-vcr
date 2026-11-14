@@ -123,22 +123,22 @@ case_scenario() {
     report = vcr.last_error_ex_h(h, 0)
     println("---- report (§1 scenario) ----\n${report}\n---- end ----")
     has(report, "interaction: 3\n", "the create interaction is the one compared with")
-    has(report, "closest candidate: interaction 3, POST ${CASE} (same method and path;", "named as the closest")
+    has(report, "\nclosest: interaction 3 POST ${CASE} (same method and path, not yet used)\n", "named as the closest")
+    has(report, "expected values are from a candidate interaction (match_multiple)\n", "the existing line stays")
     first = block_of(report, "first difference:")
-    eq_s(first, "first difference: request body at /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue\n- <SubjectValue>Rule 1;Openness;</SubjectValue>\n+ <SubjectValue></SubjectValue>", "leads with the SubjectValue")
+    eq_s(first, "first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte 777\n- <SubjectValue>Rule 1;Openness;</SubjectValue>\n+ <SubjectValue></SubjectValue>", "leads with the SubjectValue")
     // The lookups matched, so they were used: not candidates.
     has(report, "\nother candidates: none unused (3 already used)\n", "the used lookups are not candidates")
     // Nothing about the lookups' action anywhere in the body diffs.
     hasnt(report, "ILookupService", "the lookup action")
     hasnt(report, "GetCountries", "the lookup body")
+    // The existing sections stay, now about interaction 3.
+    has(report, "\nrequest body\n--- expected\n", "the raw body diff")
+    has(report, "\nnormalized request body\n--- expected\n", "the normalized body diff")
     // Volatile values never show as differences.
     hasnt(first, ID, "a MessageID")
     hasnt(first, "messageId", "a MessageID token")
     hasnt(first, "2026-11-14T10:15:00", "the SubmissionDate")
-    // The existing sections stay, now about interaction 3.
-    has(report, "expected values are from a candidate interaction (match_multiple)\n", "the existing line stays")
-    has(report, "\nrequest body\n--- expected\n", "the raw body diff")
-    has(report, "\nnormalized request body\n--- expected\n", "the normalized body diff")
     // rules fired and bindings are this interaction's.
     has(report, "rules fired:\n", "rules fired")
     has(report, "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;` (request body: submitted = 2026-11-14T10:15:00)", "the SubmissionDate rule fired on the create")
@@ -152,7 +152,7 @@ case_scenario() {
     eq_s(str_of(cc, "method"), "POST", "closestCandidate.method")
     eq_s(str_of(cc, "path"), CASE, "closestCandidate.path")
     eq_i(int_of(cc, "tier"), 1, "closestCandidate.tier")
-    eq_s(str_of(cc, "reason"), "same method and path", "closestCandidate.reason")
+    eq_s(str_of(cc, "reason"), "same method and path, not yet used", "closestCandidate.reason")
     score = int_of(cc, "score")
     if score < 900 || score > 999 { fail("closestCandidate.score ${score}") }
     eq_i(json.json_array_size(member(ev, "candidates")), 0, "no other candidates")
@@ -161,7 +161,7 @@ case_scenario() {
     eq_s(str_of(fd, "element"), "/Envelope/Body/CreateCase/caseData/CaseData/SubjectValue", "firstDifference.element")
     eq_s(str_of(fd, "expected"), "<SubjectValue>Rule 1;Openness;</SubjectValue>", "firstDifference.expected")
     eq_s(str_of(fd, "actual"), "<SubjectValue></SubjectValue>", "firstDifference.actual")
-    if int_of(fd, "offset") <= 0 { fail("firstDifference.offset") }
+    eq_i(int_of(fd, "offset"), 777, "firstDifference.offset")
     json.json_free(all)
     done(h)
 }
@@ -172,10 +172,10 @@ create_first() {
     go(h)
     miss("POST", CASE, closest_fixture.create_request(ID, "", "2026-11-14T10:15:00"), "application/soap+xml", "the create first")
     report = vcr.last_error_ex_h(h, 0)
-    has(report, "closest candidate: interaction 3, POST ${CASE} (same method and path;", "still the create")
+    has(report, "closest: interaction 3 POST ${CASE} (same method and path, not yet used)\n", "still the create")
     others = block_of(report, "other candidates:")
     has(others, "  interaction ", "listed")
-    has(others, ", POST ${LOOKUP} (fallback: same method, another path; score 0.", "the lookups, briefly")
+    has(others, "  interaction 0 POST ${LOOKUP}, score 0.206 (fallback: same method, another path, not yet used)\n", "the lookups, briefly")
     hasnt(report, "ILookupService", "the lookup action")
     all, ev = latest_event(h)
     cands = member(ev, "candidates")
@@ -183,7 +183,7 @@ create_first() {
     c0 = json.array_get(cands, 0)!
     eq_i(int_of(c0, "tier"), 2, "a lookup is tier 2")
     eq_s(str_of(c0, "path"), LOOKUP, "candidate path")
-    eq_s(str_of(c0, "reason"), "fallback: same method, another path", "candidate reason")
+    eq_s(str_of(c0, "reason"), "fallback: same method, another path, not yet used", "candidate reason")
     json.json_free(all)
     done(h)
 }
@@ -198,10 +198,10 @@ all_used() {
     vcr.clear_last_error_h(h)
     miss("POST", CASE, closest_fixture.create_request(ID, "Rule 9", "2026-11-14T10:15:00"), "application/soap+xml", "a repeated create")
     report = vcr.last_error_ex_h(h, 0)
-    has(report, "closest candidate: every interaction already used; closest is interaction 3, POST ${CASE} (same method and path;", "labelled")
+    has(report, "closest: every interaction already used; closest is interaction 3 POST ${CASE} (same method and path, already used)\n", "labelled")
     has(report, "+ <SubjectValue>Rule 9</SubjectValue>", "and diffed")
     all, ev = latest_event(h)
-    eq_s(str_of(member(ev, "closestCandidate"), "reason"), "every interaction already used; same method and path", "JSON reason")
+    eq_s(str_of(member(ev, "closestCandidate"), "reason"), "same method and path, already used", "JSON reason")
     json.json_free(all)
     done(h)
 }
@@ -217,17 +217,19 @@ same_path() {
     // Closest to 2 (944), then 1 (777), then 0 (333).
     miss("POST", "/orders", "a=1&b=YYYY&c=3&d=5", FORM, "near 2")
     report = vcr.last_error_ex_h(h, 0)
-    has(report, "closest candidate: interaction 2, POST /orders (same method and path; score 0.944)", "the closer one")
-    has(report, "first difference: request body\n- a=1&b=YYYY&c=3&d=4\n+ a=1&b=YYYY&c=3&d=5\n", "first difference")
-    has(report, "other candidates:\n  interaction 1, POST /orders (same method and path; score 0.777)\n  interaction 0, POST /orders (same method and path; score 0.333)\n", "the others, best first")
+    has(report, "closest: interaction 2 POST /orders (same method and path, not yet used)\n", "the closer one")
+    has(report, "first difference: request body, normalised byte 17\n- a=1&b=YYYY&c=3&d=4\n+ a=1&b=YYYY&c=3&d=5\n", "first difference")
+    has(report, "other candidates:\n  interaction 1 POST /orders, score 0.777 (same method and path, not yet used)\n  interaction 0 POST /orders, score 0.333 (same method and path, not yet used)\n", "the others, best first")
     // As close to 0 as to 1 (714 each): the lower index.
     miss("POST", "/orders", "a=1&b=ZZZZ&c=3", FORM, "as near 0 as 1")
-    has(vcr.last_error_ex_h(h, 0), "closest candidate: interaction 0, POST /orders (same method and path; score 0.714)", "a tie goes to the lower index")
+    tie = vcr.last_error_ex_h(h, 0)
+    has(tie, "closest: interaction 0 POST /orders (same method and path, not yet used)\n", "a tie goes to the lower index")
+    has(tie, "  interaction 1 POST /orders, score 0.714 (", "with the same score")
     // An unused interaction wins over a closer used one.
     st, _b = hit("POST", "/orders", "a=1&b=YYYY&c=3", FORM)
     if st != 200 { fail("interaction 1 matches (${st})") }
     miss("POST", "/orders", "a=1&b=YYYY&c=4", FORM, "near used 1")
-    has(vcr.last_error_ex_h(h, 0), "closest candidate: interaction 2, POST /orders", "unused interactions first")
+    has(vcr.last_error_ex_h(h, 0), "closest: interaction 2 POST /orders (", "unused interactions first")
     done(h)
 }
 
@@ -237,11 +239,11 @@ fallback() {
     h = open_tape(tmp_tape("fallback", t), 1)
     go(h)
     miss("POST", "/c", "x=1", FORM, "another path")
-    has(vcr.last_error_ex_h(h, 0), "closest candidate: interaction 0, POST /a (fallback: same method, another path; score 1.000)", "tier 2")
-    has(vcr.last_error_ex_h(h, 0), "first difference: path\n- /a\n+ /c\n", "the path is the difference")
+    has(vcr.last_error_ex_h(h, 0), "closest: interaction 0 POST /a (fallback: same method, another path, not yet used)\n", "tier 2")
+    has(vcr.last_error_ex_h(h, 0), "first difference: path, normalised byte 1\n- /a\n+ /c\n", "the path is the difference")
     miss("DELETE", "/b", "", "", "another method")
     r = vcr.last_error_ex_h(h, 0)
-    has(r, "closest candidate: interaction 0, POST /a (fallback: another method;", "tier 3, labelled")
+    has(r, "closest: interaction 0 POST /a (fallback: another method, not yet used)\n", "tier 3, labelled")
     has(r, "first difference: method\n- POST\n+ DELETE\n", "the method is the difference")
     all, ev = latest_event(h)
     eq_i(int_of(member(ev, "closestCandidate"), "tier"), 3, "JSON tier 3")
@@ -258,7 +260,8 @@ pretty_modes() {
         go(h)
         closest_fixture.drive(BASE)
         report = vcr.last_error_ex_h(h, 0)
-        has(report, "first difference: request body at /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue\n- <SubjectValue>Rule 1;Openness;</SubjectValue>\n+ <SubjectValue></SubjectValue>\n", "pretty mode ${i}: escaped element")
+        has(report, "first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte ", "pretty mode ${i}: the same element path")
+        has(report, "\n- <SubjectValue>Rule 1;Openness;</SubjectValue>\n+ <SubjectValue></SubjectValue>\n", "pretty mode ${i}: escaped element")
         done(h)
         i = i + 1
     }
@@ -272,7 +275,7 @@ pretty_modes() {
         if i == 0 { vcr.set_pretty_xml_h(h, 2) } else { vcr.set_match_xml_body_h(h, 1) }
         go(h)
         miss("POST", "/case", "<Case><Title>Leak</Title><Owner>Kim</Owner></Case>", "application/xml", "a missing element")
-        has(vcr.last_error_ex_h(h, 0), "first difference: request body at /Case/Priority\n- <Priority>High</Priority>\n+ <Owner>Kim</Owner>\n", "pretty mode ${i}: one pretty line each side")
+        has(vcr.last_error_ex_h(h, 0), "first difference: /Case/Priority, normalised byte 32\n- <Priority>High</Priority>\n+ <Owner>Kim</Owner>\n", "pretty mode ${i}: one pretty line each side")
         done(h)
         i = i + 1
     }
@@ -282,7 +285,7 @@ pretty_modes() {
     vcr.set_pretty_json_h(h, 2)
     go(h)
     miss("POST", "/j", "{\"case\":{\"subject\":\"Rule 2\",\"tags\":[\"a\",\"b\"],\"title\":\"Leak\"}}", "application/json", "a JSON field")
-    has(vcr.last_error_ex_h(h, 0), "first difference: request body at /case/subject\n", "a JSON pointer")
+    has(vcr.last_error_ex_h(h, 0), "first difference: /case/subject, normalised byte ", "a JSON pointer")
     done(h)
 }
 
@@ -299,10 +302,10 @@ redaction() {
     go(h)
     miss("POST", "/note", "<Note><Text>token ${SECRET}; Rule 2</Text></Note>", "application/xml", "an unredacted secret in the window")
     report = vcr.last_error_ex_h(h, 0)
-    has(report, "first difference: request body at /Note/Text\n- <Text>token [REDACTED]; Rule 1</Text>\n+ <Text>token [REDACTED]; Rule 2</Text>\n", "masked on both sides")
+    has(report, "first difference: /Note/Text, normalised byte 35\n- <Text>token [REDACTED]; Rule 1</Text>\n+ <Text>token [REDACTED]; Rule 2</Text>\n", "masked on both sides")
     miss("POST", "/login", "{\"user\":\"kim\",\"password\":\"pw-not-real-55\",\"note\":\"key ${SECRET2}; Rule 2\"}", "application/json", "a JSON secret in the window")
     r2 = vcr.last_error_ex_h(h, 0)
-    has(r2, "first difference: request body at /note\n- \"note\": \"key [REDACTED]; Rule 1\",\n+ \"note\": \"key [REDACTED]; Rule 2\",\n", "the JSON difference, masked")
+    has(r2, "first difference: /note, normalised byte 34\n- \"note\": \"key [REDACTED]; Rule 1\",\n+ \"note\": \"key [REDACTED]; Rule 2\",\n", "the JSON difference, masked")
     dj = vcr.diagnostics_json_h(h, 0)
     const LEAKS[] = ["s3cr3t-not-real-77", "pw-not-real-55", "k3y-not-real-88"]
     for k in 0..LEAKS.len {
@@ -328,9 +331,9 @@ ordered() {
     miss("POST", LOOKUP, closest_fixture.lookup_request("Subjects", ID2), "application/soap+xml", "out of order")
     report = vcr.last_error_ex_h(h, 0)
     has(report, "interaction: 1\n", "the cursor's interaction")
-    hasnt(report, "closest candidate:", "no candidate line in ordered playback")
+    hasnt(report, "closest:", "no closest line in ordered playback")
     hasnt(report, "other candidates:", "no candidates in ordered playback")
-    has(report, "first difference: request body at /Envelope/Header/Action\n", "the first difference")
+    has(report, "first difference: /Envelope/Header/Action, normalised byte ", "the first difference")
     all, ev = latest_event(h)
     cc = member(ev, "closestCandidate")
     eq_i(int_of(cc, "index"), 1, "JSON: the cursor's interaction")
@@ -355,7 +358,7 @@ large() {
     t0 = time.now_ms()
     miss("POST", "/big", live, "text/plain", "a large body")
     ms = time.now_ms() - t0
-    has(vcr.last_error_ex_h(h, 0), "closest candidate: interaction 1, POST /big", "the closer large body")
+    has(vcr.last_error_ex_h(h, 0), "closest: interaction 1 POST /big (", "the closer large body")
     println("  ok: two ${string.length(a)}-byte candidates ranked and reported in ${ms} ms")
     if ms > 20000 { fail("a large body took ${ms} ms") }
     done(h)

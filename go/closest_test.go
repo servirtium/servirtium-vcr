@@ -26,8 +26,8 @@ func TestClosestCandidateLeadsWithTheFirstRealDifference(t *testing.T) {
 	report := s.LastError(false)
 	for _, want := range []string{
 		"interaction: 3\n",
-		"closest candidate: interaction 3, POST /Services/CaseService.svc (same method and path; score 0.983)\n",
-		"first difference: request body at /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue\n" +
+		"closest: interaction 3 POST /Services/CaseService.svc (same method and path, not yet used)\n",
+		"first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte 777\n" +
 			"- <SubjectValue>Rule 1;Openness;</SubjectValue>\n" +
 			"+ <SubjectValue></SubjectValue>\n",
 		"other candidates: none unused (3 already used)\n",
@@ -61,13 +61,13 @@ func TestClosestCandidateLeadsWithTheFirstRealDifference(t *testing.T) {
 		t.Fatalf("diagnostics JSON: %v %d", err, len(events))
 	}
 	c, d := events[0].ClosestCandidate, events[0].FirstDifference
-	if c.Index != 3 || c.Method != "POST" || c.Path != "/Services/CaseService.svc" || c.Tier != 1 || c.Score != 983 || c.Reason != "same method and path" {
+	if c.Index != 3 || c.Method != "POST" || c.Path != "/Services/CaseService.svc" || c.Tier != 1 || c.Score != 983 || c.Reason != "same method and path, not yet used" {
 		t.Fatalf("closestCandidate %+v", c)
 	}
 	if len(events[0].Candidates) != 0 {
 		t.Fatalf("candidates %v", events[0].Candidates)
 	}
-	if d.Section != "body" || d.Offset <= 0 || d.Element != "/Envelope/Body/CreateCase/caseData/CaseData/SubjectValue" ||
+	if d.Section != "body" || d.Offset != 777 || d.Element != "/Envelope/Body/CreateCase/caseData/CaseData/SubjectValue" ||
 		d.Expected != "<SubjectValue>Rule 1;Openness;</SubjectValue>" || d.Actual != "<SubjectValue></SubjectValue>" {
 		t.Fatalf("firstDifference %+v", d)
 	}

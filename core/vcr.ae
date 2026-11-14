@@ -7278,23 +7278,21 @@ replay_diagnostic_text(e: *ReplayDiagnostic) -> string {
     tape = diagnostic_text(e.tape, 512)
     heading = "Servirtium replay mismatch #${seq} (kind ${kind})\ntest: ${test_name}\nsource: ${file}:${line}\ntape: ${tape}\ninteraction: ${idx}\n"
     if e.candidate == 1 { heading = string_concat(heading, "expected values are from a candidate interaction (match_multiple)\n") }
+    request_method = e.actual_method
+    request_path = e.actual_path
+    heading = string_concat(heading, "request: ${request_method} ${request_path}\n")
+    // Added on top of the existing report: which interaction, and where
+    // the two first really differ (docs/replay-diagnostics.md).
     if e.candidate == 1 && list_size(e.ranked) > 0 {
         top = list_get_raw(e.ranked, 0) as *Ranked
         lead = ""
         if e.all_used == 1 { lead = "every interaction already used; closest is " }
-        heading = string_concat(heading, "closest candidate: ${lead}${ranked_line(top)}\n")
+        heading = string_concat(heading, "closest: ${lead}interaction ${top.index} ${top.method} ${top.path} (${top.reason})\n")
     }
-    request_method = e.actual_method
-    request_path = e.actual_path
-    heading = string_concat(heading, "request: ${request_method} ${request_path}\n")
     if e.fd_section != "" {
-        label = e.fd_section
-        if label == "headers" || label == "body" { label = "request ${label}" }
-        at = ""
-        if e.fd_element != "" { at = " at ${e.fd_element}" }
-        heading = string_concat(heading, "first difference: ${label}${at}\n- ${e.fd_expected}\n+ ${e.fd_actual}\n")
+        heading = string_concat(heading, "first difference: ${fd_label(e)}\n- ${e.fd_expected}\n+ ${e.fd_actual}\n")
     } else if list_size(e.ranked) > 0 {
-        heading = string_concat(heading, "first difference: none outside volatile values and masked values\n")
+        heading = string_concat(heading, "first difference: none in the normalised forms (outside volatile tokens and masked values)\n")
     }
     if e.candidate == 1 && list_size(e.ranked) == 1 && e.all_used == 0 && e.used_count > 0 {
         heading = string_concat(heading, "other candidates: none unused (${e.used_count} already used)\n")
@@ -7303,7 +7301,8 @@ replay_diagnostic_text(e: *ReplayDiagnostic) -> string {
         heading = string_concat(heading, "other candidates:\n")
         k = 1
         while k < list_size(e.ranked) && k <= 10 {
-            heading = string_concat(heading, "  ${ranked_line(list_get_raw(e.ranked, k) as *Ranked)}\n")
+            r = list_get_raw(e.ranked, k) as *Ranked
+            heading = string_concat(heading, "  interaction ${r.index} ${r.method} ${r.path}, score ${closest.per_mille_text(r.score)} (${r.reason})\n")
             k = k + 1
         }
         if list_size(e.ranked) > 11 {
@@ -7313,9 +7312,19 @@ replay_diagnostic_text(e: *ReplayDiagnostic) -> string {
     }
     return string_concat(heading, e.detail)
 }
-// "interaction 3, POST /cases (same method and path; score 0.981)"
-ranked_line(r: *Ranked) -> string {
-    return "interaction ${r.index}, ${r.method} ${r.path} (${r.reason}; score ${closest.per_mille_text(r.score)})"
+// "/Envelope/Body/X, normalised byte 1408", "path, normalised byte 1",
+// "request header Accept, normalised byte 0", "method".
+fd_label(e: *ReplayDiagnostic) -> string {
+    if e.fd_section == "method" { return "method" }
+    what = e.fd_section
+    if what == "headers" {
+        what = "request headers"
+        if e.fd_element != "" { what = "request header ${e.fd_element}" }
+    } else if what == "body" {
+        what = "request body"
+        if e.fd_element != "" { what = e.fd_element }
+    }
+    return "${what}, normalised byte ${e.fd_offset}"
 }
 ranked_json(r: *Ranked, reason: string) -> ptr {
     o = json.obj()
@@ -7360,9 +7369,7 @@ replay_diagnostic_json(e: *ReplayDiagnostic, server_key: string) -> ptr {
     if list_size(e.ranked) == 0 { json.set(obj, "closestCandidate", json.null_value()) }
     else {
         top = list_get_raw(e.ranked, 0) as *Ranked
-        reason = top.reason
-        if e.all_used == 1 { reason = "every interaction already used; ${reason}" }
-        json.set(obj, "closestCandidate", ranked_json(top, reason))
+        json.set(obj, "closestCandidate", ranked_json(top, top.reason))
         k = 1
         while k < list_size(e.ranked) {
             r = list_get_raw(e.ranked, k) as *Ranked
@@ -7587,6 +7594,7 @@ cc_rank_k(vc: *Vcr, lv: *LiveView) -> (ptr, int) {
         e = tape_get_k(vc, i)
         if all_used == 1 || e.used == 0 {
             r = cc_score_k(vc, e, i, lv)
+            if e.used == 1 { r.reason = "${r.reason}, already used" } else { r.reason = "${r.reason}, not yet used" }
             list_add_raw(out, r)
             k = list_size(out) - 1
             while k > 0 && cc_before(r, list_get_raw(out, k - 1) as *Ranked) == 1 {

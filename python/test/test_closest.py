@@ -19,9 +19,9 @@ def test_reports_against_the_closest_candidate_leading_with_the_first_real_diffe
         subprocess.run([str(ROOT / "target/test-tools/closest_fixture"), "case", server.base_url], check=True)
         report = server.read_last_error(False)
         assert "interaction: 3\n" in report
-        assert "closest candidate: interaction 3, POST /Services/CaseService.svc (same method and path; score 0.983)\n" in report
+        assert "closest: interaction 3 POST /Services/CaseService.svc (same method and path, not yet used)\n" in report
         assert (
-            "first difference: request body at /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue\n"
+            "first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte 777\n"
             "- <SubjectValue>Rule 1;Openness;</SubjectValue>\n"
             "+ <SubjectValue></SubjectValue>\n"
         ) in report
@@ -31,12 +31,12 @@ def test_reports_against_the_closest_candidate_leading_with_the_first_real_diffe
         assert len(events) == 1
         assert events[0]["closestCandidate"] == {
             "index": 3, "method": "POST", "path": "/Services/CaseService.svc",
-            "tier": 1, "score": 983, "reason": "same method and path",
+            "tier": 1, "score": 983, "reason": "same method and path, not yet used",
         }
         assert events[0]["candidates"] == []
         difference = events[0]["firstDifference"]
         assert difference["section"] == "body"
-        assert difference["offset"] > 0
+        assert difference["offset"] == 777
         assert difference["element"] == "/Envelope/Body/CreateCase/caseData/CaseData/SubjectValue"
         assert difference["expected"] == "<SubjectValue>Rule 1;Openness;</SubjectValue>"
         assert difference["actual"] == "<SubjectValue></SubjectValue>"
