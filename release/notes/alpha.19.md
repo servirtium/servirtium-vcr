@@ -18,6 +18,11 @@
   `expected.headers` and `actual.headers` only. See
   [docs/replay-diagnostics.md](../../docs/replay-diagnostics.md).
 
+- **A playback that cannot start says why.** When the server could not
+  bind its port, or was not listening within the start timeout, start
+  failed with an empty `last_error`. It now reads `cannot listen on port N:
+  …` or `not listening on port N after T ms: …`, with the system's reason.
+
 ## Changed
 
 - **Header names match case-insensitively** (RFC 9110); values still
