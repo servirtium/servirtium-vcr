@@ -69,6 +69,7 @@
 //   import std.http
 import secret_fields
 import volatile
+import closest
 import std.io
 //   import std.http.client
 //
@@ -2719,17 +2720,21 @@ do_playback_multiple(vc: *Vcr, req: ptr, res: ptr) {
             msg = "no recorded interaction in the playback range ${rtext} matches ${got_method} ${gp}"
         }
         set_outcome_k(vc, msg, KIND_PATH_OR_METHOD_DIFF, -1)
+        // Report against the interaction the request was most plausibly
+        // meant for (docs/replay-diagnostics.md). Ranked with only the
+        // bindings committed so far; then the chosen one is matched again
+        // so its binding failure and proposals are what the report shows,
+        // as for the cursor's interaction in ordered playback.
+        vol_begin_request_k(vc)
+        ranked, all_used = cc_rank_k(vc, cc_live_view_k(vc, req, live_body))
         candidate_index = -1
         candidate_entry = null as *Interaction
-        j = range_from_k(vc)
-        while j < n {
-            entry = tape_get_k(vc, j)
-            if entry.method == got_method { candidate_index = j; candidate_entry = entry; break }
-            j = j + 1
+        if list_size(ranked) > 0 {
+            candidate_index = (list_get_raw(ranked, 0) as *Ranked).index
+            candidate_entry = tape_get_k(vc, candidate_index)
+            interaction_matches_pre(vc, candidate_index, candidate_entry, req, got_method, got_path_plain, got_path_q, live_headers, live_body)
         }
-        first = range_from_k(vc)
-        if candidate_entry == null && n > first { candidate_index = first; candidate_entry = tape_get_k(vc, first) }
-        retain_replay_mismatch_k(vc, KIND_PATH_OR_METHOD_DIFF, candidate_index, candidate_entry, req, live_body, 1)
+        retain_replay_mismatch_k(vc, KIND_PATH_OR_METHOD_DIFF, candidate_index, candidate_entry, req, live_body, ranked, all_used)
         emit_mismatch_response(res, msg, KIND_PATH_OR_METHOD_DIFF)
         return
     }
@@ -2779,7 +2784,7 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
     if cur >= n {
         msg = "tape exhausted — SUT made more requests than the tape contains"
         set_outcome_k(vc, msg, KIND_TAPE_EXHAUSTED, cur)
-        retain_replay_mismatch_k(vc, KIND_TAPE_EXHAUSTED, cur, null, req, read_full_request_body(req), 0)
+        retain_replay_mismatch_k(vc, KIND_TAPE_EXHAUSTED, cur, null, req, read_full_request_body(req), null, 0)
         emit_mismatch_response(res, msg, KIND_TAPE_EXHAUSTED)
         return
     }
@@ -2814,7 +2819,7 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
         msg = "tape mismatch at interaction ${cur}: expected ${e.method} ${expected_path}, got ${gm} ${gp}"
         if vc.tape.vfail != "" { msg = "${msg}; ${vc.tape.vfail}" }
         set_outcome_k(vc, msg, KIND_PATH_OR_METHOD_DIFF, cur)
-        retain_replay_mismatch_k(vc, KIND_PATH_OR_METHOD_DIFF, cur, e, req, read_full_request_body(req), 0)
+        retain_replay_mismatch_k(vc, KIND_PATH_OR_METHOD_DIFF, cur, e, req, read_full_request_body(req), null, 0)
         emit_mismatch_response(res, msg, KIND_PATH_OR_METHOD_DIFF)
         return
     }
@@ -2825,7 +2830,7 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
     if bh_diff != "" {
         msg = "interaction ${cur}: ${bh_diff}"
         set_outcome_k(vc, msg, KIND_HEADER_VALUE_DIFF, cur)
-        retain_replay_mismatch_k(vc, KIND_HEADER_VALUE_DIFF, cur, e, req, read_full_request_body(req), 0)
+        retain_replay_mismatch_k(vc, KIND_HEADER_VALUE_DIFF, cur, e, req, read_full_request_body(req), null, 0)
         emit_mismatch_response(res, msg, KIND_HEADER_VALUE_DIFF)
         return
     }
@@ -2911,7 +2916,7 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
             }
             if vc.tape.vfail != "" { msg = "${msg}; ${vc.tape.vfail}" }
             set_outcome_k(vc, msg, kind, cur)
-            retain_replay_mismatch_k(vc, kind, cur, e, req, read_full_request_body(req), 0)
+            retain_replay_mismatch_k(vc, kind, cur, e, req, read_full_request_body(req), null, 0)
             emit_mismatch_response(res, msg, kind)
             return
         }
@@ -2938,7 +2943,7 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
             msg = "interaction ${cur}: request body different to expectation — recorded=${rlen} bytes, live=${llen} bytes"
             if vc.tape.vfail != "" { msg = "${msg}; ${vc.tape.vfail}" }
             set_outcome_k(vc, msg, KIND_BODY_DIFF, cur)
-            retain_replay_mismatch_k(vc, KIND_BODY_DIFF, cur, e, req, live_body, 0)
+            retain_replay_mismatch_k(vc, KIND_BODY_DIFF, cur, e, req, live_body, null, 0)
             emit_mismatch_response(res, msg, KIND_BODY_DIFF)
             return
         }
@@ -7110,7 +7115,15 @@ struct ReplayDiagnostic {
     actual_body: string
     detail: string
     volatile: string         // the volatile-values section ("" without rules)
-    candidate: int
+    candidate: int           // 1 under match_multiple: the interaction was chosen
+    ranked: ptr              // *Ranked, the compared interaction first ("" list: none)
+    all_used: int            // 1 when every interaction had already been used
+    used_count: int          // how many had (match_multiple), so not candidates
+    fd_section: string       // first difference: method, path, headers, body ("" none)
+    fd_offset: int           // its byte offset in the normalized expected form
+    fd_element: string       // XML element path, JSON pointer or header name
+    fd_expected: string      // one line each side, masked
+    fd_actual: string
 }
 // VCR `vc`'s replay diagnostics. The list belongs to its Outcome: read or
 // write it only with the Outcome lock held.
@@ -7220,6 +7233,11 @@ diagnostic_binary(s: string) -> int {
 diagnostic_diff(title: string, expected: string, actual: string) -> string {
     if expected == actual { return "" }
     offset = first_difference(expected, actual)
+    return diagnostic_diff_at(title, expected, actual, offset, offset)
+}
+// The same, from a known first difference: `offset` in expected, `offset_b`
+// in actual (they differ once volatile tokens were skipped).
+diagnostic_diff_at(title: string, expected: string, actual: string, offset: int, offset_b: int) -> string {
     if diagnostic_binary(expected) == 1 || diagnostic_binary(actual) == 1 {
         a_len = string.length(expected)
         b_len = string.length(actual)
@@ -7234,18 +7252,18 @@ diagnostic_diff(title: string, expected: string, actual: string) -> string {
     }
     start_b = 0
     i = 0
-    while i < offset && i < string.length(actual) {
+    while i < offset_b && i < string.length(actual) {
         if string.char_at(actual, i) == 10 { start_b = i + 1 }
         i = i + 1
     }
     end_a = string.index_of_from(expected, "\n", offset)
     if end_a < 0 { end_a = string.length(expected) }
-    end_b = string.index_of_from(actual, "\n", offset)
+    end_b = string.index_of_from(actual, "\n", offset_b)
     if end_b < 0 { end_b = string.length(actual) }
     if start_a < offset - 128 { start_a = offset - 128 }
-    if start_b < offset - 128 { start_b = offset - 128 }
+    if start_b < offset_b - 128 { start_b = offset_b - 128 }
     if end_a > offset + 384 { end_a = offset + 384 }
-    if end_b > offset + 384 { end_b = offset + 384 }
+    if end_b > offset_b + 384 { end_b = offset_b + 384 }
     a = diagnostic_text(string.substring(expected, start_a, end_a), 512)
     b = diagnostic_text(string.substring(actual, start_b, end_b), 512)
     return "${title}\n--- expected\n+++ actual\n@@ line ${line}, byte ${offset} @@\n- ${a}\n+ ${b}\n"
@@ -7259,11 +7277,54 @@ replay_diagnostic_text(e: *ReplayDiagnostic) -> string {
     line = e.source_line
     tape = diagnostic_text(e.tape, 512)
     heading = "Servirtium replay mismatch #${seq} (kind ${kind})\ntest: ${test_name}\nsource: ${file}:${line}\ntape: ${tape}\ninteraction: ${idx}\n"
-    if e.candidate == 1 { heading = string_concat(heading, "expected values are from a candidate interaction (match_multiple)\n") }
+    if e.candidate == 1 && list_size(e.ranked) > 0 {
+        top = list_get_raw(e.ranked, 0) as *Ranked
+        lead = ""
+        if e.all_used == 1 { lead = "every interaction already used; closest is " }
+        heading = string_concat(heading, "closest candidate: ${lead}${ranked_line(top)}\n")
+    }
     request_method = e.actual_method
     request_path = e.actual_path
     heading = string_concat(heading, "request: ${request_method} ${request_path}\n")
+    if e.fd_section != "" {
+        label = e.fd_section
+        if label == "headers" || label == "body" { label = "request ${label}" }
+        at = ""
+        if e.fd_element != "" { at = " at ${e.fd_element}" }
+        heading = string_concat(heading, "first difference: ${label}${at}\n- ${e.fd_expected}\n+ ${e.fd_actual}\n")
+    } else if list_size(e.ranked) > 0 {
+        heading = string_concat(heading, "first difference: none outside volatile values and masked values\n")
+    }
+    if e.candidate == 1 && list_size(e.ranked) == 1 && e.all_used == 0 && e.used_count > 0 {
+        heading = string_concat(heading, "other candidates: none unused (${e.used_count} already used)\n")
+    }
+    if e.candidate == 1 && list_size(e.ranked) > 1 {
+        heading = string_concat(heading, "other candidates:\n")
+        k = 1
+        while k < list_size(e.ranked) && k <= 10 {
+            heading = string_concat(heading, "  ${ranked_line(list_get_raw(e.ranked, k) as *Ranked)}\n")
+            k = k + 1
+        }
+        if list_size(e.ranked) > 11 {
+            more = list_size(e.ranked) - 11
+            heading = string_concat(heading, "  and ${more} more\n")
+        }
+    }
     return string_concat(heading, e.detail)
+}
+// "interaction 3, POST /cases (same method and path; score 0.981)"
+ranked_line(r: *Ranked) -> string {
+    return "interaction ${r.index}, ${r.method} ${r.path} (${r.reason}; score ${closest.per_mille_text(r.score)})"
+}
+ranked_json(r: *Ranked, reason: string) -> ptr {
+    o = json.obj()
+    json.set(o, "index", json.from_int(r.index))
+    json.set(o, "method", json.str(r.method))
+    json.set(o, "path", json.str(r.path))
+    json.set(o, "tier", json.from_int(r.tier))
+    json.set(o, "score", json.from_int(r.score))
+    json.set(o, "reason", json.str(reason))
+    return o
 }
 replay_diagnostic_json(e: *ReplayDiagnostic, server_key: string) -> ptr {
     obj = json.obj()
@@ -7292,6 +7353,33 @@ replay_diagnostic_json(e: *ReplayDiagnostic, server_key: string) -> ptr {
     json.set(obj, "actual", actual)
     json.set(obj, "diff", json.str(e.detail))
     json.set(obj, "volatile", json.str(e.volatile))
+    // Which interaction this is about, the others considered, and where
+    // the two first really differ (docs/replay-diagnostics.md).
+    others = json.arr()
+    if list_size(e.ranked) == 0 { json.set(obj, "closestCandidate", json.null_value()) }
+    else {
+        top = list_get_raw(e.ranked, 0) as *Ranked
+        reason = top.reason
+        if e.all_used == 1 { reason = "every interaction already used; ${reason}" }
+        json.set(obj, "closestCandidate", ranked_json(top, reason))
+        k = 1
+        while k < list_size(e.ranked) {
+            r = list_get_raw(e.ranked, k) as *Ranked
+            json.push(others, ranked_json(r, r.reason))
+            k = k + 1
+        }
+    }
+    json.set(obj, "candidates", others)
+    if e.fd_section == "" { json.set(obj, "firstDifference", json.null_value()) }
+    else {
+        fd = json.obj()
+        json.set(fd, "section", json.str(e.fd_section))
+        json.set(fd, "offset", json.from_int(e.fd_offset))
+        json.set(fd, "element", json.str(e.fd_element))
+        json.set(fd, "expected", json.str(e.fd_expected))
+        json.set(fd, "actual", json.str(e.fd_actual))
+        json.set(obj, "firstDifference", fd)
+    }
     return obj
 }
 diagnostic_headers_k(vc: *Vcr, block: string) -> string {
@@ -7320,14 +7408,330 @@ diagnostic_headers_k(vc: *Vcr, block: string) -> string {
     }
     return out
 }
+// ---- which interaction a mismatch is about (docs/replay-diagnostics.md) ----
+// Ordered playback compares the cursor's interaction. Under match_multiple
+// nothing matched, so the report needs the one the request was most
+// plausibly meant for: the unused interactions (all of them once every one
+// was used), ranked by tier (same method and normalized path; same method;
+// the rest), then by how alike the normalized request bodies are, then by
+// tape order. Every form is normalized as matching normalizes it.
+
+struct Ranked {
+    index: int; tier: int
+    score: int               // thousandths, for the report
+    common: int; longer: int // the exact similarity, for the ranking
+    method: string; path: string; reason: string
+}
+
+// The live request, read once, and its body canonicalized at most once per
+// canonicalizer (cached when no staged secret makes it per-interaction).
+struct LiveView {
+    method: string; path_plain: string; path_q: string; headers: string; body: string
+    canon: ptr               // *LiveCanon, by body mode
+}
+struct LiveCanon { mode: int; vol: int; text: string }
+
+cc_live_view_k(vc: *Vcr, req: ptr, body: string) -> *LiveView {
+    lv = malloc(sizeof(LiveView)) as *LiveView
+    lv.method = string.copy(http_request_method(req))
+    lv.path_plain = string.copy(http_request_path(req))
+    lv.path_q = build_recorded_path(req)
+    lv.headers = normalize_live_headers_k(vc, req)
+    lv.body = body
+    lv.canon = list_new()
+    return lv
+}
+// The live body under body mode `mode` (0 bytes, 1 JSON, 2 XML; with `vol`,
+// rendered with tokens), "" when that canonicalizer refuses it.
+cc_live_body_k(vc: *Vcr, lv: *LiveView, index: int, mode: int, vol: int) -> string {
+    cache = vc.secrets.materialized == 0
+    if cache {
+        k = 0
+        while k < list_size(lv.canon) {
+            c = list_get_raw(lv.canon, k) as *LiveCanon
+            if c.mode == mode && c.vol == vol { return c.text }
+            k = k + 1
+        }
+    }
+    body = secret_canonical_live_k(vc, index, FIELD_REQUEST_BODY, lv.body)
+    text = body
+    if vol == 1 { text = vol_render_live_k(vc, FIELD_REQUEST_BODY, vol_canonical_body_k(vc, mode, body, 0)) }
+    else if mode == 1 { text = json_body_canonicalize(body) }
+    else if mode == 2 { text = xml_canonicalize(body) }
+    if cache {
+        c2 = malloc(sizeof(LiveCanon)) as *LiveCanon
+        c2.mode = mode; c2.vol = vol; c2.text = text
+        list_add_raw(lv.canon, c2)
+    }
+    return text
+}
+// The request path as interaction `e` compares it.
+cc_live_path_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> string {
+    p = lv.path_plain
+    if expected_path_includes_query(e.path) == 1 { p = lv.path_q }
+    return secret_canonical_live_k(vc, index, FIELD_PATH, p)
+}
+// (expected, live) normalized paths.
+cc_path_pair_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> (string, string) {
+    got = uri_canonical(cc_live_path_k(vc, e, index, lv))
+    if vol_ready_k(vc, e) == 1 { return e.v_path, vol_render_live_k(vc, FIELD_PATH, got) }
+    return uri_canonical(vol_unescape_k(vc, rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH))), got
+}
+// 1 when matching compares interaction e's request headers.
+cc_headers_compared_k(vc: *Vcr, e: *Interaction) -> int {
+    if vcr_get_strict_headers_k(vc) == 1 || list_size(match_headers_k(vc)) > 0 { return 1 }
+    if is_blank(expected_req_headers_k(vc, e)) == 0 { return 1 }
+    return 0
+}
+// (expected, live) normalized request headers: the named ones only under
+// ByHeader matching without strict headers.
+cc_headers_pair_k(vc: *Vcr, e: *Interaction, lv: *LiveView) -> (string, string) {
+    exp = vol_unescape_k(vc, expected_req_headers_k(vc, e))
+    live = lv.headers
+    if vol_ready_k(vc, e) == 1 {
+        exp = e.v_req_headers
+        live = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, live)
+    }
+    return diagnostic_headers_k(vc, exp), diagnostic_headers_k(vc, live)
+}
+// (expected, live, body mode) normalized request bodies.
+cc_body_pair_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> (string, string, int) {
+    if vol_ready_k(vc, e) == 1 { return e.v_req_body, cc_live_body_k(vc, lv, index, e.v_body_mode, 1), e.v_body_mode }
+    exp = vol_unescape_k(vc, rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY))
+    if vcr_get_match_json_body_k(vc) == 1 {
+        ej = json_body_canonicalize(exp)
+        lj = cc_live_body_k(vc, lv, index, 1, 0)
+        if ej != "" && lj != "" { return ej, lj, 1 }
+    }
+    if vcr_get_match_xml_body_k(vc) == 1 {
+        ex = xml_canonicalize(exp)
+        lx = cc_live_body_k(vc, lv, index, 2, 0)
+        if ex != "" && lx != "" { return ex, lx, 2 }
+    }
+    return exp, cc_live_body_k(vc, lv, index, 0, 0), 0
+}
+// The tokens in `text` already bound for interaction `index`: "|token|...".
+cc_bound_k(vc: *Vcr, text: string, index: int) -> string {
+    if vol_on_k(vc) == 0 { return "" }
+    out = string.copy("")
+    l = volatile.parts(text, vc.settings.vstyle, vc.rules.vtwo, vc.rules.vone)
+    k = 0
+    while k < volatile.part_count(l) {
+        if volatile.part_token(l, k) == 1 && volatile.part_numbered(l, k) == 1 {
+            tok = volatile.part_text(l, k)
+            _v, _src, found = vol_bound(vc, tok, index)
+            if found == 1 { out = string_concat(out, "|${tok}|") }
+        }
+        k = k + 1
+    }
+    return out
+}
+// Interaction e's tier and body score against the live request.
+cc_score_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> *Ranked {
+    r = malloc(sizeof(Ranked)) as *Ranked
+    r.index = index
+    r.method = diagnostic_text(e.method, 128)
+    r.path = diagnostic_text(diagnostic_safe_k(vc, rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH), FIELD_PATH), 512)
+    tier = closest.TIER_OTHER
+    if e.method == lv.method {
+        tier = closest.TIER_METHOD
+        same = 0
+        got = cc_live_path_k(vc, e, index, lv)
+        if string.length(got) > 0 {
+            if vol_ready_k(vc, e) == 1 {
+                pe, pl = cc_path_pair_k(vc, e, index, lv)
+                // Any value in a token's place: the path's shape decides.
+                da, _db = closest.first_real_difference(pe, pl, vc.settings.vstyle, "")
+                if da < 0 { same = 1 }
+            } else { same = request_paths_equal(got, rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH)) }
+        }
+        if same == 1 { tier = closest.TIER_PATH }
+    }
+    r.tier = tier
+    r.reason = closest.tier_reason(tier)
+    be, bl, _mode = cc_body_pair_k(vc, e, index, lv)
+    r.common = 1
+    r.longer = 1
+    if is_blank(be) == 0 {
+        common, longer = closest.similarity_parts(be, bl, vc.settings.vstyle, cc_bound_k(vc, be, index))
+        r.common = common
+        r.longer = longer
+    }
+    r.score = closest.per_mille(r.common, r.longer)
+    return r
+}
+// 1 when a ranks before b: tier, then score, then tape order.
+cc_before(a: *Ranked, b: *Ranked) -> int {
+    if a.tier != b.tier { if a.tier < b.tier { return 1 } return 0 }
+    if closest.more_alike(a.common, a.longer, b.common, b.longer) == 1 { return 1 }
+    if closest.more_alike(b.common, b.longer, a.common, a.longer) == 1 { return 0 }
+    if a.index < b.index { return 1 }
+    return 0
+}
+// The candidates for a request nothing matched, best first, and 1 when
+// every interaction had already been used (they are then all candidates).
+cc_rank_k(vc: *Vcr, lv: *LiveView) -> (ptr, int) {
+    from = range_from_k(vc)
+    to = range_to_k(vc)
+    all_used = 1
+    i = from
+    while i <= to {
+        if tape_get_k(vc, i).used == 0 { all_used = 0 }
+        i = i + 1
+    }
+    warn = vc.tape.vreqwarn
+    out = list_new()
+    i = from
+    while i <= to {
+        e = tape_get_k(vc, i)
+        if all_used == 1 || e.used == 0 {
+            r = cc_score_k(vc, e, i, lv)
+            list_add_raw(out, r)
+            k = list_size(out) - 1
+            while k > 0 && cc_before(r, list_get_raw(out, k - 1) as *Ranked) == 1 {
+                list_set(out, k, list_get_raw(out, k - 1))
+                k = k - 1
+            }
+            list_set(out, k, r)
+        }
+        i = i + 1
+    }
+    vc.tape.vreqwarn = warn
+    return out, all_used
+}
+
+// One line of a normalized form around byte `off`, for the report.
+cc_line(s: string, off: int) -> string {
+    return trim_leading_ws(closest.line_window(s, off, 240))
+}
+// The snippet of an XML body around byte `off`: an element held escaped,
+// readable; with a canonical (pretty) form, its line; else the element if
+// it is short and on one line, else its line.
+cc_xml_snippet_k(vc: *Vcr, s: string, off: int, pretty: int) -> string {
+    _path, start, name, escaped = closest.xml_element_at(s, off)
+    if start >= 0 && (escaped == 1 || pretty == 0) {
+        end = closest.xml_element_end(s, start, off, name, escaped)
+        if end > start && end - start <= 400 {
+            el = string.substring(s, start, end)
+            if string.index_of(el, "\n") < 0 {
+                // Masked again: unescaping can spell a secret the masking
+                // of the escaped form did not see.
+                if escaped == 1 { return diagnostic_safe_k(vc, closest.xml_unescape(el), FIELD_REQUEST_BODY) }
+                if end - start <= 240 { return el }
+            }
+        }
+    }
+    return cc_line(s, off)
+}
+// A snippet as one diagnostic line.
+cc_one_line(s: string) -> string {
+    return str_replace_all(diagnostic_text(s, 512), "\n", "\\n")
+}
+cc_set_difference(d: *ReplayDiagnostic, section: string, offset: int, element: string, expected: string, actual: string) {
+    d.fd_section = section
+    d.fd_offset = offset
+    d.fd_element = diagnostic_text(element, 512)
+    d.fd_expected = cc_one_line(expected)
+    d.fd_actual = cc_one_line(actual)
+}
+// Where interaction e and the request first really differ, in the order
+// matching checks: method, path, request headers, request body. Both sides
+// are masked (diagnostic_safe_k) before anything is compared or cut out.
+cc_first_difference_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView, d: *ReplayDiagnostic) {
+    style = vc.settings.vstyle
+    if e.method != lv.method {
+        cc_set_difference(d, "method", 0, "", e.method, lv.method)
+        return
+    }
+    pe, pl = cc_path_pair_k(vc, e, index, lv)
+    me = diagnostic_safe_k(vc, pe, FIELD_PATH)
+    ml = diagnostic_safe_k(vc, pl, FIELD_PATH)
+    da, db = closest.first_real_difference(me, ml, style, cc_bound_k(vc, pe, index))
+    if da >= 0 {
+        cc_set_difference(d, "path", da, "", me, ml)
+        return
+    }
+    if cc_headers_compared_k(vc, e) == 1 {
+        he, hl = cc_headers_pair_k(vc, e, lv)
+        he = diagnostic_safe_k(vc, he, FIELD_REQUEST_HEADERS)
+        hl = diagnostic_safe_k(vc, hl, FIELD_REQUEST_HEADERS)
+        da, db = closest.first_real_difference(he, hl, style, cc_bound_k(vc, he, index))
+        if da >= 0 {
+            le = cc_line(he, da)
+            ll = cc_line(hl, db)
+            name = le
+            colon = string.index_of(le, ":")
+            if colon > 0 { name = string.substring(le, 0, colon) } else { name = "" }
+            cc_set_difference(d, "headers", da, name, le, ll)
+            return
+        }
+    }
+    be, bl, mode = cc_body_pair_k(vc, e, index, lv)
+    if is_blank(be) == 1 { return }
+    if diagnostic_binary(be) == 1 || diagnostic_binary(bl) == 1 {
+        da, _db = closest.first_real_difference(be, bl, style, "")
+        if da >= 0 {
+            ne = string.length(be)
+            nl = string.length(bl)
+            cc_set_difference(d, "body", da, "", "[binary body: ${ne} bytes]", "[binary body: ${nl} bytes]")
+        }
+        return
+    }
+    bound = cc_bound_k(vc, be, index)
+    be = diagnostic_safe_k(vc, be, FIELD_REQUEST_BODY)
+    bl = diagnostic_safe_k(vc, bl, FIELD_REQUEST_BODY)
+    da, db = closest.first_real_difference(be, bl, style, bound)
+    if da < 0 { return }
+    first = string.char_at(trim_leading_ws(be), 0)
+    if mode == 2 || (mode == 0 && first == 60) {
+        path, _s, _n, _x = closest.xml_element_at(be, da)
+        pretty = 0
+        if mode == 2 { pretty = 1 }
+        cc_set_difference(d, "body", da, path, cc_xml_snippet_k(vc, be, da, pretty), cc_xml_snippet_k(vc, bl, db, pretty))
+        return
+    }
+    element = ""
+    if mode == 1 || (mode == 0 && (first == 123 || first == 91)) { element = closest.json_pointer_at(be, da) }
+    cc_set_difference(d, "body", da, element, cc_line(be, da), cc_line(bl, db))
+}
+
+// `ranked` (match_multiple): the interactions considered, the compared one
+// first; null for ordered playback, which compares the cursor's interaction.
 retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction,
-                          req: ptr, actual_body: string, candidate: int) {
+                          req: ptr, actual_body: string, ranked: @keep ptr, all_used: int) {
     e = malloc(sizeof(ReplayDiagnostic)) as *ReplayDiagnostic
     e.kind = kind
     e.interaction = index
     e.retrieved = 0
     e.reported = 0
+    candidate = 0
+    if ranked != null { candidate = 1 }
     e.candidate = candidate
+    e.all_used = all_used
+    e.fd_section = ""
+    e.fd_offset = 0
+    e.fd_element = ""
+    e.fd_expected = ""
+    e.fd_actual = ""
+    lv = cc_live_view_k(vc, req, actual_body)
+    e.used_count = 0
+    if ranked != null {
+        e.ranked = ranked
+        u = range_from_k(vc)
+        while u <= range_to_k(vc) {
+            if tape_get_k(vc, u).used == 1 { e.used_count = e.used_count + 1 }
+            u = u + 1
+        }
+    } else {
+        e.ranked = list_new()
+        if expected != null {
+            r = cc_score_k(vc, expected, index, lv)
+            r.reason = "the next interaction in tape order"
+            list_add_raw(e.ranked, r)
+        }
+    }
+    if expected != null { cc_first_difference_k(vc, expected, index, lv, e) }
+    vol = vol_ready_k(vc, expected)
     e.expected_method = ""
     e.expected_path = ""
     e.expected_headers = ""
@@ -7375,13 +7779,15 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
         detail = "no expected interaction available\n"
     } else {
         detail = diagnostic_diff("method", e.expected_method, e.actual_method)
-        detail = string_concat(detail, diagnostic_diff("path", e.expected_path, e.actual_path))
+        // With volatile values the raw forms differ at every token; the
+        // volatile section diffs the normalized forms instead.
+        if vol == 0 { detail = string_concat(detail, diagnostic_diff("path", e.expected_path, e.actual_path)) }
         header_diff = kind >= KIND_HEADER_MISSING && kind <= KIND_HEADER_UNEXPECTED
         if candidate == 1 && (vcr_get_strict_headers_k(vc) == 1 || is_blank(expected.req_headers) == 0 || list_size(match_headers_k(vc)) > 0) { header_diff = true }
-        if header_diff {
+        if header_diff && vol == 0 {
             detail = string_concat(detail, diagnostic_diff("request headers", e.expected_headers, e.actual_headers))
         }
-        if kind == KIND_BODY_DIFF || (candidate == 1 && is_blank(expected.req_body) == 0) {
+        if vol == 0 && (kind == KIND_BODY_DIFF || (candidate == 1 && is_blank(expected.req_body) == 0)) {
             if diagnostic_binary(expected.req_body) == 1 || diagnostic_binary(actual_body) == 1 {
                 offset = first_difference(expected.req_body, actual_body)
                 detail = string_concat(detail, "request body: binary values differ at byte ${offset} (body bytes omitted)\n")
@@ -7389,7 +7795,7 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
                 detail = string_concat(detail, diagnostic_diff("request body", e.expected_body, e.actual_body))
             }
         }
-        if detail == "" { detail = "values differ outside displayed excerpts or before diagnostic masking\n" }
+        if detail == "" && vol == 0 { detail = "values differ outside displayed excerpts or before diagnostic masking\n" }
     }
     if kind == KIND_BODY_DIFF && expected != null {
         expected_size = string.length(rt_apply_unredactions_for_k(vc, expected.req_body, FIELD_REQUEST_BODY))
@@ -8021,7 +8427,7 @@ range_annotate_last_diagnostic_k(vc: *Vcr, note: string) {
 // diagnostic is about (-1 for none), `expected` its entry (or null).
 range_fail_k(vc: *Vcr, req: ptr, res: ptr, kind: int, msg: string, index: int, expected: *Interaction) {
     set_outcome_k(vc, msg, kind, index)
-    retain_replay_mismatch_k(vc, kind, index, expected, req, read_full_request_body(req), 0)
+    retain_replay_mismatch_k(vc, kind, index, expected, req, read_full_request_body(req), null, 0)
     range_annotate_last_diagnostic_k(vc, msg)
     emit_mismatch_response(res, msg, kind)
 }
@@ -8871,19 +9277,27 @@ vol_bindings_text_k(vc: *Vcr) -> string {
     return out
 }
 
+// A normalized diff from the first real difference: a token never counts
+// as one where an unbound token of its name lines up ({{name-?}}).
+vol_diff_k(vc: *Vcr, title: string, expected: string, live: string, index: int) -> string {
+    da, db = closest.first_real_difference(expected, live, vc.settings.vstyle, cc_bound_k(vc, expected, index))
+    if da < 0 { return "" }
+    return diagnostic_diff_at(title, expected, live, da, db)
+}
+
 // The volatile-values part of a playback mismatch diagnostic.
 vol_diagnostic_k(vc: *Vcr, e: *Interaction, index: int, live_path: string, live_headers: string, live_body: string) -> string {
     out = "volatile values:\n"
     if vc.tape.vfail != "" { out = string_concat(out, "binding: ${vc.tape.vfail}\n") }
     lp = vol_render_live_k(vc, FIELD_PATH, uri_canonical(live_path))
-    out = string_concat(out, diagnostic_diff("normalized path", e.v_path, lp))
+    out = string_concat(out, vol_diff_k(vc, "normalized path", e.v_path, lp, index))
     if is_blank(e.v_req_headers) == 0 || vcr_get_strict_headers_k(vc) == 1 {
         lh = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, live_headers)
-        out = string_concat(out, diagnostic_diff("normalized request headers", e.v_req_headers, lh))
+        out = string_concat(out, vol_diff_k(vc, "normalized request headers", e.v_req_headers, lh, index))
     }
     if is_blank(e.v_req_body) == 0 {
         lb = vol_render_live_k(vc, FIELD_REQUEST_BODY, vol_canonical_body_k(vc, e.v_body_mode, live_body, 0))
-        out = string_concat(out, diagnostic_diff("normalized request body", e.v_req_body, lb))
+        out = string_concat(out, vol_diff_k(vc, "normalized request body", e.v_req_body, lb, index))
     }
     rules = volatile_rules_k(vc)
     fields = [FIELD_PATH, FIELD_REQUEST_HEADERS, FIELD_REQUEST_BODY]

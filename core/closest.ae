@@ -14,7 +14,7 @@ import std.string
 import std.list
 import volatile
 exports(
-    first_real_difference, common_suffix, similarity, per_mille_text,
+    first_real_difference, common_suffix, similarity, similarity_parts, per_mille, more_alike, per_mille_text,
     xml_element_at, xml_element_end, json_pointer_at, line_window, xml_unescape,
     TIER_PATH, TIER_METHOD, TIER_OTHER, tier_reason
 )
@@ -28,8 +28,8 @@ const TIER_OTHER = 3    // the rest
 
 tier_reason(tier: int) -> string {
     if tier == TIER_PATH { return "same method and path" }
-    if tier == TIER_METHOD { return "same method, different path" }
-    return "fallback: different method"
+    if tier == TIER_METHOD { return "fallback: same method, another path" }
+    return "fallback: another method"
 }
 
 cl_char(s: string, i: int) -> int {
@@ -166,24 +166,41 @@ common_suffix(a: string, b: string, from_a: int, from_b: int, style: int, bound:
     return string.length(a) - i, string.length(b) - j
 }
 
-// How alike two normalized forms are, in thousandths: the common prefix plus
-// the common suffix, as a share of the longer. Deterministic and linear.
-similarity(a: string, b: string, style: int, bound: string) -> int {
+// How alike two normalized forms are: (the common prefix plus the common
+// suffix, the longer length). Deterministic and linear. Equal forms (and
+// two empty ones) give (n, n), n >= 1.
+similarity_parts(a: string, b: string, style: int, bound: string) -> (int, int) {
     la = string.length(a)
     lb = string.length(b)
-    if la == 0 && lb == 0 { return 1000 }
+    longer = la
+    if lb > longer { longer = lb }
+    if longer == 0 { return 1, 1 }
     da, db = first_real_difference(a, b, style, bound)
-    if da < 0 { return 1000 }
+    if da < 0 { return longer, longer }
     sa, sb = common_suffix(a, b, da, db, style, bound)
     common = da + sa
     if db + sb < common { common = db + sb }
-    longer = la
-    if lb > longer { longer = lb }
-    score = 0
-    if longer > 2000000 { score = common / (longer / 1000) } else { score = common * 1000 / longer }
-    // 1000 means equal; anything that differs stays below it.
+    // Equal means equal: anything that differs stays below the whole.
+    if common >= longer { common = longer - 1 }
+    return common, longer
+}
+cl_wide(x: int) -> long { return x }
+// The same in thousandths, 1000 only when equal.
+similarity(a: string, b: string, style: int, bound: string) -> int {
+    common, longer = similarity_parts(a, b, style, bound)
+    return per_mille(common, longer)
+}
+per_mille(common: int, longer: int) -> int {
+    if common == longer { return 1000 }
+    n = cl_wide(common) * 1000 / cl_wide(longer)
+    score = n as int
     if score > 999 { score = 999 }
     return score
+}
+// 1 when common_a/longer_a > common_b/longer_b (exactly, no rounding).
+more_alike(common_a: int, longer_a: int, common_b: int, longer_b: int) -> int {
+    if cl_wide(common_a) * cl_wide(longer_b) > cl_wide(common_b) * cl_wide(longer_a) { return 1 }
+    return 0
 }
 // 987 -> "0.987", 1000 -> "1.000".
 per_mille_text(n: int) -> string {
@@ -250,7 +267,8 @@ cl_tag_end(s: string, i: int, close: string) -> int {
     return -1
 }
 
-// The element open at byte `off` of an XML text: (its path of local names,
+// The element open at byte `off` of an XML text, or whose start tag holds
+// it: (its path of local names,
 // "/Envelope/Body/…", where its start tag begins, its name as written, 1 when
 // it is markup held escaped as text). Escaped markup (&lt;X&gt; inside an
 // element's text, one level deep) is walked like markup, so a path reaches
@@ -284,8 +302,13 @@ xml_element_at(s: string, off: int) -> (string, int, string, int) {
             if cl_char(s, p) == 47 { closing = 1; p = p + 1 }
             ne = cl_xml_name_end(s, p)
             end = cl_tag_end(s, i, ">")
-            if end < 0 || end > off || ne == p { break }
+            if ne == p { break }
             name = string.substring(s, p, ne)
+            if end < 0 || end > off {
+                // The difference is in this start tag: it is the element.
+                if closing == 0 { cl_frame(stack, name, i, 0) }
+                break
+            }
             if closing == 1 { cl_pop_to(stack, name, 0) }
             else if cl_char(s, end - 2) != 47 { cl_frame(stack, name, i, 0) }
             i = end
@@ -299,8 +322,11 @@ xml_element_at(s: string, off: int) -> (string, int, string, int) {
             c2 = cl_char(s, p)
             if ne > p && ((c2 >= 65 && c2 <= 90) || (c2 >= 97 && c2 <= 122) || c2 == 95) {
                 end = string.index_of_from(s, "&gt;", i)
-                if end < 0 || end + 4 > off { break }
                 name = string.substring(s, p, ne)
+                if end < 0 || end + 4 > off {
+                    if closing == 0 { cl_frame(stack, name, i, 1) }
+                    break
+                }
                 if closing == 1 { cl_pop_to(stack, name, 1) }
                 else if cl_char(s, end - 1) != 47 { cl_frame(stack, name, i, 1) }
                 i = end + 4

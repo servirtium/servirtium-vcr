@@ -1,0 +1,59 @@
+// The closest-candidate scenario (docs/replay-diagnostics.md, "Which
+// interaction a mismatch is compared with") against a playback server,
+// without depending on a binding's own HTTP client. Tape:
+// core_tests/closest/case.md, played back with match_multiple on.
+//
+//   closest_fixture case <base_url>   three SOAP lookups in shuffled order
+//       (each matches; RelatesTo echoes its MessageID), then a CreateCase
+//       whose SubjectValue is empty where the tape has "Rule 1;Openness;":
+//       a 599. The binding's test then reads the diagnostic.
+//
+// Every request carries a fresh MessageID and SubmissionDate (volatile
+// values), so only the SubjectValue really differs.
+import core_tests.fixture_support
+import std.os
+import std.string
+exports(lookup_request, create_request, post_soap, lookups, drive)
+
+const WSA = "http://www.w3.org/2005/08/addressing"
+const SOAP = "http://www.w3.org/2003/05/soap-envelope"
+const SOAP_TYPE = "application/soap+xml; charset=utf-8"
+const LOOKUP = "/Services/LookupService.svc"
+const CASE = "/Services/CaseService.svc"
+
+envelope(service: string, contract: string, action: string, id: string, body: string) -> string {
+    header = "<a:Action s:mustUnderstand=\"1\">http://services.example.test/${contract}/${action}</a:Action><a:MessageID>urn:uuid:${id}</a:MessageID><a:ReplyTo><a:Address>${WSA}/anonymous</a:Address></a:ReplyTo><a:To s:mustUnderstand=\"1\">http://crm.example.test/Services/${service}</a:To>"
+    return "<s:Envelope xmlns:s=\"${SOAP}\" xmlns:a=\"${WSA}\"><s:Header>${header}</s:Header><s:Body>${body}</s:Body></s:Envelope>"
+}
+// kind: Countries, Categories or Subjects.
+lookup_request(kind: string, id: string) -> string {
+    return envelope("LookupService.svc", "lookup/ILookupService", "Get${kind}", id, "<Get${kind} xmlns=\"http://services.example.test/lookup\"><includeInactive>false</includeInactive></Get${kind}>")
+}
+create_request(id: string, subject: string, stamp: string) -> string {
+    data = "&lt;CaseData&gt;&lt;Title&gt;Water leak in flat 3&lt;/Title&gt;&lt;Description&gt;Ceiling drips when it rains&lt;/Description&gt;&lt;CountryValue&gt;GB&lt;/CountryValue&gt;&lt;CategoryValue&gt;Housing;Repairs;&lt;/CategoryValue&gt;&lt;SubjectValue&gt;${subject}&lt;/SubjectValue&gt;&lt;ContactEmail&gt;someone@example.test&lt;/ContactEmail&gt;&lt;SubmissionDate&gt;${stamp}&lt;/SubmissionDate&gt;&lt;/CaseData&gt;"
+    return envelope("CaseService.svc", "case/ICaseService", "CreateCase", id, "<CreateCase xmlns=\"http://services.example.test/case\"><caseData>${data}</caseData></CreateCase>")
+}
+post_soap(base: string, path: string, body: string) -> (int, string) {
+    return fixture_support.post_request(base, path, body, SOAP_TYPE, null)
+}
+// The three lookups, in another order than the tape's; each must match.
+lookups(base: string) {
+    const KINDS[] = ["Subjects", "Countries", "Categories"]
+    const IDS[] = ["0b6c35a3-0000-4000-8000-000000000001", "0b6c35a3-0000-4000-8000-000000000002", "0b6c35a3-0000-4000-8000-000000000003"]
+    for i in 0..KINDS.len {
+        status, body = post_soap(base, LOOKUP, lookup_request(KINDS[i], IDS[i]))
+        fixture_support.check(status == 200, "lookup ${KINDS[i]} matched (${status}): ${body}")
+        fixture_support.check(string.contains(body, "<a:RelatesTo>urn:uuid:${IDS[i]}</a:RelatesTo>") == 1, "RelatesTo echoes the lookup's MessageID: ${body}")
+    }
+}
+drive(base: string) {
+    lookups(base)
+    status, body = post_soap(base, CASE, create_request("0b6c35a3-0000-4000-8000-000000000004", "", "2026-11-14T10:15:00"))
+    fixture_support.check(status == 599, "the create differs in SubjectValue (${status}): ${body}")
+}
+main() {
+    scenario = os.args_get(1)
+    base = os.args_get(2)
+    if scenario == "case" { drive(base) }
+    else { fixture_support.check(false, "unknown scenario ${scenario}") }
+}

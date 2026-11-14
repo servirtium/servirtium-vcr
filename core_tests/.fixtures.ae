@@ -12,7 +12,7 @@ aeb(cap) {
         err = fs.mkdir_p("${root}/target/test-tools")
         if err != "" { bldr.fail(err); return 1 }
         const EXECUTABLE_MODE = 493 // 0755
-        const TOOLS[] = ["redaction_fixture", "secret_fixture", "diagnostic_fixture", "volatile_fixture", "test_upstream", "free_port"]
+        const TOOLS[] = ["redaction_fixture", "secret_fixture", "diagnostic_fixture", "volatile_fixture", "closest_fixture", "test_upstream", "free_port"]
         for i in 0..TOOLS.len {
             tool = TOOLS[i]
             capabilities = "fs,net,os,extern"

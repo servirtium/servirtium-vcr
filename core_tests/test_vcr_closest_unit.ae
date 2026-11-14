@@ -59,6 +59,13 @@ main() {
     near = closest.similarity("<c><t>Leak</t><s>Rule 1</s></c>", "<c><t>Leak</t><s></s></c>", M, "")
     far = closest.similarity("<l><code>R1</code></l>", "<c><t>Leak</t><s></s></c>", M, "")
     if near <= far { println("FAIL: a near body (${near}) outscores a far one (${far})"); exit(1) }
+    // The ranking compares the exact fractions, finer than thousandths.
+    c1, l1 = closest.similarity_parts("abcdefghij", "abcdXfghij", M, "")
+    eq_i(c1, 9, "common")
+    eq_i(l1, 10, "longer")
+    eq_i(closest.more_alike(3999998, 4000000, 3999997, 4000000), 1, "finer than thousandths")
+    eq_i(closest.more_alike(3999997, 4000000, 3999998, 4000000), 0, "and the other way")
+    eq_i(closest.more_alike(1, 2, 2, 4), 0, "equal fractions")
     eq_s(closest.per_mille_text(987), "0.987", "per mille")
     eq_s(closest.per_mille_text(1000), "1.000", "one")
     eq_s(closest.per_mille_text(5), "0.005", "small")
@@ -96,6 +103,11 @@ main() {
     z = "<?xml version=\"1.0\"?><r><!-- <x> --><e a=\"1>2\"/><f><g>q</g></f><h>w</h></r>"
     p3, _s3, _n3, _e3 = closest.xml_element_at(z, string.index_of(z, "w</h>"))
     eq_s(p3, "/r/h", "siblings closed")
+    // The difference is in a start tag: that element.
+    w = "<a><b>1</b><c>2</c></a>"
+    p6, s6, n6, e6 = closest.xml_element_at(w, string.index_of(w, "c>2"))
+    eq_s(p6, "/a/c", "in a start tag")
+    eq_s(string.substring(w, s6, closest.xml_element_end(w, s6, s6, n6, e6)), "<c>2</c>", "that element")
     p4, s4, _n4, _e4 = closest.xml_element_at("text", 2)
     eq_s(p4, "", "no element")
     eq_i(s4, -1, "no element start")
