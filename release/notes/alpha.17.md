@@ -1,4 +1,4 @@
-# Servirtium 2.0.0-alpha.18
+# Servirtium 2.0.0-alpha.17
 
 - Fix the Swift static bundle: include the QuickJS implementation required by
   Bruno conversion in all four variants. Alpha.16's Swift package could fail

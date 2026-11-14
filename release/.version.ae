@@ -43,7 +43,7 @@
 // Docs are different from selenium's: ~29 READMEs quote the tag in download
 // URLs and the dependency lines, so instead of one row per line, every *.md
 // (except CHANGELOG*, and anything under target/ node_modules/ .git/ dist/
-// _build/) has the OLD version (the one in SERVIRTIUM_VCR_VERSION) replaced by
+// _build/ notes/) has the OLD version (the one in SERVIRTIUM_VCR_VERSION) replaced by
 // the new one in set mode, in every spelling (tag, semver, RubyGems, PEP 440;
 // the bare spellings only for a pre-release, since a bare 2.0.0 is too common),
 // and in check mode a doc still quoting the old version fails when old != requested.
@@ -144,7 +144,9 @@ const PINS[] = [
 const TAG = "v\\d+\\.\\d+\\.\\d+(?:-[a-z]+\\.\\d+)?"
 
 // Directories the doc sweep never enters.
-const SKIP_DIRS = "|target|node_modules|.git|dist|_build|"
+// notes: release/notes/<version>.md, one per release, each naming its own
+// version (the sweep once retitled alpha.17's notes as alpha.18).
+const SKIP_DIRS = "|target|node_modules|.git|dist|_build|notes|"
 
 // The marker a template carries, "" if none.
 marker(template: string) -> string {
