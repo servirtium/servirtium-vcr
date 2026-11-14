@@ -7129,6 +7129,10 @@ struct ReplayDiagnostic {
     fd_element: string       // XML element path, JSON pointer or header name
     fd_expected: string      // one line each side, masked
     fd_actual: string
+    headers_match: int       // 1 match, 0 differ, -1 no interaction to compare
+    hd_name: string          // the first differing header, its two lines
+    hd_expected: string      // (masked; "(missing)" on the side without it)
+    hd_actual: string
 }
 // VCR `vc`'s replay diagnostics. The list belongs to its Outcome: read or
 // write it only with the Outcome lock held.
@@ -7322,10 +7326,8 @@ replay_diagnostic_text(e: *ReplayDiagnostic) -> string {
 fd_label(e: *ReplayDiagnostic) -> string {
     if e.fd_section == "method" { return "method" }
     what = e.fd_section
-    if what == "headers" {
-        what = "request headers"
-        if e.fd_element != "" { what = "request header ${e.fd_element}" }
-    } else if what == "body" {
+    if what == "headers" { return "header ${e.fd_element}" }
+    if what == "body" {
         what = "request body"
         if e.fd_element != "" { what = e.fd_element }
     }
@@ -7383,6 +7385,8 @@ replay_diagnostic_json(e: *ReplayDiagnostic, server_key: string) -> ptr {
         }
     }
     json.set(obj, "candidates", others)
+    if e.headers_match < 0 { json.set(obj, "headersMatch", json.null_value()) }
+    else { json.set(obj, "headersMatch", json.boolean(e.headers_match)) }
     if e.fd_section == "" { json.set(obj, "firstDifference", json.null_value()) }
     else {
         fd = json.obj()
@@ -7648,6 +7652,41 @@ cc_set_difference(d: *ReplayDiagnostic, section: string, offset: int, element: s
     d.fd_expected = cc_one_line(expected)
     d.fd_actual = cc_one_line(actual)
 }
+// Interaction e's request headers against the request's, both in
+// matching's canonical form (cc_headers_pair_k: ignored headers left out,
+// sorted by name, credentials and volatile values as matching has them):
+// d.headers_match, and the first differing header with its line each side,
+// masked line by line ("(missing)" where a side lacks it). Compared before
+// masking, so a masked value that differs still counts.
+cc_header_compare_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView, d: *ReplayDiagnostic) {
+    d.headers_match = 1
+    if cc_headers_compared_k(vc, e) == 0 { return }
+    he, hl = cc_headers_pair_k(vc, e, lv)
+    found, ia, ib = closest.header_difference(he, hl, vc.settings.vstyle, cc_bound_k(vc, he, index))
+    if found == 0 { return }
+    d.headers_match = 0
+    le = "(missing)"
+    ll = "(missing)"
+    name = ""
+    if ib >= 0 {
+        ll = diagnostic_safe_k(vc, closest.header_line(hl, ib), FIELD_REQUEST_HEADERS)
+        name = closest.header_name(closest.header_line(hl, ib))
+    }
+    // The offset of the expected line in the normalised expected block
+    // (its end when only the request has the header).
+    d.fd_offset = string.length(he)
+    if ia >= 0 {
+        line = closest.header_line(he, ia)
+        le = diagnostic_safe_k(vc, line, FIELD_REQUEST_HEADERS)
+        name = closest.header_name(line)
+        d.fd_offset = 0
+        k = 0
+        while k < ia { d.fd_offset = d.fd_offset + string.length(closest.header_line(he, k)) + 1; k = k + 1 }
+    }
+    d.hd_name = cc_one_line(name)
+    d.hd_expected = cc_one_line(le)
+    d.hd_actual = cc_one_line(ll)
+}
 // Where interaction e and the request first really differ, in the order
 // matching checks: method, path, request headers, request body. Both sides
 // are masked (diagnostic_safe_k) before anything is compared or cut out.
@@ -7665,20 +7704,9 @@ cc_first_difference_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView, d: *
         cc_set_difference(d, "path", da, "", me, ml)
         return
     }
-    if cc_headers_compared_k(vc, e) == 1 {
-        he, hl = cc_headers_pair_k(vc, e, lv)
-        he = diagnostic_safe_k(vc, he, FIELD_REQUEST_HEADERS)
-        hl = diagnostic_safe_k(vc, hl, FIELD_REQUEST_HEADERS)
-        da, db = closest.first_real_difference(he, hl, style, cc_bound_k(vc, he, index))
-        if da >= 0 {
-            le = cc_line(he, da)
-            ll = cc_line(hl, db)
-            name = le
-            colon = string.index_of(le, ":")
-            if colon > 0 { name = string.substring(le, 0, colon) } else { name = "" }
-            cc_set_difference(d, "headers", da, name, le, ll)
-            return
-        }
+    if d.headers_match == 0 {
+        cc_set_difference(d, "headers", d.fd_offset, d.hd_name, d.hd_expected, d.hd_actual)
+        return
     }
     be, bl, mode = cc_body_pair_k(vc, e, index, lv)
     if is_blank(be) == 1 { return }
@@ -7744,7 +7772,14 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
             list_add_raw(e.ranked, r)
         }
     }
-    if expected != null { cc_first_difference_k(vc, expected, index, lv, e) }
+    e.headers_match = -1
+    e.hd_name = ""
+    e.hd_expected = ""
+    e.hd_actual = ""
+    if expected != null {
+        cc_header_compare_k(vc, expected, index, lv, e)
+        cc_first_difference_k(vc, expected, index, lv, e)
+    }
     e.expected_method = ""
     e.expected_path = ""
     e.expected_headers = ""
@@ -7793,10 +7828,13 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
     } else {
         detail = diagnostic_diff("method", e.expected_method, e.actual_method)
         detail = string_concat(detail, diagnostic_diff("path", e.expected_path, e.actual_path))
+        // Request headers in matching's canonical form: one line when they
+        // match; else the first differing header, one line each side. The
+        // raw blocks are in diagnosticsJson's expected/actual only.
         header_diff = kind >= KIND_HEADER_MISSING && kind <= KIND_HEADER_UNEXPECTED
-        if candidate == 1 && (vcr_get_strict_headers_k(vc) == 1 || is_blank(expected.req_headers) == 0 || list_size(match_headers_k(vc)) > 0) { header_diff = true }
-        if header_diff {
-            detail = string_concat(detail, diagnostic_diff("request headers", e.expected_headers, e.actual_headers))
+        if header_diff || cc_headers_compared_k(vc, expected) == 1 {
+            if e.headers_match == 1 { detail = string_concat(detail, "request headers: match\n") }
+            else { detail = string_concat(detail, "request headers: header ${e.hd_name} differs\n- ${e.hd_expected}\n+ ${e.hd_actual}\n") }
         }
         if kind == KIND_BODY_DIFF || (candidate == 1 && is_blank(expected.req_body) == 0) {
             if diagnostic_binary(expected.req_body) == 1 || diagnostic_binary(actual_body) == 1 {

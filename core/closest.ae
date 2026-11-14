@@ -16,6 +16,7 @@ import volatile
 exports(
     first_real_difference, common_suffix, similarity, similarity_parts, per_mille, more_alike, per_mille_text,
     xml_element_at, xml_element_end, json_pointer_at, line_window, xml_unescape,
+    header_line, header_name, header_difference,
     TIER_PATH, TIER_METHOD, TIER_OTHER, tier_reason
 )
 extern malloc(n: int) -> ptr
@@ -435,4 +436,90 @@ line_window(s: string, off: int, width: int) -> string {
         if end - start > width { end = start + width; post = "..." }
     }
     return "${pre}${string.substring(s, start, end)}${post}"
+}
+
+// ---- request headers ----
+
+struct HLine { text: string; used: int }
+cl_hline(l: ptr, k: int) -> *HLine { return list_get_raw(l, k) as *HLine }
+// The non-blank lines of a header block, as a list of *HLine.
+header_lines(block: string) -> ptr {
+    out = list_new()
+    i = 0
+    n = string.length(block)
+    while i < n {
+        e = string.index_of_from(block, "\n", i)
+        if e < 0 { e = n }
+        if e > i {
+            h = malloc(sizeof(HLine)) as *HLine
+            h.text = string.substring(block, i, e)
+            h.used = 0
+            list_add_raw(out, h)
+        }
+        i = e + 1
+    }
+    return out
+}
+// Line `k` of a header block (as header_lines counts them).
+header_line(block: string, k: int) -> string {
+    l = header_lines(block)
+    if k < 0 || k >= list_size(l) { return "" }
+    return cl_hline(l, k).text
+}
+// A header line's name: the text before its first colon.
+header_name(line: string) -> string {
+    c = string.index_of(line, ":")
+    if c < 0 { return line }
+    return string.substring(line, 0, c)
+}
+cl_ieq(a: string, b: string) -> int {
+    if string.length(a) != string.length(b) { return 0 }
+    k = 0
+    while k < string.length(a) {
+        x = string.char_at(a, k)
+        y = string.char_at(b, k)
+        if x >= 65 && x <= 90 { x = x + 32 }
+        if y >= 65 && y <= 90 { y = y + 32 }
+        if x != y { return 0 }
+        k = k + 1
+    }
+    return 1
+}
+// The first header that differs between two canonical header blocks, by
+// name: (1, its line in a or -1 when only b has it, its line in b or -1
+// when only a has it), or (0, -1, -1) when every line has an equal partner.
+// a's lines are taken in order, each paired with b's first unpaired line of
+// the same name (as written, else the same name in another case); lines
+// are equal as the first-difference comparison has them (tokens line up).
+// Then b's first unpaired line. Header counts are small: pairing is a scan.
+header_difference(a: string, b: string, style: int, bound: string) -> (int, int, int) {
+    la = header_lines(a)
+    lb = header_lines(b)
+    i = 0
+    while i < list_size(la) {
+        line = cl_hline(la, i).text
+        name = header_name(line)
+        pick = -1
+        k = 0
+        while k < list_size(lb) && pick < 0 {
+            if cl_hline(lb, k).used == 0 && header_name(cl_hline(lb, k).text) == name { pick = k }
+            k = k + 1
+        }
+        k = 0
+        while k < list_size(lb) && pick < 0 {
+            if cl_hline(lb, k).used == 0 && cl_ieq(header_name(cl_hline(lb, k).text), name) == 1 { pick = k }
+            k = k + 1
+        }
+        if pick < 0 { return 1, i, -1 }
+        cl_hline(lb, pick).used = 1
+        da, _db = first_real_difference(line, cl_hline(lb, pick).text, style, bound)
+        if da >= 0 { return 1, i, pick }
+        i = i + 1
+    }
+    k = 0
+    while k < list_size(lb) {
+        if cl_hline(lb, k).used == 0 { return 1, -1, k }
+        k = k + 1
+    }
+    return 0, -1, -1
 }

@@ -1,0 +1,228 @@
+// The "request headers" section of a replay-mismatch report
+// (docs/replay-diagnostics.md): both sides in matching's canonical form
+// (ignored per-connection headers left out, sorted by name, volatile values
+// and credentials as matching sees them, masked), "request headers: match"
+// when they match, else the first differing header by name with one line
+// each side ("(missing)" for a header on one side only). The raw blocks are
+// in diagnosticsJson only. Ordered playback and match_multiple alike.
+// Hand-written tapes, fake values, a local playback server only.
+import core.vcr
+import std.http
+import std.http.client
+import std.json
+import std.string
+import std.fs
+import std.io
+
+extern exit(code: int)
+
+const PORT = 18396
+const BASE = "http://127.0.0.1:18396"
+const CASE = "/Services/Integration/CaseService.svc"
+const SOAP = "application/soap+xml; charset=utf-8"
+const SECRET = "tenant-s3cret-not-real"
+const TOKEN = "live-t0ken-not-real-99"
+
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+has(text: string, part: string, what: string) {
+    if string.contains(text, part) != 1 { fail("${what}: no [${part}] in\n${text}") }
+}
+hasnt(text: string, part: string, what: string) {
+    if string.contains(text, part) == 1 { fail("${what}: [${part}] must not appear in\n${text}") }
+}
+ok(err: string, what: string) { if err != "" { fail("${what}: ${err}") } }
+
+tmp_tape(name: string, text: string) -> string {
+    t = io.getenv("TMPDIR")
+    if t == 0 { t = "/tmp" }
+    p = "${t}/vcr_headers_${name}.tape"
+    ok(fs.write(p, text), "write ${name}")
+    return p
+}
+envelope(subject: string) -> string {
+    return "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\"><s:Body><CreateCase xmlns=\"http://services.example.test/case/2013/08\"><caseData>&lt;CaseData&gt;&lt;Title&gt;Water leak&lt;/Title&gt;&lt;SubjectValue&gt;${subject}&lt;/SubjectValue&gt;&lt;/CaseData&gt;</caseData></CreateCase></s:Body></s:Envelope>"
+}
+// One POST interaction; its recorded request headers in the order given.
+tape_text(block: string, headers: string) -> string {
+    F = "```"
+    return "${block}## Interaction 0: POST ${CASE}\n\n### Request headers recorded for playback:\n\n${F}\n${headers}${F}\n### Request body recorded for playback (${SOAP}):\n\n${F}\n${envelope("Rule 1;Openness;")}\n${F}\n### Response headers recorded for playback:\n\n${F}\nContent-Type: text/plain\n${F}\n### Response body recorded for playback (200: text/plain):\n\n${F}\ncreated\n${F}\n\n"
+}
+// The §1 tape: the create's headers as WCF sent them, not alphabetical.
+const WCF_HEADERS = "Content-Type: application/soap+xml; charset=utf-8\nExpect: 100-continue\nAccept-Encoding: gzip, deflate\n"
+
+struct Header { name: string; value: string }
+
+open_tape(tape: string, multiple: int) -> ptr {
+    h, err = vcr.open_playback(tape, PORT)
+    if h == null { fail("open ${tape}: ${err}") }
+    vcr.set_match_multiple_h(h, multiple)
+    return h
+}
+go(h: ptr) {
+    if vcr.start_background_h(h, 10000) != 0 { fail("start: ${vcr.last_error_h(h)}") }
+}
+done(h: ptr) {
+    vcr.assert_no_mismatches_h(h)   // acknowledged: nothing reported at stop
+    vcr.eject(h)
+    vcr.destroy_h(h)
+}
+// POST the create with these headers ("Name: value\n" lines, in order).
+// The client adds Host and Content-Length itself.
+post(headers: string, subject: string) -> int {
+    req = client.request("POST", "${BASE}${CASE}")
+    client.set_timeout(req, 10s)
+    client.set_body(req, string.bytes(envelope(subject)), "")
+    lines = string.split(headers, "\n")
+    k = 0
+    while k < string.array_size(lines) {
+        line = string.array_get(lines, k)
+        c = string.index_of(line, ": ")
+        if c > 0 { client.set_header(req, string.substring(line, 0, c), string.substring(line, c + 2, string.length(line))) }
+        k = k + 1
+    }
+    string.array_free(lines)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail("send: ${err}") }
+    st = client.response_status(resp)
+    client.response_free(resp)
+    return st
+}
+// The request is replayed or not, as matching decides; then the report.
+expect_status(h: ptr, headers: string, subject: string, want: int, what: string) -> string {
+    st = post(headers, subject)
+    if st != want { fail("${what}: status ${st}, want ${want}\n${vcr.last_error_ex_h(h, 0)}") }
+    if want == 200 { return "" }
+    return vcr.last_error_ex_h(h, 0)
+}
+// The newest event's headersMatch.
+headers_match(h: ptr) -> int {
+    all = json.parse(vcr.diagnostics_json_h(h, 0))!
+    ev = json.array_get(all, json.json_array_size(all) - 1)!
+    v, _e = json.object_get(ev, "headersMatch")
+    if v == null { fail("no headersMatch") }
+    r = json.json_get_bool(v)
+    json.json_free(all)
+    return r
+}
+first_difference_json(h: ptr) -> string {
+    all = json.parse(vcr.diagnostics_json_h(h, 0))!
+    ev = json.array_get(all, json.json_array_size(all) - 1)!
+    fd, _e = json.object_get(ev, "firstDifference")
+    text, _err = json.encode(fd)
+    out = string.copy(text)
+    json.json_free(all)
+    return out
+}
+// Nothing in the report reads as a header difference.
+no_header_difference(report: string, what: string) {
+    has(report, "\nrequest headers: match\n", "${what}: the headers match")
+    hasnt(report, "\nrequest headers\n", "${what}: no header diff")
+    hasnt(report, "first difference: header", "${what}: no header named")
+    hasnt(report, "Accept-Encoding", "${what}: an ignored header")
+    has(report, "first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte ", "${what}: the body is the difference")
+}
+
+// ---- §1, cut down: the same headers plus Host and Content-Length; the body differs ----
+section_1(multiple: int) {
+    h = open_tape(tmp_tape("wcf", tape_text("", WCF_HEADERS)), multiple)
+    go(h)
+    expect_status(h, WCF_HEADERS, "Rule 1;Openness;", 200, "as recorded")
+    vcr.reset_cursor_h(h)
+    report = expect_status(h, WCF_HEADERS, "", 599, "the body differs")
+    if multiple == 1 { println("---- report (§1 scenario) ----\n${report}\n---- end ----") }
+    no_header_difference(report, "§1 (multiple ${multiple})")
+    if headers_match(h) != 1 { fail("headersMatch must be true") }
+    // The raw blocks stay in the JSON.
+    dj = vcr.diagnostics_json_h(h, 0)
+    has(dj, "Accept-Encoding: gzip, deflate", "the raw recorded headers in the JSON")
+    // Same headers in another order: matching passes, and the report agrees.
+    vcr.reset_cursor_h(h)
+    vcr.clear_last_error_h(h)
+    reordered = "Accept-Encoding: gzip, deflate\nExpect: 100-continue\nContent-Type: application/soap+xml; charset=utf-8\n"
+    expect_status(h, reordered, "Rule 1;Openness;", 200, "reordered, as recorded")
+    vcr.reset_cursor_h(h)
+    no_header_difference(expect_status(h, reordered, "", 599, "reordered, the body differs"), "reordered (multiple ${multiple})")
+    done(h)
+}
+
+// ---- real header differences ----
+differences(multiple: int) {
+    h = open_tape(tmp_tape("wcf", tape_text("", WCF_HEADERS)), multiple)
+    go(h)
+    // Another Content-Type value.
+    r = expect_status(h, "Content-Type: text/xml\nExpect: 100-continue\nAccept-Encoding: gzip, deflate\n", "Rule 1;Openness;", 599, "Content-Type")
+    has(r, "first difference: header Content-Type\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n", "named, one line each side")
+    has(r, "\nrequest headers: header Content-Type differs\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n", "the header section")
+    if headers_match(h) != 0 { fail("headersMatch must be false") }
+    has(first_difference_json(h), "\"section\":\"headers\"", "JSON section")
+    has(first_difference_json(h), "\"element\":\"Content-Type\"", "JSON element is the header name")
+    // A header the request leaves out.
+    vcr.reset_cursor_h(h)
+    r2 = expect_status(h, "Content-Type: application/soap+xml; charset=utf-8\nAccept-Encoding: gzip, deflate\n", "Rule 1;Openness;", 599, "Expect missing")
+    has(r2, "first difference: header Expect\n- Expect: 100-continue\n+ (missing)\n", "missing from the request")
+    // A header the tape does not have.
+    vcr.reset_cursor_h(h)
+    r3 = expect_status(h, "${WCF_HEADERS}X-Extra: one\n", "Rule 1;Openness;", 599, "an extra header")
+    has(r3, "first difference: header X-Extra\n- (missing)\n+ X-Extra: one\n", "missing from the tape")
+    // Matching compares header names as written: content-type is another
+    // header line, and the report says which.
+    vcr.reset_cursor_h(h)
+    r4 = expect_status(h, "content-type: application/soap+xml; charset=utf-8\nExpect: 100-continue\n", "Rule 1;Openness;", 599, "a lower-case name")
+    has(r4, "first difference: header Content-Type\n- Content-Type: application/soap+xml; charset=utf-8\n+ content-type: application/soap+xml; charset=utf-8\n", "the name's case")
+    done(h)
+}
+
+// ---- volatile values and credentials never show as differences, nor unmasked ----
+masked(multiple: int) {
+    block = "## Volatile values\n\n- request headers: `X-Correlation-Id: {{correlationId}}`\n\n"
+    headers = "Authorization: Bearer AUTHORIZATION_1\nContent-Type: application/soap+xml; charset=utf-8\nX-Correlation-Id: {{correlationId}}\nX-Tenant: TENANT_1; region=eu\n"
+    h = open_tape(tmp_tape("masked", tape_text(block, headers)), multiple)
+    ok(vcr.redact_credentials_h(h), "credentials on playback")
+    ok(vcr.unredact_h(h, 3, "TENANT_1", SECRET), "unredact")
+    go(h)
+    live = "Content-Type: application/soap+xml; charset=utf-8\nAuthorization: Bearer ${TOKEN}\nX-Correlation-Id: corr-0000-not-real\nX-Tenant: ${SECRET}; region=eu\n"
+    expect_status(h, live, "Rule 1;Openness;", 200, "matches as recorded")
+    vcr.reset_cursor_h(h)
+    r = expect_status(h, live, "", 599, "the body differs")
+    has(r, "\nrequest headers: match\n", "a token and a credential are no difference")
+    hasnt(r, "first difference: header", "no header named")
+    // The tenant header really differs; its secret is masked on both sides.
+    vcr.reset_cursor_h(h)
+    live2 = "Content-Type: application/soap+xml; charset=utf-8\nAuthorization: Bearer ${TOKEN}\nX-Correlation-Id: corr-0000-not-real\nX-Tenant: ${SECRET}; region=us\n"
+    r2 = expect_status(h, live2, "Rule 1;Openness;", 599, "the tenant region")
+    has(r2, "first difference: header X-Tenant\n- X-Tenant: [REDACTED]; region=eu\n+ X-Tenant: [REDACTED]; region=us\n", "masked on both sides")
+    has(r2, "\nrequest headers: header X-Tenant differs\n- X-Tenant: [REDACTED]; region=eu\n+ X-Tenant: [REDACTED]; region=us\n", "and in the section")
+    dj = vcr.diagnostics_json_h(h, 0)
+    hasnt(r, SECRET, "text"); hasnt(r2, SECRET, "text"); hasnt(dj, SECRET, "JSON")
+    hasnt(r, TOKEN, "text"); hasnt(r2, TOKEN, "text"); hasnt(dj, TOKEN, "JSON")
+    hasnt(block_after(r2, "first difference:"), "corr-0000-not-real", "a volatile value in the first difference")
+    done(h)
+}
+// The report from the line starting `head` to its third line.
+block_after(report: string, head: string) -> string {
+    at = string.index_of(report, head)
+    if at < 0 { return "" }
+    end = at
+    k = 0
+    while k < 3 {
+        n = string.index_of_from(report, "\n", end + 1)
+        if n < 0 { return string.substring(report, at, string.length(report)) }
+        end = n
+        k = k + 1
+    }
+    return string.substring(report, at, end)
+}
+
+main() {
+    println("=== request headers in the mismatch report ===")
+    m = 0
+    while m < 2 {
+        section_1(m)
+        differences(m)
+        masked(m)
+        m = m + 1
+    }
+    println("=== request headers in the mismatch report passed ===")
+    exit(0)
+}
