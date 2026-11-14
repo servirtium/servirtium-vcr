@@ -1,6 +1,7 @@
 // Alpha.16 consumer probe matrix. The shared fixture DAG runs this suite
 // for every language binding; all bindings use this exact core implementation.
 import core.vcr
+import std.http
 import std.http.client
 import std.string
 import std.fs
@@ -8,7 +9,17 @@ import std.os
 extern exit(code: int)
 // Per process, so trees running core_tests on one host at once do not collide.
 tape_path() -> string { return "/tmp/svcr-xml-matrix-${os.getpid()}.md" }
-port_for() -> int { return 30000 + os.getpid() % 20000 }
+// A port the OS has just handed out and released: a fixed or pid-derived one
+// collides with whatever else a busy host is running.
+port_for() -> int {
+    s = http.server_create(0)
+    if s == null { return 0 }
+    err = http.server_bind(s, "127.0.0.1", 0)
+    port = 0
+    if err == "" { port = http.server_port(s) }
+    http.server_free(s)
+    return port
+}
 const RESPONSE = "<R>\n  <C>response</C>\n</R>"
 fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
 check(row: int, recorded: string, live: string, matches: int, enabled: int, multiple: int) {
@@ -18,13 +29,14 @@ check(row: int, recorded: string, live: string, matches: int, enabled: int, mult
     err = vcr.flush_h(h, tape_path())
     vcr.destroy_h(h)
     if err != "" { fail(err) }
-    p, err = vcr.open_playback(tape_path(), port_for())
+    port = port_for()
+    p, err = vcr.open_playback(tape_path(), port)
     if err != "" { fail(err) }
     if enabled == 1 { vcr.set_pretty_xml_h(p, 2) }
     if enabled == 2 { vcr.set_match_xml_body_h(p, 1) }
     vcr.set_match_multiple_h(p, multiple)
     if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
-    url = "http://127.0.0.1:${port_for()}"
+    url = "http://127.0.0.1:${port}"
     req = client.request("POST", "${url}/xml")
     ctype = "application/xml"
     if row == 18 { ctype = "text/plain" }

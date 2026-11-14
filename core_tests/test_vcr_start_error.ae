@@ -1,0 +1,48 @@
+// A playback that cannot listen says why: start_background_h used to return -1
+// with an empty last_error when the port was taken or the listener never came
+// up, so every binding's Start() failed with no message. The port is taken the
+// way a busy host takes it: another playback already listening there.
+import core.vcr
+import std.http
+import std.string
+import std.fs
+import std.os
+extern exit(code: int)
+
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+
+free_port() -> int {
+    s = http.server_create(0)
+    if s == null { return 0 }
+    err = http.server_bind(s, "127.0.0.1", 0)
+    port = 0
+    if err == "" { port = http.server_port(s) }
+    http.server_free(s)
+    return port
+}
+
+main() {
+    tape = "/tmp/svcr-start-error-${os.getpid()}.md"
+    h = vcr.open_offline()
+    err = vcr.record_full_h(h, "GET", "/x", 200, "text/plain", "ok", "", "")
+    if err != "" { fail(err) }
+    err = vcr.flush_h(h, tape)
+    vcr.destroy_h(h)
+    if err != "" { fail(err) }
+
+    port = free_port()
+    first, ferr = vcr.open_playback(tape, port)
+    if ferr != "" { fail(ferr) }
+    if vcr.start_background_h(first, 5000) != 0 { fail("first playback: ${vcr.last_error_h(first)}") }
+
+    second, serr = vcr.open_playback(tape, port)
+    if serr != "" { fail(serr) }
+    if vcr.start_background_h(second, 2000) == 0 { fail("a second playback started on port ${port}, which the first holds") }
+    msg = vcr.last_error_h(second)
+    if msg == "" { fail("a failed start left last_error empty") }
+    if string.contains(msg, "${port}") == 0 { fail("last_error does not name the port: ${msg}") }
+    println("PASS a playback that cannot listen says why: ${msg}")
+    vcr.destroy_h(second)
+    vcr.destroy_h(first)
+    fs.delete(tape)
+}

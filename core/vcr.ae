@@ -3227,12 +3227,17 @@ start_background_h(server: ptr, timeout_ms: int) -> int {
     http.monitor(server_of(server)) {
         listening() | host: string, port: int | { sync.atomic_store(started, 1) }
     }
-    if http.http_server_start_background_raw(server_of(server)) < 0 {
+    serr = http.server_start_background(server_of(server))
+    if serr != "" {
+        set_last_error_k(key_for(server), "cannot listen on port ${http.http_server_port(server_of(server))}: ${serr}")
         return -1
     }
     waited = 0
     while sync.atomic_load(started) == 0 {
         if waited >= timeout_ms {
+            why = http.http_server_error(server_of(server))
+            if why != "" { why = ": ${why}" }
+            set_last_error_k(key_for(server), "not listening on port ${http.http_server_port(server_of(server))} after ${timeout_ms} ms${why}")
             return -1
         }
         sleep(1)
