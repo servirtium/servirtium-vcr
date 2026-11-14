@@ -135,11 +135,10 @@ case_scenario() {
     hasnt(first, ID, "a MessageID")
     hasnt(first, "messageId", "a MessageID token")
     hasnt(first, "2026-11-14T10:15:00", "the SubmissionDate")
-    nb = string.index_of(report, "normalized request body")
-    if nb < 0 { fail("no normalized request body") }
-    body = string.substring(report, nb, string.index_of(report, "rules fired:"))
-    has(body, "Rule 1;Openness;", "the normalized body diff starts at the real difference")
-    hasnt(body, "messageId", "the normalized body diff skips the tokens")
+    // The existing sections stay, now about interaction 3.
+    has(report, "expected values are from a candidate interaction (match_multiple)\n", "the existing line stays")
+    has(report, "\nrequest body\n--- expected\n", "the raw body diff")
+    has(report, "\nnormalized request body\n--- expected\n", "the normalized body diff")
     // rules fired and bindings are this interaction's.
     has(report, "rules fired:\n", "rules fired")
     has(report, "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;` (request body: submitted = 2026-11-14T10:15:00)", "the SubmissionDate rule fired on the create")

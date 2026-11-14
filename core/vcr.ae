@@ -7277,6 +7277,7 @@ replay_diagnostic_text(e: *ReplayDiagnostic) -> string {
     line = e.source_line
     tape = diagnostic_text(e.tape, 512)
     heading = "Servirtium replay mismatch #${seq} (kind ${kind})\ntest: ${test_name}\nsource: ${file}:${line}\ntape: ${tape}\ninteraction: ${idx}\n"
+    if e.candidate == 1 { heading = string_concat(heading, "expected values are from a candidate interaction (match_multiple)\n") }
     if e.candidate == 1 && list_size(e.ranked) > 0 {
         top = list_get_raw(e.ranked, 0) as *Ranked
         lead = ""
@@ -7731,7 +7732,6 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
         }
     }
     if expected != null { cc_first_difference_k(vc, expected, index, lv, e) }
-    vol = vol_ready_k(vc, expected)
     e.expected_method = ""
     e.expected_path = ""
     e.expected_headers = ""
@@ -7779,15 +7779,13 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
         detail = "no expected interaction available\n"
     } else {
         detail = diagnostic_diff("method", e.expected_method, e.actual_method)
-        // With volatile values the raw forms differ at every token; the
-        // volatile section diffs the normalized forms instead.
-        if vol == 0 { detail = string_concat(detail, diagnostic_diff("path", e.expected_path, e.actual_path)) }
+        detail = string_concat(detail, diagnostic_diff("path", e.expected_path, e.actual_path))
         header_diff = kind >= KIND_HEADER_MISSING && kind <= KIND_HEADER_UNEXPECTED
         if candidate == 1 && (vcr_get_strict_headers_k(vc) == 1 || is_blank(expected.req_headers) == 0 || list_size(match_headers_k(vc)) > 0) { header_diff = true }
-        if header_diff && vol == 0 {
+        if header_diff {
             detail = string_concat(detail, diagnostic_diff("request headers", e.expected_headers, e.actual_headers))
         }
-        if vol == 0 && (kind == KIND_BODY_DIFF || (candidate == 1 && is_blank(expected.req_body) == 0)) {
+        if kind == KIND_BODY_DIFF || (candidate == 1 && is_blank(expected.req_body) == 0) {
             if diagnostic_binary(expected.req_body) == 1 || diagnostic_binary(actual_body) == 1 {
                 offset = first_difference(expected.req_body, actual_body)
                 detail = string_concat(detail, "request body: binary values differ at byte ${offset} (body bytes omitted)\n")
@@ -7795,7 +7793,7 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
                 detail = string_concat(detail, diagnostic_diff("request body", e.expected_body, e.actual_body))
             }
         }
-        if detail == "" && vol == 0 { detail = "values differ outside displayed excerpts or before diagnostic masking\n" }
+        if detail == "" { detail = "values differ outside displayed excerpts or before diagnostic masking\n" }
     }
     if kind == KIND_BODY_DIFF && expected != null {
         expected_size = string.length(rt_apply_unredactions_for_k(vc, expected.req_body, FIELD_REQUEST_BODY))
@@ -9277,27 +9275,19 @@ vol_bindings_text_k(vc: *Vcr) -> string {
     return out
 }
 
-// A normalized diff from the first real difference: a token never counts
-// as one where an unbound token of its name lines up ({{name-?}}).
-vol_diff_k(vc: *Vcr, title: string, expected: string, live: string, index: int) -> string {
-    da, db = closest.first_real_difference(expected, live, vc.settings.vstyle, cc_bound_k(vc, expected, index))
-    if da < 0 { return "" }
-    return diagnostic_diff_at(title, expected, live, da, db)
-}
-
 // The volatile-values part of a playback mismatch diagnostic.
 vol_diagnostic_k(vc: *Vcr, e: *Interaction, index: int, live_path: string, live_headers: string, live_body: string) -> string {
     out = "volatile values:\n"
     if vc.tape.vfail != "" { out = string_concat(out, "binding: ${vc.tape.vfail}\n") }
     lp = vol_render_live_k(vc, FIELD_PATH, uri_canonical(live_path))
-    out = string_concat(out, vol_diff_k(vc, "normalized path", e.v_path, lp, index))
+    out = string_concat(out, diagnostic_diff("normalized path", e.v_path, lp))
     if is_blank(e.v_req_headers) == 0 || vcr_get_strict_headers_k(vc) == 1 {
         lh = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, live_headers)
-        out = string_concat(out, vol_diff_k(vc, "normalized request headers", e.v_req_headers, lh, index))
+        out = string_concat(out, diagnostic_diff("normalized request headers", e.v_req_headers, lh))
     }
     if is_blank(e.v_req_body) == 0 {
         lb = vol_render_live_k(vc, FIELD_REQUEST_BODY, vol_canonical_body_k(vc, e.v_body_mode, live_body, 0))
-        out = string_concat(out, vol_diff_k(vc, "normalized request body", e.v_req_body, lb, index))
+        out = string_concat(out, diagnostic_diff("normalized request body", e.v_req_body, lb))
     }
     rules = volatile_rules_k(vc)
     fields = [FIELD_PATH, FIELD_REQUEST_HEADERS, FIELD_REQUEST_BODY]
