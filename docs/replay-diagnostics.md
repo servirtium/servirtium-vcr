@@ -100,7 +100,7 @@ requests have completed. Separate handles retain separate events.
 
 ```json
 "closestCandidate": {"index": 3, "method": "POST", "path": "/Services/CaseService.svc",
-                     "tier": 1, "score": 983, "reason": "same method and path"},
+                     "tier": 1, "score": 983, "reason": "same method and path, not yet used"},
 "candidates": [],
 "firstDifference": {"section": "body", "offset": 777,
                     "element": "/Envelope/Body/CreateCase/caseData/CaseData/SubjectValue",
@@ -119,7 +119,8 @@ every section of the report (path, headers, body, rules fired, bindings):
 1. **Candidates** are the interactions not yet used (in the playback range,
    if one is set). If every one has been used, all of them are candidates,
    and the report says so: "every interaction already used; closest is
-   interaction 3, …".
+   interaction 3 …". Each candidate's `reason` ends "not yet used" or
+   "already used".
 2. **Tiers**: `1` the same method and normalized path; `2` the same method
    only (`fallback: same method, another path`); `3` the rest (`fallback:
    another method`). A request to `CaseService.svc` is never compared with
@@ -143,19 +144,25 @@ its name), and the canonical forms of `pretty_xml`/`match_xml_body` and
 
 ## The report, section by section
 
+The existing report is unchanged except that, under `match_multiple`, it is
+about the chosen interaction. The new lines are added after `request:`:
+
 ```text
 Servirtium replay mismatch #1 (kind 1)
 test: …
 source: …
 tape: …
 interaction: 3                                     <- the interaction compared with
-closest candidate: interaction 3, POST /Services/CaseService.svc (same method and path; score 0.983)
+expected values are from a candidate interaction (match_multiple)
 request: POST /Services/CaseService.svc
-first difference: request body at /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue
+closest: interaction 3 POST /Services/CaseService.svc (same method and path, not yet used)
+first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte 777
 - <SubjectValue>Rule 1;Openness;</SubjectValue>
 + <SubjectValue></SubjectValue>
 other candidates: none unused (3 already used)
-volatile values:                                   <- the existing sections, about interaction 3
+request body                                       <- the existing sections, about interaction 3
+…
+volatile values:
 normalized request body
 …
 rules fired:
@@ -164,76 +171,70 @@ bindings:
 …
 ```
 
-* `closest candidate` (match_multiple only): the chosen interaction, its
-  tier's reason and its score.
-* `first difference`: the first section, in matching's order (method,
-  path, request headers, request body), where the normalized forms really
-  differ; tokens and canonicalization never count. For XML (and markup held
-  escaped inside an element, one level deep, as WCF's `caseData` is) it
-  names the element path by local names; for JSON the JSON pointer; for
-  headers the header name. One line each side: an escaped element shown
+* `closest` (match_multiple only): the chosen interaction, the reason for
+  its tier, and whether it had been used. When every interaction had been
+  used: `closest: every interaction already used; closest is interaction 3
+  POST … (same method and path, already used)`.
+* `first difference`: the first place, in matching's order (method, path,
+  request headers, request body), where the normalised forms really
+  differ; tokens and canonicalisation never count. It names an XML element
+  path by local names (also inside markup held escaped in an element, one
+  level deep, as WCF's `caseData` is), a JSON pointer, `request header
+  NAME`, `path`, `request body` or `method`, then the byte offset in the
+  normalised expected form. One line each side: an escaped element shown
   readable; a pretty-printed line when a pretty or XML-matching mode is on;
   otherwise the element, if short, or a window of its line. Ordered
-  playback gets this line too.
+  playback gets this line too (and no `closest` line: the cursor names the
+  interaction).
 * `other candidates` (match_multiple only): one line each, best first, at
-  most ten.
-* Then the existing sections. With volatile rules the raw path, header and
-  body diffs are left out (they would differ at every token); the
-  `normalized …` diffs in `volatile values:` start at the first real
-  difference.
+  most ten: `  interaction 0 POST /Services/LookupService.svc, score 0.206
+  (fallback: same method, another path, not yet used)`; or `none unused (N
+  already used)`.
+* Then the existing sections, as before, pointed at the chosen
+  interaction.
 
 Both sides are masked, as described below, before anything is compared,
 cut out or printed, in the text and in `diagnosticsJson`.
 
 ### Before and after, for the WCF suite
 
-Three SOAP lookups in any order, then a `CreateCase` whose `SubjectValue`
-is empty where the tape has `Rule 1;Openness;`
-(`core_tests/test_vcr_closest_candidate.ae`, tape
-`core_tests/closest/case.md`). Before, the report compared the create
-with interaction 0, a lookup:
+A WCF client makes five lookups in any order, then a `CreateCase`; the
+tape has six interactions, played with `match_multiple`. The create
+differs from interaction 5 only in `<SubjectValue>`. Before, the report
+compared it with interaction 0, a lookup:
 
 ```text
-interaction: 0
-expected values are from a candidate interaction (match_multiple)
-request: POST /Services/CaseService.svc
-path
---- expected
-+++ actual
-@@ line 1, byte 10 @@
-- /Services/LookupService.svc
-+ /Services/CaseService.svc
+request headers
+@@ line 1, byte 0 @@
+- Accept-Encoding: gzip, deflate
++ Content-Type: application/soap+xml; charset=utf-8
 request body
 --- expected
 +++ actual
-@@ line 1, byte 179 @@
-- -envelope" xmlns:a="…"><s:Header><a:Action s:mustUnderstand="1">http://services.example.test/lookup/ILookupService/GetCountries</a:Action><a:MessageID>urn:uuid:{{messageId-1}}</a:MessageID>…
-+ -envelope" xmlns:a="…"><s:Header><a:Action s:mustUnderstand="1">http://services.example.test/case/ICaseService/CreateCase</a:Action><a:MessageID>urn:uuid:0b6c35a3-0000-4000-8000-000000000004</a:MessageID>…
-volatile values:
+@@ line 1, byte 201 @@
+- ...<a:Action s:mustUnderstand="1">http://.../lookup/2013/08/ILookupService/GetLookupListByName</a:Action>...
++ ...<a:Action s:mustUnderstand="1">http://.../case/2013/08/ICaseService/CreateCase</a:Action>...
 normalized path
-…
-```
-
-After:
-
-```text
-interaction: 3
-closest candidate: interaction 3, POST /Services/CaseService.svc (same method and path; score 0.983)
-request: POST /Services/CaseService.svc
-first difference: request body at /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue
-- <SubjectValue>Rule 1;Openness;</SubjectValue>
-+ <SubjectValue></SubjectValue>
-other candidates: none unused (3 already used)
-volatile values:
-normalized request body
 --- expected
 +++ actual
-@@ line 1, byte 777 @@
-- …&lt;SubjectValue&gt;Rule 1;Openness;&lt;/SubjectValue&gt;…
-+ …&lt;SubjectValue&gt;&lt;/SubjectValue&gt;…
-rules fired:
-…
+- /Services/Integration/LookupService.svc
++ /Services/Integration/CaseService.svc
+...
 ```
+
+After, the report leads with:
+
+```text
+closest: interaction 5 POST /Services/Integration/CaseService.svc (same method and path, not yet used)
+first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte 1408
+- <SubjectValue>Rule 1;Openness;</SubjectValue>
++ <SubjectValue></SubjectValue>
+```
+
+and the existing sections follow, about interaction 5. The cut-down
+version is `core_tests/test_vcr_closest_candidate.ae` (tape
+`core_tests/closest/case.md`: three lookups and a create), whose report
+begins as in the section above.
 
 ## Excerpts and masking
 

@@ -10,15 +10,16 @@
   every interaction was used, all are candidates and the report says so.
   Every section of the report (path, headers, body, rules fired, bindings)
   is about that interaction.
-- **Every mismatch leads with the first real difference**, ordered playback
-  too: `first difference: request body at
-  /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue`, then one line
-  each side. Volatile-value tokens and the pretty/canonical forms never show
+- **Every mismatch reports the first real difference**, ordered playback
+  too, added after the `request:` line: `closest: interaction 5 POST
+  /Services/Integration/CaseService.svc (same method and path, not yet
+  used)` (match_multiple only), then `first difference:
+  /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte
+  1408` and one line each side, then the other candidates with their
+  scores. Volatile-value tokens and the pretty/canonical forms never show
   as differences; XML gets an element path (into escaped markup held as
-  text too), JSON a pointer, headers the header name. The `normalized …`
-  diffs of the volatile section start there too, and with volatile rules
-  the raw path/header/body diffs, which differed at every token, are left
-  out.
+  text too), JSON a pointer, headers the header name. The existing sections
+  are unchanged, only pointed at the chosen interaction.
 - **`diagnosticsJson()` has three new fields per event**: `closestCandidate`
   (`index`, `method`, `path`, `tier`, `score` in thousandths, `reason`),
   `candidates` (the others considered, same fields) and `firstDifference`
@@ -28,7 +29,3 @@
   See [docs/replay-diagnostics.md](../../docs/replay-diagnostics.md).
 - Matching is unchanged: only what is reported.
 
-## Breaking
-
-- The report's `expected values are from a candidate interaction
-  (match_multiple)` line is replaced by `closest candidate: …`.
