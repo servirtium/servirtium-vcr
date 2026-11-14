@@ -1,0 +1,412 @@
+// Replay-mismatch diagnostics: which interaction a request was most likely
+// meant for, and where the two first really differ. Pure functions over the
+// normalized forms matching compares (docs/replay-diagnostics.md); the VCR's
+// state (tape, bindings, redaction) stays in core/vcr.ae, which calls these.
+//
+// A normalized form may hold volatile-value tokens ({{name-1}}, {{name}}) and,
+// on the live side, a slot no token stands for yet ({{name-?}}). A `-?` slot
+// lines up with any token of its name the expectation holds, unless that
+// token is already bound (`bound`, "|token|token|"): then it is a real
+// difference. Everything else is compared byte for byte.
+//
+// All of it is linear in the text: a prefix and a suffix scan, never an LCS.
+import std.string
+import std.list
+import volatile
+exports(
+    first_real_difference, common_suffix, similarity, per_mille_text,
+    xml_element_at, xml_element_end, json_pointer_at, line_window, xml_unescape,
+    TIER_PATH, TIER_METHOD, TIER_OTHER, tier_reason
+)
+extern malloc(n: int) -> ptr
+extern string_concat(a: string, b: string) -> string @heap
+
+// Candidate tiers, best first.
+const TIER_PATH = 1     // same method and normalized path
+const TIER_METHOD = 2   // same method only
+const TIER_OTHER = 3    // the rest
+
+tier_reason(tier: int) -> string {
+    if tier == TIER_PATH { return "same method and path" }
+    if tier == TIER_METHOD { return "same method, different path" }
+    return "fallback: different method"
+}
+
+cl_char(s: string, i: int) -> int {
+    if i < 0 || i >= string.length(s) { return -1 }
+    return string.char_at(s, i)
+}
+cl_at(s: string, i: int, lit: string) -> int {
+    n = string.length(lit)
+    if i < 0 || i + n > string.length(s) { return 0 }
+    k = 0
+    while k < n {
+        if string.char_at(s, i + k) != string.char_at(lit, k) { return 0 }
+        k = k + 1
+    }
+    return 1
+}
+cl_name_char(c: int) -> int {
+    if (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 { return 1 }
+    return 0
+}
+
+// A token-shaped run at s[i]: open name ("-" digits | "-?")? close. The index
+// after it, or -1. `unbound` (out) is 1 for the `-?` form.
+cl_token_end(s: string, i: int, style: int) -> (int, int) {
+    o = volatile.marker_open(style)
+    if cl_at(s, i, o) == 0 { return -1, 0 }
+    p = i + string.length(o)
+    q = p
+    while cl_name_char(cl_char(s, q)) == 1 { q = q + 1 }
+    if q == p { return -1, 0 }
+    unbound = 0
+    if cl_char(s, q) == 45 {
+        if cl_char(s, q + 1) == 63 { unbound = 1; q = q + 2 }
+        else {
+            d = q + 1
+            while cl_char(s, d) >= 48 && cl_char(s, d) <= 57 { d = d + 1 }
+            if d == q + 1 { return -1, 0 }
+            q = d
+        }
+    }
+    c = volatile.marker_close(style)
+    if cl_at(s, q, c) == 0 { return -1, 0 }
+    return q + string.length(c), unbound
+}
+cl_token_name(s: string, i: int, style: int) -> string {
+    p = i + string.length(volatile.marker_open(style))
+    q = p
+    while cl_name_char(cl_char(s, q)) == 1 { q = q + 1 }
+    return string.substring(s, p, q)
+}
+// The start of a token-shaped run ending exactly at s[end), or -1.
+cl_token_start_before(s: string, end: int, style: int) -> int {
+    o = volatile.marker_open(style)
+    c = volatile.marker_close(style)
+    if cl_at(s, end - string.length(c), c) == 0 { return -1 }
+    k = end - string.length(c) - string.length(o)
+    floor = end - 160
+    while k >= 0 && k >= floor {
+        if cl_at(s, k, o) == 1 {
+            te, _u = cl_token_end(s, k, style)
+            if te == end { return k }
+            return -1
+        }
+        k = k - 1
+    }
+    return -1
+}
+// 1 when a `-?` slot at b[bs] lines up with the token at a[a_start, a_end).
+cl_slot_fits(a: string, a_start: int, a_end: int, b: string, bs: int, style: int, bound: string) -> int {
+    if cl_token_name(a, a_start, style) != cl_token_name(b, bs, style) { return 0 }
+    tok = string.substring(a, a_start, a_end)
+    if string.index_of(bound, "|${tok}|") >= 0 { return 0 }
+    return 1
+}
+
+// The first place a and b really differ, as (offset in a, offset in b), or
+// (-1, -1) when they do not.
+first_real_difference(a: string, b: string, style: int, bound: string) -> (int, int) {
+    la = string.length(a)
+    lb = string.length(b)
+    o0 = string.char_at(volatile.marker_open(style), 0)
+    i = 0
+    j = 0
+    while i < la && j < lb {
+        cb = string.char_at(b, j)
+        if cb == o0 {
+            be, unbound = cl_token_end(b, j, style)
+            if be > 0 {
+                ae, _u = cl_token_end(a, i, style)
+                if ae > 0 {
+                    if unbound == 1 && cl_slot_fits(a, i, ae, b, j, style, bound) == 1 {
+                        i = ae
+                        j = be
+                        continue
+                    }
+                    // Two tokens that are not the same: the difference is
+                    // the token, not a digit inside it.
+                    if string.substring(a, i, ae) != string.substring(b, j, be) { return i, j }
+                }
+            }
+        }
+        if string.char_at(a, i) != cb { return i, j }
+        i = i + 1
+        j = j + 1
+    }
+    if i == la && j == lb { return -1, -1 }
+    return i, j
+}
+
+// How much of a's and b's ends agree, never reaching back past a[from_a) or
+// b[from_b): (bytes of a, bytes of b).
+common_suffix(a: string, b: string, from_a: int, from_b: int, style: int, bound: string) -> (int, int) {
+    c0 = string.char_at(volatile.marker_close(style), string.length(volatile.marker_close(style)) - 1)
+    i = string.length(a)
+    j = string.length(b)
+    while i > from_a && j > from_b {
+        cb = string.char_at(b, j - 1)
+        if cb == c0 {
+            bs = cl_token_start_before(b, j, style)
+            if bs >= from_b {
+                _be, unbound = cl_token_end(b, bs, style)
+                a_start = cl_token_start_before(a, i, style)
+                if unbound == 1 && a_start >= from_a && cl_slot_fits(a, a_start, i, b, bs, style, bound) == 1 {
+                    i = a_start
+                    j = bs
+                    continue
+                }
+            }
+        }
+        if string.char_at(a, i - 1) != cb { break }
+        i = i - 1
+        j = j - 1
+    }
+    return string.length(a) - i, string.length(b) - j
+}
+
+// How alike two normalized forms are, in thousandths: the common prefix plus
+// the common suffix, as a share of the longer. Deterministic and linear.
+similarity(a: string, b: string, style: int, bound: string) -> int {
+    la = string.length(a)
+    lb = string.length(b)
+    if la == 0 && lb == 0 { return 1000 }
+    da, db = first_real_difference(a, b, style, bound)
+    if da < 0 { return 1000 }
+    sa, sb = common_suffix(a, b, da, db, style, bound)
+    common = da + sa
+    if db + sb < common { common = db + sb }
+    longer = la
+    if lb > longer { longer = lb }
+    score = 0
+    if longer > 2000000 { score = common / (longer / 1000) } else { score = common * 1000 / longer }
+    // 1000 means equal; anything that differs stays below it.
+    if score > 999 { score = 999 }
+    return score
+}
+// 987 -> "0.987", 1000 -> "1.000".
+per_mille_text(n: int) -> string {
+    if n >= 1000 { return "1.000" }
+    if n < 0 { n = 0 }
+    if n < 10 { return "0.00${n}" }
+    if n < 100 { return "0.0${n}" }
+    return "0.${n}"
+}
+
+// ---- where in the document ----
+
+struct ClFrame { name: string; start: int; escaped: int; key: string; index: int; array: int; want_key: int }
+cl_frame(l: ptr, name: string, start: int, escaped: int) {
+    f = malloc(sizeof(ClFrame)) as *ClFrame
+    f.name = string.copy(name); f.start = start; f.escaped = escaped
+    f.key = ""; f.index = 0; f.array = 0; f.want_key = 0
+    list_add_raw(l, f)
+}
+cl_top(l: ptr) -> *ClFrame {
+    if list_size(l) == 0 { return null }
+    return list_get_raw(l, list_size(l) - 1) as *ClFrame
+}
+cl_pop_to(l: ptr, name: string, escaped: int) {
+    k = list_size(l) - 1
+    while k >= 0 {
+        f = list_get_raw(l, k) as *ClFrame
+        if f.name == name && f.escaped == escaped {
+            while list_size(l) > k { list_remove(l, list_size(l) - 1) }
+            return
+        }
+        k = k - 1
+    }
+}
+cl_local(name: string) -> string {
+    k = string.length(name) - 1
+    while k >= 0 && string.char_at(name, k) != 58 { k = k - 1 }
+    return string.substring(name, k + 1, string.length(name))
+}
+cl_xml_name_end(s: string, p: int) -> int {
+    q = p
+    while q < string.length(s) {
+        c = string.char_at(s, q)
+        if c == 32 || c == 9 || c == 10 || c == 13 || c == 62 || c == 47 || c == 38 { break }
+        q = q + 1
+    }
+    return q
+}
+// The end of a tag starting at s[i] (after its closing marker), quotes
+// honoured; -1 if it does not end.
+cl_tag_end(s: string, i: int, close: string) -> int {
+    q = 0
+    k = i
+    n = string.length(s)
+    while k < n {
+        c = string.char_at(s, k)
+        if q != 0 { if c == q { q = 0 } }
+        else {
+            if c == 34 || c == 39 { q = c }
+            else if cl_at(s, k, close) == 1 { return k + string.length(close) }
+        }
+        k = k + 1
+    }
+    return -1
+}
+
+// The element open at byte `off` of an XML text: (its path of local names,
+// "/Envelope/Body/…", where its start tag begins, its name as written, 1 when
+// it is markup held escaped as text). Escaped markup (&lt;X&gt; inside an
+// element's text, one level deep) is walked like markup, so a path reaches
+// into an XML document carried as a string. ("", -1, "", 0) outside any.
+xml_element_at(s: string, off: int) -> (string, int, string, int) {
+    stack = list_new()
+    i = 0
+    while i < off {
+        c = string.char_at(s, i)
+        if c == 60 {
+            if cl_at(s, i, "<!--") == 1 {
+                e = string.index_of_from(s, "-->", i)
+                if e < 0 { break }
+                i = e + 3
+                continue
+            }
+            if cl_at(s, i, "<![CDATA[") == 1 {
+                e = string.index_of_from(s, "]]>", i)
+                if e < 0 { break }
+                i = e + 3
+                continue
+            }
+            if cl_char(s, i + 1) == 63 || cl_char(s, i + 1) == 33 {
+                e = string.index_of_from(s, ">", i)
+                if e < 0 { break }
+                i = e + 1
+                continue
+            }
+            closing = 0
+            p = i + 1
+            if cl_char(s, p) == 47 { closing = 1; p = p + 1 }
+            ne = cl_xml_name_end(s, p)
+            end = cl_tag_end(s, i, ">")
+            if end < 0 || end > off || ne == p { break }
+            name = string.substring(s, p, ne)
+            if closing == 1 { cl_pop_to(stack, name, 0) }
+            else if cl_char(s, end - 2) != 47 { cl_frame(stack, name, i, 0) }
+            i = end
+            continue
+        }
+        if c == 38 && cl_at(s, i, "&lt;") == 1 {
+            closing = 0
+            p = i + 4
+            if cl_char(s, p) == 47 { closing = 1; p = p + 1 }
+            ne = cl_xml_name_end(s, p)
+            c2 = cl_char(s, p)
+            if ne > p && ((c2 >= 65 && c2 <= 90) || (c2 >= 97 && c2 <= 122) || c2 == 95) {
+                end = string.index_of_from(s, "&gt;", i)
+                if end < 0 || end + 4 > off { break }
+                name = string.substring(s, p, ne)
+                if closing == 1 { cl_pop_to(stack, name, 1) }
+                else if cl_char(s, end - 1) != 47 { cl_frame(stack, name, i, 1) }
+                i = end + 4
+                continue
+            }
+        }
+        i = i + 1
+    }
+    path = string.copy("")
+    k = 0
+    while k < list_size(stack) {
+        f = list_get_raw(stack, k) as *ClFrame
+        path = string_concat(path, "/${cl_local(f.name)}")
+        k = k + 1
+    }
+    top = cl_top(stack)
+    if top == null { return "", -1, "", 0 }
+    return path, top.start, top.name, top.escaped
+}
+// Where the element `name` opened at s[start] closes, from `from` on: the
+// index after its end tag, or -1.
+xml_element_end(s: string, start: int, from: int, name: string, escaped: int) -> int {
+    close = "</${name}>"
+    if escaped == 1 { close = "&lt;/${name}&gt;" }
+    e = string.index_of_from(s, close, from)
+    if e < 0 { return -1 }
+    return e + string.length(close)
+}
+// Markup held as text, readable: &lt; &gt; &quot; &apos; &amp;.
+xml_unescape(s: string) -> string {
+    out = string.replace_all(s, "&lt;", "<")
+    out = string.replace_all(out, "&gt;", ">")
+    out = string.replace_all(out, "&quot;", "\"")
+    out = string.replace_all(out, "&apos;", "'")
+    return string.replace_all(out, "&amp;", "&")
+}
+
+// The JSON pointer of the value open at byte `off` of a JSON text
+// ("/caseData/subject", "/items/2"); "" at the top.
+json_pointer_at(s: string, off: int) -> string {
+    stack = list_new()
+    i = 0
+    while i < off {
+        c = string.char_at(s, i)
+        if c == 34 {
+            k = i + 1
+            n = string.length(s)
+            while k < n && string.char_at(s, k) != 34 {
+                if string.char_at(s, k) == 92 { k = k + 1 }
+                k = k + 1
+            }
+            if k >= off { break }
+            top = cl_top(stack)
+            if top != null && top.array == 0 && top.want_key == 1 {
+                key = string.substring(s, i + 1, k)
+                key = string.replace_all(key, "~", "~0")
+                top.key = string.replace_all(key, "/", "~1")
+            }
+            i = k + 1
+            continue
+        }
+        if c == 123 || c == 91 {
+            cl_frame(stack, "", i, 0)
+            f = cl_top(stack)
+            if c == 91 { f.array = 1 } else { f.want_key = 1 }
+        } else if c == 125 || c == 93 {
+            if list_size(stack) > 0 { list_remove(stack, list_size(stack) - 1) }
+        } else if c == 58 {
+            top = cl_top(stack)
+            if top != null { top.want_key = 0 }
+        } else if c == 44 {
+            top = cl_top(stack)
+            if top != null {
+                if top.array == 1 { top.index = top.index + 1 }
+                else { top.want_key = 1; top.key = "" }
+            }
+        }
+        i = i + 1
+    }
+    path = string.copy("")
+    k = 0
+    while k < list_size(stack) {
+        f = list_get_raw(stack, k) as *ClFrame
+        if f.array == 1 { path = string_concat(path, "/${string.from_int(f.index)}") }
+        else if f.key != "" { path = string_concat(path, "/${f.key}") }
+        else { break }
+        k = k + 1
+    }
+    return path
+}
+
+// The line of `s` holding byte `off`, at most `width` bytes of it, centred
+// on `off`; "..." marks a cut.
+line_window(s: string, off: int, width: int) -> string {
+    n = string.length(s)
+    if off > n { off = n }
+    start = off
+    while start > 0 && string.char_at(s, start - 1) != 10 { start = start - 1 }
+    end = string.index_of_from(s, "\n", off)
+    if end < 0 { end = n }
+    pre = ""
+    post = ""
+    if end - start > width {
+        half = width / 2
+        if off - start > half { start = off - half; pre = "..." }
+        if end - start > width { end = start + width; post = "..." }
+    }
+    return "${pre}${string.substring(s, start, end)}${post}"
+}
