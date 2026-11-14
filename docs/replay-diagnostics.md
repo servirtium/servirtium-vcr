@@ -190,8 +190,13 @@ bindings:
   most ten: `  interaction 0 POST /Services/LookupService.svc, score 0.206
   (fallback: same method, another path, not yet used)`; or `none unused (N
   already used)`.
-* Then the existing sections, as before, pointed at the chosen
-  interaction.
+* Then the existing sections, pointed at the chosen interaction. The raw
+  `path`, `request headers` and `request body` diffs are raw by definition
+  and stay as they were. The `normalized …` diffs of `volatile values:`
+  start at the first real difference of the normalised forms, with the same
+  comparison as the `first difference` line: an unbound `{{name-?}}` lines
+  up with the expected token of its name, so tokens never show as
+  differences.
 
 Both sides are masked, as described below, before anything is compared,
 cut out or printed, in the text and in `diagnosticsJson`.
@@ -231,8 +236,20 @@ first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, norm
 + <SubjectValue></SubjectValue>
 ```
 
-and the existing sections follow, about interaction 5. The cut-down
-version is `core_tests/test_vcr_closest_candidate.ae` (tape
+and the existing sections follow, about interaction 5, with the normalised
+body diff starting at the same byte instead of at the first `MessageID`:
+
+```text
+volatile values:
+normalized request body
+--- expected
++++ actual
+@@ line 1, byte 1408 @@
+- …&lt;SubjectValue&gt;Rule 1;Openness;&lt;/SubjectValue&gt;…
++ …&lt;SubjectValue&gt;&lt;/SubjectValue&gt;…
+```
+
+The cut-down version is `core_tests/test_vcr_closest_candidate.ae` (tape
 `core_tests/closest/case.md`: three lookups and a create), whose report
 begins as in the section above.
 

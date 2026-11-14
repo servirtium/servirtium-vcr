@@ -9283,19 +9283,28 @@ vol_bindings_text_k(vc: *Vcr) -> string {
     return out
 }
 
+// A normalized diff from the first real difference (docs/volatile-values.md,
+// docs/replay-diagnostics.md): an unbound {{name-?}} slot lines up with the
+// expected token of its name, so tokens never show as differences.
+vol_diff_k(vc: *Vcr, title: string, expected: string, live: string, index: int) -> string {
+    da, db = closest.first_real_difference(expected, live, vc.settings.vstyle, cc_bound_k(vc, expected, index))
+    if da < 0 { return "" }
+    return diagnostic_diff_at(title, expected, live, da, db)
+}
+
 // The volatile-values part of a playback mismatch diagnostic.
 vol_diagnostic_k(vc: *Vcr, e: *Interaction, index: int, live_path: string, live_headers: string, live_body: string) -> string {
     out = "volatile values:\n"
     if vc.tape.vfail != "" { out = string_concat(out, "binding: ${vc.tape.vfail}\n") }
     lp = vol_render_live_k(vc, FIELD_PATH, uri_canonical(live_path))
-    out = string_concat(out, diagnostic_diff("normalized path", e.v_path, lp))
+    out = string_concat(out, vol_diff_k(vc, "normalized path", e.v_path, lp, index))
     if is_blank(e.v_req_headers) == 0 || vcr_get_strict_headers_k(vc) == 1 {
         lh = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, live_headers)
-        out = string_concat(out, diagnostic_diff("normalized request headers", e.v_req_headers, lh))
+        out = string_concat(out, vol_diff_k(vc, "normalized request headers", e.v_req_headers, lh, index))
     }
     if is_blank(e.v_req_body) == 0 {
         lb = vol_render_live_k(vc, FIELD_REQUEST_BODY, vol_canonical_body_k(vc, e.v_body_mode, live_body, 0))
-        out = string_concat(out, diagnostic_diff("normalized request body", e.v_req_body, lb))
+        out = string_concat(out, vol_diff_k(vc, "normalized request body", e.v_req_body, lb, index))
     }
     rules = volatile_rules_k(vc)
     fields = [FIELD_PATH, FIELD_REQUEST_HEADERS, FIELD_REQUEST_BODY]

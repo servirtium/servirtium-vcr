@@ -19,7 +19,10 @@
   scores. Volatile-value tokens and the pretty/canonical forms never show
   as differences; XML gets an element path (into escaped markup held as
   text too), JSON a pointer, headers the header name. The existing sections
-  are unchanged, only pointed at the chosen interaction.
+  are pointed at the chosen interaction; the volatile section's
+  `normalized …` diffs now start at the first real difference too (an
+  unbound `{{name-?}}` lines up with the expected token), while the raw
+  diffs stay raw.
 - **`diagnosticsJson()` has three new fields per event**: `closestCandidate`
   (`index`, `method`, `path`, `tier`, `score` in thousandths, `reason`),
   `candidates` (the others considered, same fields) and `firstDifference`

@@ -135,6 +135,12 @@ case_scenario() {
     // The existing sections stay, now about interaction 3.
     has(report, "\nrequest body\n--- expected\n", "the raw body diff")
     has(report, "\nnormalized request body\n--- expected\n", "the normalized body diff")
+    // ... which starts at the first real difference: tokens never count.
+    nb = string.index_of(report, "\nnormalized request body\n")
+    body = string.substring(report, nb, string.index_of(report, "rules fired:"))
+    has(body, "@@ line 1, byte 777 @@", "the normalized body hunk starts at the SubjectValue")
+    has(body, "&lt;SubjectValue&gt;Rule 1;Openness;&lt;/SubjectValue&gt;", "and shows it")
+    hasnt(body, "messageId", "the normalized body hunk skips the tokens")
     // Volatile values never show as differences.
     hasnt(first, ID, "a MessageID")
     hasnt(first, "messageId", "a MessageID token")
