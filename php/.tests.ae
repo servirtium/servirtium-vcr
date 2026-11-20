@@ -10,7 +10,7 @@
 import bldr
 import php
 import bldr (env)
-import php (phpunit_phar_url, config, ini)
+import php (phpunit_phar_url, phpunit_phar_sha256, config, ini)
 aeb(cap) {
     bldr.build() {
         dep("core_tests/.fixtures.ae")
@@ -18,7 +18,8 @@ aeb(cap) {
         lib = dep_artifact("core/.build.ae", "shared_lib")
         php.test() {
             env("SERVIRTIUM_VCR_LIB", lib)
-            phpunit_phar_url("https://phar.phpunit.de/phpunit-11.phar")
+            phpunit_phar_url("https://phar.phpunit.de/phpunit-11.5.58.phar")
+            phpunit_phar_sha256("9d488cd5e62b8eea20dd50ea1e2b65ff6e3837183922f152c7264407f82c368e")
             config("phpunit.xml")
             ini("extension", "ffi")
             ini("ffi.enable", "1")
