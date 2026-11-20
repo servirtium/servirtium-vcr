@@ -302,7 +302,6 @@ extern http_request_path(req: ptr) -> string
 extern http_request_query(req: ptr) -> string
 extern http_request_scheme(req: ptr) -> string
 extern http_request_body(req: ptr) -> string
-extern http_request_body_length(req: ptr) -> int
 extern http_get_header(req: ptr, name: string) -> string
 extern http_response_set_status(res: ptr, code: int)
 extern http_response_set_header(res: ptr, name: string, value: string)
@@ -2412,7 +2411,7 @@ serve_static_file(m: *StaticMount, req: ptr, res: ptr) {
 // GraphQL / JSON / file-upload POST is well within that range — so
 // every body must come through here, never http_request_body directly.
 read_full_request_body(req: ptr) -> string {
-    total = http_request_body_length(req)
+    total = http.request_body_length(req)
     if total <= 0 { return "" }
     buf = bytes.new(total)
     if buf == null { return http_request_body(req) }

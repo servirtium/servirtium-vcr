@@ -24,9 +24,18 @@ exports (parser_new, parser_new_with, parser_free, parse, eval_in, module_defini
 const BRU_PARSER_VERSION = "@usebruno/lang 0.41.0"
 const BRU_PARSER_DIR = "usebruno-lang-0.41.0"
 
-// The parser's runtime: heap cap (KB) and the time one parse may take (ms).
+// The parser's runtime: heap cap (KB) and the time one entry into JavaScript
+// (one eval, one call) may take (ns, 30 s).
 const BRU_HEAP_KB = 131072
-const BRU_TIME_MS = 30000
+const BRU_TIME_NS = 30000000000
+
+// Give the next entry into JavaScript its own BRU_TIME_NS. Since Aether 0.916
+// the deadline is an absolute time on quickjs.now_ns()'s clock that the host
+// sets (set_time_limit, which restarted it at every entry, is gone), so each
+// eval and call re-arms it to keep the old per-entry budget.
+arm(q: ptr) {
+    qjs.set_deadline_ns(q, qjs.now_ns() + BRU_TIME_NS)
+}
 
 // The text of a module definition: the vendored file wrapped as a CommonJS
 // factory for glue.js's require().
@@ -45,7 +54,7 @@ parser_new() -> (ptr, string) {
 parser_new_with(extra: string) -> (ptr, string) {
     q = qjs.runtime(BRU_HEAP_KB, 0)
     if q == null { return null, "bru: cannot create a QuickJS runtime" }
-    qjs.set_time_limit(q, BRU_TIME_MS)
+    arm(q)
     v, err = qjs.eval(q, bru_js.bru_js_glue(), "glue.js")
     if err != "" { qjs.dispose(q); return null, "bru: glue.js: ${err}" }
     qjs.release(q, v)
@@ -53,12 +62,14 @@ parser_new_with(extra: string) -> (ptr, string) {
     i = 0
     while i < n {
         name = bru_js.bru_js_module_name(i)
+        arm(q)
         mv, merr = qjs.eval(q, module_definition(name, bru_js.bru_js_module_source(i)), "${name}.js")
         if merr != "" { qjs.dispose(q); return null, "bru: ${name}: ${merr}" }
         qjs.release(q, mv)
         i = i + 1
     }
     if extra != "" {
+        arm(q)
         ev, eerr = qjs.eval(q, extra, "extra.js")
         if eerr != "" { qjs.dispose(q); return null, "bru: ${eerr}" }
         qjs.release(q, ev)
@@ -73,10 +84,12 @@ parser_free(p: ptr) {
 // Evaluate `code` in the parser's runtime: (its value as a string, "") or
 // ("", the exception). For tests and for anything that needs more than parse.
 eval_in(p: ptr, code: string, label: string) -> (string, string) {
+    arm(p)
     v, err = qjs.eval(p, code, label)
     if err != "" { return "", err }
-    s = qjs.to_string(p, v)
+    s, serr = qjs.to_string(p, v)
     qjs.release(p, v)
+    if serr != "" { return "", serr }
     return s, ""
 }
 
@@ -90,13 +103,15 @@ parse(p: ptr, kind: string, text: string) -> (string, string) {
     t = qjs.new_string(p, text)
     _e0 = qjs.set_index(p, args, 0, k)
     _e1 = qjs.set_index(p, args, 1, t)
+    arm(p)
     r, cerr = qjs.call(p, fnh, 0, args)
     qjs.release(p, k)
     qjs.release(p, t)
     qjs.release(p, args)
     qjs.release(p, fnh)
     if cerr != "" { return "", cerr }
-    s = qjs.to_string(p, r)
+    s, serr = qjs.to_string(p, r)
     qjs.release(p, r)
+    if serr != "" { return "", serr }
     return s, ""
 }
