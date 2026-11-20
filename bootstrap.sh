@@ -54,6 +54,20 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
+# 2026-11-20: ae 0.912.0 -> 0.927.0, REQUIRED: core/bru.ae and core/vcr.ae no
+# longer compile on 0.912.0's successors. Aether 0.916.0 removed
+# contrib.quickjs's set_time_limit (the deadline is now an absolute time the host
+# sets with set_deadline_ns on quickjs.now_ns()'s clock) and made
+# quickjs.to_string return (string, error); bru.ae now arms a deadline before each
+# eval and call, which keeps the old per-entry 30 s budget, and handles the
+# error. And std.http declares http_request_body_length -> long (it was int);
+# vcr.ae's own extern for it conflicted in the generated C, so it now calls
+# http.request_body_length. Neither spelling works across 0.916, so the real
+# floor is 0.916.0, the first release with the new quickjs API; 0.927.0 is the
+# latest published release and the one the full suite ran on, and this repo
+# pins one number, so AE_PIN == AE_FETCH == 0.927.0. aeb stays v0.344: the run
+# used an aeb built from main (b46c17a, run with AETHER= pointing at 0.927.0),
+# not the v0.344 tag.
 # 2026-11-12: Aether 0.912.0 for the alpha.16 XML work. Validation scope:
 # pure-Aether nodes and Python; other SDK/platform lanes remain separate.
 # 2026-11-08: ae 0.897.0 -> 0.898.0 and aeb v0.343 -> v0.344, REQUIRED
@@ -125,8 +139,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.912.0"
-AE_FETCH="v0.912.0"
+AE_PIN="0.927.0"
+AE_FETCH="v0.927.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
