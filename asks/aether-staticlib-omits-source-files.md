@@ -1,6 +1,9 @@
 # `ae build --emit=staticlib` omits module `@source` C files
 
-Status: open. First seen on Aether 0.912.0, re-checked on 0.931.0 (2026-11-20).
+Status: RESOLVED in Aether 0.934.0 (aether#3799). First seen on Aether 0.912.0, re-checked on 0.931.0 (2026-11-20).
+Checked 2026-11-21 on cachyos: `core/embed.ae` as a static archive for x86_64-linux-musl, undefined `qjs_*`
+symbols not defined elsewhere in the archive: 15 with the released 0.931.0, 0 with the released 0.934.0
+(with `--extra _embed_strdup.c`, `vcr_embed_dup` is defined too). `release/swift-bundle.sh` no longer works around it.
 
 ## Motivation
 

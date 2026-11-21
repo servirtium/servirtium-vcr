@@ -74,10 +74,7 @@ each of its four variants and runs the matching host consumer (tape loading
 and Bruno conversion). This catches missing native dependencies before the
 publication step, without requiring a Swift SDK. Run the same build/checks
 locally with `aeb release/.swiftBundle.ae` using the pinned Aether and Zig.
-Aether's static archive still omits module `@source` files (seen on 0.912.0, re-checked on 0.931.0: the archive has undefined `qjs_*` symbols and no QuickJS object), so the script
-adds QuickJS, including its amalgamation, from the selected toolchain alongside
-the string bridge. Alpha.16 lacked this object and its Swift consumer could
-not link; the shared libraries were unaffected.
+Through Aether 0.931.0 the static archive omitted module `@source` files and `--extra` C files (undefined `qjs_*` symbols and no QuickJS object, first seen on 0.912.0), and the script compiled QuickJS and the string bridge itself and added them with `zig ar`. Alpha.16 lacked the QuickJS object and its Swift consumer could not link; the shared libraries were unaffected. Aether 0.934.0 archives both (aether#3799), so the script passes `--extra _embed_strdup.c` and compiles nothing itself; the consumer link check of each variant is what would catch a symbol missing again.
 
 Never create the bare tag by hand at the `v` tag's commit: its manifest has
 no checksum. If a step after publishing fails (for example a GitHub download

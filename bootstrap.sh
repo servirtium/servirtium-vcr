@@ -54,6 +54,14 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
+# 2026-11-21: ae 0.933.0 -> 0.934.0, a FLOOR move for the release leaf (aeb stays
+# v0.348). Aether 0.934.0 (aether#3799) makes `ae build --emit=staticlib` archive
+# the modules' @source C files and the --extra files, so release/swift-bundle.sh no
+# longer compiles QuickJS and the string bridge itself and adds them with zig ar;
+# it needs that, so the release leaf cannot run on 0.933.0. The core library's own
+# floor stays 0.916.0. Evidence: on cachyos, core/embed.ae as a static archive for
+# x86_64-linux-musl has 15 undefined qjs_* symbols with the released 0.931.0 and 0
+# with the released 0.934.0 (asks/aether-staticlib-omits-source-files.md, RESOLVED).
 # 2026-11-21: ae 0.931.0 -> 0.933.0, tracking-only, no new primitive needed (the
 # floor stays 0.916.0; aeb stays v0.348). 0.932.0 and 0.933.0 change no stdlib
 # file; the compiler change is the actor-local scoping fix.
@@ -149,8 +157,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.933.0"
-AE_FETCH="v0.933.0"
+AE_PIN="0.934.0"
+AE_FETCH="v0.934.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

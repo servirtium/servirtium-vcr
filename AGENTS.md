@@ -163,7 +163,7 @@ tapes (see "Bruno" below); both return `""` or the error.
 The build runner is **aeb** (sibling repo `../aeb`; its `AGENTS.md` is the deep
 reference). Quick facts:
 
-- Manage Aether with `ae version install 0.933.0` and `ae version use 0.933.0`;
+- Manage Aether with `ae version install 0.934.0` and `ae version use 0.934.0`;
   check `ae version` confirms matching `ae`/`aetherc`. Use the version manager
   for upgrades rather than manually downloading toolchain archives. If aeb picks
   an older private compiler, pass `AETHER=/absolute/path/to/selected/ae`.
@@ -672,9 +672,10 @@ claim to execute those platforms. `bruno_import_demo/.build.ae` builds both
 CLI and Aether widget service; its `.tests.ae` hydrates/lints/replays the demo.
 Python binding tests, packaging and Python-specific browser examples stay Python.
 `aeb release/.swiftBundle.ae` builds all four Swift static variants and checks
-consumer linking before publication. Through Aether 0.931.0 (re-checked), static archives omit
-module `@source` dependencies: `swift-bundle.sh` must add QuickJS as well as the
-string bridge. The host check also loads a tape and runs Bruno conversion.
+consumer linking before publication. Through Aether 0.931.0 static archives omitted
+module `@source` and `--extra` C files, so `swift-bundle.sh` had to add QuickJS and the
+string bridge itself; from 0.934.0 it passes `--extra _embed_strdup.c` and the archive carries both
+(the consumer link of every variant checks it). string bridge. The host check also loads a tape and runs Bruno conversion.
 Nim's `execCmdEx` capture pipe leaves extra writers inherited by detached
 children: waiting for EOF then waits for the upstream to exit. Its fixture
 commands capture stdout/stderr through a temporary file and wait for the

@@ -23,13 +23,16 @@
 # triples x86_64-swift-linux-musl / aarch64-swift-linux-musl), Windows, FreeBSD.
 # Those consumers use the source form (SERVIRTIUM_VCR_LIB_DIR + branch:).
 #
-# HOW: `ae build --emit=staticlib --target <triple>` (zig cc; the cross path is
-# the only one that emits a static archive) archives the program and the whole
-# Aether runtime into one .a. Through ae 0.931.0 (re-checked 2026-11-20; first seen on 0.912.0) this omits --extra C files
-# AND module @source dependencies. Compile both the string bridge and QuickJS
-# (the Bruno converter's @source, including its pinned amalgamation) for the
-# same target and add them with zig ar. Link a real C ABI consumer for EVERY
-# variant before zipping; execute the matching host consumer too.
+# HOW: `ae build --emit=staticlib --target <triple> --extra _embed_strdup.c`
+# (zig cc; the cross path is the only one that emits a static archive) archives
+# the program, the whole Aether runtime, the string bridge (--extra) and the
+# C files of the modules it imports (QuickJS, the Bruno converter's @source,
+# with its pinned amalgamation) into one .a. Aether 0.934.0 is the first release
+# that does: through 0.931.0 the archive omitted both (undefined `qjs_*` and
+# `vcr_embed_dup` for the consumer, first seen on 0.912.0), and this script
+# compiled them itself with zig cc and added them with zig ar. Link a real C ABI
+# consumer for EVERY variant before zipping; execute the matching host consumer
+# too: that link is what catches a symbol the archive lacks.
 #
 # The zip is not bit-reproducible (the archives carry build paths), so its
 # checksum is only known once it is built. The release workflow therefore writes
@@ -38,7 +41,7 @@
 #
 # Usage: release/swift-bundle.sh <tag> <outdir>
 #   e.g. release/swift-bundle.sh v2.0.0-alpha.14 release/dist
-# Needs ae (the release pin), zig, zip (or python3) and a sha256 tool.
+# Needs ae (the release pin, 0.934.0 or later), zig, zip (or python3) and a sha256 tool.
 set -euo pipefail
 
 TAG="${1:?usage: swift-bundle.sh <tag> <outdir>}"
@@ -53,17 +56,6 @@ command -v ae  >/dev/null || die "ae not on PATH"
 command -v zig >/dev/null || die "zig not on PATH"
 command -v zip >/dev/null || command -v python3 >/dev/null || die "zip (or python3) not on PATH"
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
-
-# Follow the installed toolchain's layout, including ae version manager's
-# current/ directory. Never borrow QuickJS from an unrelated source checkout.
-QUICKJS_SOURCE=""
-for toolroot in "${AETHER_HOME:-$HOME/.aether}/current" "${AETHER_HOME:-$HOME/.aether}" "$(dirname "$(command -v ae)")/.."; do
-  candidate="$toolroot/share/aether/contrib/quickjs/aether_quickjs.c"
-  if [ -f "$candidate" ]; then QUICKJS_SOURCE="$candidate"; break; fi
-done
-[ -n "$QUICKJS_SOURCE" ] || die "cannot find contrib.quickjs in the selected Aether toolchain (set AETHER_HOME)"
-[ -f "$(dirname "$QUICKJS_SOURCE")/amalgamation/quickjs-amalgam.c" ] \
-  || die "the selected Aether toolchain has no QuickJS amalgamation"
 
 SEMVER="${TAG#v}"
 NAME="servirtium-vcr-swift-${TAG}.artifactbundle.zip"
@@ -97,7 +89,7 @@ SHIM
 chmod +x "$WORK/zigshim/zig"
 export PATH="$WORK/zigshim:$PATH"
 
-# ae target | zig triple (for the bridge) | bundle dir | SwiftPM triple
+# ae target | zig triple (for the consumer link check) | bundle dir | SwiftPM triple
 VARIANTS="
 aarch64-macos aarch64-macos-none macos-arm64  arm64-apple-macosx
 x86_64-macos  x86_64-macos-none  macos-x86_64 x86_64-apple-macosx
@@ -112,20 +104,13 @@ while read -r aet zt dir triple; do
   lib="$BUNDLE/$dir/libservirtium_vcr.a"
   log="$WORK/$dir.log"
   printf 'swift-bundle:   %-14s -> %s ... ' "$aet" "$dir/libservirtium_vcr.a"
-  # Same flags as core/.build.ae's release shared_lib (caps + --size).
+  # Same flags as core/.build.ae's release shared_lib (caps + --size), and its
+  # --extra bridge.
   ( cd "$ROOT/core" && ae build embed.ae --emit=staticlib --with=fs,net,os,extern \
-      --size --target "$aet" -o "$lib" ) >"$log" 2>&1 \
+      --extra _embed_strdup.c --size --target "$aet" -o "$lib" ) >"$log" 2>&1 \
     || { echo FAILED; tail -30 "$log" >&2; die "static build failed for $aet"; }
-  zig cc -target "$zt" -Os -fPIC -c "$ROOT/core/_embed_strdup.c" -o "$WORK/$dir-embed_strdup.o" \
-    || die "compiling the string bridge for $zt failed"
-  zig cc -target "$zt" -Os -fPIC -c "$QUICKJS_SOURCE" -o "$WORK/$dir-quickjs.o" >"$WORK/$dir-quickjs.log" 2>&1 \
-    || { cat "$WORK/$dir-quickjs.log" >&2; die "compiling QuickJS for $zt failed"; }
-  zig ar rs "$lib" "$WORK/$dir-embed_strdup.o" "$WORK/$dir-quickjs.o" \
-    || die "adding the string bridge and QuickJS for $aet failed"
-  # The bridge object must be a member now, and the C ABI in the archive's
-  # symbol index (portable checks: zig ar lists members, and the index is text).
-  zig ar t "$lib" | grep -qx "$dir-embed_strdup.o" \
-    || { echo FAILED; die "$dir: the string bridge is not in the archive"; }
+  # The C ABI must be in the archive's symbol index (portable check: the index
+  # is text). Missing C from the bridge or QuickJS fails the consumer link below.
   LC_ALL=C grep -aq aether_vcr_embed_open_playback "$lib" \
     || { echo FAILED; die "$dir: the C ABI is not in the archive"; }
   echo ok
