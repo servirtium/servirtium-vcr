@@ -74,7 +74,7 @@ each of its four variants and runs the matching host consumer (tape loading
 and Bruno conversion). This catches missing native dependencies before the
 publication step, without requiring a Swift SDK. Run the same build/checks
 locally with `aeb release/.swiftBundle.ae` using the pinned Aether and Zig.
-Aether 0.912.0's static archive omits module `@source` files, so the script
+Aether's static archive still omits module `@source` files (seen on 0.912.0, re-checked on 0.931.0: the archive has undefined `qjs_*` symbols and no QuickJS object), so the script
 adds QuickJS, including its amalgamation, from the selected toolchain alongside
 the string bridge. Alpha.16 lacked this object and its Swift consumer could
 not link; the shared libraries were unaffected.

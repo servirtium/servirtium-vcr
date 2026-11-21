@@ -17,7 +17,7 @@
 # Env overrides:
 #   PREFIX        install prefix                 (default: $HOME/.local; no sudo)
 #   AETHER_REF    ae tag/branch/SHA to install   (default: $AE_FETCH below)
-#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.344)
+#   AEB_REF       aeb tag/branch/SHA to install  (default: v0.348)
 #   MIN_AE        minimum acceptable ae version  (default: $AE_PIN below)
 #   AEB_TIMEOUT   passed through to aeb (seconds)  (optional)
 # Extra args pass through to `aeb` (e.g. ./bootstrap.sh .tests.ae).
@@ -54,6 +54,13 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
+# 2026-11-20: ae 0.927.0 -> 0.931.0 and aeb v0.344 -> v0.348. The ae move is
+# tracking-only (no new primitive needed, the floor stays 0.916.0). The aeb move
+# is REQUIRED: v0.344's own tools (for example topo-sort.ae and scan-ae-files.ae)
+# no longer compile on 0.931.0 (E0202, a ptr given to a string parameter), so no
+# aeb older than v0.347 runs here, and v0.348 is the first release with
+# phpunit_phar_sha256, which the php leaf uses. Verified on the released 0.931.0
+# with the tagged aeb v0.348 (get.sh into a private prefix) on Linux x86_64.
 # 2026-11-20: ae 0.912.0 -> 0.927.0, REQUIRED: core/bru.ae and core/vcr.ae no
 # longer compile on 0.912.0's successors. Aether 0.916.0 removed
 # contrib.quickjs's set_time_limit (the deadline is now an absolute time the host
@@ -139,8 +146,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.927.0"
-AE_FETCH="v0.927.0"
+AE_PIN="0.931.0"
+AE_FETCH="v0.931.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
@@ -398,7 +405,7 @@ AE_FETCH="v0.927.0"
                        # choice, not a discovered requirement.
 # ---- aeb pin: ONE number too, matching the AE_PIN policy above.
 #
-#   aeb floor == AEB_REF == v0.344 == the verified release for this cut.
+#   aeb floor == AEB_REF == v0.348 == the verified release for this cut.
 #
 # v0.327 (from v0.326) is REQUIRED, coupled with AE_PIN 0.824: v0.326's bldr
 # does not compile on ae 0.818+ (E0902), and v0.327 is the first release that
@@ -451,7 +458,7 @@ AE_FETCH="v0.927.0"
 #
 # Released aeb bundles now report their version. Enforce the release floor;
 # an unversioned development build cannot establish that it meets the pin.
-AEB_REF="${AEB_REF:-v0.344}"
+AEB_REF="${AEB_REF:-v0.348}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"; export PREFIX

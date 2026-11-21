@@ -25,7 +25,7 @@
 #
 # HOW: `ae build --emit=staticlib --target <triple>` (zig cc; the cross path is
 # the only one that emits a static archive) archives the program and the whole
-# Aether runtime into one .a. Through ae 0.912.0 this omits --extra C files
+# Aether runtime into one .a. Through ae 0.931.0 (re-checked 2026-11-20; first seen on 0.912.0) this omits --extra C files
 # AND module @source dependencies. Compile both the string bridge and QuickJS
 # (the Bruno converter's @source, including its pinned amalgamation) for the
 # same target and add them with zig ar. Link a real C ABI consumer for EVERY
