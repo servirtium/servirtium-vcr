@@ -54,6 +54,9 @@ set -euo pipefail
 # (libservirtium_vcr + core_tests + the language sweep). A newer number is not
 # automatically better; it is another thing to have tested. Aether cuts
 # releases fast — do not chase HEAD by hand.
+# 2026-11-21: ae 0.931.0 -> 0.933.0, tracking-only, no new primitive needed (the
+# floor stays 0.916.0; aeb stays v0.348). 0.932.0 and 0.933.0 change no stdlib
+# file; the compiler change is the actor-local scoping fix.
 # 2026-11-20: ae 0.927.0 -> 0.931.0 and aeb v0.344 -> v0.348. The ae move is
 # tracking-only (no new primitive needed, the floor stays 0.916.0). The aeb move
 # is REQUIRED: v0.344's own tools (for example topo-sort.ae and scan-ae-files.ae)
@@ -146,8 +149,8 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.931.0"
-AE_FETCH="v0.931.0"
+AE_PIN="0.933.0"
+AE_FETCH="v0.933.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
