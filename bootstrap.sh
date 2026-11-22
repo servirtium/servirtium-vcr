@@ -162,8 +162,10 @@ set -euo pipefail
 # 0.935.0 apart from the contrib.quickjs module's own ABI change (strings by
 # length), which only C that calls qjs_* directly would feel; this repo calls
 # the module's Aether functions. aeb unchanged (v0.348).
-AE_PIN="0.935.0"
-AE_FETCH="v0.935.0"
+# 2026-11-22: ae 0.935.0 -> 0.936.0, a tracking-only bump, no new primitive
+# needed. aeb unchanged (v0.348).
+AE_PIN="0.936.0"
+AE_FETCH="v0.936.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

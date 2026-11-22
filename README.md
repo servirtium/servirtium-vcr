@@ -408,7 +408,7 @@ target, so they install in that order. aeb's
 from a bare clone: prebuilt-binary-first per platform, source fallback otherwise,
 fetching the pinned Aether via Aether's own `get.sh`. The authoritative pins live
 in [`bootstrap.sh`](bootstrap.sh): `AE_PIN` and `AE_FETCH` are now **one
-number** — `0.935.0`, a published release (the floor is 0.916.0, the first with the new `contrib.quickjs` deadline API the `.bru` converter uses) carrying `std.json`'s `pretty`
+number** — `0.936.0`, a published release (the floor is 0.916.0, the first with the new `contrib.quickjs` deadline API the `.bru` converter uses) carrying `std.json`'s `pretty`
 (used by the `pretty_json` recording option) and `std.xml`'s `pretty` (used by
 `pretty_xml`) on top of in-memory TLS PEM and
 the RSA/P-384/P-521/Ed25519 key support. (They used
@@ -419,7 +419,7 @@ means "tested". The trade: a user with a good-but-different ae gets a fetch
 they didn't strictly need.) The **aeb** pin is one number on the same policy:
 `AEB_REF` == floor == `v0.348` (v0.344 and older cannot run on 0.931.0; v0.344 had the Janet SDK the Janet binding's tests
 use, and is the first aeb built with Aether 0.898.0, which FreeBSD needs),
-used here with Aether 0.935.0. `bootstrap.sh` explicitly passes the selected
+used here with Aether 0.936.0. `bootstrap.sh` explicitly passes the selected
 `ae` to aeb so its private orchestrator toolchain cannot select an older compiler. The
 pair preserves distinct GNU/musl binary-package identities (the libc-aware
 release floor is still Aether 0.838.0, which 0.860 satisfies). `bootstrap.sh` now checks the aeb release version as well as the
@@ -437,13 +437,13 @@ pinned `ae` (>= `AE_PIN`) THEN a pinned `aeb`, binary-first, into `~/.local`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeb/v0.348/get.sh \
-  | AE_PIN=0.935.0 AEB_REF=v0.348 sh
+  | AE_PIN=0.936.0 AEB_REF=v0.348 sh
 ```
 
 (Prefer this to `sh -c "$(curl …)"` — the piped form is what `get.sh`'s
 executed-mode guard is built for. If you want a fetch error and install progress
 on your own terminal rather than through the pipe, download first and run the
-file: `curl … -o get.sh && AE_PIN=0.935.0 AEB_REF=v0.348 bash get.sh` — same
+file: `curl … -o get.sh && AE_PIN=0.936.0 AEB_REF=v0.348 bash get.sh` — same
 result.)
 
 ### Optionally: `aeo` (only for the containerized integration tests)
@@ -457,7 +457,7 @@ the same way, and ensures `ae` + `aeb` first (aeo shells them at runtime):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aether-lang-dev/aeo/main/get.sh \
-  | AE_PIN=0.935.0 AEB_REF=v0.348 AEO_REF=v0.2.3 sh
+  | AE_PIN=0.936.0 AEB_REF=v0.348 AEO_REF=v0.2.3 sh
 ```
 
 (Verified binary-first on a clean `debian:13-slim` — no compiler, no `make` —
