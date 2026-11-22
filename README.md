@@ -482,6 +482,46 @@ aeb go/.tests.ae      # one binding (builds libservirtium_vcr it deps, then test
 See each binding's own `docs/`, and [`integration/`](integration/) for the
 cross-binding browser/SVN/climate/TodoBackend tests.
 
+## For consideration: connection deadlines and cancellation
+
+Aether 0.936.0 added, in `std.tcp` and `std.cryptography.tls13_client`
+(design: aether `docs/design/tcp-tls-deadlines-and-cancellation.md`):
+
+- **One absolute deadline per connection** on the monotonic clock
+  (`tcp.connect_until(host, port, due_ms, cancel)`, `tcp.set_deadline(sock,
+  due_ms, cancel)`, `tls13_client.conn_set_deadline(conn, due_ms, cancel)`,
+  and `due_ms:` / `cancel:` on the `tls13_client.connect*` calls). It covers
+  the dial, the handshake and every read and write after; a peer that
+  trickles a byte inside each per-call timeout no longer resets it.
+- **A cancel handle** (`tcp.cancel_new`, `cancel`, `cancel_retain`,
+  `cancel_free`) that another thread or actor trips to wake a blocked
+  connection. The canceller never touches the descriptor, so the owner stays
+  the only closer.
+- Two exact errors, `tcp.DEADLINE_EXCEEDED` and `tcp.CANCELLED`, distinct
+  from `"timeout"`, a peer's close and a TLS failure.
+
+It does **not** reach `std.http.client` or the WebSocket calls: those still
+have only their own per-request timeout. Nothing here is required; these are
+places it could help, not work that is planned.
+
+Where it might apply here:
+
+- **Record mode's upstream call** (`core/vcr.ae`) is bounded by a fixed 30 s
+  per-request HTTP timeout, and goes through `std.http.client`, which the new
+  API does not reach. If the proxy ever dials upstream itself over
+  `std.tcp`/`tls13_client` (as the raw `tcp.connect` interop paths under
+  `integration/` do), one absolute deadline per interaction would stop a
+  trickling upstream from holding a recording open, and would be a natural
+  thing to expose as a setting beside the existing ones.
+- **Stopping the VCR while an interaction is in flight.** If a stop
+  ever has to wait for an in-flight upstream call or its timeout, a cancel
+  handle owned by the VCR instance (not a global: one per
+  running VCR) and tripped by `stop` would end that call at once with
+  `tcp.CANCELLED`, which the recorder can tell apart from an upstream
+  failure and so not write a half interaction to the tape.
+- **Bindings**: nothing changes in the C ABI unless a deadline or stop
+  becomes a setting; if it does, it goes to all bindings together, as usual.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
