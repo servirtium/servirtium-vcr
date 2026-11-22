@@ -157,8 +157,13 @@ set -euo pipefail
 # 2026-10-21 (kept): 0.838 enabled distinct musl ae-add packages (aether#3073,
 # aeb#17) and enforces unique short export names — the libc-aware release floor
 # is still 0.838.0, which 0.840 satisfies.
-AE_PIN="0.934.0"
-AE_FETCH="v0.934.0"
+# 2026-11-22: ae 0.934.0 -> 0.935.0, a tracking-only bump, no new primitive
+# needed. The generated C of the core and its tests is the same on 0.934.0 and
+# 0.935.0 apart from the contrib.quickjs module's own ABI change (strings by
+# length), which only C that calls qjs_* directly would feel; this repo calls
+# the module's Aether functions. aeb unchanged (v0.348).
+AE_PIN="0.935.0"
+AE_FETCH="v0.935.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
