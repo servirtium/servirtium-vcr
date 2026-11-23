@@ -1,0 +1,81 @@
+<Project>
+  <!--
+    Servirtium.Vcr on .NET Framework: put the native engine (servirtium_vcr.dll)
+    in the output directory.
+
+    Modern .NET finds the engine under runtimes/<rid>/native/ by itself. A .NET
+    Framework project often does not get it:
+      - packages.config never copies runtimes/ assets (NuGet imports this file,
+        build/net48/, into the project instead);
+      - an SDK-style project with PackageReference copies them only when it
+        has a RuntimeIdentifier, and a project that gets the package through a
+        ProjectReference gets no build/ targets at all (NuGet imports
+        buildTransitive/net48/, which imports this file).
+
+    Which engine:
+      - RuntimeIdentifier win-x64 or win-arm64, or PlatformTarget x64 or ARM64:
+        that one, next to the assembly.
+      - AnyCPU (a library, a test project, or an exe that does not prefer 32-bit):
+        both, under runtimes/win-x64/native/ and runtimes/win-arm64/native/;
+        Servirtium.Vcr picks the one for the process's architecture at run time.
+      - x86 (RuntimeIdentifier win-x86, PlatformTarget x86, or an AnyCPU exe with
+        Prefer32Bit): the build fails with SVCR001, because there is no 32-bit
+        engine. Build the process as x64 (or ARM64).
+
+    When NuGet already copies the engine (an SDK-style project with a
+    RuntimeIdentifier), this adds nothing, so it is never copied twice.
+
+    Set ServirtiumVcrCopyNative to false to turn all of this off (for example
+    when the engine comes from SERVIRTIUM_VCR_LIB).
+  -->
+  <PropertyGroup>
+    <_ServirtiumVcrNativeRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\runtimes'))</_ServirtiumVcrNativeRoot>
+  </PropertyGroup>
+
+  <Target Name="ServirtiumVcrCopyNative"
+          AfterTargets="ResolveAssemblyReferences"
+          Condition="'$(ServirtiumVcrCopyNative)' != 'false'">
+    <PropertyGroup>
+      <_ServirtiumVcrPlatform>$(PlatformTarget)</_ServirtiumVcrPlatform>
+      <_ServirtiumVcrPlatform Condition="'$(_ServirtiumVcrPlatform)' == ''">AnyCPU</_ServirtiumVcrPlatform>
+      <_ServirtiumVcrArch></_ServirtiumVcrArch>
+      <!-- A RuntimeIdentifier decides first: it is what the process will be. -->
+      <_ServirtiumVcrArch Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.EndsWith('-x64'))">x64</_ServirtiumVcrArch>
+      <_ServirtiumVcrArch Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.EndsWith('-arm64'))">arm64</_ServirtiumVcrArch>
+      <_ServirtiumVcrArch Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.EndsWith('-x86'))">x86</_ServirtiumVcrArch>
+      <_ServirtiumVcrArch Condition="'$(RuntimeIdentifier)' != '' and '$(_ServirtiumVcrArch)' == ''">other</_ServirtiumVcrArch>
+      <!-- Otherwise the platform target. -->
+      <_ServirtiumVcrArch Condition="'$(_ServirtiumVcrArch)' == '' and '$(_ServirtiumVcrPlatform.ToLowerInvariant())' == 'x64'">x64</_ServirtiumVcrArch>
+      <_ServirtiumVcrArch Condition="'$(_ServirtiumVcrArch)' == '' and '$(_ServirtiumVcrPlatform.ToLowerInvariant())' == 'arm64'">arm64</_ServirtiumVcrArch>
+      <_ServirtiumVcrArch Condition="'$(_ServirtiumVcrArch)' == '' and '$(_ServirtiumVcrPlatform.ToLowerInvariant())' == 'x86'">x86</_ServirtiumVcrArch>
+      <_ServirtiumVcrArch Condition="'$(_ServirtiumVcrArch)' == '' and '$(_ServirtiumVcrPlatform.ToLowerInvariant())' == 'anycpu' and ('$(OutputType)' == 'Exe' or '$(OutputType)' == 'WinExe') and '$(Prefer32Bit)' == 'true'">x86</_ServirtiumVcrArch>
+      <_ServirtiumVcrArch Condition="'$(_ServirtiumVcrArch)' == '' and '$(_ServirtiumVcrPlatform.ToLowerInvariant())' == 'anycpu'">any</_ServirtiumVcrArch>
+      <_ServirtiumVcrArch Condition="'$(_ServirtiumVcrArch)' == ''">other</_ServirtiumVcrArch>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_ServirtiumVcrAlreadyCopied Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)%(Extension)' == 'servirtium_vcr.dll'" />
+    </ItemGroup>
+
+    <Error Code="SVCR001"
+           Condition="'@(_ServirtiumVcrAlreadyCopied)' == '' and '$(_ServirtiumVcrArch)' == 'x86'"
+           Text="Servirtium.Vcr has no 32-bit (x86) native engine, and this project builds a 32-bit process (RuntimeIdentifier '$(RuntimeIdentifier)', PlatformTarget '$(_ServirtiumVcrPlatform)', Prefer32Bit '$(Prefer32Bit)'). Build it as x64 or ARM64: set &lt;PlatformTarget&gt;x64&lt;/PlatformTarget&gt; (and &lt;Prefer32Bit&gt;false&lt;/Prefer32Bit&gt; for an exe), or &lt;RuntimeIdentifier&gt;win-x64&lt;/RuntimeIdentifier&gt;, and run tests with a 64-bit test host. Set ServirtiumVcrCopyNative to false to skip this check." />
+    <Error Code="SVCR002"
+           Condition="'@(_ServirtiumVcrAlreadyCopied)' == '' and '$(_ServirtiumVcrArch)' == 'other'"
+           Text="Servirtium.Vcr ships Windows native engines for x64 and ARM64 only; this project targets RuntimeIdentifier '$(RuntimeIdentifier)', PlatformTarget '$(_ServirtiumVcrPlatform)'. Set ServirtiumVcrCopyNative to false and point SERVIRTIUM_VCR_LIB at an engine for that platform." />
+
+    <ItemGroup Condition="'@(_ServirtiumVcrAlreadyCopied)' == '' and ('$(_ServirtiumVcrArch)' == 'x64' or '$(_ServirtiumVcrArch)' == 'arm64')">
+      <ReferenceCopyLocalPaths Include="$(_ServirtiumVcrNativeRoot)\win-$(_ServirtiumVcrArch)\native\servirtium_vcr.dll">
+        <DestinationSubDirectory></DestinationSubDirectory>
+      </ReferenceCopyLocalPaths>
+    </ItemGroup>
+    <ItemGroup Condition="'@(_ServirtiumVcrAlreadyCopied)' == '' and '$(_ServirtiumVcrArch)' == 'any'">
+      <ReferenceCopyLocalPaths Include="$(_ServirtiumVcrNativeRoot)\win-x64\native\servirtium_vcr.dll">
+        <DestinationSubDirectory>runtimes\win-x64\native\</DestinationSubDirectory>
+      </ReferenceCopyLocalPaths>
+      <ReferenceCopyLocalPaths Include="$(_ServirtiumVcrNativeRoot)\win-arm64\native\servirtium_vcr.dll">
+        <DestinationSubDirectory>runtimes\win-arm64\native\</DestinationSubDirectory>
+      </ReferenceCopyLocalPaths>
+    </ItemGroup>
+  </Target>
+</Project>

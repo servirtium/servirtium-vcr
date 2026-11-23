@@ -64,6 +64,35 @@ dotnet test
 `SERVIRTIUM_VCR_LIB=/path/to/libservirtium_vcr.so` overrides the native-lib
 location (handy when iterating on `core/embed.ae`).
 
+## .NET Framework 4.8 consumers (`dotnet/net48/`)
+
+The shipped package (net8.0 + net48, from `Servirtium.Vcr.pkg.csproj`) carries
+`build/net48/Servirtium.Vcr.targets` and `buildTransitive/net48/`, which copy
+the Windows engine into a .NET Framework project's output (the binding
+README's ".NET Framework 4.8" section says when and which).
+`dotnet/net48/check.sh NUPKG_DIR WORK_DIR` builds a packed `.nupkg` into the
+three project shapes users have: an SDK-style MSTest project with a
+`PackageReference` (AnyCPU, `RuntimeIdentifier` win-x64, x64, and x86, which
+must fail with `SVCR001`), tests that reach the package through a
+`ProjectReference`, and a classic `packages.config` console project (and its
+template default `Prefer32Bit`, which must fail too). It checks the output
+layout and that no engine is copied twice; on Windows (MSYS2 bash) it then
+runs `dotnet test` and the console program. Building needs only the .NET SDK
+(the .NET Framework reference assemblies come from NuGet), so it runs on Linux;
+running needs Windows.
+
+```sh
+# 1. the Windows engines (any host with ae and zig)
+TARGETS="x86_64-windows aarch64-windows" release/build.sh
+# 2. stage them and pack (any host with the .NET SDK)
+mkdir -p dotnet/Servirtium.Vcr/native/win-x64 dotnet/Servirtium.Vcr/native/win-arm64
+cp release/dist/*-windows-x86_64.dll dotnet/Servirtium.Vcr/native/win-x64/servirtium_vcr.dll
+cp release/dist/*-windows-arm64.dll dotnet/Servirtium.Vcr/native/win-arm64/servirtium_vcr.dll
+dotnet pack dotnet/Servirtium.Vcr/Servirtium.Vcr.pkg.csproj -c Release -o ../nupkg
+# 3. build (and on Windows run) the consumers
+sh dotnet/net48/check.sh ../nupkg ../net48work
+```
+
 ## RID matrix
 
 | RID | Built by | Status |

@@ -1,0 +1,19 @@
+<!--
+  (ii) The project that references the package: a plain net48 library, like a
+  team's test-support ("gateway") project. The tests reference this project,
+  not the package.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Servirtium.Vcr" Version="$(ServirtiumVcrVersion)" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../shared/ConsumerChecks.cs" />
+  </ItemGroup>
+</Project>

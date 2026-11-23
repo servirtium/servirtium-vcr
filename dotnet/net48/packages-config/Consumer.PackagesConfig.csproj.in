@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  (iii) A classic (non-SDK) .NET Framework 4.8 console project with
+  packages.config, as Visual Studio's "Console App (.NET Framework)" template
+  makes it and as NuGet's Install-Package edits it: a HintPath reference into
+  packages\ and an Import of the package's build\net48 targets at the end.
+  packages.config never copies runtimes\ assets: those targets put the engine
+  in bin\. The template's default for an AnyCPU exe is Prefer32Bit=true, a
+  32-bit process with no engine to load: check.sh builds it that way too and
+  expects SVCR001; the project as written sets Prefer32Bit=false.
+  check.sh writes this file with @VERSION@ filled in.
+-->
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{6A0F3C1E-2B7D-4E36-9C55-3D7B1F0E8A42}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Servirtium.Vcr.Net48Consumer</RootNamespace>
+    <AssemblyName>Consumer.PackagesConfig</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit Condition=" '$(Prefer32Bit)' == '' ">false</Prefer32Bit>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Servirtium.Vcr">
+      <HintPath>..\packages\Servirtium.Vcr.@VERSION@\lib\net48\Servirtium.Vcr.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\shared\ConsumerChecks.cs" />
+    <Compile Include="..\shared\Program.cs" />
+    <None Include="..\shared\tapes\single_get.md">
+      <Link>tapes\single_get.md</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Import Project="..\packages\Servirtium.Vcr.@VERSION@\build\net48\Servirtium.Vcr.targets" Condition="Exists('..\packages\Servirtium.Vcr.@VERSION@\build\net48\Servirtium.Vcr.targets')" />
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\packages\Servirtium.Vcr.@VERSION@\build\net48\Servirtium.Vcr.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Servirtium.Vcr.@VERSION@\build\net48\Servirtium.Vcr.targets'))" />
+  </Target>
+</Project>

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<packages>
+  <package id="Servirtium.Vcr" version="@VERSION@" targetFramework="net48" />
+</packages>

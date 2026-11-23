@@ -1,0 +1,10 @@
+<Project>
+  <!--
+    PackageReference imports buildTransitive/ (when a package has it) into the
+    project that references the package AND into every project that gets the
+    package through a ProjectReference; build/ alone reaches only the first.
+    packages.config reads build/ only. One file holds the logic: this imports it,
+    and NuGet imports one of the two, never both.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)..\..\build\net48\Servirtium.Vcr.targets" />
+</Project>

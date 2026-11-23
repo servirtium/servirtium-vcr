@@ -77,6 +77,38 @@ In a `.csproj` the dependency is `<PackageReference Include="Servirtium.Vcr" Ver
 Once published it is the same line with no `nuget.config` change; it does not resolve from nuget.org today.
 `PackageReference` to a prerelease needs the explicit version, as above.
 
+### .NET Framework 4.8
+
+The same package serves .NET Framework 4.8 (`lib/net48/`). The native engine
+reaches the output directory in every usual project shape:
+
+- **SDK-style project, `PackageReference`**: with a `RuntimeIdentifier`
+  (`win-x64`, `win-arm64`) NuGet copies the engine next to your assembly.
+  Without one, the package's `build/net48/Servirtium.Vcr.targets` copies it:
+  with `PlatformTarget` `x64` or `ARM64`, that engine next to the assembly;
+  for AnyCPU (a test project, a library), both, under
+  `runtimes\win-x64\native\` and `runtimes\win-arm64\native\`, and the
+  binding loads the one for the process's architecture.
+- **A project that references a project that has the `PackageReference`**
+  (tests that reference a shared test-support project): NuGet imports
+  `buildTransitive/net48/` there, which does the same.
+- **Classic project with `packages.config`**: NuGet's install adds the import of
+  `build\net48\Servirtium.Vcr.targets`, which does the same (`packages.config`
+  never copies `runtimes\` itself).
+
+There is no 32-bit engine. A build that makes a 32-bit process
+(`PlatformTarget` x86, `RuntimeIdentifier` win-x86, or an AnyCPU exe with
+`Prefer32Bit`, the classic console template's default) fails with `SVCR001`
+and says what to set: `<PlatformTarget>x64</PlatformTarget>` (with
+`<Prefer32Bit>false</Prefer32Bit>` for an exe), and a 64-bit test host. Set
+`<ServirtiumVcrCopyNative>false</ServirtiumVcrCopyNative>` to turn the copy
+(and the check) off, for example when `SERVIRTIUM_VCR_LIB` points at the
+engine. `dotnet/net48/check.sh` builds all of these shapes from a packed
+`.nupkg`, and on Windows runs them ([docs/building.md](docs/building.md)).
+
+On .NET Framework `CreateClientHandler` is not available (it is built on
+`SocketsHttpHandler`); point the client at `BaseUrl` directly.
+
 ### Notes for coding agents
 
 - `error NU1101: Unable to find package Servirtium.Vcr` means the local feed is not

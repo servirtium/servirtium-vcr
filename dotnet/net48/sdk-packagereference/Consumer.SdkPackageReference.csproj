@@ -1,0 +1,28 @@
+<!--
+  (i) An SDK-style net48 test project with a PackageReference to Servirtium.Vcr,
+  MSTest, no RuntimeIdentifier and no PlatformTarget (AnyCPU): the package's
+  build targets copy both Windows engines under runtimes\win-*\native\.
+  check.sh also builds it with RuntimeIdentifier win-x64 (NuGet copies the
+  engine itself; the targets must add nothing), PlatformTarget x64 (one engine,
+  next to the assembly) and PlatformTarget x86 (refused, SVCR001).
+  ServirtiumVcrVersion comes from check.sh (SERVIRTIUM_VCR_VERSION).
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Servirtium.Vcr" Version="$(ServirtiumVcrVersion)" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.6.4" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.6.4" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../shared/ConsumerChecks.cs" />
+    <Compile Include="../shared/ConsumerTests.cs" />
+    <None Include="../shared/tapes/*.md" Link="tapes/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

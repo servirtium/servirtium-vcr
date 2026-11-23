@@ -71,4 +71,17 @@
     <None Include="native/win-arm64/servirtium_vcr.dll" Pack="true" PackagePath="runtimes/win-arm64/native/" Condition="Exists('native/win-arm64/servirtium_vcr.dll')" />
   </ItemGroup>
 
+  <!--
+    .NET Framework consumers: copy the Windows engine into the output
+    directory where NuGet does not (packages.config; PackageReference without
+    a RuntimeIdentifier; a project that gets the package through a
+    ProjectReference). build/ is what packages.config and a direct
+    PackageReference import; buildTransitive/ reaches projects that reference
+    a project that references the package. See the comments in the files.
+  -->
+  <ItemGroup>
+    <None Include="build/net48/Servirtium.Vcr.targets" Pack="true" PackagePath="build/net48/" />
+    <None Include="buildTransitive/net48/Servirtium.Vcr.targets" Pack="true" PackagePath="buildTransitive/net48/" />
+  </ItemGroup>
+
 </Project>

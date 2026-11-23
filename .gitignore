@@ -66,3 +66,4 @@ erl_crash.dump
 
 # sdk_harnesses: fetched SDK sources, NuGet/dotnet caches, results (wipe = rm -rf)
 /sdk_harnesses/*/target/
+/dotnet/Servirtium.Vcr/native/
