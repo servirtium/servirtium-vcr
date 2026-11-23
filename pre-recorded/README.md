@@ -9,6 +9,7 @@ test against it, with no container and no service.
 |---|---|
 | [`from-testcontainers/`](from-testcontainers/README.md) | Aether tests that start each service with [testcontainers-ae](https://github.com/servirtium/testcontainers-ae) and put Servirtium in the middle |
 | [`joomla-api/`](joomla-api/README.md) | An Aether test that starts Joomla 6.2.0 and MariaDB in containers (generic containers of [testcontainers-ae](https://github.com/servirtium/testcontainers-ae)) and puts Servirtium in the middle: CRUD on articles, categories, tags, banners and users, ids chained, requests cribbed from the Bruno collection below |
+| [`ntlm/`](ntlm/README.md) | A pytest suite with our own NTLM-protected server (pyspnego's acceptor, a synthetic user, loopback) and four clients (requests-ntlm, curl, httpx Negotiate, a leg-by-leg one), recording the NTLM and Negotiate handshakes through Servirtium's Python binding; its README sets out what record and playback do with NTLM, including a record-mode connection problem |
 | [`converted/from.bru/renekreijveld_bruno-joomla-api/`](converted/from.bru/renekreijveld_bruno-joomla-api/README.md) | `servirtium convert bru` on René Kreijveld's Joomla 6 Web Services collection, as it is: the examples its author wrote, not recordings (189 of 194 have no response body, and say so). **GPL-3.0**, like the collection, kept apart from the MIT rest of this repository |
 
 The recorded services' licences and terms bind anyone using their tapes: see
