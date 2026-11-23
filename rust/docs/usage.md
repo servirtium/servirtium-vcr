@@ -154,7 +154,7 @@ request's header set must match the recorded block (Host is stripped). An
 HTTP client that adds incidental headers (`Accept`, `User-Agent`,
 `Accept-Encoding`, …) will trip this unless those headers are on the tape.
 
-For request bodies, `.match_json_body()` opts into semantic JSON comparison —
+For request bodies, `.pretty_json(2)` on playback opts into semantic JSON comparison —
 object key order and insignificant whitespace are ignored (array order still
 matters), and non-JSON bodies fall back to byte-exact matching.
 

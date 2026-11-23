@@ -144,7 +144,7 @@ if (srv.lastKind() != .ok) { /* srv.lastError() e.g. "<name> request header ..."
 > suppressed on the request. The suite passes `-H 'User-Agent:' -H 'Accept:'`
 > to curl to match an Authorization-only block.
 
-For request bodies, `.matchJsonBody()` opts into semantic JSON matching: JSON
+For request bodies, `.prettyJson(2)` on playback opts into semantic JSON matching: JSON
 request bodies match when equal as JSON (object key order and insignificant
 whitespace ignored; array order still significant), while non-JSON bodies fall
 back to byte-exact matching.

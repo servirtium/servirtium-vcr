@@ -3,7 +3,7 @@ import std.bytes
 import std.dl
 import std.os
 import std.string
-exports(load, open_playback, start, stop, port, last, events, assert_clean, context, kind, clear, reset, unredact, match_multiple, match_header, match_json)
+exports(load, open_playback, start, stop, port, last, events, assert_clean, context, kind, clear, reset, unredact, match_multiple, match_header, pretty_json)
 extern strlen(p: ptr) -> long
 cfn Open(string, string, string, int) -> ptr
 cfn IntHandle(ptr) -> int
@@ -49,7 +49,7 @@ load(file: string) {
     unredact_fn = symbol("unredact") as Unredact
     multiple_fn = symbol("set_match_multiple") as SetInt
     header_fn = symbol("match_header") as Header
-    json_fn = symbol("set_match_json_body") as SetInt
+    json_fn = symbol("set_pretty_json") as SetInt
 }
 owned_text(p: ptr) -> string {
     if p == null { return "" }
@@ -70,4 +70,4 @@ reset(h: ptr) { reset_fn(h) }
 unredact(h: ptr, field: int, pattern: string, value: string) -> string { return owned_text(unredact_fn(h, field, pattern, value)) }
 match_multiple(h: ptr, enabled: int) { multiple_fn(h, enabled) }
 match_header(h: ptr, name: string) { header_fn(h, name) }
-match_json(h: ptr, enabled: int) { json_fn(h, enabled) }
+pretty_json(h: ptr, indent: int) { json_fn(h, indent) }

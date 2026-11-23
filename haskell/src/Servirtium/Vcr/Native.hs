@@ -70,8 +70,6 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_static_content
   , aether_vcr_embed_untaped
   , aether_vcr_embed_set_strict_headers
-  , aether_vcr_embed_set_match_json_body
-  , aether_vcr_embed_set_match_xml_body
   , aether_vcr_embed_set_match_multiple
   , aether_vcr_embed_indent_code_blocks
   , aether_vcr_embed_emphasize_http_verbs
@@ -244,11 +242,6 @@ foreign import ccall unsafe "aether_vcr_embed_untaped"
 foreign import ccall unsafe "aether_vcr_embed_set_strict_headers"
   aether_vcr_embed_set_strict_headers :: Handle -> CInt -> IO ()
 
-foreign import ccall unsafe "aether_vcr_embed_set_match_json_body"
-  aether_vcr_embed_set_match_json_body :: Handle -> CInt -> IO ()
-
-foreign import ccall unsafe "aether_vcr_embed_set_match_xml_body"
-  aether_vcr_embed_set_match_xml_body :: Handle -> CInt -> IO ()
 
 foreign import ccall unsafe "aether_vcr_embed_set_match_multiple"
   aether_vcr_embed_set_match_multiple :: Handle -> CInt -> IO ()

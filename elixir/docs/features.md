@@ -18,7 +18,7 @@ in `test/` against the real native library.
 | Header removal | ✅ | ✅ | `remove_header:` opt | — |
 | Notes | ✅ | ✅ | `note:` opt / `Servirtium.note/3` | ✅ |
 | Strict request matching | ✅ | ✅ | `strict_headers:` opt | ✅ (reset/leak) |
-| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `match_json_body:` opt | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `pretty_json:` opt on playback | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `match_multiple:` opt | — |
 | Match on a specific request header (opt-in) | ✅ | ✅ | `match_header:` opt | — |
 | Static-content bypass | ✅ | ✅ | `static_content:` opt | ✅ |

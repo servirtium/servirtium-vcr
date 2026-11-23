@@ -145,8 +145,8 @@ exports (
     add_license_notice_h, volatile_rule_h, volatile_bind_h, volatile_profile_h, set_volatile_markers_h,
     volatile_report_h, clear_volatile_h,
     redact_whole_tape_h, redact_whole_tape_described_h, clear_collapses_h, static_content_h, untaped_h,
-    set_strict_headers_h, set_match_json_body_h, set_rules_footer_h, get_rules_footer_h,
-    RULES_FOOTER_HEADING, xml_canonicalize, set_match_xml_body_h, set_pretty_xml_h, get_pretty_xml_h,
+    set_strict_headers_h, set_rules_footer_h, get_rules_footer_h,
+    RULES_FOOTER_HEADING, xml_canonicalize, set_pretty_xml_h, get_pretty_xml_h,
     set_pretty_json_h, get_pretty_json_h, sort_json_keys_h, get_sort_json_keys_h, sort_json_array_h,
     sort_json_array_at_h, sort_response_headers_h, get_sort_response_headers_h, sort_header_value_h,
     clear_stable_order_h, json_canonical, json_body_canonicalize, set_tls_h, set_tls_pem_h, tls_enabled_h,
@@ -361,7 +361,7 @@ extern zlib_backend_available() -> int
 //   Rules     - what a test registered (redactions, header removals,
 //               normalizations, mounts, ByHeader names, format flags):
 //               written at setup, read by matching, recording and emitting
-//   Settings  - mode, strict, match_json_body/xml_body/multiple, pretty_*,
+//   Settings  - mode, strict, match_multiple, pretty_*,
 //               sort_*, rules_footer, license_notice, upstream base/cafile,
 //               TLS paths/PEM, playback range: written at setup only
 //   Tape      - the interactions, the playback cursor, the stable-order
@@ -431,8 +431,6 @@ struct Rules {
 struct Settings {
     mode: string             // "" / "playback" = replay; "record" = forward+capture
     strict: int              // strict request-header matching
-    match_json_body: int
-    match_xml_body: int
     match_multiple: int
     rules_footer: int
     pretty_xml: int          // indent width, 0 = off
@@ -561,8 +559,6 @@ new_settings() -> *Settings {
     s = malloc(sizeof(Settings)) as *Settings
     s.mode = ""
     s.strict = 0
-    s.match_json_body = 0
-    s.match_xml_body = 0
     s.match_multiple = 0
     s.rules_footer = 0
     s.pretty_xml = 0
@@ -876,32 +872,19 @@ vcr_set_rules_footer_k(vc: *Vcr, on: int) {
 vcr_get_rules_footer_k(vc: *Vcr) -> int { return vc.settings.rules_footer }
 vcr_get_strict_headers_k(vc: *Vcr) -> int { return vc.settings.strict }
 
-// Opt-in: when on, a request body that differs byte-for-byte from the recorded
-// one is re-checked for *semantic* JSON equality (key order and insignificant
-// whitespace ignored) before being called a mismatch. Off by default so the
-// libservirtium_vcr stays byte-exact; a fixture turns it on when its bodies are JSON whose
-// serialization it doesn't control. Non-JSON bodies fall back to the byte-exact
-// result, so enabling it never loosens matching for non-JSON payloads.
-vcr_set_match_json_body_k(vc: *Vcr, on: int) {
-    if on != 0 { vc.settings.match_json_body = 1 } else { vc.settings.match_json_body = 0 }
-}
-vcr_get_match_json_body_k(vc: *Vcr) -> int {
+// Canonical request-body matching on playback (docs/pretty-json.md,
+// docs/pretty-xml.md): with pretty_json (pretty_xml) on, a request body that
+// differs byte-for-byte from the tape's gets a second chance at JSON (XML)
+// equality of the canonical forms before it is called a BodyDiff. A body that
+// does not parse falls back to the byte-exact verdict, so it never loosens
+// matching for other payloads.
+canonical_json_k(vc: *Vcr) -> int {
     if vc.settings.pretty_json > 0 { return 1 }
-    return vc.settings.match_json_body
+    return 0
 }
-
-// XML-semantic request-body matching (field report #10), the twin of the JSON
-// matcher above and off by default on the same terms: a byte-differing request
-// body gets a second chance at XML equality (attribute order and insignificant
-// whitespace ignored; element order significant) before it is called a
-// BodyDiff. A non-XML body always falls back to the byte-exact verdict, so
-// enabling it never loosens non-XML matching.
-vcr_set_match_xml_body_k(vc: *Vcr, on: int) {
-    if on != 0 { vc.settings.match_xml_body = 1 } else { vc.settings.match_xml_body = 0 }
-}
-vcr_get_match_xml_body_k(vc: *Vcr) -> int {
+canonical_xml_k(vc: *Vcr) -> int {
     if vc.settings.pretty_xml > 0 { return 1 }
-    return vc.settings.match_xml_body
+    return 0
 }
 
 // Opt-in: when on, playback matches by SEARCHING all recorded interactions for
@@ -2911,10 +2894,10 @@ interaction_matches_pre(vc: *Vcr, index: int, e: *Interaction, req: ptr, got_met
         bm = string.equals(canonical_body, expected_req_body)
         if vol == 1 {
             bm = vol_match_k(vc, FIELD_REQUEST_BODY, expected_req_body, vol_canonical_body_k(vc, e.v_body_mode, canonical_body, 0), index)
-        } else if bm == 0 && vcr_get_match_json_body_k(vc) == 1 {
+        } else if bm == 0 && canonical_json_k(vc) == 1 {
             bm = json_request_bodies_equal(e, canonical_body, expected_req_body)
         }
-        if bm == 0 && vcr_get_match_xml_body_k(vc) == 1 {
+        if bm == 0 && canonical_xml_k(vc) == 1 {
             bm = xml_request_bodies_equal(e, canonical_body, expected_req_body)
         }
         if bm == 0 { return 0 }
@@ -3167,10 +3150,10 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
         bodies_match = string.equals(canonical_body, expected_req_body)
         if vol == 1 {
             bodies_match = vol_match_k(vc, FIELD_REQUEST_BODY, expected_req_body, vol_canonical_body_k(vc, e.v_body_mode, canonical_body, 0), cur)
-        } else if bodies_match == 0 && vcr_get_match_json_body_k(vc) == 1 {
+        } else if bodies_match == 0 && canonical_json_k(vc) == 1 {
             bodies_match = json_request_bodies_equal(e, canonical_body, expected_req_body)
         }
-        if bodies_match == 0 && vcr_get_match_xml_body_k(vc) == 1 {
+        if bodies_match == 0 && canonical_xml_k(vc) == 1 {
             bodies_match = xml_request_bodies_equal(e, canonical_body, expected_req_body)
         }
         if bodies_match == 0 {
@@ -4149,8 +4132,6 @@ apply_tls_h(server: ptr) -> string {
 set_strict_headers_h(server: ptr, on: int) { vcr_set_strict_headers_k(key_for(server), on) }
 set_rules_footer_h(server: ptr, on: int) { vcr_set_rules_footer_k(key_for(server), on) }
 get_rules_footer_h(server: ptr) -> int { return vcr_get_rules_footer_k(key_for(server)) }
-set_match_json_body_h(server: ptr, on: int) { vcr_set_match_json_body_k(key_for(server), on); vol_refresh_k(key_for(server)) }
-set_match_xml_body_h(server: ptr, on: int) { vcr_set_match_xml_body_k(key_for(server), on); vol_refresh_k(key_for(server)) }
 set_pretty_xml_h(server: ptr, indent: int) { vcr_set_pretty_xml_k(key_for(server), indent); vol_refresh_k(key_for(server)) }
 get_pretty_xml_h(server: ptr) -> int { return vcr_get_pretty_xml_k(key_for(server)) }
 set_pretty_json_h(server: ptr, indent: int) { vcr_set_pretty_json_k(key_for(server), indent); vol_refresh_k(key_for(server)) }
@@ -4456,7 +4437,7 @@ flush_k(vc: *Vcr, tape_path: string) -> string {
 // (User-Agent, Cookie, sec-ch-*) would never match a test client's — so request
 // headers are NOT imported; matching is method + path (+ request body). The
 // request BODY is imported (it distinguishes POSTs to one path; pair it with
-// set_match_json_body for JSON APIs). The full response — status, headers (minus
+// pretty_json on playback for JSON APIs). The full response — status, headers (minus
 // hop-by-hop / Content-Encoding, since the body is stored decoded), and body
 // (base64-marked when the HAR entry is base64-encoded) — is imported.
 
@@ -5522,8 +5503,8 @@ pretty_json_request_k(vc: *Vcr, ctype: string, body: string) -> string {
 // tape as it is. Request bodies are never reordered: the app under test sent
 // them, playback compares the live request with the recorded one, and a
 // client's serializer is deterministic; a test whose client really does send
-// keys in a varying order turns on set_match_json_body_h instead (JSON-
-// semantic matching). Request headers are already written sorted by name.
+// keys in a varying order turns on pretty_json on playback instead
+// (canonical JSON matching). Request headers are already written sorted by name.
 // A body that is not JSON (response_body_is_json_k: by its Content-Type, or
 // a JSON object or array on a request path a sort_json_array_at rule names),
 // or does not parse, is left byte-exact. The recording-rules footer lists each ordering rule ("ordered")
@@ -7817,12 +7798,12 @@ cc_headers_pair_k(vc: *Vcr, e: *Interaction, lv: *LiveView) -> (string, string) 
 cc_body_pair_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> (string, string, int) {
     if vol_ready_k(vc, e) == 1 { return self_tokens_k(vc, e.v_req_body, lv.host), cc_live_body_k(vc, lv, index, e.v_body_mode, 1), e.v_body_mode }
     exp = vol_unescape_k(vc, expected_field_k(vc, e.req_body, FIELD_REQUEST_BODY, lv.host))
-    if vcr_get_match_json_body_k(vc) == 1 {
+    if canonical_json_k(vc) == 1 {
         ej = json_body_canonicalize(exp)
         lj = cc_live_body_k(vc, lv, index, 1, 0)
         if ej != "" && lj != "" { return ej, lj, 1 }
     }
-    if vcr_get_match_xml_body_k(vc) == 1 {
+    if canonical_xml_k(vc) == 1 {
         ex = xml_canonicalize(exp)
         lx = cc_live_body_k(vc, lv, index, 2, 0)
         if ex != "" && lx != "" { return ex, lx, 2 }
@@ -8106,7 +8087,7 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
         n = string.length(expected.req_body)
         e.expected_body = "[binary body: ${n} bytes]"
     }
-    if expected != null && vcr_get_match_json_body_k(vc) == 1 {
+    if expected != null && canonical_json_k(vc) == 1 {
         recorded_json = json_body_canonicalize(e.expected_body)
         live_json = json_body_canonicalize(e.actual_body)
         if recorded_json != "" && live_json != "" {
@@ -8114,7 +8095,7 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
             e.actual_body = diagnostic_safe_k(vc, live_json, FIELD_REQUEST_BODY)
         }
     }
-    if expected != null && vcr_get_match_xml_body_k(vc) == 1 {
+    if expected != null && canonical_xml_k(vc) == 1 {
         // Mask before XML escaping, which could otherwise change a secret's
         // spelling and prevent diagnostic_safe from recognizing it.
         recorded_xml = xml_canonicalize(e.expected_body)
@@ -9200,8 +9181,8 @@ vol_prepare_k(vc: *Vcr) {
         body = rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY)
         mode = 0
         if body_is_binary(body) == 0 && is_blank(body) == 0 {
-            if vcr_get_match_json_body_k(vc) == 1 && vol_json_canonical_k(vc, body) != "" { mode = 1 }
-            else if vcr_get_match_xml_body_k(vc) == 1 && xml_canonicalize(body) != "" { mode = 2 }
+            if canonical_json_k(vc) == 1 && vol_json_canonical_k(vc, body) != "" { mode = 1 }
+            else if canonical_xml_k(vc) == 1 && xml_canonicalize(body) != "" { mode = 2 }
             body = vol_rewrite_k(vc, FIELD_REQUEST_BODY, vol_canonical_body_k(vc, mode, body, 1), i, m, 1)
         }
         e.v_body_mode = mode

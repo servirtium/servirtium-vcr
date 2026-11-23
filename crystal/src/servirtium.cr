@@ -88,8 +88,6 @@ lib LibVcr
   fun strict_ignore_common_headers = aether_vcr_embed_strict_ignore_common_headers(h : Void*) : Void
   fun ignore_volatile_headers = aether_vcr_embed_ignore_volatile_headers(h : Void*) : Void
   fun set_strict_headers = aether_vcr_embed_set_strict_headers(h : Void*, on : LibC::Int) : Void
-  fun set_match_json_body = aether_vcr_embed_set_match_json_body(h : Void*, on : LibC::Int) : Void
-  fun set_match_xml_body = aether_vcr_embed_set_match_xml_body(h : Void*, on : LibC::Int) : Void
   fun set_match_multiple = aether_vcr_embed_set_match_multiple(h : Void*, on : LibC::Int) : Void
   fun indent_code_blocks = aether_vcr_embed_indent_code_blocks(h : Void*) : Void
   fun emphasize_http_verbs = aether_vcr_embed_emphasize_http_verbs(h : Void*) : Void
@@ -516,21 +514,6 @@ module Servirtium
 
     def strict_headers=(on : Bool)
       LibVcr.set_strict_headers(@handle, on ? 1 : 0)
-    end
-
-    # Opt-in: a request body that differs byte-for-byte gets a second chance at
-    # semantic JSON equality (key order + whitespace ignored, array order
-    # significant). A non-JSON body always falls back to the byte-exact verdict.
-    def match_json_body=(on : Bool)
-      LibVcr.set_match_json_body(@handle, on ? 1 : 0)
-    end
-
-    # Opt-in: the SOAP/XML twin of match_json_body — a byte-differing request
-    # body gets a second chance at semantic XML equality (attribute order +
-    # insignificant whitespace ignored; element order significant). A non-XML
-    # body always falls back to the byte-exact verdict.
-    def match_xml_body=(on : Bool)
-      LibVcr.set_match_xml_body(@handle, on ? 1 : 0)
     end
 
     # Opt-in: search ALL interactions for one that fits and replay it WITHOUT

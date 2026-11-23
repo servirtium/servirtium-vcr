@@ -69,13 +69,12 @@ defmodule Servirtium do
       through the last). Selection is by number only. A record server refuses
       it (raises)
     * `:strict_headers` — `true` to compare request headers on every interaction
-    * `:match_json_body` — `true` to match request bodies by semantic JSON
-      equality (key order / whitespace ignored) instead of byte-for-byte;
-      non-JSON bodies fall back to byte-exact
-    * `:match_xml_body` — `true` to match request bodies by semantic XML
-      equality (attribute order / insignificant whitespace ignored, element
-      order significant) instead of byte-for-byte; non-XML bodies fall back to
-      byte-exact
+    * `:pretty_json` — a positive integer to match JSON request bodies by
+      canonical form (key order / whitespace ignored), as recording with the
+      same option writes them; non-JSON bodies stay byte-exact
+    * `:pretty_xml` — a positive integer to match XML request bodies by
+      canonical form (attribute order / insignificant whitespace ignored,
+      element order significant); non-XML bodies stay byte-exact
     * `:ignore_volatile_headers` — `true` to drop the per-request tracing /
       correlation headers clients inject on every call (traceparent, tracestate,
       Request-Id, X-Request-Id, X-Correlation-Id, baggage) from both sides
@@ -553,8 +552,6 @@ defmodule Servirtium do
       _ -> :ok
     end
     if Keyword.get(opts, :strict_headers, false), do: Native.set_strict_headers(handle, 1)
-    if Keyword.get(opts, :match_json_body, false), do: Native.set_match_json_body(handle, 1)
-    if Keyword.get(opts, :match_xml_body, false), do: Native.set_match_xml_body(handle, 1)
     if Keyword.get(opts, :ignore_volatile_headers, false), do: Native.ignore_volatile_headers(handle)
     if Keyword.get(opts, :match_multiple, false), do: Native.set_match_multiple(handle, 1)
 

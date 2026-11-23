@@ -15,8 +15,7 @@ Vcr.Playback(tape).PrettyJson(2).Start();
 Bindings use their usual spelling (`pretty_json`, `prettyJson`, `PrettyJSON`,
 or `set_pretty_json`). The C ABI is
 `aether_vcr_embed_set_pretty_json(handle, indent)`, with a corresponding getter.
-JVM/CLR family bindings inherit their Java/.NET APIs. `MatchJsonBody(true)`
-remains a matching-only compatibility alias using the same canonicalizer.
+JVM/CLR family bindings inherit their Java/.NET APIs.
 
 ## Recording
 

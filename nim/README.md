@@ -38,7 +38,7 @@ reimplement Servirtium in Nim.
   `tapeLength`, `lastKind`/`lastError`/`lastIndex`, `resetCursor`,
   `clearLastError`, `close`, plus the full mutation/format set (`redact`,
   `unredact`, `removeHeader`, `volatileRule`, `volatileBind`, `volatileProfile`, `volatileMarkers`, `volatileReport`, `redactWholeTape`,
-  `staticContent`, `untaped`, `note`, `setStrictHeaders`, `setMatchJsonBody`,
+  `staticContent`, `untaped`, `note`, `setStrictHeaders`,
   `setMatchMultiple`, `matchHeader`, `setSortJsonKeys`, `sortJsonArray`, `setPlaybackRange`,
   `indentCodeBlocks`,
   `emphasizeHttpVerbs`, `failIfChanged`).

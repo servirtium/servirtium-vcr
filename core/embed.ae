@@ -550,23 +550,6 @@ vcr_embed_set_rules_footer(s: ptr, on: int) {
     vcr.set_rules_footer_h(s, on)
 }
 
-// Opt-in: match request bodies by semantic JSON equality (key order /
-// whitespace ignored) instead of byte-for-byte. Off by default; non-JSON
-// bodies always fall back to the byte-exact comparison.
-vcr_embed_set_match_json_body(s: ptr, on: int) {
-    if s == null { return }
-    vcr.set_match_json_body_h(s, on)
-}
-
-// Opt-in: match request bodies by semantic XML equality (attribute order and
-// insignificant whitespace ignored; element order significant) instead of
-// byte-for-byte. Off by default; non-XML bodies always fall back to the
-// byte-exact comparison. The twin of set_match_json_body for SOAP/XML APIs.
-vcr_embed_set_match_xml_body(s: ptr, on: int) {
-    if s == null { return }
-    vcr.set_match_xml_body_h(s, on)
-}
-
 // Opt-in pretty XML (docs/pretty-xml.md): recording indents XML request
 // and response bodies; playback compares XML requests in canonical form.
 // indent 0 = off (default), 1..16 = spaces per level (>16 clamps to 16).

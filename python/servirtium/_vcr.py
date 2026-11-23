@@ -293,8 +293,8 @@ class PlaybackBuilder(_BuilderBase):
         self._substitutions: list[tuple[Field, str, str, bool]] = []
         self._secret_resolver = None
         self._strict_headers = False
-        self._match_json_body = False
-        self._match_xml_body = False
+        self._pretty_json = 0
+        self._pretty_xml = 0
         self._match_multiple = False
         self._match_headers: list[str] = []
         self._playback_range: tuple[int, int] | None = None
@@ -310,29 +310,20 @@ class PlaybackBuilder(_BuilderBase):
         self._strict_headers = on
         return self
 
-    def match_json_body(self, on: bool = True):
-        """Opt in to matching request bodies by *semantic* JSON equality (key
-        order and insignificant whitespace ignored) instead of byte-for-byte.
-        Non-JSON bodies fall back to the byte-exact comparison, so enabling this
-        never loosens matching for non-JSON payloads."""
-        self._match_json_body = on
+    def pretty_json(self, indent: int = 2):
+        """Match JSON request bodies by canonical form (key order and
+        insignificant whitespace ignored), as recording with the same option
+        writes them; serve tape responses as written. Non-JSON bodies keep the
+        byte-exact comparison. ``indent`` 0 turns it off."""
+        self._pretty_json = indent
         return self
 
-    def pretty_json(self, indent: int = 2):
-        """Match JSON requests by canonical form; serve tape responses as written."""
-        return self.match_json_body(indent > 0)
-
     def pretty_xml(self, indent: int = 2):
-        """Match XML requests using the same canonicalizer as recording."""
-        return self.match_xml_body(indent > 0)
-
-    def match_xml_body(self, on: bool = True):
-        """Opt in to matching request bodies by *semantic* XML equality
-        (attribute order and insignificant whitespace ignored; element order
-        significant) instead of byte-for-byte — the SOAP/XML twin of
-        :meth:`match_json_body`. Non-XML bodies fall back to the byte-exact
-        comparison, so enabling this never loosens matching for non-XML payloads."""
-        self._match_xml_body = on
+        """Match XML request bodies by canonical form (attribute order and
+        insignificant whitespace ignored; element order significant), using the
+        same canonicalizer as recording. Non-XML bodies keep the byte-exact
+        comparison. ``indent`` 0 turns it off."""
+        self._pretty_xml = indent
         return self
 
     def match_multiple(self, on: bool = True):
@@ -377,10 +368,10 @@ class PlaybackBuilder(_BuilderBase):
         super()._apply_config(handle)
         if self._strict_headers:
             N.set_strict_headers(handle, 1)
-        if self._match_json_body:
-            N.set_match_json_body(handle, 1)
-        if self._match_xml_body:
-            N.set_match_xml_body(handle, 1)
+        if self._pretty_json:
+            N.set_pretty_json(handle, self._pretty_json)
+        if self._pretty_xml:
+            N.set_pretty_xml(handle, self._pretty_xml)
         if self._match_multiple:
             N.set_match_multiple(handle, 1)
         for name in self._match_headers:

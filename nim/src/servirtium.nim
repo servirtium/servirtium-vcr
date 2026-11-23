@@ -341,19 +341,6 @@ proc addLicenseNotice*(s: VcrServer; text: string): string {.discardable.} =
 proc setStrictHeaders*(s: VcrServer; on: bool) =
   native.set_strict_headers(s.handle, cint(if on: 1 else: 0))
 
-proc setMatchJsonBody*(s: VcrServer; on: bool) =
-  ## Opt in to matching request bodies by semantic JSON equality (key order /
-  ## whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back to
-  ## byte-exact.
-  native.set_match_json_body(s.handle, cint(if on: 1 else: 0))
-
-proc setMatchXmlBody*(s: VcrServer; on: bool) =
-  ## Opt in to matching request bodies by semantic XML equality (attribute
-  ## order / insignificant whitespace ignored; element order significant)
-  ## instead of byte-for-byte — the SOAP/XML twin of setMatchJsonBody. Non-XML
-  ## bodies fall back to byte-exact.
-  native.set_match_xml_body(s.handle, cint(if on: 1 else: 0))
-
 proc setMatchMultiple*(s: VcrServer; on: bool) =
   ## Opt in to reusable, order-independent playback: matches any recorded
   ## interaction (not just the next in sequence) and doesn't consume it — for

@@ -15,7 +15,7 @@ exercised by the PHPUnit suite against the real native library.
 | Header removal | ✅ | `->removeHeader(field, name)` | — |
 | Notes | ✅ | `->note()` / `$server->note()` | — |
 | Strict request matching | ✅ | `->strictHeaders()` | — |
-| JSON request-body matching (semantic, opt-in) | ✅ | `->matchJsonBody()` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | `->prettyJson()` on playback | — |
 | Reusable / order-independent matching (opt-in) | ✅ | `->matchMultiple()` | — |
 | Match on a specific request header (opt-in) | ✅ | `->matchHeader($name)` | — |
 | Static-content bypass | ✅ | `->staticContent(mount, dir)` | — |

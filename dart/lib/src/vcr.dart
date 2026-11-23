@@ -401,8 +401,8 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   final List<(VcrField, String, String)> _unredactions = [];
   final List<(VcrField, String, String, bool)> _substitutions = [];
   bool _strictHeaders = false;
-  bool _matchJsonBody = false;
-  bool _matchXmlBody = false;
+  int _prettyJson = 0;
+  int _prettyXml = 0;
   bool _matchMultiple = false;
   (int, int)? _playbackRange;
   final List<String> _matchHeaders = [];
@@ -417,23 +417,19 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
     return this;
   }
 
-  /// Opt in to matching request bodies by semantic JSON equality (key order /
-  /// whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back to
-  /// byte-exact.
-  PlaybackBuilder matchJsonBody([bool on = true]) {
-    _matchJsonBody = on;
+  /// Match JSON request bodies by canonical form (key order / whitespace
+  /// ignored), as recording with the same option writes them; serve tape
+  /// responses as written. Non-JSON bodies stay byte-exact. 0 turns it off.
+  PlaybackBuilder prettyJson([int indent = 2]) {
+    _prettyJson = indent;
     return this;
   }
 
-  /// Match JSON requests by canonical form; serve tape responses as written.
-  PlaybackBuilder prettyJson([int indent = 2]) => matchJsonBody(indent > 0);
-
-  /// Match XML requests by canonical form; serve tape responses as written.
-  PlaybackBuilder prettyXml([int indent = 2]) => matchXmlBody(indent > 0);
-
-  /// Compatibility alias for XML layout matching; malformed bodies stay byte-exact.
-  PlaybackBuilder matchXmlBody([bool on = true]) {
-    _matchXmlBody = on;
+  /// Match XML request bodies by canonical form (attribute order /
+  /// insignificant whitespace ignored); serve tape responses as written.
+  /// Non-XML bodies stay byte-exact. 0 turns it off.
+  PlaybackBuilder prettyXml([int indent = 2]) {
+    _prettyXml = indent;
     return this;
   }
 
@@ -486,8 +482,8 @@ class PlaybackBuilder extends _BuilderBase<PlaybackBuilder> {
   void _applyConfig(Pointer<Void> handle) {
     super._applyConfig(handle);
     if (_strictHeaders) Native.setStrictHeaders(handle, 1);
-    if (_matchJsonBody) Native.setMatchJsonBody(handle, 1);
-    if (_matchXmlBody) Native.setMatchXmlBody(handle, 1);
+    if (_prettyJson > 0) Native.setPrettyJson(handle, _prettyJson);
+    if (_prettyXml > 0) Native.setPrettyXml(handle, _prettyXml);
     if (_matchMultiple) Native.setMatchMultiple(handle, 1);
     final range = _playbackRange;
     if (range != null) {

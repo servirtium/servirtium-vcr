@@ -18,7 +18,7 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by
 | Header removal | ✅ | ✅ | `.RemoveHeader(field, name)` | ✅ |
 | Notes | ✅ | ✅ | `.Note(…)` / `VcrServer.Note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.StrictHeaders()` | ✅ pass + fail |
-| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.MatchJsonBody()` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.PrettyJson()` on playback | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `.MatchMultiple()` | — |
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.MatchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.StaticContent(mount, dir)` | ✅ |

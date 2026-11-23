@@ -112,7 +112,7 @@ Vcr.record(tape, upstream).prettyXml(2).start(); // pretty-print recorded XML bo
 > those must be on the recorded block, or dropped via
 > `removeHeader(VcrField.requestHeaders, ...)`.
 
-> Note: `matchJsonBody()` is an opt-in request-body matcher that compares by
+> Note: `prettyJson()` on playback is an opt-in request-body matcher that compares by
 > semantic JSON equality (object key order and insignificant whitespace
 > ignored, array order significant); non-JSON bodies fall back to byte-exact.
 

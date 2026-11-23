@@ -151,7 +151,7 @@ if (vcr.lastKind !== VcrOutcome.Ok) throw new Error(vcr.lastError)
 > match (`HeaderUnexpected`). Drop them with
 > `removeHeader(VcrField.RequestHeaders, name)` — see `src/playback-match.test.ts`.
 
-For request bodies, `.matchJsonBody()` opts into semantic JSON comparison —
+For request bodies, `.prettyJson()` on playback opts into semantic JSON comparison —
 object key order and insignificant whitespace are ignored (array order still
 matters), and non-JSON bodies fall back to byte-exact matching.
 

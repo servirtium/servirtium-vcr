@@ -19,8 +19,8 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
 
     private final List<Substitution> substitutions = new ArrayList<>();
     private boolean strictHeaders;
-    private boolean matchJsonBody;
-    private boolean matchXmlBody;
+    private int prettyJson;
+    private int prettyXml;
     private boolean matchMultiple;
     private int rangeFrom = -1;
     private int rangeTo = -1;
@@ -54,35 +54,28 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
     }
 
     /**
-     * Opt in to matching request bodies by <em>semantic</em> JSON equality (key
-     * order and insignificant whitespace ignored) instead of byte-for-byte.
-     * Non-JSON bodies fall back to the byte-exact comparison, so this never
-     * loosens matching for non-JSON payloads.
+     * Match JSON request bodies by canonical form (key order and insignificant
+     * whitespace ignored), as recording with the same option writes them;
+     * serve tape responses as written. Non-JSON bodies stay byte-exact.
      */
-    public PlaybackBuilder matchJsonBody() {
-        return matchJsonBody(true);
-    }
+    public PlaybackBuilder prettyJson() { return prettyJson(2); }
 
-    public PlaybackBuilder matchJsonBody(boolean on) {
-        this.matchJsonBody = on;
+    /** As {@link #prettyJson()}; {@code indent} 0 turns it off. */
+    public PlaybackBuilder prettyJson(int indent) {
+        this.prettyJson = indent;
         return this;
     }
 
-    /** Match JSON requests by canonical form; serve tape responses as written. */
-    public PlaybackBuilder prettyJson() { return prettyJson(2); }
-    public PlaybackBuilder prettyJson(int indent) { return matchJsonBody(indent > 0); }
-
-    /** Match XML requests by canonical form; serve tape responses as written. */
+    /**
+     * Match XML request bodies by canonical form (attribute order and
+     * insignificant whitespace ignored; element order significant); serve tape
+     * responses as written. Non-XML bodies stay byte-exact.
+     */
     public PlaybackBuilder prettyXml() { return prettyXml(2); }
-    public PlaybackBuilder prettyXml(int indent) { return matchXmlBody(indent > 0); }
 
-    /** Compatibility alias for XML layout matching; malformed bodies stay byte-exact. */
-    public PlaybackBuilder matchXmlBody() {
-        return matchXmlBody(true);
-    }
-
-    public PlaybackBuilder matchXmlBody(boolean on) {
-        this.matchXmlBody = on;
+    /** As {@link #prettyXml()}; {@code indent} 0 turns it off. */
+    public PlaybackBuilder prettyXml(int indent) {
+        this.prettyXml = indent;
         return this;
     }
 
@@ -157,11 +150,11 @@ public final class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
             if (strictHeaders) {
                 NativeMethods.SET_STRICT_HEADERS.invokeExact(handle, 1);
             }
-            if (matchJsonBody) {
-                NativeMethods.SET_MATCH_JSON_BODY.invokeExact(handle, 1);
+            if (prettyJson > 0) {
+                NativeMethods.SET_PRETTY_JSON.invokeExact(handle, prettyJson);
             }
-            if (matchXmlBody) {
-                NativeMethods.SET_MATCH_XML_BODY.invokeExact(handle, 1);
+            if (prettyXml > 0) {
+                NativeMethods.SET_PRETTY_XML.invokeExact(handle, prettyXml);
             }
             if (matchMultiple) {
                 NativeMethods.SET_MATCH_MULTIPLE.invokeExact(handle, 1);

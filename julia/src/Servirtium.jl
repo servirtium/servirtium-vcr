@@ -35,7 +35,7 @@ export Vcr, VcrError, Field, Outcome,
     volatile_rule, volatile_bind, volatile_profile, volatile_markers, volatile_report, redact_whole_tape, remove_header,
     match_header, note, static_content, untaped,
     strict_ignore_common_headers, ignore_volatile_headers, set_strict_headers,
-    set_match_json_body, set_match_xml_body, set_match_multiple,
+    set_match_multiple,
     indent_code_blocks, emphasize_http_verbs, set_rewrite_upstream_base, set_pretty_xml,
     set_pretty_json, get_pretty_json,
     remove_transport_headers, remove_cloud_headers,
@@ -471,21 +471,6 @@ ignore_volatile_headers(vcr::Vcr) =
 
 set_strict_headers(vcr::Vcr, on::Bool) =
     ccall((:aether_vcr_embed_set_strict_headers, LIB), Cvoid,
-          (Ptr{Cvoid}, Cint), alive(vcr), on ? 1 : 0)
-
-"""Opt-in: a request body that differs byte-for-byte gets a second chance at
-semantic JSON equality (key order + whitespace ignored, array order
-significant). A non-JSON body always falls back to the byte-exact verdict."""
-set_match_json_body(vcr::Vcr, on::Bool) =
-    ccall((:aether_vcr_embed_set_match_json_body, LIB), Cvoid,
-          (Ptr{Cvoid}, Cint), alive(vcr), on ? 1 : 0)
-
-"""Opt-in: a request body that differs byte-for-byte gets a second chance at
-semantic XML equality (attribute order + insignificant whitespace ignored;
-element order significant) — the SOAP/XML twin of `set_match_json_body`. A
-non-XML body always falls back to the byte-exact verdict."""
-set_match_xml_body(vcr::Vcr, on::Bool) =
-    ccall((:aether_vcr_embed_set_match_xml_body, LIB), Cvoid,
           (Ptr{Cvoid}, Cint), alive(vcr), on ? 1 : 0)
 
 """Opt-in: search ALL interactions for one that fits and replay it WITHOUT

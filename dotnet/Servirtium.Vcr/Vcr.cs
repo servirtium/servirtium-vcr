@@ -363,8 +363,8 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     private readonly List<(VcrResponseField field, string pattern, string replacement, bool required)> _substitutions = new();
     private readonly List<string> _matchHeaders = new();
     private bool _strictHeaders;
-    private bool _matchJsonBody;
-    private bool _matchXmlBody;
+    private int _prettyJson;
+    private int _prettyXml;
     private bool _matchMultiple;
     private (int from, int to)? _playbackRange;
 
@@ -383,34 +383,29 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     }
 
     /// <summary>
-    /// Opt in to matching request bodies by semantic JSON equality (key
-    /// order / whitespace ignored) instead of byte-for-byte. Non-JSON
-    /// bodies fall back to byte-exact.
+    /// Match JSON request bodies by canonical form (key order and
+    /// insignificant whitespace ignored), as recording with the same option
+    /// writes them; serve tape responses as written. Non-JSON bodies stay
+    /// byte-exact. <paramref name="indent"/> 0 turns it off.
     /// </summary>
-    public PlaybackBuilder MatchJsonBody(bool on = true)
+    /// <param name="indent">Spaces per level the tape was recorded with; any value above 0 turns canonical matching on.</param>
+    public PlaybackBuilder PrettyJson(int indent = 2)
     {
-        _matchJsonBody = on;
+        _prettyJson = indent;
         return this;
     }
 
-    /// <summary>Match JSON requests by their shared canonical forms; serve tape responses as written.</summary>
-    public PlaybackBuilder PrettyJson(int indent = 2) => MatchJsonBody(indent > 0);
-
-    /// <summary>Match XML request bodies using the shared layout canonicalizer.
-    /// Responses are served exactly as written in the tape.</summary>
-    public PlaybackBuilder PrettyXml(int indent = 2) => MatchXmlBody(indent > 0);
-
     /// <summary>
-    /// Opt in to matching request bodies by semantic XML equality (attribute
-    /// order and insignificant whitespace ignored; element order significant)
-    /// instead of byte-for-byte — the SOAP/XML twin of <see cref="MatchJsonBody"/>.
-    /// Non-XML bodies fall back to byte-exact. A chosen volatile element (a
-    /// WS-Addressing MessageID) is a <see cref="VcrBuilderBase{TSelf}.VolatileRule"/>
-    /// rule; this closes the key-order / indentation gap.
+    /// Match XML request bodies by canonical form (attribute order and
+    /// insignificant whitespace ignored; element order significant); serve
+    /// tape responses as written. Non-XML bodies stay byte-exact. A chosen
+    /// volatile element (a WS-Addressing MessageID) is a
+    /// <see cref="VcrBuilderBase{TSelf}.VolatileRule"/> rule.
     /// </summary>
-    public PlaybackBuilder MatchXmlBody(bool on = true)
+    /// <param name="indent">Spaces per level the tape was recorded with; any value above 0 turns canonical matching on.</param>
+    public PlaybackBuilder PrettyXml(int indent = 2)
     {
-        _matchXmlBody = on;
+        _prettyXml = indent;
         return this;
     }
 
@@ -529,8 +524,8 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     {
         base.ApplyConfig(handle);
         if (_strictHeaders) NativeMethods.SetStrictHeaders(handle, 1);
-        if (_matchJsonBody) NativeMethods.SetMatchJsonBody(handle, 1);
-        if (_matchXmlBody) NativeMethods.SetMatchXmlBody(handle, 1);
+        if (_prettyJson > 0) NativeMethods.SetPrettyJson(handle, _prettyJson);
+        if (_prettyXml > 0) NativeMethods.SetPrettyXml(handle, _prettyXml);
         if (_matchMultiple) NativeMethods.SetMatchMultiple(handle, 1);
         foreach (string name in _matchHeaders)
         {

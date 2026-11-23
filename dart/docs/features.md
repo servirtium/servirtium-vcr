@@ -20,7 +20,7 @@ exercised by `dart test` against the real native library.
 | Stable order (sorted JSON keys / arrays, response headers) | ✅ | `.sortJsonKeys()` / `.sortJsonArray(path, by)` / `.sortJsonArrayAt(re, path, by)` / `.sortResponseHeaders()` / `.sortHeaderValue(name)` | ✅ |
 | Playback range (replay interactions from..to) | ✅ | `.playbackRange(from, to)` / `server.setPlaybackRange(from, to)` | ✅ |
 | Strict request matching | ✅ | `.strictHeaders()` | — |
-| JSON request-body matching (semantic, opt-in) | ✅ | `.matchJsonBody()` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | `.prettyJson()` on playback | — |
 | Reusable / order-independent matching (opt-in) | ✅ | `.matchMultiple()` | — |
 | Match on a specific request header (opt-in) | ✅ | `.matchHeader(name)` | — |
 | Static-content bypass | ✅ | `.staticContent(mount, dir)` | — |

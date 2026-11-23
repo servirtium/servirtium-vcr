@@ -258,8 +258,8 @@ module Servirtium
       @unredactions = []
       @substitutions = []
       @strict_headers = false
-      @match_json_body = false
-      @match_xml_body = false
+      @pretty_json = 0
+      @pretty_xml = 0
       @match_multiple = false
       @match_headers = []
       @playback_range = nil
@@ -278,27 +278,19 @@ module Servirtium
       self
     end
 
-    # Opt in to matching request bodies by semantic JSON equality (key order /
-    # whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back
-    # to byte-exact.
-    def match_json_body(on: true)
-      @match_json_body = on
+    # Match JSON request bodies by canonical form (key order / whitespace
+    # ignored), as recording with the same option writes them; serve tape
+    # responses as written. Non-JSON bodies stay byte-exact. 0 turns it off.
+    def pretty_json(indent = 2)
+      @pretty_json = indent
       self
     end
 
-    # Match JSON requests by canonical form; serve tape responses as written.
-    def pretty_json(indent = 2)
-      match_json_body(on: indent > 0)
-    end
-
-    # Match XML requests by canonical form; serve tape responses as written.
+    # Match XML request bodies by canonical form (attribute order /
+    # insignificant whitespace ignored); serve tape responses as written.
+    # Non-XML bodies stay byte-exact. 0 turns it off.
     def pretty_xml(indent = 2)
-      match_xml_body(on: indent > 0)
-    end
-
-    # Compatibility alias for XML layout matching; malformed bodies stay byte-exact.
-    def match_xml_body(on: true)
-      @match_xml_body = on
+      @pretty_xml = indent
       self
     end
 
@@ -366,8 +358,8 @@ module Servirtium
     def apply_config(handle)
       super
       Native.call(:set_strict_headers, handle, 1) if @strict_headers
-      Native.call(:set_match_json_body, handle, 1) if @match_json_body
-      Native.call(:set_match_xml_body, handle, 1) if @match_xml_body
+      Native.call(:set_pretty_json, handle, @pretty_json) if @pretty_json.positive?
+      Native.call(:set_pretty_xml, handle, @pretty_xml) if @pretty_xml.positive?
       Native.call(:set_match_multiple, handle, 1) if @match_multiple
       @match_headers.each do |name|
         Native.call(:match_header, handle, name)

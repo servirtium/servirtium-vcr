@@ -142,8 +142,8 @@ Leaving out the side means both.
 
 ### What a template matches, exactly
 
-- **The canonical form.** With `pretty_xml`/`match_xml_body` or
-  `pretty_json`/`match_json_body` on, playback canonicalizes both bodies
+- **The canonical form.** With `pretty_xml` or
+  `pretty_json` on, playback canonicalizes both bodies
   first (`docs/pretty-xml.md`, `docs/pretty-json.md`), then applies the
   rules, then compares; recording applies them to the formatted body it
   writes. Write templates as one line of the canonical form shows the text.

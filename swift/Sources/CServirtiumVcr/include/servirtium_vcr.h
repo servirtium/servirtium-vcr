@@ -69,8 +69,6 @@ char *aether_vcr_embed_untaped(void *h, const char *path);
 char *aether_vcr_embed_strict_ignore_common_headers(void *h);
 char *aether_vcr_embed_ignore_volatile_headers(void *h);
 void  aether_vcr_embed_set_strict_headers(void *h, int on);
-void  aether_vcr_embed_set_match_json_body(void *h, int on);
-void  aether_vcr_embed_set_match_xml_body(void *h, int on);
 void  aether_vcr_embed_set_match_multiple(void *h, int on);
 void  aether_vcr_embed_indent_code_blocks(void *h);
 void  aether_vcr_embed_emphasize_http_verbs(void *h);

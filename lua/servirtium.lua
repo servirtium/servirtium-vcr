@@ -355,29 +355,19 @@ function PlaybackBuilder:strict_headers()
     return self
 end
 
--- Opt in to matching request bodies by semantic JSON equality (key order /
--- whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back to
--- byte-exact.
-function PlaybackBuilder:match_json_body()
-    self._match_json_body = true
-    return self
-end
-
--- Match JSON requests by canonical form; serve tape responses as written.
+-- Match JSON request bodies by canonical form (key order / whitespace
+-- ignored), as recording with the same option writes them; serve tape
+-- responses as written. Non-JSON bodies stay byte-exact; 0 turns it off.
 function PlaybackBuilder:pretty_json(indent)
-    self._match_json_body = (indent or 2) > 0
+    self._pretty_json = indent or 2
     return self
 end
 
--- Match XML requests by canonical form; serve tape responses as written.
+-- Match XML request bodies by canonical form (attribute order / insignificant
+-- whitespace ignored); serve tape responses as written. Non-XML bodies stay
+-- byte-exact; 0 turns it off.
 function PlaybackBuilder:pretty_xml(indent)
-    self._match_xml_body = (indent or 2) > 0
-    return self
-end
-
--- Compatibility alias for XML layout matching; malformed bodies stay byte-exact.
-function PlaybackBuilder:match_xml_body()
-    self._match_xml_body = true
+    self._pretty_xml = indent or 2
     return self
 end
 
@@ -529,11 +519,11 @@ function PlaybackBuilder:start()
         if self._strict_headers then
             C.set_strict_headers(handle, true)
         end
-        if self._match_json_body then
-            C.set_match_json_body(handle, true)
+        if self._pretty_json > 0 then
+            C.set_pretty_json(handle, self._pretty_json)
         end
-        if self._match_xml_body then
-            C.set_match_xml_body(handle, true)
+        if self._pretty_xml > 0 then
+            C.set_pretty_xml(handle, self._pretty_xml)
         end
         if self._match_multiple then
             C.set_match_multiple(handle, true)
@@ -911,8 +901,8 @@ function M.playback(tapePath, opts)
     b._unredactions = {}
     b._substitutions = {}
     b._strict_headers = false
-    b._match_json_body = false
-    b._match_xml_body = false
+    b._pretty_json = 0
+    b._pretty_xml = 0
     b._match_multiple = false
     b._match_headers = {}
     if opts then

@@ -25,9 +25,9 @@ final class PlaybackBuilder extends VcrBuilderBase
 
     private bool $strictHeadersOn = false;
 
-    private bool $matchJsonBodyOn = false;
+    private int $prettyJsonIndent = 0;
 
-    private bool $matchXmlBodyOn = false;
+    private int $prettyXmlIndent = 0;
 
     private bool $matchMultipleOn = false;
 
@@ -55,33 +55,25 @@ final class PlaybackBuilder extends VcrBuilderBase
     }
 
     /**
-     * Opt in to matching request bodies by semantic JSON equality (key order /
-     * whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back
-     * to byte-exact.
+     * Match JSON request bodies by canonical form (key order / whitespace
+     * ignored), as recording with the same option writes them; serve tape
+     * responses as written. Non-JSON bodies stay byte-exact. 0 turns it off.
      */
-    public function matchJsonBody(bool $on = true): static
+    public function prettyJson(int $indent = 2): static
     {
-        $this->matchJsonBodyOn = $on;
+        $this->prettyJsonIndent = $indent;
 
         return $this;
     }
 
-    /** Match JSON requests by canonical form; serve tape responses as written. */
-    public function prettyJson(int $indent = 2): static
-    {
-        return $this->matchJsonBody($indent > 0);
-    }
-
-    /** Match XML requests by canonical form; serve tape responses as written. */
+    /**
+     * Match XML request bodies by canonical form (attribute order /
+     * insignificant whitespace ignored); serve tape responses as written.
+     * Non-XML bodies stay byte-exact. 0 turns it off.
+     */
     public function prettyXml(int $indent = 2): static
     {
-        return $this->matchXmlBody($indent > 0);
-    }
-
-    /** Compatibility alias for XML layout matching; malformed bodies stay byte-exact. */
-    public function matchXmlBody(bool $on = true): static
-    {
-        $this->matchXmlBodyOn = $on;
+        $this->prettyXmlIndent = $indent;
 
         return $this;
     }
@@ -157,11 +149,11 @@ final class PlaybackBuilder extends VcrBuilderBase
         if ($this->strictHeadersOn) {
             $lib->aether_vcr_embed_set_strict_headers($handle, 1);
         }
-        if ($this->matchJsonBodyOn) {
-            $lib->aether_vcr_embed_set_match_json_body($handle, 1);
+        if ($this->prettyJsonIndent > 0) {
+            $lib->aether_vcr_embed_set_pretty_json($handle, $this->prettyJsonIndent);
         }
-        if ($this->matchXmlBodyOn) {
-            $lib->aether_vcr_embed_set_match_xml_body($handle, 1);
+        if ($this->prettyXmlIndent > 0) {
+            $lib->aether_vcr_embed_set_pretty_xml($handle, $this->prettyXmlIndent);
         }
         if ($this->matchMultipleOn) {
             $lib->aether_vcr_embed_set_match_multiple($handle, 1);

@@ -120,7 +120,7 @@ main() {
     println("=== VCR pretty_xml recording option ===\n")
     OUT = flush_out_path()
 
-    // ---- 1. on + match_xml_body: both bodies indented ----
+    // ---- 1. on: both bodies indented ----
     println("Test 1: pretty_xml(2) indents XML request and response bodies")
     vh = vcr.open_offline()
     vcr.set_pretty_xml_h(vh, 2)

@@ -96,8 +96,6 @@ extern char *aether_vcr_embed_static_content(void *h, const char *mount,
                                              const char *dir);
 extern char *aether_vcr_embed_untaped(void *h, const char *path);
 extern void  aether_vcr_embed_set_strict_headers(void *h, int on);
-extern void  aether_vcr_embed_set_match_json_body(void *h, int on);
-extern void  aether_vcr_embed_set_match_xml_body(void *h, int on);
 extern char *aether_vcr_embed_set_tls(void *h, const char *cert, const char *key);
 extern char *aether_vcr_embed_set_tls_pem(void *h, const char *cert_pem, const char *key_pem);
 extern char *aether_vcr_embed_last_tls_protocol(void *h);
@@ -521,24 +519,6 @@ static int l_set_strict_headers(lua_State *L)
     return 0;
 }
 
-/* set_match_json_body(handle, on) */
-static int l_set_match_json_body(lua_State *L)
-{
-    void *h = check_handle(L, 1);
-    int on = lua_toboolean(L, 2);
-    aether_vcr_embed_set_match_json_body(h, on);
-    return 0;
-}
-
-/* set_match_xml_body(handle, on) */
-static int l_set_match_xml_body(lua_State *L)
-{
-    void *h = check_handle(L, 1);
-    int on = lua_toboolean(L, 2);
-    aether_vcr_embed_set_match_xml_body(h, on);
-    return 0;
-}
-
 /* ignore_volatile_headers(handle) -> string (empty == ok) */
 static int l_ignore_volatile_headers(lua_State *L)
 {
@@ -865,8 +845,6 @@ static const luaL_Reg servirtium_funcs[] = {
     {"note",                            l_note},
     {"untaped",                         l_untaped},
     {"set_strict_headers",              l_set_strict_headers},
-    {"set_match_json_body",             l_set_match_json_body},
-    {"set_match_xml_body",              l_set_match_xml_body},
     {"ignore_volatile_headers",         l_ignore_volatile_headers},
     {"set_tls",                         l_set_tls},
     {"set_tls_pem",                     l_set_tls_pem},

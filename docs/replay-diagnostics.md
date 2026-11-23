@@ -171,8 +171,8 @@ every section of the report (path, headers, body, rules fired, bindings):
 "Normalized" means what matching compares: playback unredactions applied,
 volatile rules applied with the tokens bound so far, a slot no token
 stands for yet shown as `{{name-?}}` (and matching any unbound token of
-its name), and the canonical forms of `pretty_xml`/`match_xml_body` and
-`pretty_json`/`match_json_body` when those are on.
+its name), and the canonical forms of `pretty_xml` and
+`pretty_json` when those are on.
 
 ## The report, section by section
 

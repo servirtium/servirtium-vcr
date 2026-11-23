@@ -209,8 +209,6 @@ def _ensure_loaded() -> None:
     g["static_content"] = _decl("aether_vcr_embed_static_content", _CSTR, [_HANDLE, ctypes.c_char_p, ctypes.c_char_p])
     g["untaped"] = _decl("aether_vcr_embed_untaped", _CSTR, [_HANDLE, ctypes.c_char_p])
     g["set_strict_headers"] = _decl("aether_vcr_embed_set_strict_headers", None, [_HANDLE, ctypes.c_int])
-    g["set_match_json_body"] = _decl("aether_vcr_embed_set_match_json_body", None, [_HANDLE, ctypes.c_int])
-    g["set_match_xml_body"] = _decl("aether_vcr_embed_set_match_xml_body", None, [_HANDLE, ctypes.c_int])
     g["set_match_multiple"] = _decl("aether_vcr_embed_set_match_multiple", None, [_HANDLE, ctypes.c_int])
     g["match_header"] = _decl("aether_vcr_embed_match_header", None, [_HANDLE, ctypes.c_char_p])
     g["clear_match_headers"] = _decl("aether_vcr_embed_clear_match_headers", None, [_HANDLE])

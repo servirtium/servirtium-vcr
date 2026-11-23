@@ -263,14 +263,6 @@ export const setStrictHeaders = lazy(
   'void aether_vcr_embed_set_strict_headers(void* server, int on)',
 )
 
-export const setMatchJsonBody = lazy(
-  'void aether_vcr_embed_set_match_json_body(void* server, int on)',
-)
-
-export const setMatchXmlBody = lazy(
-  'void aether_vcr_embed_set_match_xml_body(void* server, int on)',
-)
-
 export const setMatchMultiple = lazy(
   'void aether_vcr_embed_set_match_multiple(void* server, int on)',
 )

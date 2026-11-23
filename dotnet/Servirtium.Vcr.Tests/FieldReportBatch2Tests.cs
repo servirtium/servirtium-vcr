@@ -19,7 +19,7 @@ namespace Servirtium.Vcr.Tests;
 ///  #6  IgnoreVolatileHeaders() drops the .NET tracing trio before matching;
 ///  #7  Placeholder() fills a marker in both directions;
 ///  #9  RequireLoopbackUpstream() refuses a non-loopback upstream;
-///  #10 MatchXmlBody() matches an attribute-reordered SOAP envelope.
+///  #10 PrettyXml() on playback matches an attribute-reordered SOAP envelope.
 /// (#8 CreateClientHandler is exercised by CreateClientHandlerTests.)
 /// </summary>
 public class FieldReportBatch2Tests : IDisposable
@@ -104,10 +104,10 @@ public class FieldReportBatch2Tests : IDisposable
     // ---- #10: XML-semantic body matching -----------------------------------
 
     [Fact]
-    public async Task MatchXmlBody_accepts_attribute_reordered_soap()
+    public async Task PrettyXml_accepts_attribute_reordered_soap()
     {
         string tape = Tape("soap.md", SoapTape());
-        using var vcr = Vcr.Playback(tape).Port(0).MatchXmlBody().Start();
+        using var vcr = Vcr.Playback(tape).Port(0).PrettyXml().Start();
         using var client = new HttpClient { BaseAddress = new Uri(vcr.BaseUrl) };
 
         // Same envelope, attributes reordered + whitespace added -> byte-different.

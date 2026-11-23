@@ -22,7 +22,7 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Credential redaction preset | ✅ | ✅ | `.RedactCredentials()` / `.RedactCredentialHeader(name)` | ✅ |
 | License notice / upstream CA file / pretty JSON | ✅ | ✅ | `.AddLicenseNotice(text)` / `.UpstreamCafile(path)` / `.PrettyJSON(n)` | ✅ notice + pretty JSON |
 | Strict request matching | ✅ | ✅ | `.StrictHeaders()` | ✅ pass + fail |
-| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.MatchJSONBody()` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.PrettyJSON(2)` on playback | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `.MatchMultiple()` | — |
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.MatchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.StaticContent(mount, dir)` | ✅ |

@@ -45,13 +45,16 @@ Both `Vcr.Playback(tape)` and `Vcr.Record(tape, upstream)` return a builder;
   `Bind(name, value)`.
 - `Tls(cert, key)` / `TlsFromPem(...)`: serve https.
 
-Playback only: `MatchMultiple()`, `StrictHeaders()`, `MatchJsonBody()`,
-`MatchXmlBody()`, `MatchHeader(name)`, `PlaybackRange(from, to)`,
+Both: `PrettyJson()` and `PrettyXml()` (recording writes the bodies indented;
+playback matches request bodies by canonical form).
+
+Playback only: `MatchMultiple()`, `StrictHeaders()`, `MatchHeader(name)`,
+`PlaybackRange(from, to)`,
 `Unredact(VcrField, pattern, value)` (request side) and
 `Substitute(VcrResponseField, pattern, value)` (the replayed response).
 
 Record only: `Redact(...)`, `RedactHeader`, `RedactQueryParam`,
-`RedactJsonField`, `RedactWholeTape`, `PrettyJson()`, `PrettyXml()`,
+`RedactJsonField`, `RedactWholeTape`,
 `AddLicenseNotice(text)`, `FailIfChanged()`, `RequireLoopbackUpstream()`,
 `RewriteUpstreamBase()` (a service that hands out its own absolute URLs keeps
 the client on the recorder; the tape holds `{{baseUrl}}`).

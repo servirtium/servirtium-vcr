@@ -165,8 +165,8 @@ if (vcr.LastKind != VcrOutcome.Ok)
     throw new Exception(vcr.LastError);   // e.g. "<name> request header ..."
 ```
 
-Opt in to `.MatchJsonBody()` alongside (or instead of) `StrictHeaders()` to
-match request bodies by semantic JSON equality — object key order and
+Opt in to `.PrettyJson()` on playback alongside (or instead of)
+`StrictHeaders()` to match request bodies by canonical JSON equality — object key order and
 insignificant whitespace are ignored (array order still matters), and non-JSON
 bodies fall back to byte-exact matching.
 

@@ -18,7 +18,7 @@ noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Whole-tape redact (uncorrelated → constant) | ✅ | ✅ | `.redactWholeTape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `.note(…)` / `Server.note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.strictHeaders()` | ✅ pass + fail |
-| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.matchJsonBody()` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.prettyJson(2)` on playback | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `.matchMultiple()` | — |
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.matchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.staticContent(mount, dir)` | ✅ |

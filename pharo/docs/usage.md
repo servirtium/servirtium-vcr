@@ -140,7 +140,7 @@ comparison on every interaction; mismatches surface via the diagnostics:
     server lastKind = #ok ifFalse: [ Error signal: server lastError ] ].
 ```
 
-Add `matchJsonBody` to the builder to match request bodies by semantic JSON
+Add `prettyJson` to the builder to match request bodies by semantic JSON
 equality — object key order and insignificant whitespace are ignored (array
 order still matters), and non-JSON bodies fall back to byte-exact matching.
 

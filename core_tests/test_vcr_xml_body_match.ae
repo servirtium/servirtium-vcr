@@ -5,12 +5,12 @@
 // XML document. Cases, one process (cursor reset between them so each retries
 // interaction 0):
 //
-//   A. match_xml_body OFF (default): an attribute-reordered + re-indented but
+//   A. pretty_xml OFF (default): an attribute-reordered + re-indented but
 //      semantically equal body must still 599 — libservirtium_vcr stays byte-exact.
-//   B. match_xml_body ON: the same reordered/re-spaced body now matches (200).
-//   C. match_xml_body ON but ELEMENT order changed: must still 599 — element
+//   B. pretty_xml ON: the same reordered/re-spaced body now matches (200).
+//   C. pretty_xml ON but ELEMENT order changed: must still 599 — element
 //      order IS significant in XML, so this is a real difference.
-//   D. match_xml_body ON but a NON-XML body: must still 599 — unparseable
+//   D. pretty_xml ON but a NON-XML body: must still 599 — unparseable
 //      bodies fall back to the byte-exact verdict, never loosened.
 
 import core.vcr
@@ -69,14 +69,14 @@ main() {
     println("PASS Case A: byte-exact default rejects attr-reordered / re-indented XML (599)")
 
     // Case B — opt-in on: the same body now matches semantically.
-    vcr.set_match_xml_body_h(raw, 1)
+    vcr.set_pretty_xml_h(raw, 2)
     vcr.clear_last_error_h(raw)
     vcr.reset_cursor_h(raw)
     statusB = post_xml(url, REORDERED)
     if statusB != 200 {
         fail("Case B (match on): expected 200 for XML-equal body, got ${statusB} (last_error='${vcr.last_error_h(raw)}')")
     }
-    println("PASS Case B: match_xml_body accepts attr-reordered / re-spaced XML (200)")
+    println("PASS Case B: pretty_xml accepts attr-reordered / re-spaced XML (200)")
 
     // Case C — opt-in on, but element content genuinely differs: still reject.
     vcr.clear_last_error_h(raw)

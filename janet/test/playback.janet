@@ -149,8 +149,7 @@
       (servirtium/indent-code-blocks vcr)
       (servirtium/emphasize-http-verbs vcr)
       (servirtium/set-rules-footer vcr true)
-      (servirtium/set-match-xml-body vcr true)
-      (servirtium/set-match-json-body vcr true)
+      (servirtium/set-pretty-json vcr 2)
       (each f [servirtium/clear-redactions
                servirtium/clear-unredactions servirtium/clear-header-removals
                servirtium/clear-static-content servirtium/clear-untaped

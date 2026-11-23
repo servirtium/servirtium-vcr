@@ -231,15 +231,6 @@ sv_str sv_set_upstream_cafile(sv_vcr *vcr, const char *path);
  * playback ignores it. */
 sv_str sv_add_license_notice(sv_vcr *vcr, const char *text);
 void sv_set_strict_headers(sv_vcr *vcr, int on);
-/* Opt-in: a request body that differs byte-for-byte gets a second chance at
- * semantic JSON equality (key order + whitespace ignored, array order
- * significant). A non-JSON body always falls back to the byte-exact verdict. */
-void sv_set_match_json_body(sv_vcr *vcr, int on);
-/* Opt-in: the SOAP/XML twin of sv_set_match_json_body — a byte-differing
- * request body gets a second chance at semantic XML equality (attribute order +
- * insignificant whitespace ignored; element order significant). A non-XML body
- * always falls back to the byte-exact verdict. */
-void sv_set_match_xml_body(sv_vcr *vcr, int on);
 /* Opt-in: search ALL interactions for one that fits and replay it WITHOUT
  * consuming it, so repeated and out-of-order requests both match. */
 void sv_set_match_multiple(sv_vcr *vcr, int on);

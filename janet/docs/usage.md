@@ -68,7 +68,6 @@ typo does not silently do nothing. Every option has an equivalent function
 | `:host` `:port` `:label` | string, int (0 = OS picks), string | (open arguments) |
 | `:native-lib` | path to the library | `set-library!` |
 | `:strict-headers` | bool | `set-strict-headers` |
-| `:match-json-body` / `:match-xml-body` | bool | `set-match-json-body` / `set-match-xml-body` |
 | `:match-multiple` | bool | `set-match-multiple` |
 | `:match-headers` | name or `[names]` | `match-header` |
 | `:strict-ignore-common-headers` | true | `strict-ignore-common-headers` |

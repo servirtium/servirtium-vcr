@@ -19,7 +19,7 @@ the binding's `test/*.janet` suite against the real native library, unless noted
 | Volatile values (`{{name-N}}`, [docs](../../docs/volatile-values.md)) / whole-tape redact | yes | yes | `:volatile-rules` `:volatile-binds` `:volatile-profile` `:volatile-markers` / `:redact-whole-tape` | yes |
 | Notes | yes | yes | `:notes` / `note` | yes |
 | Strict request matching | yes | yes | `:strict-headers` + `:strict-ignore-common-headers` | yes pass + fail |
-| JSON / XML request-body matching (semantic, opt-in) | yes | yes | `:match-json-body` / `:match-xml-body` | core probe |
+| JSON / XML request-body matching (canonical, opt-in) | yes | yes | `:pretty-json` / `:pretty-xml` on playback | core probe |
 | Reusable / order-independent matching (opt-in) | yes | yes | `:match-multiple` | yes |
 | Match on a specific request header (opt-in) | yes | yes | `:match-headers` / `match-header` | accepted |
 | Static-content bypass | yes | yes | `:static-content` | yes |

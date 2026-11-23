@@ -33,7 +33,6 @@ check(row: int, recorded: string, live: string, matches: int, enabled: int, mult
     p, err = vcr.open_playback(tape_path(), port)
     if err != "" { fail(err) }
     if enabled == 1 { vcr.set_pretty_json_h(p, 2) }
-    if enabled == 2 { vcr.set_match_json_body_h(p, 1) }
     vcr.set_match_multiple_h(p, multiple)
     if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
     req = client.request("QUERY", "http://127.0.0.1:${port}/json")
@@ -136,7 +135,6 @@ main() {
         check(50, "{\"x\":01}", "{\"x\":1}", 0, 1, multiple)
         check(51, "{\"x\":1} trailing", "{\"x\":1}", 0, 1, multiple)
         check(52, "{\"s\":\"literal\nnewline\"}", "{\"s\":\"literal\\nnewline\"}", 0, 1, multiple)
-        check(53, "{\"x\":1}", "{\"x\":1.0}", 1, 2, multiple)
     }
     println("PASS JSON matrix: QUERY bodies, exact data, ordered + reusable, canonical diagnostics, idempotency")
 }

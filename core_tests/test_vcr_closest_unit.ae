@@ -111,7 +111,7 @@ main() {
     p4, s4, _n4, _e4 = closest.xml_element_at("text", 2)
     eq_s(p4, "", "no element")
     eq_i(s4, -1, "no element start")
-    // Pretty-printed lines (PrettyXml / MatchXmlBody canonical form).
+    // Pretty-printed lines (the pretty_xml canonical form).
     pretty = "<r>\n  <a>1</a>\n  <b>two</b>\n</r>"
     p5, _s5, _n5, _e5 = closest.xml_element_at(pretty, string.index_of(pretty, "two"))
     eq_s(p5, "/r/b", "pretty")

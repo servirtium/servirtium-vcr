@@ -18,7 +18,7 @@ the real native library.
 | Header removal | ✅ | ✅ | `.remove_header(field, name)` | ✅ |
 | Notes | ✅ | ✅ | `.note(…)` / `VcrServer.note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.strict_headers()` | ✅ pass + fail |
-| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.match_json_body()` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.pretty_json()` on playback | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `.match_multiple()` | — |
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.match_header(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.static_content(mount, dir)` | ✅ |

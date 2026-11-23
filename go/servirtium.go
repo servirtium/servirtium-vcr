@@ -92,8 +92,6 @@ char*  aether_vcr_embed_note(void* server, const char* title, const char* body);
 char*  aether_vcr_embed_static_content(void* server, const char* mount_path, const char* fs_dir);
 char*  aether_vcr_embed_untaped(void* server, const char* path);
 void   aether_vcr_embed_set_strict_headers(void* server, int on);
-void   aether_vcr_embed_set_match_json_body(void* server, int on);
-void   aether_vcr_embed_set_match_xml_body(void* server, int on);
 void   aether_vcr_embed_set_match_multiple(void* server, int on);
 void   aether_vcr_embed_match_header(void* server, const char* name);
 void   aether_vcr_embed_indent_code_blocks(void* server);
@@ -446,8 +444,8 @@ type PlaybackBuilder struct {
 	secretResolver SecretResolver
 	baseBuilder
 	strictHeaders bool
-	matchJSONBody bool
-	matchXMLBody  bool
+	prettyJSON    int
+	prettyXML     int
 	matchMultiple bool
 	matchHeaders  []string
 	unredactions  []replacement
@@ -474,19 +472,15 @@ func (b *PlaybackBuilder) Label(label string) *PlaybackBuilder { b.label = label
 // Server.LastError.
 func (b *PlaybackBuilder) StrictHeaders() *PlaybackBuilder { b.strictHeaders = true; return b }
 
-// MatchJSONBody opts in to matching request bodies by semantic JSON equality
-// (key order / whitespace ignored) instead of byte-for-byte. Non-JSON bodies
-// fall back to byte-exact.
-func (b *PlaybackBuilder) MatchJSONBody() *PlaybackBuilder { b.matchJSONBody = true; return b }
+// PrettyJSON matches JSON request bodies by canonical form (key order /
+// whitespace ignored), as recording with the same option writes them; tape
+// responses are served as written. Non-JSON bodies stay byte-exact; 0 turns it off.
+func (b *PlaybackBuilder) PrettyJSON(indent int) *PlaybackBuilder { b.prettyJSON = indent; return b }
 
-// PrettyJSON matches JSON requests by canonical form; tape responses are served as written.
-func (b *PlaybackBuilder) PrettyJSON(indent int) *PlaybackBuilder { b.matchJSONBody = indent > 0; return b }
-
-// PrettyXML matches XML requests by canonical form; tape responses are served as written.
-func (b *PlaybackBuilder) PrettyXML(indent int) *PlaybackBuilder { b.matchXMLBody = indent > 0; return b }
-
-// MatchXMLBody is the matching-only alias; malformed bodies stay byte-exact.
-func (b *PlaybackBuilder) MatchXMLBody() *PlaybackBuilder { b.matchXMLBody = true; return b }
+// PrettyXML matches XML request bodies by canonical form (attribute order /
+// insignificant whitespace ignored); tape responses are served as written.
+// Non-XML bodies stay byte-exact; 0 turns it off.
+func (b *PlaybackBuilder) PrettyXML(indent int) *PlaybackBuilder { b.prettyXML = indent; return b }
 
 // IgnoreVolatileHeaders drops the per-request volatile headers modern clients
 // inject on every call (traceparent, tracestate, Request-Id, X-Request-Id,
@@ -645,11 +639,11 @@ func (b *PlaybackBuilder) applyConfig(handle unsafe.Pointer) error {
 	if b.strictHeaders {
 		C.aether_vcr_embed_set_strict_headers(handle, 1)
 	}
-	if b.matchJSONBody {
-		C.aether_vcr_embed_set_match_json_body(handle, 1)
+	if b.prettyJSON > 0 {
+		C.aether_vcr_embed_set_pretty_json(handle, C.int(b.prettyJSON))
 	}
-	if b.matchXMLBody {
-		C.aether_vcr_embed_set_match_xml_body(handle, 1)
+	if b.prettyXML > 0 {
+		C.aether_vcr_embed_set_pretty_xml(handle, C.int(b.prettyXML))
 	}
 	if b.matchMultiple {
 		C.aether_vcr_embed_set_match_multiple(handle, 1)

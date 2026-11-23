@@ -15,8 +15,6 @@ Vcr.Playback(tape).PrettyXml(2).Start();
 Other bindings use their usual spelling (`pretty_xml`, `prettyXml`, `PrettyXML`,
 or `set_pretty_xml`). The C ABI is
 `aether_vcr_embed_set_pretty_xml(handle, indent)` with a corresponding getter.
-The existing playback `MatchXmlBody(true)` switch remains a compatibility
-alias for XML layout matching; it uses exactly the same canonicalizer.
 JVM and CLR family bindings inherit their underlying Java/.NET APIs.
 
 ## Recording

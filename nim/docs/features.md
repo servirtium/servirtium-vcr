@@ -19,7 +19,7 @@ library, unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Whole-tape redact (uncorrelated volatiles → constant) | ✅ | ✅ | `redactWholeTape(pattern, repl)` | ✅ core probe |
 | Notes | ✅ | ✅ | `note(title, body)` (builder + running server) | ✅ |
 | Strict request matching | ✅ | ✅ | `setStrictHeaders(true)` | ✅ pass + fail |
-| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `setMatchJsonBody(true)` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `prettyJson(2)` on playback | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `setMatchMultiple(true)` | — |
 | Match on a specific request header (opt-in) | ✅ | ✅ | `matchHeader(name)` | — |
 | Static-content bypass | ✅ | ✅ | `staticContent(mount, dir)` | ✅ |

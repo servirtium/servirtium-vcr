@@ -69,8 +69,6 @@ extern char *aether_vcr_embed_match_header(sv_handle h, const char *name);
 extern void  aether_vcr_embed_strict_ignore_common_headers(sv_handle h);
 extern void  aether_vcr_embed_ignore_volatile_headers(sv_handle h);
 extern void  aether_vcr_embed_set_strict_headers(sv_handle h, int on);
-extern void  aether_vcr_embed_set_match_json_body(sv_handle h, int on);
-extern void  aether_vcr_embed_set_match_xml_body(sv_handle h, int on);
 extern void  aether_vcr_embed_set_match_multiple(sv_handle h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(sv_handle h);
 extern void  aether_vcr_embed_emphasize_http_verbs(sv_handle h);
@@ -495,14 +493,6 @@ void sv_ignore_volatile_headers(sv_vcr *vcr) {
 
 void sv_set_strict_headers(sv_vcr *vcr, int on) {
     if (vcr != NULL) aether_vcr_embed_set_strict_headers(vcr->h, on);
-}
-
-void sv_set_match_json_body(sv_vcr *vcr, int on) {
-    if (vcr != NULL) aether_vcr_embed_set_match_json_body(vcr->h, on);
-}
-
-void sv_set_match_xml_body(sv_vcr *vcr, int on) {
-    if (vcr != NULL) aether_vcr_embed_set_match_xml_body(vcr->h, on);
 }
 
 void sv_set_match_multiple(sv_vcr *vcr, int on) {

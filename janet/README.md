@@ -76,7 +76,7 @@ signatures are one table (`abi` in `servirtium/init.janet`), copied from
 (servirtium/diagnostics-json vcr) (servirtium/assert-no-mismatches vcr) (servirtium/test-context vcr "name")
 (servirtium/har-import har tape) (servirtium/har-export tape har)
 # configuration, as options or as functions: redact, unredact, substitute, remove-header,
-# match-header, set-strict-headers, set-match-json-body, set-match-multiple, static-content,
+# match-header, set-strict-headers, set-match-multiple, static-content,
 # untaped, note, volatile-rule, bind, volatile-profile, volatile-markers, redact-whole-tape, add-license-notice,
 # set-pretty-json, remove-transport-headers, remove-cloud-headers, redact-credentials,
 # redact-credential-header, set-upstream-cafile, set-tls, set-sort-json-keys, sort-json-array,

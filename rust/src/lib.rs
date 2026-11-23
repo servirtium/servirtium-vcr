@@ -154,8 +154,8 @@ impl Vcr {
             unredactions: Vec::new(),
             substitutions: Vec::new(),
             strict_headers: false,
-            match_json_body: false,
-            match_xml_body: false,
+            pretty_json: 0,
+            pretty_xml: 0,
             match_multiple: false,
             match_headers: Vec::new(),
             playback_range: None,
@@ -327,8 +327,8 @@ pub struct PlaybackBuilder {
     unredactions: Vec<(Field, String, String)>,
     substitutions: Vec<(Field, String, String, bool)>,
     strict_headers: bool,
-    match_json_body: bool,
-    match_xml_body: bool,
+    pretty_json: i32,
+    pretty_xml: i32,
     match_multiple: bool,
     match_headers: Vec<String>,
     playback_range: Option<(i32, i32)>,
@@ -442,29 +442,20 @@ impl PlaybackBuilder {
         self.strict_headers = true;
         self
     }
-    /// Opt in to matching request bodies by *semantic* JSON equality (key order
-    /// and insignificant whitespace ignored) instead of byte-for-byte. Non-JSON
-    /// bodies fall back to the byte-exact comparison, so this never loosens
-    /// matching for non-JSON payloads.
-    pub fn match_json_body(mut self) -> Self {
-        self.match_json_body = true;
-        self
-    }
-    /// Match JSON requests by canonical form; serve tape responses as written.
+    /// Match JSON request bodies by canonical form (key order and insignificant
+    /// whitespace ignored), as recording with the same option writes them;
+    /// serve tape responses as written. Non-JSON bodies stay byte-exact; 0
+    /// turns it off.
     pub fn pretty_json(mut self, indent: i32) -> Self {
-        self.match_json_body = indent > 0;
+        self.pretty_json = indent;
         self
     }
 
-    /// Match XML requests by canonical form; serve tape responses as written.
+    /// Match XML request bodies by canonical form (attribute order and
+    /// insignificant whitespace ignored; element order significant); serve tape
+    /// responses as written. Non-XML bodies stay byte-exact; 0 turns it off.
     pub fn pretty_xml(mut self, indent: i32) -> Self {
-        self.match_xml_body = indent > 0;
-        self
-    }
-
-    /// Compatibility alias for XML layout matching; malformed bodies stay byte-exact.
-    pub fn match_xml_body(mut self) -> Self {
-        self.match_xml_body = true;
+        self.pretty_xml = indent;
         self
     }
     /// Opt in to reusable, order-independent playback: matches any recorded
@@ -583,11 +574,11 @@ impl PlaybackBuilder {
         if self.strict_headers {
             unsafe { (n.set_strict_headers)(handle, 1) };
         }
-        if self.match_json_body {
-            unsafe { (n.set_match_json_body)(handle, 1) };
+        if self.pretty_json > 0 {
+            unsafe { (n.set_pretty_json)(handle, self.pretty_json) };
         }
-        if self.match_xml_body {
-            unsafe { (n.set_match_xml_body)(handle, 1) };
+        if self.pretty_xml > 0 {
+            unsafe { (n.set_pretty_xml)(handle, self.pretty_xml) };
         }
         if self.match_multiple {
             unsafe { (n.set_match_multiple)(handle, 1) };

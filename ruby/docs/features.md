@@ -20,7 +20,7 @@ library.
 | Untaped (incidental 404, cursor preserved) | ✅ | ✅ | `.untaped(path)` | ✅ |
 | Notes | ✅ | ✅ | `.note(…)` / `Server#note` | ✅ |
 | Strict request matching | ✅ | ✅ | `.strict_headers` | ✅ |
-| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.match_json_body` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `.pretty_json` on playback | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `.match_multiple` | — |
 | Match on a specific request header (opt-in) | ✅ | ✅ | `.match_header(name)` | — |
 | Static-content bypass | ✅ | ✅ | `.static_content(mount, dir)` | — |

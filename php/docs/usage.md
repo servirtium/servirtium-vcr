@@ -117,7 +117,7 @@ Vcr::record($tape, $upstream)->indentCodeBlocks()->emphasizeHttpVerbs()->prettyX
 > that header must be on the recorded request block, or be dropped via
 > `removeHeader(VcrField::RequestHeaders, ...)`.
 
-> Note: `matchJsonBody()` is an opt-in request-body matcher that compares by
+> Note: `prettyJson()` on playback is an opt-in request-body matcher that compares by
 > semantic JSON equality (object key order and insignificant whitespace
 > ignored, array order significant); non-JSON bodies fall back to byte-exact.
 

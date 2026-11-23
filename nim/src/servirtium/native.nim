@@ -126,10 +126,6 @@ proc untaped*(h: Handle, path: cstring): cstring
   {.importc: "aether_vcr_embed_untaped", cdecl.}
 proc set_strict_headers*(h: Handle, on: cint)
   {.importc: "aether_vcr_embed_set_strict_headers", cdecl.}
-proc set_match_json_body*(h: Handle, on: cint)
-  {.importc: "aether_vcr_embed_set_match_json_body", cdecl.}
-proc set_match_xml_body*(h: Handle, on: cint)
-  {.importc: "aether_vcr_embed_set_match_xml_body", cdecl.}
 proc set_match_multiple*(h: Handle, on: cint)
   {.importc: "aether_vcr_embed_set_match_multiple", cdecl.}
 proc set_rewrite_upstream_base*(h: Handle, on: cint)

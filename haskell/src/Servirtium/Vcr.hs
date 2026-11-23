@@ -162,12 +162,10 @@ data PlaybackOptions = PlaybackOptions
   , pbStrictHeaders  :: Bool
     -- ^ Compare the SUT's request headers against the recorded block on
     -- every interaction (default 'False').
-  , pbMatchJsonBody  :: Bool
-    -- ^ Opt in to matching request bodies by semantic JSON equality (key order
-    -- \/ whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall
-    -- back to byte-exact (default 'False').
   , pbPrettyJson     :: Int
-    -- ^ Shared JSON layout setting (0 off, positive on).
+    -- ^ Match JSON request bodies by canonical form (key order \/ whitespace
+    -- ignored), as recording with the same setting writes them; non-JSON
+    -- bodies stay byte-exact (0 off, the default; positive on).
   , pbVolatileMarkers :: Maybe VolatileMarkers
     -- ^ Marker style for placeholders and tokens; applied before any rule.
   , pbVolatileProfiles :: [FilePath]
@@ -180,12 +178,9 @@ data PlaybackOptions = PlaybackOptions
   , pbVolatileBinds :: [(String, String)]
     -- ^ @(name or token, value)@: bind a real value to a placeholder.
   , pbPrettyXml      :: Int
-    -- ^ Shared XML layout setting (0 off, positive on).
-  , pbMatchXmlBody   :: Bool
-    -- ^ Opt in to matching request bodies by semantic XML equality (attribute
-    -- order \/ insignificant whitespace ignored; element order significant)
-    -- instead of byte-for-byte — the SOAP/XML twin of 'pbMatchJsonBody'.
-    -- Non-XML bodies fall back to byte-exact (default 'False').
+    -- ^ Match XML request bodies by canonical form (attribute order \/
+    -- insignificant whitespace ignored; element order significant); non-XML
+    -- bodies stay byte-exact (0 off, the default; positive on).
   , pbIgnoreVolatileHeaders :: Bool
     -- ^ Drop the per-request volatile headers modern clients inject on every
     -- call (traceparent, tracestate, Request-Id, X-Request-Id,
@@ -363,14 +358,12 @@ playbackOptions tape = PlaybackOptions
   , pbPort          = 0
   , pbLabel         = ""
   , pbStrictHeaders = False
-  , pbMatchJsonBody = False
   , pbPrettyJson    = 0
   , pbPrettyXml     = 0
   , pbVolatileMarkers = Nothing
   , pbVolatileProfiles = []
   , pbVolatileRules = []
   , pbVolatileBinds = []
-  , pbMatchXmlBody  = False
   , pbIgnoreVolatileHeaders = False
   , pbRemoveTransportHeaders = False
   , pbRemoveCloudHeaders = []
@@ -630,10 +623,8 @@ startPlayback opts = do
       mapM_ (\(from, to) -> check "set_playback_range" $
                N.aether_vcr_embed_set_playback_range handle (fromIntegral from) (fromIntegral to))
             (pbPlaybackRange opts)
-      when (pbMatchJsonBody opts) $ N.aether_vcr_embed_set_match_json_body handle 1
       when (pbPrettyJson opts > 0) $ N.aether_vcr_embed_set_pretty_json handle (fromIntegral (pbPrettyJson opts))
       when (pbPrettyXml opts > 0) $ N.aether_vcr_embed_set_pretty_xml handle (fromIntegral (pbPrettyXml opts))
-      when (pbMatchXmlBody opts) $ N.aether_vcr_embed_set_match_xml_body handle 1
       applyVolatile handle (pbVolatileMarkers opts) (pbVolatileProfiles opts) (pbVolatileRules opts) (pbVolatileBinds opts)
       when (pbMatchMultiple opts) $ N.aether_vcr_embed_set_match_multiple handle 1
       mapM_ (\name ->

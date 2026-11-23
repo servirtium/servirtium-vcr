@@ -197,7 +197,7 @@ if srv.LastKind() != servirtium.Ok {
 > `StrictHeaders()` that header must appear on the recorded request block, or
 > be suppressed on the request (`req.Header.Set("User-Agent", "")`).
 
-For request bodies, `MatchJSONBody()` is an opt-in matcher that compares by
+For request bodies, `PrettyJSON(2)` on playback is an opt-in matcher that compares by
 semantic JSON equality (object key order and insignificant whitespace ignored,
 array order significant); non-JSON bodies fall back to byte-exact.
 

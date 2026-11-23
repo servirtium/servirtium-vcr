@@ -259,32 +259,24 @@ fallback() {
 
 // ---- pretty modes: the same element path; windows on pretty lines ----
 pretty_modes() {
-    i = 0
-    while i < 2 {
-        h = open_tape(CASE_TAPE, 1)
-        if i == 0 { vcr.set_pretty_xml_h(h, 2) } else { vcr.set_match_xml_body_h(h, 1) }
-        go(h)
-        closest_fixture.drive(BASE)
-        report = vcr.last_error_ex_h(h, 0)
-        has(report, "first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte ", "pretty mode ${i}: the same element path")
-        has(report, "\n- <SubjectValue>Rule 1;Openness;</SubjectValue>\n+ <SubjectValue></SubjectValue>\n", "pretty mode ${i}: escaped element")
-        done(h)
-        i = i + 1
-    }
+    h = open_tape(CASE_TAPE, 1)
+    vcr.set_pretty_xml_h(h, 2)
+    go(h)
+    closest_fixture.drive(BASE)
+    report = vcr.last_error_ex_h(h, 0)
+    has(report, "first difference: /Envelope/Body/CreateCase/caseData/CaseData/SubjectValue, normalised byte ", "pretty_xml: the same element path")
+    has(report, "\n- <SubjectValue>Rule 1;Openness;</SubjectValue>\n+ <SubjectValue></SubjectValue>\n", "pretty_xml: escaped element")
+    done(h)
     // A missing element: the pretty-printed lines each side.
     t = string.concat(interaction(0, "POST", "/case", "application/xml", "<Case><Title>Leak</Title><Priority>High</Priority><Owner>Kim</Owner></Case>", "ok"),
                       interaction(1, "POST", "/other", "application/xml", "<Other/>", "ok"))
     tape = tmp_tape("pretty", t)
-    i = 0
-    while i < 2 {
-        h = open_tape(tape, 1)
-        if i == 0 { vcr.set_pretty_xml_h(h, 2) } else { vcr.set_match_xml_body_h(h, 1) }
-        go(h)
-        miss("POST", "/case", "<Case><Title>Leak</Title><Owner>Kim</Owner></Case>", "application/xml", "a missing element")
-        has(vcr.last_error_ex_h(h, 0), "first difference: /Case/Priority, normalised byte 32\n- <Priority>High</Priority>\n+ <Owner>Kim</Owner>\n", "pretty mode ${i}: one pretty line each side")
-        done(h)
-        i = i + 1
-    }
+    h = open_tape(tape, 1)
+    vcr.set_pretty_xml_h(h, 2)
+    go(h)
+    miss("POST", "/case", "<Case><Title>Leak</Title><Owner>Kim</Owner></Case>", "application/xml", "a missing element")
+    has(vcr.last_error_ex_h(h, 0), "first difference: /Case/Priority, normalised byte 32\n- <Priority>High</Priority>\n+ <Owner>Kim</Owner>\n", "pretty_xml: one pretty line each side")
+    done(h)
     // JSON: the pointer of the first difference.
     tj = interaction(0, "POST", "/j", "application/json", "{\"case\":{\"title\":\"Leak\",\"tags\":[\"a\",\"b\"],\"subject\":\"Rule 1\"}}", "ok")
     h = open_tape(tmp_tape("json", tj), 1)
@@ -304,7 +296,7 @@ redaction() {
     h = open_tape(tmp_tape("redaction", t), 1)
     ok(vcr.unredact_h(h, 4, "TOKEN_1", SECRET), "unredact")
     ok(vcr.unredact_h(h, 4, "TOKEN_2", SECRET2), "unredact")
-    vcr.set_match_json_body_h(h, 1)
+    vcr.set_pretty_json_h(h, 2)
     go(h)
     miss("POST", "/note", "<Note><Text>token ${SECRET}; Rule 2</Text></Note>", "application/xml", "an unredacted secret in the window")
     report = vcr.last_error_ex_h(h, 0)

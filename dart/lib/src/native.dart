@@ -331,10 +331,6 @@ class Native {
       _lib.lookupFunction<_UntapedC, _UntapedD>('aether_vcr_embed_untaped');
   static final setStrictHeaders =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_strict_headers');
-  static final setMatchJsonBody =
-      _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_match_json_body');
-  static final setMatchXmlBody =
-      _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_match_xml_body');
   static final setMatchMultiple =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_match_multiple');
   static final matchHeader = _lib

@@ -10,8 +10,8 @@ Class {
         'secretResolver',
 		'unredactions',
 		'strictHeaders',
-		'matchJsonBody',
-		'matchXmlBody',
+		'prettyJson',
+		'prettyXml',
 		'matchMultiple',
 		'matchHeaders',
 		'playbackRange',
@@ -27,8 +27,8 @@ ServirtiumPlaybackBuilder >> initializeTape: aTapePath [
 	super initializeTape: aTapePath.
 	unredactions := OrderedCollection new.
 	strictHeaders := false.
-	matchJsonBody := false.
-	matchXmlBody := false.
+	prettyJson := 0.
+	prettyXml := 0.
 	matchMultiple := false.
 	matchHeaders := OrderedCollection new.
 	playbackRange := nil.
@@ -47,39 +47,6 @@ ServirtiumPlaybackBuilder >> strictHeaders [
 ServirtiumPlaybackBuilder >> strictHeaders: aBoolean [
 
 	strictHeaders := aBoolean.
-	^ self
-]
-
-{ #category : 'configuring' }
-ServirtiumPlaybackBuilder >> matchJsonBody [
-	"Opt in to matching request bodies by semantic JSON equality (key order /
-	 whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back
-	 to byte-exact."
-
-	^ self matchJsonBody: true
-]
-
-{ #category : 'configuring' }
-ServirtiumPlaybackBuilder >> matchJsonBody: aBoolean [
-
-	matchJsonBody := aBoolean.
-	^ self
-]
-
-{ #category : 'configuring' }
-ServirtiumPlaybackBuilder >> matchXmlBody [
-	"Opt in to matching request bodies by semantic XML equality (attribute order
-	 / insignificant whitespace ignored; element order significant) instead of
-	 byte-for-byte — the SOAP/XML twin of matchJsonBody. Non-XML bodies fall back
-	 to byte-exact."
-
-	^ self matchXmlBody: true
-]
-
-{ #category : 'configuring' }
-ServirtiumPlaybackBuilder >> matchXmlBody: aBoolean [
-
-	matchXmlBody := aBoolean.
 	^ self
 ]
 
@@ -149,8 +116,8 @@ ServirtiumPlaybackBuilder >> applyConfig: handle [
 
 	super applyConfig: handle.
 	strictHeaders ifTrue: [ self library setStrictHeaders: handle on: 1 ].
-	matchJsonBody ifTrue: [ self library setMatchJsonBody: handle on: 1 ].
-	matchXmlBody ifTrue: [ self library setMatchXmlBody: handle on: 1 ].
+	prettyJson > 0 ifTrue: [ self library setPrettyJson: handle indent: prettyJson ].
+	prettyXml > 0 ifTrue: [ self library setPrettyXml: handle indent: prettyXml ].
 	matchMultiple ifTrue: [ self library setMatchMultiple: handle on: 1 ].
 	matchHeaders do: [ :name |
 		self library matchHeader: handle name: name ].
@@ -213,7 +180,12 @@ ServirtiumPlaybackBuilder >> prettyXml [
 
 { #category : 'configuring' }
 ServirtiumPlaybackBuilder >> prettyXml: anIndent [
-    ^ self matchXmlBody: anIndent > 0
+	"Match XML request bodies by canonical form (attribute order / insignificant
+	 whitespace ignored; element order significant); serve tape responses as
+	 written. Non-XML bodies stay byte-exact; 0 turns it off."
+
+	prettyXml := anIndent.
+	^ self
 ]
 
 { #category : 'configuring' }
@@ -223,5 +195,10 @@ ServirtiumPlaybackBuilder >> prettyJson [
 
 { #category : 'configuring' }
 ServirtiumPlaybackBuilder >> prettyJson: anIndent [
-    ^ self matchJsonBody: anIndent > 0
+	"Match JSON request bodies by canonical form (key order / whitespace
+	 ignored), as recording with the same option writes them; serve tape
+	 responses as written. Non-JSON bodies stay byte-exact; 0 turns it off."
+
+	prettyJson := anIndent.
+	^ self
 ]

@@ -33,7 +33,6 @@ check(row: int, recorded: string, live: string, matches: int, enabled: int, mult
     p, err = vcr.open_playback(tape_path(), port)
     if err != "" { fail(err) }
     if enabled == 1 { vcr.set_pretty_xml_h(p, 2) }
-    if enabled == 2 { vcr.set_match_xml_body_h(p, 1) }
     vcr.set_match_multiple_h(p, multiple)
     if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
     url = "http://127.0.0.1:${port}"
@@ -111,7 +110,5 @@ main() {
         check(40, "<C>x&#13;y</C>", "<C>x\ry</C>", 0, 1, multiple)
         check(37, "<C><bad></C>", "<C> <bad></C>", 0, 1, multiple)
     }
-    // Legacy switch uses the identical canonicalizer.
-    check(10, "<C>one\ntwo</C>", "<C>one\r\ntwo</C>", 1, 2, 0)
     println("PASS alpha.16 XML matrix: ordered + reusable, response bytes, idempotency")
 }

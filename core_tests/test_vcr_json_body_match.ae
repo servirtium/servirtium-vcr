@@ -5,10 +5,10 @@
 // object with a specific key order. Three cases, one process (cursor reset
 // between them so each retries interaction 0):
 //
-//   A. match_json_body OFF (default): a key-reordered but semantically equal
+//   A. pretty_json OFF (default): a key-reordered but semantically equal
 //      body must still 599 — libservirtium_vcr stays byte-exact by default.
-//   B. match_json_body ON: the same reordered body must now match (200).
-//   C. match_json_body ON but a NON-JSON body: must still 599 — unparseable
+//   B. pretty_json ON: the same reordered body must now match (200).
+//   C. pretty_json ON but a NON-JSON body: must still 599 — unparseable
 //      bodies fall back to the byte-exact verdict, never loosened.
 //
 // Mirrors the actor architecture of test_vcr_strict_match_body.ae (the VCR's
@@ -73,14 +73,14 @@ main() {
     println("PASS Case A: byte-exact default rejects key-reordered JSON (599)")
 
     // Case B — opt-in on: the same reordered JSON now matches semantically.
-    vcr.set_match_json_body_h(raw, 1)
+    vcr.set_pretty_json_h(raw, 2)
     vcr.clear_last_error_h(raw)
     vcr.reset_cursor_h(raw)
     statusB = post_json(url, REORDERED)
     if statusB != 200 {
         fail("Case B (match on): expected 200 for JSON-equal body, got ${statusB} (last_error='${vcr.last_error_h(raw)}')")
     }
-    println("PASS Case B: match_json_body accepts key-reordered / re-spaced JSON (200)")
+    println("PASS Case B: pretty_json accepts key-reordered / re-spaced JSON (200)")
 
     // Case C — opt-in on, but a non-JSON body: fall back to byte-exact → reject.
     vcr.clear_last_error_h(raw)

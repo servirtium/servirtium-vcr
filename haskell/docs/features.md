@@ -18,7 +18,7 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Header removal | ✅ | ✅ | `recRemoveHeaders` / `pbRemoveHeaders` | ✅ (record/redaction tests) |
 | Notes | ✅ | ✅ | `recNote` / `note` | — |
 | Strict request matching | ✅ | ✅ | `pbStrictHeaders` | — |
-| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `pbMatchJsonBody = True` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `pbPrettyJson = 2` | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `pbMatchMultiple = True` | — |
 | Match on a specific request header (opt-in) | ✅ | ✅ | `pbMatchHeaders = ["Name"]` | — |
 | Static-content bypass | ✅ | ✅ | `pbStaticContent` | — |

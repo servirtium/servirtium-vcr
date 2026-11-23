@@ -153,8 +153,6 @@
    "untaped" [:ptr :ptr :string]
    "set_strict_headers" [:void :ptr :int32]
    "set_rules_footer" [:void :ptr :int32]
-   "set_match_json_body" [:void :ptr :int32]
-   "set_match_xml_body" [:void :ptr :int32]
    "set_pretty_xml" [:void :ptr :int32]
    "get_pretty_xml" [:int32 :ptr]
    "set_pretty_json" [:void :ptr :int32]
@@ -464,19 +462,6 @@
   "Match the whole request header block, not just the method and path."
   [srv on]
   (c "set_strict_headers" (live srv "set_strict_headers") (flag on)) nil)
-
-(defn set-match-json-body
-  "Opt in: a request body that differs byte-for-byte gets a second chance at
-  semantic JSON equality (key order and whitespace ignored, array order
-  significant). A non-JSON body falls back to the byte-exact verdict."
-  [srv on]
-  (c "set_match_json_body" (live srv "set_match_json_body") (flag on)) nil)
-
-(defn set-match-xml-body
-  "Opt in: semantic XML equality for request bodies (attribute order and
-  insignificant whitespace ignored; element order significant)."
-  [srv on]
-  (c "set_match_xml_body" (live srv "set_match_xml_body") (flag on)) nil)
 
 (defn set-match-multiple
   "Opt in: search ALL interactions for one that fits and replay it WITHOUT
@@ -803,7 +788,7 @@
   (each item items (if (indexed? item) (f srv ;item) (f srv item))))
 
 (def- option-order
-  [:strict-headers :match-json-body :match-xml-body :match-multiple :match-headers
+  [:strict-headers :match-multiple :match-headers
    :strict-ignore-common-headers :ignore-volatile-headers :remove-transport-headers
    :remove-cloud-headers :redact-credentials :redact-credential-headers
    :remove-headers :redact :redact-headers :redact-query-params :redact-json-fields
@@ -821,8 +806,6 @@
 (defn- apply-option [srv key v]
   (case key
     :strict-headers (set-strict-headers srv v)
-    :match-json-body (set-match-json-body srv v)
-    :match-xml-body (set-match-xml-body srv v)
     :match-multiple (set-match-multiple srv v)
     :match-headers (each n (one-or-many v) (match-header srv n))
     :strict-ignore-common-headers (when v (strict-ignore-common-headers srv))
@@ -909,7 +892,7 @@
 
   `opts` is an optional struct: :host (default "127.0.0.1"), :port (default 0,
   the OS picks), :label, :native-lib, and the declarative configuration
-  options (see docs/usage.md): :strict-headers :match-json-body
+  options (see docs/usage.md): :strict-headers :pretty-json
   :match-multiple :match-headers :remove-headers :redact :unredact
   :substitute :static-content :untaped :secret-resolver ... Anything else
   raises. Stop it with `stop`, or use `with-playback`, which always does.

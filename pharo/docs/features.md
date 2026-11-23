@@ -19,7 +19,7 @@ diagnostics), mapped through the stack. "Test" = exercised by
 | Header removal | ✅ | ✅ | `removeHeaderField:name:` | ✅ (via strict) |
 | Notes | ✅ | ✅ | `noteTitle:body:` (builder + server) | ✅ |
 | Strict request matching | ✅ | ✅ | `strictHeaders` | ✅ pass + fail |
-| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `matchJsonBody` | — |
+| JSON request-body matching (semantic, opt-in) | ✅ | ✅ | `prettyJson` | — |
 | Reusable / order-independent matching (opt-in) | ✅ | ✅ | `matchMultiple` | — |
 | Match on a specific request header (opt-in) | ✅ | ✅ | `matchHeader:` | — |
 | Static-content bypass | ✅ | ✅ | `staticContentMount:dir:` | ✅ |

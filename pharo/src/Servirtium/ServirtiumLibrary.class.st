@@ -297,18 +297,6 @@ ServirtiumLibrary >> setStrictHeaders: server on: on [
 ]
 
 { #category : 'ffi - mutations' }
-ServirtiumLibrary >> setMatchJsonBody: server on: on [
-
-	^ self ffiCall: #( void aether_vcr_embed_set_match_json_body ( void* server, int on ) )
-]
-
-{ #category : 'ffi - mutations' }
-ServirtiumLibrary >> setMatchXmlBody: server on: on [
-
-	^ self ffiCall: #( void aether_vcr_embed_set_match_xml_body ( void* server, int on ) )
-]
-
-{ #category : 'ffi - mutations' }
 ServirtiumLibrary >> ignoreVolatileHeaders: server [
 
 	^ self ffiCall: #( void* aether_vcr_embed_ignore_volatile_headers ( void* server ) )

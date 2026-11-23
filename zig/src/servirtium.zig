@@ -83,8 +83,6 @@ pub extern "c" fn aether_vcr_embed_note(handle: Handle, a: [*c]const u8, b: [*c]
 pub extern "c" fn aether_vcr_embed_static_content(handle: Handle, mount: [*c]const u8, dir: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_untaped(handle: Handle, path: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_set_strict_headers(handle: Handle, on: c_int) void;
-pub extern "c" fn aether_vcr_embed_set_match_json_body(handle: Handle, on: c_int) void;
-pub extern "c" fn aether_vcr_embed_set_match_xml_body(handle: Handle, on: c_int) void;
 pub extern "c" fn aether_vcr_embed_set_match_multiple(handle: Handle, on: c_int) void;
 pub extern "c" fn aether_vcr_embed_match_header(handle: Handle, name: [*c]const u8) void;
 pub extern "c" fn aether_vcr_embed_indent_code_blocks(handle: Handle) void;
@@ -626,8 +624,8 @@ pub const Playback = struct {
     listen_port: c_int = 0,
     label_str: [:0]const u8 = "",
     strict_headers: bool = false,
-    match_json_body: bool = false,
-    match_xml_body: bool = false,
+    pretty_json: c_int = 0,
+    pretty_xml: c_int = 0,
     match_multiple: bool = false,
     ignore_volatile_headers: bool = false,
     remove_transport_headers: bool = false,
@@ -802,35 +800,21 @@ pub const Playback = struct {
         return b;
     }
 
-    /// Opt in to matching request bodies by semantic JSON equality (key order /
-    /// whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back
-    /// to byte-exact.
-    pub fn matchJsonBody(self: Playback) Playback {
-        var b = self;
-        b.match_json_body = true;
-        return b;
-    }
-
-    /// Opt in to matching request bodies by semantic XML equality (attribute
-    /// order / insignificant whitespace ignored; element order significant)
-    /// instead of byte-for-byte — the SOAP/XML twin of matchJsonBody. Non-XML
-    /// bodies fall back to byte-exact.
-    /// Match XML layout using the shared recording canonicalizer.
+    /// Match JSON request bodies by canonical form (key order / whitespace
+    /// ignored), as recording with the same option writes them; serve tape
+    /// responses as written. Non-JSON bodies stay byte-exact; 0 turns it off.
     pub fn prettyJson(self: Playback, indent: c_int) Playback {
         var b = self;
-        b.match_json_body = indent > 0;
+        b.pretty_json = indent;
         return b;
     }
 
+    /// Match XML request bodies by canonical form (attribute order /
+    /// insignificant whitespace ignored; element order significant); serve
+    /// tape responses as written. Non-XML bodies stay byte-exact; 0 turns it off.
     pub fn prettyXml(self: Playback, indent: c_int) Playback {
         var b = self;
-        b.match_xml_body = indent > 0;
-        return b;
-    }
-
-    pub fn matchXmlBody(self: Playback) Playback {
-        var b = self;
-        b.match_xml_body = true;
+        b.pretty_xml = indent;
         return b;
     }
 
@@ -903,8 +887,8 @@ pub const Playback = struct {
         try applyVolatile(self.allocator, handle, self.volatile_markers, self.volatile_items.items, diag);
         try applyPresets(self.allocator, handle, self.remove_transport_headers, self.cloud_vendors.items, self.redact_credentials, self.credential_headers.items);
         if (self.strict_headers) aether_vcr_embed_set_strict_headers(handle, 1);
-        if (self.match_json_body) aether_vcr_embed_set_match_json_body(handle, 1);
-        if (self.match_xml_body) aether_vcr_embed_set_match_xml_body(handle, 1);
+        if (self.pretty_json > 0) aether_vcr_embed_set_pretty_json(handle, self.pretty_json);
+        if (self.pretty_xml > 0) aether_vcr_embed_set_pretty_xml(handle, self.pretty_xml);
         if (self.match_multiple) aether_vcr_embed_set_match_multiple(handle, 1);
         if (self.playback_range) |r| try checkErr(self.allocator, aether_vcr_embed_set_playback_range(handle, r[0], r[1]));
         for (self.match_headers.items) |name| {

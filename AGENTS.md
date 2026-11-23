@@ -124,7 +124,6 @@ kind, pattern)`, `volatile_bind(h, name_or_token, value)`,
 header presets, below); `set_upstream_cafile(h, path)` (record mode: verify
 an https upstream against this PEM CA, e.g. Elasticsearch 8's own; guarded by
 `core_tests/tls_probe.ae`); `set_strict_headers(h, int)`;
-`set_match_json_body(h, int)` (opt-in JSON-semantic request-body matching, below);
 `set_match_multiple(h, int)` (reusable/order-independent playback) and
 `match_header(h, name)` / `clear_match_headers(h)` (ByHeader — match a specific
 request header), both below;
@@ -465,8 +464,8 @@ Decisions, and why:
   any combination with other rules.
 - **Request side left alone.** The app under test sent the request, playback
   compares it with the tape, and a client's serializer is deterministic; a
-  client that really varies its key order wants `set_match_json_body`
-  (JSON-semantic matching), not a rewritten tape. Request headers are already
+  client that really varies its key order wants `pretty_json` on playback
+  (canonical JSON matching), not a rewritten tape. Request headers are already
   written sorted by name.
 - **Footer.** Each rule is a row, `ordered`, with the interactions it
   *applies to* (response headers present, the header present, a JSON body,
@@ -591,7 +590,7 @@ Vcr.HttpRecorder's HAR model (portions © Giannis Georgopoulos, MIT — see
   match a test client — so imported tapes match on **method + path (+ request
   body)**, like the `single_get` golden.
 - **Request body is kept** (distinguishes POSTs to one path; pair with
-  `set_match_json_body` for JSON APIs).
+  `pretty_json` on playback for JSON APIs).
 - **Response** status/headers/body kept; hop-by-hop + `Content-Encoding` dropped
   (the body is stored decoded). Header-name casing is preserved as-is (HTTP/2 HARs
   lower-case them; HTTP is case-insensitive and the `(200: type)` line comes from
@@ -838,26 +837,19 @@ process launchers; the shared fixture itself stays language-neutral.
   space and controls stay escaped. `core_tests/test_vcr_path_encoding.ae`
   covers matches and non-matches.
 - **JSON request-body matching is opt-in and lives in libservirtium_vcr.**
-  `set_match_json_body(h, 1)` makes a request body that differs byte-for-byte
+  `set_pretty_json(h, n)` on playback makes a request body that differs byte-for-byte
   get a second chance at *semantic* JSON equality (object key order + whitespace
   ignored; array order significant) before it's a `BodyDiff`. Off by default —
   libservirtium_vcr stays byte-exact — and a **non-JSON body always falls back to the
   byte-exact verdict**, so enabling it never loosens non-JSON matching. Logic is
   `json_body_canonicalize` / `json_request_bodies_equal` in `core/vcr.ae`:
   exact decimal tokens, decoded strings, stable duplicate-key handling, and
-  the same canonical forms in diagnostics. `pretty_json` implies this matcher;
-  the recorded request is indented too. The
+  the same canonical forms in diagnostics; on record the request is indented
+  too. `pretty_xml` is the XML twin. (The matching-only `set_match_json_body` /
+  `set_match_xml_body` aliases were removed in alpha.20.) The
   `core_tests/test_vcr_json_body_match.ae` proves off→reject / on→match /
   on+non-JSON→reject. Modelled on Vcr.HttpRecorder's `RulesMatcher.ByJsonContent`
   (portions © Giannis Georgopoulos, MIT — see the `LICENSE` attribution line).
-  Binding surface follows the `strict_headers` pattern exactly (a
-  `PlaybackBuilder.match_json_body()` toggle), wired across the bindings that
-  expose `strict_headers`: python/rust/java/ruby/javascript/php/dart/go/nim/zig/
-  lua/haskell/elixir/dotnet/pharo, plus the shared BEAM NIF; kotlin/scala/groovy/
-  clojure inherit it free from the Java `PlaybackBuilder`. **erlang's and gleam's
-  idiomatic wrappers surface the shared setting as `set_pretty_json`**;
-  the matching-only alias remains reachable via
-  `servirtium_nif:set_match_json_body/2`.
 - **Two more opt-in matchers, same libservirtium_vcr home + rollout as the JSON one.**
   `set_match_multiple(h,1)` — **MatchMultiple**: playback searches ALL
   interactions for one that fits (not just the cursor) and replays it WITHOUT
@@ -872,8 +864,10 @@ process launchers; the shared fixture itself stays language-neutral.
   `match_headers_diff_k` in `core/vcr.ae`; tests
   `test_vcr_match_multiple.ae` / `test_vcr_by_header.ae`. Modelled on
   Vcr.HttpRecorder's `RulesMatcher.MatchMultiple` / `ByHeader`. Binding surface
-  (`match_multiple()` toggle, repeatable `match_header(name)`) swept the same set
-  as `match_json_body`.
+  (`match_multiple()` toggle, repeatable `match_header(name)`) swept the same
+  set as `strict_headers`: python/rust/java/ruby/javascript/php/dart/go/nim/zig/
+  lua/haskell/elixir/dotnet/pharo plus the shared BEAM NIF; kotlin/scala/groovy/
+  clojure inherit it from the Java `PlaybackBuilder`.
 - **A relative `-L` in a package manifest works in-tree and fails for every
   consumer.** `swift/Package.swift` linked with `.unsafeFlags(["-L", "native",
   …])`. That is resolved by the LINKER's working directory, which is the

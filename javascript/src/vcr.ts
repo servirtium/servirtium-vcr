@@ -318,8 +318,8 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   private readonly unredactions: Array<{ field: VcrField; pattern: string; replacement: string }> = []
   private readonly substitutions: Array<{ field: VcrField; pattern: string; replacement: string; required: boolean }> = []
   private strictHeadersOn = false
-  private matchJsonBodyOn = false
-  private matchXmlBodyOn = false
+  private prettyJsonIndent = 0
+  private prettyXmlIndent = 0
   private matchMultipleOn = false
   private readonly matchHeaders: string[] = []
   private playbackRangeValue: { from: number; to: number } | null = null
@@ -342,24 +342,22 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   }
 
   /**
-   * Opt in to matching request bodies by semantic JSON equality (key order /
-   * whitespace ignored) instead of byte-for-byte. Non-JSON bodies fall back to
-   * byte-exact.
+   * Match JSON request bodies by canonical form (key order / whitespace
+   * ignored), as recording with the same option writes them; serve tape
+   * responses as written. Non-JSON bodies stay byte-exact. 0 turns it off.
    */
-  matchJsonBody(on = true): PlaybackBuilder {
-    this.matchJsonBodyOn = on
+  prettyJson(indent = 2): PlaybackBuilder {
+    this.prettyJsonIndent = indent
     return this
   }
 
-  /** Match JSON requests by canonical form; serve tape responses as written. */
-  prettyJson(indent = 2): PlaybackBuilder { return this.matchJsonBody(indent > 0) }
-
-  /** Match XML requests by canonical form; serve tape responses as written. */
-  prettyXml(indent = 2): PlaybackBuilder { return this.matchXmlBody(indent > 0) }
-
-  /** Compatibility alias for XML layout matching; malformed bodies stay byte-exact. */
-  matchXmlBody(on = true): PlaybackBuilder {
-    this.matchXmlBodyOn = on
+  /**
+   * Match XML request bodies by canonical form (attribute order /
+   * insignificant whitespace ignored); serve tape responses as written.
+   * Non-XML bodies stay byte-exact. 0 turns it off.
+   */
+  prettyXml(indent = 2): PlaybackBuilder {
+    this.prettyXmlIndent = indent
     return this
   }
 
@@ -418,8 +416,8 @@ export class PlaybackBuilder extends VcrBuilderBase<PlaybackBuilder> {
   protected applyConfig(handle: unknown): void {
     super.applyConfig(handle)
     if (this.strictHeadersOn) N.setStrictHeaders(handle, 1)
-    if (this.matchJsonBodyOn) N.setMatchJsonBody(handle, 1)
-    if (this.matchXmlBodyOn) N.setMatchXmlBody(handle, 1)
+    if (this.prettyJsonIndent > 0) N.setPrettyJson(handle, this.prettyJsonIndent)
+    if (this.prettyXmlIndent > 0) N.setPrettyXml(handle, this.prettyXmlIndent)
     if (this.matchMultipleOn) N.setMatchMultiple(handle, 1)
     for (const name of this.matchHeaders) {
       N.matchHeader(handle, name)

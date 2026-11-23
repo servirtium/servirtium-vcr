@@ -51,7 +51,7 @@ A fixture is a builder; configure it fluently, then `:start()` it for a
 servirtium.playback(tape)
     :host("127.0.0.1") :port(0) :label("my fixture")
     :strict_headers()
-    :match_json_body()
+    :pretty_json()
     :match_multiple()
     :match_header("Authorization")
     :remove_header(servirtium.FIELD_REQUEST_HEADERS, "User-Agent")

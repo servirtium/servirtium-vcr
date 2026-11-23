@@ -158,7 +158,7 @@ utf8_projection() {
 }
 semantic_projection() {
     semantic = server("")
-    native_probe.match_json(semantic.handle, 1)
+    native_probe.pretty_json(semantic.handle, 2)
     check(post(semantic, "{ \"role\" : \"reader\" }", null) == 200 && native_probe.events(semantic.handle, 0) == "[]", "semantic match has no diagnostic")
     check(post(semantic, "{\"role\":\"reader\"}", null) == 599, "exhausted tape")
     events = json.parse(native_probe.events(semantic.handle, 1))!
