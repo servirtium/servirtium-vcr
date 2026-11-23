@@ -1,0 +1,8 @@
+# The NTLM server and its pytest suite (python -m pip install -r requirements.txt).
+# Pinned: the server's NTLM is pyspnego's, and the tapes say which version.
+pyspnego==0.12.4
+cryptography==50.0.2
+requests==2.34.2
+requests-ntlm==1.3.0
+httpx==0.28.1
+pytest==9.2.0
