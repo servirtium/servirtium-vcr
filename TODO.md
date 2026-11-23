@@ -32,25 +32,6 @@ re-record. Test: extend `core_tests/test_vcr_header_presets.ae` (a reused
 token passes; a different value for the same number, or the same value for
 two numbers, is a mismatch).
 
-## Record mode: pair each client connection with its own upstream connection (2026-11-23)
-
-Found by `pre-recorded/ntlm/` (README, finding a). Record mode forwards
-through `std.http.client`'s process-wide idle pool, keyed by origin, so a
-client connection is not paired with an upstream connection. Connection-
-bound authentication (NTLM, Negotiate) then records wrongly: interleaved
-handshakes fail, a Type 3 on a new client connection succeeds where the
-server refuses it, and an upstream connection one client authenticated
-answers another client's anonymous requests (across VCRs in one process
-too). One client at a time records correctly, which is how the ntlm tapes
-were made.
-
-Blocked on Aether: `std.http.client` has no way to send on a chosen
-connection (`asks/aether-http-client-connection-affinity.md`). Then: a
-per-VCR map in `do_record` from the client connection to its upstream
-connection, closed with the client's; a core test with a per-connection
-upstream; and the four strict xfails in `pre-recorded/ntlm/test_ntlm.py`
-become passes (pytest will say so: they are strict).
-
 ## Stable order in the language bindings (2026-11-07)
 
 Core, the C ABI and the pre-recorded recorder have opt-in stable order

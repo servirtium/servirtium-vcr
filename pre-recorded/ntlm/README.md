@@ -68,14 +68,14 @@ Each is written by the test named, run with `NTLM_RERECORD=1`.
 
 | Tape | What it holds | Test |
 |---|---|---|
-| [`handshake_requests_ntlm.md`](tapes/handshake_requests_ntlm.md) | requests + requests-ntlm, `GET /whoami`: the anonymous request (401, both challenges), Type 1 (401, Type 2), Type 3 (200, the user as JSON). | [test_ntlm.py#L270](test_ntlm.py#L270) |
-| [`handshake_requests_ntlm_unredacted.md`](tapes/handshake_requests_ntlm_unredacted.md) | The same with no credential rule and the server's own Type 2: every token as sent. The Type 3 names the user, domain and workstation and carries the NTLMv2 response. | [test_ntlm.py#L236](test_ntlm.py#L236) |
-| [`handshake_curl_ntlm.md`](tapes/handshake_curl_ntlm.md) | `curl --ntlm`: Type 1 straight away (401, Type 2), Type 3 (200). | [test_ntlm.py#L284](test_ntlm.py#L284) |
-| [`handshake_httpx_negotiate.md`](tapes/handshake_httpx_negotiate.md) | httpx with pyspnego's Negotiate client: anonymous (401), SPNEGO NegTokenInit carrying the Type 1 (401, NegTokenResp carrying the Type 2), NegTokenResp carrying the Type 3 (200, with the server's mechListMIC in `WWW-Authenticate: Negotiate`). | [test_ntlm.py#L293](test_ntlm.py#L293) |
-| [`refuses_a_wrong_password_curl_ntlm.md`](tapes/refuses_a_wrong_password_curl_ntlm.md) | `curl --ntlm` with the wrong password: Type 1 (401, Type 2), Type 3 (401, logon denied). | [test_ntlm.py#L308](test_ntlm.py#L308) |
-| [`post_with_body_requests_ntlm.md`](tapes/post_with_body_requests_ntlm.md) | requests-ntlm, `POST /echo` with a JSON body: the body goes on all three legs. | [test_ntlm.py#L336](test_ntlm.py#L336) |
-| [`post_with_body_curl_ntlm.md`](tapes/post_with_body_curl_ntlm.md) | `curl --ntlm` POSTs, plain then chunked: the Type 1 leg has no body (`Content-Length: 0`, or one empty chunk), the Type 3 leg has it. | [test_ntlm.py#L347](test_ntlm.py#L347) |
-| [`calls_on_an_authenticated_connection_requests_ntlm.md`](tapes/calls_on_an_authenticated_connection_requests_ntlm.md) | requests-ntlm on one session: the handshake (interactions 0 to 2), then `POST /echo`, `GET /whoami` and `GET /anonymous` with no `Authorization` at all (3 to 5). | [test_ntlm.py#L317](test_ntlm.py#L317) |
+| [`handshake_requests_ntlm.md`](tapes/handshake_requests_ntlm.md) | requests + requests-ntlm, `GET /whoami`: the anonymous request (401, both challenges), Type 1 (401, Type 2), Type 3 (200, the user as JSON). | [test_ntlm.py#L258](test_ntlm.py#L258) |
+| [`handshake_requests_ntlm_unredacted.md`](tapes/handshake_requests_ntlm_unredacted.md) | The same with no credential rule and the server's own Type 2: every token as sent. The Type 3 names the user, domain and workstation and carries the NTLMv2 response. | [test_ntlm.py#L224](test_ntlm.py#L224) |
+| [`handshake_curl_ntlm.md`](tapes/handshake_curl_ntlm.md) | `curl --ntlm`: Type 1 straight away (401, Type 2), Type 3 (200). | [test_ntlm.py#L272](test_ntlm.py#L272) |
+| [`handshake_httpx_negotiate.md`](tapes/handshake_httpx_negotiate.md) | httpx with pyspnego's Negotiate client: anonymous (401), SPNEGO NegTokenInit carrying the Type 1 (401, NegTokenResp carrying the Type 2), NegTokenResp carrying the Type 3 (200, with the server's mechListMIC in `WWW-Authenticate: Negotiate`). | [test_ntlm.py#L281](test_ntlm.py#L281) |
+| [`refuses_a_wrong_password_curl_ntlm.md`](tapes/refuses_a_wrong_password_curl_ntlm.md) | `curl --ntlm` with the wrong password: Type 1 (401, Type 2), Type 3 (401, logon denied). | [test_ntlm.py#L296](test_ntlm.py#L296) |
+| [`post_with_body_requests_ntlm.md`](tapes/post_with_body_requests_ntlm.md) | requests-ntlm, `POST /echo` with a JSON body: the body goes on all three legs. | [test_ntlm.py#L324](test_ntlm.py#L324) |
+| [`post_with_body_curl_ntlm.md`](tapes/post_with_body_curl_ntlm.md) | `curl --ntlm` POSTs, plain then chunked: the Type 1 leg has no body (`Content-Length: 0`, or one empty chunk), the Type 3 leg has it. | [test_ntlm.py#L335](test_ntlm.py#L335) |
+| [`calls_on_an_authenticated_connection_requests_ntlm.md`](tapes/calls_on_an_authenticated_connection_requests_ntlm.md) | requests-ntlm on one session: the handshake (interactions 0 to 2), then `POST /echo`, `GET /whoami` and `GET /anonymous` with no `Authorization` at all (3 to 5). | [test_ntlm.py#L305](test_ntlm.py#L305) |
 
 The repository's convention is a login on its own tape, separate from the
 calls that follow. For NTLM that is not recordable: the calls after the
@@ -83,53 +83,46 @@ handshake carry no credential, because NTLM authenticated the connection,
 and a new recording is a new connection, which is not authenticated. So the
 calls tape starts with its handshake, and a test that wants only the calls
 replays interactions 3 to 5 with `playback_range(3)`
-([test_ntlm.py#L458](test_ntlm.py#L458)).
+([test_ntlm.py#L446](test_ntlm.py#L446)).
 
 ## Findings
 
 ### (a) Record mode and connections
 
-**Servirtium's recorder does not pair a client connection with an
-upstream connection.** It forwards each request with Aether's
-`std.http.client`, whose idle connection pool is process-wide and keyed by
-origin only. NTLM authenticates a connection, so:
+**Servirtium's recorder pairs each client connection with an upstream
+connection of its own** (since Aether 0.939.0: a pinned `std.http.client`
+pool per client connection, closed when the client's connection closes).
+NTLM authenticates a connection, and through the recorder it behaves as it
+does directly:
 
-- **One client at a time works, by accident.** The pool hands the
-  recorder back the one upstream connection the previous leg used, so the
-  Type 3 lands where its Type 1 did and the server accepts it
-  ([test_ntlm.py#L150](test_ntlm.py#L150): one upstream connection for the
-  whole handshake). All the tapes here were recorded that way.
-- **Two clients interleaving their handshakes fail.** Both go upstream over
-  the one pooled connection; the second Type 1 replaces the first's
-  challenge, and the first Type 3 is refused as if its password were wrong
-  (xfail, [test_ntlm.py#L167](test_ntlm.py#L167)).
-- **A Type 3 on a new client connection succeeds through the recorder**,
-  where the server refuses it directly
-  ([test_ntlm.py#L99](test_ntlm.py#L99) and
-  [#L114](test_ntlm.py#L114)): `Connection: close` is not forwarded, and
-  the pooled upstream connection still holds the challenge (xfail,
-  [#L211](test_ntlm.py#L211)). Record mode hides NTLM's connection binding.
-- **An authenticated upstream connection is handed to other clients.** After
-  one client authenticates, an anonymous request from another client
-  connection, or from a second recording VCR in the same process, is
-  served as the authenticated user, and the tape records a 200 for a
-  request with no credentials (xfail,
-  [#L185](test_ntlm.py#L185) and [#L198](test_ntlm.py#L198)). Recording a
-  suite whose clients run in parallel, or which has anonymous and
-  authenticated cases in one process, records wrong answers.
+- **One client's handshake** reaches the server on one upstream connection
+  ([test_ntlm.py#L150](test_ntlm.py#L150)).
+- **Two clients interleaving their handshakes** each keep their own upstream
+  connection, and both authenticate ([test_ntlm.py#L162](test_ntlm.py#L162)).
+- **A Type 3 on a new client connection** goes upstream on a new connection
+  and is refused, as the server refuses it directly
+  ([#L197](test_ntlm.py#L197); directly: [test_ntlm.py#L99](test_ntlm.py#L99)
+  and [#L114](test_ntlm.py#L114)).
+- **An authenticated upstream connection stays its client's.** An anonymous
+  request from another client connection, or from a second recording VCR in
+  the same process, gets its own upstream connection and the 401
+  ([#L177](test_ntlm.py#L177) and [#L188](test_ntlm.py#L188)). Clients that
+  run in parallel, and anonymous and authenticated cases in one process,
+  record what the server said to each.
 
-So: record one NTLM client at a time, one recording per process or per
-upstream origin, and check that an anonymous case still gets its 401.
-
-The fix is not in Servirtium's core alone: `std.http.client` has no way to
-send a request on a particular connection. What it needs, and how the core
-would use it, is in
-[`asks/aether-http-client-connection-affinity.md`](../../asks/aether-http-client-connection-affinity.md)
-and the repository's [TODO.md](../../TODO.md).
+Before 0.939.0 the recorder forwarded through `std.http.client`'s
+process-wide idle pool, keyed by origin only: all four of the cases above
+went wrong (two clients' handshakes shared one connection and the first
+was refused; an authenticated connection answered other clients' anonymous
+requests as that user, across VCRs too; a Type 3 on a new client connection
+succeeded). The tapes here were recorded one client at a time, which the
+pool happened to get right, and re-record byte for byte with the pairing.
+The Aether side was asked for in
+[`asks/aether-http-client-connection-affinity.md`](../../asks/aether-http-client-connection-affinity.md).
 
 The client's side is fine: the recorder's listener keeps the client's
 connection alive across the legs (curl reuses it,
-[#L222](test_ntlm.py#L222)).
+[#L210](test_ntlm.py#L210)).
 
 ### (b) What a tape records
 
@@ -137,10 +130,10 @@ All the legs, each as its own interaction, with its status: the anonymous
 401 (when the client sends one), the Type 1 and its 401 with the Type 2,
 the Type 3 and the 200. The first 401's two challenges are kept in the
 order the server sent them, `Negotiate` then `NTLM`
-([#L236](test_ntlm.py#L236)). Header names keep their casing
+([#L224](test_ntlm.py#L224)). Header names keep their casing
 (`Authorization`, `WWW-Authenticate`); response headers keep the server's
 order; request headers are written sorted by name, not in the client's
-order ([#L253](test_ntlm.py#L253)).
+order ([#L241](test_ntlm.py#L241)).
 
 Which scheme each client picked, offered `Negotiate` then `NTLM`:
 
@@ -155,62 +148,62 @@ Which scheme each client picked, offered `Negotiate` then `NTLM`:
 
 A client's Type 1 is the same bytes every run; its Type 3 is not, even
 against the same challenge: it carries the client's own nonce and
-timestamp, and the NTLMv2 proof over them ([#L369](test_ntlm.py#L369)).
+timestamp, and the NTLMv2 proof over them ([#L357](test_ntlm.py#L357)).
 So with no rule, strict request matching passes the first legs and stops
 at the Type 3: `HeaderValueDiff` on `Authorization`, and the client gets
-Servirtium's 599 ([#L380](test_ntlm.py#L380)).
+Servirtium's 599 ([#L368](test_ntlm.py#L368)).
 
 The existing credential preset is the rule: `redact_credentials()` on the
 record and the playback builder writes `Authorization: NTLM
 AUTHORIZATION_N` and matches it on presence. Every NTLM tape here then
 plays back, for requests-ntlm and for curl
-([#L391](test_ntlm.py#L391), [#L400](test_ntlm.py#L400)), the refusal tape
-included ([#L429](test_ntlm.py#L429)). No core change was needed.
+([#L379](test_ntlm.py#L379), [#L388](test_ntlm.py#L388)), the refusal tape
+included ([#L417](test_ntlm.py#L417)). No core change was needed.
 
 What that costs, and cannot be helped: playback cannot check an NTLM
 response (it would need the password's hash and a challenge it issued), so
-a wrong password replays as a 200 ([#L419](test_ntlm.py#L419)). And a tape
+a wrong password replays as a 200 ([#L407](test_ntlm.py#L407)). And a tape
 replays only for a client that takes the same legs: curl, which skips the
 anonymous request, cannot replay the requests-ntlm tape
-([#L409](test_ntlm.py#L409)).
+([#L397](test_ntlm.py#L397)).
 
 ### (d) Redaction
 
 The unredacted Type 3 names the domain, user and workstation in clear and
 carries the password-derived NTLMv2 response
-([#L485](test_ntlm.py#L485)). The credential preset leaves none of the
-client's tokens on the tape ([#L492](test_ntlm.py#L492)) and, as (c) says,
+([#L473](test_ntlm.py#L473)). The credential preset leaves none of the
+client's tokens on the tape ([#L480](test_ntlm.py#L480)) and, as (c) says,
 still plays back.
 
 The Type 2 is the server's: its challenge is a public nonce, but its target
 information names the server and its domain (on a real IIS, real names). A
 `redact_whole_tape` regex on `NTLM TlRMTVNTUAACAAAA...` can write it as one
 fixed, well-formed Type 2; the client computes its Type 3 against that, and
-playback passes ([#L502](test_ntlm.py#L502)). Redacted to a placeholder it
-cannot play back: the client must parse it ([#L512](test_ntlm.py#L512)).
+playback passes ([#L490](test_ntlm.py#L490)). Redacted to a placeholder it
+cannot play back: the client must parse it ([#L500](test_ntlm.py#L500)).
 With the fixed Type 2, an NTLM tape re-records byte for byte
-([#L524](test_ntlm.py#L524)).
+([#L512](test_ntlm.py#L512)).
 
 pyspnego, client and server, names the machine after
 `socket.gethostname()` inside its tokens; the suite sets
 `NETBIOS_COMPUTER_NAME` for the clients and the server presents a
 synthetic name, and a test checks no tape names the recording machine,
-inside the tokens too ([#L543](test_ntlm.py#L543)).
+inside the tokens too ([#L531](test_ntlm.py#L531)).
 
 ### (e) Other things the run turned up
 
 - **Negotiate's mechListMIC.** SPNEGO ends with the server's mechListMIC on
   the 200, keyed by the record run's session key. Replayed, it fails a
   client that checks it (pyspnego: `BadMICError`; xfail,
-  [#L440](test_ntlm.py#L440)). A playback `substitute()` that removes that
-  recorded header line cures it ([#L445](test_ntlm.py#L445)); note that
+  [#L428](test_ntlm.py#L428)). A playback `substitute()` that removes that
+  recorded header line cures it ([#L433](test_ntlm.py#L433)); note that
   `substitute` replaces literal text, it is not a regex.
 - **POST bodies.** requests-ntlm re-sends the body on every leg; curl sends
   none until the Type 3 (`Content-Length: 0` on the Type 1, or one empty
   chunk when chunked). The recorder writes a chunked body whole, keeps the
   client's `Transfer-Encoding: chunked` on the tape, and forwards it upstream
-  with a `Content-Length` ([#L336](test_ntlm.py#L336),
-  [#L347](test_ntlm.py#L347)).
+  with a `Content-Length` ([#L324](test_ntlm.py#L324),
+  [#L335](test_ntlm.py#L335)).
 - **Pre-sent credentials.** curl `--ntlm` sends its Type 1 with the first
   request, so its tapes have no anonymous leg.
 - **Connection: close.** A client that closes after its Type 1 can never
@@ -243,8 +236,9 @@ python ntlm_server.py --port 8099     # the server on its own, logging to stderr
 
 The curl tests need a curl built with NTLM (`curl --version` lists it
 under Features); Arch's curl 8.23.0 is not, so on cachyos they skip, with
-that reason. Last run: macOS arm64, 35 passed and 6 xfailed; cachyos
-(Python 3.14, curl without NTLM), 27 passed, 6 xfailed, 8 skipped.
+that reason. Last run (Aether 0.939.0, 2026-11-23): macOS arm64, 39 passed
+and 2 xfailed; cachyos (Python 3.14, curl without NTLM), 31 passed, 2
+xfailed, 8 skipped.
 
 ## Licence
 

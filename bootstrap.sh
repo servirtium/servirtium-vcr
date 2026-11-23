@@ -164,8 +164,14 @@ set -euo pipefail
 # the module's Aether functions. aeb unchanged (v0.348).
 # 2026-11-22: ae 0.935.0 -> 0.936.0, a tracking-only bump, no new primitive
 # needed. aeb unchanged (v0.348).
-AE_PIN="0.936.0"
-AE_FETCH="v0.936.0"
+# 2026-11-23: ae 0.936.0 -> 0.939.0, a FLOOR move: record mode pairs each
+# client connection with an upstream connection of its own through
+# std.http.client's pinned pools (client.pool_new_pinned, http.request_conn_id,
+# http.server_on_conn_close; aether#3851), which 0.939.0 is the first to have.
+# NTLM and Negotiate record correctly only with it (pre-recorded/ntlm). aeb
+# unchanged (v0.348).
+AE_PIN="0.939.0"
+AE_FETCH="v0.939.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

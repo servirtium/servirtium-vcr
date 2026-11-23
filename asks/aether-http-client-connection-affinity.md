@@ -1,5 +1,13 @@
 # std.http.client cannot send a request on a chosen connection
 
+**RESOLVED 2026-11-23 in Aether 0.939.0** (aether#3851): per-owner pools
+(`client.pool_new_pinned()`, a pool holding one connection; a request sent
+through `client.set_pool`), `http.request_conn_id` and
+`http.server_on_conn_close`; plain requests no longer pool. `do_record` gives
+each client connection a pinned pool of its own and frees it when the
+client's connection closes; the four NTLM cases below pass
+(`pre-recorded/ntlm/README.md`, finding (a)). Kept for the record.
+
 Found 2026-11-23 by `pre-recorded/ntlm/` (pyspnego's NTLM acceptor,
 recording through servirtium-vcr on Aether 0.936.0). Not worked around in
 servirtium-vcr (there is nothing in the core to work around it with); not

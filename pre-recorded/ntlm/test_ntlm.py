@@ -147,11 +147,11 @@ def test_direct_the_anonymous_endpoint_needs_no_credentials(ntlm_server):
 # ============================================================================
 
 
-def test_record_one_clients_handshake_succeeds_because_the_recorder_reuses_its_one_upstream_connection(ntlm_server, tmp_path):
-    """Record mode forwards each request with Aether's std.http.client, whose
-    process-wide idle pool hands back the connection the previous request
-    used. One client at a time, that keeps the handshake on one upstream
-    connection, so NTLM works: by the pool's accident, not by pairing."""
+def test_record_keeps_one_clients_handshake_on_one_upstream_connection(ntlm_server, tmp_path):
+    """Record mode gives each client connection an upstream connection of its
+    own (a pinned std.http.client pool, Aether 0.939.0), kept for all its
+    requests, so the three legs of a handshake reach the server on one
+    connection."""
     with recorder(tmp_path / "t.md", ntlm_server.url).start() as vcr:
         r = K.requests_call(vcr.base_url)
         assert vcr.last_kind is Outcome.OK
@@ -159,12 +159,9 @@ def test_record_one_clients_handshake_succeeds_because_the_recorder_reuses_its_o
     assert ntlm_server.connections_opened() == 1
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Record mode does not pair client connections with upstream connections: two clients' "
-    "interleaved handshakes go upstream over the one pooled connection, the second Type 1 "
-    "replaces the first's challenge, and the first Type 3 is refused as if the password were "
-    "wrong (then the second as having no handshake). See README, finding (a)."))
 def test_record_keeps_two_interleaved_handshakes_on_their_own_upstream_connections(ntlm_server, tmp_path):
+    """Two clients' handshakes, interleaved leg by leg: each client
+    connection's legs go upstream on its own connection, so both succeed."""
     with recorder(tmp_path / "t.md", ntlm_server.url).start() as vcr:
         a, b = K.WireClient(vcr.base_url), K.WireClient(vcr.base_url)
         ca, cb = K.WireClient.context(), K.WireClient.context()
@@ -177,12 +174,9 @@ def test_record_keeps_two_interleaved_handshakes_on_their_own_upstream_connectio
     assert (sa, sb) == (200, 200), log
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Record mode hands an upstream connection that one client authenticated to the next "
-    "request from ANOTHER client connection (the pool is keyed by origin only), so an "
-    "anonymous client is served as the authenticated user, and the tape records a 200 for a "
-    "request with no credentials. See README, finding (a)."))
 def test_record_does_not_hand_one_clients_authenticated_upstream_connection_to_another_client(ntlm_server, tmp_path):
+    """An upstream connection one client authenticated stays that client's:
+    another client connection's anonymous request gets its own and the 401."""
     with recorder(tmp_path / "t.md", ntlm_server.url).start() as vcr:
         assert K.requests_call(vcr.base_url).status == 200
         anonymous = K.WireClient(vcr.base_url)
@@ -191,11 +185,8 @@ def test_record_does_not_hand_one_clients_authenticated_upstream_connection_to_a
     assert status == 401, f"an anonymous client got {status}: {body.strip()}"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "The idle pool is process-wide, so the leak crosses VCRs too: a second recording VCR in "
-    "the same process, with a different tape, reuses the upstream connection the first VCR's "
-    "client authenticated. See README, finding (a)."))
 def test_record_a_second_vcr_in_the_process_does_not_inherit_an_authenticated_upstream_connection(ntlm_server, tmp_path):
+    """Nor across VCRs: a second recording VCR in the process opens its own."""
     with recorder(tmp_path / "one.md", ntlm_server.url).start() as vcr:
         assert K.requests_call(vcr.base_url).status == 200
     with recorder(tmp_path / "two.md", ntlm_server.url).start() as vcr:
@@ -203,12 +194,9 @@ def test_record_a_second_vcr_in_the_process_does_not_inherit_an_authenticated_up
     assert status == 401, f"an anonymous client of the second VCR got {status}: {body.strip()}"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Record mode hides NTLM's connection binding: a client whose Type 3 arrives on a new "
-    "connection (it asked to close after the Type 1) is refused by the server directly, but "
-    "authenticates through the recorder, which does not forward Connection: close and sends "
-    "the Type 3 over the pooled upstream connection. See README, finding (a)."))
 def test_record_refuses_a_type3_on_a_new_client_connection_as_the_server_does(ntlm_server, tmp_path):
+    """A Type 3 on a new client connection goes upstream on a new connection,
+    which the server refuses, as it does directly."""
     with recorder(tmp_path / "t.md", ntlm_server.url).start() as vcr:
         ctx = K.WireClient.context()
         first = K.WireClient(vcr.base_url)

@@ -111,6 +111,7 @@ import std.io
 //   - Arbitrary binary decoded record bodies without base64 emission
 
 import std.http
+import std.intmap
 import std.fs
 import std.string
 import std.list
@@ -323,6 +324,12 @@ extern http_request_set_timeout_raw(req: ptr, seconds: int) -> int
 extern http_request_set_cafile_raw(req: ptr, path: string) -> int
 extern http_request_free_raw(req: ptr)
 extern http_send_raw(req: ptr) -> ptr
+// Connection owners (std.http.client, Aether 0.939.0):
+// record mode sends each client connection's requests through a pinned pool
+// of its own.
+extern http_request_set_pool_raw(req: ptr, pool: ptr) -> int
+extern http_client_pool_new_pinned_raw() -> ptr
+extern http_client_pool_free_raw(pool: ptr)
 extern http_response_status(response: ptr) -> int
 extern http_response_body(response: ptr) -> string
 extern http_response_body_length(response: ptr) -> int
@@ -505,6 +512,20 @@ struct Vcr {
     note_present: int        // a note staged by note() for the next recording
     note_title: string
     note_body: string
+    upstreams: *Upstreams    // record mode: each client connection's upstream connection
+}
+
+// Record mode's upstream connections, one per client connection. NTLM and
+// Negotiate authenticate a connection, not a request, so a recorder that
+// let any client's request ride any upstream connection sent one client's
+// request as another's user, and split a handshake over two connections.
+// Each client connection (http.request_conn_id) gets a pinned pool of its
+// own, a single upstream connection kept for all its requests, and the
+// pool is freed when the client connection closes (vcr_conn_closed) or the
+// VCR is freed.
+struct Upstreams {
+    lock: ptr                // see lock_take; guards conns
+    conns: ptr               // std.intmap: client connection id -> pinned pool
 }
 
 new_rules() -> *Rules {
@@ -624,7 +645,50 @@ new_vcr(server: @keep ptr) -> *Vcr {
     vc.note_title = string.copy("")
     vc.note_body = string.copy("")
     vc.id = string.copy(string.from_long(mem.ptr_to_long(vc as ptr)))
+    u = malloc(sizeof(Upstreams)) as *Upstreams
+    u.lock = lock_new()
+    u.conns = intmap.new(16)
+    vc.upstreams = u
+    if server != null { http.server_on_conn_close(server, vcr_conn_closed, vc as ptr) }
     return vc
+}
+
+// The pinned pool carrying client connection `id`'s requests upstream,
+// made on its first request. Null for id 0 (a connection the server cannot
+// name): that request gets an upstream connection of its own.
+upstream_for_k(vc: *Vcr, id: long) -> ptr {
+    if id == 0 { return null }
+    u = vc.upstreams
+    lock_take(u.lock)
+    pool = mem.long_to_ptr(intmap.get(u.conns, id, 0))
+    if pool == null {
+        pool = http_client_pool_new_pinned_raw()
+        intmap.put(u.conns, id, mem.ptr_to_long(pool))
+    }
+    lock_give(u.lock)
+    return pool
+}
+
+// A client connection closed: close its upstream connection with it.
+@c_callback
+vcr_conn_closed(id: long, ud: ptr) {
+    u = key_for(ud).upstreams
+    lock_take(u.lock)
+    pool = mem.long_to_ptr(intmap.get(u.conns, id, 0))
+    intmap.remove(u.conns, id)
+    lock_give(u.lock)
+    if pool != null { http_client_pool_free_raw(pool) }
+}
+
+free_upstreams(u: *Upstreams) {
+    slot = intmap.next(u.conns, 0)
+    while slot >= 0 {
+        http_client_pool_free_raw(mem.long_to_ptr(intmap.value_at(u.conns, slot)))
+        slot = intmap.next(u.conns, slot + 1)
+    }
+    intmap.free(u.conns)
+    sync.atomic_free(u.lock)
+    free(u as ptr)
 }
 
 // Free a VCR record and the lists it owns. Only for a VCR nothing else can
@@ -663,6 +727,7 @@ free_vcr(vc: *Vcr) {
     list_free(s.values)
     list_free(s.cred_counters)
     free(s as ptr)
+    free_upstreams(vc.upstreams)
     free(vc as ptr)
 }
 
@@ -2531,6 +2596,8 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
         http_request_set_header_raw(creq, "Content-Length", "0")
     }
     http_request_set_timeout_raw(creq, 30)
+    // This client connection's upstream connection, and no other's.
+    http_request_set_pool_raw(creq, upstream_for_k(vc, http.request_conn_id(req)))
     upstream_ca = vc.settings.upstream_cafile
     if string.length(upstream_ca) > 0 { http_request_set_cafile_raw(creq, upstream_ca) }
 
