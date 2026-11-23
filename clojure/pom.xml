@@ -9,6 +9,20 @@
     <version>2.0.0-alpha.19</version>
     <packaging>jar</packaging>
 
+    <url>https://github.com/servirtium/servirtium-vcr</url>
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://github.com/servirtium/servirtium-vcr/blob/main/LICENSE</url>
+        </license>
+    </licenses>
+    <scm>
+        <connection>scm:git:https://github.com/servirtium/servirtium-vcr.git</connection>
+        <developerConnection>scm:git:git@github.com:servirtium/servirtium-vcr.git</developerConnection>
+        <url>https://github.com/servirtium/servirtium-vcr</url>
+        <tag>HEAD</tag>
+    </scm>
+
     <!--
       Servirtium VCR for Clojure: a thin idiomatic wrapper over the Java FFM
       binding (dev.servirtium:vcr), which is the actual

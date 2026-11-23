@@ -8,6 +8,7 @@ authors:
 
 crystal: ">= 1.0.0"
 license: MIT
+repository: https://github.com/servirtium/servirtium-vcr
 
 # A root shard.yml (../shard.yml) makes the repo installable as
 # `github: servirtium/servirtium-vcr`; KEEP THE TWO IN STEP.

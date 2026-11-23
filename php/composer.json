@@ -3,6 +3,10 @@
     "description": "Record/replay for HTTP service tests in the Servirtium markdown tape format — a thin PHP FFI layer over the Aether VCR core.",
     "type": "library",
     "license": "MIT",
+    "homepage": "https://github.com/servirtium/servirtium-vcr",
+    "support": {
+        "source": "https://github.com/servirtium/servirtium-vcr/tree/main/php"
+    },
     "keywords": ["servirtium", "vcr", "http", "record", "replay", "testing", "ffi"],
     "require": {
         "php": ">=8.2",

@@ -21,6 +21,7 @@ authors:
 
 crystal: ">= 1.0.0"
 license: MIT
+repository: https://github.com/servirtium/servirtium-vcr
 
 libraries:
   libservirtium_vcr: "2.0.0"

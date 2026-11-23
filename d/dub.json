@@ -6,6 +6,7 @@
         "Paul Hammant"
     ],
     "license": "MIT",
+    "homepage": "https://github.com/servirtium/servirtium-vcr",
     "targetType": "library",
     "importPaths": [
         "src"

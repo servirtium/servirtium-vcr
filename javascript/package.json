@@ -3,6 +3,11 @@
   "version": "2.0.0-alpha.19",
   "description": "Record/replay for HTTP service tests in the Servirtium markdown tape format — a thin Node.js (koffi FFI) wrapper over the Aether VCR core.",
   "homepage": "https://servirtium.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/servirtium/servirtium-vcr.git",
+    "directory": "javascript"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "license": "MIT",

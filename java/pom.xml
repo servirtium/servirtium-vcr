@@ -13,17 +13,17 @@
         A thin Java FFM (java.lang.foreign / Project Panama) wrapper over the Aether VCR core.
     </description>
 
-    <url>http://github.com/paul-hammant/servirtium</url>
+    <url>https://github.com/servirtium/servirtium-vcr</url>
     <licenses>
         <license>
-            <name>Two clause BSD license</name>
-            <url>https://github.com/paul-hammant/servirtium/blob/master/LICENSE.txt</url>
+            <name>MIT License</name>
+            <url>https://github.com/servirtium/servirtium-vcr/blob/main/LICENSE</url>
         </license>
     </licenses>
     <scm>
-        <connection>scm:git:git@github.com:paul-hammant/servirtium.git</connection>
-        <developerConnection>scm:git:git@github.com:paul-hammant/servirtium.git</developerConnection>
-        <url>git@github.com:paul-hammant/servirtium.git</url>
+        <connection>scm:git:https://github.com/servirtium/servirtium-vcr.git</connection>
+        <developerConnection>scm:git:git@github.com:servirtium/servirtium-vcr.git</developerConnection>
+        <url>https://github.com/servirtium/servirtium-vcr</url>
         <tag>HEAD</tag>
     </scm>
 

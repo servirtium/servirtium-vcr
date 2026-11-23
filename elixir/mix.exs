@@ -46,8 +46,8 @@ defmodule Servirtium.MixProject do
   defp package do
     [
       files: ~w(lib mix.exs README.md docs MIGRATION.md LICENSE),
-      licenses: ["Apache-2.0"],
-      links: %{"Servirtium" => "https://servirtium.dev"}
+      licenses: ["MIT"],
+      links: %{"Servirtium" => "https://servirtium.dev", "Source" => "https://github.com/servirtium/servirtium-vcr"}
     ]
   end
 
