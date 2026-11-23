@@ -3,9 +3,10 @@
 * ``requests`` + ``requests-ntlm`` (pyspnego inside): sends the request
   without credentials, then Type 1 and Type 3 on the same pooled connection.
   Prefers NTLM when a server offers both NTLM and Negotiate.
-* ``curl --ntlm``: sends Type 1 straight away (it is told the scheme), then
-  Type 3 on the same connection.
-* ``curl --negotiate``: SPNEGO through the system GSS-API library.
+* :func:`type1_first_call`: pyspnego's NTLM client on one kept-alive
+  ``http.client`` connection, told the scheme, so it sends Type 1 with the
+  first request (no anonymous leg) and holds a POST's body back until the
+  Type 3.
 * ``httpx`` with :class:`SpnegoAuth` below (pyspnego's Negotiate client;
   with no Kerberos it is SPNEGO carrying NTLM).
 * :class:`WireClient`: one ``http.client`` connection per object and a
@@ -18,8 +19,6 @@ from __future__ import annotations
 import base64
 import http.client
 import json
-import shutil
-import subprocess
 from dataclasses import dataclass, field
 
 import httpx
@@ -38,7 +37,7 @@ class Result:
     body: str
     statuses: list[int] = field(default_factory=list)  # every response, in order
     schemes: list[str] = field(default_factory=list)  # the Authorization scheme of each request ("" for none)
-    trace: str = ""
+    connections: int = 0  # TCP connections the client opened (type1_first_call only)
 
     def json(self):
         return json.loads(self.body)
@@ -65,47 +64,57 @@ def requests_call(base: str, path: str = "/whoami", password: str = PASSWORD, me
             s.close()
 
 
-# ---- curl
+# ---- Type 1 first, on one kept-alive connection
 
 
-def curl_has(feature: str) -> bool:
-    if not shutil.which("curl"):
-        return False
-    out = subprocess.run(["curl", "--version"], capture_output=True, text=True).stdout
-    return any(feature in line.split() for line in out.splitlines() if line.startswith("Features:"))
+class _CountingConnection(http.client.HTTPConnection):
+    """An ``http.client`` connection that counts the TCP connections it opens
+    (it reopens on its own if the server closes one)."""
+
+    def __init__(self, host: str, port: int):
+        super().__init__(host, port, timeout=30)
+        self.opened = 0
+
+    def connect(self):
+        self.opened += 1
+        super().connect()
 
 
-def curl_version() -> str:
-    return subprocess.run(["curl", "--version"], capture_output=True, text=True).stdout.splitlines()[0]
+def _host_port(base: str) -> tuple[str, int]:
+    host, port = base.split("://", 1)[1].rsplit(":", 1)
+    return host, int(port)
 
 
-def curl_call(base: str, path: str = "/whoami", *, auth: str = "ntlm", password: str = PASSWORD,
-              method: str = "GET", data: str | None = None, chunked: bool = False) -> Result:
-    cmd = ["curl", "-sS", "-v", "--max-time", "30", "-X", method]
-    if auth == "ntlm":
-        cmd += ["--ntlm", "-u", f"{USER}:{password}"]
-    elif auth == "negotiate":
-        cmd += ["--negotiate", "-u", f"{USER}:{password}"]
-    if data is not None:
-        cmd += ["-H", "Content-Type: application/json", "--data-binary", "@-"]
-        if chunked:
-            cmd += ["-H", "Transfer-Encoding: chunked"]
-    cmd += ["-w", "\n%{http_code}", base + path]
-    p = subprocess.run(cmd, input=data or "", capture_output=True, text=True, timeout=60)
-    body, _, code = p.stdout.rpartition("\n")
-    statuses, schemes, pending = [], [], None
-    for line in p.stderr.splitlines():
-        if line.startswith("> GET ") or line.startswith("> POST "):
-            if pending is not None:
-                schemes.append(pending)
-            pending = ""
-        elif line.lower().startswith("> authorization:"):
-            pending = line.split(":", 1)[1].strip().split(" ", 1)[0]
-        elif line.startswith("< HTTP/"):
-            statuses.append(int(line.split()[2]))
-    if pending is not None:
-        schemes.append(pending)
-    return Result(int(code or 0), body, statuses, schemes, p.stderr)
+def type1_first_call(base: str, path: str = "/whoami", *, password: str = PASSWORD, method: str = "GET",
+                     body: bytes | None = None, chunked: bool = False) -> Result:
+    """NTLM with pyspnego, told the scheme: the first request carries the
+    Type 1 (no anonymous request), the Type 3 goes on the same connection.
+    A POST's body waits for the Type 3: the Type 1 leg says
+    ``Content-Length: 0`` or, chunked, sends only the last (empty) chunk."""
+    conn = _CountingConnection(*_host_port(base))
+    ctx = WireClient.context(password)
+    token, statuses, text, type3 = ctx.step(), [], "", False
+    try:
+        while True:
+            headers = {"Authorization": f"NTLM {base64.b64encode(token).decode()}"}
+            payload = None
+            if body is not None:
+                headers["Content-Type"] = "application/json"
+                payload = body if type3 else b""
+                if chunked:
+                    headers["Transfer-Encoding"] = "chunked"
+                    payload = iter([payload] if payload else [])
+            conn.request(method, path, body=payload, headers=headers, encode_chunked=chunked)
+            r = conn.getresponse()
+            text = r.read().decode()
+            statuses.append(r.status)
+            challenge = next((v for v in r.headers.get_all("WWW-Authenticate") or [] if v.startswith("NTLM ")), None)
+            if type3 or r.status != 401 or challenge is None:
+                break
+            token, type3 = ctx.step(base64.b64decode(challenge.split(" ", 1)[1])), True
+        return Result(statuses[-1], text, statuses, ["NTLM"] * len(statuses), conn.opened)
+    finally:
+        conn.close()
 
 
 # ---- httpx with a pyspnego auth flow

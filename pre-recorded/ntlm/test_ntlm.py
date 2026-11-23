@@ -22,7 +22,6 @@ from conftest import (FIXED_TYPE2, TAPES, NtlmServerProcess, TYPE2_ON_TAPE, comm
                       recorder)
 from ntlm_wire import build_challenge, message_type, parse_authenticate, parse_challenge
 
-CURL_NTLM = pytest.mark.skipif(not K.curl_has("NTLM"), reason="this curl was built without NTLM")
 Outcome = servirtium.Outcome
 
 
@@ -55,15 +54,13 @@ def test_direct_requests_ntlm_picks_ntlm_over_the_negotiate_offered_first_and_au
     assert ntlm_server.connections_opened() == 1
 
 
-@CURL_NTLM
-def test_direct_curl_ntlm_sends_type1_without_waiting_for_a_401_and_authenticates(ntlm_server):
-    """curl --ntlm knows the scheme, so it skips the anonymous request: Type 1
-    first, then Type 3 on the same (re-used) connection."""
-    r = K.curl_call(ntlm_server.url)
-    assert r.status == 200 and r.json()["user"] == "NAEDOMAIN\\naeuser"
+def test_direct_a_client_told_the_scheme_sends_type1_first_and_authenticates_on_one_connection(ntlm_server):
+    """A client that knows the scheme skips the anonymous request: Type 1
+    first, then Type 3 on the same connection."""
+    r = K.type1_first_call(ntlm_server.url)
+    assert r.status == 200 and r.json() == {"user": "NAEDOMAIN\\naeuser", "scheme": "NTLM"}
     assert r.statuses == [401, 200] and r.schemes == ["NTLM", "NTLM"]
-    assert "Re-using existing" in r.trace or "left intact" in r.trace
-    assert ntlm_server.connections_opened() == 1
+    assert r.connections == 1 and ntlm_server.connections_opened() == 1
 
 
 def test_direct_httpx_negotiate_without_kerberos_is_spnego_carrying_ntlm(ntlm_server):
@@ -75,18 +72,6 @@ def test_direct_httpx_negotiate_without_kerberos_is_spnego_carrying_ntlm(ntlm_se
     assert r.schemes == ["", "Negotiate", "Negotiate"]
     assert ntlm_server.lines("SPNEGO NegTokenInit carrying Type 1")
     assert ntlm_server.lines("SPNEGO NegTokenResp carrying Type 3")
-
-
-@pytest.mark.skipif(not K.curl_has("SPNEGO"), reason="this curl was built without SPNEGO")
-def test_direct_curl_negotiate_falls_back_to_ntlm_without_kerberos(ntlm_server):
-    """Whether curl --negotiate, with no Kerberos ticket, gets through by
-    NTLM inside SPNEGO depends on the GSS-API library under curl."""
-    r = K.curl_call(ntlm_server.url, auth="negotiate")
-    if r.status != 200:
-        gss = [ln.strip("* ") for ln in r.trace.splitlines() if "gss" in ln.lower()]
-        pytest.xfail(f"{K.curl_version()}: no NTLM fallback, the 401 stands (statuses {r.statuses}); "
-                     f"curl said: {gss[:1] or 'nothing about GSS-API'}")
-    assert r.json()["scheme"] == "Negotiate"
 
 
 def test_direct_a_wrong_password_is_refused_and_logged(ntlm_server):
@@ -212,14 +197,13 @@ def test_record_refuses_a_type3_on_a_new_client_connection_as_the_server_does(nt
     assert status == 401
 
 
-@CURL_NTLM
 def test_record_the_recorder_keeps_the_client_connection_alive_across_legs(ntlm_server, tmp_path):
     """The client's side is fine: the recorder's own listener is keep-alive,
-    so curl sends its Type 3 on the connection that carried the Type 1."""
+    so the client sends its Type 3 on the connection that carried the Type 1."""
     with recorder(tmp_path / "t.md", ntlm_server.url).start() as vcr:
-        r = K.curl_call(vcr.base_url)
+        r = K.type1_first_call(vcr.base_url)
         vcr.commit()
-    assert r.status == 200 and "Re-using existing" in r.trace
+    assert r.status == 200 and r.connections == 1
 
 
 # ============================================================================
@@ -278,11 +262,12 @@ def test_record_handshake_requests_ntlm(ntlm_server, tmp_path):
     assert header(legs[1]["response_headers"], "WWW-Authenticate") == [FIXED_TYPE2]
 
 
-@CURL_NTLM
-def test_record_handshake_curl_ntlm(ntlm_server, tmp_path):
-    tape = committed_or_tmp(tmp_path, "handshake_curl_ntlm.md")
+def test_record_handshake_type1_first_ntlm(ntlm_server, tmp_path):
+    """(b) A client that sends its Type 1 with the first request: two legs,
+    no anonymous one."""
+    tape = committed_or_tmp(tmp_path, "handshake_type1_first_ntlm.md")
     with recorder(tape, ntlm_server.url).start() as vcr:
-        assert K.curl_call(vcr.base_url).status == 200
+        assert K.type1_first_call(vcr.base_url).status == 200
         vcr.commit()
     legs = parse_tape(tape)
     assert [i["status"] for i in legs] == [401, 200]
@@ -304,11 +289,10 @@ def test_record_handshake_httpx_negotiate(ntlm_server, tmp_path):
     assert legs[2]["status"] == 200
 
 
-@CURL_NTLM
-def test_record_refuses_a_wrong_password_curl_ntlm(ntlm_server, tmp_path):
-    tape = committed_or_tmp(tmp_path, "refuses_a_wrong_password_curl_ntlm.md")
+def test_record_refuses_a_wrong_password_type1_first_ntlm(ntlm_server, tmp_path):
+    tape = committed_or_tmp(tmp_path, "refuses_a_wrong_password_type1_first_ntlm.md")
     with recorder(tape, ntlm_server.url).start() as vcr:
-        r = K.curl_call(vcr.base_url, password=K.WRONG_PASSWORD)
+        r = K.type1_first_call(vcr.base_url, password=K.WRONG_PASSWORD)
         vcr.commit()
     assert r.status == 401
     assert [i["status"] for i in parse_tape(tape)] == [401, 401]
@@ -346,16 +330,15 @@ def test_record_post_with_body_requests_ntlm(ntlm_server, tmp_path):
     assert [i["request_body"].strip() for i in parse_tape(tape)] == ['{"order": 7}'] * 3
 
 
-@CURL_NTLM
-def test_record_post_with_body_curl_ntlm(ntlm_server, tmp_path):
-    """(e) curl holds a POST's body back until the Type 3: its Type 1 leg
-    says ``Content-Length: 0``, or, chunked, sends only the last chunk; the
-    recorder writes the chunked body whole and forwards it with a
+def test_record_post_body_after_type3_ntlm(ntlm_server, tmp_path):
+    """(e) A client that holds a POST's body back until the Type 3: its Type 1
+    leg says ``Content-Length: 0``, or, chunked, sends only the last chunk;
+    the recorder writes the chunked body whole and forwards it with a
     Content-Length."""
-    tape = committed_or_tmp(tmp_path, "post_with_body_curl_ntlm.md")
+    tape = committed_or_tmp(tmp_path, "post_body_after_type3_ntlm.md")
     with recorder(tape, ntlm_server.url).start() as vcr:
-        assert K.curl_call(vcr.base_url, "/echo", method="POST", data='{"order": 7}').status == 200
-        assert K.curl_call(vcr.base_url, "/echo", method="POST", data='{"order": 8}', chunked=True).status == 200
+        assert K.type1_first_call(vcr.base_url, "/echo", method="POST", body=b'{"order": 7}').status == 200
+        assert K.type1_first_call(vcr.base_url, "/echo", method="POST", body=b'{"order": 8}', chunked=True).status == 200
         vcr.commit()
     legs = parse_tape(tape)
     assert [i["request_body"].strip() for i in legs] == ["", '{"order": 7}', "", '{"order": 8}']
@@ -400,22 +383,19 @@ def test_playback_with_the_credential_preset_replays_requests_ntlm():
     assert r.status == 200 and r.json() == {"user": "NAEDOMAIN\\naeuser", "scheme": "NTLM"}
 
 
-@CURL_NTLM
-def test_playback_with_the_credential_preset_replays_curl_ntlm():
-    with player(TAPES / "handshake_curl_ntlm.md").start() as vcr:
-        r = K.curl_call(vcr.base_url)
+def test_playback_with_the_credential_preset_replays_a_type1_first_handshake():
+    with player(TAPES / "handshake_type1_first_ntlm.md").start() as vcr:
+        r = K.type1_first_call(vcr.base_url)
         assert vcr.last_kind is Outcome.OK, vcr.last_error
         vcr.assert_all_consumed()
     assert r.status == 200 and r.json()["user"] == "NAEDOMAIN\\naeuser"
 
 
-@CURL_NTLM
-def test_playback_needs_a_client_that_takes_the_same_legs_so_curl_cannot_replay_the_requests_ntlm_tape():
-    """The requests-ntlm tape starts with the anonymous request curl --ntlm
-    never sends (it opens with its Type 1): ordered playback refuses the
-    first request."""
+def test_playback_needs_a_client_that_takes_the_same_legs_so_a_type1_first_client_cannot_replay_the_requests_ntlm_tape():
+    """The requests-ntlm tape starts with the anonymous request a Type 1
+    first client never sends: ordered playback refuses the first request."""
     with player(TAPES / "handshake_requests_ntlm.md").start() as vcr:
-        r = K.curl_call(vcr.base_url)
+        r = K.type1_first_call(vcr.base_url)
         kind, index = vcr.last_kind, vcr.last_index
     assert r.statuses[:1] == [599] and kind is not Outcome.OK, (kind, index)
 
@@ -429,10 +409,9 @@ def test_playback_accepts_a_wrong_password_because_credentials_match_on_presence
     assert r.status == 200
 
 
-@CURL_NTLM
 def test_playback_replays_the_servers_refusal_of_a_wrong_password():
-    with player(TAPES / "refuses_a_wrong_password_curl_ntlm.md").start() as vcr:
-        r = K.curl_call(vcr.base_url, password=K.WRONG_PASSWORD)
+    with player(TAPES / "refuses_a_wrong_password_type1_first_ntlm.md").start() as vcr:
+        r = K.type1_first_call(vcr.base_url, password=K.WRONG_PASSWORD)
         assert vcr.last_kind is Outcome.OK, vcr.last_error
     assert r.status == 401 and r.statuses == [401, 401]
 
@@ -494,9 +473,9 @@ def test_unredacted_type3_names_the_user_domain_and_workstation():
 
 
 def test_the_credential_preset_leaves_no_client_token_on_the_tape():
-    for name in ("handshake_requests_ntlm.md", "handshake_curl_ntlm.md", "handshake_httpx_negotiate.md",
-                 "refuses_a_wrong_password_curl_ntlm.md", "calls_on_an_authenticated_connection_requests_ntlm.md",
-                 "post_with_body_requests_ntlm.md", "post_with_body_curl_ntlm.md"):
+    for name in ("handshake_requests_ntlm.md", "handshake_type1_first_ntlm.md", "handshake_httpx_negotiate.md",
+                 "refuses_a_wrong_password_type1_first_ntlm.md", "calls_on_an_authenticated_connection_requests_ntlm.md",
+                 "post_with_body_requests_ntlm.md", "post_body_after_type3_ntlm.md"):
         text = (TAPES / name).read_text()
         assert "TlRMTVNTUAAB" not in text and "TlRMTVNTUAAD" not in text, name
         for value in re.findall(r"^Authorization: (.*)$", text, flags=re.M):

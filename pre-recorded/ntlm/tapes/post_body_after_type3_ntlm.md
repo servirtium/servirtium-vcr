@@ -3,7 +3,6 @@
 ### Request headers recorded for playback:
 
 ```
-Accept: */*
 Authorization: NTLM AUTHORIZATION_1
 Content-Length: 0
 Content-Type: application/json
@@ -33,7 +32,6 @@ Content-Length: 60
 ### Request headers recorded for playback:
 
 ```
-Accept: */*
 Authorization: NTLM AUTHORIZATION_2
 Content-Length: 12
 Content-Type: application/json
@@ -63,7 +61,6 @@ Content-Length: 75
 ### Request headers recorded for playback:
 
 ```
-Accept: */*
 Authorization: NTLM AUTHORIZATION_1
 Content-Type: application/json
 Host: {{request.host}}
@@ -93,7 +90,6 @@ Content-Length: 60
 ### Request headers recorded for playback:
 
 ```
-Accept: */*
 Authorization: NTLM AUTHORIZATION_3
 Content-Type: application/json
 Host: {{request.host}}

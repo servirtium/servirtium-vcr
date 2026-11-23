@@ -3,7 +3,6 @@
 ### Request headers recorded for playback:
 
 ```
-Accept: */*
 Authorization: NTLM AUTHORIZATION_1
 Host: {{request.host}}
 ```
@@ -31,7 +30,6 @@ Content-Length: 60
 ### Request headers recorded for playback:
 
 ```
-Accept: */*
 Authorization: NTLM AUTHORIZATION_2
 Host: {{request.host}}
 ```
