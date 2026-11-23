@@ -1,0 +1,118 @@
+// What a mismatch report says, from a field report written against a
+// .NET Framework TFS client:
+//   - the heading names the outcome (HeaderValueDiff), not a number;
+//   - no empty "test:" or "source: :0" line when the test set no context;
+//   - a header difference is shown once, not again in the headers section;
+//   - when the tape has run out, the request's headers and body are shown,
+//     so the missing interaction can be written from the report (before,
+//     only "no expected interaction available": the reporter added a dummy
+//     interaction to force a diff);
+//   - remove_transport_headers drops Expect, which .NET Framework's
+//     HttpWebRequest sends on every POST (Expect: 100-continue).
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.os
+extern exit(code: int)
+
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+has(text: string, part: string, what: string) {
+    if string.contains(text, part) != 1 { fail("${what}: [${part}] not in\n${text}") }
+}
+hasnt(text: string, part: string, what: string) {
+    if string.contains(text, part) == 1 { fail("${what}: [${part}] must not be in\n${text}") }
+}
+port_for() -> int {
+    s = http.server_create(0)
+    if s == null { return 0 }
+    err = http.server_bind(s, "127.0.0.1", 0)
+    port = 0
+    if err == "" { port = http.server_port(s) }
+    http.server_free(s)
+    return port
+}
+// A one-interaction tape: POST /svc with `headers`, body <a/>.
+tape_with(name: string, headers: string) -> string {
+    path = "/tmp/svcr-report-${name}-${os.getpid()}.md"
+    h = vcr.open_offline()
+    err = vcr.record_full_h(h, "POST", "/svc", 200, "text/plain", "ok", headers, "<a/>")
+    if err != "" { fail(err) }
+    err = vcr.flush_h(h, path)
+    vcr.destroy_h(h)
+    if err != "" { fail(err) }
+    return path
+}
+start(tape: string, transport: int) -> (ptr, int) {
+    port = port_for()
+    p, err = vcr.open_playback(tape, port)
+    if err != "" { fail(err) }
+    if transport == 1 { vcr.remove_transport_headers_h(p) }
+    if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
+    return p, port
+}
+// POST /svc with SOAPAction `action`, optionally Expect: 100-continue.
+post(port: int, action: string, expect: int, body: string) -> int {
+    req = client.request("POST", "http://127.0.0.1:${port}/svc")
+    client.set_timeout(req, 5s)
+    client.set_header(req, "SOAPAction", action)
+    if expect == 1 { client.set_header(req, "Expect", "100-continue") }
+    if client.set_body(req, string.bytes(body), "text/xml") != "" { fail("set body") }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail(err) }
+    st = client.response_status(resp)
+    client.response_free(resp)
+    return st
+}
+
+main() {
+    println("=== mismatch reports a reader can act on ===")
+    tape = tape_with("hv", "Content-Type: text/xml\nSOAPAction: \"urn:a\"\n")
+
+    // A header value differs, no test context.
+    p, port = start(tape, 0)
+    if post(port, "\"urn:b\"", 0, "<a/>") != 599 { fail("urn:b matched") }
+    r = vcr.assert_no_mismatches_h(p)
+    has(r, "Servirtium replay mismatch #1 (HeaderValueDiff)\n", "the outcome is named")
+    hasnt(r, "(kind ", "no numeric kind")
+    hasnt(r, "\nsource:", "no empty source line")
+    has(r, "first difference: header SOAPAction\n- SOAPAction: \"urn:a\"\n+ SOAPAction: \"urn:b\"\n", "the difference")
+    has(r, "request headers: header SOAPAction differs (the first difference)\n", "named again, not repeated")
+    at = string.index_of(r, "+ SOAPAction: \"urn:b\"")
+    if string.index_of_from(r, "+ SOAPAction: \"urn:b\"", at + 1) >= 0 { fail("the differing line is printed twice:\n${r}") }
+    println("  PASS outcome named, no empty lines, a header difference shown once")
+
+    // With a test context: test and source are shown.
+    vcr.test_context_h(p, "TfsTests.QueriesWorkItems", "TfsTests.cs", 42)
+    if post(port, "\"urn:b\"", 0, "<a/>") != 599 { fail("urn:b matched") }
+    r2 = vcr.assert_no_mismatches_h(p)
+    has(r2, "\ntest: TfsTests.QueriesWorkItems\nsource: TfsTests.cs:42\n", "the context")
+    println("  PASS the test context when there is one")
+    vcr.destroy_h(p)
+
+    // The tape runs out: the request is shown whole.
+    p2, port2 = start(tape, 0)
+    if post(port2, "\"urn:a\"", 0, "<a/>") != 200 { fail("the recorded request: ${vcr.last_error_h(p2)}") }
+    if post(port2, "\"urn:next\"", 0, "<GetItems><Id>7</Id></GetItems>") != 599 { fail("past the end matched") }
+    if vcr.last_kind_h(p2) != 5 { fail("kind ${vcr.last_kind_h(p2)}, want 5") }
+    r3 = vcr.assert_no_mismatches_h(p2)
+    has(r3, "(TapeExhausted)\n", "named")
+    has(r3, "request: POST /svc\n", "the request line")
+    has(r3, "no expected interaction available\nrequest headers (as playback compares them):\n", "the headers heading")
+    has(r3, "SOAPAction: \"urn:next\"\n", "its headers")
+    has(r3, "request body:\n<GetItems><Id>7</Id></GetItems>\n", "its body")
+    println("  PASS an exhausted tape shows the request's headers and body")
+    vcr.destroy_h(p2)
+
+    // Expect: 100-continue on the live request, none on the tape.
+    p3, port3 = start(tape, 0)
+    if post(port3, "\"urn:a\"", 1, "<a/>") != 599 { fail("Expect matched without the preset") }
+    vcr.destroy_h(p3)
+    p4, port4 = start(tape, 1)
+    if post(port4, "\"urn:a\"", 1, "<a/>") != 200 { fail("remove_transport_headers kept Expect: ${vcr.last_error_h(p4)}") }
+    println("  PASS remove_transport_headers drops Expect")
+    vcr.destroy_h(p4)
+    println("PASS")
+    exit(0)
+}

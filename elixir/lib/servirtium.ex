@@ -52,7 +52,7 @@ defmodule Servirtium do
       tape cursor / forwarding upstream (e.g. `"/favicon.ico"`)
     * `:remove_transport_headers` — `true` to drop `Host`, `Connection`,
       `Content-Length`, the other hop-by-hop headers and the request's
-      `Accept-Encoding` (Servirtium 1's behaviour)
+      `Accept-Encoding` (Servirtium 1's behaviour) and `Expect`
     * `:remove_cloud_headers` — list of vendors (`"aws"`, `"azure"`,
       `"cloudflare"`, `"fastly"`, `"gcp"`) whose CDN / load-balancer tracing and
       cache-status headers are dropped

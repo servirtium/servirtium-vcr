@@ -16,7 +16,7 @@ try (var server = Vcr.playback("tapes/users.md").label("UsersTest").start()) {
 A mismatch assertion raises the binding's existing error/exception with a diff:
 
 ```text
-Servirtium replay mismatch #1 (kind 6)
+Servirtium replay mismatch #1 (BodyDiff)
 test: UsersTest.rejectsAdmin
 source: tests/UsersTest.java:42
 tape: tapes/users.md
@@ -29,6 +29,30 @@ request body
 @@ line 1, byte 9 @@
 - {"role":"reader"}
 + {"role":"admin"}
+```
+
+The heading names the outcome (`BodyDiff`, as the bindings' `Outcome` enums
+spell it). The `test:` and `source:` lines are there only when the test set
+them (`testContext`); `source:` without a line number when the line is 0. A
+difference the `first difference:` lines already show (a header, the method)
+is not shown again: the headers section then reads `request headers: header
+NAME differs (the first difference)`.
+
+When the tape has run out (`TapeExhausted`), there is nothing to compare
+with, so the report shows the request whole, as playback compares it (after
+header removals, masked), ready to be written into a tape:
+
+```text
+Servirtium replay mismatch #2 (TapeExhausted)
+tape: tapes/workitems.md
+interaction: 5
+request: POST /tfs/DefaultCollection/WorkItemTracking/v1.0/ClientService.asmx
+no expected interaction available
+request headers (as playback compares them):
+Content-Type: application/soap+xml; charset=utf-8
+SOAPAction: "http://schemas.microsoft.com/TeamFoundation/2005/06/WorkItemTracking/ClientServices/03/GetMetadataEx2"
+request body:
+<s:Envelope …>…</s:Envelope>
 ```
 
 ## Retrieval and test boundaries
@@ -156,7 +180,7 @@ The existing report is unchanged except that, under `match_multiple`, it is
 about the chosen interaction. The new lines are added after `request:`:
 
 ```text
-Servirtium replay mismatch #1 (kind 1)
+Servirtium replay mismatch #1 (PathOrMethodDiff)
 test: …
 source: …
 tape: …

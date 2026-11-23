@@ -153,7 +153,10 @@ differences(multiple: int) {
     // Another Content-Type value.
     r = expect_status(h, "Content-Type: text/xml\nExpect: 100-continue\nAccept-Encoding: gzip, deflate\n", "Rule 1;Openness;", 599, "Content-Type")
     has(r, "first difference: header Content-Type\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n", "named, one line each side")
-    has(r, "\nrequest headers: header Content-Type differs\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n", "the header section")
+    // The section names it once more without repeating the two lines.
+    has(r, "\nrequest headers: header Content-Type differs (the first difference)\n", "the header section")
+    first_at = string.index_of(r, "+ Content-Type: text/xml")
+    if first_at >= 0 && string.index_of_from(r, "+ Content-Type: text/xml", first_at + 1) >= 0 { fail("the differing line is printed twice:\n${r}") }
     if headers_match(h) != 0 { fail("headersMatch must be false") }
     has(first_difference_json(h), "\"section\":\"headers\"", "JSON section")
     has(first_difference_json(h), "\"element\":\"Content-Type\"", "JSON element is the header name")
@@ -195,7 +198,7 @@ masked(multiple: int) {
     live2 = "Content-Type: application/soap+xml; charset=utf-8\nAuthorization: Bearer ${TOKEN}\nX-Correlation-Id: corr-0000-not-real\nX-Tenant: ${SECRET}; region=us\n"
     r2 = expect_status(h, live2, "Rule 1;Openness;", 599, "the tenant region")
     has(r2, "first difference: header X-Tenant\n- X-Tenant: [REDACTED]; region=eu\n+ X-Tenant: [REDACTED]; region=us\n", "masked on both sides")
-    has(r2, "\nrequest headers: header X-Tenant differs\n- X-Tenant: [REDACTED]; region=eu\n+ X-Tenant: [REDACTED]; region=us\n", "and in the section")
+    has(r2, "\nrequest headers: header X-Tenant differs (the first difference)\n", "and in the section")
     dj = vcr.diagnostics_json_h(h, 0)
     hasnt(r, SECRET, "text"); hasnt(r2, SECRET, "text"); hasnt(dj, SECRET, "JSON")
     hasnt(r, TOKEN, "text"); hasnt(r2, TOKEN, "text"); hasnt(dj, TOKEN, "JSON")

@@ -112,7 +112,7 @@ func TestRequestHeadersSectionUsesMatchingsCanonicalForm(t *testing.T) {
 	report := s.LastError(false)
 	for _, want := range []string{
 		"first difference: header Content-Type\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n",
-		"request headers: header Content-Type differs\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n",
+		"request headers: header Content-Type differs (the first difference)\n",
 	} {
 		if !strings.Contains(report, want) {
 			t.Fatalf("no %q in\n%s", want, report)

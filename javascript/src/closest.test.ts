@@ -52,7 +52,8 @@ it('renders the request-headers section in matching\'s canonical form', () => {
     })
     const report = server.readLastError(false)
     expect(report).toContain('first difference: header Content-Type\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n')
-    expect(report).toContain('request headers: header Content-Type differs\n- Content-Type: application/soap+xml; charset=utf-8\n+ Content-Type: text/xml\n')
+    expect(report).toContain('request headers: header Content-Type differs (the first difference)\n')
+    expect(report.split('+ Content-Type: text/xml').length).toBe(2)
     expect(() => server.assertNoMismatches()).toThrow('Content-Type')
   } finally { server.close() }
 })

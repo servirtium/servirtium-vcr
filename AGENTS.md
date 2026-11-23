@@ -358,7 +358,7 @@ under its preset's name, so a reader sees which preset left a header out.
 | `redact_credentials_h(h)` | `Authorization` / `Proxy-Authorization` keep their scheme (`Bearer AUTHORIZATION_1`); each cookie's value in `Cookie` and `Set-Cookie` becomes `COOKIE_N` (attributes kept); `X-Api-Key` and `X-Auth-Token` become `API_KEY_N` / `AUTH_TOKEN_N` |
 | `redact_credential_header_h(h, name)` | one more header the same way, its whole value a token named after it (`X-Vault-Token: X_VAULT_TOKEN_1`) |
 | `remove_cloud_headers_h(h, vendor)` | a vendor's CDN / load-balancer tracing and cache-status headers; vendors in `CLOUD_VENDORS` (`aws, azure, cloudflare, fastly, gcp`), unknown names are an error |
-| `remove_transport_headers_h(h)` | `Host`, `Connection`, `Content-Length`, the other hop-by-hop headers and the request's `Accept-Encoding` (Servirtium 1's behaviour) |
+| `remove_transport_headers_h(h)` | `Host`, `Connection`, `Content-Length`, the other hop-by-hop headers and the request's `Accept-Encoding` (Servirtium 1's behaviour) and `Expect` (.NET Framework's HttpWebRequest sends `Expect: 100-continue` on every POST) |
 | `strict_ignore_common_headers_h(h)` | the request's `User-Agent`, `Accept`, `Accept-Encoding`, `Connection` |
 | `ignore_volatile_headers_h(h)` | the request's `traceparent`, `tracestate`, `Request-Id`, `X-Request-Id`, `X-Correlation-Id`, `baggage` |
 

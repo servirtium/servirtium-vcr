@@ -65,10 +65,8 @@ def test_renders_the_request_headers_section_in_matchings_canonical_form():
             "- Content-Type: application/soap+xml; charset=utf-8\n"
             "+ Content-Type: text/xml\n"
         ) in report
-        assert (
-            "request headers: header Content-Type differs\n"
-            "- Content-Type: application/soap+xml; charset=utf-8\n"
-            "+ Content-Type: text/xml\n"
-        ) in report
+        # Named again in the headers section, the lines not repeated.
+        assert "request headers: header Content-Type differs (the first difference)\n" in report
+        assert report.count("+ Content-Type: text/xml") == 1
         with pytest.raises(servirtium.VcrError, match="Content-Type"):
             server.assert_no_mismatches()

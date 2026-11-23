@@ -141,7 +141,8 @@ public abstract class VcrBuilderBase<S extends VcrBuilderBase<S>> {
     /**
      * Drop the transport headers: {@code Host}, {@code Connection},
      * {@code Content-Length}, the other hop-by-hop headers and the request's
-     * {@code Accept-Encoding} (Servirtium 1's behaviour), from both the
+     * {@code Accept-Encoding} (Servirtium 1's behaviour) and {@code Expect},
+     * from both the
      * recorded tape and the live request. Opt-in; listed in the recording-rules
      * footer under the preset's name.
      */

@@ -111,7 +111,9 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     /// <summary>
     /// Drop the transport headers: <c>Host</c>, <c>Connection</c>,
     /// <c>Content-Length</c>, the other hop-by-hop headers and the request's
-    /// <c>Accept-Encoding</c> (Servirtium 1's behaviour), from both the
+    /// <c>Accept-Encoding</c> (Servirtium 1's behaviour) and <c>Expect</c>
+    /// (HttpWebRequest on .NET Framework sends <c>Expect: 100-continue</c> on
+    /// every POST), from both the
     /// recorded tape and the live request. Opt-in; listed in the
     /// recording-rules footer under the preset's name.
     /// </summary>

@@ -3251,6 +3251,20 @@ const KIND_TAPE_EXHAUSTED      = 5
 const KIND_BODY_DIFF           = 6
 const KIND_RECORD_ERROR        = 7
 
+// An Outcome's name, as the bindings' enums spell it, for reports: a reader
+// should not have to look a number up.
+outcome_name(kind: int) -> string {
+    if kind == KIND_OK { return "Ok" }
+    if kind == KIND_PATH_OR_METHOD_DIFF { return "PathOrMethodDiff" }
+    if kind == KIND_HEADER_MISSING { return "HeaderMissing" }
+    if kind == KIND_HEADER_VALUE_DIFF { return "HeaderValueDiff" }
+    if kind == KIND_HEADER_UNEXPECTED { return "HeaderUnexpected" }
+    if kind == KIND_TAPE_EXHAUSTED { return "TapeExhausted" }
+    if kind == KIND_BODY_DIFF { return "BodyDiff" }
+    if kind == KIND_RECORD_ERROR { return "RecordError" }
+    return "kind ${kind}"
+}
+
 // Direct concat extern — interpolation recycles a backing buffer
 // and corrupts when the same `out` variable is rebuilt many times
 // in sequence (the kind of pattern a markdown-emitter hammers).
@@ -3669,7 +3683,7 @@ add_preset_removals_k(vc: *Vcr, field: int, names: string, origin: string) {
 // own.
 remove_transport_headers_h(server: ptr) -> string {
     key = key_for(server)
-    add_preset_removals_k(key, FIELD_REQUEST_HEADERS, "Host, Connection, Content-Length, Transfer-Encoding, Keep-Alive, TE, Trailer, Upgrade, Accept-Encoding", "transport")
+    add_preset_removals_k(key, FIELD_REQUEST_HEADERS, "Host, Connection, Content-Length, Transfer-Encoding, Keep-Alive, TE, Trailer, Upgrade, Accept-Encoding, Expect", "transport")
     add_preset_removals_k(key, FIELD_RESPONSE_HEADERS, "Connection, Content-Length, Transfer-Encoding, Keep-Alive, Trailer, Upgrade, Proxy-Authenticate", "transport")
     return ""
 }
@@ -7524,7 +7538,15 @@ replay_diagnostic_text(e: *ReplayDiagnostic) -> string {
     file = diagnostic_text(e.source_file, 512)
     line = e.source_line
     tape = diagnostic_text(e.tape, 512)
-    heading = "Servirtium replay mismatch #${seq} (kind ${kind})\ntest: ${test_name}\nsource: ${file}:${line}\ntape: ${tape}\ninteraction: ${idx}\n"
+    // The test and source lines only when the test said (test_context): an
+    // empty "test:" or "source: :0" only looks like something is missing.
+    heading = "Servirtium replay mismatch #${seq} (${outcome_name(kind)})\n"
+    if string.length(test_name) > 0 { heading = string_concat(heading, "test: ${test_name}\n") }
+    if string.length(file) > 0 {
+        if line > 0 { heading = string_concat(heading, "source: ${file}:${line}\n") }
+        else { heading = string_concat(heading, "source: ${file}\n") }
+    }
+    heading = string_concat(heading, "tape: ${tape}\ninteraction: ${idx}\n")
     if e.candidate == 1 { heading = string_concat(heading, "expected values are from a candidate interaction (match_multiple)\n") }
     request_method = e.actual_method
     request_path = e.actual_path
@@ -7558,7 +7580,20 @@ replay_diagnostic_text(e: *ReplayDiagnostic) -> string {
             heading = string_concat(heading, "  and ${more} more\n")
         }
     }
-    return string_concat(heading, e.detail)
+    return string_concat(heading, text_detail(e))
+}
+// The detail as the text report shows it: what the first-difference lines
+// above already show (a header's two lines, a method) is not repeated. The
+// JSON keeps the whole detail.
+text_detail(e: *ReplayDiagnostic) -> string {
+    d = e.detail
+    if e.fd_section == "headers" && e.fd_element == e.hd_name {
+        d = string.replace(d, "request headers: header ${e.hd_name} differs\n- ${e.hd_expected}\n+ ${e.hd_actual}\n", "request headers: header ${e.hd_name} differs (the first difference)\n")
+    }
+    if e.fd_section == "method" {
+        d = string.replace(d, diagnostic_diff("method", e.expected_method, e.actual_method), "")
+    }
+    return d
 }
 // "/Envelope/Body/X, normalised byte 1408", "path, normalised byte 1",
 // "request header Accept, normalised byte 0", "method".
@@ -8065,7 +8100,16 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
     }
     detail = string.copy("")
     if expected == null {
-        detail = "no expected interaction available\n"
+        // Nothing on the tape to compare with: show the request whole, as
+        // playback compares it (masked), so a tape can be written from it.
+        detail = "no expected interaction available\nrequest headers (as playback compares them):\n"
+        if string.length(e.actual_headers) > 0 { detail = string_concat(detail, e.actual_headers) } else { detail = string_concat(detail, "(none)\n") }
+        if string.length(e.actual_headers) > 0 && string.char_at(e.actual_headers, string.length(e.actual_headers) - 1) != 10 { detail = string_concat(detail, "\n") }
+        if string.length(actual_body) == 0 { detail = string_concat(detail, "request body: (none)\n") }
+        else {
+            detail = string_concat(detail, "request body:\n${diagnostic_text(e.actual_body, 4096)}")
+            if string.char_at(detail, string.length(detail) - 1) != 10 { detail = string_concat(detail, "\n") }
+        }
     } else {
         detail = diagnostic_diff("method", e.expected_method, e.actual_method)
         detail = string_concat(detail, diagnostic_diff("path", e.expected_path, e.actual_path))
