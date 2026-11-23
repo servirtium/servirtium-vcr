@@ -150,6 +150,8 @@ export const stopAndFlush = lazy(
   'void* aether_vcr_embed_stop_and_flush(void* server, const char* tape_path)',
 )
 
+export const close = lazy('void* aether_vcr_embed_close(void* server)')
+
 export const stopAndFlushFailIfChanged = lazy(
   'void* aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path)',
 )

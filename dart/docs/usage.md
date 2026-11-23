@@ -3,7 +3,8 @@
 All fixtures start from `Vcr.playback(tapePath)` or
 `Vcr.record(tapePath, upstreamBase)`, are configured with a fluent builder,
 and started with `.start()`, which returns a `VcrServer`. Call `.close()` to
-stop it (and, in record mode, flush the tape).
+stop it. A record server writes its tape only on `.commit()`; closing it
+without `.commit()` (or `.discard()`) writes nothing and throws.
 
 The SUT only needs `vcr.baseUrl`. Everything else lives in test setup/teardown.
 
@@ -38,7 +39,8 @@ the SUT, and captures it. Chunked responses are de-chunked automatically.
 
 ```dart
 Vcr.record(tape, upstream).failIfChanged().start();
-// ... close() writes the new tape AND throws VcrException on drift.
+// ... commit() writes the new tape AND throws VcrException on drift.
+// (close() without commit() or discard() writes nothing and throws.)
 ```
 
 ## Redaction / unredaction

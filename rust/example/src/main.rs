@@ -74,7 +74,7 @@ fn record_and_compare(tape: &str) {
     if got != "ok-body" {
         fail(&format!("record: upstream round-trip returned {got:?}"));
     }
-    vcr.finish()
+    vcr.commit()
         .unwrap_or_else(|e| fail(&format!("record: flush failed: {e}")));
 
     let golden = std::fs::read(tape).unwrap_or_else(|e| fail(&format!("read golden: {e}")));

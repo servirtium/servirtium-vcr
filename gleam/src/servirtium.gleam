@@ -58,6 +58,12 @@ fn nif_stop(handle: Handle) -> a
 @external(erlang, "servirtium_nif", "stop_and_flush")
 fn nif_stop_and_flush(handle: Handle, tape: String) -> String
 
+@external(erlang, "servirtium_nif", "close")
+fn nif_close(handle: Handle) -> String
+
+@external(erlang, "servirtium_nif", "discard")
+fn nif_discard(handle: Handle, tape: String) -> String
+
 @external(erlang, "servirtium_nif", "base_url")
 fn nif_base_url(handle: Handle, host: String) -> String
 
@@ -344,16 +350,39 @@ pub type Closed {
   CloseError(String)
 }
 
-/// Stop the server. In record mode this also flushes the captured tape to
-/// disk, then frees the VCR; returns CloseError(msg) on a record-flush problem.
-/// A second close is a harmless no-op. Read diagnostics before closing.
+/// Stop the server and free the VCR. A recording neither committed nor
+/// discarded is dropped, no tape is written, and this returns CloseError(msg)
+/// saying to call `commit` (or `discard`). A second close is a harmless
+/// no-op. Read diagnostics before closing.
 pub fn close(vcr: Vcr) -> Closed {
-  case vcr.mode {
-    Playback -> {
-      let _ = nif_stop(vcr.handle)
-      let _ = nif_destroy(vcr.handle)
-      Closed
+  let closed = nif_close(vcr.handle)
+  let _ = nif_destroy(vcr.handle)
+  case closed {
+    "" -> Closed
+    msg -> CloseError(msg)
+  }
+}
+
+/// Record mode: stop the server and DROP the recording without writing a
+/// tape, then free the VCR. In playback mode it just stops.
+pub fn discard(vcr: Vcr) -> Closed {
+  let _ = case vcr.mode {
+    Playback -> nif_stop(vcr.handle)
+    Record -> {
+      let _ = nif_discard(vcr.handle, vcr.tape)
+      Nil
     }
+  }
+  let _ = nif_destroy(vcr.handle)
+  Closed
+}
+
+/// Record mode: stop the server and write the tape now, then free the VCR;
+/// returns CloseError(msg) on a write problem. The only way a recording
+/// becomes a tape. In playback mode, `close`.
+pub fn commit(vcr: Vcr) -> Closed {
+  case vcr.mode {
+    Playback -> close(vcr)
     Record -> {
       case vcr.secret_redactor { Some(callback) -> stage_redactor(vcr.handle, callback, False) None -> Nil }
       let flushed = nif_stop_and_flush(vcr.handle, vcr.tape)

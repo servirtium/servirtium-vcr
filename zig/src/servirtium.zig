@@ -46,6 +46,7 @@ pub extern "c" fn aether_vcr_embed_destroy(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_start(handle: Handle) c_int;
 pub extern "c" fn aether_vcr_embed_stop(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_stop_and_flush(handle: Handle, tape_path: [*c]const u8) [*c]u8;
+pub extern "c" fn aether_vcr_embed_close(handle: Handle) [*c]u8;
 pub extern "c" fn aether_vcr_embed_stop_and_flush_fail_if_changed(handle: Handle, tape_path: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_stop_and_flush_or_check(handle: Handle, tape_path: [*c]const u8) [*c]u8;
 pub extern "c" fn aether_vcr_embed_discard(handle: Handle, tape_path: [*c]const u8) [*c]u8;
@@ -511,12 +512,15 @@ pub const Vcr = struct {
         return takeString(self.allocator, aether_vcr_embed_stop_and_flush(self.handle, tape_path.ptr));
     }
 
-    /// Stop the server and free the handle. Idempotent.
-    pub fn close(self: *Vcr) void {
+    /// Stop the server and free the handle. A recording neither flushed
+    /// (`stopAndFlush`) nor discarded writes nothing and this returns
+    /// `error.VcrError`. Idempotent.
+    pub fn close(self: *Vcr) !void {
         if (self.handle == null) return;
-        aether_vcr_embed_stop(self.handle);
-        aether_vcr_embed_destroy(self.handle);
+        const h = self.handle;
         self.handle = null;
+        defer aether_vcr_embed_destroy(h);
+        try checkErr(self.allocator, aether_vcr_embed_close(h));
     }
 };
 
@@ -1491,24 +1495,32 @@ pub const Server = struct {
         aether_vcr_embed_clear_last_error(self.handle);
     }
 
-    /// Stop the server. In record mode also flush the tape to disk and return
-    /// `error.VcrError` on drift if `failIfChanged` was set. Idempotent.
-    pub fn close(self: *Server) !void {
-        if (self.handle == null) return;
+    /// Record mode: stop the server and write the tape now, returning
+    /// `error.VcrError` on an error or drift (with `failIfChanged`). The only
+    /// way a recording becomes a tape: `close` without `commit` or `discard`
+    /// writes nothing and returns `error.VcrError`. No-op in playback mode.
+    pub fn commit(self: *Server) !void {
+        if (self.handle == null or !self.record_mode) return;
         const h = self.handle;
         self.handle = null;
         defer aether_vcr_embed_destroy(h);
-
-        if (!self.record_mode) {
-            aether_vcr_embed_stop(h);
-            return;
-        }
         if (self.secret_redactor) |redactor| try secretStage(self.allocator, h, redactor, null);
         const res = if (self.fail_if_changed)
             aether_vcr_embed_stop_and_flush_fail_if_changed(h, self.tape_path.ptr)
         else
             aether_vcr_embed_stop_and_flush(h, self.tape_path.ptr);
         try checkErr(self.allocator, res);
+    }
+
+    /// Stop the server. A recording neither committed nor discarded is
+    /// dropped, no tape is written, and this returns `error.VcrError` (the
+    /// message, saying to call `commit` or `discard`, goes to stderr). Idempotent.
+    pub fn close(self: *Server) !void {
+        if (self.handle == null) return;
+        const h = self.handle;
+        self.handle = null;
+        defer aether_vcr_embed_destroy(h);
+        try checkErr(self.allocator, aether_vcr_embed_close(h));
     }
 
     /// Stop the server and, in record mode, DROP the captured recording WITHOUT
@@ -1525,13 +1537,5 @@ pub const Server = struct {
             return;
         }
         aether_vcr_embed_free_string(aether_vcr_embed_discard(h, self.tape_path.ptr));
-    }
-
-    /// Stop without flushing (escape hatch for teardown after a failure).
-    pub fn stop(self: *Server) void {
-        if (self.handle == null) return;
-        aether_vcr_embed_stop(self.handle);
-        aether_vcr_embed_destroy(self.handle);
-        self.handle = null;
     }
 };

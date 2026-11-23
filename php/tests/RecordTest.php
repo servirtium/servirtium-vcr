@@ -12,7 +12,7 @@ use Servirtium\VcrOutcome;
 /**
  * Record mode end-to-end: the VCR forwards to a live upstream (a `php -S`
  * server), returns the real response to the SUT, captures the exchange,
- * flushes a tape on stop, and the same tape then replays. Plus redaction.
+ * writes a tape on commit, and the same tape then replays. Plus redaction.
  */
 final class RecordTest extends TestCase
 {
@@ -41,7 +41,7 @@ final class RecordTest extends TestCase
             try {
                 $run('drive', $dir, $rec->baseUrl());
                 self::assertSame(VcrOutcome::Ok, $rec->lastKind());
-            } finally { $rec->stop(); }
+            } finally { $rec->commit(); }
             $run('check', $dir);
             $vcr = Vcr::playback($tape)->start();
             try {
@@ -73,7 +73,7 @@ final class RecordTest extends TestCase
             try {
                 $run('drive', $dir, $rec->baseUrl());
                 self::assertSame(VcrOutcome::Ok, $rec->lastKind());
-            } finally { $rec->stop(); }
+            } finally { $rec->commit(); }
             $run('check', $dir);
         } finally {
             foreach (glob($dir . '/*') as $file) { unlink($file); }
@@ -86,7 +86,7 @@ final class RecordTest extends TestCase
         $rec = Vcr::record($this->tape, $this->upstreamBase)
             ->addLicenseNotice('test notice')->prettyJson(2)->removeTransportHeaders()
             ->removeCloudHeaders('aws')->redactCredentials()->redactCredentialHeader('X-Vault-Token')->port(0)->start();
-        $rec->stop();
+        $rec->commit();
         $this->assertFileExists($this->tape);
     }
 
@@ -170,7 +170,7 @@ final class RecordTest extends TestCase
     {
         $rec = Vcr::record($this->tape, $this->upstreamBase)->prettyJson(2)->sortJsonKeys()->port(0)->start();
         $this->httpGet($rec->baseUrl() . '/doc');
-        $rec->stop();
+        $rec->commit();
 
         $this->assertStringContainsString("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}", file_get_contents($this->tape));
     }
@@ -180,7 +180,7 @@ final class RecordTest extends TestCase
         $rec = Vcr::record($this->tape, $this->upstreamBase)->sortJsonKeys()->port(0)->start();
         $this->httpGet($rec->baseUrl() . '/doc');
         try {
-            $rec->stop();
+            $rec->commit();
             $this->fail('expected the tape to be refused');
         } catch (\Servirtium\VcrException $e) {
             $this->assertStringContainsString('sort_json_keys needs pretty_json', $e->getMessage());
@@ -194,7 +194,7 @@ final class RecordTest extends TestCase
             ->sortJsonArray('', 'n')->sortJsonArrayAt('/list', '', 'n')
             ->sortResponseHeaders()->sortHeaderValue('Allow')->port(0)->start();
         $this->httpGet($rec->baseUrl() . '/list');
-        $rec->stop();
+        $rec->commit();
 
         $tape = file_get_contents($this->tape);
         $this->assertLessThan(strpos($tape, '"n": "z"'), strpos($tape, '"n": "a"'));
@@ -208,7 +208,7 @@ final class RecordTest extends TestCase
     {
         $rec = Vcr::record($this->tape, $this->upstreamBase)->port(0)->start();
         $this->assertSame('hello-from-upstream', $this->httpGet($rec->baseUrl() . '/greeting'));
-        $rec->stop(); // flushes the tape
+        $rec->commit(); // writes the tape
 
         $this->assertFileExists($this->tape);
 
@@ -227,10 +227,27 @@ final class RecordTest extends TestCase
             ->redact(VcrField::ResponseBody, 'hello-from-upstream', 'REDACTED')
             ->port(0)->start();
         $this->httpGet($rec->baseUrl() . '/greeting');
-        $rec->stop();
+        $rec->commit();
 
         $tape = file_get_contents($this->tape);
         $this->assertStringContainsString('REDACTED', $tape);
         $this->assertStringNotContainsString('hello-from-upstream', $tape);
+    }
+
+    public function testClosingARecordingWithoutCommitWritesNothingAndThrows(): void
+    {
+        $rec = Vcr::record($this->tape, $this->upstreamBase)->port(0)->start();
+        $this->httpGet($rec->baseUrl() . '/doc');
+        try {
+            $rec->stop();
+            $this->fail('expected stop without commit to throw');
+        } catch (\Servirtium\VcrException $e) {
+            $this->assertStringContainsString('without commit or discard', $e->getMessage());
+        }
+        $this->assertFileDoesNotExist($this->tape);
+        $dropped = Vcr::record($this->tape, $this->upstreamBase)->port(0)->start();
+        $dropped->discard();
+        $dropped->stop();
+        $this->assertFileDoesNotExist($this->tape);
     }
 }

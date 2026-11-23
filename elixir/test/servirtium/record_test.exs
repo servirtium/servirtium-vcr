@@ -1,7 +1,7 @@
 defmodule Servirtium.RecordTest do
   @moduledoc """
   Record mode end-to-end: forward to a live `:gen_tcp` upstream, return the
-  real response to the SUT, flush a Servirtium markdown tape on stop, then
+  real response to the SUT, write a Servirtium markdown tape on commit, then
   replay the same tape offline. Also covers redaction and notes asserted
   against the written tape content.
 
@@ -39,6 +39,7 @@ defmodule Servirtium.RecordTest do
         [redact_header: ["Authorization"], redact_query_param: ["password"], redact_json_field: ["secretKey"]], fn rec ->
           run.(["drive", directory, Servirtium.base_url(rec)])
           assert Servirtium.last_kind(rec) == :ok
+          :ok = Servirtium.commit(rec)
         end)
       run.(["check", directory])
     after File.rm_rf!(directory) end
@@ -58,6 +59,7 @@ defmodule Servirtium.RecordTest do
       Servirtium.with_record(tape, upstream, [rewrite_upstream_base: true], fn rec ->
         run.(["drive", directory, Servirtium.base_url(rec)])
         assert Servirtium.last_kind(rec) == :ok
+        :ok = Servirtium.commit(rec)
       end)
       run.(["check", directory])
       Servirtium.with_playback(tape, [], fn vcr ->
@@ -91,9 +93,10 @@ defmodule Servirtium.RecordTest do
       # ---- record ----
       Servirtium.with_record(tape, TestUpstream.base_url(up), [port: 0], fn srv ->
         assert {200, "hello-from-upstream"} = get(Servirtium.base_url(srv), "/greeting")
+        :ok = Servirtium.commit(srv)
       end)
 
-      assert File.exists?(tape), "record-mode stop should write the tape"
+      assert File.exists?(tape), "record-mode commit should write the tape"
       assert File.read!(tape) =~ "/greeting"
     after
       TestUpstream.stop(up)
@@ -118,6 +121,8 @@ defmodule Servirtium.RecordTest do
           # The live SUT still sees the real bytes...
           assert {200, "token=SECRET123 rest-of-body"} =
                    get(Servirtium.base_url(srv), "/data")
+
+          :ok = Servirtium.commit(srv)
         end
       )
 
@@ -140,6 +145,7 @@ defmodule Servirtium.RecordTest do
         [port: 0, note: {"Login", "Establishes the session"}],
         fn srv ->
           assert {200, "body"} = get(Servirtium.base_url(srv), "/login")
+          :ok = Servirtium.commit(srv)
         end
       )
 
@@ -161,6 +167,7 @@ defmodule Servirtium.RecordTest do
         [port: 0, license_notice: "Recorded under the MIT licence"],
         fn srv ->
           assert {200, "body"} = get(Servirtium.base_url(srv), "/login")
+          :ok = Servirtium.commit(srv)
         end
       )
 
@@ -186,7 +193,7 @@ defmodule Servirtium.RecordTest do
         )
 
       assert {200, @json} = get(Servirtium.base_url(srv), "/data")
-      assert :ok = Servirtium.stop(srv)
+      assert :ok = Servirtium.commit(srv)
 
       assert File.read!(tape) =~ ~s("a": {\n    "y": 3,\n    "z": 2\n  },\n  "b": 1)
     after
@@ -200,7 +207,7 @@ defmodule Servirtium.RecordTest do
     try do
       {:ok, srv} = Servirtium.record(tape, TestUpstream.base_url(up), port: 0, sort_json_keys: true)
       assert {200, @json} = get(Servirtium.base_url(srv), "/data")
-      assert {:error, msg} = Servirtium.stop(srv)
+      assert {:error, msg} = Servirtium.commit(srv)
       assert msg =~ "sort_json_keys needs pretty_json"
     after
       TestUpstream.stop(up)
@@ -225,7 +232,22 @@ defmodule Servirtium.RecordTest do
         Servirtium.record(tape, "http://127.0.0.1:1", port: 0, playback_range: {0, -1})
       end
     after
-      Servirtium.stop(srv)
+      Servirtium.discard(srv)
     end
+  end
+
+  test "closing a recording without commit or discard writes nothing", %{tape: tape} do
+    {:ok, srv} = Servirtium.record(tape, "http://127.0.0.1:1", port: 0)
+    assert {:error, msg} = Servirtium.stop(srv)
+    assert msg =~ "without commit or discard"
+    refute File.exists?(tape)
+
+    assert_raise Servirtium.Error, ~r/without commit or discard/, fn ->
+      Servirtium.with_record(tape, "http://127.0.0.1:1", [port: 0], fn _ -> :ok end)
+    end
+
+    refute File.exists?(tape)
+    Servirtium.with_record(tape, "http://127.0.0.1:1", [port: 0], &Servirtium.discard/1)
+    refute File.exists?(tape)
   end
 end

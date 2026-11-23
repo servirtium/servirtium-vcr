@@ -25,7 +25,7 @@ void main() {
       try {
         run(['drive', directory.path, rec.baseUrl]);
         expect(rec.lastKind, VcrOutcome.ok);
-      } finally { rec.close(); }
+      } finally { rec.commit(); }
       run(['check', directory.path]);
     } finally { directory.deleteSync(recursive: true); }
   });
@@ -45,7 +45,7 @@ void main() {
       try {
         run(['drive', directory.path, rec.baseUrl]);
         expect(rec.lastKind, VcrOutcome.ok);
-      } finally { rec.close(); }
+      } finally { rec.commit(); }
       run(['check', directory.path]);
       final vcr = Vcr.playback(tape).start();
       try {
@@ -104,7 +104,7 @@ void main() {
     final rec = Vcr.record(tapePath, upstreamBase).port(0).start();
     final (_, body) = await httpGet('${rec.baseUrl}/greeting');
     expect(body, 'hello-from-upstream');
-    rec.close(); // flushes the tape
+    rec.commit(); // writes the tape
 
     expect(File(tapePath).existsSync(), isTrue);
 
@@ -131,7 +131,7 @@ void main() {
     expect(rec.sortJsonKeys, isTrue);
     expect(rec.sortResponseHeaders, isTrue);
     await httpGet('${rec.baseUrl}/json');
-    rec.close();
+    rec.commit();
     expect(File(tapePath).readAsStringSync(),
         contains('{\n  "apple": {\n    "banana": 3,\n    "mango": 2\n  },\n  "zebra": 1\n}'));
   });
@@ -139,7 +139,7 @@ void main() {
   test('sortJsonKeys without prettyJson is refused at emit time', () async {
     final rec = Vcr.record(tapePath, upstreamBase).sortJsonKeys().port(0).start();
     await httpGet('${rec.baseUrl}/json');
-    expect(() => rec.close(),
+    expect(() => rec.commit(),
         throwsA(isA<VcrException>().having((e) => e.message, 'message', contains('sort_json_keys needs pretty_json'))));
     expect(File(tapePath).existsSync(), isFalse);
     expect(() => Vcr.record(tapePath, upstreamBase).sortJsonArray('a/b').port(0).start(),
@@ -162,10 +162,21 @@ void main() {
         .port(0)
         .start();
     await httpGet('${rec.baseUrl}/greeting');
-    rec.close();
+    rec.commit();
 
     final tape = File(tapePath).readAsStringSync();
     expect(tape, contains('REDACTED'));
     expect(tape, isNot(contains('hello-from-upstream')));
+  });
+
+  test('closing a recording without commit or discard writes nothing and throws', () async {
+    final rec = Vcr.record(tapePath, upstreamBase).port(0).start();
+    await httpGet('${rec.baseUrl}/greeting');
+    expect(() => rec.close(), throwsA(isA<VcrException>().having((e) => e.toString(), 'message', contains('without commit or discard'))));
+    expect(File(tapePath).existsSync(), isFalse);
+    final dropped = Vcr.record(tapePath, upstreamBase).port(0).start();
+    dropped.discard();
+    dropped.close();
+    expect(File(tapePath).existsSync(), isFalse);
   });
 }

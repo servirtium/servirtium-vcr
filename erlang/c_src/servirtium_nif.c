@@ -37,6 +37,7 @@ extern void  aether_vcr_embed_destroy(void *server);
 extern int   aether_vcr_embed_start(void *server);
 extern void  aether_vcr_embed_stop(void *server);
 extern char *aether_vcr_embed_stop_and_flush(void *server, const char *tape_path);
+extern char *aether_vcr_embed_close(void *server);
 extern char *aether_vcr_embed_stop_and_flush_fail_if_changed(void *server, const char *tape_path);
 extern char *aether_vcr_embed_stop_and_flush_or_check(void *server, const char *tape_path);
 
@@ -296,6 +297,15 @@ static ERL_NIF_TERM nif_stop(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]
     if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
     aether_vcr_embed_stop(h);
     return enif_make_atom(env, "ok");
+}
+
+static ERL_NIF_TERM nif_close(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    void *h;
+    if (is_destroyed_handle(env, argv[0])) return take_cstr(env, NULL);
+    if (!get_handle(env, argv[0], &h)) return enif_make_badarg(env);
+    return take_cstr(env, aether_vcr_embed_close(h));
 }
 
 static ERL_NIF_TERM nif_stop_and_flush(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
@@ -1012,6 +1022,7 @@ static ErlNifFunc nif_funcs[] = {
     {"start",         1, nif_start,         0},
     {"stop",          1, nif_stop,          0},
     {"stop_and_flush", 2, nif_stop_and_flush, 0},
+    {"close", 1, nif_close, 0},
     {"stop_and_flush_fail_if_changed", 2, nif_stop_and_flush_fail_if_changed, 0},
     {"discard", 2, nif_discard, 0},
 

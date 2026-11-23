@@ -296,9 +296,10 @@ end
     record(f, tape_path, upstream_base; host="127.0.0.1", port=0)
 
 Forward each request to `upstream_base`, return the live response to the SUT,
-and capture the exchange. The do-block form flushes the tape when the block
-ends normally, and DISCARDS it if the block threw — a failed test shouldn't
-overwrite a good tape.
+and capture the exchange. `flush!(vcr)` writes the tape, `discard!(vcr)`
+drops it; closing a recording with neither writes nothing and throws. The
+do-block form closes when the block ends (so the block must flush! or
+discard!), and DISCARDS the recording if the block threw.
 """
 function record(tape_path::AbstractString, upstream_base::AbstractString;
                 host::AbstractString="127.0.0.1", port::Integer=0,
@@ -316,14 +317,14 @@ end
 function record(f::Function, tape_path::AbstractString,
                 upstream_base::AbstractString; kwargs...)
     vcr = record(tape_path, upstream_base; kwargs...)
-    try
-        result = f(vcr)
-        flush!(vcr)
-        result
+    result = try
+        f(vcr)
     catch
-        close!(vcr)
+        discard!(vcr)
         rethrow()
     end
+    close!(vcr)
+    result
 end
 
 # ---- introspection --------------------------------------------------------
@@ -659,12 +660,18 @@ end
 # Every path stops (or flushes/discards, which stops) and then destroys the VCR
 # exactly once; the handle is cleared so a second call is a no-op.
 
-"""Stop the server, discarding any recording. Idempotent."""
+"""Stop the server. A recording neither flushed (committed) nor discarded is
+dropped, no tape is written, and this throws. Idempotent."""
 function close!(vcr::Vcr)
     vcr.closed && return nothing
     vcr.closed = true
-    ccall((:aether_vcr_embed_stop, LIB), Cvoid, (Ptr{Cvoid},), vcr.handle)
-    release!(vcr)
+    err = try
+        take(ccall((:aether_vcr_embed_close, LIB), Ptr{Cchar}, (Ptr{Cvoid},), vcr.handle))
+    finally
+        release!(vcr)
+    end
+    isempty(err) || throw(VcrError(err))
+    nothing
 end
 
 function flush_with!(vcr::Vcr, native::Function, what::AbstractString,

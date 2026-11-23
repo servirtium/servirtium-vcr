@@ -146,8 +146,9 @@ try {
   const recorder = Vcr.record('hello.md', upstreamUrl).port(0).start()
   try {
     await getGreeting(recorder)
+    recorder.commit() // Writes hello.md, including the query string and JSON body.
   } finally {
-    recorder.close() // Writes hello.md, including the query string and JSON body.
+    recorder.discard() // No-op after commit(); drops the recording if getGreeting threw.
   }
 } finally {
   await new Promise((resolve, reject) => {

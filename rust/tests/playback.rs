@@ -225,7 +225,7 @@ fn opens_starts_and_finishes_many_times() {
     for _ in 0..50 {
         let vcr = Vcr::playback(tape_path("single_get.md")).port(0).start().unwrap();
         assert_eq!(1, vcr.tape_length());
-        vcr.finish().unwrap(); // finish stops + destroys; the Drop that follows is a no-op
+        vcr.commit().unwrap(); // commit stops + destroys; the Drop that follows is a no-op
     }
 }
 

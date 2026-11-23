@@ -13,7 +13,7 @@
     (defer (do ((up :close)) (h/rm tape))
       (servirtium/with-record [rec tape (up :base-url)]
         (h/eq (h/get-body (servirtium/base-url rec) "/greeting") "hello-from-upstream" "live body")
-        (h/eq (servirtium/tape-length rec) 1 "one interaction captured"))
+        (h/eq (servirtium/tape-length rec) 1 "one interaction captured") (servirtium/flush-tape rec))
       (h/truthy (h/read-file tape) "with-record wrote the tape")
       (servirtium/with-playback [play tape]
         (h/eq (h/get-body (servirtium/base-url play) "/greeting") "hello-from-upstream" "replayed body")
@@ -27,7 +27,7 @@
       (servirtium/with-record [rec tape (up :base-url)]
         (h/eq (h/post-body (servirtium/base-url rec) "/submit" "ping") "created" "live POST response")
         (h/eq (first ((up :last))) "POST" "the upstream saw a POST")
-        (h/eq (get ((up :last)) 1) "ping" "the upstream saw the body"))
+        (h/eq (get ((up :last)) 1) "ping" "the upstream saw the body") (servirtium/flush-tape rec))
       (servirtium/with-playback [play tape]
         (h/eq (h/post-body (servirtium/base-url play) "/submit" "ping") "created" "replayed POST")
         (h/eq (servirtium/last-kind play) :ok (servirtium/last-error play))))))
@@ -38,7 +38,7 @@
     (def tape (h/temp-path "notice.md"))
     (defer (do ((up :close)) (h/rm tape))
       (servirtium/with-record [rec tape (up :base-url) {:license-notice "Licensed under the Test Licence 1.0.\nSecond line."}]
-        (h/get-body (servirtium/base-url rec) "/x"))
+        (h/get-body (servirtium/base-url rec) "/x") (servirtium/flush-tape rec))
       (def text (h/read-file tape))
       (h/contains text "## LICENSE NOTICE" "heading")
       (h/contains text "Licensed under the Test Licence 1.0.\nSecond line." "text with the caller's line break")
@@ -55,10 +55,10 @@
     (def pretty (h/temp-path "pretty.md"))
     (defer (do ((up :close)) (h/rm plain) (h/rm pretty))
       (servirtium/with-record [rec plain (up :base-url)]
-        (h/get-body (servirtium/base-url rec) "/j"))
+        (h/get-body (servirtium/base-url rec) "/j") (servirtium/flush-tape rec))
       (servirtium/with-record [rec pretty (up :base-url) {:pretty-json 2}]
         (h/eq (servirtium/get-pretty-json rec) 2)
-        (h/get-body (servirtium/base-url rec) "/j"))
+        (h/get-body (servirtium/base-url rec) "/j") (servirtium/flush-tape rec))
       (h/contains (h/read-file plain) "{\"a\":1,\"b\":[1,2]}" "compact by default")
       (h/not-contains (h/read-file pretty) "{\"a\":1,\"b\":[1,2]}" "no longer compact")
       (h/contains (h/read-file pretty) "  \"a\": 1" "indented by two"))))
@@ -73,7 +73,7 @@
                                 :redact-credentials true
                                 :redact-credential-headers ["X-Vault-Token"]
                                 :ignore-volatile-headers true}]
-        nil)
+        nil (servirtium/flush-tape rec))
       (def e (h/raises (fn [] (servirtium/record tape "http://127.0.0.1:1" {:remove-cloud-headers "nosuchvendor"}))))
       (h/eq (e :op) "remove_cloud_headers" "error op")
       (h/eq (e :error) :servirtium))))
@@ -92,7 +92,7 @@
     (def tape (h/temp-path "creds.md"))
     (defer (do ((up :close)) (h/rm tape))
       (servirtium/with-record [rec tape (up :base-url) {:redact-credentials true}]
-        (h/get-body (servirtium/base-url rec) "/x" ["Authorization: Bearer s3cr3t-value" "X-Api-Key: key-value-123"]))
+        (h/get-body (servirtium/base-url rec) "/x" ["Authorization: Bearer s3cr3t-value" "X-Api-Key: key-value-123"]) (servirtium/flush-tape rec))
       (def text (h/read-file tape))
       (h/not-contains text "s3cr3t-value" "authorization redacted")
       (h/not-contains text "key-value-123" "api key redacted"))))
@@ -103,7 +103,7 @@
     (def tape (h/temp-path "rec.md"))
     (defer (do ((up :close)) (h/rm tape))
       (servirtium/with-record [rec tape (up :base-url) {:redact [[:response-body "secret-token" "REDACTED"]]}]
-        (h/get-body (servirtium/base-url rec) "/x"))
+        (h/get-body (servirtium/base-url rec) "/x") (servirtium/flush-tape rec))
       (h/contains (h/read-file tape) "REDACTED" "tape contains REDACTED")
       (h/not-contains (h/read-file tape) "secret-token" "tape must not contain the secret"))))
 
@@ -113,7 +113,7 @@
     (def tape (h/temp-path "rec.md"))
     (defer (do ((up :close)) (h/rm tape))
       (servirtium/with-record [rec tape (up :base-url) {:notes [["Why this exists" "documents the call"]]}]
-        (h/get-body (servirtium/base-url rec) "/x"))
+        (h/get-body (servirtium/base-url rec) "/x") (servirtium/flush-tape rec))
       (h/contains (h/read-file tape) "## [Note] Why this exists:" "note heading on the tape"))))
 
 (h/testcase "record removes a named response header"
@@ -123,10 +123,10 @@
     (def up (h/start-upstream {:extra-headers {"X-Trace-Id" "abc123"}}))
     (defer (do ((up :close)) (h/rm tape1) (h/rm tape2))
       (servirtium/with-record [rec tape1 (up :base-url)]
-        (h/get-body (servirtium/base-url rec) "/x"))
+        (h/get-body (servirtium/base-url rec) "/x") (servirtium/flush-tape rec))
       (h/contains (h/read-file tape1) "X-Trace-Id" "captured without removal")
       (servirtium/with-record [rec tape2 (up :base-url) {:remove-headers [[:response-headers "X-Trace-Id"]]}]
-        (h/get-body (servirtium/base-url rec) "/x"))
+        (h/get-body (servirtium/base-url rec) "/x") (servirtium/flush-tape rec))
       (h/not-contains (h/read-file tape2) "X-Trace-Id" "removed"))))
 
 (h/testcase "volatile values and whole-tape redact"
@@ -137,7 +137,7 @@
       (servirtium/with-record [rec tape (up :base-url)
                                {:volatile-rules [["response body" "(?<uuid>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})" "regex"]]
                                 :redact-whole-tape [["20[0-9]{2}-[0-9]{2}-[0-9]{2}" "<DATE>"]]}]
-        (h/get-body (servirtium/base-url rec) "/x"))
+        (h/get-body (servirtium/base-url rec) "/x") (servirtium/flush-tape rec))
       (def text (h/read-file tape))
       (h/contains text "{{uuid}}" "a one-sided token, unnumbered")
       (h/contains text "<DATE>" "constant")
@@ -151,10 +151,10 @@
     (def up (h/start-upstream {:body "leak"}))
     (defer (do ((up :close)) (h/rm tape1) (h/rm tape2))
       (servirtium/with-record [a tape1 (up :base-url) {:redact [[:response-body "leak" "SCRUBBED"]]}]
-        (h/get-body (servirtium/base-url a) "/x"))
+        (h/get-body (servirtium/base-url a) "/x") (servirtium/flush-tape a))
       (h/contains (h/read-file tape1) "SCRUBBED" "fixture A")
       (servirtium/with-record [b tape2 (up :base-url)]
-        (h/get-body (servirtium/base-url b) "/x"))
+        (h/get-body (servirtium/base-url b) "/x") (servirtium/flush-tape b))
       (h/contains (h/read-file tape2) "leak" "fixture B keeps its body")
       (h/not-contains (h/read-file tape2) "SCRUBBED" "A's redaction did not leak"))))
 
@@ -165,12 +165,12 @@
     (defer (h/rm tape)
       (defer ((up1 :close))
         (servirtium/with-record [first-rec tape (up1 :base-url) {:flush-mode :fail-if-changed}]
-          (h/get-body (servirtium/base-url first-rec) "/x")))   # first record: no drift
+          (h/get-body (servirtium/base-url first-rec) "/x") (servirtium/flush-tape first-rec)))   # first record: no drift
       (def up2 (h/start-upstream {:body "v2-changed"}))
       (defer ((up2 :close))
         (def e (h/raises (fn []
                            (servirtium/with-record [second-rec tape (up2 :base-url) {:flush-mode :fail-if-changed}]
-                             (h/get-body (servirtium/base-url second-rec) "/x")))))
+                             (h/get-body (servirtium/base-url second-rec) "/x") (servirtium/flush-tape second-rec)))))
         (h/eq (e :error) :servirtium "structured drift error")
         (h/truthy (not= "" (e :message)) "drift message"))
       (h/contains (h/read-file tape) "v2-changed" "the new tape is still written"))))
@@ -182,7 +182,7 @@
     (defer (h/rm tape)
       (defer ((up1 :close))
         (servirtium/with-record [r tape (up1 :base-url)]
-          (h/get-body (servirtium/base-url r) "/x")))
+          (h/get-body (servirtium/base-url r) "/x") (servirtium/flush-tape r)))
       (def up2 (h/start-upstream {:body "v2-changed"}))
       (defer ((up2 :close))
         (def rec (servirtium/record tape (up2 :base-url)))
@@ -204,7 +204,7 @@
       (def e (h/raises (fn []
                          (servirtium/with-record [r tape (up :base-url)]
                            (h/get-body (servirtium/base-url r) "/x")
-                           (error "the test failed")))))
+                           (error "the test failed") (servirtium/flush-tape r)))))
       (h/eq e "the test failed" "the body's error propagates")
       (h/eq (h/read-file tape) nil "a failed run never mints a tape"))))
 
@@ -218,7 +218,7 @@
                                 :redact-query-params ["password"]
                                 :redact-json-fields ["secretKey"]}]
         (h/run-tool "redaction_fixture" "drive" dir (servirtium/base-url rec))
-        (h/eq (servirtium/last-kind rec) :ok "structured record outcome"))
+        (h/eq (servirtium/last-kind rec) :ok "structured record outcome") (servirtium/flush-tape rec))
       (h/run-tool "redaction_fixture" "check" dir))))
 
 (h/testcase "rewrite_upstream_base keeps the client on the VCR"
@@ -229,7 +229,7 @@
       (def upstream (h/run-tool "origin_fixture" "start" dir))
       (servirtium/with-record [rec tape upstream {:rewrite-upstream-base true}]
         (h/run-tool "origin_fixture" "drive" dir (servirtium/base-url rec))
-        (h/eq (servirtium/last-kind rec) :ok "origin record outcome"))
+        (h/eq (servirtium/last-kind rec) :ok "origin record outcome") (servirtium/flush-tape rec))
       (h/run-tool "origin_fixture" "check" dir)
       (servirtium/with-playback [vcr tape]
         (h/run-tool "origin_fixture" "replay" dir (servirtium/base-url vcr))
@@ -249,7 +249,7 @@
                                     (++ count)
                                     (string (string/ascii-upper (first (peg/match ~(* "/" (<- (to "/"))) (request :path)))) "_PASSWORD")))}]
         (h/run-tool "secret_fixture" "drive" (servirtium/base-url rec))
-        (h/eq count 0 "the callback is deferred until flush"))
+        (h/eq count 0 "the callback is deferred until flush") (servirtium/flush-tape rec))
       (h/eq count 20 "field count")
       (h/run-tool "secret_fixture" "check" tape)
       (servirtium/with-playback [replay tape
@@ -279,7 +279,7 @@
     (defer (do ((up :close)) (h/rm tape))
       (servirtium/with-record [rec tape (up :base-url) {:sort-json-keys true :pretty-json 2}]
         (h/truthy (servirtium/get-sort-json-keys rec) "sort-json-keys is on")
-        (h/eq (h/get-body (servirtium/base-url rec) "/data") json "the live body is untouched"))
+        (h/eq (h/get-body (servirtium/base-url rec) "/data") json "the live body is untouched") (servirtium/flush-tape rec))
       (h/contains (h/read-file tape) "\"a\": {\n    \"y\": 3,\n    \"z\": 2\n  },\n  \"b\": 1"
                   "sorted, pretty tape"))))
 
@@ -301,7 +301,7 @@
       (h/truthy (h/raises (fn [] (servirtium/record tape "http://127.0.0.1:1" {:sort-header-values [""]})))
                 "an empty header name is refused")
       (def rec (servirtium/record tape "http://127.0.0.1:1" {:sort-response-headers true}))
-      (defer (servirtium/stop rec)
+      (defer (servirtium/discard rec)
         (h/truthy (servirtium/get-sort-response-headers rec) "on")
         (servirtium/clear-stable-order rec)
         (h/eq (servirtium/get-sort-response-headers rec) false "cleared")))))
@@ -311,9 +311,23 @@
     (def tape (h/temp-path "range-refused.md"))
     (defer (h/rm tape)
       (def rec (servirtium/record tape "http://127.0.0.1:1"))
-      (defer (servirtium/stop rec)
+      (defer (servirtium/discard rec)
         (h/truthy (h/raises (fn [] (servirtium/set-playback-range rec 0 -1)))
                   "set-playback-range raises on a record server"))
       (h/truthy (h/raises (fn [] (servirtium/record tape "http://127.0.0.1:1" {:playback-range [0 -1]})))
                 ":playback-range raises on a record server"))))
+
+(h/testcase "closing a recording without flush-tape or discard writes nothing and raises"
+  (fn []
+    (def tape (h/temp-path "uncommitted.md"))
+    (defer (h/rm tape)
+      (def rec (servirtium/record tape "http://127.0.0.1:1"))
+      (def e (h/raises (fn [] (servirtium/stop rec))))
+      (h/contains (e :message) "without commit or discard" "the reason")
+      (h/eq (h/read-file tape) nil "no tape written")
+      (h/truthy (h/raises (fn [] (servirtium/with-record [r tape "http://127.0.0.1:1"] nil))) "with-record raises")
+      (h/eq (h/read-file tape) nil "no tape written by with-record")
+      (servirtium/with-record [r tape "http://127.0.0.1:1"] (servirtium/discard r))
+      (h/eq (h/read-file tape) nil "discard writes nothing"))))
+
 (h/done "record")

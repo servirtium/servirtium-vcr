@@ -11,7 +11,7 @@
 --   * @servirtium-todobackend record@ — RECORD phase (manual, on-demand).
 --     VCR in record mode, forwarding to the live Kotlin/http4k SUT
 --     (@TODOBACKEND_UPSTREAM@). Every CRUD call is forwarded upstream and
---     recorded, then flushed to the tape on close. Driven by .haskell_record.ae
+--     recorded, then written to the tape by commit. Driven by .haskell_record.ae
 --     (which brings the SUT up in a container and tears it down).
 module Main (main) where
 
@@ -50,7 +50,7 @@ playback =
       then putStrLn "TODOBACKEND_PLAYBACK_OK"  >> exitSuccess
       else putStrLn "TODOBACKEND_PLAYBACK_FAIL" >> exitFailure
 
--- | Record: forward to the live SUT at @TODOBACKEND_UPSTREAM@ and flush a tape.
+-- | Record: forward to the live SUT at @TODOBACKEND_UPSTREAM@ and commit a tape.
 record :: IO ()
 record = do
   mUpstream <- lookupEnv "TODOBACKEND_UPSTREAM"
@@ -74,6 +74,8 @@ record = do
         forM_ msgs $ \m -> TIO.putStrLn ("  FAIL: " <> m)
         if failures /= 0 || passes == 0
           then do
-            putStrLn "record: suite did not pass against the live SUT; tape NOT trustworthy"
-            exitFailure
-          else putStrLn ("record: wrote " ++ tapePath)
+            putStrLn "record: suite did not pass against the live SUT; no tape written"
+            exitFailure -- throws, so withRecord discards the recording
+          else do
+            commit vcr
+            putStrLn ("record: wrote " ++ tapePath)

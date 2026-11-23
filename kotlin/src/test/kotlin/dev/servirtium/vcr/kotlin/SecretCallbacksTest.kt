@@ -19,7 +19,7 @@ class SecretCallbacksTest {
             Vcr.record(tape, run("start", dir.toString())).secretRedactor { key, request ->
                 assertSame(thread, Thread.currentThread())
                 if (key == "password") { count++; request.path().split('/')[1].uppercase(Locale.ROOT) + "_PASSWORD" } else null
-            }.start().use { run("drive", it.baseUrl()); assertEquals(0, count) }
+            }.start().use { run("drive", it.baseUrl()); assertEquals(0, count); it.commit() }
             assertEquals(20, count); run("check", tape)
             Vcr.playback(tape).secretResolver { token -> "pw-" + token.removeSuffix("_PASSWORD").lowercase(Locale.ROOT) + "&secret" }.start().use {
                 run("drive", it.baseUrl()); it.assertNoMismatches()

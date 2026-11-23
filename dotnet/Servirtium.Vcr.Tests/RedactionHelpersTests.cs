@@ -18,6 +18,7 @@ public class RedactionHelpersTests
                     .RedactHeader("Authorization").RedactQueryParam("password").RedactJsonField("secretKey").Start()) {
                 Run("drive", directory, rec.BaseUrl);
                 Assert.Equal(VcrOutcome.Ok, rec.LastKind);
+                rec.Commit();
             }
             Run("check", directory);
         } finally { Directory.Delete(directory, true); }

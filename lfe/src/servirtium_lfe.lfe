@@ -51,7 +51,7 @@
    (clear_stable_order 1)
    (set_playback_range 3) (clear_playback_range 1)
    (get_playback_range_from 1) (get_playback_range_to 1)
-   (close 1)
+   (close 1) (commit 1) (discard 1)
    ;; introspection
    (base_url 1)
    (port 1)
@@ -151,15 +151,13 @@
 (defun last_index (vcr)
   (servirtium_nif:last_index (maps:get 'handle vcr)))
 
-;; Stop the server. In record mode this also flushes the captured tape to
-;; disk, then frees the VCR. Returns 'ok, or #(error Msg) on a record-flush
-;; problem. The handle is a NIF resource, so a second close is a harmless no-op.
-(defun close (vcr)
+;; Record mode: stop the server and write the tape now, then free the VCR.
+;; Returns 'ok, or #(error Msg) on a write problem. The only way a recording
+;; becomes a tape: close without commit or discard writes nothing. In playback
+;; mode, close.
+(defun commit (vcr)
   (case (maps:get 'mode vcr)
-    ('playback
-     (servirtium_nif:stop (maps:get 'handle vcr))
-     (servirtium_nif:destroy (maps:get 'handle vcr))
-     'ok)
+    ('playback (close vcr))
     ('record
      (case (maps:get 'secret_redactor vcr 'undefined)
        ('undefined 'ok)
@@ -167,9 +165,29 @@
      (let ((flushed (servirtium_nif:stop_and_flush (maps:get 'handle vcr)
                                                    (to-bin (maps:get 'tape vcr)))))
        (servirtium_nif:destroy (maps:get 'handle vcr))
-       (case flushed
-         (#"" 'ok)
-         (msg (tuple 'error (binary_to_list msg))))))))
+       (result flushed)))))
+
+;; Record mode: stop the server and DROP the recording without writing a tape,
+;; then free the VCR. In playback mode it just stops. Returns 'ok.
+(defun discard (vcr)
+  (case (maps:get 'mode vcr)
+    ('record (servirtium_nif:discard (maps:get 'handle vcr) (to-bin (maps:get 'tape vcr))))
+    (_ (servirtium_nif:stop (maps:get 'handle vcr))))
+  (servirtium_nif:destroy (maps:get 'handle vcr))
+  'ok)
+
+;; Stop the server and free the VCR. A recording neither committed nor
+;; discarded is dropped, no tape is written, and this returns #(error Msg)
+;; saying to commit (or discard). The handle is a NIF resource, so a second
+;; close is a harmless no-op.
+(defun close (vcr)
+  (let ((closed (servirtium_nif:close (maps:get 'handle vcr))))
+    (servirtium_nif:destroy (maps:get 'handle vcr))
+    (result closed)))
+
+(defun result
+  ((#"") 'ok)
+  ((msg) (tuple 'error (binary_to_list msg))))
 
 ;; ---- internals -----------------------------------------------------------
 

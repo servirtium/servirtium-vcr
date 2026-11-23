@@ -37,6 +37,7 @@ final class Native
         int    aether_vcr_embed_start(void* server);
         void   aether_vcr_embed_stop(void* server);
         char*  aether_vcr_embed_stop_and_flush(void* server, const char* tape_path);
+        char*  aether_vcr_embed_close(void* server);
         char*  aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path);
         char*  aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path);
         char*  aether_vcr_embed_discard(void* server, const char* tape_path);

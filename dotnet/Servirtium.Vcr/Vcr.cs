@@ -43,8 +43,9 @@ public static class Vcr
     /// <summary>
     /// Record live interactions: forward to <paramref name="upstreamBase"/>,
     /// return the real response to the SUT, and capture the exchange. The
-    /// tape is written to <paramref name="tapePath"/> when the server is
-    /// disposed.
+    /// tape is written to <paramref name="tapePath"/> by
+    /// <see cref="VcrServer.Commit"/>; disposing the server without it (or
+    /// <see cref="VcrServer.Discard"/>) writes nothing and throws.
     /// </summary>
     public static RecordBuilder Record(string tapePath, string upstreamBase) => new(tapePath, upstreamBase);
 }
@@ -755,7 +756,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     /// Opt-in stable order: write JSON response bodies' object keys sorted at
     /// every depth. Sorted JSON is only written pretty-printed: without
     /// <see cref="PrettyJson"/> the tape is refused when it is written
-    /// (<c>Dispose</c> throws <see cref="VcrException"/>, "sort_json_keys
+    /// (<c>Commit</c> throws <see cref="VcrException"/>, "sort_json_keys
     /// needs pretty_json ...").
     /// </summary>
     public RecordBuilder SortJsonKeys(bool on = true)
@@ -937,8 +938,9 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
 }
 
 /// <summary>
-/// A running VCR server. Dispose to stop it; in record mode dispose also
-/// flushes the captured tape to disk.
+/// A running VCR server. Dispose to stop it. In record mode the tape is
+/// written by <see cref="Commit"/> and dropped by <see cref="Discard"/>;
+/// disposing a recording with neither writes nothing and throws.
 /// </summary>
 public sealed class VcrServer : IDisposable
 {
@@ -1234,8 +1236,9 @@ public sealed class VcrServer : IDisposable
     }
 
     /// <summary>
-    /// Stop the server and free it. A record server not yet committed or
-    /// discarded writes its tape first (as <see cref="Commit"/> does).
+    /// Stop the server and free it. A record server neither committed nor
+    /// discarded writes NO tape and throws a <see cref="VcrException"/> saying
+    /// to call <see cref="Commit"/> (or <see cref="Discard"/>).
     /// </summary>
     public void Dispose()
     {
@@ -1243,18 +1246,12 @@ public sealed class VcrServer : IDisposable
         if (_handle == IntPtr.Zero) return;
         IntPtr h = _handle;
         _handle = IntPtr.Zero;
-
-        if (!_recordMode)
-        {
-            try { NativeMethods.Stop(h); }
-            finally { NativeMethods.Destroy(h); }
-            return;
-        }
-
-        // Back-compat: a record server disposed WITHOUT an explicit Commit()/
-        // Discard() still flushes, so existing tests keep recording on dispose.
-        // Tests that must not mint a tape on failure call Discard() in teardown.
-        FlushAndDestroy(h);
+        string err;
+        try { err = NativeMethods.TakeString(NativeMethods.Close(h)); }
+        finally { NativeMethods.Destroy(h); }
+        // A record server disposed without Commit() or Discard() writes no
+        // tape: a test must say which it wants.
+        if (!string.IsNullOrEmpty(err)) throw new VcrException(err);
     }
 }
 

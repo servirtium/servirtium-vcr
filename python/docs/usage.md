@@ -3,8 +3,10 @@
 All fixtures start from `servirtium.playback(tape_path)` or
 `servirtium.record(tape_path, upstream_base)`, configured with a fluent
 builder, and started with `.start()`, which returns a `VcrServer`. Use the
-server as a context manager (`with ... as vcr:`) or call `.close()` explicitly;
-in record mode close/exit also flushes the tape.
+server as a context manager (`with ... as vcr:`) or call `.close()` explicitly.
+A recording is written only by `vcr.commit()` and dropped by `vcr.discard()`;
+closing it (or leaving the `with`) with neither writes nothing and raises
+`VcrError`, and a `with` block that raises discards it.
 
 The system-under-test only ever needs `vcr.base_url`. Everything else — tape
 path, mode, mutations, assertions — lives in your test setup/teardown.
@@ -29,7 +31,7 @@ import urllib.request
 with servirtium.record("tapes/climate_api.md",
                        "https://climatedataapi.worldbank.org").port(0).start() as vcr:
     urllib.request.urlopen(f"{vcr.base_url}/api/v1/countries", timeout=10).read()
-    # exiting the `with` (or calling vcr.close()) writes the markdown tape.
+    vcr.commit()   # writes the markdown tape
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
@@ -187,7 +189,7 @@ vcr = (
     .start()
 )
 # ... make requests via vcr.base_url ...
-vcr.close()  # flush the tape
+vcr.commit()  # write the tape (close() without commit() writes nothing and raises)
 ```
 
 Playback tolerates either form regardless, so cross-implementation tapes load

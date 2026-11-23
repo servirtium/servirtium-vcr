@@ -5,7 +5,7 @@
 // your system-under-test at `vcr.baseUrl` and drive it with plain HTTP.
 //
 //   let vcr = try Vcr.playback("tapes/single_get.md")
-//   defer { vcr.close() }
+//   defer { try? vcr.close() }
 //   let body = try String(contentsOf: URL(string: vcr.baseUrl + "/ok")!)
 //   XCTAssertEqual(vcr.lastKind, .ok)
 //
@@ -181,7 +181,7 @@ public final class Vcr {
                                        port: Int32 = 0,
                                        _ body: (Vcr) throws -> T) throws -> T {
         let vcr = try playback(tapePath, host: host, port: port)
-        defer { vcr.close() }
+        defer { try? vcr.close() }
         return try body(vcr)
     }
 
@@ -192,14 +192,15 @@ public final class Vcr {
                                      host: String = "127.0.0.1", port: Int32 = 0,
                                      _ body: (Vcr) throws -> T) throws -> T {
         let vcr = try record(tapePath, upstreamBase: upstreamBase, host: host, port: port)
+        let result: T
         do {
-            let result = try body(vcr)
-            try vcr.flush()
-            return result
+            result = try body(vcr)
         } catch {
-            vcr.close()
+            vcr.discard()
             throw error
         }
+        try vcr.close()
+        return result
     }
 
     /// Check an opened handle (every open returns one; a failed open is a dead
@@ -503,16 +504,24 @@ public final class Vcr {
 
     // ---- shutdown --------------------------------------------------------
 
-    /// Stop the server, discarding any recording, and free the native handle
-    /// (read diagnostics before this). Idempotent.
-    public func close() {
+    /// Stop the server and free the native handle (read diagnostics before
+    /// this). A recording neither flushed (committed) nor discarded is
+    /// dropped, no tape is written, and this throws. Idempotent.
+    public func close() throws {
         if closed { return }
         closed = true
-        aether_vcr_embed_stop(handle)
+        let err = take(aether_vcr_embed_close(handle))
         aether_vcr_embed_destroy(handle)
+        if !err.isEmpty { throw VcrError(err) }
     }
 
-    deinit { close() }
+    // A deinit cannot throw: an unclosed recording is dropped and the reason
+    // goes to stderr. Call close() (or use withRecord) to get the error.
+    deinit {
+        do { try close() } catch {
+            FileHandle.standardError.write("servirtium: \(error)\n".data(using: .utf8)!)
+        }
+    }
 
     /// Stop and write the captured tape. `tapePath` defaults to the one the
     /// recorder was opened with. Idempotent.

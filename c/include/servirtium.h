@@ -114,7 +114,8 @@ sv_vcr *sv_playback_url(const char *tape_url, sv_str *error);
 
 /* Record: forward each request to upstream_base, return the live response to
  * the SUT, and capture the exchange. The tape is written by
- * sv_close_and_flush — plain sv_close discards the recording. */
+ * sv_close_and_flush (sv_discard drops it); sv_close without either writes
+ * nothing and returns an error. */
 sv_vcr *sv_record(const char *tape_path, const char *upstream_base,
                   sv_str *error);
 
@@ -292,9 +293,11 @@ void sv_clear_format_options(sv_vcr *vcr);
 
 /* ---- shutdown ---------------------------------------------------------- */
 
-/* Stop the server and release the handle. In record mode the recording is
- * DISCARDED — use sv_close_and_flush to write it. */
-void sv_close(sv_vcr *vcr);
+/* Stop the server and release the handle. A recording neither written
+ * (sv_close_and_flush*) nor discarded (sv_discard) is dropped, no tape is
+ * written, and the returned owned string says why (commit or discard it);
+ * otherwise the string is empty. Free it with sv_free. */
+sv_str sv_close(sv_vcr *vcr);
 
 /* Stop, write the captured tape to tape_path (NULL = the path the recorder
  * was opened with), and release the handle. Returns an owned error string —

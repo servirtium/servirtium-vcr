@@ -4,7 +4,7 @@
 // VCR in record mode, forwarding to the live Kotlin/http4k SUT
 // (TODOBACKEND_UPSTREAM). The Mocha spec runs in headless Chrome (JS
 // selenium-webdriver) against the VCR; every CRUD call is forwarded upstream
-// and recorded, then flushed to the tape on close. The suite must pass for the
+// and recorded, then written to the tape on commit. The suite must pass for the
 // recording to be considered good.
 //
 // Driven by .javascript_record.ae, which brings the SUT up in a container
@@ -33,11 +33,12 @@ async function main() {
     console.log(`mocha (record): ${passes} passed, ${failures} failed`)
     for (const m of failMsgs) console.log('  FAIL:', m)
     if (failures || passes === 0) {
-      console.log('record: suite did not pass against the live SUT; tape NOT trustworthy')
+      console.log('record: suite did not pass against the live SUT; no tape written')
       return 1
     }
+    vcr.commit() // writes the tape to TAPE
   } finally {
-    vcr.close() // flushes the tape to TAPE
+    vcr.discard() // no-op after commit; drops the recording on any other exit
   }
 
   console.log(`record: wrote ${TAPE}`)

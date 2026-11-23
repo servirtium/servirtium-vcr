@@ -147,6 +147,12 @@ ServirtiumLibrary >> stop: server [
 ]
 
 { #category : 'ffi - lifecycle' }
+ServirtiumLibrary >> close: server [
+
+	^ self ffiCall: #( void* aether_vcr_embed_close ( void* server ) )
+]
+
+{ #category : 'ffi - lifecycle' }
 ServirtiumLibrary >> stopAndFlush: server tape: tapePath [
 
 	^ self ffiCall: #( void* aether_vcr_embed_stop_and_flush ( void* server, String tapePath ) )

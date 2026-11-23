@@ -23,7 +23,7 @@ class SecretCallbacksTest:
       ).start()
       try
         run("drive", rec.baseUrl()); assertEquals(0, count)
-      finally rec.close()
+      finally rec.commit()
       assertEquals(20, count); run("check", tape)
       val replay = Vcr.playback(tape).secretResolver(token => "pw-" + token.stripSuffix("_PASSWORD").toLowerCase(Locale.ROOT) + "&secret").start()
       try

@@ -114,7 +114,7 @@ func TestRecordThenReplaysSameInteraction(t *testing.T) {
 	if body != "hello-from-upstream" {
 		t.Fatalf("recorded body: expected %q, got %q", "hello-from-upstream", body)
 	}
-	if err := rec.Close(); err != nil { // flushes the tape
+	if err := rec.Commit(); err != nil { // writes the tape
 		t.Fatalf("close (flush): %v", err)
 	}
 	if _, err := os.Stat(tape); err != nil {
@@ -159,7 +159,7 @@ func TestRecordAndReplayPostWithBody(t *testing.T) {
 	if up.lastMethod != "POST" {
 		t.Fatalf("upstream should have seen POST, saw %q", up.lastMethod)
 	}
-	if err := rec.Close(); err != nil {
+	if err := rec.Commit(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 
@@ -206,7 +206,7 @@ func TestStructuredRedactionHelpers(t *testing.T) {
 	if rec.LastKind() != servirtium.Ok {
 		t.Fatal(rec.LastError())
 	}
-	if err := rec.Close(); err != nil {
+	if err := rec.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	run("check", directory)
@@ -235,7 +235,7 @@ func TestRewriteUpstreamBase(t *testing.T) {
 	if rec.LastKind() != servirtium.Ok {
 		t.Fatal(rec.LastError())
 	}
-	if err := rec.Close(); err != nil {
+	if err := rec.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	run("check", directory)
@@ -261,7 +261,7 @@ func TestRecordLicenseNoticeAndPresets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rec.Close(); err != nil {
+	if err := rec.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := servirtium.Record(tape, "http://127.0.0.1:1").RemoveCloudHeaders("nosuchvendor").Start(); err == nil {
@@ -291,7 +291,7 @@ func TestRecordSortJSONKeysWithPrettyJSONWritesSortedPrettyJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if err := rec.Close(); err != nil {
+	if err := rec.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	if got := readTape(t, tape); !strings.Contains(got, sortedJSON) {
@@ -313,7 +313,7 @@ func TestRecordSortJSONKeysWithoutPrettyJSONIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	err = rec.Close()
+	err = rec.Commit()
 	if err == nil || !strings.Contains(err.Error(), "sort_json_keys needs pretty_json") {
 		t.Fatalf("expected the needs-pretty_json refusal, got %v", err)
 	}
@@ -375,5 +375,38 @@ func TestRetainedReplayDiagnostics(t *testing.T) {
 	}
 	if events := server.DiagnosticsJSON(false); events != "[]" {
 		t.Fatal(events)
+	}
+}
+
+func TestClosingARecordingWithoutCommitWritesNothingAndFails(t *testing.T) {
+	up := newFakeUpstream()
+	defer up.close()
+	tape := tempTape(t, "uncommitted.md")
+	rec, err := servirtium.Record(tape, up.baseURL()).Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(rec.BaseURL() + "/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	err = rec.Close()
+	if err == nil || !strings.Contains(err.Error(), "without commit or discard") {
+		t.Fatalf("Close without Commit: %v", err)
+	}
+	if _, statErr := os.Stat(tape); !os.IsNotExist(statErr) {
+		t.Fatalf("a tape was written: %v", statErr)
+	}
+	dropped, err := servirtium.Record(tape, up.baseURL()).Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropped.Discard()
+	if err := dropped.Close(); err != nil {
+		t.Fatalf("Close after Discard: %v", err)
+	}
+	if _, statErr := os.Stat(tape); !os.IsNotExist(statErr) {
+		t.Fatalf("a tape was written after Discard: %v", statErr)
 	}
 }

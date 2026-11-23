@@ -93,5 +93,6 @@ using var vcr = Vcr.Record("tapes/my_api.md", "https://api.example.com")
     .Redact(VcrField.RequestHeaders, realToken, "Bearer REDACTED")
     .Port(0)
     .Start();
-// ... drive the SUT ...  (Dispose flushes the tape)
+// ... drive the SUT ...
+vcr.Commit();   // writes the tape; Dispose without Commit or Discard writes nothing and throws
 ```

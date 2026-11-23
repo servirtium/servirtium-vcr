@@ -110,8 +110,9 @@ process-global. Consequences:
   run test classes in parallel if you want; this binding no longer requires
   `forkCount=1` for correctness.
 - `OPEN_PLAYBACK` / `OPEN_RECORD` mint the handle; `applyConfig(...)` writes
-  this fixture's config into that handle before `START`; `close()` stops it
-  (and, in record mode, flushes the tape) and releases the handle.
+  this fixture's config into that handle before `START`; `commit()` writes a
+  recording, `discard()` drops it, and `close()` stops and releases the handle
+  (throwing for a recording that was neither committed nor discarded).
 
 ## A subtle ordering rule (notes)
 

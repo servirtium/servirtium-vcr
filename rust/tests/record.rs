@@ -1,6 +1,6 @@
 //! Record mode end-to-end and record-side breadth: forward to a live
 //! upstream, return the real response to the SUT, capture, flush a Servirtium
-//! markdown tape on drop, then replay it; plus redaction, header removal,
+//! markdown tape on commit, then replay it; plus redaction, header removal,
 //! notes, drift detection, POST bodies, and per-fixture state isolation.
 
 mod common;
@@ -22,7 +22,7 @@ fn record_accepts_license_notice_pretty_json_and_presets() {
         .port(0)
         .start()
         .unwrap();
-    rec.finish().unwrap();
+    rec.commit().unwrap();
     assert!(std::fs::read_to_string(&tape.0).unwrap().contains("## LICENSE NOTICE"));
     assert!(Vcr::record(&tape.0, &upstream.base_url)
         .remove_cloud_headers("nosuchvendor")
@@ -53,7 +53,7 @@ fn sort_json_keys_with_pretty_json_writes_sorted_pretty_json() {
     assert!(rec.sort_json_keys());
     assert!(rec.sort_response_headers());
     let _ = ureq::get(&format!("{}/data", rec.base_url())).call().unwrap();
-    rec.finish().unwrap();
+    rec.commit().unwrap();
     assert!(tape.read().contains(SORTED), "sorted, pretty JSON expected in:\n{}", tape.read());
 }
 
@@ -65,7 +65,7 @@ fn sort_json_keys_without_pretty_json_is_refused() {
     let tape = TempTape::new();
     let rec = Vcr::record(&tape.0, &upstream.base_url).sort_json_keys().port(0).start().unwrap();
     let _ = ureq::get(&format!("{}/data", rec.base_url())).call().unwrap();
-    let err = rec.finish().unwrap_err();
+    let err = rec.commit().unwrap_err();
     assert!(err.message().contains("sort_json_keys needs pretty_json"), "{err}");
     assert!(!std::path::Path::new(&tape.0).exists(), "a refused tape is not written");
     assert!(Vcr::record(&tape.0, &upstream.base_url).sort_json_array("a/b", "").port(0).start().is_err());
@@ -96,7 +96,7 @@ fn records_then_replays_the_same_interaction() {
             .into_string()
             .unwrap();
         assert_eq!("hello-from-upstream", body);
-        rec.finish().unwrap(); // flush the tape
+        rec.commit().unwrap(); // flush the tape
     }
 
     assert!(std::path::Path::new(&tape.0).exists(), "record should write the tape");
@@ -126,7 +126,7 @@ fn redacts_response_body_before_it_lands_on_the_tape() {
             .start()
             .unwrap();
         let _ = ureq::get(&format!("{}/x", rec.base_url())).call().unwrap();
-        rec.finish().unwrap();
+        rec.commit().unwrap();
     }
 
     let content = tape.read();
@@ -146,7 +146,7 @@ fn attaches_a_note_to_the_recorded_interaction() {
             .start()
             .unwrap();
         let _ = ureq::get(&format!("{}/x", rec.base_url())).call().unwrap();
-        rec.finish().unwrap();
+        rec.commit().unwrap();
     }
 
     assert!(tape.read().contains("## [Note] Why this exists:"));
@@ -163,7 +163,7 @@ fn removes_a_named_response_header_from_the_tape() {
     {
         let rec = Vcr::record(&tape1.0, &upstream.base_url).port(0).start().unwrap();
         let _ = ureq::get(&format!("{}/x", rec.base_url())).call().unwrap();
-        rec.finish().unwrap();
+        rec.commit().unwrap();
     }
     assert!(tape1.read().contains("X-Trace-Id"));
 
@@ -175,7 +175,7 @@ fn removes_a_named_response_header_from_the_tape() {
             .start()
             .unwrap();
         let _ = ureq::get(&format!("{}/x", rec.base_url())).call().unwrap();
-        rec.finish().unwrap();
+        rec.commit().unwrap();
     }
     assert!(!tape2.read().contains("X-Trace-Id"));
 }
@@ -195,7 +195,7 @@ fn mutation_state_does_not_leak_between_fixtures() {
             .start()
             .unwrap();
         let _ = ureq::get(&format!("{}/x", a.base_url())).call().unwrap();
-        a.finish().unwrap();
+        a.commit().unwrap();
     }
     assert!(tape1.read().contains("SCRUBBED"));
 
@@ -203,7 +203,7 @@ fn mutation_state_does_not_leak_between_fixtures() {
     {
         let b = Vcr::record(&tape2.0, &upstream.base_url).port(0).start().unwrap();
         let _ = ureq::get(&format!("{}/x", b.base_url())).call().unwrap();
-        b.finish().unwrap();
+        b.commit().unwrap();
     }
     let c = tape2.read();
     assert!(c.contains("leak"));
@@ -224,11 +224,11 @@ fn fail_if_changed_errors_when_a_re_record_drifts() {
             .start()
             .unwrap();
         let _ = ureq::get(&format!("{}/x", first.base_url())).call().unwrap();
-        first.finish().unwrap();
+        first.commit().unwrap();
     }
     assert!(std::path::Path::new(&tape.0).exists());
 
-    // Re-record with a changed upstream — finish() must error, while still
+    // Re-record with a changed upstream — commit() must error, while still
     // writing the new tape for `git diff`.
     upstream.set_body("v2-changed");
     let second = Vcr::record(&tape.0, &upstream.base_url)
@@ -237,7 +237,7 @@ fn fail_if_changed_errors_when_a_re_record_drifts() {
         .start()
         .unwrap();
     let _ = ureq::get(&format!("{}/x", second.base_url())).call().unwrap();
-    let result = second.finish();
+    let result = second.commit();
 
     assert!(result.is_err(), "expected a drift error");
     assert!(tape.read().contains("v2-changed"));
@@ -258,7 +258,7 @@ fn records_and_replays_a_post_with_a_body() {
             .unwrap();
         assert_eq!("created", resp);
         assert_eq!(Some("POST".to_string()), upstream.last_method());
-        rec.finish().unwrap();
+        rec.commit().unwrap();
     }
 
     // Replay the same POST offline.
@@ -292,7 +292,7 @@ fn structured_redaction_helpers_preserve_upstream_credentials() {
         .start().unwrap();
     run(&["drive", dir, &rec.base_url()]);
     assert_eq!(rec.last_kind(), servirtium::Outcome::Ok);
-    drop(rec);
+    rec.commit().unwrap();
     run(&["check", dir]);
     std::fs::remove_dir_all(directory).unwrap();
 }
@@ -316,7 +316,7 @@ fn rewrite_upstream_base_keeps_the_client_on_the_vcr() {
     let rec = servirtium::Vcr::record(tape.to_str().unwrap(), upstream).rewrite_upstream_base().start().unwrap();
     run(&["drive", dir, &rec.base_url()]);
     assert_eq!(rec.last_kind(), servirtium::Outcome::Ok);
-    drop(rec);
+    rec.commit().unwrap();
     run(&["check", dir]);
     let play = servirtium::Vcr::playback(tape.to_str().unwrap()).start().unwrap();
     run(&["replay", dir, &play.base_url()]);
@@ -324,4 +324,26 @@ fn rewrite_upstream_base_keeps_the_client_on_the_vcr() {
     play.assert_all_consumed().unwrap();
     drop(play);
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn closing_a_recording_without_commit_writes_nothing_and_errs() {
+    let upstream = FakeUpstream::new();
+    let tape = TempTape::new();
+    let rec = Vcr::record(&tape.0, &upstream.base_url).port(0).start().unwrap();
+    ureq::get(&format!("{}/x", rec.base_url())).call().unwrap();
+    let err = rec.close().unwrap_err();
+    assert!(err.to_string().contains("without commit or discard"), "{err}");
+    assert!(!std::path::Path::new(&tape.0).exists());
+    let dropped = Vcr::record(&tape.0, &upstream.base_url).port(0).start().unwrap();
+    ureq::get(&format!("{}/x", dropped.base_url())).call().unwrap();
+    dropped.discard();
+    assert!(!std::path::Path::new(&tape.0).exists());
+    // Dropped (not closed) without commit: a panic.
+    let unhandled = std::panic::catch_unwind(|| {
+        let rec = Vcr::record(&tape.0, &upstream.base_url).port(0).start().unwrap();
+        drop(rec);
+    });
+    assert!(unhandled.is_err());
+    assert!(!std::path::Path::new(&tape.0).exists());
 }

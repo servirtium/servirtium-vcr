@@ -46,7 +46,7 @@ server-first model the Aether VCR is designed around.
 | v1 | v2 |
 |---|---|
 | `NewServirtium()` + `StartPlayback(name, port)` | `servirtium.Playback(tapePath).Port(p).Start()` |
-| `StartRecord(apiURL, port)` + `WriteRecord(name)` | `servirtium.Record(tapePath, upstream).Port(p).Start()`; tape flushed on `Close()` |
+| `StartRecord(apiURL, port)` + `WriteRecord(name)` | `servirtium.Record(tapePath, upstream).Port(p).Start()`; tape written by `Commit()` (`Close()` without `Commit()`/`Discard()` writes nothing and errors) |
 | `GetPlaybackURL()` / `GetRecordURL()` | `srv.BaseURL()` |
 | `EndPlayback()` / `EndRecord()` | `srv.Close()` |
 | `Set{Caller,Record}{Request,Response}BodyReplacement(re→s)` | `.Redact(field, pattern, repl)` (record) / `.Unredact(...)` (playback) |

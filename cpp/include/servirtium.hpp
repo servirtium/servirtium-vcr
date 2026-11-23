@@ -40,6 +40,7 @@
 
 #include <servirtium.h>
 
+#include <cstdio>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -196,7 +197,14 @@ public:
         return *this;
     }
 
-    ~Vcr() { close(); }
+    // A destructor must not throw: an unclosed recording is dropped and the
+    // reason goes to stderr. Call close() (or flush()/discard()) to handle it.
+    ~Vcr() {
+        sv_vcr* h = release();
+        if (h == nullptr) return;
+        std::string why = detail::take(sv_close(h));
+        if (!why.empty()) std::fprintf(stderr, "servirtium: %s\n", why.c_str());
+    }
 
     // ---- introspection ---------------------------------------------------
 
@@ -474,11 +482,14 @@ public:
             "flush_or_check");
     }
 
-    // Stop the server now, discarding any recording. Idempotent; the
-    // destructor calls it.
+    // Stop the server now. A recording neither flushed nor discarded is
+    // dropped, no tape is written, and this throws Error saying to flush (or
+    // discard) it. Idempotent.
     void close() {
         sv_vcr* h = release();
-        if (h != nullptr) sv_close(h);
+        if (h == nullptr) return;
+        std::string why = detail::take(sv_close(h));
+        if (!why.empty()) throw Error(why);
     }
 
     // Stop the server and DROP the captured recording WITHOUT writing a tape

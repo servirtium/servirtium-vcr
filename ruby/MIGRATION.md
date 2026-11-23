@@ -50,7 +50,8 @@ Servirtium.record('spec/tapes/my_api.md', 'https://api.example.com')
           .redact(Servirtium::Field::REQUEST_HEADERS, real_token, 'Bearer REDACTED')
           .port(0)
           .start do |server|
-  # ... drive the SUT ...  (block exit flushes the tape)
+  # ... drive the SUT ...
+  server.commit # writes the tape; a block that ends without commit or discard raises
 end
 ```
 

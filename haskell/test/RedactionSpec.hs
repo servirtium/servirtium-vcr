@@ -25,6 +25,7 @@ spec = describe "redaction" $
             body <- httpGet (url ++ "/secret")
             -- The live SUT still sees the real upstream bytes.
             body `shouldBe` "secret-token-12345"
+            commit vcr
 
       -- The committed tape is scrubbed.
       contents <- readFile tape

@@ -51,9 +51,11 @@ marshalling rules to drift from `core/embed.ae`.
 ### What Swift adds
 
 - **Scoped forms** — `Vcr.withPlayback(tape) { … }` closes on every path;
-  `Vcr.withRecord(tape, upstreamBase:) { … }` flushes when the body returns and
-  **discards** the recording if it threw, so a failed test can't overwrite a
-  good tape.
+  `Vcr.withRecord(tape, upstreamBase:) { … }` **discards** the recording if
+  the body threw, so a failed test can't overwrite a good tape. The body writes
+  the tape with `try rec.flush()` (or drops it with `rec.discard()`); a
+  recording closed with neither writes nothing and `close()` (and so
+  `withRecord`) throws.
 - **`throws` instead of NULL/error strings** — a failed open or a rejected
   config call raises `VcrError` carrying the core's reason (`open_error`), never hands back a dead handle. `close()`/`flush()`/`discard()` free the native handle (idempotent; read diagnostics first).
 - **Typed enums** (`Field`, `Outcome`) and automatic caller-owned-string

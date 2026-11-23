@@ -66,6 +66,10 @@ final class NativeMethods {
             "aether_vcr_embed_stop",
             FunctionDescriptor.ofVoid(C_PTR));
 
+    static final MethodHandle CLOSE = down(
+            "aether_vcr_embed_close",
+            FunctionDescriptor.of(C_STR, C_PTR));
+
     static final MethodHandle STOP_AND_FLUSH = down(
             "aether_vcr_embed_stop_and_flush",
             FunctionDescriptor.of(C_STR, C_PTR, C_PTR));

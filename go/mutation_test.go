@@ -25,7 +25,7 @@ func TestRecordRedactsResponseBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	get(t, rec.BaseURL(), "/x")
-	if err := rec.Close(); err != nil {
+	if err := rec.Commit(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -51,7 +51,7 @@ func TestRecordAttachesNote(t *testing.T) {
 		t.Fatal(err)
 	}
 	get(t, rec.BaseURL(), "/x")
-	if err := rec.Close(); err != nil {
+	if err := rec.Commit(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -74,7 +74,7 @@ func TestRecordRemovesNamedResponseHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	get(t, rec.BaseURL(), "/x")
-	if err := rec.Close(); err != nil {
+	if err := rec.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(readTape(t, tape1), "X-Trace-Id") {
@@ -90,7 +90,7 @@ func TestRecordRemovesNamedResponseHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	get(t, rec2.BaseURL(), "/x")
-	if err := rec2.Close(); err != nil {
+	if err := rec2.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(readTape(t, tape2), "X-Trace-Id") {
@@ -114,7 +114,7 @@ func TestMutationStateDoesNotLeakBetweenFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	get(t, a.BaseURL(), "/x")
-	if err := a.Close(); err != nil {
+	if err := a.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(readTape(t, tape1), "SCRUBBED") {
@@ -127,7 +127,7 @@ func TestMutationStateDoesNotLeakBetweenFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	get(t, b.BaseURL(), "/x")
-	if err := b.Close(); err != nil {
+	if err := b.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	tape2Text := readTape(t, tape2)
@@ -151,7 +151,7 @@ func TestFailIfChangedReturnsErrorOnDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	get(t, first.BaseURL(), "/x")
-	if err := first.Close(); err != nil {
+	if err := first.Commit(); err != nil {
 		t.Fatalf("first record should not drift: %v", err)
 	}
 
@@ -163,7 +163,7 @@ func TestFailIfChangedReturnsErrorOnDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	get(t, second.BaseURL(), "/x")
-	if err := second.Close(); err == nil {
+	if err := second.Commit(); err == nil {
 		t.Fatal("expected a drift error from Close, got nil")
 	}
 	if !strings.Contains(readTape(t, tape), "v2-changed") {

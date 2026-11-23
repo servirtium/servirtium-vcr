@@ -790,25 +790,23 @@ class VcrServer:
         finally:
             N.destroy(handle)
 
-    def close(self) -> None:
-        """Stop the server; flush the tape if recording."""
-        if not self._handle:
+    def commit(self) -> None:
+        """Record mode: stop the server and write the tape now (with
+        ``fail_if_changed``, raise if it differs from the one on disk). The
+        only way a recording becomes a tape: :meth:`close` (and leaving the
+        ``with`` block) without commit or :meth:`discard` writes nothing and
+        raises. No-op outside record mode."""
+        if not self._handle or not self._record_mode:
             return
         handle = self._handle
         self._handle = None
-
         try:
-            if not self._record_mode:
-                N.stop(handle)
-                return
-
             if self._secret_redactor is not None:
                 try:
                     _secret_stage(handle, self._secret_redactor, False)
                 except BaseException:
                     N.stop(handle)
                     raise
-
             if self._fail_if_changed:
                 result = N.stop_and_flush_fail_if_changed(handle, N.encode(self._tape_path))
             else:
@@ -819,11 +817,30 @@ class VcrServer:
         finally:
             N.destroy(handle)
 
+    def close(self) -> None:
+        """Stop the server. A recording neither committed nor discarded is
+        dropped, no tape is written, and this raises :class:`VcrError` saying
+        to call :meth:`commit` (or :meth:`discard`)."""
+        if not self._handle:
+            return
+        handle = self._handle
+        self._handle = None
+        try:
+            err = N.take_string(N.close(handle))
+        finally:
+            N.destroy(handle)
+        if err:
+            raise VcrError(err)
+
     def __enter__(self) -> "VcrServer":
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
-        self.close()
+        # A failing block drops its recording without hiding the failure.
+        if exc_type is not None:
+            self.discard()
+        else:
+            self.close()
         return False
 
 

@@ -240,10 +240,14 @@ module Servirtium
       return server unless block_given?
 
       begin
-        yield server
-      ensure
-        server.close
+        result = yield server
+      rescue Exception # rubocop:disable Lint/RescueException
+        # A failing block drops its recording without hiding the failure.
+        server.discard
+        raise
       end
+      server.close
+      result
     end
   end
 

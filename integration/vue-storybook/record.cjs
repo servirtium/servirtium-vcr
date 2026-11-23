@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // RECORD phase (on-demand). A Servirtium VCR serves the built Vue page (static
 // mount at /app) and RECORDS the form's POST by forwarding it to a throwaway
-// stub backend, then flushes the markdown tape on close. Selenium drives the
+// stub backend, then writes the markdown tape on commit. Selenium drives the
 // real browser. Re-run to regenerate tapes/post.md.
 //
 //   SERVIRTIUM_VCR_LIB=../../core/native/libservirtium_vcr.so node record.cjs
@@ -37,11 +37,12 @@ async function main() {
     console.log('browser saw (record):', JSON.stringify(text))
     const ok = text.includes('Created #1') && text.includes(MESSAGE)
     if (!ok) {
-      console.log('record: form did not show the expected result; tape NOT trustworthy')
+      console.log('record: form did not show the expected result; no tape written')
       return 1
     }
+    vcr.commit() // writes the tape to TAPE
   } finally {
-    vcr.close() // flushes the tape to TAPE
+    vcr.discard() // no-op after commit; drops the recording on any other exit
     stub.close()
   }
   console.log(`record: wrote ${TAPE}`)

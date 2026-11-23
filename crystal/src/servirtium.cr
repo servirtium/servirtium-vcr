@@ -47,6 +47,7 @@ lib LibVcr
   fun start = aether_vcr_embed_start(h : Void*) : LibC::Int
   fun stop = aether_vcr_embed_stop(h : Void*) : Void
   fun stop_and_flush = aether_vcr_embed_stop_and_flush(h : Void*, tape : LibC::Char*) : LibC::Char*
+  fun close = aether_vcr_embed_close(h : Void*) : LibC::Char*
   fun stop_and_flush_fail_if_changed = aether_vcr_embed_stop_and_flush_fail_if_changed(h : Void*, tape : LibC::Char*) : LibC::Char*
   fun stop_and_flush_or_check = aether_vcr_embed_stop_and_flush_or_check(h : Void*, tape : LibC::Char*) : LibC::Char*
   fun discard = aether_vcr_embed_discard(h : Void*, tape : LibC::Char*) : LibC::Char*
@@ -255,20 +256,20 @@ module Servirtium
     Vcr.new(started(handle, "record open failed: #{tape_path}"), host, tape_path)
   end
 
-  # Block form of `.record`: flushes the captured tape when the block ends
-  # normally, and discards it if the block raised (a failed test shouldn't
-  # overwrite a good tape).
+  # Block form of `.record`: the block calls `#flush` to write the tape (or
+  # `#discard`). Ending the block with neither writes nothing and raises; a
+  # block that raises discards its recording.
   def self.record(tape_path : String, upstream_base : String,
                   host : String = "127.0.0.1", port : Int32 = 0, &)
     vcr = record(tape_path, upstream_base, host, port)
     begin
       result = yield vcr
-      vcr.flush
-      result
     rescue ex
-      vcr.close
+      vcr.discard
       raise ex
     end
+    vcr.close
+    result
   end
 
   # HAR 1.2 capture -> Servirtium markdown tape. Raises Error on failure.
@@ -670,12 +671,17 @@ module Servirtium
 
     # ---- shutdown ----
 
-    # Stop the server, discarding any recording. Idempotent.
+    # Stop the server. A recording neither flushed (committed) nor discarded
+    # is dropped, no tape is written, and this raises Error. Idempotent.
     def close : Nil
       return if @closed
       @closed = true
-      LibVcr.stop(@handle)
-      LibVcr.destroy(@handle)
+      err = begin
+        Servirtium.take(LibVcr.close(@handle))
+      ensure
+        LibVcr.destroy(@handle)
+      end
+      raise Error.new(err) unless err.empty?
     end
 
     # Stop and write the captured tape. `tape_path` defaults to the one the

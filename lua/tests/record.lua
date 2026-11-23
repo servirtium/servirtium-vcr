@@ -22,7 +22,7 @@ do
     local rec = assert(servirtium.record(tape, up.base_url):port(0):start())
     local body = h.curl_get(rec:base_url(), "/greeting")
     h.eq(body, "hello-from-upstream", "recorded (live) body")
-    h.eq(rec:close(), "", "close (flush) returns no error")
+    h.eq(rec:commit(), "", "commit returns no error")
     up.close()
 
     h.truthy(h.read_file(tape) ~= nil, "record-mode close wrote the tape")
@@ -43,7 +43,7 @@ do
         :add_license_notice("test notice"):pretty_json(2):remove_transport_headers()
         :remove_cloud_headers("aws"):redact_credentials():redact_credential_header("X-Vault-Token")
         :port(0):start())
-    rec:close()
+    h.eq(rec:commit(), "", "commit")
     os.remove(tape)
     local bad = servirtium.record(tape, "http://127.0.0.1:1"):remove_cloud_headers("nosuchvendor"):port(0):start()
     h.eq(bad, nil, "an unknown cloud vendor is rejected")
@@ -59,7 +59,7 @@ do
     h.eq(h.curl_post(rec:base_url(), "/submit", "ping"), "created", "live POST response")
     local method = up.last()
     h.eq(method, "POST", "upstream saw POST")
-    h.eq(rec:close(), "", "close returns no error")
+    h.eq(rec:commit(), "", "close returns no error")
     up.close()
 
     -- replay the same POST offline
@@ -91,7 +91,7 @@ do
         :redact_header("Authorization"):redact_query_param("password"):redact_json_field("secretKey"):start())
     fixture_run("drive", rec:base_url())
     h.eq(rec:last_kind(), servirtium.OK, "structured record outcome")
-    h.eq(rec:close(), "", "structured flush")
+    h.eq(rec:commit(), "", "structured flush")
     fixture_run("check")
     for _, name in ipairs({"url", "done", "capture.json", "tape.md"}) do os.remove(directory .. "/" .. name) end
     os.remove(directory)
@@ -117,7 +117,7 @@ do
     local rec = assert(servirtium.record(tape, upstream):rewrite_upstream_base():start())
     fixture_run("drive", rec:base_url())
     h.eq(rec:last_kind(), servirtium.OK, "origin record outcome")
-    h.eq(rec:close(), "", "origin flush")
+    h.eq(rec:commit(), "", "origin flush")
     fixture_run("check")
     local vcr = assert(servirtium.playback(tape):start())
     fixture_run("replay", vcr:base_url())
@@ -162,7 +162,7 @@ do
         if key == "password" then count = count + 1; return request.path:match("^/([^/]+)"):upper() .. "_PASSWORD" end
     end):start())
     run("drive", rec:base_url()); h.eq(count, 0, "deferred callback")
-    h.eq(rec:close(), "", "secret flush"); h.eq(count, 20, "field count"); run("check", tape)
+    h.eq(rec:commit(), "", "secret flush"); h.eq(count, 20, "field count"); run("check", tape)
     local replay = assert(servirtium.playback(tape):secret_resolver(function(token)
         return "pw-" .. token:gsub("_PASSWORD$", ""):lower() .. "&secret"
     end):start())
@@ -180,7 +180,7 @@ do
     local rec = assert(servirtium.record(tape, up.base_url):sort_json_keys():pretty_json(2):port(0):start())
     h.truthy(rec:sort_json_keys_enabled(), "sort_json_keys is on")
     h.eq(h.curl_get(rec:base_url(), "/data"), json, "live body is untouched")
-    h.eq(rec:close(), "", "close (flush) returns no error")
+    h.eq(rec:commit(), "", "commit returns no error")
     h.contains(h.read_file(tape), '"a": {\n    "y": 3,\n    "z": 2\n  },\n  "b": 1', "sorted, pretty tape")
     os.remove(tape)
 
@@ -188,7 +188,7 @@ do
     local refused = h.temp_tape("refused.md")
     local rec2 = assert(servirtium.record(refused, up.base_url):sort_json_keys():port(0):start())
     h.curl_get(rec2:base_url(), "/data")
-    h.contains(rec2:close(), "sort_json_keys needs pretty_json", "refusal message")
+    h.contains(rec2:commit(), "sort_json_keys needs pretty_json", "refusal message")
     h.eq(h.read_file(refused), nil, "nothing written")
     up.close()
 
@@ -209,5 +209,17 @@ do
     local rec = assert(servirtium.record(tape, "http://127.0.0.1:1"):port(0):start())
     h.truthy(rec:set_playback_range(0, -1) ~= "", "refused on a record handle")
     rec:discard()
+end
+
+do
+    h.case("closing a recording without commit or discard writes nothing")
+    local tape = h.temp_tape("uncommitted.md")
+    local rec = assert(servirtium.record(tape, "http://127.0.0.1:1"):port(0):start())
+    h.contains(rec:close(), "without commit or discard", "close says why")
+    h.eq(io.open(tape, "rb"), nil, "no tape written")
+    local dropped = assert(servirtium.record(tape, "http://127.0.0.1:1"):port(0):start())
+    dropped:discard()
+    h.eq(dropped:close(), "", "close after discard")
+    h.eq(io.open(tape, "rb"), nil, "no tape written after discard")
 end
 h.done("record")

@@ -3,7 +3,7 @@
 
 VCR in record mode, forwarding to the live Kotlin/http4k SUT (TODOBACKEND_UPSTREAM).
 The Mocha spec runs in headless Chrome against the VCR; every CRUD call is
-forwarded upstream and recorded, then flushed to the tape on close. The suite
+forwarded upstream and recorded, then written to the tape on commit. The suite
 must pass for the recording to be considered good.
 
 Driven by record.sh, which brings the SUT up in a container (started with its
@@ -35,14 +35,17 @@ def main() -> int:
     )
     try:
         passes, failures, msgs = run_suite(vcr.base_url)
-        print(f"mocha (record): {passes} passed, {failures} failed")
-        for m in msgs:
-            print("  FAIL:", m)
-        if failures or passes == 0:
-            print("record: suite did not pass against the live SUT; tape NOT trustworthy")
-            return 1
-    finally:
-        vcr.close()  # flushes the tape to TAPE
+    except BaseException:
+        vcr.discard()
+        raise
+    print(f"mocha (record): {passes} passed, {failures} failed")
+    for m in msgs:
+        print("  FAIL:", m)
+    if failures or passes == 0:
+        vcr.discard()
+        print("record: suite did not pass against the live SUT; no tape written")
+        return 1
+    vcr.commit()  # writes the tape to TAPE
 
     print(f"record: wrote {TAPE}")
     return 0

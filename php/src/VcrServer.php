@@ -168,10 +168,15 @@ final class VcrServer
 
     // ---- lifecycle --------------------------------------------------------
 
-    /** Stop the server; flush the tape if recording (and raise on drift). */
-    public function stop(): void
+    /**
+     * Record mode: stop the server and write the tape now (raising on drift
+     * with failIfChanged). The only way a recording becomes a tape: stop()
+     * without commit() or discard() writes nothing and throws. No-op in
+     * playback mode.
+     */
+    public function commit(): void
     {
-        if ($this->handle === null) {
+        if ($this->handle === null || !$this->recordMode) {
             return;
         }
         $handle = $this->handle;
@@ -179,12 +184,6 @@ final class VcrServer
         $lib = Native::lib();
 
         try {
-            if (!$this->recordMode) {
-                $lib->aether_vcr_embed_stop($handle);
-
-                return;
-            }
-
             if ($this->secretRedactor !== null) {
                 try {
                     Secrets::stage($handle, $this->secretRedactor, false);
@@ -202,6 +201,29 @@ final class VcrServer
             }
         } finally {
             $lib->aether_vcr_embed_destroy($handle);
+        }
+    }
+
+    /**
+     * Stop the server. A recording neither committed nor discarded is
+     * dropped, no tape is written, and this throws a VcrException saying to
+     * call commit() (or discard()).
+     */
+    public function stop(): void
+    {
+        if ($this->handle === null) {
+            return;
+        }
+        $handle = $this->handle;
+        $this->handle = null;
+        $lib = Native::lib();
+        try {
+            $err = Native::takeString($lib->aether_vcr_embed_close($handle));
+        } finally {
+            $lib->aether_vcr_embed_destroy($handle);
+        }
+        if ($err !== '') {
+            throw new VcrException($err);
         }
     }
 

@@ -120,6 +120,7 @@ public class PlaybackTests
         var res = (IntPtr)native.GetMethod("SetPlaybackRange", any)!.Invoke(null, new object[] { handle, 0, -1 })!;
         string err = (string)native.GetMethod("TakeString", any)!.Invoke(null, new object?[] { res })!;
         Assert.NotEqual(string.Empty, err);
+        rec.Discard();
         Assert.Equal(-1, (int)native.GetMethod("GetPlaybackRangeFrom", any)!.Invoke(null, new object[] { handle })!);
         rec.Discard();
     }

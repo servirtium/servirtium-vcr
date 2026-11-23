@@ -30,6 +30,7 @@ def test_four_services_resolve_named_secrets_without_live_upstream(tmp_path):
     with servirtium.record(str(tape), upstream).secret_redactor(redact).start() as recorder:
         run('drive', recorder.base_url)
         assert seen == [], 'redactors must not run on the HTTP worker'
+        recorder.commit()
     run('check', tape)
     assert len(seen) == 20
     assert {fmt for _, fmt, _ in seen} >= {'query', 'json', 'form', 'xml', 'yaml'}
@@ -55,7 +56,7 @@ def test_failed_redactor_does_not_overwrite_existing_tape(tmp_path):
     recorder = servirtium.record(str(tape), upstream).secret_redactor(failing).start()
     run('drive', recorder.base_url)
     with pytest.raises(RuntimeError, match='callback failed'):
-        recorder.close()
+        recorder.commit()
     assert tape.read_text() == 'original'
 
 

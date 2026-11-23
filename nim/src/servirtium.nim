@@ -55,9 +55,9 @@ type
     ResponseHeaders = 5
     Response = 6 ## substitution-only: body AND headers in one rule
 
-  ## A running VCR server. `recording` selects the close semantics: a record
-  ## server flushes its tape on close, a playback server just stops.
-  ## `failIfChanged` selects the drift-detecting flush variant.
+  ## A running VCR server. A record server writes its tape only on `commit`;
+  ## a playback server just stops on close. `failIfChanged` selects the
+  ## drift-detecting variant of `commit`.
   SecretRequest* = object
     `method`*, path*, location*, format*, fieldPath*: string
     interaction*: int
@@ -191,7 +191,7 @@ proc clearLastError*(s: VcrServer) =
   native.clear_last_error(s.handle)
 
 proc failIfChanged*(s: VcrServer) =
-  ## Make `close` (record mode) flush the tape with drift detection: it still
+  ## Make `commit` (record mode) write the tape with drift detection: it still
   ## writes the freshly recorded tape, but raises `VcrError` if it differs from
   ## the on-disk one.
   s.failIfChanged = true
@@ -449,25 +449,35 @@ proc getPlaybackRangeTo*(s: VcrServer): int =
   ## The playback range's end, or -1 when none is set.
   int(native.get_playback_range_to(s.handle))
 
+proc commit*(s: VcrServer) =
+  ## Record mode: stop the server and write the tape now (raising on drift
+  ## with failIfChanged). The only way a recording becomes a tape: `close`
+  ## without `commit` or `discardRecording` writes nothing and raises.
+  ## No-op in playback mode.
+  if s.handle == nil or not s.recording:
+    return
+  if s.secretRedactorCallback != nil: s.secretStage(false)
+  let err =
+    if s.failIfChanged:
+      takeString(native.stop_and_flush_fail_if_changed(s.handle, cstring(s.tapePath)))
+    else:
+      takeString(native.stop_and_flush(s.handle, cstring(s.tapePath)))
+  native.destroy(s.handle)
+  s.handle = nil
+  if err.len > 0:
+    raise newException(VcrError, err)
+
 proc close*(s: VcrServer) =
-  if s.handle != nil and s.recording and s.secretRedactorCallback != nil: s.secretStage(false)
-  ## Stop the server. For a record server, flush the tape to disk first.
+  ## Stop the server. A recording neither committed nor discarded is
+  ## dropped, no tape is written, and this raises VcrError saying to call
+  ## `commit` (or `discardRecording`).
   if s.handle == nil:
     return
-  if s.recording:
-    let err =
-      if s.failIfChanged:
-        takeString(native.stop_and_flush_fail_if_changed(s.handle, cstring(s.tapePath)))
-      else:
-        takeString(native.stop_and_flush(s.handle, cstring(s.tapePath)))
-    native.destroy(s.handle)
-    s.handle = nil
-    if err.len > 0:
-      raise newException(VcrError, err)
-  else:
-    native.stop(s.handle)
-    native.destroy(s.handle)
-    s.handle = nil
+  let err = takeString(native.close(s.handle))
+  native.destroy(s.handle)
+  s.handle = nil
+  if err.len > 0:
+    raise newException(VcrError, err)
 
 proc discardRecording*(s: VcrServer) =
   ## Stop the server and, in record mode, DROP the captured recording WITHOUT

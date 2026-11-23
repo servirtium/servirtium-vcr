@@ -35,7 +35,8 @@
     # the upstream is just another playback server; the recorder proxies to it
     (servirtium/with-playback [upstream "tapes/single_get.md"]
       (servirtium/with-record [rec tape (servirtium/base-url upstream)]
-        (assert (= "ok-body" (http-get (servirtium/base-url rec) "/ok")))))
+        (assert (= "ok-body" (http-get (servirtium/base-url rec) "/ok")))
+        (servirtium/flush-tape rec)))
     (assert (string/find "## Interaction 0: GET /ok" (slurp tape)))
     (servirtium/with-playback [vcr tape]
       (assert (= "ok-body" (http-get (servirtium/base-url vcr) "/ok")))

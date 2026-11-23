@@ -154,7 +154,8 @@ end
 begin
   Servirtium.record('hello.md', upstream_url).port(0).start do |server|
     get_greeting(server)
-  end # Block exit closes the recorder and writes hello.md.
+    server.commit # Writes hello.md. Leaving the block without commit (or discard) writes nothing and raises.
+  end
   worker.value # Wait for the upstream handler and propagate any error.
 ensure
   worker.kill

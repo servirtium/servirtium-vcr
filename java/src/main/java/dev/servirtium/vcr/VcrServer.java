@@ -17,8 +17,6 @@ public final class VcrServer implements AutoCloseable {
     private final boolean recordMode;
     private final boolean failIfChanged;
     private String baseUrl;
-    private boolean committed;
-    private boolean discarded;
 
     VcrServer(MemorySegment handle, String host, String tapePath, boolean recordMode, boolean failIfChanged) {
         this.handle = handle;
@@ -211,17 +209,16 @@ public final class VcrServer implements AutoCloseable {
      * {@link #discard()} on the failure path, so a half-finished recording from
      * a failed test never becomes a tape that later replays as the truth. The
      * write is crash-safe (temp file + atomic rename) in the native library.
-     * Once committed (or discarded), {@link #close()} does nothing further.
-     * No-op outside record mode.
+     * Once committed (or discarded), {@link #close()} does nothing further;
+     * closing a recording with neither writes nothing and throws. No-op
+     * outside record mode.
      */
     public void commit() {
         if (handle == null || !recordMode) {
-            committed = true;
             return;
         }
         MemorySegment h = handle;
         handle = null;
-        committed = true;
         try {
             try {
             if (secretRedactor != null) SecretCallbacks.stage(h, secretRedactor, null);
@@ -250,12 +247,10 @@ public final class VcrServer implements AutoCloseable {
      */
     public void discard() {
         if (handle == null || !recordMode) {
-            discarded = true;
             return;
         }
         MemorySegment h = handle;
         handle = null;
-        discarded = true;
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment tape = NativeMethods.cString(arena, tapePath);
             MemorySegment res = (MemorySegment) NativeMethods.DISCARD.invokeExact(h, tape);
@@ -267,26 +262,29 @@ public final class VcrServer implements AutoCloseable {
         }
     }
 
+    /**
+     * Stop the server. A recording neither committed nor discarded is
+     * dropped, no tape is written, and this throws a {@link VcrException}
+     * saying to call {@link #commit()} (or {@link #discard()}).
+     */
     @Override
     public void close() {
         // Already committed, discarded or closed (handle gone): nothing left to do.
         if (handle == null) {
             return;
         }
-        if (!recordMode) {
-            MemorySegment h = handle;
-            handle = null;
-            try {
-                NativeMethods.STOP.invokeExact(h);
-            } catch (Throwable t) {
-                throw VcrBuilderBase.rethrow("close", t);
-            } finally {
-                VcrBuilderBase.destroy(h);
-            }
-            return;
+        MemorySegment h = handle;
+        handle = null;
+        String err;
+        try {
+            err = NativeMethods.takeString((MemorySegment) NativeMethods.CLOSE.invokeExact(h));
+        } catch (Throwable t) {
+            throw VcrBuilderBase.rethrow("close", t);
+        } finally {
+            VcrBuilderBase.destroy(h);
         }
-        // Back-compat: a record server closed WITHOUT an explicit commit()/
-        // discard() still flushes, so existing tests keep recording on close.
-        commit();
+        if (err != null && !err.isEmpty()) {
+            throw new VcrException(err);
+        }
     }
 }

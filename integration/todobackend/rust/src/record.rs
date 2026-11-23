@@ -3,7 +3,7 @@
 //! VCR in record mode, forwarding to the live Kotlin/http4k SUT
 //! (TODOBACKEND_UPSTREAM). The Mocha spec runs in headless Chrome (Rust
 //! thirtyfour) against the VCR; every CRUD call is forwarded upstream and
-//! recorded, then flushed to the tape on finish. The suite must pass for the
+//! recorded, then written to the tape on commit. The suite must pass for the
 //! recording to be considered good.
 //!
 //! Driven by .rust_record.ae, which brings the SUT up in a container (started
@@ -42,14 +42,13 @@ async fn main() -> std::process::ExitCode {
 
     let suite_ok = failures == 0 && passes > 0;
     if !suite_ok {
-        // Drop the VCR without flushing-to-success expectations; bail.
-        eprintln!("record: suite did not pass against the live SUT; tape NOT trustworthy");
-        drop(vcr);
+        eprintln!("record: suite did not pass against the live SUT; no tape written");
+        vcr.discard();
         return std::process::ExitCode::FAILURE;
     }
 
-    // finish() flushes the tape to disk and surfaces any flush error.
-    match vcr.finish() {
+    // commit() writes the tape to disk and surfaces any flush error.
+    match vcr.commit() {
         Ok(()) => {
             println!("record: wrote {}", tape_path());
             std::process::ExitCode::SUCCESS

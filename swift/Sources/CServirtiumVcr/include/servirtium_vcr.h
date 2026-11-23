@@ -28,6 +28,7 @@ void  aether_vcr_embed_destroy(void *h);
 int   aether_vcr_embed_start(void *h);
 void  aether_vcr_embed_stop(void *h);
 char *aether_vcr_embed_stop_and_flush(void *h, const char *tape);
+char *aether_vcr_embed_close(void *h);
 char *aether_vcr_embed_stop_and_flush_fail_if_changed(void *h, const char *tape);
 char *aether_vcr_embed_stop_and_flush_or_check(void *h, const char *tape);
 char *aether_vcr_embed_discard(void *h, const char *tape);

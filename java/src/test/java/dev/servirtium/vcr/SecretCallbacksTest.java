@@ -26,6 +26,7 @@ class SecretCallbacksTest {
                 return request.path().split("/")[1].toUpperCase(Locale.ROOT) + "_PASSWORD";
             }).start()) {
                 run("drive", server.baseUrl()); assertEquals(0, count[0]);
+                server.commit();
             }
             assertEquals(20, count[0]); run("check", tape);
             assertThrows(VcrException.class, () -> Vcr.playback(tape).start());

@@ -12,7 +12,7 @@ import (
 // VCR in record mode, forwarding to the live Kotlin/http4k SUT
 // (TODOBACKEND_UPSTREAM). The Mocha spec runs in real headless Chrome (Go's own
 // github.com/tebeka/selenium) against the VCR; every CRUD call is forwarded
-// upstream and recorded, then flushed to the tape on Close. The suite must pass
+// upstream and recorded, then written to the tape on Commit. The suite must pass
 // for the recording to be trustworthy. Mirrors the Python record.py.
 //
 // Gated on TODOBACKEND_UPSTREAM (t.Skip when unset) so a normal `go test`
@@ -39,13 +39,12 @@ func TestRecordTheCrudSuiteAgainstTheLiveSut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start record VCR: %v", err)
 	}
-	// Close (flushes the tape) happens unconditionally; assertions below decide
-	// the test outcome.
+	// The tape is written only by the Commit at the end, once the suite has
+	// passed; any earlier exit (Fatalf, panic) discards the recording.
+	committed := false
 	defer func() {
-		if cerr := vcr.Close(); cerr != nil {
-			t.Errorf("close/flush record VCR: %v", cerr)
-		} else {
-			t.Logf("record: wrote %s", tapePath())
+		if !committed {
+			vcr.Discard()
 		}
 	}()
 
@@ -64,4 +63,9 @@ func TestRecordTheCrudSuiteAgainstTheLiveSut(t *testing.T) {
 	if r.passes <= 0 {
 		t.Fatalf("suite produced no passes; tape NOT trustworthy")
 	}
+	committed = true
+	if err := vcr.Commit(); err != nil {
+		t.Fatalf("commit record VCR: %v", err)
+	}
+	t.Logf("record: wrote %s", tapePath())
 }

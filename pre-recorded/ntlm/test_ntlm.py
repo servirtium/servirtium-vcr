@@ -155,6 +155,7 @@ def test_record_keeps_one_clients_handshake_on_one_upstream_connection(ntlm_serv
     with recorder(tmp_path / "t.md", ntlm_server.url).start() as vcr:
         r = K.requests_call(vcr.base_url)
         assert vcr.last_kind is Outcome.OK
+        vcr.commit()
     assert r.status == 200 and r.statuses == [401, 401, 200]
     assert ntlm_server.connections_opened() == 1
 
@@ -170,6 +171,7 @@ def test_record_keeps_two_interleaved_handshakes_on_their_own_upstream_connectio
         sa = a.get(token=ca.step(K.WireClient.token_of(cha)))[0]
         sb = b.get(token=cb.step(K.WireClient.token_of(chb)))[0]
         a.close(), b.close()
+        vcr.commit()
     log = "\n".join(ntlm_server.log())
     assert (sa, sb) == (200, 200), log
 
@@ -182,6 +184,7 @@ def test_record_does_not_hand_one_clients_authenticated_upstream_connection_to_a
         anonymous = K.WireClient(vcr.base_url)
         status, _, body = anonymous.get()
         anonymous.close()
+        vcr.commit()
     assert status == 401, f"an anonymous client got {status}: {body.strip()}"
 
 
@@ -189,8 +192,10 @@ def test_record_a_second_vcr_in_the_process_does_not_inherit_an_authenticated_up
     """Nor across VCRs: a second recording VCR in the process opens its own."""
     with recorder(tmp_path / "one.md", ntlm_server.url).start() as vcr:
         assert K.requests_call(vcr.base_url).status == 200
+        vcr.commit()
     with recorder(tmp_path / "two.md", ntlm_server.url).start() as vcr:
         status, _, body = K.WireClient(vcr.base_url).get()
+        vcr.commit()
     assert status == 401, f"an anonymous client of the second VCR got {status}: {body.strip()}"
 
 
@@ -203,6 +208,7 @@ def test_record_refuses_a_type3_on_a_new_client_connection_as_the_server_does(nt
         _, challenge, _ = first.get(token=ctx.step(), close=True)
         first.close()
         status = K.WireClient(vcr.base_url).get(token=ctx.step(K.WireClient.token_of(challenge)))[0]
+        vcr.commit()
     assert status == 401
 
 
@@ -212,6 +218,7 @@ def test_record_the_recorder_keeps_the_client_connection_alive_across_legs(ntlm_
     so curl sends its Type 3 on the connection that carried the Type 1."""
     with recorder(tmp_path / "t.md", ntlm_server.url).start() as vcr:
         r = K.curl_call(vcr.base_url)
+        vcr.commit()
     assert r.status == 200 and "Re-using existing" in r.trace
 
 
@@ -228,6 +235,7 @@ def test_record_handshake_requests_ntlm_unredacted(ntlm_server, tmp_path):
     tape = committed_or_tmp(tmp_path, "handshake_requests_ntlm_unredacted.md")
     with recorder(tape, ntlm_server.url, credentials=False, fixed_type2=False).start() as vcr:
         assert K.requests_call(vcr.base_url).status == 200
+        vcr.commit()
     legs = parse_tape(tape)
     assert [(i["method"], i["path"], i["status"]) for i in legs] == [("GET", "/whoami", 401)] * 2 + [("GET", "/whoami", 200)]
     assert header(legs[0]["response_headers"], "WWW-Authenticate") == ["Negotiate", "NTLM"]
@@ -245,6 +253,7 @@ def test_tape_request_headers_are_sorted_by_name_and_response_headers_keep_the_s
     tape = tmp_path / "t.md"
     with recorder(tape, ntlm_server.url, credentials=False, fixed_type2=False).start() as vcr:
         K.requests_call(vcr.base_url)
+        vcr.commit()
     leg = parse_tape(tape)[1]
     names = [n for n, _ in leg["request_headers"]]
     sent = ntlm_server.lines("header order:")[1].split("header order: ")[1].split(", ")
@@ -263,6 +272,7 @@ def test_record_handshake_requests_ntlm(ntlm_server, tmp_path):
     tape = committed_or_tmp(tmp_path, "handshake_requests_ntlm.md")
     with recorder(tape, ntlm_server.url).start() as vcr:
         assert K.requests_call(vcr.base_url).status == 200
+        vcr.commit()
     legs = parse_tape(tape)
     assert [header(i["request_headers"], "Authorization") for i in legs] == [[], ["NTLM AUTHORIZATION_1"], ["NTLM AUTHORIZATION_2"]]
     assert header(legs[1]["response_headers"], "WWW-Authenticate") == [FIXED_TYPE2]
@@ -273,6 +283,7 @@ def test_record_handshake_curl_ntlm(ntlm_server, tmp_path):
     tape = committed_or_tmp(tmp_path, "handshake_curl_ntlm.md")
     with recorder(tape, ntlm_server.url).start() as vcr:
         assert K.curl_call(vcr.base_url).status == 200
+        vcr.commit()
     legs = parse_tape(tape)
     assert [i["status"] for i in legs] == [401, 200]
     assert [header(i["request_headers"], "Authorization") for i in legs] == [["NTLM AUTHORIZATION_1"], ["NTLM AUTHORIZATION_2"]]
@@ -285,6 +296,7 @@ def test_record_handshake_httpx_negotiate(ntlm_server, tmp_path):
     tape = committed_or_tmp(tmp_path, "handshake_httpx_negotiate.md")
     with recorder(tape, ntlm_server.url).start() as vcr:
         assert K.httpx_call(vcr.base_url).status == 200
+        vcr.commit()
     legs = parse_tape(tape)
     assert [header(i["request_headers"], "Authorization") for i in legs] == [[], ["Negotiate AUTHORIZATION_1"], ["Negotiate AUTHORIZATION_2"]]
     (_, t2), (_, mic) = tokens_on(tape, "WWW-Authenticate")
@@ -297,6 +309,7 @@ def test_record_refuses_a_wrong_password_curl_ntlm(ntlm_server, tmp_path):
     tape = committed_or_tmp(tmp_path, "refuses_a_wrong_password_curl_ntlm.md")
     with recorder(tape, ntlm_server.url).start() as vcr:
         r = K.curl_call(vcr.base_url, password=K.WRONG_PASSWORD)
+        vcr.commit()
     assert r.status == 401
     assert [i["status"] for i in parse_tape(tape)] == [401, 401]
     assert ntlm_server.lines("REFUSED: Type 3 (AUTHENTICATE) rejected by pyspnego")
@@ -314,6 +327,7 @@ def test_record_calls_on_an_authenticated_connection_requests_ntlm(ntlm_server, 
         assert K.requests_call(vcr.base_url, "/echo", method="POST", json_body={"order": 7}, session=s).status == 200
         assert K.requests_call(vcr.base_url, session=s).status == 200
         assert s.get(vcr.base_url + "/anonymous").status_code == 200
+        vcr.commit()
     legs = parse_tape(tape)
     assert [(i["method"], i["path"], i["status"]) for i in legs] == [
         ("GET", "/whoami", 401), ("GET", "/whoami", 401), ("GET", "/whoami", 200),
@@ -327,6 +341,7 @@ def test_record_post_with_body_requests_ntlm(ntlm_server, tmp_path):
     tape = committed_or_tmp(tmp_path, "post_with_body_requests_ntlm.md")
     with recorder(tape, ntlm_server.url).start() as vcr:
         r = K.requests_call(vcr.base_url, "/echo", method="POST", json_body={"order": 7})
+        vcr.commit()
     assert r.status == 200 and r.json()["received"] == {"order": 7}
     assert [i["request_body"].strip() for i in parse_tape(tape)] == ['{"order": 7}'] * 3
 
@@ -341,6 +356,7 @@ def test_record_post_with_body_curl_ntlm(ntlm_server, tmp_path):
     with recorder(tape, ntlm_server.url).start() as vcr:
         assert K.curl_call(vcr.base_url, "/echo", method="POST", data='{"order": 7}').status == 200
         assert K.curl_call(vcr.base_url, "/echo", method="POST", data='{"order": 8}', chunked=True).status == 200
+        vcr.commit()
     legs = parse_tape(tape)
     assert [i["request_body"].strip() for i in legs] == ["", '{"order": 7}', "", '{"order": 8}']
     assert header(legs[0]["request_headers"], "Content-Length") == ["0"]
@@ -504,6 +520,7 @@ def test_a_type2_redacted_to_a_placeholder_cannot_be_played_back(ntlm_server, tm
     with (recorder(tape, ntlm_server.url, fixed_type2=False)
           .redact_whole_tape(TYPE2_ON_TAPE, "NTLM CHALLENGE_REDACTED").start()) as vcr:
         assert K.requests_call(vcr.base_url).status == 200
+        vcr.commit()
     with player(tape).start() as vcr:
         with pytest.raises(Exception):
             K.requests_call(vcr.base_url)
@@ -516,6 +533,7 @@ def test_rerecording_with_these_rules_writes_the_same_tape_byte_for_byte(ntlm_se
     one, two = tmp_path / "one.md", tmp_path / "two.md"
     with recorder(one, ntlm_server.url).start() as vcr:
         assert K.requests_call(vcr.base_url).status == 200
+        vcr.commit()
     # A second server: on the first one, the recorder's pooled upstream
     # connection is still authenticated (finding a) and the anonymous
     # request would get a 200.
@@ -523,6 +541,7 @@ def test_rerecording_with_these_rules_writes_the_same_tape_byte_for_byte(ntlm_se
     try:
         with recorder(two, second.url).start() as vcr:
             assert K.requests_call(vcr.base_url).status == 200
+            vcr.commit()
     finally:
         second.stop()
     assert one.read_bytes() == two.read_bytes() == (TAPES / "handshake_requests_ntlm.md").read_bytes()

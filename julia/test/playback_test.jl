@@ -133,6 +133,7 @@ end
             redact_json_field(rec, "secretKey")
             fixture_run("drive", directory, base_url(rec))
             @test last_kind(rec) == Ok
+            flush!(rec)
         end
         fixture_run("check", directory)
     end
@@ -149,6 +150,7 @@ end
             set_rewrite_upstream_base(rec)
             fixture_run("drive", directory, base_url(rec))
             @test last_kind(rec) == Ok
+            flush!(rec)
         end
         fixture_run("check", directory)
         playback(tape) do vcr
@@ -238,6 +240,7 @@ end
                 @test get_sort_json_keys(rec)
                 set_pretty_json(rec, 2)
                 @test http_get("$(base_url(rec))/data") == json
+                flush!(rec)
             end
             @test occursin("\"a\": {\n    \"y\": 3,\n    \"z\": 2\n  },\n  \"b\": 1", read(sorted, String))
 
@@ -256,7 +259,7 @@ end
             @test get_sort_response_headers(probe)
             clear_stable_order(probe)
             @test !get_sort_response_headers(probe)
-            close!(probe)
+            discard!(probe)
         end
     end
 end
@@ -278,7 +281,22 @@ end
     mktempdir() do dir
         rec = record(joinpath(dir, "refused.md"), "http://127.0.0.1:1")
         @test_throws VcrError set_playback_range(rec, 0, -1)
-        close!(rec)
+        discard!(rec)
+    end
+end
+
+@testset "closing a recording without flush! or discard!" begin
+    mktempdir() do dir
+        tape = joinpath(dir, "uncommitted.md")
+        rec = record(tape, "http://127.0.0.1:1")
+        err = try close!(rec); nothing catch e; e end
+        @test err isa VcrError
+        @test occursin("without commit or discard", err.msg)
+        @test !isfile(tape)
+        @test_throws VcrError record(_ -> nothing, tape, "http://127.0.0.1:1")
+        @test !isfile(tape)
+        record(discard!, tape, "http://127.0.0.1:1")
+        @test !isfile(tape)
     end
 end
 

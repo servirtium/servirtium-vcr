@@ -42,8 +42,9 @@ logic.
 
 - **Loan-pattern combinators** — `usingPlayback`, `usingPlaybackOn`,
   `usingRecord` run a body against a live server and dispose it on every path,
-  including exceptions. In record mode disposal is what flushes the tape, so
-  the loan pattern is also what makes a recording land on disk.
+  including exceptions. A recording lands on disk only when the body calls
+  `Commit()`; disposing it without `Commit()` or `Discard()` writes nothing and
+  throws.
 - **Members as functions** — `baseUrl`, `port`, `tapeLength`, `lastKind`,
   `lastError`, `lastIndex`, `resetCursor`, `note` are curry-friendly, so a VCR
   can sit in a pipeline (`vcr |> Servirtium.baseUrl`).

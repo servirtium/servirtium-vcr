@@ -29,6 +29,7 @@ public class RecordMutationTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
         {
             await client.GetStringAsync("/x");
+            rec.Commit();
         }
 
         string tape = File.ReadAllText(_tape);
@@ -45,6 +46,7 @@ public class RecordMutationTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
         {
             await client.GetStringAsync("/x");
+            rec.Commit();
         }
 
         Assert.Contains("## [Note] Why this exists:", File.ReadAllText(_tape));
@@ -60,6 +62,7 @@ public class RecordMutationTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
         {
             await client.GetStringAsync("/x");
+            rec.Commit();
         }
         Assert.Contains("X-Trace-Id", File.ReadAllText(_tape));
 
@@ -70,6 +73,7 @@ public class RecordMutationTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
         {
             await client.GetStringAsync("/x");
+            rec.Commit();
         }
         Assert.DoesNotContain("X-Trace-Id", File.ReadAllText(_tape2));
     }
@@ -85,6 +89,7 @@ public class RecordMutationTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(a.BaseUrl) })
         {
             await client.GetStringAsync("/x");
+            a.Commit();
         }
         Assert.Contains("SCRUBBED", File.ReadAllText(_tape));
 
@@ -93,6 +98,7 @@ public class RecordMutationTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(b.BaseUrl) })
         {
             await client.GetStringAsync("/x");
+            b.Commit();
         }
         Assert.Contains("leak", File.ReadAllText(_tape2));
         Assert.DoesNotContain("SCRUBBED", File.ReadAllText(_tape2));
@@ -107,10 +113,11 @@ public class RecordMutationTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(first.BaseUrl) })
         {
             await client.GetStringAsync("/x");
+            first.Commit();
         }
         Assert.True(File.Exists(_tape));
 
-        // Re-record with a changed upstream — dispose must throw, while still
+        // Re-record with a changed upstream — commit must throw, while still
         // writing the new tape for `git diff`.
         _upstream.ResponseBody = "v2-changed";
         var second = Vcr.Record(_tape, _upstream.BaseUrl).FailIfChanged().Port(0).Start();
@@ -118,7 +125,7 @@ public class RecordMutationTests : IDisposable
         {
             await client.GetStringAsync("/x");
         }
-        Assert.Throws<VcrException>(() => second.Dispose());
+        Assert.Throws<VcrException>(() => second.Commit());
         Assert.Contains("v2-changed", File.ReadAllText(_tape));
     }
 
@@ -133,6 +140,7 @@ public class RecordMutationTests : IDisposable
             var resp = await client.PostAsync("/submit", new StringContent("ping"));
             Assert.Equal("created", await resp.Content.ReadAsStringAsync());
             Assert.Equal("POST", _upstream.LastMethod);
+            rec.Commit();
         }
 
         // Replay the same POST offline.

@@ -3,8 +3,9 @@
 All fixtures start from `Servirtium.playback(tape_path)` or
 `Servirtium.record(tape_path, upstream_base)`, are configured with a fluent
 builder, and started with `.start`, which returns a `Servirtium::Server`. Call
-`server.close` to stop it (and, in record mode, flush the tape) — or pass a
-block to `.start` and it auto-closes.
+`server.close` to stop it — or pass a block to `.start` and it auto-closes.
+A record server writes its tape only on `server.commit`; closing it without
+`commit` (or `discard`) writes nothing and raises.
 
 The system-under-test only ever needs `server.base_url`. Everything else —
 tape path, mode, mutations, assertions — lives in your test setup/teardown.
@@ -41,8 +42,14 @@ Servirtium.record('spec/tapes/climate_api.md', 'https://climatedataapi.worldbank
           .port(0)
           .start do |server|
   Net::HTTP.get_response(URI.join(server.base_url, '/api/v1/countries'))
-end   # block exit closes the server, which forwards nothing more and writes the tape
+  server.commit   # writes the tape
+end
 ```
+
+A recording becomes a tape only by `commit`. `discard` drops it; closing the
+server (or leaving the block) with neither writes nothing and raises
+`Servirtium::Error`, so a test cannot mint a tape by accident. A block that
+raises discards its recording.
 
 Record forwards each request to the upstream, returns the **real** response to
 your SUT, and captures the exchange. Chunked and gzip-encoded responses are
@@ -57,9 +64,9 @@ For a complete local HTTP service and replay after stopping it, see the
 Servirtium.record(tape, upstream).fail_if_changed.start { |s| ... }
 ```
 
-On close, the freshly recorded tape is written **and** a `Servirtium::Error` is
-raised if it differs from the committed tape — so `git diff` shows the drift and
-CI fails loudly. (Without `fail_if_changed`, close just overwrites.)
+On `commit`, the freshly recorded tape is written **and** a `Servirtium::Error` is
+raised if it differs from the one on disk — so `git diff` shows the drift and
+CI fails loudly. (Without `fail_if_changed`, commit just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -232,7 +239,7 @@ Servirtium.record(tape, upstream)
 
 A rule the core refuses (an empty header name, a bad regex) raises
 `Servirtium::Error` at `start`. `sort_json_keys` / `sort_json_array*` without
-`pretty_json` are refused when the tape is written: `close` raises
+`pretty_json` are refused when the tape is written: `commit` raises
 `Servirtium::Error` ("sort_json_keys needs pretty_json ...") and writes nothing.
 
 ## Playback range

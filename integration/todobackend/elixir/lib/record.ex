@@ -5,7 +5,7 @@ defmodule TodoBackend.Record do
   VCR in record mode, forwarding to the live Kotlin/http4k SUT
   (`TODOBACKEND_UPSTREAM`). The Mocha spec runs in headless Chrome (Elixir W3C
   WebDriver client) against the VCR; every CRUD call is forwarded upstream and
-  recorded, then flushed to the tape on stop. The suite must pass for the
+  recorded, then written to the tape on commit. The suite must pass for the
   recording to be considered good.
 
   Driven by `.elixir_record.ae`, which brings the SUT up in a container (started
@@ -42,24 +42,27 @@ defmodule TodoBackend.Record do
         redact_whole_tape: [{"Date: .+ GMT", "Date: <DATE>"}]
       )
 
-    rc =
+    {passes, failures, msgs} =
       try do
-        {passes, failures, msgs} = Browser.run_suite(Servirtium.base_url(srv))
-        IO.puts("mocha (record): #{passes} passed, #{failures} failed")
-        for m <- msgs, do: IO.puts("  FAIL: #{m}")
-
-        if failures != 0 or passes == 0 do
-          IO.puts("record: suite did not pass against the live SUT; tape NOT trustworthy")
-          1
-        else
-          0
-        end
-      after
-        # flushes the tape to TAPE
-        Servirtium.stop(srv)
+        Browser.run_suite(Servirtium.base_url(srv))
+      rescue
+        e ->
+          Servirtium.discard(srv)
+          reraise e, __STACKTRACE__
       end
 
-    if rc == 0, do: IO.puts("record: wrote #{Browser.tape()}")
-    rc
+    IO.puts("mocha (record): #{passes} passed, #{failures} failed")
+    for m <- msgs, do: IO.puts("  FAIL: #{m}")
+
+    if failures != 0 or passes == 0 do
+      Servirtium.discard(srv)
+      IO.puts("record: suite did not pass against the live SUT; no tape written")
+      1
+    else
+      # writes the tape to TAPE
+      :ok = Servirtium.commit(srv)
+      IO.puts("record: wrote #{Browser.tape()}")
+      0
+    end
   end
 end

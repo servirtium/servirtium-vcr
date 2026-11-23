@@ -26,6 +26,7 @@ public class RewriteUpstreamBaseTests
                 Run("drive", directory, rec.BaseUrl);
                 Assert.Equal(VcrOutcome.Ok, rec.LastKind);
                 rec.Commit();
+                rec.Commit();
             }
             Run("check", directory);
             using (var vcr = Vcr.Playback(tape).Port(0).Start()) {

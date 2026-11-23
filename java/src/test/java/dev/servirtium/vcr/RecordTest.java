@@ -75,6 +75,7 @@ class RecordTest {
         try (VcrServer rec = Vcr.record(tapePath.toString(), upstreamBase).port(0).start()) {
             String body = getString(rec.baseUrl() + "/greeting");
             assertEquals("hello-from-upstream", body);
+            rec.commit();
         } // close flushes the tape
 
         assertTrue(Files.exists(tapePath), "record-mode close should write the tape");
@@ -95,6 +96,7 @@ class RecordTest {
             try (VcrServer rec = Vcr.record(tapePath.toString(), up.baseUrl())
                     .port(0).prettyJson(2).sortJsonKeys().start()) {
                 getString(rec.baseUrl() + "/doc");
+                rec.commit();
             }
         }
         String tape = Files.readString(tapePath);
@@ -108,7 +110,7 @@ class RecordTest {
             up.responseContentType = "application/json";
             VcrServer rec = Vcr.record(tapePath.toString(), up.baseUrl()).port(0).sortJsonKeys().start();
             getString(rec.baseUrl() + "/doc");
-            VcrException e = assertThrows(VcrException.class, rec::close);
+            VcrException e = assertThrows(VcrException.class, rec::commit);
             assertTrue(e.getMessage().contains("sort_json_keys needs pretty_json"), e.getMessage());
             assertFalse(Files.exists(tapePath));
         }
@@ -124,6 +126,7 @@ class RecordTest {
                     .sortJsonArray("", "n").sortJsonArrayAt("/doc", "", "n")
                     .sortResponseHeaders().sortHeaderValue("Allow").start()) {
                 getString(rec.baseUrl() + "/doc");
+                rec.commit();
             }
             String tape = Files.readString(tapePath);
             assertTrue(tape.indexOf("\"n\": \"a\"") < tape.indexOf("\"n\": \"z\""), tape);
@@ -139,9 +142,26 @@ class RecordTest {
         try (VcrServer rec = Vcr.record(tapePath.toString(), upstreamBase)
                 .port(0).addLicenseNotice("Recorded under the MIT licence").start()) {
             getString(rec.baseUrl() + "/greeting");
+            rec.commit();
         }
         String tape = Files.readString(tapePath);
         assertTrue(tape.contains("## LICENSE NOTICE"), tape);
         assertTrue(tape.contains("Recorded under the MIT licence"), tape);
+    }
+
+    @Test
+    void closingARecordingWithoutCommitOrDiscardWritesNothingAndThrows() throws Exception {
+        try (FakeUpstream up = new FakeUpstream()) {
+            VcrServer rec = Vcr.record(tapePath.toString(), up.baseUrl()).port(0).start();
+            getString(rec.baseUrl() + "/x");
+            VcrException e = assertThrows(VcrException.class, rec::close);
+            assertTrue(e.getMessage().contains("without commit or discard"), e.getMessage());
+            assertFalse(Files.exists(tapePath));
+            try (VcrServer dropped = Vcr.record(tapePath.toString(), up.baseUrl()).port(0).start()) {
+                getString(dropped.baseUrl() + "/x");
+                dropped.discard();
+            }
+            assertFalse(Files.exists(tapePath));
+        }
     }
 }

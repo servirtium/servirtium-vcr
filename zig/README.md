@@ -74,8 +74,9 @@ same across all bindings, so existing tapes replay as-is.
 
 **Server**: `.port`, `.baseUrl`, `.tapeLength`, `.lastError`, `.lastKind`,
 `.lastIndex`, `.note`, `.resetCursor`, `.clearLastError`, `.close`
-(record-mode `close` flushes the tape; `failIfChanged` returns
-`error.VcrError` on drift).
+`.commit` (record mode: writes the tape; `failIfChanged` returns
+`error.VcrError` on drift), `.discard`; `close` on a recording neither
+committed nor discarded writes nothing and returns `error.VcrError`).
 
 The builders use **value semantics** so a chain like
 `Playback.init(...).port(0).start()` works (Zig won't take a `*` to an

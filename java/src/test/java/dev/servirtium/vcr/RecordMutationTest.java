@@ -74,6 +74,7 @@ class RecordMutationTest {
                 .redact(Field.RESPONSE_BODY, "secret-token", "REDACTED")
                 .port(0).start()) {
             get(rec.baseUrl() + "/x");
+            rec.commit();
         }
 
         String content = read(tape);
@@ -87,6 +88,7 @@ class RecordMutationTest {
                 .note("Why this exists", "documents the call")
                 .port(0).start()) {
             get(rec.baseUrl() + "/x");
+            rec.commit();
         }
 
         assertTrue(read(tape).contains("## [Note] Why this exists:"));
@@ -101,6 +103,7 @@ class RecordMutationTest {
         // case-insensitively to be agnostic about the wire casing.)
         try (VcrServer rec = Vcr.record(tape.toString(), upstream.baseUrl()).port(0).start()) {
             get(rec.baseUrl() + "/x");
+            rec.commit();
         }
         assertTrue(read(tape).toLowerCase().contains("x-trace-id"));
 
@@ -109,6 +112,7 @@ class RecordMutationTest {
                 .removeHeader(Field.RESPONSE_HEADERS, "X-Trace-Id")
                 .port(0).start()) {
             get(rec.baseUrl() + "/x");
+            rec.commit();
         }
         assertFalse(read(tape2).toLowerCase().contains("x-trace-id"));
     }
@@ -121,12 +125,14 @@ class RecordMutationTest {
                 .redact(Field.RESPONSE_BODY, "leak", "SCRUBBED")
                 .port(0).start()) {
             get(a.baseUrl() + "/x");
+            a.commit();
         }
         assertTrue(read(tape).contains("SCRUBBED"));
 
         // Fixture B registers NO redaction; A's must not leak in.
         try (VcrServer b = Vcr.record(tape2.toString(), upstream.baseUrl()).port(0).start()) {
             get(b.baseUrl() + "/x");
+            b.commit();
         }
         assertTrue(read(tape2).contains("leak"));
         assertFalse(read(tape2).contains("SCRUBBED"));
@@ -139,16 +145,17 @@ class RecordMutationTest {
         try (VcrServer first = Vcr.record(tape.toString(), upstream.baseUrl())
                 .failIfChanged().port(0).start()) {
             get(first.baseUrl() + "/x");
+            first.commit();
         }
         assertTrue(Files.exists(tape));
 
-        // Re-record with a changed upstream — close must throw, while still
+        // Re-record with a changed upstream — commit must throw, while still
         // writing the new tape for `git diff`.
         upstream.responseBody = "v2-changed";
         VcrServer second = Vcr.record(tape.toString(), upstream.baseUrl())
                 .failIfChanged().port(0).start();
         get(second.baseUrl() + "/x");
-        assertThrows(VcrException.class, second::close);
+        assertThrows(VcrException.class, second::commit);
         assertTrue(read(tape).contains("v2-changed"));
     }
 
@@ -160,6 +167,7 @@ class RecordMutationTest {
             HttpResponse<String> resp = post(rec.baseUrl() + "/submit", "ping");
             assertEquals("created", resp.body());
             assertEquals("POST", upstream.lastMethod);
+            rec.commit();
         }
 
         // Replay the same POST offline.

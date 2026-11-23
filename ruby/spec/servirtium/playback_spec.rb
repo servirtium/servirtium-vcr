@@ -141,6 +141,7 @@ RSpec.describe 'Servirtium playback' do
           err = native.take_string(native.call(:set_playback_range, handle, 0, -1))
           expect(err).not_to be_empty
           expect(native.call(:get_playback_range_from, handle)).to eq(-1)
+          server.discard
         end
       end
     end

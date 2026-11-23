@@ -43,6 +43,7 @@ class ServirtiumKotlinTest {
             }.use { rec ->
                 run("drive", directory.toString(), rec.baseUrl())
                 assertEquals(Outcome.OK, rec.lastKind())
+                rec.commit()
             }
             run("check", directory.toString())
         } finally {
@@ -66,6 +67,7 @@ class ServirtiumKotlinTest {
             record(tape, upstream) { rewriteUpstreamBase() }.use { rec ->
                 run("drive", directory.toString(), rec.baseUrl())
                 assertEquals(Outcome.OK, rec.lastKind())
+                rec.commit()
             }
             run("check", directory.toString())
             playback(tape).use { vcr ->
@@ -115,9 +117,10 @@ class ServirtiumKotlinTest {
         val upstreamUrl = "http://127.0.0.1:${upstream.address.port}"
         val tape = Files.createTempFile("servirtium-kt", ".md").toString()
 
-        // record (forwards to the live upstream, writes the tape on close)
+        // record (forwards to the live upstream, writes the tape on commit)
         record(tape, upstreamUrl) { port(0) }.use { vcr ->
             assertEquals("hello-from-upstream", get(vcr.baseUrl() + "/greeting"))
+            vcr.commit()
         }
         upstream.stop(0)
 
@@ -147,7 +150,7 @@ class ServirtiumKotlinTest {
         try {
             record(tape.toString(), "http://127.0.0.1:${upstream.address.port}") {
                 port(0); prettyJson(2); sortJsonKeys()
-            }.use { vcr -> get(vcr.baseUrl() + "/doc") }
+            }.use { vcr -> get(vcr.baseUrl() + "/doc"); vcr.commit() }
             assertTrue(Files.readString(tape).contains("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}"))
         } finally {
             upstream.stop(0)
@@ -163,7 +166,7 @@ class ServirtiumKotlinTest {
         try {
             val rec = record(tape.toString(), "http://127.0.0.1:${upstream.address.port}") { port(0); sortJsonKeys() }
             get(rec.baseUrl() + "/doc")
-            val e = assertThrows(VcrException::class.java) { rec.close() }
+            val e = assertThrows(VcrException::class.java) { rec.commit() }
             assertTrue(e.message!!.contains("sort_json_keys needs pretty_json"), e.message)
             assertFalse(Files.exists(tape))
         } finally {
@@ -182,7 +185,7 @@ class ServirtiumKotlinTest {
                 port(0); prettyJson(2)
                 sortJsonArray("", "n"); sortJsonArrayAt("/doc", "", "n")
                 sortResponseHeaders(); sortHeaderValue("Allow")
-            }.use { vcr -> get(vcr.baseUrl() + "/doc") }
+            }.use { vcr -> get(vcr.baseUrl() + "/doc"); vcr.commit() }
             val text = Files.readString(tape)
             assertTrue(text.indexOf("\"n\": \"a\"") < text.indexOf("\"n\": \"z\""), text)
             assertTrue(text.contains("Allow: GET, POST"), text)

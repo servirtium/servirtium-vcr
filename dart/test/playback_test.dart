@@ -47,7 +47,7 @@ void main() {
     try {
       final rec = Vcr.record('${directory.path}/tape.md', 'http://127.0.0.1:1')
           .addLicenseNotice('test notice').prettyJson(2).port(0).start();
-      rec.close();
+      rec.commit();
     } finally {
       directory.deleteSync(recursive: true);
     }

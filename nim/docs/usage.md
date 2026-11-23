@@ -4,7 +4,9 @@ Every fixture starts from `playback(tapePath)` or
 `record(tapePath, upstreamBase)`, which return an opened-but-not-started
 `VcrServer`. Configure it (mutations, strict headers, static mounts, …) on that
 returned object, call `start()`, then point your system-under-test at
-`baseUrl()`. `close()` stops the server (and, in record mode, flushes the tape).
+`baseUrl()`. `close()` stops the server. A recording is written only by
+`commit()` and dropped by `discardRecording()`; closing it with neither writes
+nothing and raises.
 
 The system-under-test only ever needs `srv.baseUrl()`. Everything else — tape
 path, mode, mutations, assertions — lives in your test setup/teardown.
@@ -50,14 +52,14 @@ srv.failIfChanged()
 doAssert srv.start()
 # ... drive SUT ...
 try:
-  srv.close()
+  srv.commit()
 except VcrError:
   # the freshly recorded tape was still written, but it differs from the
   # committed one — git diff shows the drift and CI fails loudly.
   raise
 ```
 
-Without `failIfChanged()`, `close()` just overwrites the tape.
+Without `failIfChanged()`, `commit()` just overwrites the tape.
 
 ## Scrubbing secrets out of tapes (redaction)
 

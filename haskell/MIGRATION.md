@@ -75,8 +75,8 @@ withRecord (recordOptions "tapes/my_api.md" "https://api.example.com")
   , recRedactions    = [(RequestHeaders, realToken, "Bearer REDACTED")]
   } $ \vcr -> do
     url <- baseUrl vcr
-    -- ... drive the SUT ...   (withRecord's teardown flushes the tape)
-    pure ()
+    -- ... drive the SUT ...
+    commit vcr   -- writes the tape; withRecord without commit or discard throws
 ```
 
 The Servirtium markdown tape *format* is unchanged — existing tapes replay

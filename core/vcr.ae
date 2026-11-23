@@ -150,7 +150,7 @@ exports (
     set_pretty_json_h, get_pretty_json_h, sort_json_keys_h, get_sort_json_keys_h, sort_json_array_h,
     sort_json_array_at_h, sort_response_headers_h, get_sort_response_headers_h, sort_header_value_h,
     clear_stable_order_h, json_canonical, json_body_canonicalize, set_tls_h, set_tls_pem_h, tls_enabled_h,
-    last_tls_protocol_h, set_upstream_cafile_h, set_forward_host_h, set_rewrite_upstream_base_h, get_rewrite_upstream_base_h, substitute_h, clear_substitutions_h,
+    last_tls_protocol_h, set_upstream_cafile_h, set_forward_host_h, set_rewrite_upstream_base_h, get_rewrite_upstream_base_h, close_h, substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h, indent_code_blocks_h,
     emphasize_http_verbs_h, clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
     clear_static_content_h, clear_untaped_h, clear_format_options_h, diagnostic_open_h,
@@ -443,6 +443,7 @@ struct Settings {
     upstream_base: string    // record mode: where requests are forwarded
     upstream_cafile: string
     forward_host: int        // record mode: send the client's Host upstream
+    finished: int            // record mode: committed (a flush) or discarded; close_h checks it
     rewrite_upstream_base: int // record mode: the upstream base becomes the recorder's (docs/vcr-address.md)
     tls_cert: string
     tls_key: string
@@ -573,6 +574,7 @@ new_settings() -> *Settings {
     s.upstream_cafile = ""
     s.forward_host = 0
     s.rewrite_upstream_base = 0
+    s.finished = 0
     s.tls_cert = ""
     s.tls_key = ""
     s.tls_cert_pem = ""
@@ -4328,18 +4330,21 @@ open_record(tape_path: string, upstream_base: string, port: int) -> (ptr, string
 // another handle can't interleave.
 stop_and_flush_h(server: ptr, tape_path: string) -> string {
     key = key_for(server)
+    key.settings.finished = 1
     http.server_stop(server_of(server))
     dump_unretrieved_k(key)
     return flush_k(key, tape_path)
 }
 stop_and_flush_fail_if_changed_h(server: ptr, tape_path: string) -> string {
     key = key_for(server)
+    key.settings.finished = 1
     http.server_stop(server_of(server))
     dump_unretrieved_k(key)
     return flush_and_fail_if_changed_k(key, tape_path)
 }
 stop_and_flush_or_check_h(server: ptr, tape_path: string) -> string {
     key = key_for(server)
+    key.settings.finished = 1
     http.server_stop(server_of(server))
     dump_unretrieved_k(key)
     return flush_or_check_k(key, tape_path)
@@ -4352,9 +4357,30 @@ stop_and_flush_or_check_h(server: ptr, tape_path: string) -> string {
 // always — there is nothing to fail, and a double-stop is harmless.
 discard_h(server: ptr, tape_path: string) -> string {
     key = key_for(server)
+    key.settings.finished = 1
     http.server_stop(server_of(server))
     dump_unretrieved_k(key)
     vcr_aether_clear_tape_k(key)
+    return ""
+}
+
+const CLOSED_UNCOMMITTED = "record VCR closed without commit or discard, so no tape was written: commit (in some bindings, flush) the recording to write the tape, or discard it to drop it"
+
+// Close a VCR (every binding's close/dispose): stop serving. A recording
+// is written only by an explicit commit (stop_and_flush*) and dropped only
+// by an explicit discard; a record VCR closed with neither writes nothing
+// and returns CLOSED_UNCOMMITTED, which the binding raises, so a test can
+// never mint a tape by falling off the end of a scope. Playback, and a
+// recording already committed or discarded, close with "".
+close_h(server: ptr) -> string {
+    key = key_for(server)
+    http.server_stop(server_of(server))
+    dump_unretrieved_k(key)
+    if mode_k(key) == "record" && key.settings.finished == 0 {
+        key.settings.finished = 1
+        vcr_aether_clear_tape_k(key)
+        return CLOSED_UNCOMMITTED
+    }
     return ""
 }
 

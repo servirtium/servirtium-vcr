@@ -22,7 +22,7 @@ describe('record', () => {
     const rec = Vcr.record(tapePath, 'http://127.0.0.1:1')
       .addLicenseNotice('test notice').prettyJson(2).removeTransportHeaders()
       .removeCloudHeaders('aws').redactCredentials().redactCredentialHeader('X-Vault-Token').port(0).start()
-    rec.close()
+    rec.commit()
     expect(() => Vcr.record(tapePath, 'http://127.0.0.1:1').removeCloudHeaders('nosuchvendor').port(0).start()).toThrow()
   })
 
@@ -33,7 +33,7 @@ describe('record', () => {
     try {
       await (await fetch(`${rec.baseUrl}/doc`)).text()
     } finally {
-      rec.close()
+      rec.commit()
     }
     expect(fs.readFileSync(tapePath, 'utf8')).toContain('{\n  "a": {\n    "c": 3,\n    "d": 2\n  },\n  "b": 1\n}')
   })
@@ -43,7 +43,7 @@ describe('record', () => {
     tapePath = tmpTape()
     const rec = Vcr.record(tapePath, upstream.baseUrl).sortJsonKeys().port(0).start()
     await (await fetch(`${rec.baseUrl}/doc`)).text()
-    expect(() => rec.close()).toThrow(/sort_json_keys needs pretty_json/)
+    expect(() => rec.commit()).toThrow(/sort_json_keys needs pretty_json/)
     expect(fs.existsSync(tapePath)).toBe(false)
   })
 
@@ -56,7 +56,7 @@ describe('record', () => {
     try {
       await (await fetch(`${rec.baseUrl}/doc`)).text()
     } finally {
-      rec.close()
+      rec.commit()
     }
     const tape = fs.readFileSync(tapePath, 'utf8')
     expect(tape.indexOf('"n": "a"')).toBeLessThan(tape.indexOf('"n": "z"'))
@@ -73,7 +73,7 @@ describe('record', () => {
       const res = await fetch(`${rec.baseUrl}/greeting`)
       expect(await res.text()).toBe('hello-from-upstream')
     } finally {
-      rec.close() // flushes the tape
+      rec.commit() // writes the tape
     }
     expect(fs.existsSync(tapePath)).toBe(true)
     // The recorder must store the DECODED payload, not chunk framing.
@@ -103,7 +103,7 @@ describe('record', () => {
       // The live SUT still sees the real bytes.
       expect(await res.text()).toBe('token=super-secret-value here')
     } finally {
-      rec.close()
+      rec.commit()
     }
 
     const onDisk = fs.readFileSync(tapePath, 'utf8')
@@ -122,7 +122,7 @@ describe('record', () => {
     try {
       await fetch(`${rec.baseUrl}/login`)
     } finally {
-      rec.close()
+      rec.commit()
     }
 
     const onDisk = fs.readFileSync(tapePath, 'utf8')
@@ -144,7 +144,7 @@ it('redacts structured credentials on tape while forwarding original values', ()
     try {
       run('drive', directory, rec.baseUrl)
       expect(rec.lastKind).toBe(VcrOutcome.Ok)
-    } finally { rec.close() }
+    } finally { rec.commit() }
     run('check', directory)
   } finally { fs.rmSync(directory, { recursive: true, force: true }) }
 })
@@ -161,7 +161,7 @@ it('rewriteUpstreamBase keeps the client on the VCR and the tape replays on anot
     try {
       run('drive', directory, rec.baseUrl)
       expect(rec.lastKind).toBe(VcrOutcome.Ok)
-    } finally { rec.close() }
+    } finally { rec.commit() }
     run('check', directory)
     const vcr = Vcr.playback(path.join(directory, 'tape.md')).start()
     try {
@@ -170,4 +170,23 @@ it('rewriteUpstreamBase keeps the client on the VCR and the tape replays on anot
       vcr.assertAllConsumed()
     } finally { vcr.close() }
   } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+})
+
+it('closing a recording without commit or discard writes nothing and throws', async () => {
+  const up = await startFakeUpstream('x')
+  const tapePath = path.join(os.tmpdir(), `vcr-close-${process.pid}-${Date.now()}.md`)
+  try {
+    const rec = Vcr.record(tapePath, up.baseUrl).port(0).start()
+    await (await fetch(`${rec.baseUrl}/x`)).text()
+    expect(() => rec.close()).toThrow(/without commit or discard/)
+    expect(fs.existsSync(tapePath)).toBe(false)
+    const dropped = Vcr.record(tapePath, up.baseUrl).port(0).start()
+    await (await fetch(`${dropped.baseUrl}/x`)).text()
+    dropped.discard()
+    dropped.close()
+    expect(fs.existsSync(tapePath)).toBe(false)
+  } finally {
+    await up.close()
+    fs.rmSync(tapePath, { force: true })
+  }
 })

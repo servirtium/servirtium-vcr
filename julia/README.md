@@ -29,9 +29,9 @@ from `SERVIRTIUM_VCR_LIB`, which is `ccall`'s library handle.
 ### What Julia adds
 
 - **do-block forms** — `playback(tape) do vcr … end` closes on every path;
-  `record(tape, upstream) do vcr … end` flushes when the block ends normally
-  and **discards** the recording if it threw, so a failed test can't overwrite
-  a good tape.
+  in `record(tape, upstream) do vcr … end` the block writes the tape with
+  `flush!(vcr)` (or drops it with `discard!`); a block that throws **discards**
+  the recording, and one that ends with neither writes nothing and throws.
 - **`@enum Field` / `@enum Outcome`** mirroring libservirtium_vcr constants, and a
   typed `VcrError`.
 - **Caller-owned-string handling** in exactly one place (`take`).

@@ -4,7 +4,8 @@ All fixtures start from `Vcr.playback(tapePath)` or
 `Vcr.record(tapePath, upstreamBase)`, configured with a fluent builder, and
 started with `.start()`, which returns a `VcrServer`. `VcrServer` is
 `AutoCloseable` — close it (a try-with-resources block, or in `@AfterEach`) to
-stop it (and, in record mode, flush the tape).
+stop it. A record server writes its tape only on `commit()`; closing it
+without `commit()` (or `discard()`) writes nothing and throws.
 
 The system-under-test only ever needs `vcr.baseUrl()`. Everything else —
 tape path, mode, mutations, assertions — lives in your test setup/teardown.

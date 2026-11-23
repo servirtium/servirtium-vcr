@@ -32,6 +32,7 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_open_error
   , aether_vcr_embed_destroy
   , aether_vcr_embed_stop_and_flush
+  , aether_vcr_embed_close
   , aether_vcr_embed_stop_and_flush_fail_if_changed
   , aether_vcr_embed_stop_and_flush_or_check
   , aether_vcr_embed_discard
@@ -151,6 +152,9 @@ foreign import ccall unsafe "aether_vcr_embed_destroy"
 
 foreign import ccall unsafe "aether_vcr_embed_stop_and_flush"
   aether_vcr_embed_stop_and_flush :: Handle -> CString -> IO CString
+
+foreign import ccall unsafe "aether_vcr_embed_close"
+  aether_vcr_embed_close :: Handle -> IO CString
 
 foreign import ccall unsafe "aether_vcr_embed_stop_and_flush_fail_if_changed"
   aether_vcr_embed_stop_and_flush_fail_if_changed :: Handle -> CString -> IO CString

@@ -30,8 +30,8 @@ def test_record_accepts_license_notice_pretty_json_and_presets(upstream):
             .redact_credential_header("X-Vault-Token")
             .port(0)
             .start()
-        ):
-            pass
+        ) as rec:
+            rec.commit()
         with open(path, encoding="utf-8") as tape:
             assert "## LICENSE NOTICE" in tape.read()
     finally:
@@ -47,6 +47,7 @@ def test_records_then_replays_the_same_interaction(upstream):
         with servirtium.record(path, upstream.base_url).port(0).start() as rec:
             status, body = http_request(rec.base_url, "GET", "/greeting")
             assert body == "hello-from-upstream"
+            rec.commit()
         # close flushed the tape
 
         assert os.path.exists(path), "record-mode close should write the tape"
@@ -74,6 +75,7 @@ def test_records_and_replays_a_post_with_a_body(upstream):
             assert body == "created"
             assert upstream.last_method == "POST"
             assert upstream.last_body == "ping"
+            rec.commit()
 
         # Replay the same POST offline.
         with servirtium.playback(path).port(0).start() as play:
@@ -104,6 +106,7 @@ def test_pretty_xml_records_indented_and_replays(upstream):
             assert status == 200
             assert body == compact  # the SUT gets the upstream bytes
             assert upstream.last_body == request
+            rec.commit()
 
         with open(path) as recorded:
             tape = recorded.read()
@@ -146,6 +149,7 @@ def test_pretty_json_records_query_and_replays_hand_edited_tapes(upstream):
             assert body == response
             assert upstream.last_method == "QUERY"
             assert upstream.last_body == request
+            rec.commit()
         with open(path) as recorded:
             tape = recorded.read()
         assert "## Interaction 0: QUERY /search" in tape
@@ -177,6 +181,7 @@ def test_pretty_xml_off_by_default(upstream):
     try:
         with servirtium.record(path, upstream.base_url).port(0).start() as rec:
             http_request(rec.base_url, "GET", "/x")
+            rec.commit()
         assert compact in open(path).read()
     finally:
         if os.path.exists(path):
@@ -198,7 +203,32 @@ def test_structured_redaction_helpers(tmp_path):
           .redact_json_field("secretKey").start()) as rec:
         run("drive", tmp_path, rec.base_url)
         assert rec.last_kind is servirtium.Outcome.OK
+        rec.commit()
     run("check", tmp_path)
+
+
+def test_closing_a_recording_without_commit_writes_nothing_and_raises(upstream):
+    import pytest
+    path = _tape_path()
+    try:
+        rec = servirtium.record(path, upstream.base_url).port(0).start()
+        http_request(rec.base_url, "GET", "/x")
+        with pytest.raises(servirtium.VcrError, match="without commit or discard"):
+            rec.close()
+        assert not os.path.exists(path)
+        # A with block that ends without commit: the same.
+        with pytest.raises(servirtium.VcrError, match="without commit or discard"):
+            with servirtium.record(path, upstream.base_url).port(0).start() as rec2:
+                http_request(rec2.base_url, "GET", "/x")
+        assert not os.path.exists(path)
+        # Discard, then close: nothing written, no error.
+        with servirtium.record(path, upstream.base_url).port(0).start() as rec3:
+            http_request(rec3.base_url, "GET", "/x")
+            rec3.discard()
+        assert not os.path.exists(path)
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
 
 
 def test_rewrite_upstream_base_keeps_the_client_on_the_vcr(tmp_path):
@@ -213,6 +243,7 @@ def test_rewrite_upstream_base_keeps_the_client_on_the_vcr(tmp_path):
     with servirtium.record(str(tmp_path / "tape.md"), upstream).rewrite_upstream_base().start() as rec:
         run("drive", tmp_path, rec.base_url)
         assert rec.last_kind is servirtium.Outcome.OK
+        rec.commit()
     run("check", tmp_path)
     with servirtium.playback(str(tmp_path / "tape.md")).start() as vcr:
         run("replay", tmp_path, vcr.base_url)
@@ -235,6 +266,8 @@ def test_structured_redactions_are_isolated_between_live_handles(tmp_path):
         with servirtium.record(str(right / "tape.md"), second_upstream).start() as second:
             run("drive", left, first.base_url)
             run("drive", right, second.base_url)
+            second.commit()
+        first.commit()
     assert "header-secret" not in (left / "tape.md").read_text()
     assert "Authorization: [REDACTED]" in (left / "tape.md").read_text()
     assert "header-secret" in (right / "tape.md").read_text()
@@ -247,6 +280,7 @@ def test_sort_json_keys_with_pretty_json_writes_sorted_pretty_json(upstream):
     try:
         with servirtium.record(path, upstream.base_url).pretty_json(2).sort_json_keys().port(0).start() as rec:
             http_request(rec.base_url, "GET", "/doc")
+            rec.commit()
         with open(path, encoding="utf-8") as tape:
             text = tape.read()
         assert '{\n  "a": {\n    "c": 3,\n    "d": 2\n  },\n  "b": 1\n}' in text
@@ -264,7 +298,7 @@ def test_sort_json_keys_without_pretty_json_is_refused(upstream):
         rec = servirtium.record(path, upstream.base_url).sort_json_keys().port(0).start()
         http_request(rec.base_url, "GET", "/doc")
         with pytest.raises(servirtium.VcrError, match="sort_json_keys needs pretty_json"):
-            rec.close()
+            rec.commit()
         assert not os.path.exists(path)
     finally:
         if os.path.exists(path):
@@ -288,6 +322,7 @@ def test_sort_json_array_and_header_rules_are_accepted_and_applied(upstream):
             .start()
         ) as rec:
             http_request(rec.base_url, "GET", "/doc")
+            rec.commit()
         with open(path, encoding="utf-8") as tape:
             text = tape.read()
         assert text.index('"n": "a"') < text.index('"n": "z"')

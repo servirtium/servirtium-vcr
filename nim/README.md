@@ -17,7 +17,7 @@ doAssert vcr.start()
 # ... point your HTTP client at vcr.baseUrl() & "/api/v1/countries" ...
 
 doAssert vcr.lastKind() == Ok   # optional: assert a clean match
-vcr.close()                     # playback stops; a record server flushes the tape
+vcr.close()                     # stops; a record server must commit() (or discardRecording()) first
 ```
 
 ## What this is (and isn't)

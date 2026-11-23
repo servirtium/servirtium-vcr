@@ -37,7 +37,7 @@ func TestNamedSecretsRoundTrip(t *testing.T) {
 	if count != 0 {
 		t.Fatal("callback ran before flush")
 	}
-	if err = rec.Close(); err != nil {
+	if err = rec.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	if count != 20 {

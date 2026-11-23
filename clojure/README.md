@@ -24,8 +24,9 @@ wrapper that adds the small idiomatic functions Clojure people expect.
 `(record tape upstream opts)` is the recording counterpart. You can also call
 the Java API directly (`(-> (Vcr/playback tape) (.port 0) (.start))`) — the
 functions are just sugar. `VcrServer` is `java.lang.AutoCloseable`, so the
-standard `clojure.core/with-open` stops the server (and, in record mode,
-flushes the tape) on exit.
+standard `clojure.core/with-open` stops the server on exit. A recording is
+written only by `(.commit server)` and dropped by `(.discard server)`; closing
+it with neither writes nothing and throws.
 
 ## What this is (and isn't)
 

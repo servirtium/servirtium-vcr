@@ -1,0 +1,111 @@
+// Closing a record VCR (every binding's close/dispose/stop/Drop) writes no
+// tape unless the recording was committed (stop_and_flush*) first: a record
+// VCR closed with neither commit nor discard drops what it captured and
+// close_h returns the CLOSED_UNCOMMITTED message, which each binding raises.
+// So a test can never mint a tape by falling off the end of a scope.
+//
+// Checked: an uncommitted record close returns the message and writes
+// nothing (even with an interaction captured); a second close is quiet; a
+// committed recording closes with "" and its tape stays; a discarded one
+// closes with "" and writes nothing; playback closes with "".
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+import std.os
+extern exit(code: int)
+
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+
+handle_hello(req: ptr, res: ptr, _ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "text/plain")
+    http.response_set_body(res, "hello")
+}
+
+port_for() -> int {
+    s = http.server_create(0)
+    if s == null { return 0 }
+    err = http.server_bind(s, "127.0.0.1", 0)
+    port = 0
+    if err == "" { port = http.server_port(s) }
+    http.server_free(s)
+    return port
+}
+
+get(url: string) -> int {
+    req = client.request("GET", url)
+    client.set_timeout(req, 10s)
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail("GET ${url}: ${err}") }
+    st = client.response_status(resp)
+    client.response_free(resp)
+    return st
+}
+
+// A started record VCR that has captured one GET /hello.
+recorded(tape: string, upstream: string) -> ptr {
+    port = port_for()
+    r, err = vcr.open_record(tape, upstream, port)
+    if err != "" { fail(err) }
+    if vcr.start_background_h(r, 10000) != 0 { fail(vcr.last_error_h(r)) }
+    if get("http://127.0.0.1:${port}/hello") != 200 { fail("recorded GET") }
+    return r
+}
+
+main() {
+    println("=== close requires commit or discard ===")
+    up = http.server_create(0)
+    if http.server_bind(up, "127.0.0.1", 0) != "" { fail("bind upstream") }
+    http.server_get(up, "/hello", handle_hello, null)
+    if http.server_start_background(up) != "" { fail("start upstream") }
+    upstream = "http://127.0.0.1:${http.server_port(up)}"
+    tape = "/tmp/svcr-close-commit-${os.getpid()}.md"
+    fs.delete(tape)
+
+    r = recorded(tape, upstream)
+    msg = vcr.close_h(r)
+    if string.contains(msg, "closed without commit or discard") != 1 { fail("uncommitted close returned: '${msg}'") }
+    if fs.exists(tape) == 1 { fail("an uncommitted close wrote the tape") }
+    if string.length(vcr.close_h(r)) != 0 { fail("a second close was not quiet") }
+    vcr.destroy_h(r)
+    println("  PASS an uncommitted record close writes no tape and says so")
+
+    c = recorded(tape, upstream)
+    ferr = vcr.stop_and_flush_h(c, tape)
+    if ferr != "" { fail(ferr) }
+    cmsg = vcr.close_h(c)
+    if string.length(cmsg) != 0 { fail("a committed close returned: '${cmsg}'") }
+    vcr.destroy_h(c)
+    text, rerr = fs.read(tape)
+    if rerr != "" { fail(rerr) }
+    if string.contains(text, "GET /hello") != 1 { fail("committed tape:\n${text}") }
+    println("  PASS a committed recording closes quietly and keeps its tape")
+
+    fs.delete(tape)
+    d = recorded(tape, upstream)
+    vcr.discard_h(d, tape)
+    dmsg = vcr.close_h(d)
+    if string.length(dmsg) != 0 { fail("a discarded close returned: '${dmsg}'") }
+    if fs.exists(tape) == 1 { fail("a discarded recording wrote the tape") }
+    vcr.destroy_h(d)
+    println("  PASS a discarded recording closes quietly and writes nothing")
+
+    fs.write(tape, text)
+    port = port_for()
+    p, perr = vcr.open_playback(tape, port)
+    if perr != "" { fail(perr) }
+    if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
+    if get("http://127.0.0.1:${port}/hello") != 200 { fail("replayed GET: ${vcr.last_error_h(p)}") }
+    pmsg = vcr.close_h(p)
+    if string.length(pmsg) != 0 { fail("a playback close returned: '${pmsg}'") }
+    vcr.destroy_h(p)
+    println("  PASS playback closes quietly")
+
+    fs.delete(tape)
+    http.server_stop(up)
+    println("PASS")
+    exit(0)
+}

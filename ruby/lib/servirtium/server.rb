@@ -117,20 +117,36 @@ module Servirtium
       Native.call(:clear_last_error, handle)
     end
 
-    # Stop the server. In record mode also flushes the tape (raising on drift
-    # if +fail_if_changed+ was set). Idempotent.
+    # Record mode: stop the server and write the tape now (raising on drift
+    # if +fail_if_changed+ was set). The only way a recording becomes a tape:
+    # {#close} without commit or {#discard} writes nothing and raises.
+    # No-op outside record mode.
+    def commit
+      return if @handle.nil? || !@record_mode
+
+      handle = @handle
+      @handle = nil
+      begin
+        flush(handle)
+      ensure
+        Native.call(:destroy, handle)
+      end
+    end
+
+    # Stop the server. A recording neither committed nor discarded is
+    # dropped, no tape is written, and this raises Servirtium::Error saying to
+    # call {#commit} (or {#discard}). Idempotent.
     def close
       return if @handle.nil?
 
       handle = @handle
       @handle = nil
-      begin
-        return Native.call(:stop, handle) unless @record_mode
-
-        flush(handle)
+      err = begin
+        Native.take_string(Native.call(:close, handle))
       ensure
         Native.call(:destroy, handle)
       end
+      raise Servirtium::Error, err unless err.empty?
     end
 
     # Record mode: stop the server and DROP the captured recording WITHOUT

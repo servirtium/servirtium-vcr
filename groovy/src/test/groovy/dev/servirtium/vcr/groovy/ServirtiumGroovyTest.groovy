@@ -46,7 +46,7 @@ class ServirtiumGroovyTest {
             try {
                 run('drive', directory.toString(), rec.baseUrl())
                 assertEquals(Outcome.OK, rec.lastKind())
-            } finally { rec.close() }
+            } finally { rec.commit() }
             run('check', directory.toString())
         } finally {
             Files.list(directory).withCloseable { files -> files.forEach { Files.delete(it) } }
@@ -70,7 +70,7 @@ class ServirtiumGroovyTest {
             try {
                 run('drive', directory.toString(), rec.baseUrl())
                 assertEquals(Outcome.OK, rec.lastKind())
-            } finally { rec.close() }
+            } finally { rec.commit() }
             run('check', directory.toString())
             def vcr = playback(tape)
             try {
@@ -122,12 +122,12 @@ class ServirtiumGroovyTest {
         def upstreamUrl = "http://127.0.0.1:${upstream.address.port}"
         def tape = Files.createTempFile("servirtium-groovy", ".md").toString()
 
-        // record (forwards to the live upstream, writes the tape on close)
+        // record (forwards to the live upstream, writes the tape on commit)
         def rec = record(tape, upstreamUrl) { port(0) }
         try {
             assertEquals("hello-from-upstream", get(rec.baseUrl() + "/greeting"))
         } finally {
-            rec.close()
+            rec.commit()
         }
         upstream.stop(0)
 
@@ -161,7 +161,7 @@ class ServirtiumGroovyTest {
             def rec = record(tape.toString(), "http://127.0.0.1:${upstream.address.port}") {
                 port(0); prettyJson(2); sortJsonKeys()
             }
-            try { get(rec.baseUrl() + "/doc") } finally { rec.close() }
+            try { get(rec.baseUrl() + "/doc") } finally { rec.commit() }
             assert Files.readString(tape).contains('{\n  "a": {\n    "c": 3,\n    "d": 2\n  },\n  "b": 1\n}')
         } finally {
             upstream.stop(0)
@@ -177,7 +177,7 @@ class ServirtiumGroovyTest {
         try {
             def rec = record(tape.toString(), "http://127.0.0.1:${upstream.address.port}") { port(0); sortJsonKeys() }
             get(rec.baseUrl() + "/doc")
-            def e = assertThrows(VcrException) { rec.close() }
+            def e = assertThrows(VcrException) { rec.commit() }
             assert e.message.contains("sort_json_keys needs pretty_json")
             assert !Files.exists(tape)
         } finally {
@@ -197,7 +197,7 @@ class ServirtiumGroovyTest {
                 sortJsonArray("", "n"); sortJsonArrayAt("/doc", "", "n")
                 sortResponseHeaders(); sortHeaderValue("Allow")
             }
-            try { get(rec.baseUrl() + "/doc") } finally { rec.close() }
+            try { get(rec.baseUrl() + "/doc") } finally { rec.commit() }
             def text = Files.readString(tape)
             assert text.indexOf('"n": "a"') < text.indexOf('"n": "z"')
             assert text.contains("Allow: GET, POST")

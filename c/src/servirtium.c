@@ -31,6 +31,7 @@ extern void  aether_vcr_embed_destroy(sv_handle h);
 extern int   aether_vcr_embed_start(sv_handle h);
 extern void  aether_vcr_embed_stop(sv_handle h);
 extern char *aether_vcr_embed_stop_and_flush(sv_handle h, const char *tape);
+extern char *aether_vcr_embed_close(sv_handle h);
 extern char *aether_vcr_embed_stop_and_flush_fail_if_changed(sv_handle h, const char *tape);
 extern char *aether_vcr_embed_stop_and_flush_or_check(sv_handle h, const char *tape);
 extern char *aether_vcr_embed_discard(sv_handle h, const char *tape);
@@ -653,10 +654,12 @@ static void free_wrapper(struct sv_vcr *vcr) {
     free(vcr);
 }
 
-void sv_close(sv_vcr *vcr) {
-    if (vcr == NULL) return;
-    aether_vcr_embed_stop(vcr->h);
+sv_str sv_close(sv_vcr *vcr) {
+    char *err;
+    if (vcr == NULL) return empty_str();
+    err = aether_vcr_embed_close(vcr->h);
     free_wrapper(vcr);
+    return adopt(err);
 }
 
 /* The three flush variants differ only in which ABI entry point they call, so

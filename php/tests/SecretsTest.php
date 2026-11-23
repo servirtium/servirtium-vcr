@@ -20,7 +20,7 @@ final class SecretsTest extends TestCase {
                 $count++; self::assertNotEmpty($request->fieldPath);
                 return strtoupper(explode('/', $request->path)[1]) . '_PASSWORD';
             })->start();
-            try { $run('drive', $rec->baseUrl()); self::assertSame(0, $count); } finally { $rec->stop(); }
+            try { $run('drive', $rec->baseUrl()); self::assertSame(0, $count); } finally { $rec->commit(); }
             self::assertSame(20, $count); $run('check', $tape);
             try { Vcr::playback($tape)->start(); self::fail('missing resolver accepted'); } catch (VcrException $error) { self::assertStringContainsString('unresolved secret', $error->getMessage()); }
             $replay = Vcr::playback($tape)->secretResolver(fn($token) => 'pw-' . strtolower(str_replace('_PASSWORD', '', $token)) . '&secret')->start();

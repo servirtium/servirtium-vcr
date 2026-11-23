@@ -30,7 +30,8 @@
           (require-ok (servirtium_lfe:redact_query_param rec "password"))
           (require-ok (servirtium_lfe:redact_json_field rec "secretKey"))
           (let ((out (os:cmd (++ fixture "drive '" directory "' '" (servirtium_lfe:base_url rec) "' && echo DRIVE_OK"))))
-            (case (string:find out "DRIVE_OK") ('nomatch (erlang:error (tuple 'redaction_fixture out))) (_ 'ok))) )
+            (case (string:find out "DRIVE_OK") ('nomatch (erlang:error (tuple 'redaction_fixture out))) (_ 'ok)))
+          (require-ok (servirtium_lfe:commit rec)))
         (after (servirtium_lfe:close rec))))
     (let ((out (os:cmd (++ fixture "check '" directory "' && echo CHECK_OK"))))
       (case (string:find out "CHECK_OK")
@@ -52,7 +53,8 @@
           (servirtium_lfe:set_rewrite_upstream_base rec 'true)
           (let ((out (os:cmd (++ fixture "drive '" directory "' '" (servirtium_lfe:base_url rec) "' && echo DRIVE_OK"))))
             (case (string:find out "DRIVE_OK") ('nomatch (erlang:error (tuple 'origin_fixture out))) (_ 'ok)))
-          (case (servirtium_lfe:last_kind rec) ('ok 'ok) (other (erlang:error (tuple 'origin_record other)))))
+          (case (servirtium_lfe:last_kind rec) ('ok 'ok) (other (erlang:error (tuple 'origin_record other))))
+          (require-ok (servirtium_lfe:commit rec)))
         (after (servirtium_lfe:close rec))))
     (let ((out (os:cmd (++ fixture "check '" directory "' && echo CHECK_OK"))))
       (case (string:find out "CHECK_OK") ('nomatch (erlang:error (tuple 'origin_fixture out))) (_ 'ok)))
@@ -156,7 +158,7 @@
                  (iolist_to_binary (list (string:uppercase service) #"_PASSWORD")))
                'undefined)))))
     (secret-run "drive" (servirtium_lfe:base_url rec))
-    (require-ok (servirtium_lfe:close rec))
+    (require-ok (servirtium_lfe:commit rec))
     (secret-run "check" tape)
     (let ((replay (servirtium_lfe:playback_with_secrets tape
           (lambda (token)
@@ -200,7 +202,7 @@
         (progn
           (funcall configure rec)
           (os:cmd (++ "curl -s " (servirtium_lfe:base_url rec) "/data"))
-          (servirtium_lfe:close rec))
+          (servirtium_lfe:commit rec))
         (after (progn (exit pid 'kill) (gen_tcp:close listen)))))))
 
 ;; Stable ordering: (a) sort_json_keys + pretty_json writes sorted, pretty
@@ -232,7 +234,7 @@
       (case (servirtium_lfe:get_sort_response_headers probe)
         ('false 'ok)
         (_ (erlang:error 'stable_order_not_cleared)))
-      (servirtium_lfe:close probe))
+      (servirtium_lfe:discard probe))
     (let (((tuple 'ok files) (file:list_dir dir)))
       (lists:foreach (lambda (name) (file:delete (++ dir "/" name))) files))
     (file:del_dir dir)))
@@ -261,7 +263,19 @@
     (case (catch (servirtium_lfe:set_playback_range rec 0 -1))
       ((tuple 'EXIT _) 'ok)
       (_ (erlang:error 'expected_record_range_refusal)))
-    (servirtium_lfe:close rec)))
+    (servirtium_lfe:discard rec))
+  ;; a recording closed without commit or discard writes nothing and says why
+  (let* ((tape (++ "/tmp/vcr-uncommitted-lfe-" (os:getpid) ".md"))
+         (rec (servirtium_lfe:record tape "http://127.0.0.1:1")))
+    (case (servirtium_lfe:close rec)
+      ((tuple 'error msg) (case (string:find msg "without commit or discard")
+                            ('nomatch (erlang:error (tuple 'close_reason msg))) (_ 'ok)))
+      (other (erlang:error (tuple 'expected_close_error other))))
+    (case (filelib:is_file tape) ('false 'ok) (_ (erlang:error 'tape_written)))
+    (let ((dropped (servirtium_lfe:record tape "http://127.0.0.1:1")))
+      (require-ok (servirtium_lfe:discard dropped))
+      (require-ok (servirtium_lfe:close dropped))
+      (case (filelib:is_file tape) ('false 'ok) (_ (erlang:error 'tape_written_after_discard))))))
 
 ;; Volatile values (docs/volatile-values.md), conformance checks 1-7.
 (defun volatile-driver (mode vcr)

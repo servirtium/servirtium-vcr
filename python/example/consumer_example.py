@@ -124,6 +124,7 @@ def _record_and_compare() -> None:
             got = urllib.request.urlopen(vcr.base_url + "/ok").read().decode()
             if got != "ok-body":
                 _fail(f"record: upstream round-trip returned {got!r}")
+            vcr.commit()
     finally:
         srv.close()
 

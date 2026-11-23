@@ -21,13 +21,13 @@ fn named_secrets_round_trip_on_calling_thread() {
         Some(request.path.split('/').nth(1).unwrap().to_uppercase()+"_PASSWORD")
     }).start().unwrap();
     run(&["drive", &rec.base_url()]); assert_eq!(0, count.load(Ordering::SeqCst));
-    rec.finish().unwrap(); assert_eq!(20, count.load(Ordering::SeqCst)); run(&["check", &tape]);
+    rec.commit().unwrap(); assert_eq!(20, count.load(Ordering::SeqCst)); run(&["check", &tape]);
     assert!(Vcr::playback(&tape).start().is_err());
     let replay = Vcr::playback(&tape).secret_resolver(move |token| {
         assert_eq!(thread, std::thread::current().id());
         Some(format!("pw-{}&secret", token.trim_end_matches("_PASSWORD").to_lowercase()))
     }).start().unwrap();
     run(&["drive", &replay.base_url()]); replay.assert_no_mismatches().unwrap();
-    replay.finish().unwrap(); run(&["check", &tape]);
+    replay.commit().unwrap(); run(&["check", &tape]);
     std::fs::remove_dir_all(&dir).unwrap();
 }

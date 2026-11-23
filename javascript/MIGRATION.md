@@ -81,7 +81,7 @@ const rec = Vcr.record('tapes/my_api.md', 'https://api.example.com')
   .port(0)
   .start()
 await fetch(`${rec.baseUrl}/path`)
-rec.close() // flushes the tape
+rec.commit() // writes the tape; close() without commit() or discard() throws
 ```
 
 The tape *format* is unchanged — format interop is the whole point — so existing

@@ -291,12 +291,15 @@ ServirtiumRecordBuilder >> start [
 
 { #category : 'starting' }
 ServirtiumRecordBuilder >> startThenDo: aBlock [
-	"Start, evaluate aBlock with the running server, and always stop it after
-	 (which flushes the tape)."
+	"Start and evaluate aBlock with the running server, which writes the tape
+	 with commit (or drops it with discard). If aBlock fails the recording is
+	 discarded; if it ends with neither, stop writes nothing and raises."
 
-	| server |
+	| server result |
 	server := self start.
-	^ [ aBlock value: server ] ensure: [ server stop ]
+	result := [ aBlock value: server ] ifCurtailed: [ server discard ].
+	server stop.
+	^ result
 ]
 
 { #category : 'configuring' }

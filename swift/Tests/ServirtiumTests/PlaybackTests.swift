@@ -65,6 +65,7 @@ final class PlaybackTests: XCTestCase {
             try rec.redactJsonField("secretKey")
             _ = try run(["drive", directory.path, rec.baseUrl])
             XCTAssertEqual(rec.lastKind, .ok)
+            try rec.flush()
         }
         _ = try run(["check", directory.path])
     }
@@ -87,6 +88,7 @@ final class PlaybackTests: XCTestCase {
             rec.rewriteUpstreamBase()
             _ = try run(["drive", directory.path, rec.baseUrl])
             XCTAssertEqual(rec.lastKind, .ok)
+            try rec.flush()
         }
         _ = try run(["check", directory.path])
         try Vcr.withPlayback(tape) { vcr in
@@ -156,6 +158,19 @@ final class PlaybackTests: XCTestCase {
             vcr.clearPlaybackRange()
             XCTAssertEqual(vcr.playbackRangeFrom, -1)
         }
+    }
+
+    func testClosingARecordingWithoutFlushWritesNothingAndThrows() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).md").path
+        let rec = try Vcr.record(path, upstreamBase: "http://127.0.0.1:1")
+        XCTAssertThrowsError(try rec.close()) { error in
+            XCTAssertTrue("\(error)".contains("without commit or discard"), "\(error)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertThrowsError(try Vcr.withRecord(path, upstreamBase: "http://127.0.0.1:1") { _ in })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        try Vcr.withRecord(path, upstreamBase: "http://127.0.0.1:1") { $0.discard() }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
     }
 
     func testARecordHandleRefusesAPlaybackRange() throws {
@@ -233,7 +248,7 @@ final class PlaybackTests: XCTestCase {
 
     func testVolatileMarkers() throws {
         let v = try Vcr.playbackUnstarted(volatileTape("wcf_dollar.md"))
-        defer { v.close() }
+        defer { try? v.close() }
         v.prettyXml(2)
         try v.volatileMarkers(.dollarCurly)
         try v.start()
@@ -255,7 +270,7 @@ final class PlaybackTests: XCTestCase {
 
     func testVolatileBind() throws {
         let v = try Vcr.playbackUnstarted(volatileTape("cases_recorded.md"))
-        defer { v.close() }
+        defer { try? v.close() }
         XCTAssertThrowsError(try v.start()) { error in
             XCTAssertTrue("\(error)".contains("caseId"))
         }
@@ -343,8 +358,8 @@ final class PlaybackTests: XCTestCase {
 
     func testCloseIsIdempotent() throws {
         let vcr = try Vcr.playback(tape)
-        vcr.close()
-        vcr.close()
+        try vcr.close()
+        try vcr.close()
     }
 
     func testMissingTapeSurfacesTheOpenError() {
@@ -357,8 +372,8 @@ final class PlaybackTests: XCTestCase {
         for _ in 0..<50 {
             let vcr = try Vcr.playback(tape)
             XCTAssertEqual(vcr.tapeLength, 1)
-            vcr.close()
-            vcr.close()
+            try vcr.close()
+            try vcr.close()
         }
     }
 
@@ -366,8 +381,8 @@ final class PlaybackTests: XCTestCase {
         let a = try Vcr.playback(tape)
         let b = try Vcr.playback(tape)
         defer {
-            a.close()
-            b.close()
+            try? a.close()
+            try? b.close()
         }
         XCTAssertNotEqual(a.port, b.port)
         XCTAssertEqual(try httpGet(a.baseUrl + "/ok"), "ok-body")

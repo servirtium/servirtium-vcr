@@ -47,7 +47,7 @@ test "record redacts the response body before it lands on the tape" {
         .port(0)
         .start();
     try poke(allocator, &rec);
-    try rec.close();
+    try rec.commit();
 
     const text = try readTape(allocator, tape);
     defer allocator.free(text);
@@ -78,7 +78,7 @@ test "record accepts a license notice, pretty JSON and the header presets" {
         .port(0)
         .start();
     try poke(allocator, &rec);
-    try rec.close();
+    try rec.commit();
 
     const text = try readTape(allocator, tape);
     defer allocator.free(text);
@@ -115,7 +115,7 @@ test "record with sortJsonKeys and prettyJson writes sorted, pretty JSON" {
     try std.testing.expect(rec.sortJsonKeys());
     try std.testing.expect(rec.sortResponseHeaders());
     try poke(allocator, &rec);
-    try rec.close();
+    try rec.commit();
 
     const text = try readTape(allocator, tape);
     defer allocator.free(text);
@@ -140,12 +140,12 @@ test "record with sortJsonKeys but no prettyJson is refused at emit time" {
     // The builder reports the refusal as error.VcrError.
     var rec = try servirtium.Record.init(allocator, tape, upstream).sortJsonKeys().port(0).start();
     try poke(allocator, &rec);
-    try std.testing.expectError(servirtium.Error.VcrError, rec.close());
+    try std.testing.expectError(servirtium.Error.VcrError, rec.commit());
     try std.testing.expectError(error.FileNotFound, readTape(allocator, tape));
 
     // The low-level wrapper returns the reason itself.
     var vcr = try servirtium.Vcr.record(allocator, "", tape, upstream, "127.0.0.1", 0, null);
-    defer vcr.close();
+    defer vcr.close() catch {};
     vcr.setSortJsonKeys(true);
     try std.testing.expect(vcr.sortJsonKeys());
     const bad = try vcr.sortJsonArray("a/b", "");
@@ -200,7 +200,7 @@ test "record attaches a note" {
         .port(0)
         .start();
     try poke(allocator, &rec);
-    try rec.close();
+    try rec.commit();
 
     const text = try readTape(allocator, tape);
     defer allocator.free(text);
@@ -228,7 +228,7 @@ test "record removes a named response header" {
     {
         var rec = try servirtium.Record.init(allocator, tape1, upstream).port(0).start();
         try poke(allocator, &rec);
-        try rec.close();
+        try rec.commit();
         const text = try readTape(allocator, tape1);
         defer allocator.free(text);
         try std.testing.expect(std.mem.indexOf(u8, text, "X-Trace-Id") != null);
@@ -241,7 +241,7 @@ test "record removes a named response header" {
             .port(0)
             .start();
         try poke(allocator, &rec);
-        try rec.close();
+        try rec.commit();
         const text = try readTape(allocator, tape2);
         defer allocator.free(text);
         try std.testing.expect(std.mem.indexOf(u8, text, "X-Trace-Id") == null);
@@ -271,7 +271,7 @@ test "mutation state does not leak between fixtures" {
             .port(0)
             .start();
         try poke(allocator, &a);
-        try a.close();
+        try a.commit();
         const text = try readTape(allocator, tape1);
         defer allocator.free(text);
         try std.testing.expect(std.mem.indexOf(u8, text, "SCRUBBED") != null);
@@ -281,7 +281,7 @@ test "mutation state does not leak between fixtures" {
     {
         var b = try servirtium.Record.init(allocator, tape2, upstream).port(0).start();
         try poke(allocator, &b);
-        try b.close();
+        try b.commit();
         const text = try readTape(allocator, tape2);
         defer allocator.free(text);
         try std.testing.expect(std.mem.indexOf(u8, text, "leak") != null);
@@ -307,7 +307,7 @@ test "fail-if-changed returns an error on drift" {
     {
         var first = try servirtium.Record.init(allocator, tape, upstream).failIfChanged().port(0).start();
         try poke(allocator, &first);
-        try first.close(); // should not drift
+        try first.commit(); // should not drift
     }
 
     // Re-record with a changed upstream — close must return an error, while
@@ -316,7 +316,7 @@ test "fail-if-changed returns an error on drift" {
     {
         var second = try servirtium.Record.init(allocator, tape, upstream).failIfChanged().port(0).start();
         try poke(allocator, &second);
-        try std.testing.expectError(servirtium.Error.VcrError, second.close());
+        try std.testing.expectError(servirtium.Error.VcrError, second.commit());
     }
 
     const text = try readTape(allocator, tape);
@@ -353,7 +353,7 @@ test "open start close fifty times; a second close is harmless" {
         try srv.close();
         var low = try servirtium.Vcr.playback(allocator, "", "tapes/single_get.md", "127.0.0.1", 0, null);
         try low.start();
-        low.close();
-        low.close();
+        try low.close();
+        try low.close();
     }
 }

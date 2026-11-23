@@ -30,7 +30,7 @@ RSpec.describe 'Volatile values' do
   end
 
   def start_error(builder)
-    builder.start { |_server| nil }
+    builder.start(&:discard)
     nil
   rescue Servirtium::Error => e
     e.message
@@ -172,7 +172,7 @@ RSpec.describe 'Volatile values' do
     it 'writes the placeholder as a token and the rule into the tape' do
       Servirtium.record(@tape, @upstream.base_url)
                 .volatile_rule('response body', "order (?<orderId>#{guid}) accepted", 'regex')
-                .port(0).start { |server| fetch(server) }
+                .port(0).start { |server| fetch(server); server.commit }
 
       written = File.read(@tape)
       expect(written).to include('order {{orderId}} accepted')
@@ -183,7 +183,7 @@ RSpec.describe 'Volatile values' do
     it 'plays that tape back needing no rules in code' do
       Servirtium.record(@tape, @upstream.base_url)
                 .volatile_rule('response body', "order (?<orderId>#{guid}) accepted", 'regex')
-                .port(0).start { |server| fetch(server) }
+                .port(0).start { |server| fetch(server); server.commit }
 
       Servirtium.playback(@tape).bind('orderId', '0b6c35a3-7f2e-4f5f-8b2a-1d6e4c9a2f70').port(0).start do |server|
         expect(fetch(server).body).to eq('order 0b6c35a3-7f2e-4f5f-8b2a-1d6e4c9a2f70 accepted')

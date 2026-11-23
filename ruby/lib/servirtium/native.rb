@@ -80,6 +80,7 @@ module Servirtium
       [:start,          'aether_vcr_embed_start',          INT,   [VOIDP]],
       [:stop,           'aether_vcr_embed_stop',           VOID,  [VOIDP]],
       [:stop_and_flush, 'aether_vcr_embed_stop_and_flush', VOIDP, [VOIDP, VOIDP]],
+      [:close, 'aether_vcr_embed_close', VOIDP, [VOIDP]],
       [:stop_and_flush_fail_if_changed,
        'aether_vcr_embed_stop_and_flush_fail_if_changed', VOIDP, [VOIDP, VOIDP]],
       [:stop_and_flush_or_check,

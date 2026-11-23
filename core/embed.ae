@@ -167,6 +167,14 @@ vcr_embed_stop_and_flush_or_check(s: ptr, tape_path: string) -> ptr {
     return vcr_embed_dup(vcr.stop_and_flush_or_check_h(s, tape_path))
 }
 
+// Close: stop serving. A record VCR neither committed (stop_and_flush*) nor
+// discarded writes NO tape and returns why; "" otherwise. Every binding's
+// close/dispose calls this, then destroy. Caller frees.
+vcr_embed_close(s: ptr) -> ptr {
+    if s == null { return vcr_embed_dup("") }
+    return vcr_embed_dup(vcr.close_h(s))
+}
+
 // Record-mode DISCARD: stop the server and drop the in-memory recording
 // WITHOUT writing a tape. A binding calls this instead of a stop_and_flush*
 // when the test failed, so a half-finished recording never becomes a tape

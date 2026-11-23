@@ -16,17 +16,32 @@ namespace Servirtium.Vcr.Tests;
 /// </summary>
 public class RecordTests : IDisposable
 {
-    private readonly HttpListener _upstream = new();
+    private readonly HttpListener _upstream;
     private readonly string _upstreamBase;
     private readonly string _tapePath = Path.Combine(Path.GetTempPath(), $"vcr_rec_{Guid.NewGuid():N}.md");
 
     public RecordTests()
     {
-        // A throwaway upstream on an OS-assigned port.
-        int port = GetFreePort();
-        _upstreamBase = $"http://127.0.0.1:{port}";
-        _upstream.Prefixes.Add($"{_upstreamBase}/");
-        _upstream.Start();
+        // A throwaway upstream on a free port. HttpListener cannot bind port
+        // 0, so the port is probed first; another test (they run in
+        // parallel) can take it before Start, so a lost race tries another.
+        for (int attempt = 1; ; attempt++)
+        {
+            int port = GetFreePort();
+            var listener = new HttpListener();
+            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            try
+            {
+                listener.Start();
+                _upstream = listener;
+                _upstreamBase = $"http://127.0.0.1:{port}";
+                break;
+            }
+            catch (HttpListenerException) when (attempt < 10)
+            {
+                ((IDisposable)listener).Dispose();
+            }
+        }
         _ = Task.Run(ServeUpstream);
     }
 
@@ -39,6 +54,7 @@ public class RecordTests : IDisposable
         {
             string body = await client.GetStringAsync("/greeting");
             Assert.Equal("hello-from-upstream", body);
+            rec.Commit();
         } // dispose flushes the tape
 
         Assert.True(File.Exists(_tapePath), "record-mode dispose should write the tape");
@@ -60,6 +76,7 @@ public class RecordTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
         {
             await client.GetStringAsync("/greeting");
+            rec.Commit();
         }
 
         string tape = File.ReadAllText(_tapePath);
@@ -75,6 +92,7 @@ public class RecordTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
         {
             await client.GetStringAsync("/doc");
+            rec.Commit();
         }
 
         string tape = File.ReadAllText(_tapePath).Replace("\r\n", "\n");
@@ -91,7 +109,7 @@ public class RecordTests : IDisposable
             await client.GetStringAsync("/doc");
         }
 
-        var ex = Assert.Throws<VcrException>(() => rec.Dispose());
+        var ex = Assert.Throws<VcrException>(() => rec.Commit());
         Assert.Contains("sort_json_keys needs pretty_json", ex.Message);
         Assert.False(File.Exists(_tapePath));
     }
@@ -107,6 +125,7 @@ public class RecordTests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
         {
             await client.GetStringAsync("/doc");
+            rec.Commit();
         }
 
         string tape = File.ReadAllText(_tapePath);
@@ -129,6 +148,7 @@ public class RecordTests : IDisposable
         {
             Assert.Equal(response, await result.Content.ReadAsStringAsync());
             Assert.Equal(request, up.LastBody);
+            rec.Commit();
         }
         string tape = File.ReadAllText(_tapePath);
         Assert.Contains("\n  <Captcha>token</Captcha>\n", tape);
@@ -187,5 +207,19 @@ public class RecordTests : IDisposable
         if (_upstream.IsListening) _upstream.Stop();
         ((IDisposable)_upstream).Dispose();
         if (File.Exists(_tapePath)) File.Delete(_tapePath);
+    }
+
+    [Fact]
+    public void Disposing_a_recording_without_Commit_or_Discard_writes_nothing_and_throws()
+    {
+        var rec = Vcr.Record(_tapePath, "http://127.0.0.1:1").Port(0).Start();
+        var ex = Assert.Throws<VcrException>(() => rec.Dispose());
+        Assert.Contains("without commit or discard", ex.Message);
+        Assert.False(File.Exists(_tapePath));
+        using (var dropped = Vcr.Record(_tapePath, "http://127.0.0.1:1").Port(0).Start())
+        {
+            dropped.Discard();
+        }
+        Assert.False(File.Exists(_tapePath));
     }
 }

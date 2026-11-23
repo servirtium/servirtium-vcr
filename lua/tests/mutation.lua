@@ -23,7 +23,7 @@ do
         :redact(servirtium.FIELD_RESPONSE_BODY, "secret-token", "REDACTED")
         :port(0):start())
     h.curl_get(rec:base_url(), "/x")
-    h.eq(rec:close(), "", "close returns no error")
+    h.eq(rec:commit(), "", "close returns no error")
     up.close()
 
     local text = h.read_file(tape)
@@ -42,7 +42,7 @@ do
         :note("Why this exists", "documents the call")
         :port(0):start())
     h.curl_get(rec:base_url(), "/x")
-    h.eq(rec:close(), "", "close returns no error")
+    h.eq(rec:commit(), "", "close returns no error")
     up.close()
 
     h.contains(h.read_file(tape), "## [Note] Why this exists:", "note heading on tape")
@@ -59,7 +59,7 @@ do
     local up1 = h.start_upstream({ extra_headers = { ["X-Trace-Id"] = "abc123" } })
     local rec = assert(servirtium.record(tape1, up1.base_url):port(0):start())
     h.curl_get(rec:base_url(), "/x")
-    h.eq(rec:close(), "", "phase 1 close")
+    h.eq(rec:commit(), "", "phase 1 close")
     up1.close()
     h.contains(h.read_file(tape1), "X-Trace-Id", "phase 1: header captured")
 
@@ -69,7 +69,7 @@ do
         :remove_header(servirtium.FIELD_RESPONSE_HEADERS, "X-Trace-Id")
         :port(0):start())
     h.curl_get(rec2:base_url(), "/x")
-    h.eq(rec2:close(), "", "phase 2 close")
+    h.eq(rec2:commit(), "", "phase 2 close")
     up2.close()
     h.not_contains(h.read_file(tape2), "X-Trace-Id", "phase 2: header removed")
 
@@ -88,7 +88,7 @@ do
         :redact(servirtium.FIELD_RESPONSE_BODY, "leak", "SCRUBBED")
         :port(0):start())
     h.curl_get(a:base_url(), "/x")
-    h.eq(a:close(), "", "fixture A close")
+    h.eq(a:commit(), "", "fixture A close")
     upA.close()
     h.contains(h.read_file(tape1), "SCRUBBED", "fixture A: SCRUBBED")
 
@@ -96,7 +96,7 @@ do
     local upB = h.start_upstream({ body = "leak" })
     local b = assert(servirtium.record(tape2, upB.base_url):port(0):start())
     h.curl_get(b:base_url(), "/x")
-    h.eq(b:close(), "", "fixture B close")
+    h.eq(b:commit(), "", "fixture B close")
     upB.close()
     local t2 = h.read_file(tape2)
     h.contains(t2, "leak", "fixture B: un-redacted body present")
@@ -115,7 +115,7 @@ do
     local first = assert(servirtium.record(tape, up1.base_url)
         :fail_if_changed():port(0):start())
     h.curl_get(first:base_url(), "/x")
-    h.eq(first:close(), "", "first record should not drift")
+    h.eq(first:commit(), "", "first record should not drift")
     up1.close()
 
     -- Re-record with a changed upstream — close must return a drift error,
@@ -124,7 +124,7 @@ do
     local second = assert(servirtium.record(tape, up2.base_url)
         :fail_if_changed():port(0):start())
     h.curl_get(second:base_url(), "/x")
-    local err = second:close()
+    local err = second:commit()
     h.truthy(err ~= "", "expected a drift error from close")
     up2.close()
     h.contains(h.read_file(tape), "v2-changed", "drift: new tape still written")

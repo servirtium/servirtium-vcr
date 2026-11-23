@@ -18,7 +18,7 @@ class SecretCallbacksTest {
                 if (key == 'password') { count++; return request.path().split('/')[1].toUpperCase(Locale.ROOT) + '_PASSWORD' }
                 null
             }.start()
-            try { run('drive', rec.baseUrl()); assertEquals(0, count) } finally { rec.close() }
+            try { run('drive', rec.baseUrl()); assertEquals(0, count) } finally { rec.commit() }
             assertEquals(20, count); run('check', tape)
             def replay = Vcr.playback(tape).secretResolver { token -> 'pw-' + token.replace('_PASSWORD', '').toLowerCase(Locale.ROOT) + '&secret' }.start()
             try { run('drive', replay.baseUrl()); replay.assertNoMismatches() } finally { replay.close() }

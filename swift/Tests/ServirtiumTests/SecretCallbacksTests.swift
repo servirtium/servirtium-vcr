@@ -20,12 +20,12 @@ final class SecretCallbacksTests: XCTestCase {
             return request.path.split(separator: "/")[0].uppercased() + "_PASSWORD"
         }
         do { _ = try run("drive", rec.baseUrl); XCTAssertEqual(count, 0) }
-        catch { rec.close(); throw error }
+        catch { rec.discard(); throw error }
         try rec.flush(); XCTAssertEqual(count, 20); _ = try run("check", tape)
         let replay = try Vcr.playback(tape, secretResolver: { token in
             "pw-" + token.replacingOccurrences(of: "_PASSWORD", with: "").lowercased() + "&secret"
         })
-        defer { replay.close() }
+        defer { try? replay.close() }
         _ = try run("drive", replay.baseUrl); try replay.assertNoMismatches()
         _ = try run("check", tape)
     }

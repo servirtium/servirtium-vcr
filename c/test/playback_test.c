@@ -198,8 +198,24 @@ static void stable_order_and_range(const char *tape) {
     rec = sv_record(out, base.ptr, NULL); sv_free(base);
     v = sv_set_playback_range(rec, 0, 1);
     ck("record handle refuses a playback range", v.len > 0); sv_free(v);
-    sv_close(rec); sv_close(up);
+    sv_discard(rec, NULL); sv_close(up);
     { char cmd[8192]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir); (void)system(cmd); }
+
+    /* A recording closed without flush or discard writes nothing and says why. */
+    {
+        char tape_x[4096];
+        sv_vcr *unflushed, *dropped;
+        snprintf(tape_x, sizeof tape_x, "/tmp/vcr-uncommitted-c-%d.md", (int)getpid());
+        remove(tape_x);
+        unflushed = sv_record(tape_x, "http://127.0.0.1:1", NULL);
+        ck("open unflushed recorder", unflushed != NULL);
+        v = sv_close(unflushed);
+        ck("close without flush says why", v.ptr != NULL && strstr(v.ptr, "without commit or discard") != NULL); sv_free(v);
+        ck("close without flush writes nothing", access(tape_x, F_OK) != 0);
+        dropped = sv_record(tape_x, "http://127.0.0.1:1", NULL);
+        sv_discard(dropped, NULL);
+        ck("discard writes nothing", access(tape_x, F_OK) != 0);
+    }
 }
 
 /* Volatile values (docs/volatile-values.md) through the shared

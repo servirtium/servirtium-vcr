@@ -76,6 +76,6 @@ with servirtium.record("tapes/my_api.md", "https://api.example.com") \
         .remove_header(servirtium.Field.RESPONSE_HEADERS, "Set-Cookie") \
         .redact(servirtium.Field.REQUEST_HEADERS, real_token, "Bearer REDACTED") \
         .port(0).start() as vcr:
-    # ... drive the SUT ...  (close/exit flushes the tape)
-    pass
+    # ... drive the SUT ...
+    vcr.commit()  # writes the tape; leaving the block without commit or discard raises
 ```

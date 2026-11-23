@@ -23,6 +23,7 @@ class RedactionHelpersTest {
                     .redactHeader("Authorization").redactQueryParam("password").redactJsonField("secretKey").start()) {
                 run("drive", directory.toString(), rec.baseUrl());
                 assertEquals(Outcome.OK, rec.lastKind());
+                rec.commit();
             }
             run("check", directory.toString());
         } finally {

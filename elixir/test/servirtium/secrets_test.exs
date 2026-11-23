@@ -20,7 +20,7 @@ defmodule Servirtium.SecretsTest do
         end
       end)
       run.(["drive", Servirtium.base_url(rec)]); refute_received :redacted
-      :ok = Servirtium.stop(rec)
+      :ok = Servirtium.commit(rec)
       for _ <- 1..20, do: assert_received(:redacted)
       refute_received :redacted
       run.(["check", tape])

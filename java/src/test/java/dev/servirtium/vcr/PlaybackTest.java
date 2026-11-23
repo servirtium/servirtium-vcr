@@ -125,6 +125,7 @@ class PlaybackTest {
             int from = (int) NativeMethods.GET_PLAYBACK_RANGE_FROM.invokeExact(handle);
             assertEquals(-1, from);
             rec.discard();
+            rec.commit();
         }
     }
 }

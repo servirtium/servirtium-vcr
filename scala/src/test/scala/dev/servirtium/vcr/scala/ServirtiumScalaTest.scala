@@ -39,9 +39,10 @@ class ServirtiumScalaTest:
     val upstreamUrl = s"http://127.0.0.1:${upstream.getAddress.getPort}"
     val tape = Files.createTempFile("servirtium-scala", ".md").toString
 
-    // record (forwards to the live upstream, writes the tape on close)
+    // record (forwards to the live upstream, writes the tape on commit)
     using(Servirtium.record(tape, upstreamUrl)(_.port(0))) { vcr =>
       assertEquals("hello-from-upstream", get(vcr.baseUrl() + "/greeting"))
+      vcr.commit()
     }
     upstream.stop(0)
 
@@ -69,6 +70,7 @@ class ServirtiumScalaTest:
       }) { rec =>
         run("drive", directory.toString, rec.baseUrl())
         assertEquals(Outcome.OK, rec.lastKind())
+        rec.commit()
       }
       run("check", directory.toString)
     finally
@@ -93,6 +95,7 @@ class ServirtiumScalaTest:
       using(Servirtium.record(tape, upstream) { builder => builder.rewriteUpstreamBase() }) { rec =>
         run("drive", directory.toString, rec.baseUrl())
         assertEquals(Outcome.OK, rec.lastKind())
+        rec.commit()
       }
       run("check", directory.toString)
       using(Servirtium.playback(tape)()) { vcr =>
@@ -141,7 +144,7 @@ class ServirtiumScalaTest:
     val tape = Files.createTempFile("servirtium-scala-sort", ".md")
     try
       using(Servirtium.record(tape.toString, s"http://127.0.0.1:${upstream.getAddress.getPort}")(
-        _.port(0).prettyJson(2).sortJsonKeys())) { vcr => get(vcr.baseUrl() + "/doc"); () }
+        _.port(0).prettyJson(2).sortJsonKeys())) { vcr => get(vcr.baseUrl() + "/doc"); vcr.commit() }
       assertTrue(Files.readString(tape).contains("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}"))
     finally
       upstream.stop(0)
@@ -154,7 +157,7 @@ class ServirtiumScalaTest:
     try
       val rec = Servirtium.record(tape.toString, s"http://127.0.0.1:${upstream.getAddress.getPort}")(_.port(0).sortJsonKeys())
       get(rec.baseUrl() + "/doc")
-      val e = assertThrows(classOf[VcrException], () => rec.close())
+      val e = assertThrows(classOf[VcrException], () => rec.commit())
       assertTrue(e.getMessage.contains("sort_json_keys needs pretty_json"), e.getMessage)
       assertFalse(Files.exists(tape))
     finally
@@ -168,7 +171,7 @@ class ServirtiumScalaTest:
     try
       using(Servirtium.record(tape.toString, base)(
         _.port(0).prettyJson(2).sortJsonArray("", "n").sortJsonArrayAt("/doc", "", "n")
-          .sortResponseHeaders().sortHeaderValue("Allow"))) { vcr => get(vcr.baseUrl() + "/doc"); () }
+          .sortResponseHeaders().sortHeaderValue("Allow"))) { vcr => get(vcr.baseUrl() + "/doc"); vcr.commit() }
       val text = Files.readString(tape)
       assertTrue(text.indexOf("\"n\": \"a\"") < text.indexOf("\"n\": \"z\""), text)
       assertTrue(text.contains("Allow: GET, POST"), text)

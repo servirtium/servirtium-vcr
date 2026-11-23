@@ -18,8 +18,9 @@
 --   assert(srv:last_kind() == servirtium.OK)
 --   srv:close()
 --
--- In playback, close() stops the server. In record, close() flushes the tape
--- (stop_and_flush, or the fail-if-changed variant) so the recording is written.
+-- In playback, close() stops the server. In record, commit() writes the tape
+-- (stop_and_flush, or the fail-if-changed variant) and discard() drops it;
+-- close() with neither writes nothing and raises.
 -- Servers default to port 0 (the OS picks a free port; read it back via
 -- :base_url() / :port()).
 --
@@ -162,28 +163,37 @@ function Server:note(title, body)
     return C.note(self._handle, title, body)
 end
 
--- Stop the server. For a record server this flushes the tape to disk
--- (stop_and_flush, or the fail-if-changed variant when fail_if_changed was set
--- on the builder). Returns "" on success, or a non-empty error/drift message.
--- Idempotent.
-function Server:close()
-    if self._closed then return "" end
+-- Record mode: stop the server and write the tape now (stop_and_flush, or
+-- the fail-if-changed variant when fail_if_changed was set on the builder).
+-- The only way a recording becomes a tape: close() without commit() or
+-- discard() writes nothing and returns why. Returns "" on success, or a
+-- non-empty error/drift message. No-op ("") in playback mode. Idempotent.
+function Server:commit()
+    if self._closed or self._mode ~= "record" then return "" end
     self._closed = true
     local handle = self._handle
     if self._secret_redactor then
         local ok, err = pcall(secret_stage, handle, self._secret_redactor, false)
         if not ok then C.stop(handle); C.destroy(handle); error(err, 0) end
     end
-    local msg = ""
-    if self._mode == "record" then
-        if self._fail_if_changed then
-            msg = C.stop_and_flush_fail_if_changed(handle, self._tape)
-        else
-            msg = C.stop_and_flush(handle, self._tape)
-        end
+    local msg
+    if self._fail_if_changed then
+        msg = C.stop_and_flush_fail_if_changed(handle, self._tape)
     else
-        C.stop(handle)
+        msg = C.stop_and_flush(handle, self._tape)
     end
+    C.destroy(handle)
+    return msg
+end
+
+-- Stop the server. A recording neither committed nor discarded is dropped,
+-- no tape is written, and this returns the reason (saying to call commit()
+-- or discard()); "" otherwise. Idempotent.
+function Server:close()
+    if self._closed then return "" end
+    self._closed = true
+    local handle = self._handle
+    local msg = C.close(handle)
     C.destroy(handle)
     return msg
 end
@@ -867,7 +877,7 @@ end
 local SERVER_METHODS = {
     base_url = true, port = true, tape_length = true, last_kind = true,
     last_index = true, last_error = true, clear_last_error = true,
-    reset_cursor = true, note = true, close = true,
+    reset_cursor = true, note = true, close = true, commit = true, discard = true,
     set_playback_range = true, clear_playback_range = true, get_playback_range = true,
     sort_json_keys_enabled = true, sort_response_headers_enabled = true,
     clear_stable_order = true,

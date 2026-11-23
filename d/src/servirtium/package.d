@@ -63,6 +63,7 @@ private extern (C) nothrow @nogc {
     int   aether_vcr_embed_start(void* h);
     void  aether_vcr_embed_stop(void* h);
     char* aether_vcr_embed_stop_and_flush(void* h, const(char)* tape);
+    char* aether_vcr_embed_close(void* h);
     char* aether_vcr_embed_stop_and_flush_fail_if_changed(void* h, const(char)* tape);
     char* aether_vcr_embed_stop_and_flush_or_check(void* h, const(char)* tape);
     char* aether_vcr_embed_discard(void* h, const(char)* tape);
@@ -592,12 +593,16 @@ struct Vcr {
 
     // ---- shutdown --------------------------------------------------------
 
-    /// Stop the server, discarding any recording. Idempotent.
+    /// Stop the server. A recording neither flushed (committed) nor
+    /// discarded is dropped, no tape is written, and this throws
+    /// VcrException. Idempotent.
     void close() {
         if (closed) return;
         closed = true;
-        aether_vcr_embed_stop(handle);
-        aether_vcr_embed_destroy(handle);
+        string err;
+        try err = takeString(aether_vcr_embed_close(handle));
+        finally aether_vcr_embed_destroy(handle);
+        if (err.length) throw new VcrException(err);
     }
 
     /// Stop and write the captured tape. `tapePath` defaults to the one the

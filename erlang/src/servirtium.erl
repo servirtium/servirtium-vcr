@@ -50,6 +50,8 @@
     last_index/1,
     reset_cursor/1,
     volatile_report/1,
+    commit/1,
+    discard/1,
     close/1
 ]).
 
@@ -261,25 +263,46 @@ reset_cursor(#{handle := H}) ->
 volatile_report(#{handle := H}) ->
     binary_to_list(servirtium_nif:volatile_report(H)).
 
-%% Stop the server. In record mode this also flushes the captured tape to
-%% disk, then frees the VCR. Returns ok, or {error, Msg} on a record-flush problem.
-%% Idempotent: the handle is a resource, a second close is a harmless no-op.
--spec close(server()) -> ok | {error, string()}.
-close(#{mode := playback, handle := H}) ->
-    servirtium_nif:stop(H),
-    servirtium_nif:destroy(H),
-    ok;
-close(#{mode := record, handle := H, tape := Tape} = Server) ->
+%% Record mode: stop the server and write the tape now, then free the VCR.
+%% Returns ok, or {error, Msg} (a write error). The only way a recording
+%% becomes a tape: close/1 without commit/1 or discard/1 writes nothing and
+%% returns an error. In playback mode, close/1.
+-spec commit(server()) -> ok | {error, string()}.
+commit(#{mode := playback} = Server) ->
+    close(Server);
+commit(#{mode := record, handle := H, tape := Tape} = Server) ->
     case maps:get(secret_redactor, Server, undefined) of
         undefined -> ok;
         Callback -> servirtium_nif:secret_stage(H, Callback, false)
     end,
     Res = servirtium_nif:stop_and_flush(H, list_to_binary(Tape)),
     servirtium_nif:destroy(H),
-    case Res of
-        <<>> -> ok;
-        Msg when is_binary(Msg) -> {error, binary_to_list(Msg)}
-    end.
+    result(Res).
+
+%% Record mode: stop the server and DROP the recording without writing a
+%% tape, then free the VCR. In playback mode it just stops. Returns ok.
+-spec discard(server()) -> ok.
+discard(#{mode := record, handle := H, tape := Tape}) ->
+    _ = servirtium_nif:discard(H, list_to_binary(Tape)),
+    servirtium_nif:destroy(H),
+    ok;
+discard(#{handle := H}) ->
+    servirtium_nif:stop(H),
+    servirtium_nif:destroy(H),
+    ok.
+
+%% Stop the server and free the VCR. A recording neither committed nor
+%% discarded is dropped, no tape is written, and this returns
+%% {error, Msg} saying to commit (or discard). Idempotent: the handle is a
+%% resource, a second close is a harmless no-op.
+-spec close(server()) -> ok | {error, string()}.
+close(#{handle := H}) ->
+    Res = servirtium_nif:close(H),
+    servirtium_nif:destroy(H),
+    result(Res).
+
+result(<<>>) -> ok;
+result(Msg) when is_binary(Msg) -> {error, binary_to_list(Msg)}.
 
 %% Redact on tape emission; forwarding retains the original value.
 redact_header(Server, Name) -> redact_header(Server, Name, <<"[REDACTED]">>, 3).

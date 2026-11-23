@@ -54,6 +54,7 @@ pub(crate) struct Native {
     /// readable between stop and destroy, never after destroy.
     pub destroy: unsafe extern "C" fn(Handle),
     pub stop_and_flush: unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
+    pub close: unsafe extern "C" fn(Handle) -> *mut c_char,
     pub stop_and_flush_fail_if_changed:
         unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
     pub stop_and_flush_or_check:
@@ -268,6 +269,7 @@ fn load() -> Result<Native, String> {
         open_error: sym!(b"aether_vcr_embed_open_error\0"),
         destroy: sym!(b"aether_vcr_embed_destroy\0"),
         stop_and_flush: sym!(b"aether_vcr_embed_stop_and_flush\0"),
+        close: sym!(b"aether_vcr_embed_close\0"),
         stop_and_flush_fail_if_changed: sym!(b"aether_vcr_embed_stop_and_flush_fail_if_changed\0"),
         stop_and_flush_or_check: sym!(b"aether_vcr_embed_stop_and_flush_or_check\0"),
         discard: sym!(b"aether_vcr_embed_discard\0"),

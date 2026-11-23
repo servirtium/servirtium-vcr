@@ -122,6 +122,9 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_stop")]
     internal static extern void Stop(IntPtr server);
 
+    [DllImport(Lib, EntryPoint = "aether_vcr_embed_close")]
+    internal static extern IntPtr Close(IntPtr server);
+
     [DllImport(Lib, EntryPoint = "aether_vcr_embed_stop_and_flush", CharSet = CharSet.Ansi)]
     internal static extern IntPtr StopAndFlush(IntPtr server, string tapePath);
 

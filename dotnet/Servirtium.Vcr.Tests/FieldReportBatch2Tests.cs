@@ -157,6 +157,7 @@ public class FieldReportBatch2Tests : IDisposable
         {
             await client.GetStringAsync("/thing");
             rec.Discard();                 // test "failed" -> drop it
+            rec.Commit();
         }
 
         Assert.False(File.Exists(tapePath), "a discarded recording must not write a tape");
@@ -174,6 +175,7 @@ public class FieldReportBatch2Tests : IDisposable
         {
             await client.GetStringAsync("/thing");
             rec.Commit();                  // success -> write it now
+            rec.Commit();
         }
 
         Assert.True(File.Exists(tapePath), "an explicit Commit() must write the tape");
@@ -204,6 +206,7 @@ public class FieldReportBatch2Tests : IDisposable
         using (var client = new HttpClient { BaseAddress = new Uri(rec.BaseUrl) })
         {
             await client.GetStringAsync("/thing");
+            rec.Commit();
             rec.Commit();
         }
         Assert.True(File.Exists(tapePath));

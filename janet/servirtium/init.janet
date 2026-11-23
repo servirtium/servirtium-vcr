@@ -104,6 +104,7 @@
    "destroy" [:void :ptr]
    "stop" [:void :ptr]
    "stop_and_flush" [:ptr :ptr :string]
+   "close" [:ptr :ptr]
    "stop_and_flush_fail_if_changed" [:ptr :ptr :string]
    "stop_and_flush_or_check" [:ptr :ptr :string]
    "discard" [:ptr :ptr :string]
@@ -956,11 +957,16 @@
   (finish-open h tape host lbl opts "record" (string "record open failed: " tape)))
 
 (defn stop
-  "Stop the server, discarding any recording. Idempotent."
+  ```
+  Stop the server. A recording neither flushed (`flush-tape`) nor discarded is
+  dropped, no tape is written, and this raises. Idempotent.
+  ```
   [srv]
   (when (and (table? srv) (srv :handle))
-    (unless (srv :closed) (c "stop" (srv :handle)))
-    (release srv))
+    (def err (if (srv :closed) "" (take (c "close" (srv :handle)))))
+    (put srv :closed true)
+    (release srv)
+    (unless (empty? err) (fail "stop" err)))
   nil)
 
 (defn- pick-tape [srv opts]
@@ -1016,10 +1022,10 @@
   (defer (stop vcr) (f vcr)))
 
 (defn call-with-record
-  "Run (f vcr) against a started record server. When f returns normally the
-  tape is flushed (per :flush-mode); if f raises, the recording is DISCARDED
-  and the error propagates, so a failed test never overwrites a good tape.
-  Returns f's result."
+  "Run (f vcr) against a started record server. f writes the tape with
+  `flush-tape` (or drops it with `discard`); if f raises, the recording is
+  DISCARDED and the error propagates; if f returns with neither, `stop` writes
+  nothing and raises. Returns f's result."
   [tape upstream-base opts f]
   (def vcr (record tape upstream-base opts))
   (def result
@@ -1027,7 +1033,7 @@
       ([err fib]
         (try (discard vcr) ([_] nil))
         (propagate err fib))))
-  (flush-tape vcr)
+  (stop vcr)
   result)
 
 (defmacro with-playback
@@ -1045,9 +1051,10 @@
   ```
   (with-record [vcr tape upstream-base opts?] body...)
 
-  Record against `upstream-base`, bind the started server to `vcr`, run the
-  body, then flush the tape. If the body raises the recording is discarded
-  instead. Evaluates to the body's value.
+  Record against `upstream-base`, bind the started server to `vcr` and run the
+  body, which writes the tape with `(flush-tape vcr)` (or drops it with
+  `discard`). If the body raises the recording is discarded; if it ends with
+  neither, nothing is written and this raises. Evaluates to the body's value.
   ```
   [binding & body]
   (def [sym tape upstream opts] binding)

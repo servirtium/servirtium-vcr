@@ -6,7 +6,7 @@
 # VCR in record mode, forwarding to the live Kotlin/http4k SUT
 # (TODOBACKEND_UPSTREAM). The Mocha spec runs in headless Chrome (Ruby
 # selenium) against the VCR; every CRUD call is forwarded upstream and
-# recorded, then flushed to the tape on close. The suite must pass for the
+# recorded, then written to the tape on commit. The suite must pass for the
 # recording to be considered good.
 #
 # Driven by .ruby_record.ae, which brings the SUT up in a container (started
@@ -37,11 +37,12 @@ def main
     puts "mocha (record): #{passes} passed, #{failures} failed"
     msgs.each { |m| puts "  FAIL: #{m}" }
     if !failures.zero? || passes.zero?
-      puts 'record: suite did not pass against the live SUT; tape NOT trustworthy'
+      puts 'record: suite did not pass against the live SUT; no tape written'
       return 1
     end
+    vcr.commit # writes the tape to TAPE
   ensure
-    vcr.close # flushes the tape to TAPE
+    vcr.discard # no-op after commit; drops the recording on any other exit
   end
 
   puts "record: wrote #{TAPE}"

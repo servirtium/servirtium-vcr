@@ -17,7 +17,7 @@ void main() {
         count++; expect(request.fieldPath, isNotEmpty);
         return '${request.path.split('/')[1].toUpperCase()}_PASSWORD';
       }).start();
-      try { run(['drive', rec.baseUrl]); expect(count, 0); } finally { rec.close(); }
+      try { run(['drive', rec.baseUrl]); expect(count, 0); } finally { rec.commit(); }
       expect(count, 20); run(['check', tape]);
       expect(() => Vcr.playback(tape).start(), throwsA(isA<VcrException>()));
       final replay = Vcr.playback(tape).secretResolver((token) => 'pw-${token.replaceAll('_PASSWORD', '').toLowerCase()}&secret').start();

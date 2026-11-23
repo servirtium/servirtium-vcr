@@ -3,7 +3,9 @@
 All fixtures start from `Vcr.Playback(tapePath)` or
 `Vcr.Record(tapePath, upstreamBase)`, configured with a fluent builder, and
 started with `.Start()`, which returns a `VcrServer`. Dispose the server to
-stop it (and, in record mode, flush the tape).
+stop it. A recording is written only by `Commit()` and dropped by
+`Discard()`; disposing a record server with neither writes nothing and throws
+a `VcrException`, so a test cannot mint a tape by leaving a `using` scope.
 
 The system-under-test only ever needs `vcr.BaseUrl`. Everything else —
 tape path, mode, mutations, assertions — lives in your test setup/teardown.
@@ -30,8 +32,7 @@ using var vcr = Vcr.Record("tapes/climate_api.md", "https://climatedataapi.world
 
 using var client = new HttpClient { BaseAddress = new Uri(vcr.BaseUrl) };
 await client.GetStringAsync("/api/v1/countries");
-// Dispose (end of `using`, or in TearDown) forwards nothing more and writes
-// the markdown tape to disk.
+vcr.Commit();   // writes the markdown tape (Discard() on a failing test drops it)
 ```
 
 Record forwards each request to the upstream, returns the **real** response
@@ -44,9 +45,9 @@ automatically.
 Vcr.Record(tape, upstream).FailIfChanged().Start();
 ```
 
-On dispose, the freshly recorded tape is written **and** a `VcrException` is
-thrown if it differs from the committed tape — so `git diff` shows the drift
-and CI fails loudly. (Without `FailIfChanged`, dispose just overwrites.)
+On `Commit()`, the freshly recorded tape is written **and** a `VcrException`
+is thrown if it differs from the one on disk — so `git diff` shows the drift
+and CI fails loudly. (Without `FailIfChanged`, commit just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -295,7 +296,7 @@ A request outside the range is never served (kind `VcrOutcome.PathOrMethodDiff`,
 | `Note(title, body)` | stage a note for the next recorded interaction |
 | `ResetCursor()` | rewind replay to interaction 0; clear last-* |
 | `ClearLastError()` | clear the last-error slot between sub-cases |
-| `Dispose()` | stop; flush tape if recording; free the native handle (idempotent; read diagnostics before disposing) |
+| `Dispose()` | stop and free the native handle (idempotent; read diagnostics before disposing); a recording neither committed nor discarded writes no tape and `Dispose` throws `VcrException` |
 
 ## `VcrOutcome`
 

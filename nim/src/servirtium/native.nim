@@ -56,6 +56,8 @@ proc stop*(h: Handle)
   {.importc: "aether_vcr_embed_stop", cdecl.}
 proc stop_and_flush*(h: Handle, tape_path: cstring): cstring
   {.importc: "aether_vcr_embed_stop_and_flush", cdecl.}
+proc close*(h: Handle): cstring
+  {.importc: "aether_vcr_embed_close", cdecl.}
 proc stop_and_flush_fail_if_changed*(h: Handle, tape_path: cstring): cstring
   {.importc: "aether_vcr_embed_stop_and_flush_fail_if_changed", cdecl.}
 proc stop_and_flush_or_check*(h: Handle, tape_path: cstring): cstring

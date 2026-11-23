@@ -28,6 +28,7 @@ spec = describe "record then replay" $ do
           url <- baseUrl rec
           _ <- run ["drive", directory, url]
           lastKind rec `shouldReturn` Ok
+          commit rec
       _ <- run ["check", directory]
       pure ()
   it "rewrite_upstream_base keeps the client on the VCR and replays on another port" $ do
@@ -42,6 +43,7 @@ spec = describe "record then replay" $ do
         url <- baseUrl rec
         _ <- run ["drive", directory, url]
         lastKind rec `shouldReturn` Ok
+        commit rec
       _ <- run ["check", directory]
       withPlayback (playbackOptions tape) $ \vcr -> do
         url <- baseUrl vcr
@@ -53,7 +55,7 @@ spec = describe "record then replay" $ do
     withRecord (recordOptions tape "http://127.0.0.1:1")
       { recLicenseNotice = Just "test notice", recPrettyJson = 2
       , recRemoveTransportHeaders = True, recRemoveCloudHeaders = ["aws"]
-      , recRedactCredentials = True, recRedactCredentialHeaders = ["X-Vault-Token"] } $ \_ -> pure ()
+      , recRedactCredentials = True, recRedactCredentialHeaders = ["X-Vault-Token"] } commit
     removeFile tape `catchIOError` \_ -> pure ()
   it "sort_json_keys with pretty_json writes sorted, pretty JSON" $ do
     tmp <- getTemporaryDirectory
@@ -65,6 +67,7 @@ spec = describe "record then replay" $ do
             url <- baseUrl vcr
             body <- httpGet (url ++ "/data")
             body `shouldBe` "{\"b\":1,\"a\":{\"z\":2,\"y\":3}}"
+            commit vcr
       written <- readFile tape
       length written `seq` pure ()
       written `shouldSatisfy` isInfixOf "\"a\": {\n    \"y\": 3,\n    \"z\": 2\n  },\n  \"b\": 1"
@@ -76,15 +79,25 @@ spec = describe "record then replay" $ do
         (withRecord (recordOptions tape upstream) { recSortJsonKeys = True } $ \vcr -> do
             url <- baseUrl vcr
             _ <- httpGet (url ++ "/data")
-            pure ())
+            commit vcr)
           `shouldThrow` (\(VcrException m) -> "sort_json_keys needs pretty_json" `isInfixOf` m)
   it "a record server refuses a playback range" $ do
     tmp <- getTemporaryDirectory
     let tape = tmp </> "vcr-range-refused-haskell.md"
     bracket_ (pure ()) (removeIfExists tape) $
-      withRecord (recordOptions tape "http://127.0.0.1:1") $ \vcr ->
+      withRecord (recordOptions tape "http://127.0.0.1:1") $ \vcr -> do
         setPlaybackRange vcr 0 (-1)
           `shouldThrow` (\(VcrException m) -> "set_playback_range" `isInfixOf` m)
+        discard vcr
+  it "closing a recording without commit or discard writes nothing and throws" $ do
+    tmp <- getTemporaryDirectory
+    let tape = tmp </> "vcr-uncommitted-haskell.md"
+    bracket_ (pure ()) (removeIfExists tape) $ do
+      withRecord (recordOptions tape "http://127.0.0.1:1") (\_ -> pure ())
+        `shouldThrow` (\(VcrException m) -> "without commit or discard" `isInfixOf` m)
+      doesFileExist tape `shouldReturn` False
+      withRecord (recordOptions tape "http://127.0.0.1:1") discard
+      doesFileExist tape `shouldReturn` False
   it "retains replay diffs and supports explicit consumption" $
     withPlayback (playbackOptions "../core_tests/diagnostics/playback.md") $ \server -> do
       testContext "Haskell scenario" "scenario.test" 123 server
@@ -120,6 +133,7 @@ spec = describe "record then replay" $ do
             url <- baseUrl vcr
             body <- httpGet (url ++ "/thing")
             body `shouldBe` "recorded-body"
+            commit vcr
 
       exists <- doesFileExist tape
       exists `shouldBe` True

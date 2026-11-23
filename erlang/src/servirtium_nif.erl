@@ -31,6 +31,7 @@
     start/1,
     stop/1,
     stop_and_flush/2,
+    close/1,
     stop_and_flush_fail_if_changed/2,
     discard/2,
     %% introspection
@@ -146,6 +147,7 @@ destroy(_Handle) -> erlang:nif_error(not_loaded).
 start(_Handle) -> erlang:nif_error(not_loaded).
 stop(_Handle) -> erlang:nif_error(not_loaded).
 stop_and_flush(_Handle, _TapePath) -> erlang:nif_error(not_loaded).
+close(_Handle) -> erlang:nif_error(not_loaded).
 stop_and_flush_fail_if_changed(_Handle, _TapePath) -> erlang:nif_error(not_loaded).
 discard(_Handle, _TapePath) -> erlang:nif_error(not_loaded).
 

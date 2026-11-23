@@ -1,7 +1,7 @@
 "
 Proves record mode end-to-end: the VCR forwards to a live local upstream
 (an in-image ZnServer), returns the real response to the SUT, captures the
-exchange, flushes a Servirtium markdown tape on stop, and the same tape
+exchange, writes a Servirtium markdown tape on commit, and the same tape
 then replays offline. Also covers redaction landing on the written tape.
 
 The upstream returns a fixed body with an explicit Content-Length (Zinc's
@@ -60,8 +60,9 @@ ServirtiumRecordTest >> testRecordsThenReplaysTheSameInteraction [
 	(Servirtium record: tape upstream: self upstreamBase)
 		port: 0;
 		startThenDo: [ :rec |
-			self assert: (ZnClient new get: rec baseUrl , '/greeting') equals: 'hello-from-upstream' ].
-	"stop flushed the tape"
+			self assert: (ZnClient new get: rec baseUrl , '/greeting') equals: 'hello-from-upstream'.
+			rec commit ].
+	"commit wrote the tape"
 	self assert: tape asFileReference exists description: 'record-mode stop should write the tape'.
 
 	"---- replay (offline) ----"
@@ -83,7 +84,7 @@ ServirtiumRecordTest >> testAcceptsALicenseNoticePrettyJsonAndHeaderPresets [
 		redactCredentials;
 		redactCredentialHeader: 'X-Vault-Token';
 		port: 0;
-		startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/x' ].
+		startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/x'. rec commit ].
 
 	self assert: (tape asFileReference contents includesSubstring: '## LICENSE NOTICE')
 ]
@@ -97,7 +98,7 @@ ServirtiumRecordTest >> testRedactsResponseBodyBeforeItLandsOnTheTape [
 	(Servirtium record: tape upstream: self upstreamBase)
 		redactField: ServirtiumField responseBody pattern: 'secret-token' replacement: 'REDACTED';
 		port: 0;
-		startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/x' ].
+		startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/x'. rec commit ].
 
 	self assert: (tape asFileReference contents includesSubstring: 'REDACTED').
 	self deny: (tape asFileReference contents includesSubstring: 'secret-token')
@@ -109,7 +110,7 @@ ServirtiumRecordTest >> testAttachesANoteToTheRecordedInteraction [
 	(Servirtium record: tape upstream: self upstreamBase)
 		noteTitle: 'Why this exists' body: 'documents the call';
 		port: 0;
-		startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/x' ].
+		startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/x'. rec commit ].
 
 	self assert: (tape asFileReference contents includesSubstring: '## [Note] Why this exists:')
 ]
@@ -122,13 +123,13 @@ ServirtiumRecordTest >> testMutationStateDoesNotLeakBetweenFixtures [
 	(Servirtium record: tape upstream: self upstreamBase)
 		redactField: ServirtiumField responseBody pattern: 'leak' replacement: 'SCRUBBED';
 		port: 0;
-		startThenDo: [ :a | ZnClient new get: a baseUrl , '/x' ].
+		startThenDo: [ :a | ZnClient new get: a baseUrl , '/x'. a commit ].
 	self assert: (tape asFileReference contents includesSubstring: 'SCRUBBED').
 
 	"Fixture B registers NO redaction; A's must not leak in."
 	(Servirtium record: tape2 upstream: self upstreamBase)
 		port: 0;
-		startThenDo: [ :b | ZnClient new get: b baseUrl , '/x' ].
+		startThenDo: [ :b | ZnClient new get: b baseUrl , '/x'. b commit ].
 	self assert: (tape2 asFileReference contents includesSubstring: 'leak').
 	self deny: (tape2 asFileReference contents includesSubstring: 'SCRUBBED')
 ]
@@ -141,7 +142,7 @@ ServirtiumRecordTest >> testFailIfChangedThrowsWhenAReRecordDrifts [
 	(Servirtium record: tape upstream: self upstreamBase)
 		failIfChanged;
 		port: 0;
-		startThenDo: [ :first | ZnClient new get: first baseUrl , '/x' ].
+		startThenDo: [ :first | ZnClient new get: first baseUrl , '/x'. first commit ].
 	self assert: tape asFileReference exists.
 
 	"Re-record with a changed upstream — stop must raise, while still
@@ -176,7 +177,8 @@ ServirtiumRecordTest >> testStructuredRedactionHelpers [
       self assert: observed entity contents equals: '{ "secretKey": "json-secret", "keep": "visible" }'.
       self assert: (observed headers at: 'Authorization') equals: 'Bearer header-secret'.
       self assert: (observed uri queryAt: 'password') equals: 'query-secret'.
-      self assert: rec lastKind equals: #ok
+      self assert: rec lastKind equals: #ok.
+      rec commit
     ] ensure: [ rec stop ].
     bytes := tape asFileReference contents.
     self deny: (bytes includesSubstring: '-secret').
@@ -209,7 +211,7 @@ ServirtiumRecordTest >> testNamedSecretsRoundTrip [
             client url: server baseUrl , '/' , service , '/login?password=' , password;
                 entity: (ZnEntity json: '{ "password": "' , password , '", "safe": 1 }'); post.
             self assert: client contents equals: '{ "password": "' , password , '", "safe": 1 }' ] ].
-    [ send value: rec. self assert: count equals: 0 ] ensure: [ rec stop ].
+    [ send value: rec. self assert: count equals: 0. rec commit ] ensure: [ rec stop ].
     self assert: count equals: 6.
     bytes := tape asFileReference contents.
     self deny: (bytes includesSubstring: 'qwerty'). self deny: (bytes includesSubstring: 'other').
@@ -250,7 +252,8 @@ ServirtiumRecordTest >> testSortJsonKeysWithPrettyJsonWritesSortedPrettyJson [
 			port: 0;
 			startThenDo: [ :rec |
 				self assert: rec sortJsonKeysEnabled.
-				self assert: (ZnClient new get: rec baseUrl , '/data') equals: json ].
+				self assert: (ZnClient new get: rec baseUrl , '/data') equals: json.
+				rec commit ].
 		expected := '"a": {' , String lf , '    "y": 3,' , String lf , '    "z": 2' , String lf , '  },' , String lf , '  "b": 1'.
 		self assert: (tape asFileReference contents includesSubstring: expected) ]
 		ensure: [ jsonUpstream stop ]
@@ -267,7 +270,7 @@ ServirtiumRecordTest >> testSortJsonKeysWithoutPrettyJsonIsRefusedWhenTheTapeIsW
 				(Servirtium record: tape upstream: 'http://127.0.0.1:' , jsonUpstream port asString)
 					sortJsonKeys;
 					port: 0;
-					startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/data' ] ]
+					startThenDo: [ :rec | ZnClient new get: rec baseUrl , '/data'. rec commit ] ]
 			raise: ServirtiumError
 			withExceptionDo: [ :e |
 				self assert: (e messageText includesSubstring: 'sort_json_keys needs pretty_json') ] ]
@@ -280,7 +283,8 @@ ServirtiumRecordTest >> testARecordServerRefusesAPlaybackRange [
 	(Servirtium record: tape upstream: self upstreamBase)
 		port: 0;
 		startThenDo: [ :rec |
-			self should: [ rec setPlaybackRangeFrom: 0 to: -1 ] raise: ServirtiumError ]
+			self should: [ rec setPlaybackRangeFrom: 0 to: -1 ] raise: ServirtiumError.
+			rec discard ]
 ]
 
 { #category : 'support' }
@@ -309,7 +313,8 @@ ServirtiumRecordTest >> testRewriteUpstreamBaseKeepsTheClientOnTheVcr [
 		port: 0;
 		startThenDo: [ :rec |
 			self origin: 'drive' in: directory fullName url: rec baseUrl.
-			self assert: rec lastKind equals: #ok ].
+			self assert: rec lastKind equals: #ok.
+			rec commit ].
 	  self origin: 'check' in: directory fullName url: nil.
 	  (Servirtium playback: originTape)
 		port: 0;
@@ -317,4 +322,16 @@ ServirtiumRecordTest >> testRewriteUpstreamBaseKeepsTheClientOnTheVcr [
 			self origin: 'replay' in: directory fullName url: play baseUrl.
 			self assert: play lastKind equals: #ok ] ]
 		ensure: [ directory ensureDeleteAll ]
+]
+
+{ #category : 'tests' }
+ServirtiumRecordTest >> testStoppingARecordingWithoutCommitWritesNothingAndRaises [
+
+	| rec |
+	rec := (Servirtium record: tape upstream: self upstreamBase) port: 0; start.
+	self
+		should: [ rec stop ]
+		raise: ServirtiumError
+		withExceptionDo: [ :e | self assert: (e messageText includesSubstring: 'without commit or discard') ].
+	self deny: tape asFileReference exists
 ]

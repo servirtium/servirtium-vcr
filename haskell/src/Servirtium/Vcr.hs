@@ -50,6 +50,7 @@ module Servirtium.Vcr
   , startPlayback
   , startRecord
   , stop
+  , commit
   , discard
   , -- * Accessors / diagnostics (in 'IO')
     baseUrl
@@ -80,7 +81,7 @@ module Servirtium.Vcr
   ) where
 
 import Control.Exception (Exception, bracket, throwIO, onException, finally)
-import Data.IORef (IORef, newIORef, atomicModifyIORef')
+import Data.IORef (IORef, newIORef, atomicModifyIORef', readIORef, writeIORef)
 import Control.Monad (unless, when)
 import Foreign.C.Types (CInt (..))
 import Foreign.C.String (CString, withCString)
@@ -780,19 +781,34 @@ startRecord opts = do
 withPlayback :: PlaybackOptions -> (VcrServer -> IO a) -> IO a
 withPlayback opts = bracket (startPlayback opts) stop
 
--- | 'bracket' over 'startRecord' / 'stop': start a record server, run the
--- action, and always stop the server afterwards (which flushes the tape, and
--- — with 'recFailIfChanged' — throws 'VcrException' on drift).
+-- | Start a record server and run the action. The action writes the tape
+-- with 'commit' (or drops it with 'discard'); if it throws, the recording is
+-- discarded; if it returns with neither, 'stop' writes nothing and throws
+-- 'VcrException'.
 withRecord :: RecordOptions -> (VcrServer -> IO a) -> IO a
-withRecord opts = bracket (startRecord opts) stop
+withRecord opts act = do
+  server <- startRecord opts
+  result <- act server `onException` discard server
+  stop server
+  pure result
 
--- | Stop the server. In record mode this also flushes the captured tape to
--- disk, and — when started with 'recFailIfChanged' — throws 'VcrException'
--- if the freshly recorded tape differs from the on-disk one.
+-- | Stop the server. A recording neither committed nor discarded is dropped,
+-- no tape is written, and this throws 'VcrException' saying to call 'commit'
+-- (or 'discard').
 stop :: VcrServer -> IO ()
-stop server = closeOnce server $ case vcrMode server of
-  Playback -> N.aether_vcr_embed_stop (vcrHandle server)
-  Record failIfChanged -> do
+stop server = do
+  err <- newIORef ""
+  closeOnce server $ writeIORef err =<< N.takeString =<< N.aether_vcr_embed_close (vcrHandle server)
+  msg <- readIORef err
+  unless (null msg) $ throwIO (VcrException msg)
+
+-- | Record mode: stop the server and write the tape now; with
+-- 'recFailIfChanged', throw 'VcrException' if it differs from the on-disk
+-- one. The only way a recording becomes a tape. In playback mode, 'stop'.
+commit :: VcrServer -> IO ()
+commit server = case vcrMode server of
+  Playback -> stop server
+  Record failIfChanged -> closeOnce server $ do
     maybe (pure ()) (\callback -> secretStage (vcrHandle server) (Just callback) Nothing) (vcrRedactor server)
     err <-
       withCString (vcrTapePath server) $ \cTape ->

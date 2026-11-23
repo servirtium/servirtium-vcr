@@ -3,8 +3,10 @@
 All fixtures start from `Servirtium.playback(tape_path, opts)` or
 `Servirtium.record(tape_path, upstream_base, opts)`. Each returns
 `{:ok, %Servirtium.Server{}}` (or raises `Servirtium.Error`). Stop the server
-with `Servirtium.stop/1` (in record mode that also flushes the tape), or use the
-`with_*` helpers that auto-stop.
+with `Servirtium.stop/1`, or use the `with_*` helpers that stop for you. A
+recording is written only by `Servirtium.commit/1` and dropped by
+`Servirtium.discard/1`; stopping it with neither writes nothing and returns
+`{:error, msg}` (`with_record/4` raises).
 
 The system-under-test only ever needs `Servirtium.base_url(srv)`. Everything
 else — tape path, mode, mutations, assertions — lives in your test
@@ -42,8 +44,10 @@ end)
 Servirtium.with_record("tapes/climate_api.md",
     "https://climatedataapi.worldbank.org", [port: 0], fn srv ->
   :httpc.request(:get, {~c"#{Servirtium.base_url(srv)}/api/v1/countries", []}, [], [])
+  :ok = Servirtium.commit(srv)
 end)
-# Stop (here, the end of with_record) forwards nothing more and writes the tape.
+# commit/1 writes the tape. Leaving with_record without commit/1 (or discard/1)
+# writes nothing and raises; an exception in the fn discards the recording.
 ```
 
 Record forwards each request to the upstream, returns the **real** response to

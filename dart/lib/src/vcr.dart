@@ -894,19 +894,16 @@ class VcrServer {
     }
   }
 
-  /// Stop the server; flush the tape if recording. Throws [VcrException] on a
-  /// record-mode flush error or drift (when `failIfChanged` was set).
-  void close() {
-    if (_handle == nullptr) return;
+  /// Record mode: stop the server and write the tape now. Throws
+  /// [VcrException] on an error or drift (when `failIfChanged` was set). The
+  /// only way a recording becomes a tape: [close] without commit or [discard]
+  /// writes nothing and throws. No-op in playback mode.
+  void commit() {
+    if (_handle == nullptr || !_recordMode) return;
     final h = _handle;
     _handle = nullptr;
 
     try {
-      if (!_recordMode) {
-        Native.stop(h);
-        return;
-      }
-
       if (_secretRedactor != null) { _secretStage(h, redactor: _secretRedactor); }
       final resultPtr = withUtf8(
           _tapePath,
@@ -920,5 +917,21 @@ class VcrServer {
     } finally {
       Native.destroy(h); // stops first if secret staging failed
     }
+  }
+
+  /// Stop the server. A recording neither committed nor discarded is
+  /// dropped, no tape is written, and this throws [VcrException] saying to
+  /// call [commit] (or [discard]).
+  void close() {
+    if (_handle == nullptr) return;
+    final h = _handle;
+    _handle = nullptr;
+    String err;
+    try {
+      err = takeString(Native.close(h));
+    } finally {
+      Native.destroy(h);
+    }
+    if (err.isNotEmpty) throw VcrException(err);
   }
 }

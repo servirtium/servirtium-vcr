@@ -26,6 +26,7 @@ RSpec.describe 'Servirtium record' do
     Servirtium.record(@tape, @upstream.base_url).remove_transport_headers.port(0).start do |server|
       res = get(server.base_url, '/greeting')
       expect(res.body).to eq('hello-from-upstream')
+      server.commit
     end
 
     expect(File.exist?(@tape)).to be(true)
@@ -45,7 +46,7 @@ RSpec.describe 'Servirtium record' do
     Servirtium.record(@tape, @upstream.base_url)
               .add_license_notice('test notice').pretty_json(2).remove_transport_headers
               .remove_cloud_headers('aws').redact_credentials.redact_credential_header('X-Vault-Token')
-              .port(0).start { |_server| nil }
+              .port(0).start(&:commit)
 
     expect(File.read(@tape)).to include('## LICENSE NOTICE')
     expect do
@@ -58,6 +59,7 @@ RSpec.describe 'Servirtium record' do
     @upstream = FakeUpstream.new(body: '{"b":1,"a":{"d":2,"c":3}}', content_type: 'application/json')
     Servirtium.record(@tape, @upstream.base_url).pretty_json(2).sort_json_keys.port(0).start do |server|
       get(server.base_url, '/doc')
+      server.commit
     end
 
     expect(File.read(@tape)).to include("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}")
@@ -69,7 +71,7 @@ RSpec.describe 'Servirtium record' do
     server = Servirtium.record(@tape, @upstream.base_url).sort_json_keys.port(0).start
     get(server.base_url, '/doc')
 
-    expect { server.close }.to raise_error(Servirtium::Error, /sort_json_keys needs pretty_json/)
+    expect { server.commit }.to raise_error(Servirtium::Error, /sort_json_keys needs pretty_json/)
     expect(File.exist?(@tape)).to be(false)
   end
 
@@ -79,7 +81,10 @@ RSpec.describe 'Servirtium record' do
     Servirtium.record(@tape, @upstream.base_url).pretty_json(2)
               .sort_json_array('', 'n').sort_json_array_at('/doc', '', 'n')
               .sort_response_headers.sort_header_value('Allow')
-              .port(0).start { |server| get(server.base_url, '/doc') }
+              .port(0).start do |server|
+                get(server.base_url, '/doc')
+                server.commit
+              end
 
     tape = File.read(@tape)
     expect(tape.index('"n": "a"')).to be < tape.index('"n": "z"')
@@ -97,6 +102,7 @@ RSpec.describe 'Servirtium record' do
       res = get(server.base_url, '/secret')
       # The live SUT still sees the real bytes...
       expect(res.body).to eq('token=SECRET123 rest')
+      server.commit
     end
 
     # ...but the committed tape is scrubbed.
@@ -111,6 +117,7 @@ RSpec.describe 'Servirtium record' do
               .port(0)
               .start do |server|
       get(server.base_url, '/greeting')
+      server.commit
     end
 
     contents = File.read(@tape)
@@ -136,6 +143,7 @@ RSpec.describe 'Structured redaction helpers' do
         .start do |rec|
           run.call('drive', dir, rec.base_url)
           expect(rec.last_kind).to eq(:ok)
+          rec.commit
         end
       run.call('check', dir)
     end
@@ -157,6 +165,7 @@ RSpec.describe 'rewrite_upstream_base' do
       Servirtium.record(File.join(dir, 'tape.md'), upstream).rewrite_upstream_base.start do |rec|
         run.call('drive', dir, rec.base_url)
         expect(rec.last_kind).to eq(:ok)
+        rec.commit
       end
       run.call('check', dir)
       Servirtium.playback(File.join(dir, 'tape.md')).start do |vcr|
@@ -165,5 +174,27 @@ RSpec.describe 'rewrite_upstream_base' do
         vcr.assert_all_consumed
       end
     end
+  end
+end
+
+
+RSpec.describe 'closing a recording' do
+  it 'writes nothing and raises without commit or discard' do
+    upstream = FakeUpstream.new(body: 'x')
+    Dir.mktmpdir('vcr-close-') do |dir|
+      tape = File.join(dir, 'tape.md')
+      server = Servirtium.record(tape, upstream.base_url).port(0).start
+      Net::HTTP.get(URI("#{server.base_url}/x"))
+      expect { server.close }.to raise_error(Servirtium::Error, /without commit or discard/)
+      expect(File.exist?(tape)).to be(false)
+      expect do
+        Servirtium.record(tape, upstream.base_url).port(0).start { |s| Net::HTTP.get(URI("#{s.base_url}/x")) }
+      end.to raise_error(Servirtium::Error, /without commit or discard/)
+      expect(File.exist?(tape)).to be(false)
+      Servirtium.record(tape, upstream.base_url).port(0).start(&:discard)
+      expect(File.exist?(tape)).to be(false)
+    end
+  ensure
+    upstream&.stop
   end
 end

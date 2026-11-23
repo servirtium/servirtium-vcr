@@ -10,7 +10,7 @@ var recorder = Vcr.record(tape, upstream)
         return "ACCOUNTS_PASSWORD";
     }).start();
 // Exercise the real client against recorder.baseUrl().
-recorder.close();
+recorder.commit(); // writes the tape; close() without commit() writes nothing and throws
 
 var playback = Vcr.playback(tape)
     .secretResolver(token -> passwords.get(token))

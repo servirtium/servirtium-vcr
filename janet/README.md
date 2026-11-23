@@ -51,8 +51,9 @@ signatures are one table (`abi` in `servirtium/init.janet`), copied from
 ### What Janet adds
 
 - **`with-playback` / `with-record` macros**: the server is stopped on every
-  path; a record block flushes the tape when it ends normally and **discards**
-  the recording if it raised, so a failed test cannot overwrite a good tape.
+  path; a record block writes the tape with `(servirtium/flush-tape vcr)` (or
+  drops it with `discard`), **discards** the recording if it raised, and raises
+  if it ends with neither.
 - **Options structs and keywords**: `{:strict-headers true :redact [[:response-body "tok" "X"]]}`,
   fields as `:request-headers`, outcomes as `:ok` / `:body-diff`. Unknown option
   keys raise, so a typo is not silently ignored.

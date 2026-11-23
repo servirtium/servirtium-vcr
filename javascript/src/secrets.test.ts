@@ -14,7 +14,7 @@ test('named secrets redact at flush and resolve four services', () => {
       count++; expect(request.fieldPath.length).toBeGreaterThan(0)
       return request.path.split('/')[1].toUpperCase() + '_PASSWORD'
     }).start()
-    try { run('drive', rec.baseUrl); expect(count).toBe(0) } finally { rec.close() }
+    try { run('drive', rec.baseUrl); expect(count).toBe(0) } finally { rec.commit() }
     expect(count).toBe(20); run('check', tape)
     expect(() => Vcr.playback(tape).start()).toThrow('unresolved secret')
     const replay = Vcr.playback(tape).secretResolver(token => 'pw-' + token.replace('_PASSWORD', '').toLowerCase() + '&secret').start()

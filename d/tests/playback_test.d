@@ -271,7 +271,7 @@ int main() {
             auto up = Vcr.playback(upstreamTape);
             scope (exit) up.close();
             auto rec = Vcr.record(dir ~ "/range.md", up.baseUrl());
-            scope (exit) rec.close();
+            scope (exit) rec.discard();
             ck("record handle refuses a playback range",
                collectExceptionMsg!VcrException(rec.setPlaybackRange(0, 1)) !is null);
             ck("no range on a record handle", rec.getPlaybackRangeFrom() == -1);
@@ -313,6 +313,20 @@ int main() {
         ck("the exception explains why", msg !is null && msg.canFind("open failed"));
         ck("the exception names the missing tape (open_error path)",
            msg !is null && msg.canFind("nonexistent"));
+    }
+
+    // ---- a recording closed without flush or discard writes nothing and throws ----
+    {
+        import std.file : tempDir, exists;
+        const tapeX = tempDir() ~ "/vcr-uncommitted-d.md";
+        auto rec = Vcr.record(tapeX, "http://127.0.0.1:1");
+        const m = collectExceptionMsg!VcrException(rec.close());
+        ck("close without flush throws", m !is null && m.canFind("without commit or discard"));
+        ck("close without flush writes nothing", !exists(tapeX));
+        auto dropped = Vcr.record(tapeX, "http://127.0.0.1:1");
+        dropped.discard();
+        dropped.close();
+        ck("discard then close writes nothing", !exists(tapeX));
     }
 
     // ---- open/start/close fifty times; a second close is harmless ----

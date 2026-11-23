@@ -30,7 +30,8 @@ module Servirtium =
         Vcr.Playback(tapePath).Host(host).Port(port).Start()
 
     /// Record: forward each request to `upstreamBase`, return the live response
-    /// to the SUT, and write the tape when the server is disposed.
+    /// to the SUT; `server.Commit()` writes the tape (`Discard()` drops it), and
+    /// disposing it with neither writes nothing and throws.
     let record (upstreamBase: string) (tapePath: string) : VcrServer =
         Vcr.Record(tapePath, upstreamBase).Start()
 
@@ -176,10 +177,18 @@ module Servirtium =
         body vcr
 
     /// Record to `tapePath` against `upstreamBase` for the duration of `body`,
-    /// then dispose — which flushes the captured tape to disk.
+    /// which writes the tape with `Commit()` (or drops it with `Discard()`). If
+    /// `body` throws the recording is discarded; if it returns with neither,
+    /// nothing is written and this throws.
     let usingRecord (upstreamBase: string) (tapePath: string) (body: VcrServer -> 'a) : 'a =
-        use vcr = record upstreamBase tapePath
-        body vcr
+        let vcr = record upstreamBase tapePath
+        let result =
+            try body vcr
+            with _ ->
+                vcr.Discard()
+                reraise ()
+        vcr.Dispose()
+        result
 
     // ---- running-server members as functions ------------------------------
 

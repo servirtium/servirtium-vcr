@@ -103,6 +103,7 @@ let ``structured helpers forward credentials and scrub tape`` () =
             use recServer = builder.Start()
             run ["drive"; directory; recServer.BaseUrl] |> ignore
             Assert.Equal(VcrOutcome.Ok, recServer.LastKind)
+            recServer.Commit()
         run ["check"; directory] |> ignore
     finally System.IO.Directory.Delete(directory, true)
 
@@ -152,6 +153,7 @@ let ``named secrets round trip`` () =
             use recorder = builder.Start()
             run "drive" recorder.BaseUrl |> ignore
             Assert.Equal(0, count)
+            recorder.Commit()
         Assert.Equal(20, count)
         run "check" tape |> ignore
         do
@@ -188,12 +190,13 @@ let ``sortJsonKeys with prettyJson writes sorted pretty JSON`` () =
         do
             use rec1 = record (Servirtium.prettyJson 2 >> Servirtium.sortJsonKeys)
             get (rec1.BaseUrl + "/doc") |> ignore
+            rec1.Commit()
         Assert.Contains("{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}", (System.IO.File.ReadAllText tape).Replace("\r\n", "\n"))
         System.IO.File.Delete tape
         // without prettyJson: refused when the tape is written
         let rec2 = record Servirtium.sortJsonKeys
         get (rec2.BaseUrl + "/doc") |> ignore
-        let ex = Assert.Throws<VcrException>(fun () -> rec2.Dispose())
+        let ex = Assert.Throws<VcrException>(fun () -> rec2.Commit())
         Assert.Contains("sort_json_keys needs pretty_json", ex.Message)
         Assert.False(System.IO.File.Exists tape)
         // a bad rule fails start
@@ -295,6 +298,7 @@ let ``rewriteUpstreamBase keeps the client on the VCR and replays on another por
             use recServer = (Vcr.Record(tape, upstream) |> Servirtium.rewriteUpstreamBase).Start()
             run ["drive"; directory; recServer.BaseUrl] |> ignore
             Assert.Equal(VcrOutcome.Ok, recServer.LastKind)
+            recServer.Commit()
         run ["check"; directory] |> ignore
         Servirtium.usingPlayback tape (fun vcr ->
             run ["replay"; directory; Servirtium.baseUrl vcr] |> ignore

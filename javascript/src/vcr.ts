@@ -862,18 +862,17 @@ export class VcrServer {
     }
   }
 
-  /** Stop the server; in record mode, flush the tape (and check drift if failIfChanged). */
-  close(): void {
-    if (N.isNull(this.handle)) return
+  /**
+   * Record mode: stop the server and write the tape now (and check drift if
+   * failIfChanged). The only way a recording becomes a tape: close() without
+   * commit() or discard() writes nothing and throws. No-op in playback.
+   */
+  commit(): void {
+    if (N.isNull(this.handle) || !this.recordMode) return
     const h = this.handle
     this.handle = null
 
     try {
-      if (!this.recordMode) {
-        N.stop(h)
-        return
-      }
-
       if (this.secretRedactorValue) secretStage(h, this.secretRedactorValue)
       const resultPtr = this.failIfChangedOn
         ? N.stopAndFlushFailIfChanged(h, this.tapePath)
@@ -885,6 +884,24 @@ export class VcrServer {
     } finally {
       N.destroy(h) // stops first if secret staging failed
     }
+  }
+
+  /**
+   * Stop the server. A recording neither committed nor discarded is dropped,
+   * no tape is written, and this throws a VcrError saying to call commit()
+   * (or discard()).
+   */
+  close(): void {
+    if (N.isNull(this.handle)) return
+    const h = this.handle
+    this.handle = null
+    let err = ''
+    try {
+      err = N.takeString(N.close(h))
+    } finally {
+      N.destroy(h)
+    }
+    if (err) throw new VcrError(err)
   }
 }
 
@@ -900,7 +917,7 @@ export const Vcr = {
   /**
    * Record live interactions: forward to `upstreamBase`, return the real
    * response to the SUT, and capture the exchange. The tape is written to
-   * `tapePath` when the server is closed.
+   * `tapePath` by the server's commit().
    */
   record(tapePath: string, upstreamBase: string): RecordBuilder {
     return new RecordBuilder(tapePath, upstreamBase)

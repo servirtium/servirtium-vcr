@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Good/Cheap/Fast — RECORD phase (on-demand). For each scenario, a fresh
 // "pick two" stub backend + a record-mode VCR; Selenium drives the toggles and
-// the conversation is flushed to that scenario's tape. The block-third tape
+// the conversation is committed to that scenario's tape. The block-third tape
 // captures the backend's 409 "Impossible" — the centre of the Venn.
 //   SERVIRTIUM_VCR_LIB=../../core/native/libservirtium_vcr.so node triple-record.cjs
 const { DIST, VCR_DIST, TRIPLE_SCENARIOS, driveTriple } = require('./selenium.cjs')
@@ -30,8 +30,9 @@ async function recordScenario(s) {
                got.fast === s.expect.fast && got.status.includes(s.expect.status)
     console.log(`  ${s.name}: ${JSON.stringify(got)} ${ok ? 'OK' : 'MISMATCH'}`)
     if (!ok) return false
+    vcr.commit() // write the tape
   } finally {
-    vcr.close() // flush the tape
+    vcr.discard() // no-op after commit; drops the recording on any other exit
     stub.close()
   }
   return true

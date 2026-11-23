@@ -3,7 +3,8 @@
 All fixtures start from `Vcr::playback($tapePath)` or
 `Vcr::record($tapePath, $upstreamBase)`, are configured with a fluent builder,
 and started with `->start()`, which returns a `VcrServer`. Call `->stop()` to
-stop it (and, in record mode, flush the tape).
+stop it. A record server writes its tape only on `->commit()`; stopping it
+without `->commit()` (or `->discard()`) writes nothing and throws.
 
 The SUT only needs `$vcr->baseUrl()`. Everything else — tape path, mode,
 mutations, assertions — lives in your test setup/teardown.
@@ -39,7 +40,7 @@ the SUT, and captures it. Chunked responses are de-chunked automatically.
 
 ```php
 Vcr::record($tape, $upstream)->failIfChanged()->start();
-// ... drive SUT ... ->stop() writes the new tape AND throws VcrException if it
+// ... drive SUT ... ->commit() writes the new tape AND throws VcrException if it
 // differs from the committed one (so git diff shows the drift, CI fails loudly).
 ```
 

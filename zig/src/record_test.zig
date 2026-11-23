@@ -46,7 +46,7 @@ test "record then replays the same interaction" {
         var res = try testutil.curl(allocator, std.testing.io, .{ .url = url });
         defer res.deinit(allocator);
         try std.testing.expectEqualStrings("hello-from-upstream", res.body);
-        try rec.close(); // flushes the tape
+        try rec.commit(); // writes the tape
     }
 
     // The record-mode close should have written the tape.
@@ -102,7 +102,7 @@ test "record and replay a POST with a body" {
         defer res.deinit(allocator);
         try std.testing.expectEqualStrings("created", res.body);
         try std.testing.expectEqualStrings("POST", up.lastMethod());
-        try rec.close();
+        try rec.commit();
     }
 
     // ---- replay the same POST offline ----
@@ -167,7 +167,7 @@ test "structured redaction helpers preserve upstream credentials" {
     const driven = try fixtureRun(allocator, &.{"drive", directory, base});
     allocator.free(driven);
     try std.testing.expectEqual(Outcome.ok, rec.lastKind());
-    try rec.close();
+    try rec.commit();
     const checked = try fixtureRun(allocator, &.{"check", directory});
     allocator.free(checked);
 }
@@ -255,7 +255,7 @@ test "named secrets round trip across four services" {
     defer rec.close() catch {};
     const base = try rec.baseUrl(); defer allocator.free(base);
     allocator.free(try secretFixtureRun(allocator, &.{"drive", base}));
-    try std.testing.expectEqual(@as(usize,0), count); try rec.close(); try std.testing.expectEqual(@as(usize,20),count);
+    try std.testing.expectEqual(@as(usize,0), count); try rec.commit(); try std.testing.expectEqual(@as(usize,20),count);
     allocator.free(try secretFixtureRun(allocator, &.{"check", tape}));
     var replay = try servirtium.Playback.init(allocator,tape).secretResolver(.{.call=secretResolve}).start();
     defer replay.close() catch {};
@@ -284,7 +284,7 @@ test "rewriteUpstreamBase keeps the client on the VCR and replays on another por
         const driven = try toolRun(allocator, tool, &.{"drive", directory, base});
         allocator.free(driven);
         try std.testing.expectEqual(Outcome.ok, rec.lastKind());
-        try rec.close();
+        try rec.commit();
     }
     const checked = try toolRun(allocator, tool, &.{"check", directory});
     allocator.free(checked);
@@ -296,4 +296,19 @@ test "rewriteUpstreamBase keeps the client on the VCR and replays on another por
     allocator.free(replayed);
     try std.testing.expectEqual(Outcome.ok, play.lastKind());
     try play.assertAllConsumed();
+}
+
+test "closing a recording without commit or discard writes nothing and fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tape = try tapePathZ(allocator, &tmp, "uncommitted.md");
+    defer allocator.free(tape);
+    var rec = try servirtium.Record.init(allocator, tape, "http://127.0.0.1:1").port(0).start();
+    try std.testing.expectError(servirtium.Error.VcrError, rec.close());
+    try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().readFileAlloc(std.testing.io, tape, allocator, .unlimited));
+    var dropped = try servirtium.Record.init(allocator, tape, "http://127.0.0.1:1").port(0).start();
+    dropped.discard();
+    try dropped.close();
+    try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().readFileAlloc(std.testing.io, tape, allocator, .unlimited));
 }

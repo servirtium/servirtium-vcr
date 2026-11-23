@@ -150,6 +150,7 @@ def _ensure_loaded() -> None:
     g["start"] = _decl("aether_vcr_embed_start", ctypes.c_int, [_HANDLE])
     g["stop"] = _decl("aether_vcr_embed_stop", None, [_HANDLE])
     g["stop_and_flush"] = _decl("aether_vcr_embed_stop_and_flush", _CSTR, [_HANDLE, ctypes.c_char_p])
+    g["close"] = _decl("aether_vcr_embed_close", _CSTR, [_HANDLE])
     g["stop_and_flush_fail_if_changed"] = _decl(
         "aether_vcr_embed_stop_and_flush_fail_if_changed", _CSTR, [_HANDLE, ctypes.c_char_p]
     )

@@ -8,7 +8,7 @@ declare(strict_types=1);
  * VCR in record mode, forwarding to the live Kotlin/http4k SUT
  * (TODOBACKEND_UPSTREAM). The Mocha spec runs in headless Chrome (PHP
  * php-webdriver) against the VCR; every CRUD call is forwarded upstream and
- * recorded, then flushed to the tape on stop. The suite must pass for the
+ * recorded, then written to the tape on commit. The suite must pass for the
  * recording to be considered good.
  *
  * Driven by .php_record.ae, which brings the SUT up in a container (started
@@ -47,11 +47,12 @@ function main(): int
             echo "  FAIL: {$m}\n";
         }
         if ($failures !== 0 || $passes === 0) {
-            echo "record: suite did not pass against the live SUT; tape NOT trustworthy\n";
+            echo "record: suite did not pass against the live SUT; no tape written\n";
             return 1;
         }
+        $vcr->commit(); // writes the tape to TAPE
     } finally {
-        $vcr->stop(); // flushes the tape to TAPE
+        $vcr->discard(); // no-op after commit; drops the recording on any other exit
     }
 
     echo "record: wrote " . TAPE . "\n";

@@ -27,7 +27,7 @@ suite "servirtium mutation":
     programReply("value=secret-token")
     discard getOnce(rec.baseUrl(), "/x")
     discard nextObservation()
-    rec.close()
+    rec.commit()
 
     let tapeText = readFile(tape)
     check tapeText.contains("REDACTED")
@@ -41,7 +41,7 @@ suite "servirtium mutation":
     programReply("upstream-body")
     discard getOnce(rec.baseUrl(), "/x")
     discard nextObservation()
-    rec.close()
+    rec.commit()
 
     let tapeText = readFile(tape)
     check tapeText.contains("## [Note] Why this exists:")
@@ -56,7 +56,7 @@ suite "servirtium mutation":
     programReply("upstream-body", extraHeaders = @[("X-Trace-Id", "abc123")])
     discard getOnce(rec1.baseUrl(), "/x")
     discard nextObservation()
-    rec1.close()
+    rec1.commit()
     # std/asynchttpserver lower-cases header names, so match case-insensitively
     # (header removal below is itself case-insensitive on libservirtium_vcr side).
     check readFile(tape1).toLowerAscii.contains("x-trace-id")
@@ -68,7 +68,7 @@ suite "servirtium mutation":
     programReply("upstream-body", extraHeaders = @[("X-Trace-Id", "abc123")])
     discard getOnce(rec2.baseUrl(), "/x")
     discard nextObservation()
-    rec2.close()
+    rec2.commit()
     check not readFile(tape2).toLowerAscii.contains("x-trace-id")
 
   test "mutation state does not leak between fixtures":
@@ -82,7 +82,7 @@ suite "servirtium mutation":
     programReply("leak")
     discard getOnce(a.baseUrl(), "/x")
     discard nextObservation()
-    a.close()
+    a.commit()
     check readFile(tape1).contains("SCRUBBED")
 
     # Fixture B registers NO redaction; A's must not leak in.
@@ -91,7 +91,7 @@ suite "servirtium mutation":
     programReply("leak")
     discard getOnce(b.baseUrl(), "/x")
     discard nextObservation()
-    b.close()
+    b.commit()
     let tape2Text = readFile(tape2)
     check tape2Text.contains("leak")
     check not tape2Text.contains("SCRUBBED")
@@ -106,9 +106,9 @@ suite "servirtium mutation":
     programReply("v1")
     discard getOnce(first.baseUrl(), "/x")
     discard nextObservation()
-    first.close() # should not raise
+    first.commit() # should not raise
 
-    # Re-record with a changed upstream — close must raise, while still
+    # Re-record with a changed upstream — commit must raise, while still
     # writing the new tape for git diff.
     let second = record(tape, upstreamBaseUrl())
     second.failIfChanged()
@@ -119,7 +119,7 @@ suite "servirtium mutation":
 
     var raised = false
     try:
-      second.close()
+      second.commit()
     except VcrError:
       raised = true
     check raised

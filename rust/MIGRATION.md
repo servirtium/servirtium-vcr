@@ -68,7 +68,7 @@ let rec = Vcr::record("tapes/my_api.md", "https://api.example.com")
     .port(0)
     .start().unwrap();
 // ... drive the SUT ...
-rec.finish().unwrap();   // flush the tape (or just drop `rec`)
+rec.commit().unwrap();   // flush the tape (or just drop `rec`)
 ```
 
 The Servirtium markdown tape *format* is unchanged, so existing tapes

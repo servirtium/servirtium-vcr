@@ -25,6 +25,7 @@ spec = describe "named secrets" $ it "redacts at flush and resolves four service
     withRecord ((recordOptions tape upstream) {recSecretRedactor = Just redact}) $ \rec -> do
       url <- baseUrl rec; _ <- run "drive" url
       readIORef count `shouldReturn` 0
+      commit rec
     readIORef count `shouldReturn` 20
     _ <- run "check" tape
     let resolve token = pure (Just ("pw-" ++ map toLower (take (length token - 9) token) ++ "&secret"))

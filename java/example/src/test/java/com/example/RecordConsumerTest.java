@@ -74,7 +74,8 @@ class RecordConsumerTest {
                                 HttpRequest.newBuilder(URI.create(vcr.baseUrl() + "/ok")).GET().build(),
                                 HttpResponse.BodyHandlers.ofString());
                 assertEquals("ok-body", resp.body(), "upstream round-trip body");
-            } // close() flushes the recorded tape
+                vcr.commit(); // writes the recorded tape
+            }
         }
 
         byte[] recorded = Files.readAllBytes(out);

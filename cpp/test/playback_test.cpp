@@ -368,6 +368,16 @@ int main(int argc, char** argv) {
                 auto rec = servirtium::Vcr::record(directory + "/range.md", up.base_url());
                 try { rec.set_playback_range(0, 1); ck("record handle refuses a playback range", false); }
                 catch (const servirtium::Error&) { ck("record handle refuses a playback range", true); }
+                rec.discard();
+            }
+            {   // a recording closed without flush or discard writes nothing and throws
+                auto rec = servirtium::Vcr::record(directory + "/unflushed.md", up.base_url());
+                try { rec.close(); ck("close without flush throws", false); }
+                catch (const servirtium::Error& e) {
+                    ck("close without flush throws",
+                       std::string(e.what()).find("without commit or discard") != std::string::npos);
+                }
+                ck("close without flush writes nothing", !std::filesystem::exists(directory + "/unflushed.md"));
             }
         }
         {   // (c) playback range: the test brings its own cookie and skips the login

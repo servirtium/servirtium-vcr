@@ -43,6 +43,7 @@ defmodule Servirtium.Native do
   defdelegate start(handle), to: :servirtium_nif
   defdelegate stop(handle), to: :servirtium_nif
   defdelegate stop_and_flush(handle, tape_path), to: :servirtium_nif
+  defdelegate close(handle), to: :servirtium_nif
   defdelegate stop_and_flush_fail_if_changed(handle, tape_path), to: :servirtium_nif
   defdelegate discard(handle, tape_path), to: :servirtium_nif
 

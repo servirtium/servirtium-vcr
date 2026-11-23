@@ -68,7 +68,8 @@ Servirtium.with_record("tapes/my_api.md", "https://api.example.com",
     [remove_header: [{:response_headers, "Set-Cookie"}],
      redact: [{:request_headers, real_token, "Bearer REDACTED"}],
      port: 0], fn srv ->
-  # ... drive the SUT ...  (with_record flushes the tape on exit)
+  # ... drive the SUT ...
+  :ok = Servirtium.commit(srv)  # writes the tape; with neither commit nor discard, with_record raises
 end)
 ```
 

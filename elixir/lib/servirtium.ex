@@ -309,17 +309,27 @@ defmodule Servirtium do
   end
 
   @doc """
-  Run `fun.(server)` against a fresh record server, auto-stopping (and flushing
-  the tape) afterwards (even on raise). Returns the value of `fun`.
+  Run `fun.(server)` against a fresh record server, which writes the tape with
+  `commit/1` (or drops it with `discard/1`). If `fun` raises, the recording is
+  discarded; if it returns with neither, nothing is written and this raises.
+  Returns the value of `fun`.
   """
   @spec with_record(String.t(), String.t(), keyword(), (Server.t() -> any())) :: any()
   def with_record(tape_path, upstream_base, opts \\ [], fun) when is_function(fun, 1) do
     {:ok, srv} = record(tape_path, upstream_base, opts)
 
-    try do
-      fun.(srv)
-    after
-      stop(srv)
+    result =
+      try do
+        fun.(srv)
+      rescue
+        e ->
+          discard(srv)
+          reraise e, __STACKTRACE__
+      end
+
+    case stop(srv) do
+      :ok -> result
+      {:error, msg} -> raise Server.error(msg)
     end
   end
 
@@ -409,20 +419,45 @@ defmodule Servirtium do
   def note(%Server{handle: h}, title, body), do: check(Native.note(h, title, body))
 
   @doc """
-  Stop the server. In record mode this also flushes the captured tape to disk
-  (raising or returning `{:error, drift_msg}` on drift if `:fail_if_changed`
-  was set). Then frees the VCR. Returns `:ok` on success. Idempotent: the
+  Stop the server and free the VCR. A recording neither committed nor
+  discarded is dropped, no tape is written, and this returns
+  `{:error, msg}` saying to call `commit/1` (or `discard/1`). Idempotent: the
   handle is a NIF resource, so a second `stop/1` is a harmless no-op. Read
   diagnostics BEFORE stopping.
   """
   @spec stop(Server.t()) :: :ok | {:error, String.t()}
-  def stop(%Server{mode: :playback, handle: h}) do
+  def stop(%Server{handle: h}) do
+    result = Native.close(h)
+    Native.destroy(h)
+    check(result)
+  end
+
+  @doc """
+  Record mode: stop the server and DROP the recording without writing a
+  tape, then free the VCR. In playback mode it just stops. Returns `:ok`.
+  """
+  @spec discard(Server.t()) :: :ok
+  def discard(%Server{mode: :record, handle: h, tape_path: tape}) do
+    Native.discard(h, tape)
+    Native.destroy(h)
+    :ok
+  end
+
+  def discard(%Server{handle: h}) do
     Native.stop(h)
     Native.destroy(h)
     :ok
   end
 
-  def stop(%Server{mode: :record, handle: h, tape_path: tape, fail_if_changed: fail?, secret_redactor: redactor}) do
+  @doc """
+  Record mode: stop the server and write the tape now (returning
+  `{:error, drift_msg}` on drift if `:fail_if_changed` was set), then free the
+  VCR. The only way a recording becomes a tape. In playback mode, `stop/1`.
+  """
+  @spec commit(Server.t()) :: :ok | {:error, String.t()}
+  def commit(%Server{mode: :playback} = srv), do: stop(srv)
+
+  def commit(%Server{mode: :record, handle: h, tape_path: tape, fail_if_changed: fail?, secret_redactor: redactor}) do
     if redactor, do: Native.secret_stage(h, redactor, false)
     result =
       if fail? do

@@ -38,6 +38,7 @@ extern void  aether_vcr_embed_destroy(void *handle);
 extern int   aether_vcr_embed_start(void *handle);          /* < 0 fail */
 extern void  aether_vcr_embed_stop(void *handle);
 extern char *aether_vcr_embed_stop_and_flush(void *handle, const char *tape_path);
+extern char *aether_vcr_embed_close(void *handle);
 extern char *aether_vcr_embed_stop_and_flush_fail_if_changed(void *handle,
                                                              const char *tape_path);
 extern char *aether_vcr_embed_stop_and_flush_or_check(void *handle,
@@ -327,6 +328,13 @@ static int l_stop(lua_State *L)
     void *h = check_handle(L, 1);
     aether_vcr_embed_stop(h);
     return 0;
+}
+
+/* close(handle) -> string: "" or why a recording was dropped */
+static int l_close(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    return push_owned_string(L, aether_vcr_embed_close(h));
 }
 
 /* stop_and_flush(handle [, tapePath]) -> string (empty == ok / no error) */
@@ -836,6 +844,7 @@ static const luaL_Reg servirtium_funcs[] = {
     {"stop",                            l_stop},
     {"destroy",                         l_destroy},
     {"stop_and_flush",                  l_stop_and_flush},
+    {"close",                           l_close},
     {"stop_and_flush_fail_if_changed",  l_stop_and_flush_fail_if_changed},
     {"stop_and_flush_or_check",         l_stop_and_flush_or_check},
     {"discard",                         l_discard},

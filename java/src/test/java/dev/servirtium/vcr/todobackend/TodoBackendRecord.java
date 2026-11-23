@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>VCR in record mode, forwarding to the live Kotlin/http4k SUT
  * ({@code TODOBACKEND_UPSTREAM}). The Mocha spec runs in real headless Chrome
  * against the VCR; every CRUD call is forwarded upstream and recorded, then
- * flushed to the tape on close. The suite must pass for the recording to be
+ * written to the tape by commit(). The suite must pass for the recording to be
  * trustworthy. Mirrors the Python {@code record.py}.
  *
  * <p>Gated on {@code TODOBACKEND_UPSTREAM} so a normal {@code mvn test} skips it
@@ -47,11 +47,13 @@ class TodoBackendRecord {
                 System.out.println("  FAIL: " + m);
             }
 
-            // Assert before close so a bad run still flushes nothing trustworthy;
-            // close() (in try-with-resources) writes the tape regardless.
+            // Only a passing run reaches commit(), the one call that writes
+            // the tape; a failing one closes uncommitted, so nothing is
+            // written (close()'s error is added to the assertion's suppressed).
             assertEquals(0, r.failures(),
                     "suite did not pass against the live SUT; tape NOT trustworthy: " + r.failMessages());
             assertTrue(r.passes() > 0, "suite produced no passes; tape NOT trustworthy");
+            vcr.commit();
         }
         System.out.println("record: wrote " + TodoBackendBrowser.TAPE);
     }

@@ -61,9 +61,10 @@
         tape (str (Files/createTempFile "servirtium-clj" ".md"
                                         (make-array FileAttribute 0)))]
     (try
-      ;; record (forwards to the live upstream, writes the tape on close)
+      ;; record (forwards to the live upstream, writes the tape on commit)
       (with-open [v (vcr/record tape upstream-url {:port 0})]
-        (is (= "hello-from-upstream" (http-get (str (.baseUrl v) "/greeting")))))
+        (is (= "hello-from-upstream" (http-get (str (.baseUrl v) "/greeting"))))
+        (.commit v))
       (finally (.stop upstream 0)))
 
     ;; replay (offline, from the tape just written)
@@ -87,7 +88,8 @@
                           {:redact-header ["Authorization"] :redact-query-param ["password"]
                            :redact-json-field ["secretKey"]})]
           (run "drive" (str directory) (.baseUrl rec))
-          (is (= Outcome/OK (.lastKind rec)))))
+          (is (= Outcome/OK (.lastKind rec)))
+          (.commit rec)))
       (run "check" (str directory))
       (finally
         (with-open [files (Files/list directory)]
@@ -109,7 +111,8 @@
       (let [upstream (run "start" (str directory))]
         (with-open [rec (vcr/record tape upstream {:rewrite-upstream-base true})]
           (run "drive" (str directory) (.baseUrl rec))
-          (is (= Outcome/OK (.lastKind rec)))))
+          (is (= Outcome/OK (.lastKind rec)))
+          (.commit rec)))
       (run "check" (str directory))
       (with-open [play (vcr/playback tape)]
         (run "replay" (str directory) (.baseUrl play))
@@ -151,7 +154,7 @@
                           (when (= key "password")
                             (swap! count inc)
                             (str (.toUpperCase ^String (nth (.split (.path request) "/") 1) java.util.Locale/ROOT) "_PASSWORD")))})]
-        (run "drive" (.baseUrl rec)) (is (= 0 @count)))
+        (run "drive" (.baseUrl rec)) (is (= 0 @count)) (.commit rec))
       (is (= 20 @count)) (run "check" tape)
       (with-open [replay (vcr/playback tape {:secret-resolver (fn [token]
                             (str "pw-" (.toLowerCase (.replace ^String token "_PASSWORD" "") java.util.Locale/ROOT) "&secret"))})]
@@ -167,7 +170,8 @@
         tape (Files/createTempFile "servirtium-clj-sort" ".md" (make-array FileAttribute 0))]
     (try
       (with-open [v (vcr/record (str tape) (base-of upstream) {:port 0 :pretty-json 2 :sort-json-keys true})]
-        (http-get (str (.baseUrl v) "/doc")))
+        (http-get (str (.baseUrl v) "/doc"))
+        (.commit v))
       (is (.contains (Files/readString tape) "{\n  \"a\": {\n    \"c\": 3,\n    \"d\": 2\n  },\n  \"b\": 1\n}"))
       (finally (.stop upstream 0) (Files/deleteIfExists tape)))))
 
@@ -178,7 +182,7 @@
     (try
       (let [rec (vcr/record (str tape) (base-of upstream) {:port 0 :sort-json-keys true})]
         (http-get (str (.baseUrl rec) "/doc"))
-        (is (thrown-with-msg? dev.servirtium.vcr.VcrException #"sort_json_keys needs pretty_json" (.close rec)))
+        (is (thrown-with-msg? dev.servirtium.vcr.VcrException #"sort_json_keys needs pretty_json" (.commit rec)))
         (is (not (Files/exists tape (make-array java.nio.file.LinkOption 0)))))
       (finally (.stop upstream 0) (Files/deleteIfExists tape)))))
 
@@ -189,7 +193,8 @@
       (with-open [v (vcr/record (str tape) (base-of upstream)
                       {:port 0 :pretty-json 2 :sort-json-array [["" "n"]] :sort-json-array-at [["/doc" "" "n"]]
                        :sort-response-headers true :sort-header-value ["Allow"]})]
-        (http-get (str (.baseUrl v) "/doc")))
+        (http-get (str (.baseUrl v) "/doc"))
+        (.commit v))
       (let [text (Files/readString tape)]
         (is (< (.indexOf text "\"n\": \"a\"") (.indexOf text "\"n\": \"z\"")))
         (is (.contains text "Allow: GET, POST")))

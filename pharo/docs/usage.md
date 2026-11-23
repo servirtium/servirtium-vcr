@@ -3,8 +3,10 @@
 All fixtures start from `Servirtium playback:` or
 `Servirtium record:upstream:`, are configured with a chained builder, and
 started with `start`, which answers a `ServirtiumServer`. Send `stop` to the
-server to stop it (and, in record mode, flush the tape). `startThenDo:`
-wraps a block and always stops the server afterward.
+server to stop it. A record server writes its tape only on `commit`; `stop`
+without `commit` (or `discard`) writes nothing and signals `ServirtiumError`.
+`startThenDo:` wraps a block and always stops the server afterward
+(discarding the recording if the block raises).
 
 The system-under-test only ever needs `server baseUrl`. Everything else —
 tape path, mode, mutations, assertions — lives in your test setUp / tearDown.
@@ -27,8 +29,10 @@ server stop.
 (Servirtium record: 'tapes/climate_api.md' upstream: 'https://climatedataapi.worldbank.org')
     port: 0;
     startThenDo: [ :server |
-        ZnClient new get: server baseUrl , '/api/v1/countries' ].
-"stop (end of startThenDo:) forwards nothing more and writes the tape."
+        ZnClient new get: server baseUrl , '/api/v1/countries'.
+        server commit ].
+"commit writes the tape; ending startThenDo: without commit (or discard) writes
+ nothing and signals ServirtiumError."
 ```
 
 Record forwards each request to the upstream, returns the **real** response

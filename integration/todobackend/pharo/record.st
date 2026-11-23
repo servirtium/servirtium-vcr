@@ -3,7 +3,7 @@
 VCR in record mode, forwarding to the live Kotlin/http4k SUT
 (TODOBACKEND_UPSTREAM). The Mocha spec runs in real headless Chrome (Parasol /
 Pharo's WebDriver client) against the VCR; every CRUD call is forwarded upstream
-and recorded, then flushed to the tape on stop. The suite must pass for the
+and recorded, then written to the tape by commit. The suite must pass for the
 recording to be considered good.
 
 Driven by .pharo_record.ae, which brings the SUT up in a container and tears it
@@ -34,10 +34,12 @@ result := (Servirtium record: tape upstream: upstream)
 		Stdio stdout
 			nextPutAll: 'mocha (record): '; print: passes;
 			nextPutAll: ' passed, '; print: failures; nextPutAll: ' failed'; lf.
-		(failures = 0 and: [ passes > 0 ]) ].
+		(failures = 0 and: [ passes > 0 ])
+			ifTrue: [ vcr commit. true ]
+			ifFalse: [ vcr discard. false ] ].
 
 result
 	ifTrue: [ Stdio stdout nextPutAll: 'record: wrote '; nextPutAll: tape; lf. Smalltalk exitSuccess ]
 	ifFalse: [
-		Stdio stdout nextPutAll: 'record: suite did not pass against the live SUT; tape NOT trustworthy'; lf.
+		Stdio stdout nextPutAll: 'record: suite did not pass against the live SUT; no tape written'; lf.
 		Smalltalk exitFailure ].

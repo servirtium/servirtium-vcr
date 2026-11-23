@@ -11,7 +11,7 @@ namespace Servirtium.Vcr.Integration.TodoBackend;
 /// <para>VCR in record mode, forwarding to the live Kotlin/http4k SUT
 /// (<c>TODOBACKEND_UPSTREAM</c>). The Mocha spec runs in real headless Chrome
 /// against the VCR; every CRUD call is forwarded upstream and recorded, then
-/// flushed to the tape on dispose. The suite must pass for the recording to be
+/// written to the tape by Commit. The suite must pass for the recording to be
 /// trustworthy. Mirrors the Python <c>record.py</c>.</para>
 ///
 /// <para>Gated on <c>TODOBACKEND_UPSTREAM</c> (via <see cref="EnvFactAttribute"/>)
@@ -52,11 +52,13 @@ public class TodoBackendRecord
                 System.Console.WriteLine("  FAIL: " + m);
             }
 
-            // Assert before dispose so a bad run flushes nothing trustworthy;
-            // Dispose (in using) writes the tape regardless.
+            // Only a passing run reaches Commit, the one call that writes
+            // the tape; a failing one leaves the using block uncommitted, so
+            // nothing is written.
             Assert.True(r.Failures == 0,
                 "suite did not pass against the live SUT; tape NOT trustworthy: " + string.Join("; ", r.FailMessages));
             Assert.True(r.Passes > 0, "suite produced no passes; tape NOT trustworthy");
+            vcr.Commit();
         }
         System.Console.WriteLine("record: wrote " + TodoBackendBrowser.Tape);
     }

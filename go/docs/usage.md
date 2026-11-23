@@ -3,7 +3,9 @@
 All fixtures start from `servirtium.Playback(tapePath)` or
 `servirtium.Record(tapePath, upstreamBase)`, are configured with a fluent
 builder, and started with `.Start()`, which returns `(*Server, error)`.
-`Close()` the server to stop it (and, in record mode, flush the tape).
+`Close()` the server to stop it. A record server writes its tape only on
+`Commit()`; `Close()` without `Commit()` (or `Discard()`) writes nothing and
+returns an error.
 
 The system-under-test only ever needs `srv.BaseURL()`. Everything else —
 tape path, mode, mutations, assertions — lives in your test setup/teardown.

@@ -25,7 +25,8 @@ main(_) ->
             ok = servirtium:redact_query_param(Recorder, "password"),
             ok = servirtium:redact_json_field(Recorder, "secretKey"),
             Run("drive", " '" ++ servirtium:base_url(Recorder) ++ "'"),
-            ok = servirtium:last_kind(Recorder)
+            ok = servirtium:last_kind(Recorder),
+            ok = servirtium:commit(Recorder)
         after ok = servirtium:close(Recorder) end,
         Run("check", "")
     after
@@ -36,6 +37,7 @@ main(_) ->
 
 
     rewrite_upstream_base(),
+    closing_a_recording_without_commit(),
 
     DiagnosticServer = servirtium:playback("../core_tests/diagnostics/playback.md"),
     ok = servirtium:test_context(DiagnosticServer, "Erlang scenario", "scenario.test", 123),
@@ -98,7 +100,7 @@ named_secrets() ->
     end),
     Run("drive", servirtium:base_url(Rec)),
     receive redacted -> error(early_callback) after 0 -> ok end,
-    ok = servirtium:close(Rec),
+    ok = servirtium:commit(Rec),
     lists:foreach(fun(_) -> receive redacted -> ok after 0 -> error(missing_callback) end end, lists:seq(1,20)),
     Run("check", Tape),
     Replay = servirtium:playback_with_secrets(Tape, fun(Token) ->
@@ -133,7 +135,7 @@ record_json(Tape, Configure) ->
     try
         Configure(Rec),
         _ = os:cmd("curl -s " ++ servirtium:base_url(Rec) ++ "/data"),
-        servirtium:close(Rec)
+        servirtium:commit(Rec)
     after
         exit(Pid, kill), gen_tcp:close(Listen)
     end.
@@ -161,7 +163,7 @@ stable_order() ->
         true = servirtium:get_sort_response_headers(Probe),
         ok = servirtium:clear_stable_order(Probe),
         false = servirtium:get_sort_response_headers(Probe),
-        _ = servirtium:close(Probe)
+        ok = servirtium:discard(Probe)
     after
         {ok, Names} = file:list_dir(Dir),
         [file:delete(filename:join(Dir, N)) || N <- Names],
@@ -188,7 +190,7 @@ playback_range() ->
     try
         {'EXIT', {{servirtium, Reason}, _}} = (catch servirtium:set_playback_range(Rec, 0, -1)),
         true = is_binary(Reason)
-    after _ = servirtium:close(Rec) end.
+    after ok = servirtium:discard(Rec) end.
 
 %% A missing tape surfaces its reason through open_error (no global open
 %% error); repeated open/start/close is leak-free and a second close is a no-op.
@@ -283,7 +285,8 @@ rewrite_upstream_base() ->
         try
             ok = servirtium:set_rewrite_upstream_base(Recorder, true),
             Run("drive", " '" ++ servirtium:base_url(Recorder) ++ "'"),
-            ok = servirtium:last_kind(Recorder)
+            ok = servirtium:last_kind(Recorder),
+            ok = servirtium:commit(Recorder)
         after ok = servirtium:close(Recorder) end,
         Run("check", ""),
         Player = servirtium:playback(Tape),
@@ -296,3 +299,15 @@ rewrite_upstream_base() ->
         [file:delete(filename:join(Directory, Name)) || Name <- Names],
         file:del_dir(Directory)
     end.
+
+%% A recording closed without commit or discard writes nothing and says why.
+closing_a_recording_without_commit() ->
+    Tape = "/tmp/vcr-uncommitted-erlang-" ++ os:getpid() ++ ".md",
+    Rec = servirtium:record(Tape, "http://127.0.0.1:1"),
+    {error, Msg} = servirtium:close(Rec),
+    true = string:find(Msg, "without commit or discard") =/= nomatch,
+    false = filelib:is_file(Tape),
+    Dropped = servirtium:record(Tape, "http://127.0.0.1:1"),
+    ok = servirtium:discard(Dropped),
+    ok = servirtium:close(Dropped),
+    false = filelib:is_file(Tape).

@@ -181,26 +181,38 @@ ServirtiumServer >> clearLastError [
 ]
 
 { #category : 'lifecycle' }
-ServirtiumServer >> stop [
-	"Stop the server. In record mode also flush the tape to disk (raising a
-	 ServirtiumError on a non-empty flush error, e.g. failIfChanged drift).
-	 Then frees the VCR (destroy) and nils the handle. Idempotent: a second
-	 call is a no-op. Read diagnostics BEFORE stop."
+ServirtiumServer >> commit [
+	"Record mode: stop the server and write the tape now (raising a
+	 ServirtiumError on a write error, e.g. failIfChanged drift), then free
+	 the VCR. The only way a recording becomes a tape: stop without commit or
+	 discard writes nothing and raises. In playback mode, stop."
 
 	| h err |
 	(handle isNil or: [ handle isNull ]) ifTrue: [ ^ self ].
+	recordMode ifFalse: [ ^ self stop ].
 	h := handle.
 	handle := nil.
-
-	recordMode ifFalse: [
-		[ self library stop: h ] ensure: [ self library destroy: h ].
-		^ self ].
-
 	[
 		secretRedactor ifNotNil: [ self library stageSecrets: h callback: secretRedactor resolving: false ].
 		err := self library takeString: (failIfChanged
 			ifTrue: [ self library stopAndFlushFailIfChanged: h tape: tapePath ]
 			ifFalse: [ self library stopAndFlush: h tape: tapePath ]) ]
+		ensure: [ self library destroy: h ].
+	err isEmpty ifFalse: [ ServirtiumError signal: err ]
+]
+
+{ #category : 'lifecycle' }
+ServirtiumServer >> stop [
+	"Stop the server and free the VCR. A recording neither committed nor
+	 discarded is dropped, no tape is written, and this raises a
+	 ServirtiumError saying to commit (or discard). Idempotent. Read
+	 diagnostics BEFORE stop."
+
+	| h err |
+	(handle isNil or: [ handle isNull ]) ifTrue: [ ^ self ].
+	h := handle.
+	handle := nil.
+	[ err := self library takeString: (self library close: h) ]
 		ensure: [ self library destroy: h ].
 	err isEmpty ifFalse: [ ServirtiumError signal: err ]
 ]

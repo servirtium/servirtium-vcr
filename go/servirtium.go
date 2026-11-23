@@ -48,6 +48,7 @@ void   aether_vcr_embed_stop(void* server);
 char*  aether_vcr_embed_open_error(void* server);
 void   aether_vcr_embed_destroy(void* server);
 char*  aether_vcr_embed_stop_and_flush(void* server, const char* tape_path);
+char*  aether_vcr_embed_close(void* server);
 char*  aether_vcr_embed_stop_and_flush_fail_if_changed(void* server, const char* tape_path);
 char*  aether_vcr_embed_stop_and_flush_or_check(void* server, const char* tape_path);
 char*  aether_vcr_embed_discard(void* server, const char* tape_path);
@@ -1306,21 +1307,17 @@ func (s *Server) ResetCursor() { C.aether_vcr_embed_reset_cursor(s.handle) }
 // ClearLastError clears the last-error slot between sub-cases.
 func (s *Server) ClearLastError() { C.aether_vcr_embed_clear_last_error(s.handle) }
 
-// Close stops the server. In record mode it also flushes the tape to disk and
-// returns an error on drift if FailIfChanged was set. Close is idempotent.
-func (s *Server) Close() error {
-	if s.handle == nil {
+// Commit stops a record server and writes the tape now (with FailIfChanged,
+// returns an error if it differs from the one on disk). It is the only way a
+// recording becomes a tape: Close without Commit or Discard writes nothing
+// and returns an error. No-op in playback mode.
+func (s *Server) Commit() error {
+	if s.handle == nil || !s.recordMode {
 		return nil
 	}
 	h := s.handle
 	s.handle = nil
-
-	if !s.recordMode {
-		C.aether_vcr_embed_stop(h)
-		C.aether_vcr_embed_destroy(h)
-		return nil
-	}
-
+	defer C.aether_vcr_embed_destroy(h)
 	if s.secretRedactor != nil {
 		if err := secretStage(h, s.secretRedactor, nil); err != nil {
 			return err
@@ -1328,7 +1325,6 @@ func (s *Server) Close() error {
 	}
 	cTape := C.CString(s.tapePath)
 	defer C.free(unsafe.Pointer(cTape))
-	defer C.aether_vcr_embed_destroy(h)
 	var res *C.char
 	if s.failIfChanged {
 		res = C.aether_vcr_embed_stop_and_flush_fail_if_changed(h, cTape)
@@ -1336,6 +1332,22 @@ func (s *Server) Close() error {
 		res = C.aether_vcr_embed_stop_and_flush(h, cTape)
 	}
 	if msg := takeString(res); msg != "" {
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
+// Close stops the server. A recording neither committed nor discarded is
+// dropped, no tape is written, and Close returns an error saying to call
+// Commit (or Discard). Idempotent.
+func (s *Server) Close() error {
+	if s.handle == nil {
+		return nil
+	}
+	h := s.handle
+	s.handle = nil
+	defer C.aether_vcr_embed_destroy(h)
+	if msg := takeString(C.aether_vcr_embed_close(h)); msg != "" {
 		return fmt.Errorf("%s", msg)
 	}
 	return nil

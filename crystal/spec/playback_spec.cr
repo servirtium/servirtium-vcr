@@ -124,6 +124,7 @@ describe "Structured redaction helpers" do
         rec.redact_json_field("secretKey")
         run.call(["drive", directory, rec.base_url])
         rec.last_kind.should eq(Servirtium::Outcome::Ok)
+        rec.flush
       end
       run.call(["check", directory])
     ensure
@@ -299,6 +300,7 @@ describe "Stable ordering" do
           rec.sort_header_value("Allow")
           expect_raises(Servirtium::Error) { rec.sort_json_array("a/b") }
           HTTP::Client.get("#{rec.base_url}/data")
+          rec.flush
         end
       end
       File.read(File.join(directory, "sorted.md")).should contain(
@@ -389,12 +391,35 @@ describe "rewrite_upstream_base" do
         rec.rewrite_upstream_base
         run.call(["drive", directory, rec.base_url])
         rec.last_kind.should eq(Servirtium::Outcome::Ok)
+        rec.flush
       end
       run.call(["check", directory])
       Servirtium.playback(tape) do |vcr|
         run.call(["replay", directory, vcr.base_url])
         vcr.last_kind.should eq(Servirtium::Outcome::Ok)
       end
+    ensure
+      Dir.glob(File.join(directory, "*")).each { |file| File.delete(file) }
+      Dir.delete(directory)
+    end
+  end
+end
+
+describe "closing a recording" do
+  it "writes nothing and raises without flush or discard" do
+    directory = File.tempname("vcr-close")
+    Dir.mkdir(directory)
+    tape = File.join(directory, "tape.md")
+    begin
+      rec = Servirtium.record(tape, "http://127.0.0.1:1")
+      expect_raises(Servirtium::Error, /without commit or discard/) { rec.close }
+      File.exists?(tape).should be_false
+      expect_raises(Servirtium::Error, /without commit or discard/) do
+        Servirtium.record(tape, "http://127.0.0.1:1") { |_r| nil }
+      end
+      File.exists?(tape).should be_false
+      Servirtium.record(tape, "http://127.0.0.1:1", &.discard)
+      File.exists?(tape).should be_false
     ensure
       Dir.glob(File.join(directory, "*")).each { |file| File.delete(file) }
       Dir.delete(directory)

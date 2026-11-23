@@ -28,9 +28,10 @@ marshalling rules to drift from `core/embed.ae`.
 ### What Crystal adds
 
 - **Block forms** — `Servirtium.playback(tape) { |vcr| … }` closes on every
-  path; `Servirtium.record(tape, upstream) { |vcr| … }` flushes the tape when
-  the block ends normally and **discards** it if the block raised, so a failed
-  test can't overwrite a good tape.
+  path; in `Servirtium.record(tape, upstream) { |vcr| … }` the block writes the
+  tape with `vcr.flush` (or drops it with `vcr.discard`); a block that raises
+  **discards** the recording, and one that ends with neither writes nothing
+  and raises.
 - **Typed enums** (`Field`, `Outcome`) and a typed `Servirtium::Error`.
 - **Caller-owned-string handling** in exactly one place (`take`), so no ABI
   `char*` reaches user code.

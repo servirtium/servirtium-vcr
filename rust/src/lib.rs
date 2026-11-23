@@ -163,8 +163,8 @@ impl Vcr {
     }
 
     /// Record live interactions: forward to `upstream_base`, return the real
-    /// response to the SUT, and capture the exchange. The tape is written
-    /// when the [`VcrServer`] is dropped (or via [`VcrServer::finish`]).
+    /// response to the SUT, and capture the exchange. The tape is written by
+    /// [`VcrServer::commit`]; dropping the server without it writes nothing.
     pub fn record(
         tape_path: impl Into<String>,
         upstream_base: impl Into<String>,
@@ -870,7 +870,7 @@ impl RecordBuilder {
     /// Opt-in stable order: sort JSON object keys at every depth in recorded
     /// JSON response bodies. Sorted JSON is only written pretty-printed: without
     /// [`pretty_json`](Self::pretty_json) the tape is refused when it is
-    /// emitted (`finish()` returns "sort_json_keys needs pretty_json: ...").
+    /// emitted (`commit()` returns "sort_json_keys needs pretty_json: ...").
     pub fn sort_json_keys(mut self) -> Self {
         self.sort_json_keys = true;
         self
@@ -910,8 +910,7 @@ impl RecordBuilder {
     /// On flush, still write the freshly recorded tape but fail if it differs
     /// from the on-disk one — the drift contract, so a normal `git diff`
     /// shows the change and CI fails loudly. The failure surfaces from
-    /// [`VcrServer::finish`]; if you let the server drop instead, drift
-    /// causes a panic (a `Drop` can't return a `Result`).
+    /// [`VcrServer::commit`].
     pub fn fail_if_changed(mut self) -> Self {
         self.fail_if_changed = true;
         self
@@ -1091,11 +1090,11 @@ enum Mode {
     Record { fail_if_changed: bool },
 }
 
-/// A running VCR server. Drop it to stop (in record mode, drop also flushes
-/// the captured tape to disk). To observe a record-mode flush error — most
-/// importantly the [`fail_if_changed`](RecordBuilder::fail_if_changed) drift
-/// check — call [`finish`](VcrServer::finish) explicitly instead of relying
-/// on `Drop` (which can only panic on error).
+/// A running VCR server. Drop it (or [`close`](VcrServer::close) it) to stop.
+/// A recording is written only by [`commit`](VcrServer::commit) and dropped
+/// by [`discard`](VcrServer::discard); a record server dropped with neither
+/// writes nothing and panics (`close` returns the error instead), so a test
+/// cannot mint a tape by falling off the end of a scope.
 pub struct VcrServer {
     secret_redactor: Option<SecretRedactor>,
     n: &'static Native,
@@ -1251,12 +1250,30 @@ impl VcrServer {
         unsafe { (self.n.clear_last_error)(self.handle) };
     }
 
-    /// Stop the server and, in record mode, flush the tape — returning any
-    /// flush error (e.g. a `fail_if_changed` drift). After `finish`, drop is
-    /// a no-op. This is the idiomatic way to observe a record-mode result;
-    /// `Drop` is a best-effort fallback that panics on a flush error.
-    pub fn finish(mut self) -> Result<(), VcrError> {
+    /// Record mode: stop the server and write the tape now, returning any
+    /// error (e.g. a `fail_if_changed` drift). The only way a recording
+    /// becomes a tape: dropping (or `close`-ing) a record server without
+    /// `commit` or `discard` writes nothing (and `Drop` panics, `close`
+    /// returns the error). In playback mode the same as `close`.
+    pub fn commit(mut self) -> Result<(), VcrError> {
         self.stop_inner()
+    }
+
+    /// Stop the server. A recording neither committed nor discarded is
+    /// dropped, no tape is written, and this returns an error saying to call
+    /// `commit` (or `discard`).
+    pub fn close(mut self) -> Result<(), VcrError> {
+        self.close_inner()
+    }
+
+    fn close_inner(&mut self) -> Result<(), VcrError> {
+        if self.finished {
+            return Ok(());
+        }
+        self.finished = true;
+        let err = take_string(self.n, unsafe { (self.n.close)(self.handle) });
+        self.destroy_handle();
+        if err.is_empty() { Ok(()) } else { Err(VcrError::new(err)) }
     }
 
     /// Record mode: stop the server and DROP the captured recording WITHOUT
@@ -1339,17 +1356,11 @@ impl VcrServer {
 
 impl Drop for VcrServer {
     fn drop(&mut self) {
-        match self.stop_inner() {
-            Ok(()) => {}
-            Err(e) => {
-                // A Drop can't return a Result. Don't double-panic during
-                // unwinding; otherwise surface the drift loudly.
-                if std::thread::panicking() {
-                    eprintln!("servirtium: VCR flush error during unwind: {e}");
-                } else {
-                    panic!("servirtium: VCR flush failed on drop: {e}. \
-                            Call VcrServer::finish() to handle this as a Result.");
-                }
+        if let Err(e) = self.close_inner() {
+            // A Drop can't return a Result. During unwinding (a failing test)
+            // the recording is dropped quietly; otherwise loudly.
+            if !std::thread::panicking() {
+                panic!("servirtium: {e}. Call VcrServer::commit() to write the tape, or discard() to drop it.");
             }
         }
     }

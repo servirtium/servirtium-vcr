@@ -32,6 +32,7 @@ def test_redacts_response_body_before_it_lands_on_the_tape(upstream):
             servirtium.Field.RESPONSE_BODY, "secret-token", "REDACTED"
         ).port(0).start() as rec:
             http_request(rec.base_url, "GET", "/x")
+            rec.commit()
 
         tape = _read(path)
         assert "REDACTED" in tape
@@ -48,6 +49,7 @@ def test_attaches_a_note_to_the_recorded_interaction(upstream):
             "Why this exists", "documents the call"
         ).port(0).start() as rec:
             http_request(rec.base_url, "GET", "/x")
+            rec.commit()
 
         assert "## [Note] Why this exists:" in _read(path)
     finally:
@@ -63,6 +65,7 @@ def test_removes_a_named_response_header_from_the_tape(upstream):
         # Phase 1: without removal, the header is captured.
         with servirtium.record(path1, upstream.base_url).port(0).start() as rec:
             http_request(rec.base_url, "GET", "/x")
+            rec.commit()
         assert "X-Trace-Id" in _read(path1)
 
         # Phase 2: with removal, it's gone.
@@ -70,6 +73,7 @@ def test_removes_a_named_response_header_from_the_tape(upstream):
             servirtium.Field.RESPONSE_HEADERS, "X-Trace-Id"
         ).port(0).start() as rec:
             http_request(rec.base_url, "GET", "/x")
+            rec.commit()
         assert "X-Trace-Id" not in _read(path2)
     finally:
         for p in (path1, path2):
@@ -87,11 +91,13 @@ def test_mutation_state_does_not_leak_between_fixtures(upstream):
             servirtium.Field.RESPONSE_BODY, "leak", "SCRUBBED"
         ).port(0).start() as a:
             http_request(a.base_url, "GET", "/x")
+            a.commit()
         assert "SCRUBBED" in _read(path1)
 
         # Fixture B registers NO redaction; A's must not leak in.
         with servirtium.record(path2, upstream.base_url).port(0).start() as b:
             http_request(b.base_url, "GET", "/x")
+            b.commit()
         assert "leak" in _read(path2)
         assert "SCRUBBED" not in _read(path2)
     finally:
@@ -107,15 +113,16 @@ def test_fail_if_changed_raises_when_a_re_record_drifts(upstream):
         upstream.response_body = "v1"
         with servirtium.record(path, upstream.base_url).fail_if_changed().port(0).start() as first:
             http_request(first.base_url, "GET", "/x")
+            first.commit()
         assert os.path.exists(path)
 
-        # Re-record with a changed upstream — close must raise, while still
+        # Re-record with a changed upstream — commit must raise, while still
         # writing the new tape for `git diff`.
         upstream.response_body = "v2-changed"
         second = servirtium.record(path, upstream.base_url).fail_if_changed().port(0).start()
         http_request(second.base_url, "GET", "/x")
         with pytest.raises(servirtium.VcrError):
-            second.close()
+            second.commit()
         assert "v2-changed" in _read(path)
     finally:
         if os.path.exists(path):

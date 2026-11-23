@@ -135,7 +135,7 @@ pub fn structured_redaction_test() {
   shell(fixture <> "drive '" <> directory <> "' '" <> servirtium.base_url(rec) <> "' && echo DRIVE_OK")
     |> should.equal("DRIVE_OK\n")
   servirtium.last_kind(rec) |> should.equal(servirtium.Ok)
-  servirtium.close(rec) |> should.equal(servirtium.Closed)
+  servirtium.commit(rec) |> should.equal(servirtium.Closed)
   shell(fixture <> "check '" <> directory <> "'")
     |> should.equal("structured redaction: upstream intact, tape scrubbed\n")
   let _ = shell("rm -r '" <> directory <> "'")
@@ -152,7 +152,7 @@ pub fn rewrite_upstream_base_test() {
     |> string.contains("DRIVE_OK\n")
     |> should.be_true()
   servirtium.last_kind(rec) |> should.equal(servirtium.Ok)
-  servirtium.close(rec) |> should.equal(servirtium.Closed)
+  servirtium.commit(rec) |> should.equal(servirtium.Closed)
   shell(fixture <> "check '" <> directory <> "'")
     |> should.equal("rewrite_upstream_base: the tape holds {{baseUrl}}\n")
   let play = servirtium.playback(directory <> "/tape.md")
@@ -199,7 +199,7 @@ pub fn named_secrets_test() {
     }
   })
   shell(fixture <> "drive '" <> servirtium.base_url(rec) <> "' && echo OK") |> should.equal("OK\n")
-  servirtium.close(rec) |> should.equal(servirtium.Closed)
+  servirtium.commit(rec) |> should.equal(servirtium.Closed)
   shell(fixture <> "check '" <> tape <> "' && echo OK") |> should.equal("OK\n")
   let replay = servirtium.playback_with_secrets(tape, fn(token) {
     Some("pw-" <> string.lowercase(string.replace(token, "_PASSWORD", "")) <> "&secret")
@@ -229,7 +229,7 @@ pub fn stable_order_test() {
   servirtium.get_sort_json_keys(rec) |> should.be_true()
   servirtium.set_pretty_json(rec, 2)
   let _ = servirtium.curl(servirtium.base_url(rec) <> "/data")
-  servirtium.close(rec) |> should.equal(servirtium.Closed)
+  servirtium.commit(rec) |> should.equal(servirtium.Closed)
   shell("cat '" <> sorted <> "'")
   |> string.contains("\"a\": {\n    \"y\": 3,\n    \"z\": 2\n  },\n  \"b\": 1")
   |> should.be_true()
@@ -237,7 +237,7 @@ pub fn stable_order_test() {
   let refused = servirtium.record(directory <> "/refused.md", upstream)
   servirtium.set_sort_json_keys(refused, True)
   let _ = servirtium.curl(servirtium.base_url(refused) <> "/data")
-  case servirtium.close(refused) {
+  case servirtium.commit(refused) {
     servirtium.CloseError(msg) ->
       msg |> string.contains("sort_json_keys needs pretty_json") |> should.be_true()
     servirtium.Closed -> panic as "expected sort_json_keys without pretty_json to be refused"
@@ -249,7 +249,7 @@ pub fn stable_order_test() {
   servirtium.get_sort_response_headers(probe) |> should.be_true()
   servirtium.clear_stable_order(probe)
   servirtium.get_sort_response_headers(probe) |> should.be_false()
-  let _ = servirtium.close(probe)
+  let _ = servirtium.discard(probe)
   json_upstream_stop(port)
   let _ = shell("rm -r '" <> directory <> "'")
 }
@@ -273,7 +273,20 @@ pub fn playback_range_test() {
 
   let rec = servirtium.record("/tmp/vcr-range-refused-gleam-" <> from_charlist(getpid()) <> ".md", "http://127.0.0.1:1")
   servirtium.set_playback_range(rec, 0, -1) |> should.be_error()
-  let _ = servirtium.close(rec)
+  let _ = servirtium.discard(rec)
+}
+
+pub fn close_without_commit_test() {
+  let tape = "/tmp/vcr-uncommitted-gleam-" <> from_charlist(getpid()) <> ".md"
+  let rec = servirtium.record(tape, "http://127.0.0.1:1")
+  case servirtium.close(rec) {
+    servirtium.CloseError(msg) -> string.contains(msg, "without commit or discard") |> should.be_true()
+    servirtium.Closed -> should.fail()
+  }
+  shell("test -e '" <> tape <> "' && echo EXISTS") |> should.equal("")
+  let dropped = servirtium.record(tape, "http://127.0.0.1:1")
+  servirtium.discard(dropped) |> should.equal(servirtium.Closed)
+  servirtium.close(dropped) |> should.equal(servirtium.Closed)
 }
 
 // Volatile values (docs/volatile-values.md), conformance checks 1-5.

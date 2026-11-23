@@ -120,7 +120,7 @@ Both are opt-in builder options; a refused rule or range comes back as a `VcrErr
   `.sort_json_array_at(request_regex, path, by)`, `.sort_response_headers()`,
   `.sort_header_value(name)`; `VcrServer::sort_json_keys()` / `sort_response_headers()` read the
   state back and `clear_stable_order()` turns it off. Sorted JSON is only written
-  pretty-printed: without `.pretty_json(2)`, `finish()` returns
+  pretty-printed: without `.pretty_json(2)`, `commit()` returns
   `sort_json_keys needs pretty_json: ...` and writes nothing. A refused rule (a bad path)
   makes `start()` return the error.
 - **Playback range (playback only):** `Vcr::playback(tape).playback_range(from, to)` replays only

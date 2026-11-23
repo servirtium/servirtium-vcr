@@ -22,6 +22,7 @@ class RewriteUpstreamBaseTest {
             try (var rec = Vcr.record(directory.resolve("tape.md").toString(), upstream).rewriteUpstreamBase().start()) {
                 run("drive", directory.toString(), rec.baseUrl());
                 assertEquals(Outcome.OK, rec.lastKind());
+                rec.commit();
             }
             run("check", directory.toString());
             try (var vcr = Vcr.playback(directory.resolve("tape.md").toString()).start()) {

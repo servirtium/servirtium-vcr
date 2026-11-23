@@ -262,6 +262,7 @@ class Native {
   static final destroy = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_destroy');
   static final stopAndFlush =
       _lib.lookupFunction<_FlushC, _FlushD>('aether_vcr_embed_stop_and_flush');
+  static final close = _lib.lookupFunction<_StrHandleC, _StrHandleD>('aether_vcr_embed_close');
   static final stopAndFlushFailIfChanged = _lib.lookupFunction<_FlushC, _FlushD>(
       'aether_vcr_embed_stop_and_flush_fail_if_changed');
   static final stopAndFlushOrCheck = _lib.lookupFunction<_FlushC, _FlushD>(

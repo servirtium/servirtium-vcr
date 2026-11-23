@@ -15,6 +15,7 @@ RSpec.describe 'Named secrets' do
         end
       end.start do |server|
         run.call('drive', server.base_url); expect(count).to eq(0)
+        server.commit
       end
       expect(count).to eq(20); run.call('check', tape)
       expect { Servirtium.playback(tape).start }.to raise_error(Servirtium::Error)

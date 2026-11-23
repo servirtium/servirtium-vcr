@@ -3,8 +3,10 @@
 All fixtures start from `Vcr::playback(tape_path)` or
 `Vcr::record(tape_path, upstream_base)`, configured with a fluent builder,
 and started with `.start()`, which returns a `Result<VcrServer, VcrError>`.
-Drop the server to stop it (and, in record mode, flush the tape); call
-`.finish()` instead when you need the flush result.
+A record server writes its tape only on `.commit()` (or drops the recording
+with `.discard()`); `.close()` without either writes nothing and returns an
+error, and dropping it uncommitted panics. A playback server just stops when
+dropped.
 
 The system-under-test only ever needs `vcr.base_url()`. Everything else —
 tape path, mode, mutations, assertions — lives in your test setup/teardown.
@@ -36,7 +38,7 @@ let rec = Vcr::record("tapes/climate_api.md", "https://climatedataapi.worldbank.
     .unwrap();
 
 let _ = ureq::get(&format!("{}/api/v1/countries", rec.base_url())).call();
-rec.finish().unwrap();   // stop + write the markdown tape (or just drop `rec`)
+rec.commit().unwrap();   // stop + write the markdown tape (or just drop `rec`)
 ```
 
 Record forwards each request to the upstream, returns the **real** response
@@ -48,14 +50,14 @@ to your SUT, and captures the exchange. Chunked responses are de-chunked
 ```rust
 let rec = Vcr::record(tape, upstream).fail_if_changed().start().unwrap();
 // ... drive SUT ...
-rec.finish()?;   // Err(VcrError) if the freshly recorded tape differs
+rec.commit()?;   // Err(VcrError) if the freshly recorded tape differs
 ```
 
-The freshly recorded tape is written **and** `finish()` returns an error if
+The freshly recorded tape is written **and** `commit()` returns an error if
 it differs from the committed tape — so `git diff` shows the drift and CI
 fails loudly. (Without `fail_if_changed`, flush just overwrites.) If you let
-the server drop instead of calling `finish()`, a drift causes a **panic**
-(a `Drop` can't return a `Result`), so prefer `finish()` with this option.
+the server drop instead of calling `commit()`, a drift causes a **panic**
+(a `Drop` can't return a `Result`), so prefer `commit()` with this option.
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -215,7 +217,7 @@ load cleanly.
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `reset_cursor()` | rewind replay to interaction 0; clear last-* |
 | `clear_last_error()` | clear the last-error slot between sub-cases |
-| `finish()` | stop; flush tape if recording, returning the flush result |
+| `commit()` | stop; flush tape if recording, returning the flush result |
 | (drop) | stop; flush tape if recording (panics on a drift error) |
 
 ## `Outcome`

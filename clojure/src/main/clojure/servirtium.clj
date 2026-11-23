@@ -69,7 +69,8 @@
 
 (defn record
   "Start a record VCR forwarding to `upstream`, returning the running VcrServer.
-  Closing it (e.g. via with-open) writes the tape to `tape`. `opts` is an
+  `(.commit server)` writes the tape to `tape`; closing it (e.g. via
+  with-open) without commit or discard writes nothing and throws. `opts` is an
   optional map; :port 0 (the default) asks the OS for a free port. Record-only
   opts: :pretty-json (indent, or true for 2), :license-notice (text under
   \"## LICENSE NOTICE\" atop the tape), :upstream-cafile (PEM CA path). Both

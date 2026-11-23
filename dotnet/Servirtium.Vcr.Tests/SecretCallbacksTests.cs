@@ -22,7 +22,7 @@ public class SecretCallbacksTests
                 if (key != "password") return null;
                 count++; Assert.NotEmpty(request.FieldPath);
                 return request.Path.Split('/')[1].ToUpperInvariant() + "_PASSWORD";
-            }).Start()) { Run("drive", rec.BaseUrl); Assert.Equal(0, count); }
+            }).Start()) { Run("drive", rec.BaseUrl); Assert.Equal(0, count); rec.Commit(); }
             Assert.Equal(20, count); Run("check", tape);
             Assert.Throws<VcrException>(() => Vcr.Playback(tape).Start());
             using (var replay = Vcr.Playback(tape).SecretResolver(token => {

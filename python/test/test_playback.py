@@ -94,6 +94,7 @@ def test_playback_range_is_refused_on_a_record_handle(upstream):
         err = N.take_string(N.set_playback_range(rec._require_handle(), 0, -1))
         assert err != ""
         assert N.get_playback_range_from(rec._require_handle()) == -1
+        rec.commit()
 
 
 def test_open_of_a_missing_tape_reports_why():

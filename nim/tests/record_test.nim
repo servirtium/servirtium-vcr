@@ -48,7 +48,7 @@ suite "servirtium record":
     let body = getBody(rec.baseUrl(), "/greeting")
     discard nextObservation()
     check body.strip() == "hello-from-upstream"
-    rec.close() # flushes the tape
+    rec.commit() # writes the tape
     check fileExists(tape)
 
     # ---- replay (offline) ----
@@ -70,7 +70,7 @@ suite "servirtium record":
     check body.strip() == "created"
     check obs.httpMethod == "POST"
     check obs.body == "ping"
-    rec.close()
+    rec.commit()
 
     # Replay the same POST offline.
     let play = playback(tape)
@@ -100,7 +100,7 @@ suite "structured redaction helpers":
     defer: rec.close()
     discard fixtureRun(@["drive", directory, rec.baseUrl()])
     check rec.lastKind() == Ok
-    rec.close()
+    rec.commit()
     discard fixtureRun(@["check", directory])
 
 
@@ -121,7 +121,7 @@ suite "rewrite_upstream_base":
     check rec.start()
     discard fixtureRun(@["drive", directory, rec.baseUrl()])
     check rec.lastKind() == Ok
-    rec.close()
+    rec.commit()
     discard fixtureRun(@["check", directory])
     let play = playback(tape)
     check play.start()
@@ -170,7 +170,7 @@ suite "named secrets":
       some(request.path.split('/')[1].toUpperAscii() & "_PASSWORD"))
     check rec.start()
     discard run(@["drive", rec.baseUrl()]); check count == 0
-    rec.close(); check count == 20
+    rec.commit(); check count == 20
     discard run(@["check", tape])
     let replay = playback(tape).secretResolver(proc(token: string): Option[string] =
       some("pw-" & token.replace("_PASSWORD", "").toLowerAscii() & "&secret"))
@@ -195,7 +195,7 @@ suite "named secrets":
     programReply("{\"zebra\":1,\"apple\":{\"mango\":2,\"banana\":3}}", "application/json")
     discard getBody(rec.baseUrl(), "/data")
     discard nextObservation()
-    rec.close()
+    rec.commit()
     check readFile(tape).contains(
       "{\n  \"apple\": {\n    \"banana\": 3,\n    \"mango\": 2\n  },\n  \"zebra\": 1\n}")
 
@@ -209,7 +209,7 @@ suite "named secrets":
     discard nextObservation()
     var refusal = ""
     try:
-      rec.close()
+      rec.commit()
     except VcrError as e:
       refusal = e.msg
     check refusal.contains("sort_json_keys needs pretty_json")
@@ -221,3 +221,23 @@ suite "named secrets":
     check rec.setPlaybackRange(0, 1) != ""
     check rec.getPlaybackRangeFrom() == -1
     rec.discardRecording()
+
+  test "closing a recording without commit or discard writes nothing and raises":
+    let tape = tempTape("uncommitted")
+    let rec = record(tape, upstreamBaseUrl())
+    check rec.start()
+    programReply("x")
+    discard getBody(rec.baseUrl(), "/x")
+    discard nextObservation()
+    var refusal = ""
+    try:
+      rec.close()
+    except VcrError as e:
+      refusal = e.msg
+    check refusal.contains("without commit or discard")
+    check not fileExists(tape)
+    let dropped = record(tape, upstreamBaseUrl())
+    check dropped.start()
+    dropped.discardRecording()
+    dropped.close()
+    check not fileExists(tape)
