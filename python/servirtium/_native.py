@@ -215,6 +215,7 @@ def _ensure_loaded() -> None:
     g["clear_match_headers"] = _decl("aether_vcr_embed_clear_match_headers", None, [_HANDLE])
     g["indent_code_blocks"] = _decl("aether_vcr_embed_indent_code_blocks", None, [_HANDLE])
     g["emphasize_http_verbs"] = _decl("aether_vcr_embed_emphasize_http_verbs", None, [_HANDLE])
+    g["set_rewrite_upstream_base"] = _decl("aether_vcr_embed_set_rewrite_upstream_base", None, [_HANDLE, ctypes.c_int])
     g["set_pretty_xml"] = _decl("aether_vcr_embed_set_pretty_xml", None, [_HANDLE, ctypes.c_int])
     g["set_pretty_json"] = _decl("aether_vcr_embed_set_pretty_json", None, [_HANDLE, ctypes.c_int])
     g["remove_transport_headers"] = _decl("aether_vcr_embed_remove_transport_headers", _CSTR, [_HANDLE])

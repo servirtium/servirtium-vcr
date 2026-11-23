@@ -83,6 +83,7 @@ final class Native
         void   aether_vcr_embed_set_match_multiple(void* server, int on);
         void   aether_vcr_embed_indent_code_blocks(void* server);
         void   aether_vcr_embed_emphasize_http_verbs(void* server);
+        void   aether_vcr_embed_set_rewrite_upstream_base(void* server, int on);
         void   aether_vcr_embed_set_pretty_xml(void* server, int indent);
         void   aether_vcr_embed_set_pretty_json(void* server, int indent);
         char*  aether_vcr_embed_remove_transport_headers(void* server);

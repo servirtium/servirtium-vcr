@@ -98,6 +98,36 @@ do
 end
 
 do
+    h.case("rewrite_upstream_base keeps the client on the VCR")
+    local directory = os.tmpname()
+    os.remove(directory)
+    assert(os.execute("mkdir -p '" .. directory .. "'"))
+    local fixture = here .. "/../../target/test-tools/origin_fixture"
+    local function fixture_run(action, url)
+        local command = "'" .. fixture .. "' " .. action .. " '" .. directory .. "'"
+        if url then command = command .. " '" .. url .. "'" end
+        local process = assert(io.popen(command .. " 2>&1"))
+        local output = process:read("*a")
+        local ok = process:close()
+        assert(ok, output)
+        return (output:gsub("%s+$", ""))
+    end
+    local tape = directory .. "/tape.md"
+    local upstream = fixture_run("start")
+    local rec = assert(servirtium.record(tape, upstream):rewrite_upstream_base():start())
+    fixture_run("drive", rec:base_url())
+    h.eq(rec:last_kind(), servirtium.OK, "origin record outcome")
+    h.eq(rec:close(), "", "origin flush")
+    fixture_run("check")
+    local vcr = assert(servirtium.playback(tape):start())
+    fixture_run("replay", vcr:base_url())
+    h.eq(vcr:last_kind(), servirtium.OK, "origin playback outcome")
+    vcr:close()
+    for _, name in ipairs({"url", "done", "items.json", "tape.md"}) do os.remove(directory .. "/" .. name) end
+    os.remove(directory)
+end
+
+do
     h.case("retained replay diagnostics")
     local root = here .. "/../.."
     local server = assert(servirtium.playback(root .. "/core_tests/diagnostics/playback.md"):start())

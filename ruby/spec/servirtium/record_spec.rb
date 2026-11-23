@@ -141,3 +141,29 @@ RSpec.describe 'Structured redaction helpers' do
     end
   end
 end
+
+
+RSpec.describe 'rewrite_upstream_base' do
+  it 'keeps the client on the VCR and replays on another port' do
+    require 'open3'
+    fixture = File.expand_path('../../../target/test-tools/origin_fixture', __dir__)
+    Dir.mktmpdir('vcr-origin-') do |dir|
+      run = lambda do |*args|
+        output, status = Open3.capture2e(fixture, *args)
+        expect(status.success?).to be(true), output
+        output.strip
+      end
+      upstream = run.call('start', dir)
+      Servirtium.record(File.join(dir, 'tape.md'), upstream).rewrite_upstream_base.start do |rec|
+        run.call('drive', dir, rec.base_url)
+        expect(rec.last_kind).to eq(:ok)
+      end
+      run.call('check', dir)
+      Servirtium.playback(File.join(dir, 'tape.md')).start do |vcr|
+        run.call('replay', dir, vcr.base_url)
+        expect(vcr.last_kind).to eq(:ok)
+        vcr.assert_all_consumed
+      end
+    end
+  end
+end

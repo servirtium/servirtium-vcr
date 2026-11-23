@@ -139,6 +139,26 @@ end
 end
 
 
+@testset "rewrite_upstream_base" begin
+    mktempdir() do directory
+        fixture = joinpath(@__DIR__, "../../target/test-tools/origin_fixture")
+        fixture_run(args...) = strip(read(`$fixture $args`, String))
+        tape = joinpath(directory, "tape.md")
+        upstream = fixture_run("start", directory)
+        record(tape, upstream) do rec
+            set_rewrite_upstream_base(rec)
+            fixture_run("drive", directory, base_url(rec))
+            @test last_kind(rec) == Ok
+        end
+        fixture_run("check", directory)
+        playback(tape) do vcr
+            fixture_run("replay", directory, base_url(vcr))
+            @test last_kind(vcr) == Ok
+        end
+    end
+end
+
+
 @testset "Retained replay diagnostics" begin
     root = joinpath(@__DIR__, "../..")
     playback(joinpath(root, "core_tests/diagnostics/playback.md")) do server

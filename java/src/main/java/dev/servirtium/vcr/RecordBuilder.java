@@ -24,6 +24,7 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     private Note note;
     private boolean indentCodeBlocks;
     private boolean emphasizeHttpVerbs;
+    private boolean rewriteUpstreamBase;
     private int prettyXml;
     private int prettyJson;
     private String licenseNotice;
@@ -132,6 +133,22 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
 
     public RecordBuilder emphasizeHttpVerbs(boolean on) {
         this.emphasizeHttpVerbs = on;
+        return this;
+    }
+
+    /**
+     * The upstream's base URL in a response becomes this recorder's in what the
+     * client receives (a service that hands out its own absolute URLs no longer
+     * sends the client around the recorder), the recorder's in a request
+     * becomes the upstream's in what is forwarded, and the tape holds
+     * {@code {{baseUrl}}} for both, which playback fills (docs/vcr-address.md).
+     */
+    public RecordBuilder rewriteUpstreamBase() {
+        return rewriteUpstreamBase(true);
+    }
+
+    public RecordBuilder rewriteUpstreamBase(boolean on) {
+        this.rewriteUpstreamBase = on;
         return this;
     }
 
@@ -250,6 +267,9 @@ public final class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
             }
             if (emphasizeHttpVerbs) {
                 NativeMethods.EMPHASIZE_HTTP_VERBS.invokeExact(handle);
+            }
+            if (rewriteUpstreamBase) {
+                NativeMethods.SET_REWRITE_UPSTREAM_BASE.invokeExact(handle, 1);
             }
             if (prettyXml > 0) {
                 NativeMethods.SET_PRETTY_XML.invokeExact(handle, prettyXml);

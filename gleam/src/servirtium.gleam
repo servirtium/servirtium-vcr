@@ -487,6 +487,18 @@ pub fn set_upstream_cafile(vcr: Vcr, path: String) -> Result(Nil, String) {
 @external(erlang, "servirtium_nif", "set_sort_json_keys")
 fn nif_set_sort_json_keys(handle: Handle, on: Int) -> Nil
 
+@external(erlang, "servirtium_nif", "set_rewrite_upstream_base")
+fn nif_set_rewrite_upstream_base(handle: Handle, on: Int) -> Nil
+
+/// Record mode: the upstream's base URL in a response becomes this
+/// recorder's in what the client receives, the recorder's in a request
+/// becomes the upstream's in what is forwarded, and the tape holds
+/// `{{baseUrl}}` for both, which playback fills (docs/vcr-address.md).
+pub fn set_rewrite_upstream_base(vcr: Vcr, on: Bool) -> Nil {
+  let _ = nif_set_rewrite_upstream_base(vcr.handle, bool_int(on))
+  Nil
+}
+
 @external(erlang, "servirtium_nif", "get_sort_json_keys")
 fn nif_get_sort_json_keys(handle: Handle) -> Int
 

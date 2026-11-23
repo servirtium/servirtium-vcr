@@ -273,3 +273,30 @@ let ``volatile: correlation, bind and errors`` () =
         Assert.Throws<VcrException>(fun () ->
             (Vcr.Playback(volatileTape "cases.md") |> Servirtium.volatileRuleOnPlayback "response body" "\"caseId\":\"{{id}}\"" "template").Start() |> ignore)
     Assert.Contains("conflicts with", conflict.Message)
+
+
+[<Fact>]
+let ``rewriteUpstreamBase keeps the client on the VCR and replays on another port`` () =
+    let directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vcr-origin-" + System.Guid.NewGuid().ToString())
+    System.IO.Directory.CreateDirectory(directory) |> ignore
+    let fixture = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../../target/test-tools/origin_fixture"))
+    let run args =
+        let info = System.Diagnostics.ProcessStartInfo(fixture, RedirectStandardOutput = true)
+        for arg in args do info.ArgumentList.Add(arg)
+        use proc = System.Diagnostics.Process.Start(info)
+        let output = proc.StandardOutput.ReadToEnd()
+        proc.WaitForExit()
+        Assert.True((proc.ExitCode = 0), output)
+        output.Trim()
+    try
+        let tape = System.IO.Path.Combine(directory, "tape.md")
+        let upstream = run ["start"; directory]
+        do
+            use recServer = (Vcr.Record(tape, upstream) |> Servirtium.rewriteUpstreamBase).Start()
+            run ["drive"; directory; recServer.BaseUrl] |> ignore
+            Assert.Equal(VcrOutcome.Ok, recServer.LastKind)
+        run ["check"; directory] |> ignore
+        Servirtium.usingPlayback tape (fun vcr ->
+            run ["replay"; directory; Servirtium.baseUrl vcr] |> ignore
+            Assert.Equal(VcrOutcome.Ok, Servirtium.lastKind vcr))
+    finally System.IO.Directory.Delete(directory, true)

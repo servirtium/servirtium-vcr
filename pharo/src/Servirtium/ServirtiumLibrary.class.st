@@ -452,6 +452,12 @@ ServirtiumLibrary >> emphasizeHttpVerbs: server [
 	^ self ffiCall: #( void aether_vcr_embed_emphasize_http_verbs ( void* server ) )
 ]
 
+{ #category : 'ffi - record' }
+ServirtiumLibrary >> setRewriteUpstreamBase: server on: on [
+
+	^ self ffiCall: #( void aether_vcr_embed_set_rewrite_upstream_base ( void* server, int on ) )
+]
+
 { #category : 'ffi - format' }
 ServirtiumLibrary >> setPrettyXml: server indent: indent [
 

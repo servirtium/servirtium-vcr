@@ -44,6 +44,29 @@ defmodule Servirtium.RecordTest do
     after File.rm_rf!(directory) end
   end
 
+  test "rewrite_upstream_base keeps the client on the VCR and replays on another port" do
+    directory = Path.join(System.tmp_dir!(), "vcr-origin-#{System.unique_integer([:positive])}")
+    fixture = Path.expand("../../../target/test-tools/origin_fixture", __DIR__)
+    run = fn args ->
+      {output, status} = System.cmd(fixture, args, stderr_to_stdout: true)
+      assert status == 0, output
+      String.trim(output)
+    end
+    try do
+      tape = Path.join(directory, "tape.md")
+      upstream = run.(["start", directory])
+      Servirtium.with_record(tape, upstream, [rewrite_upstream_base: true], fn rec ->
+        run.(["drive", directory, Servirtium.base_url(rec)])
+        assert Servirtium.last_kind(rec) == :ok
+      end)
+      run.(["check", directory])
+      Servirtium.with_playback(tape, [], fn vcr ->
+        run.(["replay", directory, Servirtium.base_url(vcr)])
+        assert Servirtium.last_kind(vcr) == :ok
+      end)
+    after File.rm_rf!(directory) end
+  end
+
   test "retained diagnostics distinguish observer reads" do
     Servirtium.with_playback("../core_tests/diagnostics/playback.md", [], fn server ->
       Servirtium.test_context(server, "Elixir scenario", "scenario.test", 123)

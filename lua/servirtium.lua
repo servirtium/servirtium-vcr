@@ -700,6 +700,15 @@ function RecordBuilder:emphasize_http_verbs()
     return self
 end
 
+-- The upstream's base URL in a response becomes this recorder's in what the
+-- client receives, the recorder's in a request becomes the upstream's in what
+-- is forwarded, and the tape holds {{baseUrl}} for both, which playback fills
+-- (docs/vcr-address.md).
+function RecordBuilder:rewrite_upstream_base()
+    self._rewrite_upstream_base = true
+    return self
+end
+
 -- Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
 function RecordBuilder:pretty_xml(indent)
     self._pretty_xml = indent or 2
@@ -782,6 +791,9 @@ function RecordBuilder:start()
         apply_base(self, handle)
         if self._indent_code_blocks then
             C.indent_code_blocks(handle)
+        end
+        if self._rewrite_upstream_base then
+            C.set_rewrite_upstream_base(handle, true)
         end
         if self._emphasize_http_verbs then
             C.emphasize_http_verbs(handle)
@@ -908,6 +920,7 @@ function M.record(tapePath, upstream, opts)
     b._note = nil
     b._indent_code_blocks = false
     b._emphasize_http_verbs = false
+    b._rewrite_upstream_base = false
     b._pretty_xml = 0
     b._pretty_json = 0
     b._sort_json_keys = false

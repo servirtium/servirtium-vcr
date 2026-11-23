@@ -390,6 +390,7 @@ module Servirtium
       @note = nil
       @indent_code_blocks = false
       @emphasize_http_verbs = false
+      @rewrite_upstream_base = false
       @pretty_xml = 0
       @pretty_json = 0
       @upstream_cafile = nil
@@ -520,6 +521,16 @@ module Servirtium
       self
     end
 
+    # The upstream's base URL in a response becomes this recorder's in what the
+    # client receives (a service that hands out its own absolute URLs no longer
+    # sends the client around the recorder), the recorder's in a request
+    # becomes the upstream's in what is forwarded, and the tape holds
+    # {{baseUrl}} for both, which playback fills (docs/vcr-address.md).
+    def rewrite_upstream_base(on: true)
+      @rewrite_upstream_base = on
+      self
+    end
+
     # On close, still write the freshly recorded tape but raise if it differs
     # from the on-disk one — the Servirtium step-4 drift contract, so a normal
     # +git diff+ shows the change and CI fails loudly.
@@ -559,6 +570,7 @@ module Servirtium
       super
       Native.call(:indent_code_blocks, handle) if @indent_code_blocks
       Native.call(:emphasize_http_verbs, handle) if @emphasize_http_verbs
+      Native.call(:set_rewrite_upstream_base, handle, 1) if @rewrite_upstream_base
       Native.call(:set_pretty_xml, handle, @pretty_xml) if @pretty_xml > 0
       Native.call(:set_pretty_json, handle, @pretty_json) if @pretty_json > 0
       check(Native.call(:set_upstream_cafile, handle, @upstream_cafile), 'set_upstream_cafile') if @upstream_cafile

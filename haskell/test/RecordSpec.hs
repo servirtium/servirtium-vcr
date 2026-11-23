@@ -30,6 +30,23 @@ spec = describe "record then replay" $ do
           lastKind rec `shouldReturn` Ok
       _ <- run ["check", directory]
       pure ()
+  it "rewrite_upstream_base keeps the client on the VCR and replays on another port" $ do
+    tmp <- getTemporaryDirectory
+    let directory = tmp </> "vcr-origin-haskell"
+    createDirectory directory
+    let run args = readProcess "../target/test-tools/origin_fixture" args ""
+        tape = directory </> "tape.md"
+    bracket_ (pure ()) (removeDirectoryRecursive directory) $ do
+      upstream <- run ["start", directory]
+      withRecord (recordOptions tape (takeWhile (/= '\n') upstream)) { recRewriteUpstreamBase = True } $ \rec -> do
+        url <- baseUrl rec
+        _ <- run ["drive", directory, url]
+        lastKind rec `shouldReturn` Ok
+      _ <- run ["check", directory]
+      withPlayback (playbackOptions tape) $ \vcr -> do
+        url <- baseUrl vcr
+        _ <- run ["replay", directory, url]
+        lastKind vcr `shouldReturn` Ok
   it "accepts a license notice, pretty JSON and the header presets" $ do
     tmp <- getTemporaryDirectory
     let tape = tmp </> "vcr-notice-haskell.md"

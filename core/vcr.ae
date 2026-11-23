@@ -149,7 +149,7 @@ exports (
     set_pretty_json_h, get_pretty_json_h, sort_json_keys_h, get_sort_json_keys_h, sort_json_array_h,
     sort_json_array_at_h, sort_response_headers_h, get_sort_response_headers_h, sort_header_value_h,
     clear_stable_order_h, json_canonical, json_body_canonicalize, set_tls_h, set_tls_pem_h, tls_enabled_h,
-    last_tls_protocol_h, set_upstream_cafile_h, set_forward_host_h, substitute_h, clear_substitutions_h,
+    last_tls_protocol_h, set_upstream_cafile_h, set_forward_host_h, set_rewrite_upstream_base_h, get_rewrite_upstream_base_h, substitute_h, clear_substitutions_h,
     set_match_multiple_h, add_match_header_h, clear_match_headers_h, indent_code_blocks_h,
     emphasize_http_verbs_h, clear_redactions_h, clear_unredactions_h, clear_header_removals_h,
     clear_static_content_h, clear_untaped_h, clear_format_options_h, diagnostic_open_h,
@@ -436,6 +436,7 @@ struct Settings {
     upstream_base: string    // record mode: where requests are forwarded
     upstream_cafile: string
     forward_host: int        // record mode: send the client's Host upstream
+    rewrite_upstream_base: int // record mode: the upstream base becomes the recorder's (docs/vcr-address.md)
     tls_cert: string
     tls_key: string
     tls_cert_pem: string
@@ -550,6 +551,7 @@ new_settings() -> *Settings {
     s.upstream_base = ""
     s.upstream_cafile = ""
     s.forward_host = 0
+    s.rewrite_upstream_base = 0
     s.tls_cert = ""
     s.tls_key = ""
     s.tls_cert_pem = ""
@@ -2475,6 +2477,18 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
     method = http_request_method(req)
     if string.length(method) == 0 { method = "GET" }
 
+    // rewrite_upstream_base (opt-in): `ubase` is the upstream base, `rbase`
+    // the recorder's own, as the client addressed it (docs/vcr-address.md).
+    rewrite = vc.settings.rewrite_upstream_base
+    ubase = ""
+    rbase = ""
+    if rewrite == 1 {
+        ubase = upstream_base_url(base)
+        rscheme = "http"
+        if tls_enabled_h_key(vc) != 0 { rscheme = "https" }
+        rbase = string_concat(rscheme, string_concat("://", live_host(req)))
+    }
+
     creq = http_request_raw(method, url)
     if creq == null {
         record_dispatch_error_k(vc, res, 500, "vcr record mode: failed to build client request")
@@ -2491,6 +2505,7 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
         // interim 100 Continue, which std.http.client (Aether 0.908) returns
         // as the final response.
         if string.length(key) > 0 && is_hop_by_hop_header(key) == 0 && icmp_rt(key, "Expect") != 0 {
+            if rewrite == 1 { val = replace_base_url(val, rbase, ubase) }
             http_request_set_header_raw(creq, key, val)
         }
         i = i + 1
@@ -2504,7 +2519,9 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
     body_len = string.length(live_body)
     if body_len > 0 {
         ctype = request_header_value(req, "Content-Type")
-        http_request_set_body_raw(creq, string.bytes(live_body), body_len, ctype)
+        fwd_body = live_body
+        if rewrite == 1 && body_is_binary(live_body) == 0 { fwd_body = replace_base_url(live_body, rbase, ubase) }
+        http_request_set_body_raw(creq, string.bytes(fwd_body), string.length(fwd_body), ctype)
     } else if string.length(request_header_value(req, "Content-Length")) > 0 {
         // An empty body the client framed with Content-Length: 0 (a PUT or
         // POST that creates something with no content) goes upstream framed
@@ -2569,6 +2586,37 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
     req_body_for_tape = ""
     if body_len > 0 { req_body_for_tape = live_body }
 
+    // What the client gets, and the tape (rewrite_upstream_base): the
+    // upstream's base becomes the recorder's in the response the client
+    // receives (a decoded gzip body goes to the client decoded, since its
+    // bytes changed), and {{baseUrl}} on the tape, where the client's own
+    // mentions of the recorder's base become {{baseUrl}} too. A changed
+    // body's recorded Content-Length follows it.
+    client_body = body
+    client_len = resp_body_len
+    if rewrite == 1 {
+        if body_is_binary(body_for_tape) == 0 && string.index_of(body_for_tape, ubase) >= 0 {
+            rewritten = replace_base_url(body_for_tape, ubase, rbase)
+            if string.equals(rewritten, body_for_tape) == 0 {
+                client_body = rewritten
+                client_len = string.length(rewritten)
+                if upstream_gzip == 1 { caller_headers = response_headers_for_tape(raw_headers, 1, 1) }
+                body_for_tape = replace_base_url(body_for_tape, ubase, "{{baseUrl}}")
+                resp_headers = set_content_length_in_block(resp_headers, string.length(body_for_tape))
+            }
+        }
+        caller_headers = replace_base_url(caller_headers, ubase, rbase)
+        resp_headers = replace_base_url(resp_headers, ubase, "{{baseUrl}}")
+        req_headers = replace_base_url(req_headers, rbase, "{{baseUrl}}")
+        if body_is_binary(req_body_for_tape) == 0 {
+            tape_req_body = replace_base_url(req_body_for_tape, rbase, "{{baseUrl}}")
+            if string.equals(tape_req_body, req_body_for_tape) == 0 {
+                req_body_for_tape = tape_req_body
+                req_headers = set_content_length_in_block(req_headers, string.length(tape_req_body))
+            }
+        }
+    }
+
     // Append and fill in the response headers as one step under the Tape
     // lock: a concurrent request on this VCR appends too, and "the last
     // interaction" must be this one. (The upstream call above runs unlocked.)
@@ -2588,12 +2636,51 @@ do_record(vc: *Vcr, req: ptr, res: ptr) {
 
     http_response_set_status(res, http_response_status(cresp))
     emit_recorded_headers_to_response(res, caller_headers)
-    http_response_set_body_n(res, string.bytes(body), resp_body_len)
+    http_response_set_body_n(res, string.bytes(client_body), client_len)
     head_content_length(req, res, resp_headers)
 
     set_outcome_k(vc, "", KIND_OK, rec_index)
 
     http_response_free(cresp)
+}
+
+// `text` with every occurrence of base URL `from` (no trailing slash)
+// replaced by `to`, where it is a whole base: the next character does not
+// continue the authority (a port digit, a host letter, '-' or '.' followed
+// by more of the name), so http://h:80 is not taken out of http://h:8080.
+replace_base_url(text: string, from: string, to: string) -> string {
+    if string.length(from) == 0 || string.index_of(text, from) < 0 { return text }
+    out = string.copy("")
+    cursor = 0
+    n = string.length(text)
+    fl = string.length(from)
+    while cursor < n {
+        at = string.index_of_from(text, from, cursor)
+        if at < 0 { break }
+        after = at + fl
+        whole = 1
+        if after < n {
+            c = string.char_at(text, after)
+            if (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 45 { whole = 0 }
+            if c == 46 && after + 1 < n {
+                d = string.char_at(text, after + 1)
+                if (d >= 48 && d <= 57) || (d >= 65 && d <= 90) || (d >= 97 && d <= 122) { whole = 0 }
+            }
+        }
+        out = string_concat(out, string.substring(text, cursor, at))
+        if whole == 1 { out = string_concat(out, to) } else { out = string_concat(out, from) }
+        cursor = after
+    }
+    return string_concat(out, string.substring(text, cursor, n))
+}
+
+// The upstream base as a whole URL to rewrite: no trailing slash.
+upstream_base_url(base: string) -> string {
+    out = base
+    while string.length(out) > 0 && string.char_at(out, string.length(out) - 1) == 47 {
+        out = string.substring(out, 0, string.length(out) - 1)
+    }
+    return out
 }
 
 // ---- playback path (per-server) ----
@@ -3895,6 +3982,16 @@ set_upstream_cafile_h(server: ptr, path: string) -> string {
 // the recorder's. A name-based virtual host upstream wants its own name,
 // so this is off by default. Connection-level only: the recording is the
 // same either way.
+// Record mode (opt-in): the upstream's base URL, written by the service in
+// a response (a service directory, a Location, a link), becomes the
+// recorder's own in what the client gets, so the client keeps talking to the
+// recorder; the recorder's, written by the client in a request, becomes the
+// upstream's in what is forwarded; and the tape holds {{baseUrl}} in both
+// places, which playback fills on both sides (docs/vcr-address.md).
+set_rewrite_upstream_base_h(server: ptr, on: int) {
+    if on != 0 { key_for(server).settings.rewrite_upstream_base = 1 } else { key_for(server).settings.rewrite_upstream_base = 0 }
+}
+get_rewrite_upstream_base_h(server: ptr) -> int { return key_for(server).settings.rewrite_upstream_base }
 set_forward_host_h(server: ptr, on: int) {
     key_for(server).settings.forward_host = on
 }

@@ -51,6 +51,34 @@ class ServirtiumKotlinTest {
         }
     }
 
+    @Test fun `rewriteUpstreamBase keeps the client on the VCR and replays on another port`() {
+        val directory = Files.createTempDirectory("vcr-origin-")
+        fun run(vararg args: String): String {
+            val process = ProcessBuilder(listOf("../target/test-tools/origin_fixture") + args)
+                .redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText()
+            assertEquals(0, process.waitFor(), output)
+            return output.trim()
+        }
+        try {
+            val tape = directory.resolve("tape.md").toString()
+            val upstream = run("start", directory.toString())
+            record(tape, upstream) { rewriteUpstreamBase() }.use { rec ->
+                run("drive", directory.toString(), rec.baseUrl())
+                assertEquals(Outcome.OK, rec.lastKind())
+            }
+            run("check", directory.toString())
+            playback(tape).use { vcr ->
+                run("replay", directory.toString(), vcr.baseUrl())
+                assertEquals(Outcome.OK, vcr.lastKind())
+                vcr.assertAllConsumed()
+            }
+        } finally {
+            Files.list(directory).use { files -> files.forEach { Files.delete(it) } }
+            Files.delete(directory)
+        }
+    }
+
     @Test fun `replay diagnostics have explicit consumption`() {
         playback("../core_tests/diagnostics/playback.md").use { server ->
             server.testContext("Kotlin scenario", "scenario.test", 123)

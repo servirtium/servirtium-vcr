@@ -279,6 +279,10 @@ export const emphasizeHttpVerbs = lazy(
   'void aether_vcr_embed_emphasize_http_verbs(void* server)',
 )
 
+export const setRewriteUpstreamBase = lazy(
+  'void aether_vcr_embed_set_rewrite_upstream_base(void* server, int on)',
+)
+
 export const setPrettyXml = lazy('void aether_vcr_embed_set_pretty_xml(void* server, int indent)')
 
 export const setPrettyJson = lazy('void aether_vcr_embed_set_pretty_json(void* server, int indent)')

@@ -77,6 +77,35 @@ class ServirtiumScalaTest:
       Files.delete(directory)
 
 
+  @Test def rewriteUpstreamBaseKeepsTheClientOnTheVcr(): Unit =
+    val directory = Files.createTempDirectory("vcr-origin-")
+    def run(args: String*): String =
+      val cmd = new java.util.ArrayList[String]()
+      cmd.add("../target/test-tools/origin_fixture")
+      args.foreach(cmd.add)
+      val process = new ProcessBuilder(cmd).redirectErrorStream(true).start()
+      val output = new String(process.getInputStream.readAllBytes())
+      assertEquals(0, process.waitFor(), output)
+      output.trim
+    try
+      val tape = directory.resolve("tape.md").toString
+      val upstream = run("start", directory.toString)
+      using(Servirtium.record(tape, upstream) { builder => builder.rewriteUpstreamBase() }) { rec =>
+        run("drive", directory.toString, rec.baseUrl())
+        assertEquals(Outcome.OK, rec.lastKind())
+      }
+      run("check", directory.toString)
+      using(Servirtium.playback(tape)()) { vcr =>
+        run("replay", directory.toString, vcr.baseUrl())
+        assertEquals(Outcome.OK, vcr.lastKind())
+        vcr.assertAllConsumed()
+      }
+    finally
+      val files = Files.list(directory)
+      try files.forEach(file => Files.delete(file)) finally files.close()
+      Files.delete(directory)
+
+
   @Test def retainedReplayDiagnostics(): Unit =
     using(Servirtium.playback("../core_tests/diagnostics/playback.md")()) { server =>
       server.testContext("Scala scenario", "scenario.test", 123)

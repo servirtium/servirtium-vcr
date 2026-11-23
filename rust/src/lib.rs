@@ -178,6 +178,7 @@ impl Vcr {
             note: None,
             indent_code_blocks: false,
             emphasize_http_verbs: false,
+            rewrite_upstream_base: false,
             pretty_xml: 0,
             pretty_json: 0,
             upstream_cafile: None,
@@ -638,6 +639,7 @@ pub struct RecordBuilder {
     note: Option<(String, String)>,
     indent_code_blocks: bool,
     emphasize_http_verbs: bool,
+    rewrite_upstream_base: bool,
     pretty_xml: i32,
     pretty_json: i32,
     upstream_cafile: Option<String>,
@@ -835,6 +837,15 @@ impl RecordBuilder {
         self.emphasize_http_verbs = true;
         self
     }
+    /// The upstream's base URL in a response becomes this recorder's in what
+    /// the client receives (a service that hands out its own absolute URLs no
+    /// longer sends the client around the recorder), the recorder's in a
+    /// request becomes the upstream's in what is forwarded, and the tape holds
+    /// `{{baseUrl}}` for both, which playback fills (docs/vcr-address.md).
+    pub fn rewrite_upstream_base(mut self) -> Self {
+        self.rewrite_upstream_base = true;
+        self
+    }
     /// Pretty-print recorded XML request and response bodies (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
     pub fn pretty_xml(mut self, indent: i32) -> Self {
         self.pretty_xml = indent;
@@ -938,6 +949,9 @@ impl RecordBuilder {
         }
         if self.emphasize_http_verbs {
             unsafe { (n.emphasize_http_verbs)(handle) };
+        }
+        if self.rewrite_upstream_base {
+            unsafe { (n.set_rewrite_upstream_base)(handle, 1) };
         }
         if self.pretty_xml > 0 {
             unsafe { (n.set_pretty_xml)(handle, self.pretty_xml) };

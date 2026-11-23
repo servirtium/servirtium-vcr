@@ -243,6 +243,10 @@ final class NativeMethods {
             "aether_vcr_embed_emphasize_http_verbs",
             FunctionDescriptor.ofVoid(C_PTR));
 
+    static final MethodHandle SET_REWRITE_UPSTREAM_BASE = down(
+            "aether_vcr_embed_set_rewrite_upstream_base",
+            FunctionDescriptor.ofVoid(C_PTR, C_INT));
+
     static final MethodHandle SET_PRETTY_XML = down(
             "aether_vcr_embed_set_pretty_xml",
             FunctionDescriptor.ofVoid(C_PTR, C_INT));

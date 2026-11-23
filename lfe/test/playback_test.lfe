@@ -40,6 +40,33 @@
       (lists:foreach (lambda (name) (file:delete (++ directory "/" name))) files))
     (file:del_dir directory))
 
+;; rewrite_upstream_base: the shared origin_fixture contract (docs/vcr-address.md).
+  (let* ((directory (++ "/tmp/vcr-origin-lfe-" (os:getpid)))
+         (fixture "../target/test-tools/origin_fixture ")
+         (tape (++ directory "/tape.md")))
+    (file:make_dir directory)
+    (let* ((upstream (string:trim (os:cmd (++ fixture "start '" directory "'"))))
+           (rec (servirtium_lfe:record tape upstream)))
+      (try
+        (progn
+          (servirtium_lfe:set_rewrite_upstream_base rec 'true)
+          (let ((out (os:cmd (++ fixture "drive '" directory "' '" (servirtium_lfe:base_url rec) "' && echo DRIVE_OK"))))
+            (case (string:find out "DRIVE_OK") ('nomatch (erlang:error (tuple 'origin_fixture out))) (_ 'ok)))
+          (case (servirtium_lfe:last_kind rec) ('ok 'ok) (other (erlang:error (tuple 'origin_record other)))))
+        (after (servirtium_lfe:close rec))))
+    (let ((out (os:cmd (++ fixture "check '" directory "' && echo CHECK_OK"))))
+      (case (string:find out "CHECK_OK") ('nomatch (erlang:error (tuple 'origin_fixture out))) (_ 'ok)))
+    (let ((play (servirtium_lfe:playback tape)))
+      (try
+        (progn
+          (let ((out (os:cmd (++ fixture "replay '" directory "' '" (servirtium_lfe:base_url play) "' && echo REPLAY_OK"))))
+            (case (string:find out "REPLAY_OK") ('nomatch (erlang:error (tuple 'origin_fixture out))) (_ 'ok)))
+          (case (servirtium_lfe:last_kind play) ('ok 'ok) (other (erlang:error (tuple 'origin_playback other)))))
+        (after (servirtium_lfe:close play))))
+    (let (((tuple 'ok files) (file:list_dir directory)))
+      (lists:foreach (lambda (name) (file:delete (++ directory "/" name))) files))
+    (file:del_dir directory))
+
   (let ((server (servirtium_lfe:playback "../core_tests/diagnostics/playback.md")))
     (servirtium_lfe:test_context server "LFE scenario" "scenario.test" 123)
     (let ((out (os:cmd (++ "../target/test-tools/diagnostic_fixture '" (servirtium_lfe:base_url server) "' && echo DRIVER_OK"))))

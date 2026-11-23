@@ -175,6 +175,7 @@
    "clear_match_headers" [:void :ptr]
    "indent_code_blocks" [:void :ptr]
    "emphasize_http_verbs" [:void :ptr]
+   "set_rewrite_upstream_base" [:void :ptr :int32]
    "clear_redactions" [:void :ptr]
    "clear_unredactions" [:void :ptr]
    "clear_header_removals" [:void :ptr]
@@ -492,6 +493,14 @@
   [srv]
   (c "emphasize_http_verbs" (live srv "emphasize_http_verbs")) nil)
 
+(defn set-rewrite-upstream-base
+  "Record mode: the upstream's base URL in a response becomes this recorder's in
+  what the client receives, the recorder's in a request becomes the upstream's
+  in what is forwarded, and the tape holds {{baseUrl}} for both, which playback
+  fills (docs/vcr-address.md)."
+  [srv on]
+  (c "set_rewrite_upstream_base" (live srv "set_rewrite_upstream_base") (flag on)) nil)
+
 (defn set-rules-footer
   "Turn the recording-rules footer on or off."
   [srv on]
@@ -798,7 +807,7 @@
    :remove-cloud-headers :redact-credentials :redact-credential-headers
    :remove-headers :redact :redact-headers :redact-query-params :redact-json-fields
    :unredact :substitute :volatile-markers :volatile-profile :volatile-rules :volatile-binds :redact-whole-tape :notes
-   :static-content :untaped :indent-code-blocks :emphasize-http-verbs
+   :static-content :untaped :indent-code-blocks :emphasize-http-verbs :rewrite-upstream-base
    :rules-footer :pretty-xml :pretty-json :license-notice :upstream-cafile
    :sort-json-keys :sort-json-arrays :sort-json-arrays-at :sort-response-headers
    :sort-header-values :playback-range :tls :tls-pem])
@@ -847,6 +856,7 @@
     :untaped (each p (one-or-many v) (untaped srv p))
     :indent-code-blocks (when v (indent-code-blocks srv))
     :emphasize-http-verbs (when v (emphasize-http-verbs srv))
+    :rewrite-upstream-base (set-rewrite-upstream-base srv v)
     :rules-footer (set-rules-footer srv v)
     :pretty-xml (set-pretty-xml srv (if (number? v) v 2))
     :pretty-json (set-pretty-json srv (if (number? v) v 2))

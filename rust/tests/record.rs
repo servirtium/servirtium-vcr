@@ -296,3 +296,32 @@ fn structured_redaction_helpers_preserve_upstream_credentials() {
     run(&["check", dir]);
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+
+#[test]
+fn rewrite_upstream_base_keeps_the_client_on_the_vcr() {
+    use std::process::Command;
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let directory = std::env::temp_dir().join(format!("vcr-origin-rust-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir(&directory).unwrap();
+    let run = |args: &[&str]| {
+        let output = Command::new(root.join("../target/test-tools/origin_fixture"))
+            .args(args).output().unwrap();
+        assert!(output.status.success(), "{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    let dir = directory.to_str().unwrap();
+    let tape = directory.join("tape.md");
+    let upstream = run(&["start", dir]);
+    let rec = servirtium::Vcr::record(tape.to_str().unwrap(), upstream).rewrite_upstream_base().start().unwrap();
+    run(&["drive", dir, &rec.base_url()]);
+    assert_eq!(rec.last_kind(), servirtium::Outcome::Ok);
+    drop(rec);
+    run(&["check", dir]);
+    let play = servirtium::Vcr::playback(tape.to_str().unwrap()).start().unwrap();
+    run(&["replay", dir, &play.base_url()]);
+    assert_eq!(play.last_kind(), servirtium::Outcome::Ok);
+    play.assert_all_consumed().unwrap();
+    drop(play);
+    std::fs::remove_dir_all(directory).unwrap();
+}

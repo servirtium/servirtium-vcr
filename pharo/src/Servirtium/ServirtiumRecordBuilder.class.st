@@ -15,6 +15,7 @@ Class {
 		'note',
 		'indentCodeBlocks',
 		'emphasizeHttpVerbs',
+		'rewriteUpstreamBase',
 		'prettyXml',
 		'prettyJson',
 		'upstreamCafile',
@@ -44,6 +45,7 @@ ServirtiumRecordBuilder >> initializeTape: aTapePath [
 	note := nil.
 	indentCodeBlocks := false.
 	emphasizeHttpVerbs := false.
+	rewriteUpstreamBase := false.
 	prettyXml := 0.
 	prettyJson := 0.
 	upstreamCafile := nil.
@@ -101,6 +103,14 @@ ServirtiumRecordBuilder >> emphasizeHttpVerbs [
 	"Emit the HTTP method emphasized (e.g. *GET*) in headings."
 
 	emphasizeHttpVerbs := true.
+	^ self
+]
+
+{ #category : 'configuring' }
+ServirtiumRecordBuilder >> rewriteUpstreamBase [
+	"The upstream's base URL in a response becomes this recorder's in what the client receives, the recorder's in a request becomes the upstream's in what is forwarded, and the tape holds {{baseUrl}} for both, which playback fills (docs/vcr-address.md)."
+
+	rewriteUpstreamBase := true.
 	^ self
 ]
 
@@ -216,6 +226,7 @@ ServirtiumRecordBuilder >> applyConfig: handle [
 	super applyConfig: handle.
 	indentCodeBlocks ifTrue: [ self library indentCodeBlocks: handle ].
 	emphasizeHttpVerbs ifTrue: [ self library emphasizeHttpVerbs: handle ].
+	rewriteUpstreamBase ifTrue: [ self library setRewriteUpstreamBase: handle on: 1 ].
 	prettyXml > 0 ifTrue: [ self library setPrettyXml: handle indent: prettyXml ].
 	prettyJson > 0 ifTrue: [ self library setPrettyJson: handle indent: prettyJson ].
 	sortJsonKeys ifTrue: [ self library setSortJsonKeys: handle on: 1 ].

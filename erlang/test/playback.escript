@@ -35,6 +35,8 @@ main(_) ->
     end,
 
 
+    rewrite_upstream_base(),
+
     DiagnosticServer = servirtium:playback("../core_tests/diagnostics/playback.md"),
     ok = servirtium:test_context(DiagnosticServer, "Erlang scenario", "scenario.test", 123),
     Driven = os:cmd("../target/test-tools/diagnostic_fixture '" ++ servirtium:base_url(DiagnosticServer) ++ "' && echo DRIVER_OK"),
@@ -263,3 +265,34 @@ start_error(Tape, Opts) ->
     try servirtium:playback_with(Tape, Opts) of
         _ -> error(expected_start_failure)
     catch error:{servirtium, Reason} -> element(tuple_size(Reason), Reason) end.
+
+%% rewrite_upstream_base: the shared origin_fixture contract (docs/vcr-address.md).
+rewrite_upstream_base() ->
+    Directory = "/tmp/vcr-origin-erlang-" ++ os:getpid(),
+    ok = file:make_dir(Directory),
+    Run = fun(Action, Extra) ->
+        Command = "../target/test-tools/origin_fixture " ++ Action ++ " '" ++ Directory ++ "'" ++ Extra,
+        Output = os:cmd(Command ++ " 2>&1; printf '\\nRC:%s' $?"),
+        [Text, "0"] = string:split(Output, "\nRC:", trailing),
+        string:trim(Text)
+    end,
+    try
+        Tape = Directory ++ "/tape.md",
+        Upstream = Run("start", ""),
+        Recorder = servirtium:record(Tape, Upstream),
+        try
+            ok = servirtium:set_rewrite_upstream_base(Recorder, true),
+            Run("drive", " '" ++ servirtium:base_url(Recorder) ++ "'"),
+            ok = servirtium:last_kind(Recorder)
+        after ok = servirtium:close(Recorder) end,
+        Run("check", ""),
+        Player = servirtium:playback(Tape),
+        try
+            Run("replay", " '" ++ servirtium:base_url(Player) ++ "'"),
+            ok = servirtium:last_kind(Player)
+        after ok = servirtium:close(Player) end
+    after
+        {ok, Names} = file:list_dir(Directory),
+        [file:delete(filename:join(Directory, Name)) || Name <- Names],
+        file:del_dir(Directory)
+    end.

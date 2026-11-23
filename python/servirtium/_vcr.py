@@ -435,6 +435,7 @@ class RecordBuilder(_BuilderBase):
         self._note: tuple[str, str] | None = None
         self._indent_code_blocks = False
         self._emphasize_http_verbs = False
+        self._rewrite_upstream_base = False
         self._pretty_xml = 0
         self._pretty_json = 0
         self._upstream_cafile: str | None = None
@@ -490,6 +491,15 @@ class RecordBuilder(_BuilderBase):
     def emphasize_http_verbs(self, on: bool = True):
         """Emit the HTTP method emphasized (e.g. ``*GET*``) in headings."""
         self._emphasize_http_verbs = on
+        return self
+
+    def rewrite_upstream_base(self, on: bool = True):
+        """The upstream's base URL in a response becomes this recorder's in what
+        the client receives (so a service that hands out its own absolute URLs
+        does not send the client around the recorder), the recorder's in a
+        request becomes the upstream's in what is forwarded, and the tape holds
+        ``{{baseUrl}}`` for both, which playback fills (docs/vcr-address.md)."""
+        self._rewrite_upstream_base = on
         return self
 
     def pretty_xml(self, indent: int = 2):
@@ -559,6 +569,8 @@ class RecordBuilder(_BuilderBase):
             N.indent_code_blocks(handle)
         if self._emphasize_http_verbs:
             N.emphasize_http_verbs(handle)
+        if self._rewrite_upstream_base:
+            N.set_rewrite_upstream_base(handle, 1)
         if self._pretty_xml > 0:
             N.set_pretty_xml(handle, self._pretty_xml)
         if self._pretty_json > 0:

@@ -485,6 +485,18 @@ vcr_embed_set_forward_host(s: ptr, on: int) {
     if s == null { return }
     vcr.set_forward_host_h(s, on)
 }
+// Record mode (opt-in, on = 1): the upstream's base URL in a response
+// becomes the recorder's in what the client receives, the recorder's in a
+// request becomes the upstream's in what is forwarded, and the tape holds
+// {{baseUrl}} for both, which playback fills (docs/vcr-address.md).
+vcr_embed_set_rewrite_upstream_base(s: ptr, on: int) {
+    if s == null { return }
+    vcr.set_rewrite_upstream_base_h(s, on)
+}
+vcr_embed_get_rewrite_upstream_base(s: ptr) -> int {
+    if s == null { return 0 }
+    return vcr.get_rewrite_upstream_base_h(s)
+}
 vcr_embed_redact_credentials(s: ptr) -> ptr {
     if s == null { return vcr_embed_dup("") }
     return vcr_embed_dup(vcr.redact_credentials_h(s))

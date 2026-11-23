@@ -142,6 +142,29 @@ pub fn structured_redaction_test() {
 }
 
 
+pub fn rewrite_upstream_base_test() {
+  let directory = "/tmp/vcr-origin-gleam-" <> from_charlist(getpid())
+  let fixture = "../target/test-tools/origin_fixture "
+  let upstream = shell(fixture <> "start '" <> directory <> "'") |> trim_trailing_newlines()
+  let rec = servirtium.record(directory <> "/tape.md", upstream)
+  servirtium.set_rewrite_upstream_base(rec, True)
+  shell(fixture <> "drive '" <> directory <> "' '" <> servirtium.base_url(rec) <> "' && echo DRIVE_OK")
+    |> string.contains("DRIVE_OK\n")
+    |> should.be_true()
+  servirtium.last_kind(rec) |> should.equal(servirtium.Ok)
+  servirtium.close(rec) |> should.equal(servirtium.Closed)
+  shell(fixture <> "check '" <> directory <> "'")
+    |> should.equal("rewrite_upstream_base: the tape holds {{baseUrl}}\n")
+  let play = servirtium.playback(directory <> "/tape.md")
+  shell(fixture <> "replay '" <> directory <> "' '" <> servirtium.base_url(play) <> "' && echo REPLAY_OK")
+    |> string.contains("REPLAY_OK\n")
+    |> should.be_true()
+  servirtium.last_kind(play) |> should.equal(servirtium.Ok)
+  servirtium.close(play) |> should.equal(servirtium.Closed)
+  let _ = shell("rm -r '" <> directory <> "'")
+}
+
+
 pub fn replay_diagnostics_test() {
   let server = servirtium.playback("../core_tests/diagnostics/playback.md")
   let _ = servirtium.test_context(server, "Gleam scenario", "scenario.test", 123)

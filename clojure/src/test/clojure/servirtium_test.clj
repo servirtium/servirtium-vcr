@@ -95,6 +95,31 @@
         (Files/delete directory)))))
 
 
+(deftest rewrite-upstream-base-keeps-the-client-on-the-vcr
+  (let [directory (Files/createTempDirectory "vcr-origin-" (make-array FileAttribute 0))
+        tape (str (.resolve directory "tape.md"))
+        run (fn [& args]
+              (let [process (-> (ProcessBuilder. ^java.util.List
+                                      (vec (concat ["target/test-tools/origin_fixture"] args)))
+                                (.redirectErrorStream true) (.start))
+                    output (slurp (.getInputStream process))]
+                (is (= 0 (.waitFor process)) output)
+                (.trim output)))]
+    (try
+      (let [upstream (run "start" (str directory))]
+        (with-open [rec (vcr/record tape upstream {:rewrite-upstream-base true})]
+          (run "drive" (str directory) (.baseUrl rec))
+          (is (= Outcome/OK (.lastKind rec)))))
+      (run "check" (str directory))
+      (with-open [play (vcr/playback tape)]
+        (run "replay" (str directory) (.baseUrl play))
+        (is (= Outcome/OK (.lastKind play))))
+      (finally
+        (with-open [files (Files/list directory)]
+          (doseq [file (iterator-seq (.iterator files))] (Files/delete file)))
+        (Files/delete directory)))))
+
+
 (deftest retained-replay-diagnostics
   (with-open [server (vcr/playback "core_tests/diagnostics/playback.md")]
     (vcr/test-context server "Clojure scenario" "scenario.test" 123)

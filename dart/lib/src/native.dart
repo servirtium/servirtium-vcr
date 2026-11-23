@@ -342,6 +342,8 @@ class Native {
       .lookupFunction<_VoidHandleC, _VoidHandleD>('aether_vcr_embed_indent_code_blocks');
   static final emphasizeHttpVerbs = _lib.lookupFunction<_VoidHandleC, _VoidHandleD>(
       'aether_vcr_embed_emphasize_http_verbs');
+  static final setRewriteUpstreamBase =
+      _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_rewrite_upstream_base');
   static final setPrettyXml =
       _lib.lookupFunction<_SetIntC, _SetIntD>('aether_vcr_embed_set_pretty_xml');
   static final setPrettyJson =

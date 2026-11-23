@@ -136,6 +136,7 @@ module Servirtium
       [:set_match_multiple,  'aether_vcr_embed_set_match_multiple',  VOID, [VOIDP, INT]],
       [:indent_code_blocks,  'aether_vcr_embed_indent_code_blocks',  VOID, [VOIDP]],
       [:emphasize_http_verbs, 'aether_vcr_embed_emphasize_http_verbs', VOID, [VOIDP]],
+      [:set_rewrite_upstream_base, 'aether_vcr_embed_set_rewrite_upstream_base', VOID, [VOIDP, INT]],
       [:set_pretty_xml, 'aether_vcr_embed_set_pretty_xml', VOID, [VOIDP, INT]],
       [:set_pretty_json, 'aether_vcr_embed_set_pretty_json', VOID, [VOIDP, INT]],
       [:remove_transport_headers, 'aether_vcr_embed_remove_transport_headers', VOIDP, [VOIDP]],

@@ -184,6 +184,33 @@ int main(int argc, char** argv) {
 
 
     {
+        // rewrite_upstream_base: the shared origin_fixture contract (docs/vcr-address.md).
+        char temp[] = "/tmp/vcr-origin-cpp-XXXXXX";
+        const char* made = mkdtemp(temp);
+        ck("create origin fixture directory", made != nullptr);
+        if (!made) return 1;
+        const std::string directory = made;
+        const auto fixture = (std::filesystem::path(tape).parent_path().parent_path().parent_path()
+                              / "target/test-tools/origin_fixture").string();
+        const auto upstream = run_cmd("'" + fixture + "' start '" + directory + "'");
+        try {
+            {
+                auto rec = servirtium::Vcr::record(directory + "/tape.md", upstream);
+                rec.rewrite_upstream_base();
+                ck("the client stayed on the recorder", std::system(("'" + fixture + "' drive '" + directory + "' '" + rec.base_url() + "'").c_str()) == 0);
+                ck("origin record outcome", rec.last_kind() == servirtium::Outcome::Ok);
+                rec.flush();
+            }
+            ck("the tape holds {{baseUrl}}", std::system(("'" + fixture + "' check '" + directory + "'").c_str()) == 0);
+            auto play = servirtium::Vcr::playback(directory + "/tape.md");
+            ck("replayed on another port", std::system(("'" + fixture + "' replay '" + directory + "' '" + play.base_url() + "'").c_str()) == 0);
+            ck("origin playback outcome", play.last_kind() == servirtium::Outcome::Ok);
+        } catch (...) { std::filesystem::remove_all(directory); throw; }
+        std::filesystem::remove_all(directory);
+    }
+
+
+    {
         const auto root = std::filesystem::path(tape).parent_path().parent_path().parent_path();
         auto server = servirtium::Vcr::playback((root / "core_tests/diagnostics/playback.md").string());
         server.test_context("C++ scenario", "scenario.test", 123);

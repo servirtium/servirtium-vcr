@@ -74,6 +74,7 @@ module Servirtium.Vcr.Native
   , aether_vcr_embed_set_match_multiple
   , aether_vcr_embed_indent_code_blocks
   , aether_vcr_embed_emphasize_http_verbs
+  , aether_vcr_embed_set_rewrite_upstream_base
   , aether_vcr_embed_set_pretty_xml
   , aether_vcr_embed_set_pretty_json
   , aether_vcr_embed_remove_transport_headers
@@ -253,6 +254,9 @@ foreign import ccall unsafe "aether_vcr_embed_indent_code_blocks"
 
 foreign import ccall unsafe "aether_vcr_embed_emphasize_http_verbs"
   aether_vcr_embed_emphasize_http_verbs :: Handle -> IO ()
+
+foreign import ccall unsafe "aether_vcr_embed_set_rewrite_upstream_base"
+  aether_vcr_embed_set_rewrite_upstream_base :: Handle -> CInt -> IO ()
 
 foreign import ccall unsafe "aether_vcr_embed_set_pretty_xml"
   aether_vcr_embed_set_pretty_xml :: Handle -> CInt -> IO ()

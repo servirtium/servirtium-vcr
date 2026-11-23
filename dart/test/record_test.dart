@@ -30,6 +30,32 @@ void main() {
     } finally { directory.deleteSync(recursive: true); }
   });
 
+  test('rewriteUpstreamBase keeps the client on the VCR and replays on another port', () {
+    final directory = Directory.systemTemp.createTempSync('vcr-origin-');
+    final fixture = File('../target/test-tools/origin_fixture').absolute.path;
+    String run(List<String> args) {
+      final result = Process.runSync(fixture, args);
+      expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+      return (result.stdout as String).trim();
+    }
+    try {
+      final tape = '${directory.path}/tape.md';
+      final upstream = run(['start', directory.path]);
+      final rec = Vcr.record(tape, upstream).rewriteUpstreamBase().start();
+      try {
+        run(['drive', directory.path, rec.baseUrl]);
+        expect(rec.lastKind, VcrOutcome.ok);
+      } finally { rec.close(); }
+      run(['check', directory.path]);
+      final vcr = Vcr.playback(tape).start();
+      try {
+        run(['replay', directory.path, vcr.baseUrl]);
+        expect(vcr.lastKind, VcrOutcome.ok);
+        vcr.assertAllConsumed();
+      } finally { vcr.close(); }
+    } finally { directory.deleteSync(recursive: true); }
+  });
+
   test('retained replay diagnostics support observer reads', () {
     final server = Vcr.playback('../core_tests/diagnostics/playback.md').start();
     try {

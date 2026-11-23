@@ -43,6 +43,7 @@
    (redact_credentials 1)
    (redact_credential_header 2)
    (set_upstream_cafile 2)
+   (set_rewrite_upstream_base 2)
    (set_sort_json_keys 2) (get_sort_json_keys 1)
    (sort_json_array 3) (sort_json_array_at 4)
    (set_sort_response_headers 2) (get_sort_response_headers 1)
@@ -261,6 +262,13 @@
 ;; when the tape is written (close/1 returns #(error "sort_json_keys needs
 ;; pretty_json: ...")).
 ;; JSON object keys sorted at every depth in recorded JSON response bodies.
+;; Record mode: the upstream's base URL in a response becomes this recorder's in
+;; what the client receives, the recorder's in a request becomes the upstream's
+;; in what is forwarded, and the tape holds {{baseUrl}} for both, which
+;; playback fills (docs/vcr-address.md).
+(defun set_rewrite_upstream_base (vcr on)
+  (servirtium_nif:set_rewrite_upstream_base (maps:get 'handle vcr) (bool-int on)))
+
 (defun set_sort_json_keys (vcr on)
   (servirtium_nif:set_sort_json_keys (maps:get 'handle vcr) (bool-int on)))
 (defun get_sort_json_keys (vcr)

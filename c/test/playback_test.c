@@ -495,6 +495,51 @@ int main(int argc, char **argv) {
 
 
     {
+        /* rewrite_upstream_base: the shared origin_fixture contract (docs/vcr-address.md). */
+        char directory[] = "/tmp/vcr-origin-c-XXXXXX";
+        char fixture[4096], command[16384], upstream[256], record_tape[4096];
+        char *part;
+        FILE *pipe;
+        sv_vcr *rec, *play;
+        sv_str value;
+        ck("create origin fixture directory", mkdtemp(directory) != NULL);
+        snprintf(fixture, sizeof fixture, "%s", tape);
+        part = strrchr(fixture, '/'); if (part) *part = '\0';
+        part = strrchr(fixture, '/'); if (part) *part = '\0';
+        part = strrchr(fixture, '/'); if (part) *part = '\0';
+        strcat(fixture, "/target/test-tools/origin_fixture");
+        snprintf(command, sizeof command, "'%s' start '%s'", fixture, directory);
+        pipe = popen(command, "r");
+        ck("start origin upstream", pipe != NULL);
+        if (!pipe) return 1;
+        ck("origin upstream URL", fgets(upstream, sizeof upstream, pipe) != NULL);
+        ck("origin upstream started", pclose(pipe) == 0);
+        upstream[strcspn(upstream, "\r\n")] = '\0';
+        snprintf(record_tape, sizeof record_tape, "%s/tape.md", directory);
+        rec = sv_record(record_tape, upstream, NULL);
+        ck("open origin recorder", rec != NULL);
+        sv_set_rewrite_upstream_base(rec, 1);
+        value = sv_base_url(rec);
+        snprintf(command, sizeof command, "'%s' drive '%s' '%s'", fixture, directory, value.ptr);
+        ck("the client stayed on the recorder", system(command) == 0); sv_free(value);
+        ck("origin record outcome", sv_last_kind(rec) == SV_OK);
+        value = sv_close_and_flush(rec, NULL); ck("origin flush", value.ptr && !value.ptr[0]); sv_free(value);
+        snprintf(command, sizeof command, "'%s' check '%s'", fixture, directory);
+        ck("the tape holds {{baseUrl}}", system(command) == 0);
+        play = sv_playback(record_tape, NULL);
+        ck("open origin playback", play != NULL);
+        value = sv_base_url(play);
+        snprintf(command, sizeof command, "'%s' replay '%s' '%s'", fixture, directory, value.ptr);
+        ck("replayed on another port", system(command) == 0); sv_free(value);
+        ck("origin playback outcome", sv_last_kind(play) == SV_OK);
+        sv_close(play);
+        { const char *files[] = {"url", "done", "items.json", "tape.md"}; size_t i;
+          for (i=0; i<4; ++i) { snprintf(command, sizeof command, "%s/%s", directory, files[i]); remove(command); }
+          rmdir(directory); }
+    }
+
+
+    {
         char root[4096], diagnostic_tape[8192], cmd[16384];
         char *part; int i; sv_vcr *server; sv_str value;
         snprintf(root, sizeof root, "%s", tape);

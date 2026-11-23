@@ -92,6 +92,7 @@ lib LibVcr
   fun set_match_multiple = aether_vcr_embed_set_match_multiple(h : Void*, on : LibC::Int) : Void
   fun indent_code_blocks = aether_vcr_embed_indent_code_blocks(h : Void*) : Void
   fun emphasize_http_verbs = aether_vcr_embed_emphasize_http_verbs(h : Void*) : Void
+  fun set_rewrite_upstream_base = aether_vcr_embed_set_rewrite_upstream_base(h : Void*, on : LibC::Int) : Void
   fun set_pretty_xml = aether_vcr_embed_set_pretty_xml(h : Void*, indent : LibC::Int) : Void
   fun set_pretty_json = aether_vcr_embed_set_pretty_json(h : Void*, indent : LibC::Int) : Void
   fun get_pretty_json = aether_vcr_embed_get_pretty_json(h : Void*) : LibC::Int
@@ -543,6 +544,14 @@ module Servirtium
 
     def emphasize_http_verbs : Nil
       LibVcr.emphasize_http_verbs(@handle)
+    end
+
+    # Record mode: the upstream's base URL in a response becomes this recorder's
+    # in what the client receives, the recorder's in a request becomes the
+    # upstream's in what is forwarded, and the tape holds {{baseUrl}} for both,
+    # which playback fills (docs/vcr-address.md).
+    def rewrite_upstream_base(on : Bool = true) : Nil
+      LibVcr.set_rewrite_upstream_base(@handle, on ? 1 : 0)
     end
 
     # Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.

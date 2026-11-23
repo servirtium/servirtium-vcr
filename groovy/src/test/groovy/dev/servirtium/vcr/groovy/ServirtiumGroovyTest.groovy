@@ -54,6 +54,36 @@ class ServirtiumGroovyTest {
         }
     }
 
+    @Test void rewriteUpstreamBaseKeepsTheClientOnTheVcr() {
+        def directory = Files.createTempDirectory('vcr-origin-')
+        def run = { String... args ->
+            def process = new ProcessBuilder(['../target/test-tools/origin_fixture'] + args.toList())
+                .redirectErrorStream(true).start()
+            def output = process.inputStream.text
+            assertEquals(0, process.waitFor(), output)
+            output.trim()
+        }
+        try {
+            def tape = directory.resolve('tape.md').toString()
+            def upstream = run('start', directory.toString())
+            def rec = record(tape, upstream) { rewriteUpstreamBase() }
+            try {
+                run('drive', directory.toString(), rec.baseUrl())
+                assertEquals(Outcome.OK, rec.lastKind())
+            } finally { rec.close() }
+            run('check', directory.toString())
+            def vcr = playback(tape)
+            try {
+                run('replay', directory.toString(), vcr.baseUrl())
+                assertEquals(Outcome.OK, vcr.lastKind())
+                vcr.assertAllConsumed()
+            } finally { vcr.close() }
+        } finally {
+            Files.list(directory).withCloseable { files -> files.forEach { Files.delete(it) } }
+            Files.delete(directory)
+        }
+    }
+
     @Test void retainedReplayDiagnostics() {
         def server = playback('../core_tests/diagnostics/playback.md')
         try {

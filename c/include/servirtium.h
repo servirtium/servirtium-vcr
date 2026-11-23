@@ -244,6 +244,8 @@ void sv_set_match_xml_body(sv_vcr *vcr, int on);
 void sv_set_match_multiple(sv_vcr *vcr, int on);
 void sv_indent_code_blocks(sv_vcr *vcr);
 void sv_emphasize_http_verbs(sv_vcr *vcr);
+/* Record mode: the upstream's base URL in a response becomes this recorder's in what the client receives, the recorder's in a request becomes the upstream's in what is forwarded, and the tape holds {{baseUrl}} for both, which playback fills (docs/vcr-address.md). on = 1. */
+void sv_set_rewrite_upstream_base(sv_vcr *vcr, int on);
 /* Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML. */
 void sv_set_pretty_xml(sv_vcr *vcr, int indent);
 /* Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout. */

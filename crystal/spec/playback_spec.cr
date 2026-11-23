@@ -370,3 +370,34 @@ describe "Playback range" do
     end
   end
 end
+
+describe "rewrite_upstream_base" do
+  it "keeps the client on the VCR and replays on another port" do
+    directory = File.tempname("vcr-origin")
+    Dir.mkdir(directory)
+    fixture = File.expand_path("../../target/test-tools/origin_fixture", __DIR__)
+    run = ->(args : Array(String)) do
+      output = IO::Memory.new
+      status = Process.run(fixture, args, output: output, error: output)
+      fail output.to_s unless status.success?
+      output.to_s.strip
+    end
+    begin
+      tape = File.join(directory, "tape.md")
+      upstream = run.call(["start", directory])
+      Servirtium.record(tape, upstream) do |rec|
+        rec.rewrite_upstream_base
+        run.call(["drive", directory, rec.base_url])
+        rec.last_kind.should eq(Servirtium::Outcome::Ok)
+      end
+      run.call(["check", directory])
+      Servirtium.playback(tape) do |vcr|
+        run.call(["replay", directory, vcr.base_url])
+        vcr.last_kind.should eq(Servirtium::Outcome::Ok)
+      end
+    ensure
+      Dir.glob(File.join(directory, "*")).each { |file| File.delete(file) }
+      Dir.delete(directory)
+    end
+  end
+end

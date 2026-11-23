@@ -97,6 +97,37 @@ int main() {
     }
 
     {
+        // rewriteUpstreamBase: the shared origin_fixture contract (docs/vcr-address.md).
+        import std.file : tempDir, mkdir, rmdirRecurse;
+        import std.conv : to;
+        import core.sys.posix.unistd : getpid;
+        const directory = tempDir() ~ "/vcr-origin-d-" ~ getpid().to!string;
+        mkdir(directory);
+        scope (exit) rmdirRecurse(directory);
+        const fixture = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "../../target/test-tools/origin_fixture");
+        string originRun(string[] args) {
+            import std.process : execute;
+            auto result = execute([fixture] ~ args);
+            assert(result.status == 0, result.output);
+            return result.output.strip;
+        }
+        const upstream = originRun(["start", directory]);
+        {
+            auto rec = Vcr.record(directory ~ "/tape.md", upstream);
+            scope (exit) rec.close();
+            rec.rewriteUpstreamBase();
+            originRun(["drive", directory, rec.baseUrl()]);
+            ck("origin record outcome", rec.lastKind() == Outcome.ok);
+            rec.flush();
+        }
+        originRun(["check", directory]);
+        auto play = Vcr.playback(directory ~ "/tape.md");
+        scope (exit) play.close();
+        originRun(["replay", directory, play.baseUrl()]);
+        ck("origin playback outcome", play.lastKind() == Outcome.ok);
+    }
+
+    {
         const root = buildNormalizedPath(__FILE_FULL_PATH__.dirName, "../..");
         auto server = Vcr.playback(buildNormalizedPath(root, "core_tests/diagnostics/playback.md"));
         scope (exit) server.close();

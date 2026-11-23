@@ -1,0 +1,165 @@
+// Record mode's rewrite_upstream_base (docs/vcr-address.md): a service that
+// writes its own absolute URLs into responses (TFS's location service, a
+// HATEOAS API, a paging nextLink) hands the client the upstream's address,
+// and the client then goes around the recorder; Redact only changes the
+// tape. With the option on, the client gets the recorder's base where the
+// upstream wrote its own, the upstream gets its own base where the client
+// wrote the recorder's, and the tape holds {{baseUrl}} in both, which
+// playback fills on both sides on any port.
+//
+// Checked here, beyond the shared origin_fixture contract every binding
+// runs: a gzipped response (rewritten after decoding, sent decoded), a base
+// that is only a prefix of another authority (http://h:P0 is left alone), a
+// base URL with a path (the client's URLs lose it, as the recorder forwards
+// /x to <base>/x), a recorded Content-Length that follows the body, a
+// binary body left alone, and the option off (the client gets the
+// upstream's address, as before).
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+import std.os
+import std.zlib
+extern exit(code: int)
+
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+
+var upstream_base = ""
+
+port_for() -> int {
+    s = http.server_create(0)
+    if s == null { return 0 }
+    err = http.server_bind(s, "127.0.0.1", 0)
+    port = 0
+    if err == "" { port = http.server_port(s) }
+    http.server_free(s)
+    return port
+}
+
+// GET /api/dir: the service directory, gzipped, naming the base and a
+// neighbour whose port starts with this one's.
+handle_dir(req: ptr, res: ptr, _ud: ptr) {
+    body = "{\"items\": \"${upstream_base}/items\", \"elsewhere\": \"${upstream_base}0/x\"}"
+    gz, _gz_len, gerr = zlib.gzip_deflate(string.bytes(body), -1)
+    if gerr != "" { fail("gzip: ${gerr}") }
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/json")
+    http.response_set_header(res, "Content-Encoding", "gzip")
+    http.response_set_header(res, "Link", "<${upstream_base}/items>; rel=\"items\"")
+    http.response_set_body_bytes(res, string.bytes(gz))
+}
+// POST /api/items: must carry the upstream's own base back.
+handle_items(req: ptr, res: ptr, _ud: ptr) {
+    body = http.request_body(req)
+    if string.equals(body, "<to>${upstream_base}/items</to>") != 1 {
+        http.response_set_status(res, 400)
+        http.response_set_body(res, "got: ${body}")
+        return
+    }
+    http.response_set_status(res, 201)
+    http.response_set_header(res, "Content-Type", "text/plain")
+    http.response_set_header(res, "Location", "${upstream_base}/items/7")
+    http.response_set_body(res, "created ${upstream_base}/items/7")
+}
+// GET /api/blob: binary bytes that happen to hold the base.
+handle_blob(req: ptr, res: ptr, _ud: ptr) {
+    http.response_set_status(res, 200)
+    http.response_set_header(res, "Content-Type", "application/octet-stream")
+    http.response_set_body(res, "\x01\x02${upstream_base}\x00")
+}
+
+rq(method: string, url: string, body: string, header: string) -> (int, string, string) {
+    req = client.request(method, url)
+    client.set_timeout(req, 10s)
+    if string.length(body) > 0 {
+        if client.set_body(req, string.bytes(body), "application/xml") != "" { fail("set body") }
+    }
+    resp, err = client.send_request(req)
+    client.request_free(req)
+    if err != "" { fail("${method} ${url}: ${err}") }
+    st = client.response_status(resp)
+    h = string.copy(client.response_header(resp, header))
+    b = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return st, h, b
+}
+
+// Record through a VCR at a fresh port with the option `on`; return the tape.
+record(tape: string, on: int) -> string {
+    port = port_for()
+    r, err = vcr.open_record(tape, upstream_base, port)
+    if err != "" { fail(err) }
+    vcr.set_rewrite_upstream_base_h(r, on)
+    if vcr.get_rewrite_upstream_base_h(r) != on { fail("get_rewrite_upstream_base") }
+    if vcr.start_background_h(r, 10000) != 0 { fail(vcr.last_error_h(r)) }
+    rec = "http://127.0.0.1:${port}"
+    // The recorder forwards /x to <upstream base>/x: the client's paths have no /api.
+    st, link, body = rq("GET", "${rec}/dir", "", "Link")
+    if st != 200 { fail("dir: ${st} ${body}") }
+    st2, loc, body2 = rq("POST", "${rec}/items", "<to>${rec}/items</to>", "Location")
+    st3, _h, blob = rq("GET", "${rec}/blob", "", "Content-Type")
+    if on == 1 {
+        want = "{\"items\": \"${rec}/items\", \"elsewhere\": \"${upstream_base}0/x\"}"
+        if string.equals(body, want) != 1 { fail("the client got: ${body}") }
+        if string.equals(link, "<${rec}/items>; rel=\"items\"") != 1 { fail("Link: ${link}") }
+        if st2 != 201 { fail("the upstream did not get its own base back: ${st2} ${body2}") }
+        if string.equals(loc, "${rec}/items/7") != 1 { fail("Location: ${loc}") }
+        if string.equals(body2, "created ${rec}/items/7") != 1 { fail("created: ${body2}") }
+        println("  PASS the client got the recorder's base (gzip decoded, a longer authority left alone)")
+        println("  PASS the upstream got its own base back")
+    } else {
+        if string.contains(link, "${upstream_base}/items") != 1 { fail("off: the client got Link: ${link}") }
+        if st2 != 400 { fail("off: the upstream got the recorder's base and still answered ${st2}") }
+        println("  PASS off: the client gets the upstream's base, as before")
+    }
+    if st3 != 200 || string.contains(blob, upstream_base) != 1 { fail("binary body changed: ${st3}") }
+    ferr = vcr.stop_and_flush_h(r, tape)
+    vcr.destroy_h(r)
+    if ferr != "" { fail(ferr) }
+    text, rerr = fs.read(tape)
+    if rerr != "" { fail(rerr) }
+    return text
+}
+
+main() {
+    println("=== record mode: rewrite_upstream_base ===")
+    up = http.server_create(0)
+    if http.server_bind(up, "127.0.0.1", 0) != "" { fail("bind upstream") }
+    http.server_get(up, "/api/dir", handle_dir, null)
+    http.server_post(up, "/api/items", handle_items, null)
+    http.server_get(up, "/api/blob", handle_blob, null)
+    if http.server_start_background(up) != "" { fail("start upstream") }
+    upstream_base = "http://127.0.0.1:${http.server_port(up)}/api"
+
+    tape = "/tmp/svcr-rewrite-base-${os.getpid()}.md"
+    text = record(tape, 1)
+    if string.contains(text, "\"items\": \"{{baseUrl}}/items\"") != 1 { fail("tape body:\n${text}") }
+    if string.contains(text, "Link: <{{baseUrl}}/items>") != 1 { fail("tape Link:\n${text}") }
+    if string.contains(text, "<to>{{baseUrl}}/items</to>") != 1 { fail("tape request body:\n${text}") }
+    if string.contains(text, "Location: {{baseUrl}}/items/7") != 1 { fail("tape Location:\n${text}") }
+    if string.contains(text, "${upstream_base}/") == 1 { fail("the upstream's base is on the tape:\n${text}") }
+    if string.contains(text, "${upstream_base}0/x") != 1 { fail("the longer authority was rewritten:\n${text}") }
+    created = "created {{baseUrl}}/items/7"
+    if string.contains(text, "Content-Length: ${string.length(created)}") != 1 { fail("Content-Length does not follow the body:\n${text}") }
+    println("  PASS the tape holds {{baseUrl}}, a Content-Length that follows the body, the binary body as sent")
+
+    // Playback on another port: both sides filled.
+    port = port_for()
+    p, perr = vcr.open_playback(tape, port)
+    if perr != "" { fail(perr) }
+    if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
+    pb = "http://127.0.0.1:${port}"
+    st, _l, body = rq("GET", "${pb}/dir", "", "Link")
+    if st != 200 || string.contains(body, "\"items\": \"${pb}/items\"") != 1 { fail("replayed dir ${st}: ${body}") }
+    st2, loc, _b = rq("POST", "${pb}/items", "<to>${pb}/items</to>", "Location")
+    if st2 != 201 || string.equals(loc, "${pb}/items/7") != 1 { fail("replayed items ${st2} ${loc}: ${vcr.last_error_h(p)}") }
+    println("  PASS replayed on port ${port}: the response and the request's base filled")
+    vcr.destroy_h(p)
+
+    _off = record(tape, 0)
+    fs.delete(tape)
+    http.server_stop(up)
+    println("PASS")
+    exit(0)
+}

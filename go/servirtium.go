@@ -97,6 +97,7 @@ void   aether_vcr_embed_set_match_multiple(void* server, int on);
 void   aether_vcr_embed_match_header(void* server, const char* name);
 void   aether_vcr_embed_indent_code_blocks(void* server);
 void   aether_vcr_embed_emphasize_http_verbs(void* server);
+void   aether_vcr_embed_set_rewrite_upstream_base(void* server, int on);
 void   aether_vcr_embed_set_pretty_xml(void* server, int indent);
 void   aether_vcr_embed_set_pretty_json(void* server, int indent);
 char*  aether_vcr_embed_remove_transport_headers(void* server);
@@ -748,6 +749,7 @@ type RecordBuilder struct {
 	note                *struct{ title, body string }
 	indentCodeBlocks    bool
 	emphasizeHTTPVerb   bool
+	rewriteUpstreamBase bool
 	prettyXML           int
 	prettyJSON          int
 	sortJSONKeys        bool
@@ -943,6 +945,13 @@ func (b *RecordBuilder) IndentCodeBlocks() *RecordBuilder { b.indentCodeBlocks =
 // EmphasizeHTTPVerbs emits the HTTP method emphasized (e.g. *GET*) in headings.
 func (b *RecordBuilder) EmphasizeHTTPVerbs() *RecordBuilder { b.emphasizeHTTPVerb = true; return b }
 
+// RewriteUpstreamBase: the upstream's base URL in a response becomes this
+// recorder's in what the client receives (a service that hands out its own
+// absolute URLs no longer sends the client around the recorder), the
+// recorder's in a request becomes the upstream's in what is forwarded, and the
+// tape holds {{baseUrl}} for both, which playback fills (docs/vcr-address.md).
+func (b *RecordBuilder) RewriteUpstreamBase() *RecordBuilder { b.rewriteUpstreamBase = true; return b }
+
 // PrettyXML: Pretty-print recorded XML request and response bodies (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
 func (b *RecordBuilder) PrettyXML(indent int) *RecordBuilder { b.prettyXML = indent; return b }
 
@@ -1007,6 +1016,9 @@ func (b *RecordBuilder) applyConfig(handle unsafe.Pointer) error {
 	}
 	if b.emphasizeHTTPVerb {
 		C.aether_vcr_embed_emphasize_http_verbs(handle)
+	}
+	if b.rewriteUpstreamBase {
+		C.aether_vcr_embed_set_rewrite_upstream_base(handle, 1)
 	}
 	if b.prettyXML > 0 {
 		C.aether_vcr_embed_set_pretty_xml(handle, C.int(b.prettyXML))

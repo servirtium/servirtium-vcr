@@ -73,6 +73,7 @@ extern void  aether_vcr_embed_set_match_xml_body(sv_handle h, int on);
 extern void  aether_vcr_embed_set_match_multiple(sv_handle h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(sv_handle h);
 extern void  aether_vcr_embed_emphasize_http_verbs(sv_handle h);
+extern void  aether_vcr_embed_set_rewrite_upstream_base(sv_handle h, int on);
 extern void  aether_vcr_embed_set_pretty_xml(sv_handle h, int indent);
 extern void  aether_vcr_embed_set_pretty_json(sv_handle h, int indent);
 extern int   aether_vcr_embed_get_pretty_json(sv_handle h);
@@ -513,6 +514,10 @@ void sv_indent_code_blocks(sv_vcr *vcr) {
 
 void sv_emphasize_http_verbs(sv_vcr *vcr) {
     if (vcr != NULL) aether_vcr_embed_emphasize_http_verbs(vcr->h);
+}
+
+void sv_set_rewrite_upstream_base(sv_vcr *vcr, int on) {
+    if (vcr != NULL) aether_vcr_embed_set_rewrite_upstream_base(vcr->h, on);
 }
 
 void sv_set_pretty_xml(sv_vcr *vcr, int indent) {

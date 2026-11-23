@@ -28,6 +28,7 @@
     redact_json_field/2, redact_json_field/4,
     add_license_notice/2,
     set_pretty_xml/2, set_pretty_json/2,
+    set_rewrite_upstream_base/2,
     remove_transport_headers/1,
     remove_cloud_headers/2,
     redact_credentials/1,
@@ -314,6 +315,13 @@ set_pretty_xml(#{handle := H}, Indent) when is_integer(Indent) ->
 %% Shared JSON layout setting: format both recorded bodies and match JSON requests.
 set_pretty_json(#{handle := H}, Indent) when is_integer(Indent) ->
     servirtium_nif:set_pretty_json(H, Indent).
+
+%% Record mode: the upstream's base URL in a response becomes this recorder's
+%% in what the client receives, the recorder's in a request becomes the
+%% upstream's in what is forwarded, and the tape holds {{baseUrl}} for both,
+%% which playback fills (docs/vcr-address.md). On is true or false.
+set_rewrite_upstream_base(#{handle := H}, On) when is_boolean(On) ->
+    servirtium_nif:set_rewrite_upstream_base(H, case On of true -> 1; false -> 0 end).
 
 %% Header presets (opt-in; each returns ok or raises {servirtium, Error}).
 %% Host, Connection, Content-Length, the other hop-by-hop headers and the

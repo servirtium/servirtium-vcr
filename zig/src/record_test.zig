@@ -127,9 +127,13 @@ test "record and replay a POST with a body" {
 
 
 fn fixtureRun(allocator: std.mem.Allocator, args: []const []const u8) ![]u8 {
+    return toolRun(allocator, "../target/test-tools/redaction_fixture", args);
+}
+
+fn toolRun(allocator: std.mem.Allocator, tool: []const u8, args: []const []const u8) ![]u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
-    try argv.appendSlice(allocator, &.{"../target/test-tools/redaction_fixture"});
+    try argv.appendSlice(allocator, &.{tool});
     try argv.appendSlice(allocator, args);
     const result = try std.process.run(allocator, std.testing.io, .{ .argv = argv.items });
     defer allocator.free(result.stderr);
@@ -258,4 +262,38 @@ test "named secrets round trip across four services" {
     const replay_base = try replay.baseUrl(); defer allocator.free(replay_base);
     allocator.free(try secretFixtureRun(allocator, &.{"drive", replay_base})); try replay.assertNoMismatches();
     allocator.free(try secretFixtureRun(allocator, &.{"check", tape}));
+}
+
+test "rewriteUpstreamBase keeps the client on the VCR and replays on another port" {
+    const allocator = std.testing.allocator;
+    const tool = "../target/test-tools/origin_fixture";
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tape = try tapePathZ(allocator, &tmp, "tape.md");
+    defer allocator.free(tape);
+    const directory = std.fs.path.dirname(tape).?;
+    const upstream_output = try toolRun(allocator, tool, &.{"start", directory});
+    defer allocator.free(upstream_output);
+    const upstream = try allocator.dupeSentinel(u8, std.mem.trim(u8, upstream_output, "\r\n "), 0);
+    defer allocator.free(upstream);
+    {
+        var rec = try servirtium.Record.init(allocator, tape, upstream).rewriteUpstreamBase().start();
+        defer rec.close() catch {};
+        const base = try rec.baseUrl();
+        defer allocator.free(base);
+        const driven = try toolRun(allocator, tool, &.{"drive", directory, base});
+        allocator.free(driven);
+        try std.testing.expectEqual(Outcome.ok, rec.lastKind());
+        try rec.close();
+    }
+    const checked = try toolRun(allocator, tool, &.{"check", directory});
+    allocator.free(checked);
+    var play = try servirtium.Playback.init(allocator, tape).port(0).start();
+    defer play.close() catch {};
+    const pbase = try play.baseUrl();
+    defer allocator.free(pbase);
+    const replayed = try toolRun(allocator, tool, &.{"replay", directory, pbase});
+    allocator.free(replayed);
+    try std.testing.expectEqual(Outcome.ok, play.lastKind());
+    try play.assertAllConsumed();
 }

@@ -1,0 +1,123 @@
+// Shared contract for record mode's rewrite_upstream_base (docs/vcr-address.md),
+// driven by every binding's tests:
+//
+//   origin_fixture start DIR        launch the upstream; prints its base URL
+//   origin_fixture drive DIR URL    the client, through a RECORDING VCR at URL
+//   origin_fixture check DIR        DIR/tape.md holds {{baseUrl}}, never the upstream
+//   origin_fixture replay DIR URL   the same client, against a PLAYBACK VCR at URL
+//
+// The upstream answers with its own absolute URLs, as a service directory
+// does (TFS's location service, a HATEOAS API): GET /start names /items in its
+// body and itself in Content-Location; POST /items must carry {"to": <the
+// upstream's own /items URL>} (what a client sends back, with the address
+// it was handed) and answers 201 with a Location and a body naming the new
+// item. The client follows what it is handed and checks that every URL it
+// gets points at the VCR it was given, so it never goes around the VCR.
+import core_tests.fixture_support
+import std.fs
+import std.http
+import std.http.client
+import std.os
+import std.string
+
+var directory = ""
+var own = ""
+
+origin_reply(res: ptr, status: int, hname: string, hvalue: string, body: string) {
+    http.response_set_status(res, status)
+    http.response_set_header(res, "Content-Type", "application/json")
+    if string.length(hname) > 0 { http.response_set_header(res, hname, hvalue) }
+    http.response_set_body(res, body)
+}
+handle_get(req: ptr, res: ptr, _data: ptr) {
+    origin_reply(res, 200, "Content-Location", "${own}/start", "{\"next\": \"${own}/items\", \"self\": \"${own}/start\"}")
+}
+handle_post(req: ptr, res: ptr, _data: ptr) {
+    body = http.request_body(req)
+    fixture_support.check(fs.write("${directory}/items.json", body) == "", "capture request")
+    if string.equals(body, "{\"to\": \"${own}/items\"}") != 1 {
+        origin_reply(res, 400, "", "", "{\"error\": \"expected my own /items URL\"}")
+        return
+    }
+    origin_reply(res, 201, "Location", "${own}/items/7", "{\"created\": \"${own}/items/7\"}")
+}
+serve(dir: string) {
+    directory = dir
+    server = http.server_create(0)
+    fixture_support.check(server != null, "create upstream")
+    fixture_support.check(http.server_bind(server, "127.0.0.1", 0) == "", "bind upstream")
+    fixture_support.check(http.server_set_keepalive(server, 0, 1, 0ns) == "", "disable keep-alive")
+    http.server_get(server, "/*", handle_get, null)
+    http.server_post(server, "/*", handle_post, null)
+    fixture_support.check(http.server_start_background(server) == "", "start upstream")
+    own = "http://127.0.0.1:${http.server_port(server)}"
+    fixture_support.check(fs.write_atomic("${dir}/url", string.bytes(own)) == "", "publish upstream URL")
+    received = fixture_support.wait_for_file("${dir}/items.json", 45000)
+    http.server_stop(server)
+    http.server_free(server)
+    fixture_support.check(received, "upstream timed out")
+    fixture_support.check(fs.write("${dir}/done", "done") == "", "publish completion")
+}
+
+// One request; status, a response header and the body.
+origin_call(method: string, url: string, body: string, header: string) -> (int, string, string) {
+    req = client.request(method, url)
+    defer client.request_free(req)
+    client.set_timeout(req, 10s)
+    if string.length(body) > 0 {
+        fixture_support.check(client.set_body(req, string.bytes(body), "application/json") == "", "set body")
+    }
+    response = client.send_request(req)!
+    defer client.response_free(response)
+    return client.response_status(response), string.copy(client.response_header(response, header)), string.copy(client.response_body(response))
+}
+
+// The client: follow what /start hands out, send it back, check every URL
+// it is given points at `base` (the VCR).
+origin_follow(base: string) {
+    st, location, body = origin_call("GET", "${base}/start", "", "Content-Location")
+    fixture_support.check(st == 200, "GET /start: ${st} ${body}")
+    fixture_support.check(location == "${base}/start", "Content-Location is the VCR's: ${location}")
+    want = "{\"next\": \"${base}/items\", \"self\": \"${base}/start\"}"
+    fixture_support.check(body == want, "the /start body names the VCR: ${body}")
+    next = "${base}/items"
+    st2, created, body2 = origin_call("POST", next, "{\"to\": \"${next}\"}", "Location")
+    fixture_support.check(st2 == 201, "POST /items: ${st2} ${body2}")
+    fixture_support.check(created == "${base}/items/7", "Location is the VCR's: ${created}")
+    fixture_support.check(body2 == "{\"created\": \"${base}/items/7\"}", "the created body names the VCR: ${body2}")
+}
+drive(dir: string, base: string) {
+    origin_follow(base)
+    fixture_support.check(fixture_support.wait_for_file("${dir}/done", 5000), "upstream did not finish")
+    upstream = string.trim(fs.read("${dir}/url")!)
+    got = fs.read("${dir}/items.json")!
+    fixture_support.check(got == "{\"to\": \"${upstream}/items\"}", "the upstream got its own URL back: ${got}")
+    println("rewrite_upstream_base: recorded, the client stayed on the recorder")
+}
+replay(base: string) {
+    origin_follow(base)
+    println("rewrite_upstream_base: replayed on ${base}")
+}
+check_tape(dir: string) {
+    tape = fs.read("${dir}/tape.md")!
+    upstream = string.trim(fs.read("${dir}/url")!)
+    fixture_support.check(string.contains(tape, upstream) == 0, "the upstream's base is on the tape:\n${tape}")
+    const EXPECTED[] = ["Content-Location: {{baseUrl}}/start", "\"next\": \"{{baseUrl}}/items\"", "{\"to\": \"{{baseUrl}}/items\"}", "Location: {{baseUrl}}/items/7", "{\"created\": \"{{baseUrl}}/items/7\"}"]
+    for i in 0..EXPECTED.len { fixture_support.check(string.contains(tape, EXPECTED[i]) == 1, "missing ${EXPECTED[i]} in:\n${tape}") }
+    println("rewrite_upstream_base: the tape holds {{baseUrl}}")
+}
+main() {
+    action = os.args_get(1); location = os.args_get(2)
+    if action == "serve" { serve(location) }
+    else if action == "start" { println(origin_launch(location)) }
+    else if action == "drive" { drive(location, os.args_get(3)) }
+    else if action == "replay" { replay(os.args_get(3)) }
+    else if action == "check" { check_tape(location) }
+    else { fixture_support.check(false, "expected start, drive, replay or check") }
+}
+// fixture_support.launch clears only its own files.
+origin_launch(dir: string) -> string {
+    fixture_support.check(fs.mkdir_p(dir) == "", "create fixture directory")
+    fs.delete("${dir}/items.json")
+    return fixture_support.launch(dir)
+}

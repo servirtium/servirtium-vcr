@@ -380,6 +380,8 @@ public:
 
     void indent_code_blocks() { sv_indent_code_blocks(vcr_); }
     void emphasize_http_verbs() { sv_emphasize_http_verbs(vcr_); }
+    // Record mode: the upstream's base URL becomes the recorder's in what the client gets, the recorder's becomes the upstream's in what is forwarded, {{baseUrl}} on the tape (docs/vcr-address.md).
+    void rewrite_upstream_base(bool on = true) { sv_set_rewrite_upstream_base(vcr_, on ? 1 : 0); }
     // Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
     void pretty_xml(int indent = 2) { sv_set_pretty_xml(vcr_, indent); }
     // Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout.

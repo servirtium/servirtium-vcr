@@ -128,6 +128,10 @@ an https upstream against this PEM CA, e.g. Elasticsearch 8's own; guarded by
 `set_match_multiple(h, int)` (reusable/order-independent playback) and
 `match_header(h, name)` / `clear_match_headers(h)` (ByHeader — match a specific
 request header), both below;
+`set_rewrite_upstream_base(h, int)` (record mode, opt-in: the upstream's base
+URL in a response becomes the recorder's in what the client receives, the
+recorder's in a request becomes the upstream's when forwarded, `{{baseUrl}}` on the
+tape; `docs/vcr-address.md`, every binding, `core_tests/origin_fixture.ae`);
 `add_license_notice(h, text)` (plain text written at the top of each tape
 under a `## LICENSE NOTICE` heading, before `## Interaction 0`, for the
 recorded service's licence terms; the developer supplies any line breaks;

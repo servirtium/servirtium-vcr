@@ -88,6 +88,7 @@
     ignore_volatile_headers/1,
     indent_code_blocks/1,
     emphasize_http_verbs/1,
+    set_rewrite_upstream_base/2,
     set_pretty_xml/2,
     set_pretty_json/2,
     set_sort_json_keys/2,
@@ -197,6 +198,7 @@ set_match_multiple(_Handle, _On) -> erlang:nif_error(not_loaded).
 ignore_volatile_headers(_Handle) -> erlang:nif_error(not_loaded).
 indent_code_blocks(_Handle) -> erlang:nif_error(not_loaded).
 emphasize_http_verbs(_Handle) -> erlang:nif_error(not_loaded).
+set_rewrite_upstream_base(_Handle, _On) -> erlang:nif_error(not_loaded).
 set_pretty_xml(_Handle, _Indent) -> erlang:nif_error(not_loaded).
 set_pretty_json(_Handle, _Indent) -> erlang:nif_error(not_loaded).
 set_sort_json_keys(_A0, _A1) -> erlang:nif_error(not_loaded).

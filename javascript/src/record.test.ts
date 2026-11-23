@@ -148,3 +148,26 @@ it('redacts structured credentials on tape while forwarding original values', ()
     run('check', directory)
   } finally { fs.rmSync(directory, { recursive: true, force: true }) }
 })
+
+
+it('rewriteUpstreamBase keeps the client on the VCR and the tape replays on another port', () => {
+  const { execFileSync } = require('child_process')
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vcr-origin-'))
+  const fixture = path.resolve(__dirname, '../../target/test-tools/origin_fixture')
+  const run = (...args: string[]) => execFileSync(fixture, args, { encoding: 'utf8' }).trim()
+  try {
+    const upstream = run('start', directory)
+    const rec = Vcr.record(path.join(directory, 'tape.md'), upstream).rewriteUpstreamBase().start()
+    try {
+      run('drive', directory, rec.baseUrl)
+      expect(rec.lastKind).toBe(VcrOutcome.Ok)
+    } finally { rec.close() }
+    run('check', directory)
+    const vcr = Vcr.playback(path.join(directory, 'tape.md')).start()
+    try {
+      run('replay', directory, vcr.baseUrl)
+      expect(vcr.lastKind).toBe(VcrOutcome.Ok)
+      vcr.assertAllConsumed()
+    } finally { vcr.close() }
+  } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+})

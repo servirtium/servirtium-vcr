@@ -69,6 +69,32 @@ final class PlaybackTests: XCTestCase {
         _ = try run(["check", directory.path])
     }
 
+    func testRewriteUpstreamBase() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("target/test-tools/origin_fixture").path
+        func run(_ args: [String]) throws -> String {
+            let (status, text) = runFixture([fixture] + args)
+            XCTAssertEqual(status, 0, text)
+            return text
+        }
+        let tape = directory.appendingPathComponent("tape.md").path
+        let upstream = try run(["start", directory.path])
+        try Vcr.withRecord(tape, upstreamBase: upstream) { rec in
+            rec.rewriteUpstreamBase()
+            _ = try run(["drive", directory.path, rec.baseUrl])
+            XCTAssertEqual(rec.lastKind, .ok)
+        }
+        _ = try run(["check", directory.path])
+        try Vcr.withPlayback(tape) { vcr in
+            _ = try run(["replay", directory.path, vcr.baseUrl])
+            XCTAssertEqual(vcr.lastKind, .ok)
+        }
+    }
+
     private var repoRoot: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()

@@ -212,6 +212,47 @@ func TestStructuredRedactionHelpers(t *testing.T) {
 	run("check", directory)
 }
 
+func TestRewriteUpstreamBase(t *testing.T) {
+	_, source, _, _ := runtime.Caller(0)
+	fixture := filepath.Join(filepath.Dir(source), "../target/test-tools/origin_fixture")
+	directory := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		output, err := exec.Command(fixture, args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("fixture: %v: %s", err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	tape := filepath.Join(directory, "tape.md")
+	upstream := run("start", directory)
+	rec, err := servirtium.Record(tape, upstream).RewriteUpstreamBase().Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rec.Close()
+	run("drive", directory, rec.BaseURL())
+	if rec.LastKind() != servirtium.Ok {
+		t.Fatal(rec.LastError())
+	}
+	if err := rec.Close(); err != nil {
+		t.Fatal(err)
+	}
+	run("check", directory)
+	play, err := servirtium.Playback(tape).Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer play.Close()
+	run("replay", directory, play.BaseURL())
+	if play.LastKind() != servirtium.Ok {
+		t.Fatal(play.LastError())
+	}
+	if err := play.AssertAllConsumed(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRecordLicenseNoticeAndPresets(t *testing.T) {
 	tape := filepath.Join(t.TempDir(), "tape.md")
 	rec, err := servirtium.Record(tape, "http://127.0.0.1:1").

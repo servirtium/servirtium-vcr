@@ -104,6 +104,33 @@ suite "structured redaction helpers":
     discard fixtureRun(@["check", directory])
 
 
+suite "rewrite_upstream_base":
+  test "keeps the client on the VCR and replays on another port":
+    let directory = getTempDir() / ("vcr-origin-nim-" & $getCurrentProcessId())
+    createDir(directory)
+    defer: removeDir(directory)
+    let fixture = currentSourcePath().parentDir.parentDir.parentDir / "target/test-tools/origin_fixture"
+    proc fixtureRun(args: seq[string]): string =
+      var command = quoteShell(fixture)
+      for arg in args: command.add(" " & quoteShell(arg))
+      fixtureOutput(command, directory)
+    let tape = directory / "tape.md"
+    let upstream = fixtureRun(@["start", directory])
+    let rec = record(tape, upstream)
+    rec.rewriteUpstreamBase()
+    check rec.start()
+    discard fixtureRun(@["drive", directory, rec.baseUrl()])
+    check rec.lastKind() == Ok
+    rec.close()
+    discard fixtureRun(@["check", directory])
+    let play = playback(tape)
+    check play.start()
+    defer: play.close()
+    discard fixtureRun(@["replay", directory, play.baseUrl()])
+    check play.lastKind() == Ok
+    play.assertAllConsumed()
+
+
 suite "retained replay diagnostics":
   test "observers do not consume and assertions report earlier failures":
     let root = currentSourcePath().parentDir.parentDir.parentDir

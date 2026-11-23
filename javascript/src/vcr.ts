@@ -464,6 +464,7 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   private pendingNote: { title: string; body: string } | null = null
   private indentCodeBlocksOn = false
   private emphasizeHttpVerbsOn = false
+  private rewriteUpstreamBaseOn = false
   private prettyXmlIndent = 0
   private prettyJsonIndent = 0
   private upstreamCafilePath: string | null = null
@@ -535,6 +536,18 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   /** Emit the HTTP method emphasized (e.g. *GET*) in headings. */
   emphasizeHttpVerbs(on = true): RecordBuilder {
     this.emphasizeHttpVerbsOn = on
+    return this
+  }
+
+  /**
+   * The upstream's base URL in a response becomes this recorder's in what the
+   * client receives (a service that hands out its own absolute URLs no longer
+   * sends the client around the recorder), the recorder's in a request becomes
+   * the upstream's in what is forwarded, and the tape holds `{{baseUrl}}` for
+   * both, which playback fills (docs/vcr-address.md).
+   */
+  rewriteUpstreamBase(on = true): RecordBuilder {
+    this.rewriteUpstreamBaseOn = on
     return this
   }
 
@@ -620,6 +633,7 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
     super.applyConfig(handle)
     if (this.indentCodeBlocksOn) N.indentCodeBlocks(handle)
     if (this.emphasizeHttpVerbsOn) N.emphasizeHttpVerbs(handle)
+    if (this.rewriteUpstreamBaseOn) N.setRewriteUpstreamBase(handle, 1)
     if (this.prettyXmlIndent > 0) N.setPrettyXml(handle, this.prettyXmlIndent)
     if (this.prettyJsonIndent > 0) N.setPrettyJson(handle, this.prettyJsonIndent)
     if (this.upstreamCafilePath !== null) check(N.setUpstreamCafile(handle, this.upstreamCafilePath), 'upstreamCafile')

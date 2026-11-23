@@ -544,6 +544,7 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   (String, String)? _note;
   bool _indentCodeBlocks = false;
   bool _emphasizeHttpVerbs = false;
+  bool _rewriteUpstreamBase = false;
   int _prettyXml = 0;
   int _prettyJson = 0;
   String? _upstreamCafile;
@@ -602,6 +603,16 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   /// Emit the HTTP method emphasized (e.g. `*GET*`) in headings.
   RecordBuilder emphasizeHttpVerbs([bool on = true]) {
     _emphasizeHttpVerbs = on;
+    return this;
+  }
+
+  /// The upstream's base URL in a response becomes this recorder's in what the
+  /// client receives (a service that hands out its own absolute URLs no longer
+  /// sends the client around the recorder), the recorder's in a request becomes
+  /// the upstream's in what is forwarded, and the tape holds `{{baseUrl}}` for
+  /// both, which playback fills (docs/vcr-address.md).
+  RecordBuilder rewriteUpstreamBase([bool on = true]) {
+    _rewriteUpstreamBase = on;
     return this;
   }
 
@@ -681,6 +692,7 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     super._applyConfig(handle);
     if (_indentCodeBlocks) Native.indentCodeBlocks(handle);
     if (_emphasizeHttpVerbs) Native.emphasizeHttpVerbs(handle);
+    if (_rewriteUpstreamBase) Native.setRewriteUpstreamBase(handle, 1);
     if (_prettyXml > 0) Native.setPrettyXml(handle, _prettyXml);
     if (_prettyJson > 0) Native.setPrettyJson(handle, _prettyJson);
     final cafile = _upstreamCafile;

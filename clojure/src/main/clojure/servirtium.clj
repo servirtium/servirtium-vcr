@@ -80,7 +80,11 @@
   VcrException \"sort_json_keys needs pretty_json ...\"): :sort-json-keys (true),
   :sort-json-array (seq of [path by]), :sort-json-array-at (seq of
   [request-regex path by]), :sort-response-headers (true), :sort-header-value
-  (seq of header names). A rule the core refuses throws at start."
+  (seq of header names). :rewrite-upstream-base (true): the upstream's base URL
+  in a response becomes this recorder's in what the client receives, the
+  recorder's in a request becomes the upstream's in what is forwarded, and the
+  tape holds {{baseUrl}} for both (docs/vcr-address.md). A rule the core
+  refuses throws at start."
   (^VcrServer [tape upstream] (record tape upstream {}))
   (^VcrServer [tape upstream opts]
    (-> (let [builder (Vcr/record tape upstream)]
@@ -97,6 +101,7 @@
          (doseq [name (:sort-header-value opts)] (.sortHeaderValue builder name))
          (when-let [text (:license-notice opts)] (.addLicenseNotice builder text))
          (when-let [path (:upstream-cafile opts)] (.upstreamCafile builder path))
+         (when (:rewrite-upstream-base opts) (.rewriteUpstreamBase builder))
          builder)
        (apply-opts opts)
        (.start))))

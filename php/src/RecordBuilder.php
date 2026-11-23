@@ -31,6 +31,7 @@ final class RecordBuilder extends VcrBuilderBase
 
     private bool $indentCodeBlocksOn = false;
     private bool $emphasizeHttpVerbsOn = false;
+    private bool $rewriteUpstreamBaseOn = false;
     private int $prettyXmlIndent = 0;
     private int $prettyJsonIndent = 0;
     private ?string $upstreamCafilePath = null;
@@ -111,6 +112,20 @@ final class RecordBuilder extends VcrBuilderBase
     public function emphasizeHttpVerbs(bool $on = true): static
     {
         $this->emphasizeHttpVerbsOn = $on;
+
+        return $this;
+    }
+
+    /**
+     * The upstream's base URL in a response becomes this recorder's in what the
+     * client receives (a service that hands out its own absolute URLs no longer
+     * sends the client around the recorder), the recorder's in a request becomes
+     * the upstream's in what is forwarded, and the tape holds `{{baseUrl}}` for
+     * both, which playback fills (docs/vcr-address.md).
+     */
+    public function rewriteUpstreamBase(bool $on = true): static
+    {
+        $this->rewriteUpstreamBaseOn = $on;
 
         return $this;
     }
@@ -222,6 +237,9 @@ final class RecordBuilder extends VcrBuilderBase
         }
         if ($this->emphasizeHttpVerbsOn) {
             $lib->aether_vcr_embed_emphasize_http_verbs($handle);
+        }
+        if ($this->rewriteUpstreamBaseOn) {
+            $lib->aether_vcr_embed_set_rewrite_upstream_base($handle, 1);
         }
         if ($this->prettyXmlIndent > 0) {
             $lib->aether_vcr_embed_set_pretty_xml($handle, $this->prettyXmlIndent);

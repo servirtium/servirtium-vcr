@@ -201,6 +201,25 @@ def test_structured_redaction_helpers(tmp_path):
     run("check", tmp_path)
 
 
+def test_rewrite_upstream_base_keeps_the_client_on_the_vcr(tmp_path):
+    import pathlib
+    import subprocess
+
+    fixture = pathlib.Path(__file__).resolve().parents[2] / "target/test-tools/origin_fixture"
+    def run(*args):
+        return subprocess.check_output([str(fixture), *map(str, args)], text=True).strip()
+
+    upstream = run("start", tmp_path)
+    with servirtium.record(str(tmp_path / "tape.md"), upstream).rewrite_upstream_base().start() as rec:
+        run("drive", tmp_path, rec.base_url)
+        assert rec.last_kind is servirtium.Outcome.OK
+    run("check", tmp_path)
+    with servirtium.playback(str(tmp_path / "tape.md")).start() as vcr:
+        run("replay", tmp_path, vcr.base_url)
+        assert vcr.last_kind is servirtium.Outcome.OK
+        vcr.assert_all_consumed()
+
+
 def test_structured_redactions_are_isolated_between_live_handles(tmp_path):
     import pathlib
     import subprocess

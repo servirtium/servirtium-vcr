@@ -97,6 +97,7 @@ defmodule Servirtium.Native do
   defdelegate ignore_volatile_headers(handle), to: :servirtium_nif
   defdelegate indent_code_blocks(handle), to: :servirtium_nif
   defdelegate emphasize_http_verbs(handle), to: :servirtium_nif
+  defdelegate set_rewrite_upstream_base(handle, on), to: :servirtium_nif
   defdelegate set_pretty_xml(handle, indent), to: :servirtium_nif
   defdelegate set_pretty_json(handle, indent), to: :servirtium_nif
   defdelegate remove_transport_headers(handle), to: :servirtium_nif

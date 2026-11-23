@@ -371,6 +371,13 @@ proc indentCodeBlocks*(s: VcrServer) =
 proc emphasizeHttpVerbs*(s: VcrServer) =
   native.emphasize_http_verbs(s.handle)
 
+proc rewriteUpstreamBase*(s: VcrServer, on = true) =
+  ## Record mode: the upstream's base URL in a response becomes this
+  ## recorder's in what the client receives, the recorder's in a request
+  ## becomes the upstream's in what is forwarded, and the tape holds
+  ## `{{baseUrl}}` for both, which playback fills (docs/vcr-address.md).
+  native.set_rewrite_upstream_base(s.handle, cint(if on: 1 else: 0))
+
 proc prettyXml*(s: VcrServer, indent: int = 2) =
   ## Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
   native.set_pretty_xml(s.handle, cint(indent))

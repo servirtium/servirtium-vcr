@@ -581,6 +581,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     private string? _licenseNotice;
     private string? _upstreamCafile;
     private bool _forwardHost;
+    private bool _rewriteUpstreamBase;
     private bool _sortJsonKeys;
     private bool _sortResponseHeaders;
     private readonly List<(string? request, string path, string by)> _sortJsonArrays = new();
@@ -692,6 +693,23 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     public RecordBuilder ForwardHost(bool on = true)
     {
         _forwardHost = on;
+        return this;
+    }
+
+    /// <summary>
+    /// For a service that writes its own absolute URLs into responses (TFS's
+    /// location service, SharePoint, a HATEOAS API, a paging <c>nextLink</c>):
+    /// the upstream's base URL in a response becomes this recorder's in what
+    /// the client receives, so the client keeps talking to the recorder
+    /// instead of going around it; the recorder's base URL in a request
+    /// becomes the upstream's in what is forwarded; and the tape holds
+    /// <c>{{baseUrl}}</c> for both, which playback fills from the live request
+    /// on both sides, on any port (docs/vcr-address.md). <c>Redact</c> only
+    /// changes the tape; this changes what the client sees while recording.
+    /// </summary>
+    public RecordBuilder RewriteUpstreamBase(bool on = true)
+    {
+        _rewriteUpstreamBase = on;
         return this;
     }
 
@@ -820,6 +838,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
             Check(NativeMethods.AddLicenseNotice(handle, _licenseNotice), nameof(AddLicenseNotice));
         }
         if (_forwardHost) NativeMethods.SetForwardHost(handle, 1);
+        if (_rewriteUpstreamBase) NativeMethods.SetRewriteUpstreamBase(handle, 1);
         if (_upstreamCafile is not null)
         {
             Check(NativeMethods.SetUpstreamCafile(handle, _upstreamCafile), nameof(UpstreamCafile));

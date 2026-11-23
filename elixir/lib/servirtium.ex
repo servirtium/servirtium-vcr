@@ -109,6 +109,10 @@ defmodule Servirtium do
     * `:note` — `{title, body}` attached to the first recorded interaction
     * `:indent_code_blocks` — `true` to emit 4-space-indented blocks
     * `:emphasize_http_verbs` — `true` to emit `*GET*` instead of `GET`
+    * `:rewrite_upstream_base` — `true`: the upstream's base URL in a response
+      becomes this recorder's in what the client receives, the recorder's in a
+      request becomes the upstream's in what is forwarded, and the tape holds
+      `{{baseUrl}}` for both, which playback fills (`docs/vcr-address.md`)
     * `:pretty_xml` — indent width (integer) to pretty-print recorded XML bodies
       (1..16; 0 = off). Formats both recorded bodies and enables request layout matching on playback.
       Falls back to byte-exact if the body isn't well-formed XML.
@@ -535,6 +539,7 @@ defmodule Servirtium do
   defp apply_record_config(handle, opts) do
     if Keyword.get(opts, :indent_code_blocks, false), do: Native.indent_code_blocks(handle)
     if Keyword.get(opts, :emphasize_http_verbs, false), do: Native.emphasize_http_verbs(handle)
+    if Keyword.get(opts, :rewrite_upstream_base, false), do: Native.set_rewrite_upstream_base(handle, 1)
 
     case Keyword.get(opts, :pretty_xml, 0) do
       n when is_integer(n) and n > 0 -> Native.set_pretty_xml(handle, n)

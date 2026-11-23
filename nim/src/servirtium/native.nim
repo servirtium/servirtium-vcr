@@ -130,6 +130,8 @@ proc set_match_xml_body*(h: Handle, on: cint)
   {.importc: "aether_vcr_embed_set_match_xml_body", cdecl.}
 proc set_match_multiple*(h: Handle, on: cint)
   {.importc: "aether_vcr_embed_set_match_multiple", cdecl.}
+proc set_rewrite_upstream_base*(h: Handle, on: cint)
+  {.importc: "aether_vcr_embed_set_rewrite_upstream_base", cdecl.}
 proc match_header*(h: Handle, name: cstring)
   {.importc: "aether_vcr_embed_match_header", cdecl.}
 proc indent_code_blocks*(h: Handle)

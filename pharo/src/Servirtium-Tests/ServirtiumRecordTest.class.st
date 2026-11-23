@@ -282,3 +282,39 @@ ServirtiumRecordTest >> testARecordServerRefusesAPlaybackRange [
 		startThenDo: [ :rec |
 			self should: [ rec setPlaybackRangeFrom: 0 to: -1 ] raise: ServirtiumError ]
 ]
+
+{ #category : 'support' }
+ServirtiumRecordTest >> origin: aMode in: aDirectory url: aBaseUrl [
+	"Run origin_fixture <mode> <dir> [<url>]; fail unless it exits 0; answer its output."
+
+	| tool out status text |
+	tool := (self tapesDir asFileReference parent parent parent parent / 'target' / 'test-tools' / 'origin_fixture') fullName.
+	out := self tempTapePath , '.out'.
+	status := LibC system: '''' , tool , ''' ' , aMode , ' ''' , aDirectory , '''' , (aBaseUrl ifNil: [ '' ] ifNotNil: [ :u | ' ''' , u , '''' ]) , ' >''' , out , ''' 2>&1'.
+	text := out asFileReference exists ifTrue: [ out asFileReference contents ] ifFalse: [ '' ].
+	out asFileReference ensureDelete.
+	self assert: status = 0 description: 'origin_fixture ' , aMode , ' failed: ' , text.
+	^ text trimBoth
+]
+
+{ #category : 'tests' }
+ServirtiumRecordTest >> testRewriteUpstreamBaseKeepsTheClientOnTheVcr [
+
+	| directory originTape origin |
+	directory := (FileLocator temp / ('vcr-origin-pharo-' , UUID new asString)) ensureCreateDirectory; yourself.
+	originTape := (directory / 'tape.md') fullName.
+	[ origin := self origin: 'start' in: directory fullName url: nil.
+	  (Servirtium record: originTape upstream: origin)
+		rewriteUpstreamBase;
+		port: 0;
+		startThenDo: [ :rec |
+			self origin: 'drive' in: directory fullName url: rec baseUrl.
+			self assert: rec lastKind equals: #ok ].
+	  self origin: 'check' in: directory fullName url: nil.
+	  (Servirtium playback: originTape)
+		port: 0;
+		startThenDo: [ :play |
+			self origin: 'replay' in: directory fullName url: play baseUrl.
+			self assert: play lastKind equals: #ok ] ]
+		ensure: [ directory ensureDeleteAll ]
+]

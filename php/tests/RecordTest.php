@@ -23,6 +23,38 @@ final class RecordTest extends TestCase
     private string $tape = '';
 
 
+    public function testRewriteUpstreamBaseKeepsTheClientOnTheVcr(): void
+    {
+        $dir = sys_get_temp_dir() . '/vcr-origin-' . uniqid();
+        mkdir($dir);
+        $fixture = dirname(__DIR__, 2) . '/target/test-tools/origin_fixture';
+        $run = function (string ...$args) use ($fixture): string {
+            $command = implode(' ', array_map('escapeshellarg', [$fixture, ...$args]));
+            exec($command . ' 2>&1', $output, $status);
+            self::assertSame(0, $status, implode("\n", $output));
+            return trim(implode("\n", $output));
+        };
+        try {
+            $tape = $dir . '/tape.md';
+            $upstream = $run('start', $dir);
+            $rec = Vcr::record($tape, $upstream)->rewriteUpstreamBase()->start();
+            try {
+                $run('drive', $dir, $rec->baseUrl());
+                self::assertSame(VcrOutcome::Ok, $rec->lastKind());
+            } finally { $rec->stop(); }
+            $run('check', $dir);
+            $vcr = Vcr::playback($tape)->start();
+            try {
+                $run('replay', $dir, $vcr->baseUrl());
+                self::assertSame(VcrOutcome::Ok, $vcr->lastKind());
+                $vcr->assertAllConsumed();
+            } finally { $vcr->stop(); }
+        } finally {
+            foreach (glob($dir . '/*') as $file) { unlink($file); }
+            rmdir($dir);
+        }
+    }
+
     public function testStructuredRedactionHelpers(): void
     {
         $dir = sys_get_temp_dir() . '/vcr-helpers-' . uniqid();

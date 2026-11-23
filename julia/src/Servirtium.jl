@@ -36,7 +36,7 @@ export Vcr, VcrError, Field, Outcome,
     match_header, note, static_content, untaped,
     strict_ignore_common_headers, ignore_volatile_headers, set_strict_headers,
     set_match_json_body, set_match_xml_body, set_match_multiple,
-    indent_code_blocks, emphasize_http_verbs, set_pretty_xml,
+    indent_code_blocks, emphasize_http_verbs, set_rewrite_upstream_base, set_pretty_xml,
     set_pretty_json, get_pretty_json,
     remove_transport_headers, remove_cloud_headers,
     redact_credentials, redact_credential_header,
@@ -498,6 +498,15 @@ indent_code_blocks(vcr::Vcr) =
 
 emphasize_http_verbs(vcr::Vcr) =
     ccall((:aether_vcr_embed_emphasize_http_verbs, LIB), Cvoid, (Ptr{Cvoid},), alive(vcr))
+
+"""
+Record mode: the upstream's base URL in a response becomes this recorder's in
+what the client receives, the recorder's in a request becomes the upstream's in
+what is forwarded, and the tape holds `{{baseUrl}}` for both, which playback
+fills (docs/vcr-address.md).
+"""
+set_rewrite_upstream_base(vcr::Vcr, on::Bool=true) =
+    ccall((:aether_vcr_embed_set_rewrite_upstream_base, LIB), Cvoid, (Ptr{Cvoid}, Cint), alive(vcr), on ? 1 : 0)
 
 """
     set_pretty_xml(vcr::Vcr, indent::Integer=2)

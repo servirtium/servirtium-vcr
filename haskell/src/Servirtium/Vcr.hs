@@ -304,6 +304,11 @@ data RecordOptions = RecordOptions
     -- ^ Emit code blocks as 4-space-indented text instead of @```@ fences.
   , recEmphasizeHttpVerbs :: Bool
     -- ^ Emit the HTTP method emphasized (e.g. @*GET*@) in headings.
+  , recRewriteUpstreamBase :: Bool
+    -- ^ The upstream's base URL in a response becomes this recorder's in what
+    -- the client receives, the recorder's in a request becomes the upstream's
+    -- in what is forwarded, and the tape holds @{{baseUrl}}@ for both, which
+    -- playback fills (docs/vcr-address.md). Default False.
   , recPrettyXml          :: Int
     -- ^ Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML. Default 0.
   , recPrettyJson         :: Int
@@ -414,6 +419,7 @@ recordOptions tape upstream = RecordOptions
   , recNote               = Nothing
   , recIndentCodeBlocks   = False
   , recEmphasizeHttpVerbs = False
+  , recRewriteUpstreamBase = False
   , recPrettyXml          = 0
   , recPrettyJson         = 0
   , recUpstreamCafile     = Nothing
@@ -706,6 +712,7 @@ startRecord opts = do
           N.aether_vcr_embed_redact_json_field handle (fieldCode f) cName cReplacement) (recRedactJsonFieldWith opts)
       when (recIndentCodeBlocks opts) (N.aether_vcr_embed_indent_code_blocks handle)
       when (recEmphasizeHttpVerbs opts) (N.aether_vcr_embed_emphasize_http_verbs handle)
+      when (recRewriteUpstreamBase opts) (N.aether_vcr_embed_set_rewrite_upstream_base handle 1)
       when (recPrettyXml opts > 0) (N.aether_vcr_embed_set_pretty_xml handle (fromIntegral (recPrettyXml opts)))
       when (recPrettyJson opts > 0) (N.aether_vcr_embed_set_pretty_json handle (fromIntegral (recPrettyJson opts)))
       mapM_ (\path -> check "set_upstream_cafile" $

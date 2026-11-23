@@ -88,6 +88,7 @@ pub extern "c" fn aether_vcr_embed_set_match_multiple(handle: Handle, on: c_int)
 pub extern "c" fn aether_vcr_embed_match_header(handle: Handle, name: [*c]const u8) void;
 pub extern "c" fn aether_vcr_embed_indent_code_blocks(handle: Handle) void;
 pub extern "c" fn aether_vcr_embed_emphasize_http_verbs(handle: Handle) void;
+pub extern "c" fn aether_vcr_embed_set_rewrite_upstream_base(handle: Handle, on: c_int) void;
 pub extern "c" fn aether_vcr_embed_set_pretty_xml(handle: Handle, indent: c_int) void;
 pub extern "c" fn aether_vcr_embed_set_pretty_json(handle: Handle, indent: c_int) void;
 pub extern "c" fn aether_vcr_embed_get_pretty_json(handle: Handle) c_int;
@@ -963,6 +964,7 @@ pub const Record = struct {
     note_text: ?NoteText = null,
     indent_code_blocks: bool = false,
     emphasize_http_verbs: bool = false,
+    rewrite_upstream_base: bool = false,
     pretty_xml: c_int = 0,
     pretty_json: c_int = 0,
     upstream_cafile: ?[:0]const u8 = null,
@@ -1180,6 +1182,16 @@ pub const Record = struct {
         return b;
     }
 
+    /// The upstream's base URL in a response becomes this recorder's in what
+    /// the client receives, the recorder's in a request becomes the upstream's
+    /// in what is forwarded, and the tape holds {{baseUrl}} for both, which
+    /// playback fills (docs/vcr-address.md).
+    pub fn rewriteUpstreamBase(self: Record) Record {
+        var b = self;
+        b.rewrite_upstream_base = true;
+        return b;
+    }
+
     /// Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
     pub fn prettyXml(self: Record, indent: c_int) Record {
         var b = self;
@@ -1286,6 +1298,7 @@ pub const Record = struct {
         try applyPresets(self.allocator, handle, self.remove_transport_headers, self.cloud_vendors.items, self.redact_credentials, self.credential_headers.items);
         if (self.indent_code_blocks) aether_vcr_embed_indent_code_blocks(handle);
         if (self.emphasize_http_verbs) aether_vcr_embed_emphasize_http_verbs(handle);
+        if (self.rewrite_upstream_base) aether_vcr_embed_set_rewrite_upstream_base(handle, 1);
         if (self.pretty_xml > 0) aether_vcr_embed_set_pretty_xml(handle, self.pretty_xml);
         if (self.pretty_json > 0) aether_vcr_embed_set_pretty_json(handle, self.pretty_json);
         if (self.upstream_cafile) |path| try checkErr(self.allocator, aether_vcr_embed_set_upstream_cafile(handle, path.ptr));

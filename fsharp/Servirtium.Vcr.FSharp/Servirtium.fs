@@ -60,6 +60,12 @@ module Servirtium =
 
     /// Opt-in stable order: write JSON response bodies' object keys sorted at every depth.
     /// Needs `prettyJson`: without it the tape is refused when written (disposing the server throws).
+    /// Record mode: the upstream's base URL becomes the recorder's in what the
+    /// client receives, the recorder's becomes the upstream's in what is
+    /// forwarded, and the tape holds {{baseUrl}} (docs/vcr-address.md).
+    let rewriteUpstreamBase (builder: RecordBuilder) : RecordBuilder =
+        builder.RewriteUpstreamBase()
+
     let sortJsonKeys (builder: RecordBuilder) : RecordBuilder =
         builder.SortJsonKeys()
 

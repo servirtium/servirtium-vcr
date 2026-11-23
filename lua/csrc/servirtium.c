@@ -109,6 +109,7 @@ extern char *aether_vcr_embed_assert_no_unfilled_placeholders(void *h);
 extern void  aether_vcr_embed_set_match_multiple(void *h, int on);
 extern void  aether_vcr_embed_indent_code_blocks(void *h);
 extern void  aether_vcr_embed_emphasize_http_verbs(void *h);
+extern void  aether_vcr_embed_set_rewrite_upstream_base(void *h, int on);
 extern void  aether_vcr_embed_set_pretty_xml(void *h, int indent);
 extern void  aether_vcr_embed_set_pretty_json(void *h, int indent);
 extern void  aether_vcr_embed_set_sort_json_keys(void *h, int on);
@@ -627,6 +628,15 @@ static int l_emphasize_http_verbs(lua_State *L)
     return 0;
 }
 
+/* set_rewrite_upstream_base(handle, on) */
+static int l_set_rewrite_upstream_base(lua_State *L)
+{
+    void *h = check_handle(L, 1);
+    int on = lua_toboolean(L, 2);
+    aether_vcr_embed_set_rewrite_upstream_base(h, on);
+    return 0;
+}
+
 /* set_pretty_xml(handle, indent) */
 static int l_set_pretty_xml(lua_State *L)
 {
@@ -860,6 +870,7 @@ static const luaL_Reg servirtium_funcs[] = {
     {"set_match_multiple",              l_set_match_multiple},
     {"indent_code_blocks",              l_indent_code_blocks},
     {"emphasize_http_verbs",            l_emphasize_http_verbs},
+    {"set_rewrite_upstream_base",       l_set_rewrite_upstream_base},
     {"set_pretty_xml",                  l_set_pretty_xml},
     {"set_pretty_json",                 l_set_pretty_json},
     {"set_sort_json_keys",              l_set_sort_json_keys},

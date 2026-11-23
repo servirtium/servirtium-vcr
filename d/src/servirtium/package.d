@@ -108,6 +108,7 @@ private extern (C) nothrow @nogc {
     void  aether_vcr_embed_set_match_multiple(void* h, int on);
     void  aether_vcr_embed_indent_code_blocks(void* h);
     void  aether_vcr_embed_emphasize_http_verbs(void* h);
+    void  aether_vcr_embed_set_rewrite_upstream_base(void* h, int on);
     void  aether_vcr_embed_set_pretty_xml(void* h, int indent);
     void  aether_vcr_embed_set_pretty_json(void* h, int indent);
     int   aether_vcr_embed_get_pretty_json(void* h);
@@ -522,6 +523,8 @@ struct Vcr {
 
     void indentCodeBlocks() { aether_vcr_embed_indent_code_blocks(handle); }
     void emphasizeHttpVerbs() { aether_vcr_embed_emphasize_http_verbs(handle); }
+    /// Record mode: the upstream's base URL in a response becomes this recorder's in what the client receives, the recorder's in a request becomes the upstream's in what is forwarded, and the tape holds {{baseUrl}} for both, which playback fills (docs/vcr-address.md).
+    void rewriteUpstreamBase(bool on = true) { aether_vcr_embed_set_rewrite_upstream_base(handle, on ? 1 : 0); }
     /// Shared XML layout setting: format recorded request and response bodies; match XML requests on playback (indent 1..16; 0 = off). Falls back to byte-exact if the body isn't well-formed XML.
     void prettyXml(int indent = 2) { aether_vcr_embed_set_pretty_xml(handle, indent); }
     /// Format recorded JSON request and response bodies, keeping key order and number spellings; playback matches JSON request layout.

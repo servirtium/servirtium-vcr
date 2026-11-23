@@ -221,6 +221,20 @@
         (h/eq (servirtium/last-kind rec) :ok "structured record outcome"))
       (h/run-tool "redaction_fixture" "check" dir))))
 
+(h/testcase "rewrite_upstream_base keeps the client on the VCR"
+  (fn []
+    (def dir (h/temp-dir "origin"))
+    (defer (h/rm-rf dir)
+      (def tape (string dir "/tape.md"))
+      (def upstream (h/run-tool "origin_fixture" "start" dir))
+      (servirtium/with-record [rec tape upstream {:rewrite-upstream-base true}]
+        (h/run-tool "origin_fixture" "drive" dir (servirtium/base-url rec))
+        (h/eq (servirtium/last-kind rec) :ok "origin record outcome"))
+      (h/run-tool "origin_fixture" "check" dir)
+      (servirtium/with-playback [vcr tape]
+        (h/run-tool "origin_fixture" "replay" dir (servirtium/base-url vcr))
+        (h/eq (servirtium/last-kind vcr) :ok "origin playback outcome")))))
+
 (h/testcase "named secrets round trip"
   (fn []
     (def dir (h/temp-dir "secrets"))
