@@ -1,0 +1,57 @@
+## Interaction 0: GET /whoami
+
+### Request headers recorded for playback:
+
+```
+Accept: */*
+Authorization: NTLM AUTHORIZATION_1
+Host: {{request.host}}
+```
+### Request body recorded for playback ():
+
+```
+```
+### Response headers recorded for playback:
+
+```
+Server: pyspnego-ntlm-test-server/1
+WWW-Authenticate: NTLM TlRMTVNTUAACAAAAHgAeADAAAAA1gorgASNFZ4mrze8AAAAAAAAAAG4AbgBOAAAATgBBAEUALQBOAFQATABNAC0AUwBFAFIAVgBFAFIAAQAeAE4AQQBFAC0ATgBUAEwATQAtAFMARQBSAFYARQBSAAIAFgBXAE8AUgBLAFMAVABBAFQASQBPAE4AAwAeAG4AYQBlAC0AbgB0AGwAbQAtAHMAZQByAHYAZQByAAcACAAAAAAAAADQAQAAAAA=
+Content-Type: text/plain; charset=utf-8
+Content-Length: 60
+```
+### Response body recorded for playback (401: text/plain; charset=utf-8):
+
+```
+401 Unauthorized: continue the handshake on this connection
+
+```
+
+## Interaction 1: GET /whoami
+
+### Request headers recorded for playback:
+
+```
+Accept: */*
+Authorization: NTLM AUTHORIZATION_2
+Host: {{request.host}}
+```
+### Request body recorded for playback ():
+
+```
+```
+### Response headers recorded for playback:
+
+```
+Server: pyspnego-ntlm-test-server/1
+WWW-Authenticate: Negotiate
+WWW-Authenticate: NTLM
+Content-Type: text/plain; charset=utf-8
+Content-Length: 31
+```
+### Response body recorded for playback (401: text/plain; charset=utf-8):
+
+```
+401 Unauthorized: logon denied
+
+```
+
