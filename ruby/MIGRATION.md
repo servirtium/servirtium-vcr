@@ -59,7 +59,7 @@ Full surface in [docs/usage.md](docs/usage.md).
 
 ## Compatibility suite
 
-`COMPATIBILITY_SUITE.md` and `todobackend_compatibility_test.rb` predate this
-rewrite and reference the deleted Ruby server/standalone-server. They need
-rework to drive record/playback through the new gem API (mirroring the other
-bindings' compatibility tests) and are left in place, unported, as a TODO.
+The 1.x `todobackend_compatibility_test.rb` drove the deleted Ruby server and
+was removed in 2.0.0-alpha.20. The TodoBackend browser suite now runs through
+the gem API in `integration/todobackend/ruby/` (`record.rb`,
+`playback_test.rb`).

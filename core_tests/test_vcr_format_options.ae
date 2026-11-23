@@ -16,7 +16,7 @@
 //      flush, read back the markdown, assert the file contains
 //      *GET* and a 4-space-indented body line.
 //   3. With toggles off, re-flush emits the canonical fenced/bare
-//      form (back-compat sanity check).
+//      form (the default).
 
 import core.vcr
 import std.http
