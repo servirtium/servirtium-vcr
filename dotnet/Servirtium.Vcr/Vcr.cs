@@ -494,6 +494,10 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     /// instead of pairing an <c>Unredact</c> with a <c>Substitute</c> by hand.
     /// The request-side rule is registered on the path and request body; use the
     /// lower-level calls directly if you need a different field scope.
+    /// For the VCR's OWN address you need no Placeholder (and no port before
+    /// <c>Start()</c>): put <c>{{baseUrl}}</c>, <c>{{request.host}}</c> or
+    /// <c>{{request.scheme}}</c> on the tape; playback fills them from the
+    /// live request on both sides (docs/vcr-address.md).
     /// </summary>
     public PlaybackBuilder Placeholder(string marker, string value)
     {

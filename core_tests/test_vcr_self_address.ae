@@ -1,0 +1,125 @@
+// The VCR's own address on the request side of a tape: {{baseUrl}},
+// {{request.host}} and {{request.scheme}} in a recorded path, request
+// header or request body are filled from the live request's Host header
+// when playback compares, as they always were in a replayed response. So a
+// tape whose requests carry URLs pointing back at the VCR (a SOAP To, a
+// callback URL, a link the service handed out that the client sends back)
+// replays on whatever port the VCR gets, Port(0) included, and the test
+// sets nothing before start.
+//
+// Found in the field (a .NET Framework TFS client): the test set
+// Placeholder("{{tfs}}", "http://127.0.0.1:<port>") before Start(), which
+// needs the port before the VCR has one, so it picked a free port in
+// advance and raced. With the built-in placeholders on the tape it needs no
+// Placeholder at all.
+import core.vcr
+import std.http
+import std.http.client
+import std.string
+import std.fs
+import std.os
+extern exit(code: int)
+
+fail(msg: string) { println("FAIL: ${msg}"); exit(1) }
+
+tape_path() -> string { return "/tmp/svcr-self-address-${os.getpid()}.md" }
+// A port the OS has just handed out and released.
+port_for() -> int {
+    s = http.server_create(0)
+    if s == null { return 0 }
+    err = http.server_bind(s, "127.0.0.1", 0)
+    port = 0
+    if err == "" { port = http.server_port(s) }
+    http.server_free(s)
+    return port
+}
+
+const REQ_BODY = "<s:Envelope><s:Header><a:To>{{baseUrl}}/Services/Items.svc</a:To><a:From>{{request.scheme}}://{{request.host}}/client</a:From></s:Header><s:Body/></s:Envelope>"
+const RESP_BODY = "next: {{baseUrl}}/Services/Items.svc?page=2"
+
+// The tape: POST /Services/{{request.scheme}}/Items.svc, a Referer that
+// names the VCR, the body above.
+write_tape() {
+    h = vcr.open_offline()
+    err = vcr.record_full_h(h, "POST", "/Services/{{request.scheme}}/Items.svc", 200, "text/plain", RESP_BODY,
+                            "Referer: {{baseUrl}}/page\n", REQ_BODY)
+    if err != "" { fail(err) }
+    err = vcr.flush_h(h, tape_path())
+    vcr.destroy_h(h)
+    if err != "" { fail(err) }
+}
+
+// POST to the VCR at `port` with the VCR's address `own` (as the client
+// was handed it) in the Referer and the body; returns status and body.
+post(port: int, own: string) -> (int, string) {
+    req = client.request("POST", "http://127.0.0.1:${port}/Services/http/Items.svc")
+    client.set_timeout(req, 5s)
+    client.set_header(req, "Referer", "${own}/page")
+    body = string.copy(REQ_BODY)
+    body = string.replace(body, "{{baseUrl}}", own)
+    body = string.replace(body, "{{request.scheme}}://{{request.host}}", own)
+    err = client.set_body(req, string.bytes(body), "application/soap+xml")
+    if err != "" { fail(err) }
+    resp, serr = client.send_request(req)
+    client.request_free(req)
+    if serr != "" { return -1, serr }
+    st = client.response_status(resp)
+    b = string.copy(client.response_body(resp))
+    client.response_free(resp)
+    return st, b
+}
+
+// One playback: `multiple` match_multiple, `vol` a volatile rule on too.
+start_playback(multiple: int, vol: int) -> (ptr, int) {
+    port = port_for()
+    p, err = vcr.open_playback(tape_path(), port)
+    if err != "" { fail(err) }
+    // The Referer is compared by name (the rest of the client's headers are not on the tape).
+    vcr.add_match_header_h(p, "Referer")
+    vcr.set_match_multiple_h(p, multiple)
+    if vol == 1 {
+        verr = vcr.volatile_rule_h(p, "request body", "template", "<a:MessageID>{{messageId}}</a:MessageID>")
+        if verr != "" { fail("volatile_rule: ${verr}") }
+    }
+    if vcr.start_background_h(p, 10000) != 0 { fail(vcr.last_error_h(p)) }
+    return p, port
+}
+
+main() {
+    println("=== the VCR's own address in a tape's requests ===")
+    write_tape()
+    m = 0
+    while m < 2 {
+        v = 0
+        while v < 2 {
+            label = "match_multiple ${m}, volatile ${v}"
+            p, port = start_playback(m, v)
+            own = "http://127.0.0.1:${port}"
+            st, body = post(port, own)
+            if st != 200 { fail("${label}: ${st}: ${body}; ${vcr.last_error_h(p)}") }
+            if vcr.last_kind_h(p) != 0 { fail("${label}: outcome ${vcr.last_kind_h(p)}") }
+            if string.equals(body, "next: ${own}/Services/Items.svc?page=2") != 1 { fail("${label}: response '${body}'") }
+            println("  PASS ${label}: matched on port ${port}, response filled")
+            vcr.destroy_h(p)
+            v = v + 1
+        }
+        m = m + 1
+    }
+
+    // Not a wildcard: another address where the tape has the VCR's is a mismatch.
+    p, port = start_playback(0, 0)
+    st, _b = post(port, "http://127.0.0.1:${port + 1}")
+    if st != 599 { fail("another address matched (${st})") }
+    k = vcr.last_kind_h(p)
+    // The Referer is compared first (ByHeader): a header value difference.
+    if k != 3 { fail("another address: kind ${k}, want 3 (HeaderValueDiff): ${vcr.last_error_h(p)}") }
+    diag = vcr.diagnostics_json_h(p, 1)
+    // The report shows the expectation filled in, so only the port differs.
+    if string.contains(diag, "http://127.0.0.1:${port}/page") != 1 { fail("the report's expected Referer is not filled in: ${diag}") }
+    println("  PASS another address is a mismatch, reported against the filled-in expectation")
+    vcr.destroy_h(p)
+
+    fs.delete(tape_path())
+    println("PASS")
+    exit(0)
+}

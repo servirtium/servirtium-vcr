@@ -810,6 +810,16 @@ process launchers; the shared fixture itself stays language-neutral.
   client verifies (Azure Storage's `x-ms-client-request-id`): record it with
   `redact_header` on the response headers, the token as the replacement.
   `core_tests/test_vcr_request_header_token.ae`.
+- **The VCR's own address on a tape, both sides (2026-11-23).** `{{baseUrl}}`,
+  `{{request.host}}` and `{{request.scheme}}` were filled from the live
+  request's Host in a replayed response only; now also in the request-side
+  expectation (path, headers, body) before comparing (`self_tokens_k`,
+  `expected_field_k`; the volatile-prepared `e.v_*` forms are filled per
+  request, since vol prep runs before the port is known), and in the
+  mismatch report's expected forms. So a tape whose requests carry the VCR's
+  URL (a SOAP To, a callback) replays on Port(0) with nothing set before
+  start. Found by a TFS field report (`Placeholder` needed the port before
+  `Start()`). `docs/vcr-address.md`, `core_tests/test_vcr_self_address.ae`.
 - **Body CRs are payload; path escapes are spelling (2026-11-07).** Found by
   the CouchDB pilot. (1) `normalize_tape_bytes` folds CRLF to LF only when
   the tape's first `## Interaction ` heading line ends in CRLF (the file was

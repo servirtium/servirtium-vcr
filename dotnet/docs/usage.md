@@ -129,6 +129,13 @@ Vcr.Playback(tape)
 
 Only `VcrField.ResponseBody` and `VcrField.ResponseHeaders` are accepted.
 
+The same three built-in placeholders are filled on the **request** side too,
+when playback compares the live request with the tape: a tape whose requests
+carry the VCR's own URL (a SOAP `To`, a callback URL) as `{{baseUrl}}` matches
+on whatever port the VCR gets, so `Port(0)` works and no `Placeholder` is
+needed for the VCR's own address. See
+[docs/vcr-address.md](../../docs/vcr-address.md).
+
 ## Removing headers
 
 Drop noisy/sensitive headers from a block (case-insensitive name match):

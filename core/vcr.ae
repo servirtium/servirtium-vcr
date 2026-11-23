@@ -1433,6 +1433,36 @@ replace_all(src: string, pattern: string, replacement: string) -> string {
     return out
 }
 
+// The VCR's own address in a request-side expectation. A tape can hold a URL
+// that points back at the VCR in what the client sends (a SOAP To, a
+// callback URL, a link the service handed out and the client sends back,
+// a Referer): {{baseUrl}} (scheme://host:port), {{request.host}}
+// (host:port) and {{request.scheme}} there are filled from the live
+// request's Host header, exactly as playback fills them in a response
+// (apply_substitutions_k), so the tape matches on whatever port the VCR
+// listens on, Port(0) included, with nothing to set before start. `host` is
+// the live Host header; "" leaves the text as it is (the expectations
+// volatile values prepare at start, which are filled when a request
+// arrives).
+self_tokens_k(vc: *Vcr, text: string, host: string) -> string {
+    if string.length(host) == 0 { return text }
+    if string.index_of(text, "{{baseUrl}}") < 0 && string.index_of(text, "{{request.host}}") < 0 && string.index_of(text, "{{request.scheme}}") < 0 { return text }
+    scheme = "http"
+    if tls_enabled_h_key(vc) != 0 { scheme = "https" }
+    out = str_replace_all(text, "{{baseUrl}}", string_concat(scheme, string_concat("://", host)))
+    out = str_replace_all(out, "{{request.host}}", host)
+    return str_replace_all(out, "{{request.scheme}}", scheme)
+}
+live_host(req: ptr) -> string {
+    if req == null { return "" }
+    return request_header_value(req, "Host")
+}
+// A recorded request field as playback expects it: the test's unredactions,
+// then the VCR's own address (self_tokens_k) from live Host `host`.
+expected_field_k(vc: *Vcr, src: string, field: int, host: string) -> string {
+    return self_tokens_k(vc, rt_apply_unredactions_for_k(vc, src, field), host)
+}
+
 rt_apply_unredactions_for_k(vc: *Vcr, src: string, field: int) -> string {
     out = string.copy(src)
     l = unredactions_k(vc)
@@ -2693,18 +2723,19 @@ interaction_matches_pre(vc: *Vcr, index: int, e: *Interaction, req: ptr, got_met
                         live_headers: string, live_body: string) -> int {
     vol = vol_ready_k(vc, e)
     vol_begin_request_k(vc)
-    expected_path = vol_unescape_k(vc, rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH))
+    host = live_host(req)
+    expected_path = vol_unescape_k(vc, expected_field_k(vc, e.path, FIELD_PATH, host))
     got_path = got_path_plain
     if expected_path_includes_query(e.path) == 1 { got_path = got_path_q }
     got_path = secret_canonical_live_k(vc, index, FIELD_PATH, got_path)
     if string.equals(got_method, e.method) == 0 { return 0 }
     if string.length(got_path) == 0 { return 0 }
     if vol == 1 {
-        if vol_match_k(vc, FIELD_PATH, e.v_path, uri_canonical(got_path), index) == 0 { return 0 }
+        if vol_match_k(vc, FIELD_PATH, self_tokens_k(vc, e.v_path, host), uri_canonical(got_path), index) == 0 { return 0 }
     } else if request_paths_equal(got_path, expected_path) == 0 { return 0 }
 
-    expected_req_headers = vol_unescape_k(vc, expected_req_headers_k(vc, e))
-    if vol == 1 { expected_req_headers = e.v_req_headers }
+    expected_req_headers = vol_unescape_k(vc, expected_req_headers_k(vc, e, host))
+    if vol == 1 { expected_req_headers = self_tokens_k(vc, e.v_req_headers, host) }
     // Full-block header match applies when strict is on, or when the tape
     // carries request headers AND the fixture didn't opt into surgical ByHeader
     // matching (which matches only the named headers, ignoring the rest).
@@ -2717,8 +2748,8 @@ interaction_matches_pre(vc: *Vcr, index: int, e: *Interaction, req: ptr, got_met
     }
     if match_headers_diff_k(vc, expected_req_headers, req, index, vol) != "" { return 0 }
 
-    expected_req_body = vol_unescape_k(vc, rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY))
-    if vol == 1 { expected_req_body = e.v_req_body }
+    expected_req_body = vol_unescape_k(vc, expected_field_k(vc, e.req_body, FIELD_REQUEST_BODY, host))
+    if vol == 1 { expected_req_body = self_tokens_k(vc, e.v_req_body, host) }
     if is_blank(expected_req_body) == 0 {
         canonical_body = secret_canonical_live_k(vc, index, FIELD_REQUEST_BODY, live_body)
         bm = string.equals(canonical_body, expected_req_body)
@@ -2839,13 +2870,14 @@ do_playback_locked(vc: *Vcr, req: ptr, res: ptr) {
     e = tape_get_k(vc, cur)
     vol = vol_ready_k(vc, e)
     vol_begin_request_k(vc)
-    expected_path = vol_unescape_k(vc, rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH))
-    expected_req_body = vol_unescape_k(vc, rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY))
-    expected_req_headers = vol_unescape_k(vc, expected_req_headers_k(vc, e))
+    host = live_host(req)
+    expected_path = vol_unescape_k(vc, expected_field_k(vc, e.path, FIELD_PATH, host))
+    expected_req_body = vol_unescape_k(vc, expected_field_k(vc, e.req_body, FIELD_REQUEST_BODY, host))
+    expected_req_headers = vol_unescape_k(vc, expected_req_headers_k(vc, e, host))
     if vol == 1 {
-        expected_path = e.v_path
-        expected_req_headers = e.v_req_headers
-        expected_req_body = e.v_req_body
+        expected_path = self_tokens_k(vc, e.v_path, host)
+        expected_req_headers = self_tokens_k(vc, e.v_req_headers, host)
+        expected_req_body = self_tokens_k(vc, e.v_req_body, host)
     }
 
     got_method = http_request_method(req)
@@ -3318,8 +3350,10 @@ unredact_h(server: ptr, field: int, pattern: string, replacement: string) -> str
 // paging and HATEOAS links resolve. Three request-derived placeholders are
 // ALSO filled automatically on every playback response, without registering
 // anything: {{request.host}} (the live Host header), {{request.scheme}}
-// (http/https — https when TLS is on) and {{baseUrl}} (scheme://host). This
-// is playback-only and request-side matching is unaffected.
+// (http/https — https when TLS is on) and {{baseUrl}} (scheme://host). The
+// registered rules are playback-only and do not touch request-side matching;
+// the three built-in placeholders are filled on the request side too
+// (self_tokens_k).
 // field: FIELD_RESPONSE_BODY (2), FIELD_RESPONSE_HEADERS (5), or FIELD_RESPONSE
 // (6) = "anywhere in the response" (body AND headers), one rule counted once.
 // required: 1 = report via assert_all_redactions_used if never used; 0 = optional
@@ -3351,17 +3385,10 @@ apply_substitutions_k(vc: *Vcr, req: ptr, text: string, field: int) -> string {
     if string.length(text) == 0 { return text }
     out = text
 
-    // Built-in request-derived tokens (cheap; only touch when present).
-    if string.index_of(out, "{{request.") >= 0 || string.index_of(out, "{{baseUrl}}") >= 0 {
-        host = request_header_value(req, "Host")
-        scheme = "http"
-        if tls_enabled_h_key(vc) != 0 { scheme = "https" }
-        base = string_concat(scheme, string_concat("://", host))
-        out = str_replace_all(out, "{{request.host}}", host)
-        out = str_replace_all(out, "{{request.scheme}}", scheme)
-        out = str_replace_all(out, "{{baseUrl}}", base)
-        out = fill_request_header_tokens(out, req)
-    }
+    // Built-in request-derived tokens (cheap; only touch when present):
+    // the VCR's own address, as request-side matching fills it too.
+    out = self_tokens_k(vc, out, live_host(req))
+    if string.index_of(out, "{{request.header.") >= 0 { out = fill_request_header_tokens(out, req) }
 
     // Caller-registered substitutions for this field.
     l = substitutions_k(vc)
@@ -7492,6 +7519,7 @@ struct Ranked {
 // canonicalizer (cached when no staged secret makes it per-interaction).
 struct LiveView {
     method: string; path_plain: string; path_q: string; headers: string; body: string
+    host: string             // the live Host header (self_tokens_k)
     canon: ptr               // *LiveCanon, by body mode
 }
 struct LiveCanon { mode: int; vol: int; text: string }
@@ -7503,6 +7531,7 @@ cc_live_view_k(vc: *Vcr, req: ptr, body: string) -> *LiveView {
     lv.path_q = build_recorded_path(req)
     lv.headers = normalize_live_headers_k(vc, req)
     lv.body = body
+    lv.host = string.copy(live_host(req))
     lv.canon = list_new()
     return lv
 }
@@ -7539,30 +7568,30 @@ cc_live_path_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> string {
 // (expected, live) normalized paths.
 cc_path_pair_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> (string, string) {
     got = uri_canonical(cc_live_path_k(vc, e, index, lv))
-    if vol_ready_k(vc, e) == 1 { return e.v_path, vol_render_live_k(vc, FIELD_PATH, got) }
-    return uri_canonical(vol_unescape_k(vc, rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH))), got
+    if vol_ready_k(vc, e) == 1 { return self_tokens_k(vc, e.v_path, lv.host), vol_render_live_k(vc, FIELD_PATH, got) }
+    return uri_canonical(vol_unescape_k(vc, expected_field_k(vc, e.path, FIELD_PATH, lv.host))), got
 }
 // 1 when matching compares interaction e's request headers.
 cc_headers_compared_k(vc: *Vcr, e: *Interaction) -> int {
     if vcr_get_strict_headers_k(vc) == 1 || list_size(match_headers_k(vc)) > 0 { return 1 }
-    if is_blank(expected_req_headers_k(vc, e)) == 0 { return 1 }
+    if is_blank(expected_req_headers_k(vc, e, "")) == 0 { return 1 }
     return 0
 }
 // (expected, live) normalized request headers: the named ones only under
 // ByHeader matching without strict headers.
 cc_headers_pair_k(vc: *Vcr, e: *Interaction, lv: *LiveView) -> (string, string) {
-    exp = vol_unescape_k(vc, expected_req_headers_k(vc, e))
+    exp = vol_unescape_k(vc, expected_req_headers_k(vc, e, lv.host))
     live = align_header_names(lv.headers, exp)
     if vol_ready_k(vc, e) == 1 {
-        exp = e.v_req_headers
+        exp = self_tokens_k(vc, e.v_req_headers, lv.host)
         live = vol_render_live_k(vc, FIELD_REQUEST_HEADERS, align_header_names(lv.headers, exp))
     }
     return diagnostic_headers_k(vc, exp), diagnostic_headers_k(vc, live)
 }
 // (expected, live, body mode) normalized request bodies.
 cc_body_pair_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> (string, string, int) {
-    if vol_ready_k(vc, e) == 1 { return e.v_req_body, cc_live_body_k(vc, lv, index, e.v_body_mode, 1), e.v_body_mode }
-    exp = vol_unescape_k(vc, rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY))
+    if vol_ready_k(vc, e) == 1 { return self_tokens_k(vc, e.v_req_body, lv.host), cc_live_body_k(vc, lv, index, e.v_body_mode, 1), e.v_body_mode }
+    exp = vol_unescape_k(vc, expected_field_k(vc, e.req_body, FIELD_REQUEST_BODY, lv.host))
     if vcr_get_match_json_body_k(vc) == 1 {
         ej = json_body_canonicalize(exp)
         lj = cc_live_body_k(vc, lv, index, 1, 0)
@@ -7596,7 +7625,7 @@ cc_score_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> *Ranked {
     r = malloc(sizeof(Ranked)) as *Ranked
     r.index = index
     r.method = diagnostic_text(e.method, 128)
-    r.path = diagnostic_text(diagnostic_safe_k(vc, rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH), FIELD_PATH), 512)
+    r.path = diagnostic_text(diagnostic_safe_k(vc, expected_field_k(vc, e.path, FIELD_PATH, lv.host), FIELD_PATH), 512)
     tier = closest.TIER_OTHER
     if e.method == lv.method {
         tier = closest.TIER_METHOD
@@ -7608,7 +7637,7 @@ cc_score_k(vc: *Vcr, e: *Interaction, index: int, lv: *LiveView) -> *Ranked {
                 // Any value in a token's place: the path's shape decides.
                 da, _db = closest.first_real_difference(pe, pl, vc.settings.vstyle, "")
                 if da < 0 { same = 1 }
-            } else { same = request_paths_equal(got, rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH)) }
+            } else { same = request_paths_equal(got, expected_field_k(vc, e.path, FIELD_PATH, lv.host)) }
         }
         if same == 1 { tier = closest.TIER_PATH }
     }
@@ -7834,10 +7863,10 @@ retain_replay_mismatch_k(vc: *Vcr, kind: int, index: int, expected: *Interaction
     e.expected_body = ""
     if expected != null {
         e.expected_method = diagnostic_text(expected.method, 128)
-        e.expected_path = diagnostic_safe_k(vc, rt_apply_unredactions_for_k(vc, expected.path, FIELD_PATH), FIELD_PATH)
+        e.expected_path = diagnostic_safe_k(vc, expected_field_k(vc, expected.path, FIELD_PATH, live_host(req)), FIELD_PATH)
         // The tape holds placeholders, not the credentials restored for matching.
-        e.expected_headers = diagnostic_safe_k(vc, diagnostic_headers_k(vc, remove_headers_from_block_k(vc, rt_apply_unredactions_for_k(vc, expected.req_headers, FIELD_REQUEST_HEADERS), FIELD_REQUEST_HEADERS)), FIELD_REQUEST_HEADERS)
-        e.expected_body = diagnostic_safe_k(vc, rt_apply_unredactions_for_k(vc, expected.req_body, FIELD_REQUEST_BODY), FIELD_REQUEST_BODY)
+        e.expected_headers = diagnostic_safe_k(vc, diagnostic_headers_k(vc, remove_headers_from_block_k(vc, expected_field_k(vc, expected.req_headers, FIELD_REQUEST_HEADERS, live_host(req)), FIELD_REQUEST_HEADERS)), FIELD_REQUEST_HEADERS)
+        e.expected_body = diagnostic_safe_k(vc, expected_field_k(vc, expected.req_body, FIELD_REQUEST_BODY, live_host(req)), FIELD_REQUEST_BODY)
     }
     e.actual_method = diagnostic_text(http_request_method(req), 128)
     actual_path = build_recorded_path(req)
@@ -8452,7 +8481,7 @@ range_check_at_start_k(vc: *Vcr) -> string {
 
 // Method and path only (the request line), as the matchers compare them.
 range_line_matches_k(vc: *Vcr, index: int, e: *Interaction, req: ptr) -> int {
-    expected_path = rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH)
+    expected_path = expected_field_k(vc, e.path, FIELD_PATH, live_host(req))
     got_path = http_request_path(req)
     if expected_path_includes_query(expected_path) == 1 { got_path = build_recorded_path(req) }
     got_path = secret_canonical_live_k(vc, index, FIELD_PATH, got_path)
@@ -8895,8 +8924,8 @@ vol_canonical_body_k(vc: *Vcr, mode: int, s: string, tape: int) -> string {
 }
 
 // The expected request headers as matching compares them.
-expected_req_headers_k(vc: *Vcr, e: *Interaction) -> string {
-    h = rt_apply_unredactions_for_k(vc, e.req_headers, FIELD_REQUEST_HEADERS)
+expected_req_headers_k(vc: *Vcr, e: *Interaction, host: string) -> string {
+    h = expected_field_k(vc, e.req_headers, FIELD_REQUEST_HEADERS, host)
     h = remove_headers_from_block_k(vc, h, FIELD_REQUEST_HEADERS)
     h = strip_transport_headers(h)
     return cred_mask_block_k(vc, h)
@@ -8933,7 +8962,7 @@ vol_prepare_k(vc: *Vcr) {
     while i < n {
         e = tape_get_k(vc, i)
         e.v_path = vol_rewrite_k(vc, FIELD_PATH, uri_canonical(rt_apply_unredactions_for_k(vc, e.path, FIELD_PATH)), i, m, 1)
-        e.v_req_headers = vol_rewrite_k(vc, FIELD_REQUEST_HEADERS, expected_req_headers_k(vc, e), i, m, 1)
+        e.v_req_headers = vol_rewrite_k(vc, FIELD_REQUEST_HEADERS, expected_req_headers_k(vc, e, ""), i, m, 1)
         body = rt_apply_unredactions_for_k(vc, e.req_body, FIELD_REQUEST_BODY)
         mode = 0
         if body_is_binary(body) == 0 && is_blank(body) == 0 {
