@@ -75,10 +75,10 @@ that mints fresh ids and timestamps every run.
 // and the rules are written into the tape.
 Vcr.Record(tape, upstream)
     .PrettyXml(2)
-    .VolatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
-    .VolatileRule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
-    .VolatileRule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
-    .VolatileRule("response headers", "Date: {{serverDate}}")
+    .VolatileRule(VolatileScope.RequestBody, "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+    .VolatileRule(VolatileScope.ResponseBody, "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
+    .VolatileRule(VolatileScope.RequestBody, "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
+    .VolatileRule(VolatileScope.ResponseHeaders, "Date: {{serverDate}}")
     .Start();
 
 // Playback: the tape's own "## Volatile values" block applies; the test binds
@@ -122,12 +122,15 @@ the test's own host:
 Vcr.Playback(tape)
     // {{baseUrl}}/{{request.host}}/{{request.scheme}} are filled automatically;
     // register your own placeholders explicitly:
-    .Substitute(VcrField.ResponseBody,    "{{vault}}", "https://" + host)
-    .Substitute(VcrField.ResponseHeaders, "{{vault}}", "https://" + host)
+    .Substitute(VcrResponseField.ResponseBody,    "{{vault}}", "https://" + host)
+    .Substitute(VcrResponseField.ResponseHeaders, "{{vault}}", "https://" + host)
     .Start();
 ```
 
-Only `VcrField.ResponseBody` and `VcrField.ResponseHeaders` are accepted.
+`Substitute` takes a `VcrResponseField`: `ResponseBody`, `ResponseHeaders`, or
+`Response` (both, one rule), so a request field cannot be passed. A request
+value that varies run to run is a `VolatileRule`; a scrubbed request value to
+restore for matching is `Unredact`.
 
 The same three built-in placeholders are filled on the **request** side too,
 when playback compares the live request with the tape: a tape whose requests

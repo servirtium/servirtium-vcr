@@ -55,7 +55,7 @@ public class FieldReportTests : IDisposable
 
         using var vcr = Vcr.Playback(tape)
             .Port(0)
-            .Substitute(VcrField.Response, "{{vault}}", "https://real-vault.example")
+            .Substitute(VcrResponseField.Response, "{{vault}}", "https://real-vault.example")
             .Start();
 
         using var client = new HttpClient { BaseAddress = new Uri(vcr.BaseUrl) };
@@ -79,7 +79,7 @@ public class FieldReportTests : IDisposable
         using var vcr = Vcr.Playback(tape)
             .Port(0)
             // Shared-fixture safeguard: optional, so an unused rule is fine.
-            .SubstituteOptional(VcrField.Response, "{{vault}}", "https://real-vault.example")
+            .SubstituteOptional(VcrResponseField.Response, "{{vault}}", "https://real-vault.example")
             .Start();
 
         using var client = new HttpClient { BaseAddress = new Uri(vcr.BaseUrl) };
@@ -98,7 +98,7 @@ public class FieldReportTests : IDisposable
 
         using var vcr = Vcr.Playback(tape)
             .Port(0)
-            .Substitute(VcrField.Response, "{{vault}}", "https://real-vault.example", required: false)
+            .Substitute(VcrResponseField.Response, "{{vault}}", "https://real-vault.example", required: false)
             .Start();
 
         using var client = new HttpClient { BaseAddress = new Uri(vcr.BaseUrl) };

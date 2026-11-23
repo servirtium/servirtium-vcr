@@ -29,7 +29,7 @@ namespace Servirtium.Vcr;
 /// Assert.Equal(VcrOutcome.Ok, vcr.LastKind);
 /// </code>
 ///
-/// Handle-based: each <see cref="Start"/> opens its own VCR handle, so N
+/// Handle-based: each <see cref="PlaybackBuilder.Start"/> or <see cref="RecordBuilder.Start"/> opens its own VCR handle, so N
 /// independent servers can run concurrently — one server per port, each
 /// keyed by its own handle. Tape/cursor/mutation state is owned by the
 /// handle (not process-global), so config from one fixture never leaks into
@@ -178,9 +178,8 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     /// for client libraries that refuse plain HTTP. <paramref name="certPath"/>
     /// and <paramref name="keyPath"/> are PEM files (a certificate and its
     /// matching private key). Honored in both playback and record mode; the
-    /// <see cref="Vcr.BaseUrl"/> then carries the <c>https</c> scheme. A bad or
-    /// mismatched PEM throws from <see cref="Build"/>. Configure before
-    /// building/starting.
+    /// <see cref="VcrServer.BaseUrl"/> then carries the <c>https</c> scheme. A bad or
+    /// mismatched PEM throws from <c>Start()</c>. Configure before starting.
     /// </summary>
     public TSelf Tls(string certPath, string keyPath)
     {
@@ -194,7 +193,7 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     /// to disk (what security reviews flag). <paramref name="certPem"/> is the
     /// PEM certificate (chain) and <paramref name="keyPem"/> the matching PEM
     /// private key. Honored in playback and record; a bad or mismatched PEM
-    /// throws from <see cref="Build"/>. Takes precedence over <see cref="Tls"/>
+    /// throws from <c>Start()</c>. Takes precedence over <see cref="Tls"/>
     /// if both are set.
     /// </summary>
     public TSelf TlsFromPem(string certPem, string keyPem)
@@ -216,20 +215,27 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// A volatile-value rule (docs/volatile-values.md). <paramref name="scope"/>:
-    /// <c>request path</c>, <c>request headers</c>, <c>response headers</c>,
-    /// <c>headers</c>, <c>request body</c>, <c>response body</c> or <c>body</c>.
-    /// <paramref name="kind"/> <c>"template"</c> (literal text with
-    /// <c>{{name}}</c> / <c>{{name:pattern}}</c> placeholders) or <c>"regex"</c>
-    /// (named groups are placeholders). Recording writes each captured value as
-    /// a token (<c>{{name-1}}</c> for a name used on both sides, <c>{{name}}</c>
-    /// for a one-sided one); playback matches any live value there and
-    /// binds it. Errors (here, a conflict with the tape's rules, an unbound
-    /// response token) throw from <c>Start()</c>.
+    /// A volatile-value rule (docs/volatile-values.md): a value that differs
+    /// run to run (a message id, a timestamp, a server-minted id) in
+    /// <paramref name="scope"/>. With <see cref="VolatileKind.Template"/>,
+    /// <paramref name="pattern"/> is literal text with <c>{{name}}</c> /
+    /// <c>{{name:pattern}}</c> placeholders; with
+    /// <see cref="VolatileKind.Regex"/>, a regex whose named groups are the
+    /// placeholders. Recording writes each captured value as a token
+    /// (<c>{{name-1}}</c> for a name used on both sides, <c>{{name}}</c> for a
+    /// one-sided one); playback matches any live value there and binds it.
+    /// Errors (a pattern with no placeholder, a conflict with the tape's
+    /// rules, an unbound response token) throw from <c>Start()</c>.
     /// </summary>
-    public TSelf VolatileRule(string scope, string pattern, string kind = "template")
+    /// <example>
+    /// <code>
+    /// .VolatileRule(VolatileScope.RequestBody, "&lt;a:MessageID&gt;urn:uuid:{{messageId}}&lt;/a:MessageID&gt;")
+    /// .VolatileRule(VolatileScope.Headers, @"(?&lt;id&gt;[0-9a-f]{8}-[0-9a-f-]{27})", VolatileKind.Regex)
+    /// </code>
+    /// </example>
+    public TSelf VolatileRule(VolatileScope scope, string pattern, VolatileKind kind = VolatileKind.Template)
     {
-        _volatile.Add(("rule", scope, kind, pattern));
+        _volatile.Add(("rule", VolatileNames.Scope(scope), VolatileNames.Kind(kind), pattern));
         return Self;
     }
 
@@ -318,7 +324,7 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     /// <summary>
     /// The configured server-certificate PEM text, or null when TLS is off.
     /// Resolves the file form (<see cref="Tls"/>) by reading it. Used by
-    /// <see cref="VcrServer.CreateClientHandler"/> to pin the self-signed cert.
+    /// <c>VcrServer.CreateClientHandler</c> (modern .NET) to pin the self-signed cert.
     /// </summary>
     private protected string? ResolveTlsCertPem()
     {
@@ -346,9 +352,14 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
 public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
 {
     private Func<string, string?>? _secretResolver;
+    /// <summary>
+    /// Fill the tape's named secret markers before serving (docs/secrets.md):
+    /// <paramref name="callback"/> gets each marker's name and returns its
+    /// real value, or null to leave it. Runs at <see cref="Start"/>.
+    /// </summary>
     public PlaybackBuilder SecretResolver(Func<string, string?> callback) { _secretResolver = callback; return this; }
     private readonly List<(VcrField field, string pattern, string replacement)> _unredactions = new();
-    private readonly List<(VcrField field, string pattern, string replacement, bool required)> _substitutions = new();
+    private readonly List<(VcrResponseField field, string pattern, string replacement, bool required)> _substitutions = new();
     private readonly List<string> _matchHeaders = new();
     private bool _strictHeaders;
     private bool _matchJsonBody;
@@ -456,13 +467,17 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     /// <c>{{request.host}}</c>, <c>{{request.scheme}}</c> and
     /// <c>{{baseUrl}}</c> are filled from the live request automatically —
     /// use <c>Substitute</c> only for your own placeholders (e.g.
-    /// <c>Substitute(VcrField.ResponseBody, "{{vault}}", "https://" + host)</c>).
-    /// Pass <see cref="VcrField.Response"/> to fill the placeholder in the body
-    /// AND the headers with one rule (counted once by
-    /// <see cref="VcrServer.AssertAllRedactionsUsed"/>). Only those three fields
-    /// are accepted; anything else throws from <see cref="Start"/>. Request-side
-    /// matching is unaffected.
+    /// <c>Substitute(VcrResponseField.ResponseBody, "{{vault}}", "https://" + host)</c>).
+    /// Pass <see cref="VcrResponseField.Response"/> to fill the placeholder in
+    /// the body AND the headers with one rule (counted once by
+    /// <see cref="VcrServer.AssertAllRedactionsUsed"/>). Request-side matching
+    /// is unaffected: a request value that varies run to run is a
+    /// <see cref="VcrBuilderBase{TSelf}.VolatileRule"/>, and a scrubbed value to
+    /// restore for matching is <see cref="Unredact"/>.
     /// </summary>
+    /// <param name="field">Where in the replayed response: the body, the headers, or both.</param>
+    /// <param name="pattern">The literal text to replace (not a regex).</param>
+    /// <param name="replacement">What the client gets instead.</param>
     /// <param name="required">
     /// When <c>true</c> (default), <see cref="VcrServer.AssertAllRedactionsUsed"/>
     /// reports this rule if it never fires. Pass <c>false</c> (or use
@@ -470,20 +485,20 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     /// that some tapes legitimately don't exercise — e.g. a <c>{{vault}}</c>
     /// substitution a 403/503/empty-vault tape contains no placeholder for.
     /// </param>
-    public PlaybackBuilder Substitute(VcrField field, string pattern, string replacement, bool required = true)
+    public PlaybackBuilder Substitute(VcrResponseField field, string pattern, string replacement, bool required = true)
     {
         _substitutions.Add((field, pattern, replacement, required));
         return this;
     }
 
     /// <summary>
-    /// Like <see cref="Substitute(VcrField,string,string,bool)"/> but optional:
+    /// Like <see cref="Substitute(VcrResponseField,string,string,bool)"/> but optional:
     /// <see cref="VcrServer.AssertAllRedactionsUsed"/> never reports it as
     /// unused. For a shared fixture that configures the same substitutions for a
     /// whole family of tapes, where some tapes legitimately contain no
     /// placeholder for a given rule (403/503/empty-vault cases).
     /// </summary>
-    public PlaybackBuilder SubstituteOptional(VcrField field, string pattern, string replacement)
+    public PlaybackBuilder SubstituteOptional(VcrResponseField field, string pattern, string replacement)
         => Substitute(field, pattern, replacement, required: false);
 
     /// <summary>
@@ -492,7 +507,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     /// filled with <paramref name="value"/> on the request side so a live request
     /// carrying the real URL still matches (an <see cref="Unredact"/>), and the
     /// served response's marker — body and headers — is filled with it too (a
-    /// <see cref="Substitute"/> over <see cref="VcrField.Response"/>). One call
+    /// <see cref="Substitute"/> over <see cref="VcrResponseField.Response"/>). One call
     /// instead of pairing an <c>Unredact</c> with a <c>Substitute</c> by hand.
     /// The request-side rule is registered on the path and request body; use the
     /// lower-level calls directly if you need a different field scope.
@@ -505,7 +520,7 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
     {
         _unredactions.Add((VcrField.Path, marker, value));
         _unredactions.Add((VcrField.RequestBody, marker, value));
-        _substitutions.Add((VcrField.Response, marker, value, false));
+        _substitutions.Add((VcrResponseField.Response, marker, value, false));
         return this;
     }
 
@@ -528,12 +543,17 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
         {
             Check(NativeMethods.Unredact(handle, (int)field, pattern, replacement), nameof(Unredact));
         }
-        foreach ((VcrField field, string pattern, string replacement, bool required) in _substitutions)
+        foreach ((VcrResponseField field, string pattern, string replacement, bool required) in _substitutions)
         {
             Check(NativeMethods.Substitute(handle, (int)field, pattern, replacement, required ? 1 : 0), nameof(Substitute));
         }
     }
 
+    /// <summary>
+    /// Open the tape, apply this builder's options and start serving. Throws
+    /// <see cref="VcrException"/> naming the reason (an unreadable tape, a bad
+    /// rule, a port in use).
+    /// </summary>
     public VcrServer Start()
     {
         IntPtr handle = NativeMethods.OpenPlayback(LabelValue, TapePath, HostValue, PortValue);
@@ -571,6 +591,12 @@ public sealed class PlaybackBuilder : VcrBuilderBase<PlaybackBuilder>
 public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
 {
     private Func<string, SecretRequest, string?>? _secretRedactor;
+    /// <summary>
+    /// Name the secrets in a recording before it is written (docs/secrets.md):
+    /// <paramref name="callback"/> gets each candidate field's key and a
+    /// <see cref="SecretRequest"/>, and returns a marker name for a secret, or
+    /// null to leave the value. Runs when the tape is written.
+    /// </summary>
     public RecordBuilder SecretRedactor(Func<string, SecretRequest, string?> callback) { _secretRedactor = callback; return this; }
     private readonly string _upstreamBase;
     private readonly List<(Func<IntPtr, int, string, string, IntPtr> operation, VcrField field, string pattern, string replacement)> _redactions = new();
@@ -872,6 +898,10 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
         }
     }
 
+    /// <summary>
+    /// Apply this builder's options and start serving, forwarding to the
+    /// upstream. Throws <see cref="VcrException"/> naming the reason.
+    /// </summary>
     public VcrServer Start()
     {
         CheckLoopbackUpstream();
@@ -920,8 +950,6 @@ public sealed class VcrServer : IDisposable
     private readonly bool _failIfChanged;
     private readonly string? _tlsCertPem;
     private string? _baseUrl;
-    private bool _discarded;
-    private bool _committed;
 
     internal VcrServer(IntPtr handle, string host, string tapePath, bool recordMode, bool failIfChanged, string? tlsCertPem = null)
     {
@@ -950,6 +978,10 @@ public sealed class VcrServer : IDisposable
 
     /// <summary>Read the latest retained diagnostic; false observes without acknowledging.</summary>
     public string ReadLastError(bool consume = true) => NativeMethods.TakeString(NativeMethods.LastErrorEx(Handle, consume ? 1 : 0));
+    /// <summary>
+    /// Every retained mismatch event as JSON (docs/replay-diagnostics.md);
+    /// <paramref name="consume"/> acknowledges them.
+    /// </summary>
     public string DiagnosticsJson(bool consume = false) => NativeMethods.TakeString(NativeMethods.DiagnosticsJson(Handle, consume ? 1 : 0));
 
     /// <summary>
@@ -958,6 +990,10 @@ public sealed class VcrServer : IDisposable
     /// <c>binding: …</c>, <c>warning: …</c>).
     /// </summary>
     public string VolatileReport() => NativeMethods.TakeString(NativeMethods.VolatileReport(Handle));
+    /// <summary>
+    /// Throw <see cref="VcrException"/> with the report of every mismatch since
+    /// the last test boundary (<see cref="TestContext"/>), if there was one.
+    /// </summary>
     public void AssertNoMismatches()
     {
         string error = NativeMethods.TakeString(NativeMethods.AssertNoMismatches(Handle));
@@ -1021,6 +1057,12 @@ public sealed class VcrServer : IDisposable
     /// client was configured for it.
     /// </summary>
     public string LastTlsProtocol => NativeMethods.TakeString(NativeMethods.LastTlsProtocol(Handle));
+    /// <summary>
+    /// Start a new test: mismatches not yet retrieved are reported under the
+    /// previous test, the retained events are cleared, and later reports carry
+    /// <paramref name="name"/> (and the source file and line, when given) in
+    /// their <c>test:</c> and <c>source:</c> lines.
+    /// </summary>
     public void TestContext(string name, string sourceFile = "", int sourceLine = 0) => NativeMethods.TestContext(Handle, name, sourceFile, sourceLine);
 
     /// <summary>Outcome of the most-recent dispatch.</summary>
@@ -1148,10 +1190,9 @@ public sealed class VcrServer : IDisposable
     /// </summary>
     public void Commit()
     {
-        if (_handle == IntPtr.Zero || !_recordMode) { _committed = true; return; }
+        if (_handle == IntPtr.Zero || !_recordMode) return;
         IntPtr h = _handle;
         _handle = IntPtr.Zero;
-        _committed = true;
         FlushAndDestroy(h);
     }
 
@@ -1185,14 +1226,17 @@ public sealed class VcrServer : IDisposable
     /// </summary>
     public void Discard()
     {
-        if (_handle == IntPtr.Zero || !_recordMode) { _discarded = true; return; }
+        if (_handle == IntPtr.Zero || !_recordMode) return;
         IntPtr h = _handle;
         _handle = IntPtr.Zero;
-        _discarded = true;
         try { NativeMethods.TakeString(NativeMethods.Discard(h, _tapePath)); }
         finally { NativeMethods.Destroy(h); }
     }
 
+    /// <summary>
+    /// Stop the server and free it. A record server not yet committed or
+    /// discarded writes its tape first (as <see cref="Commit"/> does).
+    /// </summary>
     public void Dispose()
     {
         // Already committed, discarded or disposed: the handle is gone.
@@ -1214,7 +1258,57 @@ public sealed class VcrServer : IDisposable
     }
 }
 
-/// <summary>Thrown when the VCR fails to start, or a record-mode flush detects drift.</summary>
+/// <summary>Where a <see cref="VcrBuilderBase{TSelf}.VolatileRule"/> applies.</summary>
+public enum VolatileScope
+{
+    /// <summary>The request path, query included.</summary>
+    RequestPath,
+    /// <summary>The request headers.</summary>
+    RequestHeaders,
+    /// <summary>The response headers.</summary>
+    ResponseHeaders,
+    /// <summary>Request and response headers.</summary>
+    Headers,
+    /// <summary>The request body.</summary>
+    RequestBody,
+    /// <summary>The response body.</summary>
+    ResponseBody,
+    /// <summary>Request and response bodies.</summary>
+    Body,
+}
+
+/// <summary>How a <see cref="VcrBuilderBase{TSelf}.VolatileRule"/> pattern is read.</summary>
+public enum VolatileKind
+{
+    /// <summary>Literal text with <c>{{name}}</c> / <c>{{name:pattern}}</c> placeholders.</summary>
+    Template,
+    /// <summary>A regular expression whose named groups are the placeholders.</summary>
+    Regex,
+}
+
+// The core's spelling of a scope and a kind (docs/volatile-values.md).
+internal static class VolatileNames
+{
+    internal static string Scope(VolatileScope scope) => scope switch
+    {
+        VolatileScope.RequestPath => "request path",
+        VolatileScope.RequestHeaders => "request headers",
+        VolatileScope.ResponseHeaders => "response headers",
+        VolatileScope.Headers => "headers",
+        VolatileScope.RequestBody => "request body",
+        VolatileScope.ResponseBody => "response body",
+        VolatileScope.Body => "body",
+        _ => throw new ArgumentOutOfRangeException(nameof(scope), scope, "not a VolatileScope"),
+    };
+
+    internal static string Kind(VolatileKind kind) => kind switch
+    {
+        VolatileKind.Template => "template",
+        VolatileKind.Regex => "regex",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "not a VolatileKind"),
+    };
+}
+
 /// <summary>The marker style of volatile-value placeholders and tokens.</summary>
 public enum VolatileMarkers
 {
@@ -1226,7 +1320,9 @@ public enum VolatileMarkers
     Wikilink = 2,
 }
 
+/// <summary>Thrown when the VCR fails to start, a mismatch is asserted, or a record-mode flush fails or detects drift.</summary>
 public sealed class VcrException : Exception
 {
+    /// <summary>An exception with the VCR's message.</summary>
     public VcrException(string message) : base(message) { }
 }

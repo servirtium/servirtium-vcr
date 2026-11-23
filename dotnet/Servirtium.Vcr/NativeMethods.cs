@@ -9,17 +9,35 @@ namespace Servirtium.Vcr;
 /// </summary>
 public enum VcrField
 {
+    /// <summary>The request path, query included.</summary>
     Path = 1,
+    /// <summary>The response body.</summary>
     ResponseBody = 2,
+    /// <summary>The request headers.</summary>
     RequestHeaders = 3,
+    /// <summary>The request body.</summary>
     RequestBody = 4,
+    /// <summary>The response headers.</summary>
     ResponseHeaders = 5,
+}
 
+/// <summary>
+/// Where <see cref="PlaybackBuilder.Substitute"/> rewrites the replayed
+/// response. Only the response: a rule for the request side (a value the
+/// client sends that varies run to run) is a
+/// <see cref="VcrBuilderBase{TSelf}.VolatileRule"/>, and a scrubbed value to
+/// restore for matching is <see cref="PlaybackBuilder.Unredact"/>.
+/// </summary>
+public enum VcrResponseField
+{
+    /// <summary>The response body.</summary>
+    ResponseBody = 2,
+    /// <summary>The response headers.</summary>
+    ResponseHeaders = 5,
     /// <summary>
-    /// Substitution only: the whole response — body AND headers. One rule,
-    /// counted once by <see cref="VcrServer.AssertAllRedactionsUsed"/>. Use when
-    /// a placeholder may appear in either (e.g. a vault host in a nextLink body
-    /// or a Location header) without registering it twice.
+    /// The whole response, body AND headers: one rule, counted once by
+    /// <see cref="VcrServer.AssertAllRedactionsUsed"/>. For a placeholder that
+    /// may appear in either (a host in a nextLink body or a Location header).
     /// </summary>
     Response = 6,
 }
@@ -31,13 +49,21 @@ public enum VcrField
 /// </summary>
 public enum VcrOutcome
 {
+    /// <summary>Matched (playback) or recorded (record).</summary>
     Ok = 0,
+    /// <summary>The method or path differs from the expected interaction's.</summary>
     PathOrMethodDiff = 1,
+    /// <summary>A recorded request header is missing from the request.</summary>
     HeaderMissing = 2,
+    /// <summary>A request header's value differs from the recorded one.</summary>
     HeaderValueDiff = 3,
+    /// <summary>The request has a header the recording does not.</summary>
     HeaderUnexpected = 4,
+    /// <summary>The tape has no interaction left for this request; the report shows the request whole.</summary>
     TapeExhausted = 5,
+    /// <summary>The request body differs from the recorded one.</summary>
     BodyDiff = 6,
+    /// <summary>Record mode could not reach the upstream or record the interaction.</summary>
     RecordError = 7,
 }
 

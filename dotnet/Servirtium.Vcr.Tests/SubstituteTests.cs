@@ -24,7 +24,7 @@ public class SubstituteTests
     {
         using var vcr = Vcr.Playback(TapePath("substitute.md"))
             .Port(0)
-            .Substitute(VcrField.ResponseBody, "{{vault}}", "https://vault.example")
+            .Substitute(VcrResponseField.ResponseBody, "{{vault}}", "https://vault.example")
             .Start();
 
         string baseUrl = vcr.BaseUrl.TrimEnd('/');   // http://127.0.0.1:<port>
@@ -45,13 +45,6 @@ public class SubstituteTests
         Assert.Contains($"{baseUrl}/page2", string.Join(",", link));
     }
 
-    [Fact]
-    public void Rejects_a_non_response_field()
-    {
-        VcrException ex = Assert.Throws<VcrException>(() =>
-            Vcr.Playback(TapePath("substitute.md")).Port(0)
-               .Substitute(VcrField.Path, "{{x}}", "y")
-               .Start());
-        Assert.Contains("substitute", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
+    // A request field cannot be passed at all: Substitute takes a
+    // VcrResponseField (the runtime refusal this replaced is gone).
 }

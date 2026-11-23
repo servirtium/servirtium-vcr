@@ -121,13 +121,14 @@ module Servirtium =
     let redactCredentialHeaderOnPlayback (name: string) (builder: PlaybackBuilder) : PlaybackBuilder =
         builder.RedactCredentialHeader(name)
 
-    /// A volatile-value rule (docs/volatile-values.md): scope, then a template
-    /// with {{name}} placeholders ("template") or a regex with named groups ("regex").
-    let volatileRule (scope: string) (pattern: string) (kind: string) (builder: RecordBuilder) : RecordBuilder =
+    /// A volatile-value rule (docs/volatile-values.md): where it applies, the
+    /// pattern, and how it is read (VolatileKind.Template: {{name}} placeholders;
+    /// VolatileKind.Regex: named groups).
+    let volatileRule (scope: VolatileScope) (pattern: string) (kind: VolatileKind) (builder: RecordBuilder) : RecordBuilder =
         builder.VolatileRule(scope, pattern, kind)
 
     /// A volatile-value rule on the playback builder.
-    let volatileRuleOnPlayback (scope: string) (pattern: string) (kind: string) (builder: PlaybackBuilder) : PlaybackBuilder =
+    let volatileRuleOnPlayback (scope: VolatileScope) (pattern: string) (kind: VolatileKind) (builder: PlaybackBuilder) : PlaybackBuilder =
         builder.VolatileRule(scope, pattern, kind)
 
     /// Bind a real value to every token of a placeholder name, or to one token (name-N).

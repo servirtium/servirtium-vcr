@@ -31,6 +31,14 @@
     <PackageId>Servirtium.Vcr</PackageId>
     <Version>2.0.0-alpha.19</Version>
     <Description>Idiomatic .NET record/replay (Servirtium) over the Aether VCR core, via P/Invoke to a precompiled native library.</Description>
+    <Authors>Paul Hammant</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/servirtium/servirtium-vcr/tree/main/dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/servirtium/servirtium-vcr</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Servirtium.Vcr.xml beside each assembly, so IDEs show the API docs. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Keep the aeb-generated csproj (same dir) out of this build. -->
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
@@ -69,6 +77,11 @@
     <None Include="native/osx-arm64/libservirtium_vcr.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native/" Condition="Exists('native/osx-arm64/libservirtium_vcr.dylib')" />
     <None Include="native/win-x64/servirtium_vcr.dll" Pack="true" PackagePath="runtimes/win-x64/native/" Condition="Exists('native/win-x64/servirtium_vcr.dll')" />
     <None Include="native/win-arm64/servirtium_vcr.dll" Pack="true" PackagePath="runtimes/win-arm64/native/" Condition="Exists('native/win-arm64/servirtium_vcr.dll')" />
+  </ItemGroup>
+
+  <!-- The package's README (nuget.org and IDE package pages show it). -->
+  <ItemGroup>
+    <None Include="README.package.md" Pack="true" PackagePath="README.md" />
   </ItemGroup>
 
   <!--

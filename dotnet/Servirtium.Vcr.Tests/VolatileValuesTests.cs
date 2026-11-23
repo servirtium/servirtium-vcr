@@ -12,23 +12,12 @@ namespace Servirtium.Vcr.Tests;
 // are driven by target/test-tools/volatile_fixture against core_tests/volatile/.
 public class VolatileValuesTests
 {
-    private static string Source([CallerFilePath] string file = "") => file;
-    private static readonly string Root = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Source())!, "../.."));
-    private static string Tape(string name) => Path.Combine(Root, "core_tests/volatile", name);
+    private static string Tape(string name) => Path.Combine(TestTools.Root, "core_tests/volatile", name);
 
     private static void Drive(string scenario, VcrServer server)
     {
-        var info = new ProcessStartInfo(Path.Combine(Root, "target/test-tools/volatile_fixture"))
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        info.ArgumentList.Add(scenario);
-        info.ArgumentList.Add(server.BaseUrl);
-        using var driver = Process.Start(info)!;
-        string output = driver.StandardOutput.ReadToEnd() + driver.StandardError.ReadToEnd();
-        driver.WaitForExit();
-        Assert.True(driver.ExitCode == 0, $"{scenario}: {output}\n{server.ReadLastError(false)}");
+        try { TestTools.Run("volatile_fixture", scenario, server.BaseUrl); }
+        catch (Xunit.Sdk.XunitException e) { throw new Xunit.Sdk.XunitException($"{e.Message}\n{server.ReadLastError(false)}"); }
     }
 
     // Spec tests 1 and 6: the tape declares its rules; none in code.
@@ -54,10 +43,10 @@ public class VolatileValuesTests
     public void WcfRoundTripWithRulesInCode()
     {
         using var server = Vcr.Playback(Tape("wcf_plain.md")).PrettyXml(2)
-            .VolatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
-            .VolatileRule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
-            .VolatileRule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
-            .VolatileRule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
+            .VolatileRule(VolatileScope.RequestBody, "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+            .VolatileRule(VolatileScope.RequestBody, "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
+            .VolatileRule(VolatileScope.RequestBody, "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
+            .VolatileRule(VolatileScope.ResponseBody, "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
             .Start();
         Drive("wcf", server);
     }
@@ -102,14 +91,28 @@ public class VolatileValuesTests
     public void BadRulesAndConflictsFailStart()
     {
         var bad = Assert.Throws<VcrException>(() =>
-            Vcr.Playback(Tape("cases.md")).VolatileRule("request body", "no placeholder").Start());
+            Vcr.Playback(Tape("cases.md")).VolatileRule(VolatileScope.RequestBody, "no placeholder").Start());
         Assert.Contains("needs at least one placeholder", bad.Message);
         var conflict = Assert.Throws<VcrException>(() =>
-            Vcr.Playback(Tape("cases.md")).VolatileRule("response body", "\"caseId\":\"{{id}}\"").Start());
+            Vcr.Playback(Tape("cases.md")).VolatileRule(VolatileScope.ResponseBody, "\"caseId\":\"{{id}}\"").Start());
         Assert.Contains("conflicts with", conflict.Message);
         Assert.Contains("(tape)", conflict.Message);
-        var kind = Assert.Throws<VcrException>(() =>
-            Vcr.Playback(Tape("cases.md")).VolatileRule("request body", "a {{b}}", "glob").Start());
-        Assert.Contains("expected template or regex", kind.Message);
+    }
+
+    // Scope and kind are enums (a typo is a compile error, not a runtime one):
+    // every value must be a spelling the core accepts.
+    [Fact]
+    public void EveryScopeAndKindIsOneTheCoreAccepts()
+    {
+        string singleGet = Path.Combine(AppContext.BaseDirectory, "tapes", "single_get.md");
+        foreach (VolatileScope scope in Enum.GetValues(typeof(VolatileScope)))
+        {
+            foreach (VolatileKind kind in Enum.GetValues(typeof(VolatileKind)))
+            {
+                string pattern = kind == VolatileKind.Template ? "id={{probe}}" : "id=(?<probe>[0-9]+)";
+                using var vcr = Vcr.Playback(singleGet).VolatileRule(scope, pattern, kind).Start();
+                Assert.Contains("rule:", vcr.VolatileReport());
+            }
+        }
     }
 }

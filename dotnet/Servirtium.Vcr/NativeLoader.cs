@@ -15,7 +15,7 @@ namespace Servirtium.Vcr;
 /// freshly built <c>ae build --emit=lib</c> artifact during development), a
 /// plain copy next to the assembly, or a NuGet
 /// <c>runtimes/&lt;rid&gt;/native/</c> asset. After loading, a required-export
-/// check (<see cref="ValidateAbi"/>) rejects a library too old for this
+/// check (<c>ValidateAbi</c>, modern .NET only) rejects a library too old for this
 /// client's ABI with a clear engine-version message.
 ///
 /// Registered once via a module initializer so it is active before the

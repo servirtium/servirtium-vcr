@@ -367,10 +367,10 @@ Removed with this: `normalize_whole_tape`, `normalize_whole_tape_described`,
 ```csharp
 using var vcr = Vcr.Playback("tapes/create_case.md")
     .PrettyXml()
-    .VolatileRule("request body", "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
-    .VolatileRule("response body", "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
-    .VolatileRule("request body", "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
-    .VolatileRule("request body", "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
+    .VolatileRule(VolatileScope.RequestBody, "<a:MessageID>urn:uuid:{{messageId}}</a:MessageID>")
+    .VolatileRule(VolatileScope.ResponseBody, "<a:RelatesTo>urn:uuid:{{messageId}}</a:RelatesTo>")
+    .VolatileRule(VolatileScope.RequestBody, "<a:To s:mustUnderstand=\"1\">{{endpoint}}/Services/")
+    .VolatileRule(VolatileScope.RequestBody, "&lt;SubmissionDate&gt;{{submitted}}&lt;/SubmissionDate&gt;")
     .Start();
 ```
 

@@ -271,7 +271,7 @@ let ``volatile: correlation, bind and errors`` () =
     Assert.Contains("caseId", unbound.Message)
     let conflict =
         Assert.Throws<VcrException>(fun () ->
-            (Vcr.Playback(volatileTape "cases.md") |> Servirtium.volatileRuleOnPlayback "response body" "\"caseId\":\"{{id}}\"" "template").Start() |> ignore)
+            (Vcr.Playback(volatileTape "cases.md") |> Servirtium.volatileRuleOnPlayback VolatileScope.ResponseBody "\"caseId\":\"{{id}}\"" VolatileKind.Template).Start() |> ignore)
     Assert.Contains("conflicts with", conflict.Message)
 
 

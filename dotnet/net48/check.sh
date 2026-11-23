@@ -93,6 +93,23 @@ build() { # label, project, extra args...
 
 echo "== Servirtium.Vcr $version, .NET Framework consumers ($( [ "$windows" = 1 ] && echo "Windows: build and run" || echo "not Windows: build only, nothing is run"))"
 
+# ---- the package itself: API docs, README, repository ----------------------
+listing=$(unzip -l "$nupkg" | awk '{print $4}')
+for entry in lib/net48/Servirtium.Vcr.xml lib/net8.0/Servirtium.Vcr.xml README.md \
+             build/net48/Servirtium.Vcr.targets buildTransitive/net48/Servirtium.Vcr.targets; do
+  if printf '%s\n' "$listing" | grep -qx "$entry"; then pass "package: $entry"; else fail "package: no $entry"; fi
+done
+nuspec=$(unzip -p "$nupkg" Servirtium.Vcr.nuspec)
+for want in '<repository type="git" url="https://github.com/servirtium/servirtium-vcr"' '<readme>README.md</readme>' '<license type="expression">MIT</license>'; do
+  if printf '%s' "$nuspec" | grep -qF "$want"; then pass "nuspec: $want"; else fail "nuspec: no $want"; fi
+done
+# The docs say what VolatileRule's scope and kind are, without reading the native library.
+if unzip -p "$nupkg" lib/net48/Servirtium.Vcr.xml | grep -q 'T:Servirtium.Vcr.VolatileScope'; then
+  pass "Servirtium.Vcr.xml documents VolatileScope"
+else
+  fail "Servirtium.Vcr.xml does not document VolatileScope"
+fi
+
 # ---- (i) SDK-style, PackageReference -------------------------------------
 for variant in anycpu rid-win-x64 x64 x86; do
   cp -R "$tree/sdk-packagereference" "$tree/sdk-pr-$variant"
