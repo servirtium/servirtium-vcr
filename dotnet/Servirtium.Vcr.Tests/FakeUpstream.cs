@@ -53,7 +53,7 @@ internal sealed class FakeUpstream : IDisposable
                 {
                     ctx.Response.Headers[h.Key] = h.Value;
                 }
-                await ctx.Response.OutputStream.WriteAsync(payload);
+                await ctx.Response.OutputStream.WriteAsync(payload, 0, payload.Length);
                 ctx.Response.Close();
             }
         }

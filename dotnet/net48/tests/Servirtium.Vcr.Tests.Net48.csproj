@@ -1,0 +1,30 @@
+<!--
+  (iv) The binding's own tests (dotnet/Servirtium.Vcr.Tests/*.cs, the same
+  sources the net8.0 suite compiles) built for .NET Framework 4.8 against the
+  packed Servirtium.Vcr package: its lib/net48 assembly and the engine its
+  build targets copy. x64, as the engine is. CreateClientHandlerTests compiles
+  to nothing on net48 (the helper is modern .NET only).
+  check.sh sets ServirtiumVcrVersion and ServirtiumVcrTestsDir (the absolute
+  path of dotnet/Servirtium.Vcr.Tests, whose fixtures are found from there).
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Servirtium.Vcr" Version="$(ServirtiumVcrVersion)" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="$(ServirtiumVcrTestsDir)/*.cs" />
+    <None Include="$(ServirtiumVcrTestsDir)/tapes/**/*" Link="tapes/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

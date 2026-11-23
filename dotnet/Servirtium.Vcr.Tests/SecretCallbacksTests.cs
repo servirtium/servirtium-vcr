@@ -7,22 +7,11 @@ using Xunit;
 namespace Servirtium.Vcr.Tests;
 public class SecretCallbacksTests
 {
-    private static string Source([CallerFilePath] string path = "") => path;
     [Fact] public void NamedSecretsRoundTripOnCallingThread()
     {
         var directory = Path.Combine(Path.GetTempPath(), "vcr-helpers-" + Guid.NewGuid());
         Directory.CreateDirectory(directory);
-        var fixture = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Source())!, "../../target/test-tools/secret_fixture"));
-        string Run(params string[] args)
-        {
-            var info = new ProcessStartInfo(fixture) { RedirectStandardOutput = true };
-            foreach (var arg in args) info.ArgumentList.Add(arg);
-            using var process = Process.Start(info)!;
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            Assert.Equal(0, process.ExitCode);
-            return output.Trim();
-        }
+        string Run(params string[] args) => TestTools.Run("secret_fixture", args);
         try {
             var upstream = Run("start", directory);
             var tape = Path.Combine(directory, "tape.md");

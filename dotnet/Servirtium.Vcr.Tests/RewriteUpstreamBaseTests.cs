@@ -14,22 +14,11 @@ namespace Servirtium.Vcr.Tests;
 /// </summary>
 public class RewriteUpstreamBaseTests
 {
-    private static string Source([CallerFilePath] string path = "") => path;
     [Fact] public void KeepsTheClientOnTheVcrAndReplaysOnAnotherPort()
     {
         var directory = Path.Combine(Path.GetTempPath(), "vcr-origin-" + Guid.NewGuid());
         Directory.CreateDirectory(directory);
-        var fixture = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Source())!, "../../target/test-tools/origin_fixture"));
-        string Run(params string[] args)
-        {
-            var info = new ProcessStartInfo(fixture) { RedirectStandardOutput = true };
-            foreach (var arg in args) info.ArgumentList.Add(arg);
-            using var process = Process.Start(info)!;
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            Assert.True(process.ExitCode == 0, output);
-            return output.Trim();
-        }
+        string Run(params string[] args) => TestTools.Run("origin_fixture", args);
         try {
             var tape = Path.Combine(directory, "tape.md");
             var upstream = Run("start", directory);

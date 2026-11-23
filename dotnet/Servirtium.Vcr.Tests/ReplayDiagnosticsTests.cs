@@ -6,16 +6,10 @@ using Servirtium.Vcr;
 using Xunit;
 namespace Servirtium.Vcr.Tests;
 public class ReplayDiagnosticsTests {
-    private static string Source([CallerFilePath] string file = "") => file;
     [Fact] public void RetainedEventsDistinguishObserverAndConsumingReads() {
-        string root = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Source())!, "../.."));
-        using var server = Vcr.Playback(Path.Combine(root, "core_tests/diagnostics/playback.md")).Start();
+        using var server = Vcr.Playback(Path.Combine(TestTools.Root, "core_tests/diagnostics/playback.md")).Start();
         server.TestContext("Dotnet scenario", "scenario.test", 123);
-        var info = new ProcessStartInfo(Path.Combine(root, "target/test-tools/diagnostic_fixture"));
-        info.ArgumentList.Add(server.BaseUrl);
-        using var driver = Process.Start(info)!;
-        driver.WaitForExit();
-        Assert.Equal(0, driver.ExitCode);
+        TestTools.Run("diagnostic_fixture", server.BaseUrl);
         Assert.Contains("owner", server.ReadLastError(false));
         Assert.Contains("scenario.test:123", server.ReadLastError(false));
         Assert.DoesNotContain("\"retrieved\":1", server.DiagnosticsJson());

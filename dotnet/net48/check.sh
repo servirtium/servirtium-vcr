@@ -218,6 +218,14 @@ else
   fi
 fi
 
+# ---- (iv) the binding's own tests, built for net48 against the package --------
+own="$tree/tests/Servirtium.Vcr.Tests.Net48.csproj"
+if build iv "$own" "-p:ServirtiumVcrTestsDir=$(np "$root/dotnet/Servirtium.Vcr.Tests")"; then
+  expect_file "(iv) the binding's tests on net48" "$tree/tests/bin/Debug/net48/servirtium_vcr.dll"
+else
+  fail "(iv) the binding's tests do not build for net48 (log: $work/logs/iv.log)"; grep -E 'error' "$work/logs/iv.log" | sort -u | head -20
+fi
+
 # ---- Windows: run them ------------------------------------------------------
 if [ "$windows" = 1 ]; then
   for t in "i-anycpu|$(pr anycpu)|" "i-rid|$(pr rid-win-x64)|-p:RuntimeIdentifier=win-x64" \
@@ -234,6 +242,18 @@ if [ "$windows" = 1 ]; then
       fail "$label: dotnet test (log: $log)"; tail -30 "$log"
     fi
   done
+  # (iv): the fixtures they drive are Windows builds of core_tests/*_fixture.ae
+  # in target/test-tools/ (TESTS_TOOLS names a directory to copy them from).
+  if [ -n "${TESTS_TOOLS:-}" ]; then mkdir -p "$root/target/test-tools" && cp "$TESTS_TOOLS"/*.exe "$root/target/test-tools/"; fi
+  log="$work/logs/test-iv.log"
+  dotnet test "$(np "$own")" -nologo --no-build "-p:ServirtiumVcrVersion=$version" \
+    "-p:ServirtiumVcrTestsDir=$(np "$root/dotnet/Servirtium.Vcr.Tests")" --logger "console;verbosity=normal" > "$log" 2>&1
+  summary=$(grep -E 'Total tests|Passed:|Failed:|Skipped:' "$log" | tr -s ' ' | tr '\n' ' ')
+  if grep -q 'Test Run Successful' "$log"; then
+    pass "(iv) the binding's tests on net48: $summary"
+  else
+    fail "(iv) the binding's tests on net48: $summary (log: $log)"; grep -E '^\s+Failed |Error Message' -A3 "$log" | head -60
+  fi
   if [ -f "$pc/bin/Debug/Consumer.PackagesConfig.exe" ]; then
     if "$pc/bin/Debug/Consumer.PackagesConfig.exe" > "$work/logs/run-iii.log" 2>&1; then
       pass "(iii) packages.config: ran, $(tr -d '\r' < "$work/logs/run-iii.log" | grep -o 'engine: .*' | sed 's|.*\\bin\\|bin\\|')"

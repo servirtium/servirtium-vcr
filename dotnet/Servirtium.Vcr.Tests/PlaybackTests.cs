@@ -70,7 +70,9 @@ public class PlaybackTests
     }
     private static async Task<HttpResponseMessage> GetWithCookie(VcrServer vcr, string path)
     {
-        using var client = new HttpClient { BaseAddress = new Uri(vcr.BaseUrl) };
+        // UseCookies = false: .NET Framework's handler otherwise replaces a
+        // Cookie header set by hand with its (empty) cookie container's.
+        using var client = new HttpClient(new HttpClientHandler { UseCookies = false }) { BaseAddress = new Uri(vcr.BaseUrl) };
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.TryAddWithoutValidation("Cookie", "sid=live");
         return await client.SendAsync(request);

@@ -1,3 +1,6 @@
+// CreateClientHandler is built on SocketsHttpHandler, which .NET Framework
+// lacks; the helper and these tests are modern .NET only.
+#if !NETFRAMEWORK
 using System;
 using System.IO;
 using System.Net;
@@ -64,3 +67,4 @@ public class CreateClientHandlerTests : IDisposable
         try { File.Delete(_tape); } catch { /* best-effort */ }
     }
 }
+#endif

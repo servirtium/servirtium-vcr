@@ -30,17 +30,7 @@ public class ConcurrentStartTests
     private static string TapePath(string name) =>
         Path.Combine(AppContext.BaseDirectory, "tapes", name);
 
-    private static (string certPem, string keyPem) SelfSignedPem()
-    {
-        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var req = new CertificateRequest("CN=localhost", ecdsa, HashAlgorithmName.SHA256);
-        var san = new SubjectAlternativeNameBuilder();
-        san.AddDnsName("localhost");
-        san.AddIpAddress(IPAddress.Loopback);
-        req.CertificateExtensions.Add(san.Build());
-        using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(2));
-        return (cert.ExportCertificatePem(), ecdsa.ExportPkcs8PrivateKeyPem());
-    }
+    private static (string certPem, string keyPem) SelfSignedPem() => TestTools.SelfSignedPem();
 
     private static async Task<string?> OneVcr((string certPem, string keyPem)? tls)
     {

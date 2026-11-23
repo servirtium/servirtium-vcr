@@ -36,16 +36,9 @@ public class TlsTests : IDisposable
         // TLS 1.3 server (no OpenSSL dependency, so it works on every cross-built
         // platform); it accepts P-256/P-384/P-521, Ed25519 and RSA 2048-16384 keys
         // (aether #3326). P-256 is just a small, fast choice for the test.
-        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var req = new CertificateRequest("CN=localhost", ecdsa, HashAlgorithmName.SHA256);
-        var san = new SubjectAlternativeNameBuilder();
-        san.AddDnsName("localhost");
-        san.AddIpAddress(IPAddress.Loopback);
-        req.CertificateExtensions.Add(san.Build());
-        using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(2));
-
-        File.WriteAllText(_certPath, cert.ExportCertificatePem() + Environment.NewLine);
-        File.WriteAllText(_keyPath, ecdsa.ExportPkcs8PrivateKeyPem() + Environment.NewLine);
+        var (certPem, keyPem) = TestTools.SelfSignedPem();
+        File.WriteAllText(_certPath, certPem + Environment.NewLine);
+        File.WriteAllText(_keyPath, keyPem + Environment.NewLine);
     }
 
     private static string TapePath(string name) =>
@@ -82,15 +75,7 @@ public class TlsTests : IDisposable
     {
         // Mint an EC P-256 cert and export BOTH as PEM strings — nothing is
         // written to disk (the whole point of TlsFromPem: no private key file).
-        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var req = new CertificateRequest("CN=localhost", ecdsa, HashAlgorithmName.SHA256);
-        var san = new SubjectAlternativeNameBuilder();
-        san.AddDnsName("localhost");
-        san.AddIpAddress(IPAddress.Loopback);
-        req.CertificateExtensions.Add(san.Build());
-        using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(2));
-        string certPem = cert.ExportCertificatePem();
-        string keyPem = ecdsa.ExportPkcs8PrivateKeyPem();
+        var (certPem, keyPem) = TestTools.SelfSignedPem();
 
         using var vcr = Vcr.Playback(TapePath("single_get.md"))
             .Port(0)

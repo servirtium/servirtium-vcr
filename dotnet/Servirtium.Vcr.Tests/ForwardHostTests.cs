@@ -43,7 +43,7 @@ public class ForwardHostTests : IDisposable
                 byte[] payload = Encoding.UTF8.GetBytes(ctx.Request.Headers["Host"] ?? "");
                 ctx.Response.ContentType = "text/plain";
                 ctx.Response.ContentLength64 = payload.Length;
-                await ctx.Response.OutputStream.WriteAsync(payload);
+                await ctx.Response.OutputStream.WriteAsync(payload, 0, payload.Length);
                 ctx.Response.Close();
             }
         }
