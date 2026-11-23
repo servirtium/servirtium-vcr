@@ -23,10 +23,6 @@
 -- close() with neither writes nothing and raises.
 -- Servers default to port 0 (the OS picks a free port; read it back via
 -- :base_url() / :port()).
---
--- For backwards compatibility, servirtium.playback(tape) / record(tape, up) can
--- still be used as a one-shot "open + start" — calling any Server method on the
--- returned builder transparently starts it. See the compatibility shim below.
 
 local C = require("servirtium_native")  -- the compiled C extension (servirtium_native.so)
 
@@ -318,10 +314,10 @@ local function apply_base(b, handle)
     end
 end
 
-local function base_builder(tape, host)
+local function base_builder(tape)
     return {
         _tape = tape,
-        _host = host or "127.0.0.1",
+        _host = "127.0.0.1",
         _port = 0,
         _label = "servirtium",
         _header_removals = {},
@@ -857,47 +853,8 @@ end
 
 -- ---- builder entry points -------------------------------------------------
 
--- A compatibility shim: historically servirtium.playback(tape) returned a
--- *started* server directly (so callers could do srv:base_url() immediately).
--- The new fluent API returns a builder. To keep both working, the builder is
--- given a metatable that lazily starts on first Server-method access and then
--- delegates — so old call sites (no :start()) and new ones (with chained
--- config + :start()) both work.
-
-local SERVER_METHODS = {
-    base_url = true, port = true, tape_length = true, last_kind = true,
-    last_index = true, last_error = true, clear_last_error = true,
-    reset_cursor = true, note = true, close = true, commit = true, discard = true,
-    set_playback_range = true, clear_playback_range = true, get_playback_range = true,
-    sort_json_keys_enabled = true, sort_response_headers_enabled = true,
-    clear_stable_order = true,
-    last_tls_protocol = true, clear_substitutions = true,
-    assert_all_consumed = true, assert_all_redactions_used = true,
-    assert_no_unfilled_placeholders = true,
-}
-
-local function attach_lazy_start(builder, builder_mt)
-    -- Wrap __index so that accessing a Server method auto-starts the builder.
-    local raw_index = builder_mt.__index
-    return setmetatable(builder, {
-        __index = function(self, key)
-            local bv = raw_index[key]
-            if bv ~= nil then return bv end
-            if SERVER_METHODS[key] then
-                local srv, serr = self:start()
-                if not srv then error("servirtium start failed: " .. tostring(serr), 0) end
-                -- Re-key this table as the started server for subsequent calls.
-                for k, v in pairs(srv) do rawset(self, k, v) end
-                setmetatable(self, Server)
-                return Server[key]
-            end
-            return nil
-        end,
-    })
-end
-
-function M.playback(tapePath, opts)
-    local b = base_builder(tapePath, opts and opts.host)
+function M.playback(tapePath)
+    local b = base_builder(tapePath)
     b._unredactions = {}
     b._substitutions = {}
     b._strict_headers = false
@@ -905,15 +862,11 @@ function M.playback(tapePath, opts)
     b._pretty_xml = 0
     b._match_multiple = false
     b._match_headers = {}
-    if opts then
-        if opts.port  ~= nil then b._port  = opts.port  end
-        if opts.label ~= nil then b._label = opts.label end
-    end
-    return attach_lazy_start(b, PlaybackBuilder)
+    return setmetatable(b, PlaybackBuilder)
 end
 
-function M.record(tapePath, upstream, opts)
-    local b = base_builder(tapePath, opts and opts.host)
+function M.record(tapePath, upstream)
+    local b = base_builder(tapePath)
     b._upstream = upstream
     b._redactions = {}
     b._whole_tape_redactions = {}
@@ -928,20 +881,7 @@ function M.record(tapePath, upstream, opts)
     b._sort_response_headers = false
     b._sort_header_values = {}
     b._fail_if_changed = false
-    if opts then
-        if opts.port  ~= nil then b._port  = opts.port  end
-        if opts.label ~= nil then b._label = opts.label end
-    end
-    return attach_lazy_start(b, RecordBuilder)
+    return setmetatable(b, RecordBuilder)
 end
-
--- ---- free-function aliases (some callers prefer servirtium.base_url(srv)) ---
-
-function M.base_url(srv, host) return srv:base_url(host) end
-function M.port(srv)           return srv:port() end
-function M.last_kind(srv)      return srv:last_kind() end
-function M.last_error(srv)     return srv:last_error() end
-function M.close(srv)          return srv:close() end
-function M.discard(srv)        return srv:discard() end
 
 return M

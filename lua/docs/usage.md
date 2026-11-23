@@ -19,10 +19,8 @@ assert(srv:last_kind() == servirtium.OK)   -- optional: assert a clean match
 srv:close()
 ```
 
-> Compatibility: `servirtium.playback(tape)` / `servirtium.record(tape, up)`
-> can also be used as a one-shot — calling any `Server` method (e.g.
-> `:base_url()`) on the builder transparently starts it with default config.
-> The fluent form (`...:port(0):start()`) is preferred.
+> `servirtium.playback(tape)` / `servirtium.record(tape, up)` return a
+> builder; nothing listens until `:start()`.
 
 ## Playback
 
