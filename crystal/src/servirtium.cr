@@ -131,7 +131,7 @@ end
 {% end %}
 
 module Servirtium
-  VERSION = "2.0.0-alpha.19"
+  VERSION = "2.0.0-alpha.20"
 
   # Field selector for redactions / unredactions / header removals. Values
   # mirror the FIELD_* constants in core/vcr.ae.

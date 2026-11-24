@@ -1,7 +1,7 @@
 defmodule Servirtium.MixProject do
   use Mix.Project
 
-  @version "2.0.0-alpha.19"
+  @version "2.0.0-alpha.20"
 
   def project do
     [
