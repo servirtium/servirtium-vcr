@@ -10,9 +10,12 @@
 # `ae add` binary-package asset in the SAME pass — so one method yields BOTH the
 # raw FFI lib and the ae-add package per triple (no hand-synthesis, no drift; the
 # builder owns the trio format). Output name: libservirtium_vcr-<tag>-<os>-<arch>.<ext>
-# GNU and musl ae-add assets keep distinct identities (aeb v0.330 + ae 0.838).
-# (.so linux / .dylib macos / .dll windows). Alongside each: <artifact>.sha256, a
-# combined release/dist/SHA256SUMS.txt, and release/dist/ae-add/ (the `ae add` set).
+# (.so linux / .dylib macos / .dll windows). The ae-add package's stem is
+# libservirtium_vcr too, so its per-triple asset IS the raw library (same name,
+# same bytes, same .sha256): the release carries one set of libraries plus the
+# ae-add aether.toml. GNU and musl assets keep distinct identities (aeb v0.330 +
+# ae 0.838). Alongside each: <artifact>.sha256, a combined
+# release/dist/SHA256SUMS.txt, and release/dist/ae-add/aether.toml.
 # Needs aeb >= v0.319 (its emit_binary_package target() cross-emit + the 0.681
 # libaether floor-guard).
 #
@@ -49,6 +52,105 @@ have zig || die "zig not on PATH — required for cross-compilation (ae build --
 have sha256sum || die "sha256sum required to checksum artifacts"
 
 TAG="${RELEASE_TAG:-$(git describe --tags --always 2>/dev/null || echo dev)}"
+
+# shellcheck disable=SC1091
+. "$HERE/toolchain.env"   # ZLIB_VERSION / ZLIB_SHA256 (and the runner's own pins)
+
+# ---- zlib for every target ---------------------------------------------------
+# A cross `ae build` compiles std.zlib's real inflate/deflate only when a
+# CROSSBUILD_SYSROOT holds lib/libz.a (and links it); without one it compiles a
+# stub, and record mode then answers a gzip upstream with 500 "gzip response but
+# zlib unavailable" (every alpha.20 library shipped that way). So build zlib's
+# compression core per target with zig, checksum-pinned, and point each
+# triple's build at it. Only zlib is staged: ae links a staged library only when
+# the program's imports ask for it, and nothing else is wanted.
+ZLIB_WORK="$ROOT/target/release-zlib"
+zlib_src() {
+  _d="$ZLIB_WORK/zlib-$ZLIB_VERSION"
+  [ -f "$_d/inflate.c" ] && { echo "$_d"; return 0; }
+  mkdir -p "$ZLIB_WORK"
+  _tgz="$ZLIB_WORK/zlib-$ZLIB_VERSION.tar.gz"
+  if [ ! -f "$_tgz" ]; then
+    curl -fsSL --retry 3 -o "$_tgz.part" \
+      "https://github.com/madler/zlib/releases/download/v$ZLIB_VERSION/zlib-$ZLIB_VERSION.tar.gz" || return 1
+    mv "$_tgz.part" "$_tgz"
+  fi
+  echo "$ZLIB_SHA256  $_tgz" | sha256sum -c - >/dev/null || { rm -f "$_tgz"; return 1; }
+  tar -xzf "$_tgz" -C "$ZLIB_WORK" || return 1
+  echo "$_d"
+}
+# zig triple for an ae release triple (glibc spelled out; macOS at the same
+# deployment target as the libraries, see the shim below).
+zig_triple_of() {
+  case "$1" in
+    *-linux-musl) echo "$1" ;;
+    *-linux)      echo "$1-gnu" ;;
+    *-macos)      echo "${1%-macos}-macos.$MACOS_MIN-none" ;;
+    *-windows)    echo "$1-gnu" ;;
+    *)            echo "$1" ;;
+  esac
+}
+# zlib_sysroot <triple> <freebsd-base-or-empty> -> echo the sysroot holding
+# lib/libz.a + include/zlib.h for that triple.
+zlib_sysroot() {
+  _t="$1"; _base="$2"
+  _sr="$ZLIB_WORK/sysroot-$_t"
+  [ -f "$_sr/lib/libz.a" ] && { echo "$_sr"; return 0; }
+  _src="$(zlib_src)" || return 1
+  _obj="$ZLIB_WORK/obj-$_t"; rm -rf "$_obj" "$_sr"; mkdir -p "$_obj" "$_sr/lib" "$_sr/include"
+  _sysflag=""; [ -n "$_base" ] && _sysflag="--sysroot=$_base"
+  for _c in adler32 compress crc32 deflate infback inffast inflate inftrees trees uncompr zutil; do
+    "$REAL_ZIG" cc -target "$(zig_triple_of "$_t")" $_sysflag -O2 -fPIC -c "$_src/$_c.c" -o "$_obj/$_c.o" || return 1
+  done
+  "$REAL_ZIG" ar rcs "$_sr/lib/libz.a" "$_obj"/*.o || return 1
+  cp "$_src/zlib.h" "$_src/zconf.h" "$_sr/include/" || return 1
+  echo "$_sr"
+}
+
+# ---- link identity: a zig shim ------------------------------------------------
+# `ae build --target` hands the library link to `zig cc` with no way to add link
+# flags, and on a non-Apple host it links a macOS dylib with no install name, so
+# zig records the -o path: every alpha.20 dylib said
+# /home/runner/work/.../libservirtium_vcr.so, and a link-time binding (Go, C,
+# C++, Zig, Nim, Crystal, D, Lua, ...) then died with "Library not loaded". zig
+# also picks a host-dependent macOS minimum (15.0 on the Linux runner). This
+# shim, first on PATH for this script's builds only, adds to a shared-library
+# link:
+#   macOS          -Wl,-install_name,@rpath/libservirtium_vcr.dylib and a
+#                  versioned triple (macOS $MACOS_MIN, as Package.swift's .v13);
+#   Linux/FreeBSD  -Wl,-soname,libservirtium_vcr.so.
+# These are the names every binding stages the library under (and what `ae add`
+# installs). release/.artifacts.ae fails a library whose name is anything else.
+MACOS_MIN=13.0
+REAL_ZIG="$(command -v zig)"
+SHIM_DIR="$ROOT/target/release-zigshim"
+mkdir -p "$SHIM_DIR"
+cat > "$SHIM_DIR/zig" <<SHIM
+#!/bin/sh
+# Generated by release/build.sh: see the comment there.
+[ "\$1" = cc ] || exec "$REAL_ZIG" "\$@"
+shared=0; target=""; prev=""
+for a in "\$@"; do
+  [ "\$a" = -shared ] && shared=1
+  [ "\$prev" = -target ] && target="\$a"
+  prev="\$a"
+done
+n=\$#
+while [ "\$n" -gt 0 ]; do
+  a=\$1; shift; n=\$((n - 1))
+  case "\$a" in *-macos-none) a="\${a%-none}.$MACOS_MIN-none" ;; esac
+  set -- "\$@" "\$a"
+done
+if [ "\$shared" = 1 ]; then
+  case "\$target" in
+    *-macos*) set -- "\$@" -Wl,-install_name,@rpath/libservirtium_vcr.dylib ;;
+    *-linux*|*-freebsd*) set -- "\$@" -Wl,-soname,libservirtium_vcr.so ;;
+  esac
+fi
+exec "$REAL_ZIG" "\$@"
+SHIM
+chmod +x "$SHIM_DIR/zig"
+export PATH="$SHIM_DIR:$PATH"
 
 # Resolve the matrix.
 if [ -n "${TARGETS:-}" ]; then
@@ -119,6 +221,9 @@ for t in $MATRIX; do
     fi
   fi
 
+  ZLIB_SYSROOT="$(zlib_sysroot "$t" "$TARGET_SYSROOT")" \
+    || die "could not build zlib for $t (zlib $ZLIB_VERSION, see release/toolchain.env)"
+
   printf 'release:   %-18s -> %s ... ' "$t" "$name"
   # ONE aeb run per triple: core/.build.ae reads SVCR_TARGET and runs
   #   aether.shared_lib(){ size() target(t) }         -> the cross lib (--size)
@@ -133,6 +238,7 @@ for t in $MATRIX; do
   rm -rf "$ROOT/target/build/core/ae-add" "$ROOT/target/build/core/lib"
   if ( cd "$ROOT" \
        && export SVCR_TARGET="$t" AEB_RELEASE_TAG="$TAG" AETHER_SYSROOT="$TARGET_SYSROOT" \
+                 CROSSBUILD_SYSROOT="$ZLIB_SYSROOT" \
        && aeb core/.build.ae ) >"$log" 2>&1; then
     # Collect the raw FFI lib (the on-disk name is cross-mangled; find it).
     libdir="$ROOT/target/build/core/lib"
@@ -144,6 +250,13 @@ for t in $MATRIX; do
       printf 'FAILED\n'; say "  built but no lib found under $libdir"; failed=$((failed+1)); continue
     fi
     cp "$src" "$out" || die "could not stage $name"
+    # On a macOS host, ae itself rewrites a cross dylib's id to @rpath/<-o
+    # leaf> (libservirtium_vcr.so) after the link; put the release name back
+    # and re-sign ad hoc (the edit invalidates the linker's signature).
+    if [ "$os" = macos ] && [ "$(uname -s)" = Darwin ]; then
+      install_name_tool -id @rpath/libservirtium_vcr.dylib "$out" 2>/dev/null \
+        && codesign -f -s - "$out" >/dev/null 2>&1 || die "could not set the install name of $name"
+    fi
     ( cd "$DIST" && sha256sum "$name" > "$name.sha256" ) || die "could not checksum $name"
     # Windows also emits an import library (<dll>.lib) — ship it (a consumer that
     # LINKS the DLL at build time needs it; our FFI bindings dlopen and don't).
@@ -152,9 +265,15 @@ for t in $MATRIX; do
       cp "$libdir/libservirtium_vcr.so.lib" "$out.lib" || die "could not stage Windows import library for $t"
       ( cd "$DIST" && sha256sum "$name.lib" > "$name.lib.sha256" ) || die "could not checksum Windows import library for $t"
     fi
-    # Collect this triple's ae-add asset trio (aeb named it in the ae-add
-    # <os>-<arch> spelling automatically; aether.toml is identical each run).
-    cp "$ROOT/target/build/core/ae-add/"servirtium_vcr-* "$AEADD/" || die "missing ae-add assets for $t"
+    # The ae-add asset aeb staged for this triple has the raw library's name;
+    # it must be the same bytes (on a macOS host the raw copy was renamed and
+    # re-signed above, so the raw library is what ships under that name).
+    # Only the aether.toml (identical every run) is collected.
+    pkg="$ROOT/target/build/core/ae-add/$name"
+    [ -f "$pkg" ] || die "missing ae-add asset $name for $t"
+    if [ "$os" != macos ] || [ "$(uname -s)" != Darwin ]; then
+      cmp -s "$pkg" "$out" || die "ae-add asset $name differs from the raw library"
+    fi
     cp "$ROOT/target/build/core/ae-add/aether.toml" "$AEADD/" || die "missing ae-add manifest for $t"
     packaged=$((packaged+1))
     printf 'ok  (%s)\n' "$(file -b "$out" 2>/dev/null | cut -c1-42)"
@@ -174,10 +293,9 @@ echo
 # it is REGENERATED after the binding packages so the jar + nupkg join it.
 ( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib 2>/dev/null > SHA256SUMS.txt || true )
 
-# The ae-add set (per-triple assets + .sha256 + aether.toml) was produced by
-# aeb's emit_binary_package and collected in the loop above — no post-processing.
+# The ae-add manifest; its per-triple assets are the raw libraries above.
 if [ "$built" -gt 0 ] && [ -f "$AEADD/aether.toml" ]; then
-  say "staged ae-add/ binary-package set ($packaged triple(s) + aether.toml) for \`ae add\`"
+  say "staged ae-add/aether.toml for \`ae add\` ($packaged triple(s); the assets are the raw libraries)"
 fi
 
 # ---- official multi-platform binding packages (opt-in) ----------------------

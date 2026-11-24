@@ -105,11 +105,61 @@ The required raw-library downloads are:
 | FreeBSD | x86_64 | `freebsd-x86_64.so` |
 
 All nine libraries must build successfully. The workflow verifies every
-checksum, both Windows import libraries, and every declared Linux x86_64 C ABI
-export. All nine `ae add` binary packages and their `aether.toml` are included,
-and each package must contain the identical raw library. GNU and musl Linux
-packages have distinct names, using the fixes released in Aether 0.838.0 and
-aeb v0.330. Consumers need Aether 0.838.0 or newer for libc-aware selection.
+checksum, both Windows import libraries, every declared Linux x86_64 C ABI
+export, and each library's link identity and zlib (below).
+
+### One set of libraries, two ways in
+
+Each library is published once, as `libservirtium_vcr-<tag>-<platform>` with
+its `.sha256`, and serves two kinds of consumer:
+
+- **Bindings and C/C++ consumers** download it, check it, and copy it to the
+  plain name their linker or loader wants (`libservirtium_vcr.so` /
+  `.dylib`; Windows bindings use `servirtium_vcr.dll`).
+- **Aether programs** use it as an `ae add` binary package. The release's
+  `aether.toml` says `binary = "libservirtium_vcr"`, so
+  `ae add github.com/servirtium/servirtium-vcr@<tag>` fetches
+  `libservirtium_vcr-<tag>-<its triple><ext>`, verifies its `.sha256`, and
+  installs it as `libservirtium_vcr<ext>`; the program says
+  `import servirtium_vcr` (ae finds `lib<module><ext>`). That route needs
+  Aether 0.838.0 or newer, for libc-aware selection of the GNU and musl Linux
+  libraries (aeb v0.330 names them apart).
+
+Releases through alpha.20 published the `ae add` package as a second,
+byte-identical copy of every library named `servirtium_vcr-<tag>-<platform>`
+(its stem was `servirtium_vcr`). The `aether.toml` was the only file that set
+did not duplicate; since alpha.21 it is the only extra asset.
+
+### Link identity and zlib
+
+A link-time binding (Go's cgo, C, C++, Zig, Nim, Crystal, D, Haskell, Lua, the
+BEAM NIF, `ae add`) records the library's own name when it links and looks
+that name up through its rpath when it runs. So:
+
+| Platform | The library calls itself | Set by |
+|---|---|---|
+| macOS | install name `@rpath/libservirtium_vcr.dylib` (deployment target macOS 13.0) | `release/build.sh`'s zig shim |
+| Linux, FreeBSD | SONAME `libservirtium_vcr.so` | the same shim |
+
+`ae build --target` gives zig no link flags of its own: on a Linux host it
+links a macOS dylib with no install name, so zig records the `-o` path, and it
+picks the host's macOS minimum (15.0 on the Linux runner). Every alpha.20
+dylib carried `/home/runner/work/.../libservirtium_vcr.so` and failed at
+start with "Library not loaded". The ELF libraries had no SONAME, which is
+harmless (a consumer records the name it linked with) but is now set too.
+Windows DLLs still call themselves `libservirtium_vcr.so.dll` (in the DLL and
+its import library), which a consumer linking the import library must match.
+
+A cross build compiles std.zlib's real inflate only when it is given a zlib to
+link, otherwise a stub; record mode then answers a gzip upstream with 500
+"gzip response but zlib unavailable" (all nine alpha.20 libraries). `build.sh`
+compiles zlib's compression core (pinned in `toolchain.env`) per target with
+zig and hands it to each build as `CROSSBUILD_SYSROOT`.
+
+`release/.artifacts.ae` fails a dylib whose install name is anything but
+`@rpath/libservirtium_vcr.dylib`, an ELF library with any SONAME other than
+`libservirtium_vcr.so`, and any library without zlib compiled in (or, for an
+in-tree host build, a shared zlib dependency).
 
 `release/toolchain.env` pins Aether, aeb, and Zig for the runner. Aether must
 match `bootstrap.sh`'s `AE_FETCH`; the version check enforces this. Toolchain
@@ -146,6 +196,7 @@ Needs `ae` + `zig` on PATH (install the pinned toolchain — see `../bootstrap.s
 - `libservirtium_vcr-<tag>-<os>-<arch>.{so,dylib,dll}` — the artifact
 - `<artifact>.sha256` — its checksum (sidecar)
 - `SHA256SUMS.txt` — all artifacts in one manifest
+- `ae-add/aether.toml` — the `ae add` manifest (its assets are the artifacts)
 
 Each is stripped (`--size`). `so`=linux ELF, `dylib`=macOS Mach-O, `dll`=Windows
 PE. On Windows each DLL also gets a `<dll>.lib` import library beside it — needed
@@ -157,7 +208,7 @@ first-class. FreeBSD needs `AETHER_SYSROOT` and skips loudly without it.
 
 Disable the automatic release workflow before using the local publisher for a
 tag, so the two publishers do not race. The script still builds and uploads raw
-libraries and the matching `ae add` assets, without publishing language packages.
+libraries and the `ae add` manifest, without publishing language packages.
 That includes the Swift artifact bundle: a release published this way has no
 bare semver tag, so SwiftPM resolves its `v` tag, whose manifest is the source
 form (`branch:`/`revision:` consumers only).
@@ -261,7 +312,8 @@ A verifier re-hashes the artifact they hold, matches `sha256`, and trusts the
 
 Release verification is implemented by `release/.artifacts.ae`. Its default mode
 checks the engine files under `release/dist`, including hashes, libc identities,
-ae-add byte identity, Windows import libraries and Linux ABI exports. Set
+install names and SONAMEs, zlib, the ae-add manifest, Windows import libraries
+and Linux ABI exports. Set
 `SVCR_ARTIFACTS_MODE=bindings` to require the fat Java jar and .NET nupkg too,
 or `version` for the version/toolchain preflight. `SVCR_ARTIFACTS_DIST` selects
 another directory, such as downloaded release assets. These checks run through

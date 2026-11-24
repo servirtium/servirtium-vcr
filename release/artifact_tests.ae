@@ -1,6 +1,9 @@
 // Controlled artifact matrix: exercise verification, not cross compilation.
 // Only the host library is loaded. Other slots intentionally reuse fixture
 // bytes; the musl slot changes the ELF NEEDED name without moving its offsets.
+// The macOS slots are a minimal Mach-O header with one LC_ID_DYLIB (the
+// install name is all the check reads) unless the host is a Mac, where the
+// host's own slot is the host library with the release install name set.
 // On a non-glibc host (FreeBSD: libc.so.7) the Linux slots get the same bytes
 // with NEEDED libc.so.7 renamed to libc.so.6 (same length), and the host's own
 // slot keeps the unpatched library, which is the one the ABI check dlopens.
@@ -33,6 +36,19 @@ manifest(dist: string) {
     }
     write_fixture("${dist}/SHA256SUMS.txt", strbuilder.finish(out))
 }
+// Little-endian 32-bit field.
+put_le32(v: int) -> string {
+    return "${string.from_char(v & 255)}${string.from_char((v >> 8) & 255)}${string.from_char((v >> 16) & 255)}${string.from_char((v >> 24) & 255)}"
+}
+// A 64-bit Mach-O dylib header whose only load command is LC_ID_DYLIB `id`,
+// followed by `tail` (where a real library's zlib code would be).
+macho(id: string, tail: string) -> string {
+    size = (24 + string.length(id) + 1 + 7) / 8 * 8
+    out = "${string.from_char(0xcf)}${string.from_char(0xfa)}${string.from_char(0xed)}${string.from_char(0xfe)}${put_le32(0x100000c)}${put_le32(0)}${put_le32(6)}${put_le32(1)}${put_le32(size)}${put_le32(0)}${put_le32(0)}"
+    out = "${out}${put_le32(13)}${put_le32(size)}${put_le32(24)}${put_le32(2)}${put_le32(0x10000)}${put_le32(0x10000)}${id}"
+    for _k in 0..(size - 24 - string.length(id)) { out = "${out}${string.from_char(0)}" }
+    return "${out}${tail}"
+}
 expect_failure(root: string, dist: string, expected: string) {
     error = artifacts.check_artifacts(root, TAG, dist)
     check(string.contains(error, expected) == 1, "expected '${expected}', got '${error}'")
@@ -61,16 +77,27 @@ main() {
     musl = string.replace_all(linux_library, "libc.so.6", "libc.so${string.from_char(0)}${string.from_char(0)}")
     dist = "${root}/dist"
     check(fs.mkdir_p("${dist}/ae-add") == "", "fixture artifacts directory")
+    good_macho = macho("@rpath/libservirtium_vcr.dylib", "incorrect header check")
+    host_slot = artifacts.host_slot()
     for i in 0..PLATFORMS.len {
         platform = PLATFORMS[i]; payload = library
         if string.starts_with(platform, "linux-") == 1 { payload = linux_library }
         if string.contains(platform, "-musl") == 1 { payload = musl }
+        if string.starts_with(platform, "macos-") == 1 && platform != host_slot { payload = good_macho }
         asset("${dist}/libservirtium_vcr-${TAG}-${platform}", payload)
-        asset("${dist}/ae-add/servirtium_vcr-${TAG}-${platform}", payload)
         if string.starts_with(platform, "windows-") == 1 { asset("${dist}/libservirtium_vcr-${TAG}-${platform}.lib", "fixture import library") }
     }
+    if string.starts_with(host_slot, "macos-") == 1 {
+        // The in-tree host build's install name is @rpath/libservirtium_vcr.so
+        // (its file is named .so); give the fixture the release one.
+        host = "${dist}/libservirtium_vcr-${TAG}-${host_slot}"
+        check(os.system("install_name_tool -id @rpath/libservirtium_vcr.dylib '${host}' 2>/dev/null && codesign -f -s - '${host}' >/dev/null 2>&1") == 0, "set the host fixture's install name")
+        data2, _n2, err2 = fs.read_binary(host)
+        check(err2 == "", "read host fixture")
+        asset(host, data2)
+    }
     manifest(dist)
-    toml = "binary = \"servirtium_vcr\"\nmodules = \".\"\n"
+    toml = "binary = \"libservirtium_vcr\"\nmodules = \".\"\n"
     write_fixture("${dist}/ae-add/aether.toml", toml)
     check(artifacts.check_artifacts(root, TAG, dist) == "", "valid artifact matrix")
     check(artifacts.check_packages(dist) != "", "missing binding packages")
@@ -95,15 +122,28 @@ main() {
     write_fixture("${raw}.sha256", string.replace_all(sidecar, ".so", "Xso"))
     expect_failure(root, dist, "checksum mismatch")
     write_fixture("${raw}.sha256", sidecar)
-    package = "${dist}/ae-add/servirtium_vcr-${TAG}-linux-x86_64.so"
-    asset(package, "different validly-checksummed bytes")
-    expect_failure(root, dist, "ae-add package differs")
-    asset(package, linux_library)
+    // A dylib whose install name is the build path (every alpha.20 dylib) or
+    // the in-tree .so name, and one built without zlib.
+    mac = "${dist}/libservirtium_vcr-${TAG}-macos-x86_64.dylib"
+    asset(mac, macho("/home/runner/work/servirtium-vcr/servirtium-vcr/target/build/core/lib/libservirtium_vcr.so", "incorrect header check")); manifest(dist)
+    expect_failure(root, dist, "wrong install name")
+    asset(mac, macho("@rpath/libservirtium_vcr.so", "incorrect header check")); manifest(dist)
+    expect_failure(root, dist, "wrong install name")
+    asset(mac, "not a Mach-O"); manifest(dist)
+    expect_failure(root, dist, "not a 64-bit Mach-O")
+    asset(mac, macho("@rpath/libservirtium_vcr.dylib", "")); manifest(dist)
+    expect_failure(root, dist, "no zlib")
+    asset(mac, good_macho); manifest(dist)
+    // SONAME: none or the plain name (the readelf text is the check's input).
+    elf_ok = "${dist}/libservirtium_vcr-${TAG}-freebsd-x86_64.so"
+    check(artifacts.check_link_identity(elf_ok, "freebsd-x86_64.so", " 0x000000000000000e (SONAME)             Library soname: [libservirtium_vcr.so]\n") == "", "plain SONAME")
+    bad = artifacts.check_link_identity(elf_ok, "freebsd-x86_64.so", " 0x000000000000000e (SONAME)             Library soname: [/home/runner/work/x/libservirtium_vcr.so]\n")
+    check(string.contains(bad, "wrong SONAME") == 1, "build-path SONAME: ${bad}")
     sums = fs.read("${dist}/SHA256SUMS.txt")!
     write_fixture("${dist}/SHA256SUMS.txt", "")
     expect_failure(root, dist, "invalid SHA256SUMS")
     write_fixture("${dist}/SHA256SUMS.txt", sums)
-    write_fixture("${dist}/ae-add/aether.toml", "binary = \"other\"\nmodules = \".\"\n")
+    write_fixture("${dist}/ae-add/aether.toml", "binary = \"servirtium_vcr\"\nmodules = \".\"\n")
     expect_failure(root, dist, "ae-add manifest")
     write_fixture("${dist}/ae-add/aether.toml", toml)
     asset(raw, musl); manifest(dist)
@@ -112,14 +152,9 @@ main() {
     write_fixture("${root}/core/embed.ae", "${source}\nvcr_embed_missing_for_test() {}\n")
     expect_failure(root, dist, "missing ABI export")
     write_fixture("${root}/core/embed.ae", source)
-    // Published downloads flatten the ae-add directory.
-    entries = fs.list_dir("${dist}/ae-add")!
-    for i in 0..fs.dir_list_count(entries) {
-        name = fs.dir_list_get(entries, i)
-        _ok, _kind, copy_err = fs.copy("${dist}/ae-add/${name}", "${dist}/${name}")
-        check(copy_err == "", "flatten ae-add package")
-    }
-    fs.dir_list_free(entries)
+    // Published downloads flatten the ae-add directory (only its aether.toml).
+    _ok, _kind, copy_err = fs.copy("${dist}/ae-add/aether.toml", "${dist}/aether.toml")
+    check(copy_err == "", "flatten ae-add manifest")
     fs.remove_tree("${dist}/ae-add")
     check(artifacts.check_artifacts(root, TAG, dist) == "", "flat published download layout")
     asset(raw, "")

@@ -7,7 +7,7 @@ import std.map
 import std.os
 import std.regex
 import std.string
-exports(check_version, check_artifacts, check_packages)
+exports(check_version, check_artifacts, check_packages, check_link_identity, host_slot)
 
 const PLATFORMS[] = ["linux-x86_64.so", "linux-arm64.so", "macos-x86_64.dylib", "macos-arm64.dylib",
     "windows-x86_64.dll", "windows-arm64.dll", "freebsd-x86_64.so", "linux-x86_64-musl.so", "linux-arm64-musl.so"]
@@ -36,6 +36,77 @@ host_slot() -> string {
         if string.starts_with(PLATFORMS[i], key) == 1 { return PLATFORMS[i] }
     }
     return "linux-x86_64.so"
+}
+// The names a consumer's loader looks for. A link-time binding records the
+// library's own name (Mach-O install name, ELF SONAME) when it links, then
+// finds that name through its rpath at run time, where every binding stages
+// the library as libservirtium_vcr.dylib / .so (and `ae add` installs it so).
+const DYLIB_ID = "@rpath/libservirtium_vcr.dylib"
+const ELF_SONAME = "libservirtium_vcr.so"
+// zlib's own inflate error text: present when zlib is compiled in. A library
+// that depends on a shared zlib names it instead (an in-tree host build).
+const ZLIB_MARKERS[] = ["incorrect header check", "libz.so.1", "libz.so.6", "libz.1.dylib", "zlib1.dll"]
+
+macho_le32(b: byte[], at: int) -> int {
+    return (b[at] as int) | ((b[at + 1] as int) << 8) | ((b[at + 2] as int) << 16) | ((b[at + 3] as int) << 24)
+}
+// The install name (LC_ID_DYLIB) of a thin 64-bit little-endian Mach-O, or
+// "" when there is none; error when the bytes are not such a Mach-O.
+macho_install_name(b: byte[], n: int) -> (string, string) {
+    if n < 32 || b[0] != 0xcf || b[1] != 0xfa || b[2] != 0xed || b[3] != 0xfe { return "", "not a 64-bit Mach-O" }
+    ncmds = macho_le32(b, 16)
+    at = 32
+    for _i in 0..ncmds {
+        if at + 8 > n { return "", "truncated Mach-O load commands" }
+        cmd = macho_le32(b, at); size = macho_le32(b, at + 4)
+        if size < 8 || at + size > n { return "", "bad Mach-O load command size" }
+        if cmd == 0xd {
+            start = at + macho_le32(b, at + 8)
+            stop = start
+            while stop < at + size && b[stop] != 0 { stop += 1 }
+            out = ""
+            for k in start..stop { out = string.concat(out, string.from_char(b[k] as int)) }
+            return out, ""
+        }
+        at += size
+    }
+    return "", ""
+}
+has_bytes(b: byte[], n: int, needle: string) -> bool {
+    m = string.length(needle)
+    if m == 0 || m > n { return false }
+    nb = string.bytes(needle)
+    first = nb[0]
+    i = 0
+    while i + m <= n {
+        if b[i] == first {
+            j = 1
+            while j < m && b[i + j] == nb[j] { j += 1 }
+            if j == m { return true }
+        }
+        i += 1
+    }
+    return false
+}
+// Per platform: the dylib's install name, the ELF SONAME (none, or the plain
+// name; readelf output is passed in where the caller ran it), and zlib.
+check_link_identity(file: string, platform: string, readelf: string) -> string {
+    data, n, err = fs.read_binary(file)
+    if err != "" || n <= 0 { return "cannot read ${file}" }
+    b = string.bytes(data)
+    if string.starts_with(platform, "macos-") == 1 {
+        id, merr = macho_install_name(b, n)
+        if merr != "" { return "${file}: ${merr}" }
+        if id != DYLIB_ID { return "wrong install name in ${file}: '${id}' (must be ${DYLIB_ID})" }
+    }
+    if string.length(readelf) > 0 && string.contains(readelf, "(SONAME)") == 1 {
+        soname = replace_pattern("(?s)^.*[(]SONAME[)][^\\[]*\\[([^]]+)\\].*$", readelf, "$1")!
+        if soname != ELF_SONAME { return "wrong SONAME in ${file}: '${soname}' (must be ${ELF_SONAME} or none)" }
+    }
+    for i in 0..ZLIB_MARKERS.len {
+        if has_bytes(b, n, ZLIB_MARKERS[i]) { return "" }
+    }
+    return "no zlib in ${file}: record mode could not decode a gzip upstream"
 }
 check_version(root: string, tag: string) -> string {
     if regex.matches_lit("^v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$", tag)! == 0 { return "invalid release tag: ${tag}" }
@@ -77,6 +148,8 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
         map.map_put(manifest, name, string.array_get(fields, 0))
         string.array_free(fields)
     }
+    // The `ae add` package's stem is libservirtium_vcr, so its per-triple
+    // assets are these raw libraries; only its aether.toml is separate.
     packages = dist
     if fs.dir_exists("${dist}/ae-add") == 1 { packages = "${dist}/ae-add" }
     for i in 0..PLATFORMS.len {
@@ -84,28 +157,29 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
         raw = "${dist}/libservirtium_vcr-${tag}-${platform}"
         err = check_manifest(raw, manifest)
         if err != "" { return err }
-        if string.starts_with(platform, "linux-") == 1 {
+        dynamic = ""
+        if string.starts_with(platform, "linux-") == 1 || string.starts_with(platform, "freebsd-") == 1 {
             args = list.new(); list.add(args, "-d"); list.add(args, raw)
-            dynamic, status, run_err = os.run_capture("readelf", args, null)
+            out, status, run_err = os.run_capture("readelf", args, null)
             list.free(args)
             if run_err != "" || status != 0 { return "readelf failed for ${raw}: ${run_err}" }
+            dynamic = out
+        }
+        if string.starts_with(platform, "linux-") == 1 {
             needed = replace_pattern("(?m)^.*[(]NEEDED[)].*\\[([^]]+)\\].*$", dynamic, "NEEDED:$1")!
             libc = "libc.so.6"; other = "libc.so"
             if string.contains(platform, "-musl") == 1 { libc = "libc.so"; other = "libc.so.6" }
             if string.contains(needed, "NEEDED:${libc}\n") == 0 || string.contains(needed, "NEEDED:${other}\n") == 1 { return "wrong Linux libc for ${raw}" }
         }
-        package = "${packages}/servirtium_vcr-${tag}-${platform}"
-        packaged, package_err = checksum(package)
-        if package_err != "" { return package_err }
-        raw_digest, _err = map.get_string(manifest, fs.path_basename(raw))
-        if packaged != raw_digest { return "ae-add package differs from raw library: ${package}" }
+        err = check_link_identity(raw, platform, dynamic)
+        if err != "" { return err }
         if string.starts_with(platform, "windows-") == 1 {
             err = check_manifest("${raw}.lib", manifest)
             if err != "" { return err }
         }
     }
     toml = fs.read("${packages}/aether.toml")!
-    if regex.matches_lit("(?m)^binary = \"servirtium_vcr\"$", toml)! == 0 || regex.matches_lit("(?m)^modules = \"[.]\"$", toml)! == 0 { return "ae-add manifest must export binary servirtium_vcr at modules = '.'" }
+    if regex.matches_lit("(?m)^binary = \"libservirtium_vcr\"$", toml)! == 0 || regex.matches_lit("(?m)^modules = \"[.]\"$", toml)! == 0 { return "ae-add manifest must export binary libservirtium_vcr at modules = '.'" }
     slot = host_slot()
     library = dl.open("${dist}/libservirtium_vcr-${tag}-${slot}")!
     defer dl.close(library)
@@ -121,7 +195,7 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
         symbol, err = dl.symbol(library, "aether_${name}")
         if symbol == null || err != "" { return "missing ABI export in ${slot}: aether_${name}" }
     }
-    println("Verified ${PLATFORMS.len} libraries, Windows import libraries, ${PLATFORMS.len} ae-add packages, checksums, and ${count} ABI exports (${slot}).")
+    println("Verified ${PLATFORMS.len} libraries (install names, SONAMEs, zlib), Windows import libraries, the ae-add manifest, checksums, and ${count} ABI exports (${slot}).")
     return ""
 }
 check_packages(dist: string) -> string {

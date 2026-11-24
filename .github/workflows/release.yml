@@ -115,7 +115,7 @@ jobs:
       - name: Verify release version and toolchain pins
         run: SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_MODE=version aeb release/.artifacts.ae
 
-      - name: Build all nine libraries, nine ae-add packages, and the four binding packages
+      - name: Build all nine libraries, the ae-add manifest, and the four binding packages
         env:
           TARGETS: x86_64-linux aarch64-linux x86_64-linux-musl aarch64-linux-musl x86_64-macos aarch64-macos x86_64-windows aarch64-windows x86_64-freebsd
           # Widen the release for exactly the fat Java jar (6 natives) and the
@@ -147,9 +147,16 @@ jobs:
           (x86_64 and arm64), plus Linux musl (x86_64 and arm64) and FreeBSD x86_64.
           Each library has a SHA256 checksum.
 
-          All nine ae-add binary packages and aether.toml are included.
-          GNU and musl Linux packages have distinct asset names; consumption
-          requires Aether 0.838.0 or newer for libc-aware selection.
+          The same nine libraries are the `ae add` binary package: aether.toml
+          names libservirtium_vcr as its binary, so `ae add` fetches the
+          library for its host by these names and Aether code says
+          `import servirtium_vcr`. GNU and musl Linux libraries have distinct
+          asset names; consumption requires Aether 0.838.0 or newer for
+          libc-aware selection.
+
+          Each macOS library's install name is @rpath/libservirtium_vcr.dylib
+          and each Linux and FreeBSD library's SONAME is libservirtium_vcr.so,
+          the names the bindings stage them under. Every library carries zlib.
 
           Three ready-to-consume multi-platform binding packages are also attached:
           a fat Java jar (servirtium-vcr-*.jar) bundling the six glibc/macOS/Windows
@@ -190,7 +197,7 @@ jobs:
             release/dist/*.dll.lib release/dist/*.jar release/dist/*.nupkg release/dist/*.tgz \
             release/dist/*.artifactbundle.zip \
             release/dist/*.sha256 release/dist/SHA256SUMS.txt \
-            release/dist/ae-add/servirtium_vcr-* release/dist/ae-add/aether.toml
+            release/dist/ae-add/aether.toml
 
       # The Go binding is a module in the go/ subdirectory, so `go get` resolves
       # versions from tags prefixed with the directory: go/<tag>. Point it at the
@@ -287,7 +294,7 @@ jobs:
           downloaded="$RUNNER_TEMP/published-core"
           gh release download "$RELEASE_TAG" --dir "$downloaded"
           SVCR_RELEASE_TAG="$RELEASE_TAG" SVCR_ARTIFACTS_DIST="$downloaded" SVCR_ARTIFACTS_MODE=bindings aeb release/.artifacts.ae
-          echo "Downloaded and verified all nine libraries, nine ae-add packages, the fat Java jar, the multi-RID .NET nupkg, the npm tarball, the Swift artifact bundle, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
+          echo "Downloaded and verified all nine libraries (install names, SONAMEs, zlib), the ae-add manifest, the fat Java jar, the multi-RID .NET nupkg, the npm tarball, the Swift artifact bundle, checksums, and Linux ABI for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
 
       # The whole point of the bare tag: a stranger's SwiftPM resolves this
       # version from GitHub, downloads the bundle, checks its checksum, links the

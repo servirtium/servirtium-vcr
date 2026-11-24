@@ -153,6 +153,13 @@ aeb(cap) {
         _m3 = fs.mkdir_p(string.concat(srcdir, "/native"))
         _c1 = fs.copy(cached, so_path)
         _c2 = fs.copy(cached, string.concat(srcdir, "/native/libservirtium_vcr.so"))
+        // A release dylib's install name is @rpath/libservirtium_vcr.dylib: a
+        // binary linked against it looks that name up in its rpath directory
+        // at run time, so the same bytes sit beside the .so under that name.
+        if os_ == "macos" {
+            _c3 = fs.copy(cached, string.concat(libdir, "/libservirtium_vcr.dylib"))
+            _c4 = fs.copy(cached, string.concat(srcdir, "/native/libservirtium_vcr.dylib"))
+        }
 
         // Publish the exact edge set core/.build.ae publishes (all four).
         publish_artifact("shared_lib", so_path)

@@ -37,7 +37,11 @@ aeb(cap) {
         //    lib for that triple with --size (release strip parity), AND for
         //    all targets stage the
         //    `ae add` binary-package asset for it (target/build/core/ae-add/:
-        //    aether.toml + servirtium_vcr-<tag>-<triple>.<ext> + .sha256). Tag from
+        //    aether.toml + libservirtium_vcr-<tag>-<triple>.<ext> + .sha256, the
+        //    raw library's own name: the stem is libservirtium_vcr, so `ae add`
+        //    installs libservirtium_vcr<ext>, the name the dylib's install name and
+        //    the ELF SONAME carry, and `import servirtium_vcr` finds it through
+        //    ae's lib<module> probe). Tag from
         //    AEB_RELEASE_TAG (release/publish.sh sets it), else v0.0.0. output() is
         //    required on BOTH builders: a cross --emit=lib writes lib….so.dll/.dylib
         //    on disk, and emit_binary_package resolves the real name from its OWN
@@ -63,7 +67,7 @@ aeb(cap) {
             // aeb v0.330 preserves the musl suffix; Aether 0.838.0 selects
             // the matching libc when installing. No target needs an exclusion.
             aether.emit_binary_package() {
-                stem("servirtium_vcr")
+                stem("libservirtium_vcr")
                 output("libservirtium_vcr.so")
                 target(t)
             }
