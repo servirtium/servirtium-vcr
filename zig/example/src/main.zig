@@ -13,7 +13,7 @@ pub fn main() !void {
     const a = std.heap.page_allocator;
 
     var play = try servirtium.Playback.init(a, "tapes/single_get.md").port(0).start();
-    defer play.stop();
+    defer play.close() catch {};
 
     const base = try play.baseUrl();
     defer a.free(base);

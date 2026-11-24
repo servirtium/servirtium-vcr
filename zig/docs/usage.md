@@ -3,8 +3,9 @@
 All fixtures start from `servirtium.Playback.init(allocator, tapePath)` or
 `servirtium.Record.init(allocator, tapePath, upstreamBase)`, are configured
 with a fluent builder, and started with `.start()`, which returns
-`!Server`. `close()` the server to stop it (and, in record mode, flush the
-tape). Tape paths, hosts, labels, patterns are NUL-terminated `[:0]const u8`
+`!Server`. `close()` the server to stop it. A record server writes its tape
+only on `commit()`; `close()` without `commit()` (or `discard()`) writes
+nothing and returns `error.VcrError`. Tape paths, hosts, labels, patterns are NUL-terminated `[:0]const u8`
 and are *borrowed* — they must outlive `start()`.
 
 The system-under-test only ever needs `srv.baseUrl()`. Everything else — tape
@@ -49,7 +50,10 @@ var srv = try servirtium.Record.init(allocator, "tapes/climate_api.md", "https:/
 
 // ... drive the SUT against srv.baseUrl() ...
 
-// close flushes the markdown tape to disk.
+// commit stops the server and writes the markdown tape to disk.
+try srv.commit();
+// (close() after commit() is a no-op; close() without commit() or discard()
+// writes nothing and returns error.VcrError.)
 try srv.close();
 ```
 
@@ -61,14 +65,14 @@ your SUT, and captures the exchange. Chunked responses are de-chunked.
 ```zig
 var srv = try servirtium.Record.init(allocator, tape, upstream).failIfChanged().start();
 // ... drive SUT ...
-srv.close() catch |err| {
+srv.commit() catch |err| {
     // the freshly recorded tape was still written, but it differs from the
     // committed one — git diff shows the drift and CI fails loudly.
     return err; // error.VcrError
 };
 ```
 
-Without `failIfChanged`, `close` just overwrites.
+Without `failIfChanged`, `commit` just overwrites.
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -167,6 +171,8 @@ var srv = try servirtium.Record.init(allocator, tape, upstream)
     .start();
 // ... first request recorded with the note ...
 try srv.note("Overdraft", "Should be refused"); // attaches to the next interaction
+// ... next request ...
+try srv.commit();
 ```
 
 ## Static content (UI tests)
@@ -202,8 +208,9 @@ cleanly.
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `resetCursor()` | rewind replay to interaction 0; clear last-* |
 | `clearLastError()` | clear the last-error slot between sub-cases |
-| `close()` | stop; flush tape if recording (`error.VcrError` on drift if `failIfChanged`) |
-| `stop()` | stop without flushing (teardown escape hatch) |
+| `commit()` | record mode: stop and write the tape (`error.VcrError` on an error, or on drift with `failIfChanged`); no-op in playback |
+| `discard()` | stop; in record mode drop the recording without writing a tape |
+| `close()` | stop; a recording neither committed nor discarded writes nothing and returns `error.VcrError` |
 
 ## `Outcome`
 
