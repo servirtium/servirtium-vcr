@@ -245,6 +245,46 @@ python ntlm_server.py --port 8099     # the server on its own, logging to stderr
 Every client is Python, pinned in `requirements.txt`; nothing is skipped
 for want of a tool. Last run (Aether 0.939.0, 2026-11-23): macOS arm64, 39 passed and 1 xfailed; cachyos (Python 3.14), 39 passed and 1 xfailed.
 
+## Re-recording
+
+From this directory, in the virtualenv above, with the library built from
+the same checkout:
+
+```sh
+NTLM_RERECORD=1 python -m pytest
+git diff --stat tapes/
+```
+
+Any machine will do: the server, the user, the clients and their versions
+are all pinned here, and the rules in [`conftest.py`](conftest.py) take
+out everything that varies by run: the server's `Date`, the recorder's
+port, the client's `User-Agent` and `Accept-Encoding` and its Type 3
+(`AUTHORIZATION_N`), and the server's random Type 2 (replaced by the fixed
+one).
+
+What to expect: `git diff tapes/` is empty except for the two tapes that do
+not use the fixed Type 2, which change on every run by design:
+
+- `handshake_requests_ntlm_unredacted.md`: the `Authorization: NTLM` Type 3
+  (its client nonce, timestamp and NTLMv2 proof) and the server's
+  `WWW-Authenticate: NTLM` Type 2 (its random challenge and timestamp).
+  The anonymous leg and the Type 1 are the same bytes.
+- `handshake_httpx_negotiate.md`: the server's NegTokenResp carrying the
+  Type 2 and its final `WWW-Authenticate: Negotiate` mechListMIC on the 200.
+  The client's tokens are `Negotiate AUTHORIZATION_N` and do not change.
+
+Commit those two only when something else on them changed. Every other
+tape re-records byte for byte; if one does not, find out why before
+committing it.
+
+When to re-record:
+
+- a pyspnego, requests, requests-ntlm or httpx version change in
+  `requirements.txt` (a client's legs, headers or tokens may change);
+- a change to [`ntlm_server.py`](ntlm_server.py) or
+  [`ntlm_wire.py`](ntlm_wire.py) (what the server sends, or the fixed Type 2);
+- a change to the rules in `recorder()` in [`conftest.py`](conftest.py).
+
 ## Licence
 
 The server, the tests and the tapes are part of servirtium-vcr, under its
