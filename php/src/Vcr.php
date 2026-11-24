@@ -49,7 +49,7 @@ final class Vcr
     /**
      * Record live interactions: forward to `$upstreamBase`, return the real
      * response to the SUT, and capture the exchange. The tape is written to
-     * `$tapePath` when the server is stopped. `$nativeLib` optionally pins the
+     * `$tapePath` only by `commit()`. `$nativeLib` optionally pins the
      * `libservirtium_vcr.so` path explicitly.
      */
     public static function record(string $tapePath, string $upstreamBase, ?string $nativeLib = null): RecordBuilder

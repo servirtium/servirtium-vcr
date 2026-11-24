@@ -2,20 +2,21 @@
 
 ## Turnkey: `./bootstrap.sh`
 
+From the repo root, `bootstrap.sh` installs the pinned `ae` (0.941.0) and `aeb`
+via their official installers to a user prefix (`$HOME/.local`, no sudo; needs
+`curl`) if they are missing, then runs `aeb` on the leaf you name:
+
 ```sh
-./bootstrap.sh        # extra args pass through to `dart test`
+./bootstrap.sh dart/.tests.ae     # builds libservirtium_vcr, then runs `dart test`
 ```
 
-Installs `ae` (≥ 0.227.0, for `std.regex`) via aether's official `get.sh` to `$HOME/.local` if
-missing (no sudo, no Aether test suite, no contrib; needs `curl`, no
-build-from-source fallback); checks the Dart SDK is present (does **not**
-auto-install it); runs `build-native.sh`; then `dart pub get && dart test`.
-Override `PREFIX` / `AETHER_REF` (pin in CI) / `MIN_AE` via env.
+It does not install the Dart SDK; it must already be present. Override `PREFIX` / `AETHER_REF` / `AEB_REF` / `MIN_AE` via env.
+
+Everything from here down is what that leaf automates.
 
 ## Prerequisites
 
-- **Dart SDK 3.x** (`dart` on PATH). `bootstrap.sh` checks for it but does not
-  install it.
+- **Dart SDK 3.8.0 or newer** (`dart` on PATH; `pubspec.yaml` requires `sdk: ^3.8.0`). `bootstrap.sh` does not install it.
 - **The Aether toolchain (`ae`)** — only to build the native library;
   `bootstrap.sh` installs it via `get.sh` if absent. Consumers of the pub
   package don't need it. From-source/HEAD flow: aether's
@@ -24,14 +25,13 @@ Override `PREFIX` / `AETHER_REF` (pin in CI) / `MIN_AE` via env.
 ## Build the native library
 
 ```sh
-./build-native.sh
+aeb core/.build.ae      # from the repo root
 ```
 
 Builds `core/native/libservirtium_vcr.so` from the in-repo `core/embed.ae`
 (C-ABI wrapper) and `core/vcr.ae` (libservirtium_vcr) using the
 **installed** toolchain — no Aether source checkout needed. `--with=fs,net,extern`
-needs a `-fPIC` Aether runtime, and libservirtium_vcr uses `std.regex`, so **ae ≥
-0.227.0** is required. The native lib is a git-ignored build artifact.
+needs a `-fPIC` Aether runtime, and libservirtium_vcr uses `std.regex`, so **ae 0.941.0** is required. The native lib is a git-ignored build artifact.
 
 ## Test
 

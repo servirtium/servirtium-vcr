@@ -77,9 +77,9 @@ The tape *format* is unchanged, so existing tapes replay as-is.
 
 ## Aether-core gaps (beyond the known ones)
 
-None new surfaced during this binding. The two known `embed.ae` omissions still
-apply (both small additions if wanted): `flush_or_check` (the `.actual`-sibling
-drift variant) and `load_url` (replay a tape fetched over HTTP). And the
+None new surfaced during this binding. `flush_or_check` (the `.actual`-sibling
+drift variant) and `load_url` (replay a tape fetched over HTTP) are exported by
+`embed.ae` but not wrapped here. And the
 strict-match default-headers interaction (a SUT client's default headers can
 flag a mismatch under `strict_headers: true`) is a client-side concern, handled
 with `remove_header`.

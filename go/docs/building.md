@@ -7,9 +7,9 @@ aeb, kept as a showcase of aeb driving a cross-language FFI artifact
 
 ## Prerequisites
 
-- The Aether toolchain (`ae`) on PATH — **≥ 0.182** for the `-fPIC` runtime
-  that `--emit=lib --with=net` needs, **≥ 0.227.0** for `std.regex` (the
-  libservirtium_vcr's whole-tape rewrites) and chunked de-chunking.
+- The Aether toolchain (`ae`) on PATH — **0.941.0**, the version
+  `bootstrap.sh` pins (the `-fPIC` runtime that `--emit=lib --with=net` needs,
+  `std.regex` for the whole-tape rewrites).
 - `aeb` on PATH.
 - A C toolchain (`cgo` links the native library).
 - **No Aether source checkout needed** — libservirtium_vcr is in this repo
@@ -30,18 +30,17 @@ curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aeb/main/install.sh 
 
 Notes for a casual servirtium-vcr/go developer:
 
-- **Pin in CI** with `AETHER_REF=v0.227.0` / `AEB_REF=v0.NNN` in front of the
+- **Pin in CI** with `AETHER_REF=v0.941.0` / `AEB_REF=v0.NNN` in front of the
   respective installer (reproducible builds).
-- **Version floor is real** — `ae` must be **≥ 0.227.0** (`std.regex` for the
-  libservirtium_vcr's whole-tape rewrites, on top of the `-fPIC` runtime + chunked
-  de-chunk). The latest released tag satisfies it; `get.sh` installs that by
-  default.
+- **The version is pinned** — `ae` must be **0.941.0** (`bootstrap.sh`'s
+  `AE_PIN`, equal to `AE_FETCH`: the one release this repo is verified
+  against).
 - **No contrib.** servirtium-vcr/go's libservirtium_vcr imports only stdlib primitives
   (`std.http`/`std.fs`/`std.regex`/`std.zlib`/`std.cryptography`) — no
   `sqlite`/`host_*` — so there's nothing extra to install.
 - **`-fPIC` triage.** If `aeb`/`core/.build.ae` fails with a link error
   mentioning `recompile with -fPIC`, you have a stale pre-0.182 `ae` — re-run
-  the `get.sh` installer (optionally `AETHER_REF=v0.227.0`). This is the single
+  the `get.sh` installer (optionally `AETHER_REF=v0.941.0`). This is the single
   most likely first-build failure, because `--emit=lib --with=net` is exactly
   the path that needs the PIC runtime.
 
@@ -54,7 +53,7 @@ For a casual dev who doesn't yet have the toolchain, the repo-root
 ./bootstrap.sh
 ```
 
-It checks for `ae` (≥ 0.227.0) and `aeb`; if either is missing/too old it
+It checks for `ae` (0.941.0, the version `bootstrap.sh` pins) and `aeb`; if either is missing/too old it
 installs them via the official `get.sh` / `install.sh` remote installers to a
 user prefix (`$HOME/.local` — **no sudo, no Aether test suite, no contrib**),
 then runs `aeb`. It's a no-op for the toolchain when both are already good,

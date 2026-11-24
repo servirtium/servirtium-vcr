@@ -171,8 +171,8 @@ console.log('Recorded hello.md and replayed it with the upstream stopped.')
 The recording is written to `hello.md` in your current directory; rerunning
 overwrites it. In your own tests, replace `upstreamUrl` with your service's URL
 and point your application's HTTP client at `vcr.baseUrl`. Always consume the
-response body before closing the recorder, and use `finally` to flush the tape
-and stop the server even if an assertion fails.
+response body before committing the recorder, and use `finally` with `discard()`
+to stop the server and drop the recording even if an assertion fails.
 
 ## Docs
 

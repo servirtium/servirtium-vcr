@@ -6,7 +6,7 @@ exercised by the PHPUnit suite against the real native library.
 | Capability | .NET API parity | PHP API | Test |
 |---|---|---|---|
 | Playback (ordered, multi-interaction) | ✅ | `Vcr::playback` | ✅ |
-| Record → flush tape | ✅ | `Vcr::record` | ✅ |
+| Record → write tape on `commit()` | ✅ | `Vcr::record` | ✅ |
 | Custom HTTP verbs | ✅ | (automatic) | — |
 | Redactions | ✅ | `->redact(field, …)` | ✅ |
 | Volatile values (placeholders, tokens, bind) | ✅ | `->volatileRule(scope, pattern)`, `->bind(name, value)`, `->volatileProfile(path)`, `->volatileMarkers(style)`, `$server->volatileReport()` | ✅ |

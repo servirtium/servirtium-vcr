@@ -10,7 +10,7 @@
 // You point your system-under-test at a local base URL. In playback it
 // replays a recorded markdown tape (no network); in record it forwards to
 // the real upstream, returns the live response, and writes the tape on
-// Close. Same tape, both directions.
+// Commit. Same tape, both directions.
 //
 //	srv, err := servirtium.Playback("tapes/my_api.md").Port(0).Start()
 //	if err != nil { t.Fatal(err) }
@@ -723,7 +723,7 @@ func (b *PlaybackBuilder) Start() (*Server, error) {
 
 // Record returns a builder that records live interactions: it forwards each
 // request to upstreamBase, returns the real response to the SUT, and captures
-// the exchange. The tape is written to tapePath when the Server is Closed.
+// the exchange. The tape is written to tapePath only by Server.Commit.
 func Record(tapePath, upstreamBase string) *RecordBuilder {
 	return &RecordBuilder{baseBuilder: baseBuilder{tapePath: tapePath, host: "127.0.0.1"}, upstreamBase: upstreamBase}
 }
@@ -955,7 +955,7 @@ func (b *RecordBuilder) PrettyJSON(indent int) *RecordBuilder { b.prettyJSON = i
 
 // SortJSONKeys is the opt-in stable order for JSON object keys: they are sorted
 // at every depth in recorded JSON response bodies. Sorted JSON is only written
-// pretty-printed: without PrettyJSON, Close returns "sort_json_keys needs
+// pretty-printed: without PrettyJSON, Commit returns "sort_json_keys needs
 // pretty_json: ..." and writes nothing.
 func (b *RecordBuilder) SortJSONKeys() *RecordBuilder { b.sortJSONKeys = true; return b }
 
@@ -997,7 +997,7 @@ func (b *RecordBuilder) AddLicenseNotice(text string) *RecordBuilder {
 	return b
 }
 
-// FailIfChanged makes Close still write the freshly recorded tape but return
+// FailIfChanged makes Commit still write the freshly recorded tape but return
 // an error if it differs from the on-disk one — the Servirtium step-4 drift
 // contract, so a normal git diff shows the change and CI fails loudly.
 func (b *RecordBuilder) FailIfChanged() *RecordBuilder { b.failIfChanged = true; return b }
@@ -1101,8 +1101,9 @@ func (b *RecordBuilder) applyConfig(handle unsafe.Pointer) error {
 }
 
 // Start opens the record server, applies this fixture's config to its handle,
-// then begins serving. The returned Server must be Closed; Close flushes the
-// tape (and returns an error on drift if FailIfChanged was set).
+// then begins serving. The returned Server must be Committed (or Discarded) to
+// end the recording: Commit writes the tape (and returns an error on drift if
+// FailIfChanged was set); Close without either writes nothing and errors.
 func (b *RecordBuilder) Start() (*Server, error) {
 	cLabel := C.CString(b.label)
 	cTape := C.CString(b.tapePath)
@@ -1164,8 +1165,9 @@ func drainStartError(handle unsafe.Pointer) string {
 
 // ---- Server ----------------------------------------------------------------
 
-// Server is a running VCR server. Close it to stop; in record mode Close also
-// flushes the captured tape to disk.
+// Server is a running VCR server. Close it to stop. In record mode the captured
+// tape is written only by Commit; Discard drops it, and Close with neither
+// writes nothing and returns an error.
 type Server struct {
 	secretRedactor SecretRedactor
 	handle         unsafe.Pointer

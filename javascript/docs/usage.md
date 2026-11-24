@@ -39,8 +39,9 @@ try {
     signal: AbortSignal.timeout(10000),
   })
   const body = await response.text()
+  vcr.commit() // stops the server and writes the markdown tape to disk
 } finally {
-  vcr.close() // forwards nothing more and writes the markdown tape to disk
+  vcr.discard() // no-op after commit(); drops the recording if the block threw
 }
 ```
 
@@ -57,9 +58,9 @@ that service has stopped, see the [README quickstart](../README.md#record-and-re
 Vcr.record(tape, upstream).failIfChanged().start()
 ```
 
-On `close()`, the freshly recorded tape is written **and** a `VcrError` is
+On `commit()`, the freshly recorded tape is written **and** a `VcrError` is
 thrown if it differs from the committed tape — so `git diff` shows the drift and
-CI fails loudly. (Without `failIfChanged`, `close()` just overwrites.)
+CI fails loudly. (Without `failIfChanged`, `commit()` just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -173,6 +174,7 @@ const vcr = Vcr.record(tape, upstream)
 // ... first request recorded with the note ...
 vcr.note('Overdraft', 'Should be refused') // attaches to the next interaction
 // ... next request ...
+vcr.commit()
 ```
 
 ## Static content (UI tests)
@@ -217,7 +219,7 @@ const rec = Vcr.record(tape, upstream)
 
 A rule the core refuses (an empty header name, a bad regex) throws `VcrError`
 at `start()`. `sortJsonKeys` / `sortJsonArray*` without `prettyJson` are
-refused when the tape is written: `close()` throws `VcrError`
+refused when the tape is written: `commit()` throws `VcrError`
 ("sort_json_keys needs pretty_json ...") and writes nothing.
 
 ## Playback range
@@ -246,7 +248,9 @@ A request outside the range is never served (kind `PathOrMethodDiff`,
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `resetCursor()` | rewind replay to interaction 0; clear last-* |
 | `clearLastError()` | clear the last-error slot between sub-cases |
-| `close()` | stop; flush tape if recording |
+| `commit()` | record: stop and write the tape (throws `VcrError` on drift if `failIfChanged`) |
+| `discard()` | record: stop and drop the recording, writing nothing |
+| `close()` | stop; a recording neither committed nor discarded writes nothing and throws `VcrError` |
 
 ## `VcrOutcome`
 

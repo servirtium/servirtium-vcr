@@ -37,7 +37,7 @@ server stop.
 
 Record forwards each request to the upstream, returns the **real** response
 to your SUT, and captures the exchange. Chunked responses are de-chunked
-(needs the native lib built with Aether ≥ 0.183.0).
+(done by the core).
 
 ### Drift detection
 
@@ -45,9 +45,9 @@ to your SUT, and captures the exchange. Chunked responses are de-chunked
 (Servirtium record: tape upstream: upstream) failIfChanged; start.
 ```
 
-On `stop`, the freshly recorded tape is written **and** a `ServirtiumError`
+On `commit`, the freshly recorded tape is written **and** a `ServirtiumError`
 is signaled if it differs from the committed tape — so `git diff` shows the
-drift and CI fails loudly. (Without `failIfChanged`, `stop` just overwrites.)
+drift and CI fails loudly. (Without `failIfChanged`, `commit` just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -161,7 +161,8 @@ to the first interaction; stage later ones on the running server:
     startThenDo: [ :server |
         "... first request recorded with the note ..."
         server noteTitle: 'Overdraft' body: 'Should be refused'.
-        "... next request gets this note ..." ].
+        "... next request gets this note ..."
+        server commit ].
 ```
 
 ## Static content (UI tests)
@@ -208,7 +209,7 @@ Each rule is off by default; the tape is byte-exact without them.
 
 Sorted JSON is only written pretty-printed: a record with `sortJsonKeys` or a
 sort-array rule but without `prettyJson:` is refused when the tape is written, so
-`stop` (and so `startThenDo:`) raises a `ServirtiumError` containing
+`commit` raises a `ServirtiumError` containing
 "sort_json_keys needs pretty_json: sorted JSON is only written pretty-printed
 (turn pretty_json on)" and writes nothing. A rule the core refuses outright
 raises from `start`.
@@ -245,7 +246,9 @@ cannot silently overwrite a journey's tape with a slice.
 | `noteTitle:body:` | stage a note for the next recorded interaction |
 | `resetCursor` | rewind replay to interaction 0; clear last-* |
 | `clearLastError` | clear the last-error slot between sub-cases |
-| `stop` | stop; flush tape if recording (idempotent) |
+| `commit` | record: stop and write the tape (signals `ServirtiumError` on drift if `failIfChanged`) |
+| `discard` | record: stop and drop the recording, writing nothing |
+| `stop` | stop; a recording neither committed nor discarded writes nothing and signals `ServirtiumError` (idempotent) |
 
 ## `ServirtiumOutcome` symbols
 

@@ -33,7 +33,7 @@ serves Flutter.
 
 ## Getting it
 
-The package is **not on pub.dev yet**. Use a pub git dependency on the release tag
+It needs Dart SDK 3.8.0 or newer (`pubspec.yaml`: `sdk: ^3.8.0`). The package is **not on pub.dev yet**. Use a pub git dependency on the release tag
 (`path: dart`, because the package is in a subdirectory), and fetch the native library from the
 same release; `dart:ffi` loads it through `SERVIRTIUM_VCR_LIB`. Run this in your own package directory (the `dart create` line makes a throwaway one; skip it to use yours):
 
@@ -122,13 +122,13 @@ content, drift, diagnostics.
 ### Stable ordering and playback range
 
 Both are opt-in builder options; a refused rule or range throws `VcrException` from `start()`
-(or `close()` for the pretty-JSON rule below).
+(or `commit()` for the pretty-JSON rule below).
 
 - **Stable order (record builder):** `.sortJsonKeys()`, `.sortJsonArray(path, by)`,
   `.sortJsonArrayAt(requestRegex, path, by)`, `.sortResponseHeaders()`, `.sortHeaderValue(name)`;
   `server.sortJsonKeys` / `server.sortResponseHeaders` read the state back and
   `clearStableOrder()` turns it off. Sorted JSON is only written pretty-printed: without
-  `.prettyJson(2)`, `close()` throws `sort_json_keys needs pretty_json: ...` and writes nothing.
+  `.prettyJson(2)`, `commit()` throws `sort_json_keys needs pretty_json: ...` and writes nothing.
 - **Playback range (playback only):** `Vcr.playback(tape).playbackRange(from, to)` replays only the
   tape's `## Interaction N` headings `from`..`to` (0-based, inclusive; `to < 0` = through the last);
   a bad range makes `start()` throw. On a running server, `setPlaybackRange` (throws on a record
@@ -152,7 +152,7 @@ without their cursors or mutations bleeding into each other.
 ## Building from source
 
 ```sh
-./bootstrap.sh        # installs `ae` via get.sh if missing, builds the native lib, runs dart test
+./bootstrap.sh dart/.tests.ae     # from the repo root: installs `ae` + `aeb` if missing, builds the native lib, runs dart test
 ```
 
 Details in [docs/building.md](docs/building.md).

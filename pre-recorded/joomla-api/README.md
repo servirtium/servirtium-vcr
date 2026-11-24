@@ -83,6 +83,19 @@ installer. Each would be a case of its own.
 - Playback is strict: a request that differs from the recorded one (method,
   path, recorded headers, body) or a recorded request never made fails the
   case.
+- The request headers stay on the tapes on purpose, as in
+  `../from-testcontainers/`: `Accept: application/vnd.api+json` is part of
+  what a JSON:API client must send, and the token header is Joomla's
+  authentication. So a bare `curl` against a served tape gets 599 (the
+  mismatch report). Send what the test sends. `servirtium serve` registers
+  no credential preset, so it matches the token as written on the tape:
+
+  ```sh
+  servirtium serve tapes/lists_user_groups_and_access_levels.md 8080 &
+  curl -H 'Accept: application/vnd.api+json' -H 'X-Joomla-Token: X_JOOMLA_TOKEN_1' \
+       -A 'servirtium-vcr pre-recorded tests (Aether std.http.client)' \
+       http://127.0.0.1:8080/api/index.php/v1/users/groups
+  ```
 
 ## Running the test
 

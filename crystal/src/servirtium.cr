@@ -246,8 +246,9 @@ module Servirtium
   end
 
   # Record: forward each request to `upstream_base`, return the live response to
-  # the SUT, and capture the exchange. The tape is written by `#flush` (or by
-  # the block form's implicit flush) — a plain `#close` discards it.
+  # the SUT, and capture the exchange. The tape is written only by `#flush`
+  # (or its drift variants); `#discard` drops it, and a plain `#close` writes
+  # nothing and raises.
   def self.record(tape_path : String, upstream_base : String,
                   host : String = "127.0.0.1", port : Int32 = 0) : Vcr
     handle = LibVcr.open_record("", tape_path, upstream_base, host, port)

@@ -166,8 +166,8 @@ public final class Vcr {
     }
 
     /// Record: forward each request to `upstreamBase`, return the live response
-    /// to the SUT, and capture the exchange. Call `flush()` to write the tape —
-    /// a plain `close()` discards the recording.
+    /// to the SUT, and capture the exchange. Call `flush()` to write the tape,
+    /// or `discard()` to drop it; a plain `close()` writes nothing and throws.
     public static func record(_ tapePath: String, upstreamBase: String,
                               host: String = "127.0.0.1", port: Int32 = 0) throws -> Vcr {
         let h = aether_vcr_embed_open_record("", tapePath, upstreamBase, host, port)
@@ -185,9 +185,10 @@ public final class Vcr {
         return try body(vcr)
     }
 
-    /// Record to `tapePath` for the duration of `body`, then flush. If `body`
-    /// throws, the recording is DISCARDED — a failed test shouldn't overwrite a
-    /// good tape.
+    /// Record to `tapePath` for the duration of `body`. The body writes the tape
+    /// with `flush()` (or drops it with `discard()`); ending with neither writes
+    /// nothing and throws. If `body` throws, the recording is DISCARDED — a
+    /// failed test shouldn't overwrite a good tape.
     public static func withRecord<T>(_ tapePath: String, upstreamBase: String,
                                      host: String = "127.0.0.1", port: Int32 = 0,
                                      _ body: (Vcr) throws -> T) throws -> T {

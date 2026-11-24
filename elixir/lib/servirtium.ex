@@ -5,7 +5,7 @@ defmodule Servirtium do
 
   You point your system-under-test at a local base URL. In **playback** it
   replays a recorded markdown tape (no network); in **record** it forwards to
-  the real upstream, returns the live response, and writes the tape on stop.
+  the real upstream, returns the live response, and writes the tape on `commit/1`.
   Same tape, both directions.
 
       {:ok, srv} = Servirtium.playback("tapes/my_api.md", port: 0)
@@ -124,7 +124,7 @@ defmodule Servirtium do
     * `:sort_json_keys` — `true` to sort JSON object keys at every depth in
       recorded JSON response bodies. Sorted JSON is only written
       pretty-printed: without `:pretty_json` the tape is refused when it is
-      written (`stop/1` returns `{:error, "sort_json_keys needs pretty_json: ..."}`)
+      written (`commit/1` returns `{:error, "sort_json_keys needs pretty_json: ..."}`)
     * `:sort_json_array` — list of `{path, by}`: sort the JSON response arrays
       `path` selects (JSON pointer, `"*"` for one segment, `""` the root array,
       or a bare member name) by member `by` (`""` = each element's canonical
@@ -134,7 +134,7 @@ defmodule Servirtium do
     * `:sort_response_headers` — `true` to sort response header lines by name
     * `:sort_header_value` — list of response header names whose
       comma-separated items are sorted (`"Allow"`)
-    * `:fail_if_changed` — `true` to raise on drift when flushing (still writes)
+    * `:fail_if_changed` — `true` to return an error on drift when committing (still writes)
 
   A `field` is one of `:path`, `:response_body`, `:request_headers`,
   `:request_body`, `:response_headers`.
@@ -225,7 +225,8 @@ defmodule Servirtium do
   @doc """
   Record live interactions: forward each request to `upstream_base`, return the
   real response to the SUT, and capture the exchange. The tape is written to
-  `tape_path` when the server is stopped. Returns `{:ok, %Servirtium.Server{}}`
+  `tape_path` only by `commit/1`; `discard/1` drops the recording, and `stop/1`
+  with neither writes nothing and returns `{:error, msg}`. Returns `{:ok, %Servirtium.Server{}}`
   or raises `Servirtium.Error`.
   """
   @spec record(String.t(), String.t(), keyword()) :: {:ok, Server.t()}

@@ -43,8 +43,11 @@ or the script those call, `run.sh`:
 Results: `target/results-<mode>.log` (console) and `target/results/<mode>/*.trx`.
 
 This was developed and run on Linux x86_64 (CachyOS, rootless Podman): the
-.NET binding ships only the `linux-x64` native library today, and the Mac
-has no .NET SDK installed (see "Why Linux" below).
+in-tree .NET build (`dotnet/Servirtium.Vcr/.build.ae`) stages only the host's
+`linux-x64` native library, and the Mac has no .NET SDK installed (see "Why
+Linux" below). The release NuGet package carries eight (`linux-x64`,
+`linux-arm64`, `linux-musl-x64`, `linux-musl-arm64`, `osx-x64`, `osx-arm64`,
+`win-x64`, `win-arm64`).
 
 ## How Servirtium is put in the middle
 
@@ -287,8 +290,9 @@ or compiler server left running (`MSBUILDDISABLENODEREUSE`,
 
 ## Why Linux, and why not the Mac
 
-The .NET binding packs only the `linux-x64` native library (its
-`.build.ae`), and the Mac has no .NET SDK installed; installing one there,
+The in-tree .NET build packs only the host's `linux-x64` native library (its
+`.build.ae`; the release NuGet package carries eight RIDs), and the Mac has no
+.NET SDK installed; installing one there,
 and a NuGet restore of a few hundred packages, would also be the kind of
 network-heavy toolchain step that pops permission dialogs. `cachyos` has the
 SDK, rootless Podman and the Aether toolchain.

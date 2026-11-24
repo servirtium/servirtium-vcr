@@ -3,8 +3,9 @@
 All fixtures start from `servirtium.playback(tapePath)` or
 `servirtium.record(tapePath, upstreamBase)`, are configured with a chainable
 builder, and started with `:start()`, which returns a `Server` (or
-`nil, message` on failure). `:close()` the server to stop it (and, in record
-mode, flush the tape).
+`nil, message` on failure). `:close()` the server to stop it. A record server
+writes its tape only on `:commit()`; `:close()` without `:commit()` (or
+`:discard()`) writes nothing and returns why.
 
 The system-under-test only ever needs `srv:base_url()`. Everything else — tape
 path, mode, mutations, assertions — lives in your test setup/teardown.
@@ -44,20 +45,20 @@ local srv = assert(servirtium.record("tapes/climate_api.md",
 
 io.popen("curl -s " .. srv:base_url() .. "/api/v1/countries"):read("*a")
 
--- close flushes the markdown tape to disk; returns "" on success.
-assert(srv:close() == "")
+-- commit stops the server and writes the markdown tape to disk; returns "" on success.
+assert(srv:commit() == "")
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
-your SUT, and captures the exchange. Chunked responses are de-chunked (needs the
-native lib built with Aether ≥ 0.227.0).
+your SUT, and captures the exchange. Chunked responses are de-chunked (done by the
+core).
 
 ### Drift detection
 
 ```lua
 local srv = assert(servirtium.record(tape, upstream):fail_if_changed():port(0):start())
 -- ... drive SUT ...
-local err = srv:close()
+local err = srv:commit()
 if err ~= "" then
     -- the freshly recorded tape was still written, but it differs from the
     -- committed one — git diff shows the drift and CI fails loudly.
@@ -65,7 +66,7 @@ if err ~= "" then
 end
 ```
 
-Without `:fail_if_changed()`, `:close()` just overwrites.
+Without `:fail_if_changed()`, `:commit()` just overwrites.
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -164,6 +165,8 @@ local srv = assert(servirtium.record(tape, upstream)
     :start())
 -- ... first request recorded with the note ...
 srv:note("Overdraft", "Should be refused")   -- attaches to the next interaction
+-- ... next request ...
+assert(srv:commit() == "")
 ```
 
 ## Static content (UI tests)
@@ -207,7 +210,7 @@ servirtium.record(tape, upstream)
 
 Sorted JSON is only written pretty-printed: a record with `:sort_json_keys()` or a
 `:sort_json_array*` rule but without `:pretty_json(n)` is refused when the tape is
-written, so `server:close()` returns "sort_json_keys needs pretty_json: sorted JSON
+written, so `server:commit()` returns "sort_json_keys needs pretty_json: sorted JSON
 is only written pretty-printed (turn pretty_json on)" and writes nothing. A rule
 the core refuses outright makes `:start()` return `nil, err`.
 
@@ -240,7 +243,9 @@ test cannot silently overwrite a journey's tape with a slice.
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `reset_cursor()` | rewind replay to interaction 0; clear last-* |
 | `clear_last_error()` | clear the last-error slot between sub-cases |
-| `close()` | stop; flush tape if recording (returns a drift message if `:fail_if_changed`) |
+| `commit()` | record: stop and write the tape (returns `""`, or a drift message if `:fail_if_changed`) |
+| `discard()` | record: stop and drop the recording, writing nothing |
+| `close()` | stop; a recording neither committed nor discarded writes nothing and returns why |
 
 ## `Outcome` constants
 

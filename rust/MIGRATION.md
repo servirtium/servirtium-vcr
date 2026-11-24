@@ -68,7 +68,7 @@ let rec = Vcr::record("tapes/my_api.md", "https://api.example.com")
     .port(0)
     .start().unwrap();
 // ... drive the SUT ...
-rec.commit().unwrap();   // flush the tape (or just drop `rec`)
+rec.commit().unwrap();   // writes the tape; dropping `rec` without commit() or discard() panics
 ```
 
 The Servirtium markdown tape *format* is unchanged, so existing tapes
@@ -93,7 +93,7 @@ replay as-is.
   `Outcome` / `VcrError`).
 - `src/native.rs` — **new**: the `libloading` FFI binding to the
   `aether_vcr_embed_*` C-ABI.
-- `build-native.sh` — **new**: builds the native lib into `native/`.
+- `.tests.ae` — **new**: the aeb leaf that builds the native lib (`core/.build.ae`) and runs the suite.
 - `tests/` — **new** integration tests driving record/playback through the
   native lib.
 - `LICENSE` (MIT) — unchanged. The Servirtium markdown tape format and the

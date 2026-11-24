@@ -8,7 +8,7 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by
 | Capability | Aether core | embed C-ABI | .NET API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `Vcr.Playback` | ✅ |
-| Record → flush tape | ✅ | ✅ | `Vcr.Record` | ✅ |
+| Record → write tape on `Commit()` | ✅ | ✅ | `Vcr.Record` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.Redact(field, …)` | ✅ |
@@ -33,10 +33,10 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `.Port(0)` → `vcr.Port` | ✅ |
 
-## Not (yet) exposed through the C-ABI
+## In the C ABI, not in the .NET API
 
-Present in the Aether VCR module but not surfaced by `core/embed.ae`, so not
-in the .NET API. Both are small `core/embed.ae` additions if wanted:
+Both are exported by `core/embed.ae` (`aether_vcr_embed_stop_and_flush_or_check`,
+`aether_vcr_embed_open_playback_url`), but this layer does not wrap them:
 
 - **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
   `<tape>.actual` and compares, instead of overwriting). The .NET layer has

@@ -120,11 +120,14 @@ source.
 
 ## Features
 
-One libservirtium_vcr; every binding exposes the same surface.
+One libservirtium_vcr; the core features below reach every binding. A few newer
+ABI calls are wrapped by some bindings only (see
+[Partial wrappers](#partial-wrappers)).
 
 - **Two modes** — *playback* (replay a committed tape, no network) and
   *record* (forward to the live upstream, return the real response, write the
-  tape on close).
+  tape when the test calls `commit()`; `discard()` drops it, and closing a
+  record VCR with neither writes nothing and raises).
 - **Canonical Servirtium markdown** — interoperable with other Servirtium
   implementations; fenced or 4-space-indented code blocks; optional emphasized
   HTTP verbs; optional `pretty_xml` and `pretty_json` indentation of recorded request and response bodies, with matching playback settings ([XML](docs/pretty-xml.md), [JSON](docs/pretty-json.md)); gzip + chunked transfer decoded to the stored payload.
@@ -194,8 +197,8 @@ One libservirtium_vcr; every binding exposes the same surface.
     traffic in a browser or proxy, convert the `.har` once, and replay it as a
     tape under any binding. (A CLI rather than a per-binding call: it's a
     convert-once-offline step, not a test-time operation — though
-    `har_import`/`har_export` are also in the C ABI for any binding that wants
-    to wrap them.)
+    `har_import`/`har_export` are also in the C ABI, and the C, C++, Crystal, D,
+    Janet, Julia and Swift bindings wrap them.)
   - `servirtium convert bru <collection> <out-dir> [--env NAME]` — **convert a
     Bruno collection's saved examples into tapes, with no network.** Each
     request `.bru` that has examples becomes one tape (one interaction per
@@ -232,6 +235,22 @@ One libservirtium_vcr; every binding exposes the same surface.
     (`servirtium import`), or exported/converted to `.bru` first.
 
 Named secrets can be selected by request context at tape emission and restored before playback starts. The same core implementation discovers query/form fields, headers, JSON, XML and YAML across all bindings. See [named secret callbacks](docs/secrets.md) for examples, language APIs and format limits.
+
+### Partial wrappers
+
+Most of the C ABI is wrapped by every binding. These calls are not (checked by
+grepping each binding's source, 2026-11-24); the Kotlin, Scala and Groovy layers
+call the Java API, and F# calls the .NET assembly, so they have what Java and
+.NET have:
+
+| ABI call | Wrapped by |
+|---|---|
+| `set_forward_host` (record: send the upstream the client's `Host`) | .NET (and F#) only |
+| `convert_bru` | JavaScript only (also the CLI's `convert bru`) |
+| `har_import` / `har_export` | C, C++, Crystal, D, Janet, Julia, Swift (also the CLI) |
+| `open_playback_url` (replay a tape fetched over HTTP) | C, C++, Crystal, D, Janet, Julia, Swift (the others declare it at most) |
+| `stop_and_flush_or_check` (the `.actual` drift variant) | C, C++, Crystal, D, Janet, Swift; the rest have the overwrite and fail-if-changed variants only |
+| `match_multiple` / `match_header` | every binding except Gleam, LFE and Clojure |
 
 Shared test drivers and release verification are Aether too: `aeb core_tests/.fixtures.ae`
 builds the HTTP fixtures under `target/test-tools/`, and `aeb release/.tests.ae`

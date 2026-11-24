@@ -31,6 +31,21 @@ Java API directly (`Vcr.playback(tape).port(0).start()`) — the helpers are jus
 sugar. Scala has no Kotlin-style receiver lambdas, so `configure` is taken as an
 ordinary `Builder => Unit` function argument.
 
+A recording is written only by `commit()` and dropped by `discard()`; closing it
+with neither writes nothing and throws `VcrException`:
+
+```scala
+import dev.servirtium.vcr.scala.Servirtium.record
+
+val vcr = record("tapes/climate_api.md", "https://climatedataapi.worldbank.org")(_.port(0))
+try
+  HttpClient.newHttpClient().send(
+    HttpRequest.newBuilder(URI.create(vcr.baseUrl() + "/api/v1/countries")).build(),
+    HttpResponse.BodyHandlers.ofString())
+  vcr.commit()    // stops the server and writes the tape
+finally vcr.discard()   // no-op after commit(); drops the recording if the body threw
+```
+
 ## What this is (and isn't)
 
 Since **2.0**, Servirtium is one libservirtium_vcr (`core/vcr.ae`, built to
@@ -58,7 +73,7 @@ val slice = Servirtium.playback(tape)(_.playbackRange(4, 6))   // interactions 4
 
 A rule the core refuses (an empty header name, a bad regex, a bad range) fails
 `record` / `playback` with a `VcrException`. The JSON rules are only written pretty-printed:
-without `prettyJson` the tape is refused when it is written (closing the server
+without `prettyJson` the tape is refused when it is written (`commit()`
 throws `VcrException`, "sort_json_keys needs pretty_json ...") and nothing is
 written. `playbackRange` selects by interaction number only (the `## Interaction N`
 headings, 0-based, inclusive; `to` < 0 means through the last); a request outside

@@ -9,7 +9,7 @@ library, unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Capability | Aether core | embed C-ABI | Nim API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `playback(tape)` | ✅ |
-| Record → flush tape | ✅ | ✅ | `record(tape, upstream)` | ✅ |
+| Record → write tape on `commit()` | ✅ | ✅ | `record(tape, upstream)` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `redact(field, …)` | ✅ |
@@ -49,7 +49,7 @@ Declared in `core/embed.ae` (and bound in `src/servirtium/native.nim`) but not
 yet wrapped by an idiomatic proc:
 
 - **`stop_and_flush_or_check`** — the `.actual`-sibling drift variant (writes a
-  `<tape>.actual` and compares, instead of overwriting). `close()` uses the
+  `<tape>.actual` and compares, instead of overwriting). `commit()` uses the
   overwrite and fail-if-changed variants only.
 - **`open_playback_url`** — replaying a tape fetched over HTTP rather than from
   disk; bound in `native.nim`, no `playback`-style wrapper yet.

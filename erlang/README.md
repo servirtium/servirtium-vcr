@@ -48,7 +48,8 @@ each compiling their own copy of the C source. There is exactly one
   (module `servirtium`, depends on `servirtium_nif`).
 - `src/servirtium.erl` — the idiomatic wrapper: `playback/1,2`, `record/2,3`,
   `base_url/1`, `port/1`, `tape_length/1`, `last_kind/1`, `last_error/1`,
-  `last_index/1`, `close/1`.
+  `last_index/1`, `commit/1`, `discard/1`, `close/1` (a record server writes its tape only on
+  `commit/1`; `close/1` with neither commit nor discard writes nothing and returns `{error, Msg}`).
 - `.build.ae` — compiles the shared `servirtium_nif` and the `servirtium_erl` OTP apps into `_build/`.
 - `build-nif-app.sh` — builds both apps from a prebuilt release library (no Aether).
 - `test/playback.escript` — smoke test (curls the VCR, asserts the body).
@@ -68,9 +69,8 @@ VER=v2.0.0-alpha.20                      # a release tag of servirtium-vcr
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
 
 # 1. build servirtium_nif + servirtium_erl into ./beam-libs
-#    (SRC=main until a release tag contains erlang/build-nif-app.sh; then SRC=$VER)
 mkdir -p beam-libs
-curl -fsSL $RAW/main/erlang/build-nif-app.sh | SRC=main VER=$VER sh -s -- ./beam-libs
+curl -fsSL $RAW/$VER/erlang/build-nif-app.sh | VER=$VER sh -s -- ./beam-libs
 
 # 2. put them on the code path: erl, escript and rebar3 shells honour ERL_LIBS
 export ERL_LIBS=$PWD/beam-libs
@@ -169,11 +169,11 @@ ok = servirtium:sort_json_array_at(Rec, "^/users", "", "name"),    % request reg
 ok = servirtium:set_sort_response_headers(Rec, true),
 ok = servirtium:sort_header_value(Rec, "Allow"),
 %% ... drive the system under test ...
-ok = servirtium:close(Rec).
+ok = servirtium:commit(Rec).
 ```
 
 A rule the core refuses raises `{servirtium, Reason}`. Sorting JSON without
-`set_pretty_json` is refused when the tape is written, so `close/1` returns
+`set_pretty_json` is refused when the tape is written, so `commit/1` returns
 `{error, "sort_json_keys needs pretty_json: ..."}` and writes nothing.
 `get_sort_json_keys/1`, `get_sort_response_headers/1` read the switches back;
 `clear_stable_order/1` turns every rule off.

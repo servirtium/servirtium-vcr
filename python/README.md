@@ -146,7 +146,7 @@ with TemporaryDirectory() as site:
             upstream_url = f"http://127.0.0.1:{upstream.server_port}"
             with servirtium.record("hello.md", upstream_url).port(0).start() as vcr:
                 get_greeting(vcr)
-            # Exiting the recording context writes hello.md.
+                vcr.commit()   # writes hello.md; leaving the block without commit() raises
         finally:
             upstream.shutdown()
             thread.join()

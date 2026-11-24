@@ -6,7 +6,7 @@ exercised by `dart test` against the real native library.
 | Capability | .NET API parity | Dart API | Test |
 |---|---|---|---|
 | Playback (ordered, multi-interaction) | ✅ | `Vcr.playback` | ✅ |
-| Record → flush tape | ✅ | `Vcr.record` | ✅ |
+| Record → write tape on `commit()` | ✅ | `Vcr.record` | ✅ |
 | Custom HTTP verbs | ✅ | (automatic) | — |
 | Redactions | ✅ | `.redact(field, …)` | ✅ |
 | Volatile values (ids, timestamps → `{{name-N}}`) | ✅ | `.volatileRule(scope, pattern, [kind])` / `.bind(name, value)` / `.volatileProfile(path)` / `.volatileMarkers(style)` / `server.volatileReport()` | [volatile-values](../../docs/volatile-values.md) |
@@ -31,11 +31,11 @@ exercised by `dart test` against the real native library.
 | Chunked de-chunk on record | ✅ | (automatic) | — |
 | Dynamic (OS-assigned) port | ✅ | `.port(0)` → `port` | ✅ |
 
-## Not exposed through the C-ABI (same as every binding)
+## In the C ABI, not in the Dart API
 
-`flush_or_check` (the `.actual`-sibling drift variant) and `load_url`
-(HTTP-fetched tape) exist in the in-repo `core/vcr.ae` libservirtium_vcr but aren't
-surfaced by `core/embed.ae`. Small additions.
+`flush_or_check` (the `.actual`-sibling drift variant, `aether_vcr_embed_stop_and_flush_or_check`)
+and `load_url` (HTTP-fetched tape, `aether_vcr_embed_open_playback_url`) are exported by
+`core/embed.ae` and declared in `lib/src/native.dart`, but no builder or server method calls them.
 
 ## Known limitations (inherited from the core)
 

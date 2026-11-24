@@ -2,28 +2,21 @@
 
 ## Turnkey: `./bootstrap.sh`
 
-For a casual dev, the repo-root `bootstrap.sh` encodes the steps below as one
-idempotent command:
+From the repo root, `bootstrap.sh` installs the pinned `ae` (0.941.0) and `aeb`
+via their official installers to a user prefix (`$HOME/.local`, no sudo; needs
+`curl`) if they are missing, then runs `aeb` on the leaf you name:
 
 ```sh
-./bootstrap.sh        # extra args pass through to `mix test`
+./bootstrap.sh elixir/.tests.ae     # builds libservirtium_vcr, then runs `mix test`
 ```
 
-It checks for `ae` (≥ 0.227.0, for `std.regex`) and installs it via aether's official `get.sh`
-remote installer to a user prefix (`$HOME/.local` — **no sudo, no Aether test
-suite, no contrib**; needs `curl`, no build-from-source fallback) if it's
-missing/too old; checks Elixir/Mix are present (it does **not** auto-install
-them — Erlang/Elixir is a large external dependency); then runs
-`build-native.sh`, `mix deps.get`, and `mix test`. No-op for the toolchain when
-`ae` is already good. Override `PREFIX` / `AETHER_REF` (pin in CI) / `MIN_AE`
-via env.
+It does not install Elixir/Mix; they must already be present. Override `PREFIX` / `AETHER_REF` / `AEB_REF` / `MIN_AE` via env.
 
-Everything from here down is what `bootstrap.sh` automates.
+Everything from here down is what that leaf automates.
 
 ## Prerequisites
 
-- **Elixir 1.15+ / Erlang OTP 26+** with `mix`. `bootstrap.sh` checks for them
-  but does not install them. (Developed against Elixir 1.18.3 / OTP 27.)
+- **Elixir 1.15+ / Erlang OTP 26+** with `mix`. `bootstrap.sh` does not install them. (Developed against Elixir 1.18.3 / OTP 27.)
 - **A C compiler** (`cc`/`gcc`/`clang`) and `make` — to build the NIF.
 - **The Aether toolchain (`ae`) on PATH** — only needed to build the *native*
   library; `bootstrap.sh` installs it via aether's `get.sh` if absent
@@ -36,7 +29,7 @@ The native library is built from the in-repo VCR embedding module,
 Aether stdlib's fs/net/regex primitives) into `core/native/`:
 
 ```sh
-./build-native.sh
+aeb core/.build.ae      # from the repo root
 ```
 
 This produces the **host platform's** shared library
@@ -52,7 +45,7 @@ ae build --emit=lib --with=fs,net,extern core/embed.ae \
 - `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR needs
   (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
   runtime; the whole-tape normalization/redaction features need `std.regex`, so
-  the floor is **Aether ≥ 0.227.0**.
+  the floor is **Aether 0.941.0**.
 
 ## The NIF is the shared Erlang app (Elixir doesn't build one)
 
@@ -78,7 +71,7 @@ shared NIF are **git-ignored build artifacts**.
 ## CI
 
 `.github/workflows/ci.yml` runs on push/PR: installs `ae`, builds the native
-libservirtium_vcr (`build-native.sh`), then `mix deps.get`, `mix test`, and
+libservirtium_vcr (`core/.build.ae`), then `mix deps.get`, `mix test`, and
 `mix format --check-formatted`.
 
 ## Platform notes

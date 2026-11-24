@@ -8,7 +8,7 @@ the real native library.
 | Capability | Aether core | embed C-ABI | Python API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `servirtium.playback` | ✅ |
-| Record → flush tape | ✅ | ✅ | `servirtium.record` | ✅ |
+| Record → write tape on commit | ✅ | ✅ | `servirtium.record`, `server.commit()` / `server.discard()` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
@@ -26,25 +26,26 @@ the real native library.
 | Header presets (transport / cloud vendor) | ✅ | ✅ | `.remove_transport_headers()` / `.remove_cloud_headers(vendor)` | ✅ |
 | Credential redaction preset | ✅ | ✅ | `.redact_credentials()` / `.redact_credential_header(name)` | ✅ |
 | License notice / upstream CA file / pretty JSON | ✅ | ✅ | `.add_license_notice(text)` / `.upstream_cafile(path)` / `.pretty_json(n)` | ✅ notice + presets |
-| Stable order (record, opt-in; needs `pretty_json` for JSON) | ✅ | — | `.sort_json_keys()` / `.sort_json_array(path, by)` / `.sort_json_array_at(request_regex, path, by)` / `.sort_response_headers()` / `.sort_header_value(name)` | ✅ |
-| Playback range (replay interactions `from`..`to` by number) | — | ✅ | `.playback_range(from_, to=-1)` | ✅ |
+| Stable order (record, opt-in; needs `pretty_json` for JSON) | ✅ | ✅ | `.sort_json_keys()` / `.sort_json_array(path, by)` / `.sort_json_array_at(request_regex, path, by)` / `.sort_response_headers()` / `.sort_header_value(name)` | ✅ |
+| Playback range (replay interactions `from`..`to` by number) | ✅ | ✅ | `.playback_range(from_, to=-1)` | ✅ |
 | Format options (indent / emphasize) | ✅ | ✅ | `.indent_code_blocks()` / `.emphasize_http_verbs()` / `.pretty_xml()` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `last_error`/`last_kind`/`last_index` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
-| Chunked de-chunk on record | ✅ (≥0.183.0) | ✅ | (automatic) | — (host uses Content-Length) |
+| Chunked de-chunk on record | ✅ | ✅ | (automatic) | — (host uses Content-Length) |
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `.port(0)` → `vcr.port` | ✅ |
 
-## Not (yet) exposed through the C-ABI
+## In the C ABI, not in the Python API
 
-Present in the in-repo Aether VCR module (`core/vcr.ae`) but not surfaced by
-`core/embed.ae`, so not in the Python API. Both are small `core/embed.ae`
-additions if wanted:
+Both are exported by `core/embed.ae` and declared in `servirtium/_native.py`,
+but the Python builders do not call them yet:
 
-- **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
-  `<tape>.actual` and compares, instead of overwriting). The Python layer has
-  the overwrite and `fail_if_changed` variants only.
-- **`load_url`** — replaying a tape fetched over HTTP rather than from disk.
+- **`flush_or_check`** (`aether_vcr_embed_stop_and_flush_or_check`) — the
+  `.actual`-sibling drift variant (writes a `<tape>.actual` and compares,
+  instead of overwriting). `commit()` uses the overwrite and `fail_if_changed`
+  variants only.
+- **`load_url`** (`aether_vcr_embed_open_playback_url`) — replaying a tape
+  fetched over HTTP rather than from disk.
 
 ## Differences from servirtium-java (by design)
 
@@ -55,10 +56,10 @@ additions if wanted:
   redact / unredact / remove-header / note primitives above, applied by the
   core, not pluggable Python transforms.
 
-## Known limitations (inherited from the core)
+## Notes on the core's behaviour
 
-- **Binary response bodies** rely on the tape's text/base64 path (an existing
-  Aether VCR limitation).
+- **Binary bodies** are supported: the core writes them base64 on the tape
+  under a `base64 below` heading and replays the bytes.
 - **Default client headers + strict matching** — `urllib`/`http.client` add
   headers the tape may not carry; strip them with `remove_header` under
   `strict_headers()`. See [usage.md](usage.md#strict-request-matching).

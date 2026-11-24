@@ -32,28 +32,25 @@ re-record. Test: extend `core_tests/test_vcr_header_presets.ae` (a reused
 token passes; a different value for the same number, or the same value for
 two numbers, is a mismatch).
 
-## Stable order in the language bindings (2026-11-07)
+## Partial wrappers in the language bindings (2026-11-11, rechecked 2026-11-24)
 
-Core, the C ABI and the pre-recorded recorder have opt-in stable order
-(AGENTS.md, "Stable order"), and the from-testcontainers suites that worked
-round varying order use it. The bindings do not wrap its ABI calls yet:
-`aether_vcr_embed_set_sort_json_keys` / `_get_sort_json_keys`,
-`_sort_json_array(h, path, by)` and `_sort_json_array_at(h, request, path,
-by)` (error string, caller frees),
-`_set_sort_response_headers` / `_get_sort_response_headers`,
-`_sort_header_value(h, name)` (error string, caller frees),
-`_clear_stable_order`. A binding's tests should cover the refusal: a JSON
-sort rule without `_set_pretty_json` makes the flush return
-`sort_json_keys needs pretty_json: …` (or `sort_json_array …`).
+Stable order, playback range, volatile values, named secrets and the license
+notice are wrapped in every binding (the Kotlin, Scala and Groovy layers and F#
+get them from the Java and .NET bindings). The root README's "Partial wrappers"
+table lists what is not:
 
-## forward_host in the language bindings (2026-11-11)
-
-`aether_vcr_embed_set_forward_host(h, int)` (record mode: send the upstream
-the client's Host; found by `sdk_harnesses/azure-sdk-for-net`, where Azurite
-accepts a copy source only on the host the request was sent to) is wrapped
-by .NET only (`RecordBuilder.ForwardHost()`, `ForwardHostTests`). The other
-bindings: a `forward_host()` toggle on the record builder, the same shape
-as `match_multiple()`. Core test: `test_vcr_forward_host_and_expect.ae`.
+- `aether_vcr_embed_set_forward_host(h, int)` (record mode: send the upstream
+  the client's Host; found by `sdk_harnesses/azure-sdk-for-net`, where Azurite
+  accepts a copy source only on the host the request was sent to) is wrapped
+  by .NET only (`RecordBuilder.ForwardHost()`, `ForwardHostTests`). The other
+  bindings: a `forward_host()` toggle on the record builder, the same shape
+  as `match_multiple()`. Core test: `test_vcr_forward_host_and_expect.ae`.
+- `match_multiple` / `match_header` are missing in Gleam, LFE and Clojure.
+- `har_import` / `har_export` are wrapped by C, C++, Crystal, D, Janet, Julia
+  and Swift only; `convert_bru` by JavaScript only.
+- `open_playback_url` and `stop_and_flush_or_check` have wrappers in C, C++,
+  Crystal, D, Janet and Swift (`open_playback_url` also Julia), and are at most
+  declared elsewhere.
 
 ## Additional language bindings
 

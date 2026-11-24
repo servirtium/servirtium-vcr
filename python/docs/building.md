@@ -28,8 +28,7 @@ ae build --emit=lib --with=fs,net,extern core/embed.ae \
 - `--emit=lib` produces a shared library with `aether_*` exports.
 - `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR needs
   (tape I/O + the embedded HTTP server). libservirtium_vcr uses `std.regex`, so the
-  current toolchain floor is **Aether ≥ v0.227.0** (chunked de-chunking was
-  introduced at ≥ 0.183.0).
+  Aether version is **0.941.0**, the one `bootstrap.sh` pins.
 
 ## Build & test
 

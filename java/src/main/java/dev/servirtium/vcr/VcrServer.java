@@ -4,9 +4,10 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
 /**
- * A running VCR server. {@link #close()} stops it; in record mode close also
- * flushes the captured tape to disk. Implements {@link AutoCloseable} for use
- * in try-with-resources.
+ * A running VCR server. {@link #close()} stops it. In record mode the captured
+ * tape is written only by {@link #commit()}; {@link #discard()} drops it, and
+ * close with neither writes nothing and throws. Implements {@link AutoCloseable}
+ * for use in try-with-resources.
  */
 public final class VcrServer implements AutoCloseable {
 

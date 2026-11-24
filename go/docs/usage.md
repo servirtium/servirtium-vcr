@@ -90,27 +90,27 @@ if err != nil { t.Fatal(err) }
 
 http.Get(srv.BaseURL() + "/api/v1/countries")
 
-// Close forwards nothing more and writes the markdown tape to disk.
-if err := srv.Close(); err != nil { t.Fatal(err) }
+// Commit stops the server and writes the markdown tape to disk.
+if err := srv.Commit(); err != nil { t.Fatal(err) }
 ```
 
 Record forwards each request to the upstream, returns the **real** response
 to your SUT, and captures the exchange. Chunked responses are de-chunked
-(needs the native lib built with Aether ≥ 0.227.0).
+(done by the core).
 
 ### Drift detection
 
 ```go
 srv, _ := servirtium.Record(tape, upstream).FailIfChanged().Start()
 // ... drive SUT ...
-if err := srv.Close(); err != nil {
+if err := srv.Commit(); err != nil {
     // the freshly recorded tape was still written, but it differs from the
     // committed one — git diff shows the drift and CI fails loudly.
     t.Fatal(err)
 }
 ```
 
-Without `FailIfChanged`, `Close` just overwrites.
+Without `FailIfChanged`, `Commit` just overwrites.
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -219,6 +219,7 @@ srv, _ := servirtium.Record(tape, upstream).
 // ... first request recorded with the note ...
 srv.Note("Overdraft", "Should be refused")   // attaches to the next interaction
 // ... next request ...
+if err := srv.Commit(); err != nil { t.Fatal(err) }
 ```
 
 ## Static content (UI tests)
@@ -257,7 +258,9 @@ cleanly.
 | `Note(title, body)` | stage a note for the next recorded interaction |
 | `ResetCursor()` | rewind replay to interaction 0; clear last-* |
 | `ClearLastError()` | clear the last-error slot between sub-cases |
-| `Close()` | stop; flush tape if recording (error on drift if `FailIfChanged`) |
+| `Commit()` | record: stop and write the tape (error on drift if `FailIfChanged`) |
+| `Discard()` | record: stop and drop the recording, writing nothing |
+| `Close()` | stop; a recording neither committed nor discarded writes nothing and returns an error |
 
 ## `Outcome`
 

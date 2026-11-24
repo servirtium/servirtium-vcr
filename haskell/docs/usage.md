@@ -4,7 +4,9 @@ All fixtures start from `playbackOptions tapePath` or
 `recordOptions tapePath upstreamBase`, are tweaked with record-update syntax,
 and are run inside `withPlayback` / `withRecord` (bracket-style, auto-stop) —
 or started explicitly with `startPlayback` / `startRecord` and torn down with
-`stop`.
+`stop`. A recording is written only by `commit vcr` and dropped by `discard vcr`;
+`withRecord` ending (or `stop`) with neither writes nothing and throws
+`VcrException`, and a `withRecord` block that throws discards its recording.
 
 The system-under-test only ever needs `baseUrl vcr`. Everything else — tape
 path, mode, mutations, assertions — lives in your test setup/teardown.
@@ -27,8 +29,8 @@ withPlayback (playbackOptions "tapes/climate_api.md") { pbPort = 0 } $ \vcr -> d
 withRecord (recordOptions "tapes/climate_api.md" "https://climatedataapi.worldbank.org") $ \vcr -> do
   url <- baseUrl vcr
   _ <- httpGet (url ++ "/api/v1/countries")
-  pure ()
--- `withRecord` stops the server at the end, which writes the markdown tape.
+  commit vcr   -- writes the markdown tape
+-- `withRecord` ending without `commit` (or `discard`) writes nothing and throws.
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
@@ -41,11 +43,9 @@ automatically.
 withRecord (recordOptions tape upstream) { recFailIfChanged = True } $ \vcr -> ...
 ```
 
-On stop, the freshly recorded tape is written **and** a `VcrException` is
+On `commit`, the freshly recorded tape is written **and** a `VcrException` is
 thrown if it differs from the committed tape — so `git diff` shows the drift
-and CI fails loudly. (Without `recFailIfChanged`, stop just overwrites.)
-Because `withRecord`'s teardown runs the flush, the exception surfaces from
-`withRecord` itself.
+and CI fails loudly. (Without `recFailIfChanged`, `commit` just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -168,6 +168,7 @@ withRecord (recordOptions tape upstream)
     -- ... first request recorded with the note ...
     note vcr "Overdraft" "Should be refused"   -- attaches to the next interaction
     -- ... next request ...
+    commit vcr
 ```
 
 ## Static content (UI tests)
@@ -212,7 +213,7 @@ withRecord (recordOptions tape upstream)
 
 Sorted JSON is only written pretty-printed: a record with `recSortJsonKeys` or a
 sort-array rule but without `recPrettyJson` is refused when the tape is written,
-so `stop` (and so `withRecord`) throws `VcrException` containing
+so `commit` throws `VcrException` containing
 "sort_json_keys needs pretty_json: sorted JSON is only written pretty-printed
 (turn pretty_json on)", and writes nothing. A rule the core refuses outright
 throws `VcrException` from `startRecord`.
@@ -246,7 +247,9 @@ overwrite a journey's tape with a slice.
 | `note vcr title body` | stage a note for the next recorded interaction |
 | `resetCursor vcr` | rewind replay to interaction 0; clear last-* |
 | `clearLastError vcr` | clear the last-error slot between sub-cases |
-| `stop vcr` | stop; flush tape if recording |
+| `commit vcr` | record: stop and write the tape (throws `VcrException` on drift if `recFailIfChanged`) |
+| `discard vcr` | record: stop and drop the recording, writing nothing |
+| `stop vcr` | stop; a recording neither committed nor discarded writes nothing and throws `VcrException` |
 
 ## `Outcome`
 

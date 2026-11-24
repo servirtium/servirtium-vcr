@@ -31,11 +31,9 @@ and this project adheres to the
 
 ### Added
 
-- `build-native.sh` — builds `native/libservirtium_vcr.so` from the installed
-  Aether toolchain's `embed.ae` (or `AETHER_REPO` override) and generates
-  `cabal.project.local` with the native lib dir + an rpath.
-- `bootstrap.sh` — one-command casual-dev bootstrap (installs `ae` if missing,
-  checks GHC/cabal, builds the native lib, runs `cabal test`).
+- `.tests.ae` — the aeb leaf that builds `core/native/libservirtium_vcr.so`,
+  generates `cabal.project.local` with the native lib dir + an rpath, and runs
+  `cabal test` (the repo-root `bootstrap.sh` runs it after installing `ae` and `aeb`).
 - `docs/` — usage, architecture, features, building — and `MIGRATION.md`.
 
 ### Known limitations (inherited from the Aether core)

@@ -36,8 +36,9 @@ class Servirtium {
     }
 
     /**
-     * Start a record VCR forwarding to {@code upstreamBase} and writing
-     * {@code tapePath} on close; {@code configure} the RecordBuilder (port,
+     * Start a record VCR forwarding to {@code upstreamBase}; {@code commit()}
+     * on the returned server writes {@code tapePath} ({@code discard()} drops
+     * it, and closing with neither writes nothing and throws); {@code configure} the RecordBuilder (port,
      * redact, volatileRule, failIfChanged, ...) in the trailing closure.
      */
     static VcrServer record(String tapePath, String upstreamBase, Closure configure = null) {

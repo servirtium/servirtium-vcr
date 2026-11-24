@@ -27,8 +27,9 @@ final vcr = Vcr.record('tapes/climate_api.md', 'https://climatedataapi.worldbank
     .port(0).start();
 try {
   // drive the SUT ...
+  vcr.commit();    // stops the server and writes the markdown tape to disk
 } finally {
-  vcr.close();   // forwards nothing more; writes the markdown tape to disk
+  vcr.discard();   // no-op after commit(); drops the recording if the block threw
 }
 ```
 
@@ -126,7 +127,9 @@ Vcr.record(tape, upstream).prettyXml(2).start(); // pretty-print recorded XML bo
 
 `baseUrl`, `port`, `tapeLength`, `lastError`, `lastKind` (→ `VcrOutcome`),
 `lastIndex`, `note(title, body)`, `resetCursor()`, `clearLastError()`,
-`close()` (stop; flush if recording; throw on drift if `failIfChanged`).
+`commit()` (record: stop and write the tape; throw on drift if `failIfChanged`),
+`discard()` (record: stop and drop the recording), `close()` (stop; a recording
+neither committed nor discarded writes nothing and throws).
 
 `VcrOutcome`: `ok`, `pathOrMethodDiff`, `headerMissing`, `headerValueDiff`,
 `headerUnexpected`, `tapeExhausted`, `bodyDiff`, `recordError`.

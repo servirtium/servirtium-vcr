@@ -576,7 +576,7 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   /**
    * Opt-in stable order: write JSON response bodies' object keys sorted at
    * every depth. Sorted JSON is only written pretty-printed: without
-   * `prettyJson` the tape is refused when written (`close()` throws
+   * `prettyJson` the tape is refused when written (`commit()` throws
    * `VcrError`, "sort_json_keys needs pretty_json ...").
    */
   sortJsonKeys(on = true): RecordBuilder {
@@ -618,7 +618,7 @@ export class RecordBuilder extends VcrBuilderBase<RecordBuilder> {
   }
 
   /**
-   * On close, still write the freshly recorded tape but throw if it differs
+   * On commit, still write the freshly recorded tape but throw if it differs
    * from the on-disk one — the Servirtium step-4 drift contract, so a normal
    * `git diff` shows the change and CI fails loudly.
    */
@@ -715,8 +715,9 @@ function drainStartError(handle: unknown): string {
 }
 
 /**
- * A running VCR server. Call `close()` to stop it; in record mode `close()`
- * also flushes the captured tape to disk.
+ * A running VCR server. Call `close()` to stop it. In record mode the captured
+ * tape is written only by `commit()`; `discard()` drops it, and `close()` with
+ * neither throws.
  */
 export class VcrServer {
   private handle: unknown

@@ -37,12 +37,12 @@ doAssert srv.start()
 
 # ... drive your SUT against srv.baseUrl() ...
 
-srv.close()   # forwards nothing more and writes the markdown tape to disk
+srv.commit()   # stops the server and writes the markdown tape to disk
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
-your SUT, and captures the exchange. Chunked responses are de-chunked (needs
-the native lib built with Aether ≥ 0.227.0).
+your SUT, and captures the exchange. Chunked responses are de-chunked (done by
+the core).
 
 ### Drift detection
 
@@ -173,6 +173,7 @@ doAssert srv.start()
 # ... first request recorded with the note ...
 srv.note("Overdraft", "Should be refused")   # attaches to the next interaction
 # ... next request ...
+srv.commit()
 ```
 
 ## Static content (UI tests)
@@ -194,7 +195,7 @@ srv.emphasizeHttpVerbs()   # *GET* instead of bare GET in headings
 srv.prettyXml(2)           # pretty-print recorded XML bodies (indent 1..16)
 srv.prettyJson(2)          # pretty-print recorded JSON bodies (indent 1..16)
 srv.addLicenseNotice("Licence terms of the recorded service")  # under ## LICENSE NOTICE
-srv.setSortJsonKeys(true)  # stable order: keys sorted (needs prettyJson, or close raises)
+srv.setSortJsonKeys(true)  # stable order: keys sorted (needs prettyJson, or commit raises)
 srv.sortJsonArray("/items", "id")  # ... and one array sorted by member "id"
 doAssert srv.start()
 ```
@@ -215,8 +216,10 @@ cleanly.
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `resetCursor()` | rewind replay to interaction 0; clear last-* |
 | `clearLastError()` | clear the last-error slot between sub-cases |
-| `failIfChanged()` | make `close` flush with drift detection (raises on drift) |
-| `close()` | stop; flush tape if recording (raises `VcrError` on drift if `failIfChanged`) |
+| `failIfChanged()` | make `commit` write with drift detection (raises on drift) |
+| `commit()` | record: stop and write the tape (raises `VcrError` on drift if `failIfChanged`) |
+| `discardRecording()` | record: stop and drop the recording, writing nothing |
+| `close()` | stop; a recording neither committed nor discarded writes nothing and raises `VcrError` |
 
 ## `Outcome`
 

@@ -64,7 +64,7 @@ func (u *fakeUpstream) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	// When chunked, deliberately do NOT set Content-Length: net/http then
 	// replies with Transfer-Encoding: chunked, exercising the Aether client
-	// de-chunking path (ae >= 0.183.0) — the recorder must store the decoded
+	// de-chunking path — the recorder must store the decoded
 	// payload, not the chunk framing.
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(payload)

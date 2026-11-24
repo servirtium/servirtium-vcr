@@ -8,7 +8,7 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Capability | Aether core | embed C-ABI | Java API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `Vcr.playback` | ✅ |
-| Record → flush tape | ✅ | ✅ | `Vcr.record` | ✅ |
+| Record → write tape on `commit()` | ✅ | ✅ | `Vcr.record` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
@@ -33,10 +33,10 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `.port(0)` → `vcr.port()` | ✅ |
 
-## Not (yet) exposed through the C-ABI
+## In the C ABI, not in the Java API
 
-Present in the Aether VCR module but not surfaced by `embed.ae`, so not in the
-Java API. Both are small `embed.ae` additions if wanted:
+Both are exported by `core/embed.ae` (`aether_vcr_embed_stop_and_flush_or_check`,
+`aether_vcr_embed_open_playback_url`), but this layer does not wrap them:
 
 - **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
   `<tape>.actual` and compares, instead of overwriting). The Java layer has

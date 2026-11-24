@@ -925,7 +925,7 @@ pub const Playback = struct {
 
 /// A builder that records live interactions: forward each request to
 /// `upstream_base`, return the real response, capture the exchange, and write
-/// the tape on `Server.close`.
+/// the tape on `Server.commit`.
 pub const Record = struct {
     secret_redactor: ?SecretRedactor = null,
 
@@ -964,7 +964,7 @@ pub const Record = struct {
     fail_if_changed: bool = false,
 
     /// Begin a record fixture that forwards to `upstream_base` and writes
-    /// `tape_path` on close. Configure fluently, then call `start`. Like
+    /// `tape_path` on `Server.commit`. Configure fluently, then call `start`. Like
     /// `Playback`, the builder uses value semantics so it chains on a temporary.
     pub fn secretRedactor(self: Record, callback: SecretRedactor) Record {
         var b = self; b.secret_redactor = callback; return b;
@@ -1211,7 +1211,7 @@ pub const Record = struct {
 
     /// Opt-in stable order: sort JSON object keys at every depth in recorded JSON
     /// response bodies. Sorted JSON is only written pretty-printed: without
-    /// `prettyJson` the tape is refused when it is emitted (`close` returns
+    /// `prettyJson` the tape is refused when it is emitted (`commit` returns
     /// `error.VcrError`; the low-level `Vcr.stopAndFlush` returns the reason).
     pub fn sortJsonKeys(self: Record) Record {
         var b = self;
@@ -1251,7 +1251,7 @@ pub const Record = struct {
         return b;
     }
 
-    /// Make `close` still write the freshly recorded tape but return an error
+    /// Make `commit` still write the freshly recorded tape but return an error
     /// if it differs from the on-disk one (Servirtium drift contract).
     pub fn failIfChanged(self: Record) Record {
         var b = self;
@@ -1342,9 +1342,9 @@ pub const Record = struct {
     }
 };
 
-/// A running VCR server. Close it to stop; in record mode `close` also flushes
-/// the captured tape to disk (and returns an error on drift if
-/// `failIfChanged` was set).
+/// A running VCR server. Close it to stop. In record mode the captured tape is
+/// written only by `commit` (which returns an error on drift if `failIfChanged`
+/// was set); `discard` drops it, and `close` with neither returns an error.
 pub const Server = struct {
     handle: Handle,
     allocator: std.mem.Allocator,

@@ -8,7 +8,7 @@ noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Capability | Aether core | embed C-ABI | Zig API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `servirtium.Playback.init(alloc, tape)` | ✅ |
-| Record → flush tape | ✅ | ✅ | `servirtium.Record.init(alloc, tape, upstream)` | ✅ |
+| Record → write tape on `commit()` | ✅ | ✅ | `servirtium.Record.init(alloc, tape, upstream)` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
@@ -71,7 +71,7 @@ Declared in `src/servirtium.zig`'s `extern "c"` block but not wired to a
 `Server`/builder method:
 
 - **`flush_or_check`** (`aether_vcr_embed_stop_and_flush_or_check`) — the
-  `.actual`-sibling drift variant. `Server.close` uses the overwrite and
+  `.actual`-sibling drift variant. `Server.commit` uses the overwrite and
   `failIfChanged` variants only.
 - **`load_url`** (`aether_vcr_embed_open_playback_url`) — replaying a tape
   fetched over HTTP; declared, but no builder yet.

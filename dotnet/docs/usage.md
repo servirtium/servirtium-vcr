@@ -47,7 +47,7 @@ Vcr.Record(tape, upstream).FailIfChanged().Start();
 
 On `Commit()`, the freshly recorded tape is written **and** a `VcrException`
 is thrown if it differs from the one on disk — so `git diff` shows the drift
-and CI fails loudly. (Without `FailIfChanged`, commit just overwrites.)
+and CI fails loudly. (Without `FailIfChanged`, `Commit()` just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -221,6 +221,7 @@ using var vcr = Vcr.Record(tape, upstream)
 // ... first request recorded with the note ...
 vcr.Note("Overdraft", "Should be refused");   // attaches to the next interaction
 // ... next request ...
+vcr.Commit();
 ```
 
 ## Static content (UI tests)
@@ -267,7 +268,7 @@ Vcr.Record(tape, upstream)
 
 A rule the core refuses (an empty header name, a bad regex) throws
 `VcrException` at `Start()`. `SortJsonKeys()` / `SortJsonArray*()` without
-`PrettyJson()` are refused when the tape is written: `Dispose()` throws
+`PrettyJson()` are refused when the tape is written: `Commit()` throws
 `VcrException` ("sort_json_keys needs pretty_json ...") and writes nothing.
 
 ## Playback range
@@ -296,6 +297,8 @@ A request outside the range is never served (kind `VcrOutcome.PathOrMethodDiff`,
 | `Note(title, body)` | stage a note for the next recorded interaction |
 | `ResetCursor()` | rewind replay to interaction 0; clear last-* |
 | `ClearLastError()` | clear the last-error slot between sub-cases |
+| `Commit()` | record: stop and write the tape (throws `VcrException` on drift if `FailIfChanged`) |
+| `Discard()` | record: stop and drop the recording, writing nothing |
 | `Dispose()` | stop and free the native handle (idempotent; read diagnostics before disposing); a recording neither committed nor discarded writes no tape and `Dispose` throws `VcrException` |
 
 ## `VcrOutcome`

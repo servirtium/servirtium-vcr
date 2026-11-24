@@ -517,7 +517,7 @@ class RecordBuilder(_BuilderBase):
     def sort_json_keys(self, on: bool = True):
         """Opt-in stable order: write JSON response bodies' object keys sorted
         at every depth. Sorted JSON is only written pretty-printed: without
-        :meth:`pretty_json` the tape is refused when it is written (``close()``
+        :meth:`pretty_json` the tape is refused when it is written (``commit()``
         raises :class:`VcrError`, "sort_json_keys needs pretty_json")."""
         self._sort_json_keys = on
         return self
@@ -549,7 +549,7 @@ class RecordBuilder(_BuilderBase):
         return self
 
     def fail_if_changed(self, on: bool = True):
-        """On close, still write the freshly recorded tape but raise if it
+        """On commit, still write the freshly recorded tape but raise if it
         differs from the on-disk one (the drift contract)."""
         self._fail_if_changed = on
         return self
@@ -655,8 +655,9 @@ class VcrServer:
     """A running VCR server.
 
     Use it as a context manager (``with ... as vcr:``) or call :meth:`close`
-    explicitly. In record mode, exit/close also flushes the captured tape to
-    disk (and raises on drift if ``fail_if_changed`` was set).
+    explicitly. In record mode the captured tape is written only by
+    :meth:`commit` (which raises on drift if ``fail_if_changed`` was set);
+    :meth:`discard` drops it, and exit/close with neither raises.
     """
 
     def __init__(self, handle, host, tape_path, *, record_mode, fail_if_changed, secret_redactor=None) -> None:
@@ -850,7 +851,8 @@ def playback(tape_path: str, *, native_lib: str | None = None) -> PlaybackBuilde
 def record(tape_path: str, upstream_base: str, *, native_lib: str | None = None) -> RecordBuilder:
     """Record live interactions: forward to ``upstream_base``, return the real
     response to the SUT, and capture the exchange. The tape is written to
-    ``tape_path`` when the server is closed.
+    ``tape_path`` only by :meth:`VcrServer.commit`; :meth:`VcrServer.discard`
+    drops the recording, and closing with neither raises.
 
     ``native_lib`` optionally pins libservirtium_vcr ``.so`` path explicitly."""
     b = RecordBuilder(tape_path, upstream_base)

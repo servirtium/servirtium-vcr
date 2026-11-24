@@ -419,7 +419,7 @@ module Servirtium
 
     # Opt-in stable order: write JSON response bodies' object keys sorted at
     # every depth. Sorted JSON is only written pretty-printed: without
-    # {#pretty_json} the tape is refused when written (+close+ raises
+    # {#pretty_json} the tape is refused when written (+commit+ raises
     # Servirtium::Error, "sort_json_keys needs pretty_json ...").
     def sort_json_keys(on: true)
       @sort_json_keys = on
@@ -527,7 +527,7 @@ module Servirtium
       self
     end
 
-    # On close, still write the freshly recorded tape but raise if it differs
+    # On commit, still write the freshly recorded tape but raise if it differs
     # from the on-disk one — the Servirtium step-4 drift contract, so a normal
     # +git diff+ shows the change and CI fails loudly.
     def fail_if_changed(on: true)
@@ -535,8 +535,9 @@ module Servirtium
       self
     end
 
-    # Start the server. With a block, yields the {Server} and closes it after
-    # (which flushes the tape).
+    # Start the server. With a block, yields the {Server} and closes it after;
+    # the block must call {Server#commit} (or {Server#discard}) or the close
+    # raises, and a block that raises discards the recording.
     def start(&)
       Native.configure(@native_lib)
       handle = open_handle
@@ -620,7 +621,7 @@ module Servirtium
 
   # Record live interactions: forward to +upstream_base+, return the real
   # response to the SUT, and capture the exchange. The tape is written to
-  # +tape_path+ when the server is closed. +native_lib+ optionally pins the
+  # +tape_path+ only by +commit+. +native_lib+ optionally pins the
   # libservirtium_vcr +.so+ path explicitly.
   def record(tape_path, upstream_base, native_lib: nil)
     b = RecordBuilder.new(tape_path, upstream_base)

@@ -4,7 +4,7 @@
 // SwiftPM can only consume a package from a git URL if Package.swift sits at
 // the root of the repository. This repo is a monorepo with one directory per
 // language binding, so this root manifest exists so that
-//     .package(url: "https://github.com/servirtium/servirtium-vcr", from: "2.0.0-alpha.14")
+//     .package(url: "https://github.com/servirtium/servirtium-vcr", from: "<version>")
 // works. Every source target below points (via `path:`) into swift/, where the
 // real Swift binding lives (swift/Sources/..., swift/Tests/..., swift/README.md).
 //
@@ -50,7 +50,7 @@
 // - The release workflow publishes the bundle, then writes its checksum here
 //   (SVCR_RELEASE_TAG=<tag> SVCR_SWIFT_CHECKSUM=<sha256> aeb release/.version.ae)
 //   in a commit on top of the v<version> commit and tags THAT commit with the
-//   bare semver tag (2.0.0-alpha.14, no "v"). SwiftPM reads both tags as the
+//   bare semver tag (<version>, no "v"). SwiftPM reads both tags as the
 //   same version and, by design, prefers the tag without the "v"
 //   (SourceControlPackageContainer: "favor the one without a v prefix"). No
 //   tag is moved and nothing is force-pushed. It then applies the same change

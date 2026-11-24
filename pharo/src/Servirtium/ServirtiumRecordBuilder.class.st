@@ -1,7 +1,7 @@
 "
 Configures and starts a record VCR server: forwards to a live upstream,
 returns the real response to the SUT, captures the exchange, and writes a
-Servirtium markdown tape when the server stops. Build via
+Servirtium markdown tape when the test sends `commit` to the server. Build via
 `Servirtium record: 'tapes/my_api.md' upstream: 'http://host:port'`.
 "
 Class {
@@ -167,7 +167,7 @@ ServirtiumRecordBuilder >> addLicenseNotice: aText [
 ServirtiumRecordBuilder >> sortJsonKeys [
 	"Stable ordering (opt-in): sort JSON object keys at every depth in recorded
 	 JSON response bodies. Sorted JSON is only written pretty-printed: without
-	 prettyJson the tape is refused when it is written (stop raises a
+	 prettyJson the tape is refused when it is written (commit raises a
 	 ServirtiumError saying 'sort_json_keys needs pretty_json')."
 
 	sortJsonKeys := true.
@@ -212,7 +212,7 @@ ServirtiumRecordBuilder >> sortHeaderValue: aName [
 
 { #category : 'configuring' }
 ServirtiumRecordBuilder >> failIfChanged [
-	"On stop, still write the freshly recorded tape but raise if it differs
+	"On commit, still write the freshly recorded tape but raise if it differs
 	 from the on-disk one — the Servirtium step-4 drift contract, so a normal
 	 `git diff` shows the change and CI fails loudly."
 
@@ -266,8 +266,8 @@ ServirtiumRecordBuilder >> applyConfig: handle [
 { #category : 'starting' }
 ServirtiumRecordBuilder >> start [
 	"Open the record server, apply config to its handle, stage the pending note,
-	 then begin serving. Answers a running ServirtiumServer that flushes the
-	 tape on stop."
+	 then begin serving. Answers a running ServirtiumServer whose commit
+	 writes the tape."
 
 	| handle |
 	handle := self library

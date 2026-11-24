@@ -16,7 +16,7 @@ self assert: server lastKind equals: #ok.   "optional: assert a clean match"
 server stop.
 ```
 
-Or auto-closing (always stops the server, flushing the tape in record mode):
+Or auto-closing (always stops the server; in record mode the block must `commit` or `discard`, and a block that raises discards the recording):
 
 ```smalltalk
 (Servirtium playback: 'tapes/climate_api.md') startThenDo: [ :server |
@@ -129,21 +129,21 @@ playback VCRs on two ports replaying their own tapes side by side.) See
 
 ## Building from source
 
-**Casual dev, one command** (installs the Aether toolchain via its official
-`get.sh` to `~/.local` if missing — no sudo, no tests; needs `curl` — then
+**Casual dev, one command** (installs the pinned Aether toolchain and `aeb` via
+their official installers to `~/.local` if missing — no sudo; needs `curl` — then
 builds the native lib and runs the headless SUnit suite; needs a Pharo VM +
 image already present, default `$HOME/.local/pharo`):
 
 ```sh
-./bootstrap.sh
+./bootstrap.sh pharo/.tests.ae     # from the repo root
 ```
 
-Already have `ae` (≥ 0.227.0, for `std.regex`) and a Pharo VM/image? Drive the
+Already have `ae` (0.941.0, the version `bootstrap.sh` pins), `aeb` and a Pharo VM/image? Drive the
 two steps directly:
 
 ```sh
-./build-native.sh     # builds native/libservirtium_vcr.so (needs `ae`)
-./run-tests.sh        # loads src/ into a fresh image copy, runs SUnit headless
+aeb core/.build.ae                                  # from the repo root: core/native/libservirtium_vcr.so
+SERVIRTIUM_VCR_LIB=$PWD/core/native/libservirtium_vcr.so pharo/run-tests.sh   # loads src/ into a fresh image copy, runs SUnit headless
 ```
 
 `run-tests.sh` exits non-zero on any SUnit failure or error. Details in

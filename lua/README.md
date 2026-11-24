@@ -16,7 +16,7 @@ local body = io.popen("curl -s " .. srv:base_url() .. "/ok"):read("*a")
 
 assert(body == "ok-body")
 assert(srv:last_kind() == servirtium.OK)   -- optional: assert a clean match
-srv:close()                                -- stops the server (flushes, if record)
+srv:close()                                -- stops the server (a record server must :commit() or :discard() first)
 ```
 
 ## What this is (and isn't)
@@ -88,14 +88,14 @@ servirtium.playback(tape):playback_range(4, 6):start()
 
 `Server` methods: `:base_url([host])`, `:port()`, `:tape_length()`,
 `:last_kind()`, `:last_index()`, `:last_error()`, `:clear_last_error()`,
-`:reset_cursor()`, `:note(title, body)`, `:close()`,
+`:reset_cursor()`, `:note(title, body)`, `:commit()`, `:discard()`, `:close()`,
 `:set_playback_range(from, to)` (returns `""` or the refusal reason),
 `:clear_playback_range()`, `:get_playback_range()` (`from, to`, or `nil`),
 `:sort_json_keys_enabled()`, `:sort_response_headers_enabled()`,
 `:clear_stable_order()`.
 
 Sorting JSON without `:pretty_json()` is refused when the tape is written:
-`:close()` returns `"sort_json_keys needs pretty_json: ..."` and writes nothing.
+`:commit()` returns `"sort_json_keys needs pretty_json: ..."` and writes nothing.
 A rule the core refuses (an empty header name, say) makes `:start()` return
 `nil, err`. A record server refuses a playback range.
 

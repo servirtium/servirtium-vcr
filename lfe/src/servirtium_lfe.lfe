@@ -88,7 +88,7 @@
                      (tuple 'playback_open_failed tape-path (binary_to_list why))))))))
 
 ;; Record: forward each request to UpstreamBase, capture the exchange, and
-;; write the tape to TapePath on close/1. Binds an OS-chosen free port.
+;; write the tape to TapePath only on commit/1 (discard/1 drops it). Binds an OS-chosen free port.
 (defun record (tape-path upstream-base)
   (open-recording tape-path upstream-base "127.0.0.1"))
 
@@ -277,7 +277,7 @@
 ;; Stable ordering (record side, all opt-in; the tape is byte-exact without
 ;; them). Sorted JSON is only written pretty-printed: a record with
 ;; set_sort_json_keys/sort_json_array* but without set_pretty_json is refused
-;; when the tape is written (close/1 returns #(error "sort_json_keys needs
+;; when the tape is written (commit/1 returns #(error "sort_json_keys needs
 ;; pretty_json: ...")).
 ;; JSON object keys sorted at every depth in recorded JSON response bodies.
 ;; Record mode: the upstream's base URL in a response becomes this recorder's in

@@ -11,8 +11,7 @@ at **build time** via `build.zig`, then runs its `zig build test` suite.
 - **`curl`** on `PATH` — the test suite shells out to `curl` for HTTP rather
   than fighting `std.http.Client`'s churning API.
 - libservirtium_vcr `libservirtium_vcr.so`, built from `core/` with the Aether
-  `ae` toolchain (≥ 0.227.0 for `std.regex` whole-tape rewrites + chunked
-  de-chunk). It is git-ignored build output produced by `core/.build.ae`.
+  `ae` toolchain (0.941.0, the version `bootstrap.sh` pins). It is git-ignored build output produced by `core/.build.ae`.
 
 ## How the build finds libservirtium_vcr
 

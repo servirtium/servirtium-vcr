@@ -31,8 +31,9 @@ inline fun playback(tapePath: String, configure: PlaybackBuilder.() -> Unit = {}
     Vcr.playback(tapePath).apply(configure).start()
 
 /**
- * Start a record VCR forwarding to [upstreamBase] and writing [tapePath] on
- * close; [configure] the [RecordBuilder] (port, redact, volatileRule,
+ * Start a record VCR forwarding to [upstreamBase]; `commit()` on the returned
+ * server writes [tapePath] (`discard()` drops it, and closing with neither
+ * writes nothing and throws); [configure] the [RecordBuilder] (port, redact, volatileRule,
  * failIfChanged, …) in the trailing lambda.
  */
 inline fun record(tapePath: String, upstreamBase: String, configure: RecordBuilder.() -> Unit = {}): VcrServer =

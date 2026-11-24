@@ -9,8 +9,9 @@ use FFI\CData;
 /**
  * A running VCR server.
  *
- * Call {@see stop()} to stop it; in record mode stop also flushes the
- * captured tape to disk (and raises on drift if `failIfChanged` was set).
+ * Call {@see stop()} to stop it. In record mode the captured tape is written
+ * only by {@see commit()} (which raises on drift if `failIfChanged` was set);
+ * {@see discard()} drops it, and stop() with neither writes nothing and throws.
  */
 final class VcrServer
 {

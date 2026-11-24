@@ -3,7 +3,7 @@
 //// Record/replay HTTP service tests in the Servirtium markdown tape format.
 //// Point your system-under-test at `base_url`. In playback it replays a
 //// recorded markdown tape (no network); in record it forwards to the real
-//// upstream, returns the live response, and writes the tape on close.
+//// upstream, returns the live response, and writes the tape on `commit`.
 ////
 ////   let vcr = servirtium.playback("tapes/single_get.md")
 ////   let url = servirtium.base_url(vcr)
@@ -511,7 +511,7 @@ pub fn set_upstream_cafile(vcr: Vcr, path: String) -> Result(Nil, String) {
 // Off by default; the tape is byte-exact without them. Sorted JSON is only
 // written pretty-printed: a record with `set_sort_json_keys`/`sort_json_array*`
 // but without `set_pretty_json` is refused when the tape is written
-// (`close` returns CloseError("sort_json_keys needs pretty_json: ...")).
+// (`commit` returns CloseError("sort_json_keys needs pretty_json: ...")).
 
 @external(erlang, "servirtium_nif", "set_sort_json_keys")
 fn nif_set_sort_json_keys(handle: Handle, on: Int) -> Nil

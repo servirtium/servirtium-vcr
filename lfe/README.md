@@ -42,7 +42,8 @@ backs the JVM family's five.
 
 - `src/servirtium_lfe.lfe` — the idiomatic LFE API: `playback`, `record`,
   `base_url`, `port`, `tape_length`, `last_kind`, `last_error`, `last_index`,
-  `close`. Mirrors the Erlang twin (`erlang/src/servirtium.erl`)
+  `commit`, `discard`, `close` (a record server writes its tape only on `commit`; `close` with
+  neither writes nothing and returns `#(error Msg)`). Mirrors the Erlang twin (`erlang/src/servirtium.erl`)
   function-for-function over the identical NIF.
 - `test/playback_test.lfe` — a plain `(main args)` conformance runner (no test
   framework): curls the VCR, asserts the body, a clean match, the tape length
@@ -78,9 +79,9 @@ in `rebar.config`. Until then, in your LFE project:
 VER=v2.0.0-alpha.20                      # a release tag of servirtium-vcr
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
 
-# 1. the native app (SRC=main until a release tag contains erlang/build-nif-app.sh)
+# 1. the native app
 mkdir -p beam-libs
-curl -fsSL $RAW/main/erlang/build-nif-app.sh | SRC=main VER=$VER sh -s -- ./beam-libs
+curl -fsSL $RAW/$VER/erlang/build-nif-app.sh | VER=$VER sh -s -- ./beam-libs
 
 # 2. the LFE app: compile the one source file into its own OTP app directory
 mkdir -p beam-libs/servirtium_lfe/ebin
@@ -128,11 +129,11 @@ the same response in a different order every run; the tape is byte-exact without
   (servirtium_lfe:set_sort_response_headers rec 'true)
   (servirtium_lfe:sort_header_value rec "Allow")
   ;; ... drive the system under test ...
-  (servirtium_lfe:close rec))
+  (servirtium_lfe:commit rec))
 ```
 
 A rule the core refuses raises `#(servirtium Reason)`. Sorting JSON without
-`set_pretty_json` is refused when the tape is written, so `close` returns
+`set_pretty_json` is refused when the tape is written, so `commit` returns
 `#(error "sort_json_keys needs pretty_json: ...")` and writes nothing.
 `get_sort_json_keys` / `get_sort_response_headers` read the switches back;
 `clear_stable_order` turns every rule off.

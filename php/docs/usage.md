@@ -28,8 +28,9 @@ $vcr = Vcr::record('tapes/climate_api.md', 'https://climatedataapi.worldbank.org
     ->port(0)->start();
 try {
     file_get_contents($vcr->baseUrl() . '/api/v1/countries');
+    $vcr->commit();    // stops the server and writes the markdown tape to disk
 } finally {
-    $vcr->stop();   // forwards nothing more; writes the markdown tape to disk
+    $vcr->discard();   // no-op after commit(); drops the recording if the block threw
 }
 ```
 
@@ -145,7 +146,7 @@ $vcr = Vcr::record($tape, $upstream)
 
 A rule the core refuses (an empty header name, a bad regex) throws
 `VcrException` at `start()`. `sortJsonKeys()` / `sortJsonArray*()` without
-`prettyJson()` are refused when the tape is written: `stop()` throws
+`prettyJson()` are refused when the tape is written: `commit()` throws
 `VcrException` ("sort_json_keys needs pretty_json ...") and writes nothing.
 
 ## Playback range
@@ -165,8 +166,9 @@ A request outside the range is never served (kind `VcrOutcome::PathOrMethodDiff`
 
 `baseUrl()`, `port()`, `tapeLength()`, `lastError()`, `lastKind()`
 (→ `VcrOutcome`), `lastIndex()`, `note($title, $body)`, `resetCursor()`,
-`clearLastError()`, `stop()` (stop; flush if recording; throw on drift if
-`failIfChanged`).
+`clearLastError()`, `commit()` (record: stop and write the tape; throw on drift if
+`failIfChanged`), `discard()` (record: stop and drop the recording), `stop()` (stop; a
+recording neither committed nor discarded writes nothing and throws).
 
 `VcrOutcome`: `Ok`, `PathOrMethodDiff`, `HeaderMissing`, `HeaderValueDiff`,
 `HeaderUnexpected`, `TapeExhausted`, `BodyDiff`, `RecordError`.

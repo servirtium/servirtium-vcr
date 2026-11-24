@@ -8,7 +8,7 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Capability | Aether core | embed C-ABI | Rust API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `Vcr::playback` | ✅ |
-| Record → flush tape | ✅ | ✅ | `Vcr::record` | ✅ |
+| Record → write tape on `commit()` | ✅ | ✅ | `Vcr::record` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
@@ -29,17 +29,17 @@ interop, diagnostics), mapped through the stack. "Test" = exercised by the
 | Format options (indent / emphasize) | ✅ | ✅ | `.indent_code_blocks()` / `.emphasize_http_verbs()` / `.pretty_xml(n)` | — |
 | Diagnostics (last error/kind/index) | ✅ | ✅ | `last_error()`/`last_kind()`/`last_index()` | ✅ |
 | gzip normalize/restore | ✅ | ✅ | (automatic) | — |
-| Chunked de-chunk on record | ✅ (≥0.183.0) | ✅ | (automatic) | — * |
+| Chunked de-chunk on record | ✅ | ✅ | (automatic) | — * |
 | Markdown interop (other impls' tapes) | ✅ | ✅ | (format-level) | — |
 | Dynamic (OS-assigned) port | ✅ | ✅ | `.port(0)` → `vcr.port()` | ✅ |
 
 \* The chunked-de-chunk path is covered by the .NET binding's test against
 the same native core; the Rust record tests use a `Content-Length` upstream.
 
-## Not (yet) exposed through the C-ABI
+## In the C ABI, not in the Rust API
 
-Present in the Aether VCR module but not surfaced by `embed.ae`, so not in
-the Rust API. Both are small `embed.ae` additions if wanted:
+Both are exported by `core/embed.ae` (`aether_vcr_embed_stop_and_flush_or_check`,
+`aether_vcr_embed_open_playback_url`), but this layer does not wrap them:
 
 - **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
   `<tape>.actual` and compares, instead of overwriting). The Rust layer has

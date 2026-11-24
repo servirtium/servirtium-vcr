@@ -2,30 +2,23 @@
 
 ## Turnkey: `./bootstrap.sh`
 
-For a casual dev, the repo-root `bootstrap.sh` encodes the steps below as one
-idempotent command:
+From the repo root, `bootstrap.sh` installs the pinned `ae` (0.941.0) and `aeb`
+via their official installers to a user prefix (`$HOME/.local`, no sudo; needs
+`curl`) if they are missing, then runs `aeb` on the leaf you name:
 
 ```sh
-./bootstrap.sh
+./bootstrap.sh pharo/.tests.ae     # builds libservirtium_vcr, then runs the headless SUnit suite
 ```
 
-It checks for `ae` (≥ 0.227.0, for `std.regex`) and installs it via aether's official `get.sh`
-remote installer to a user prefix (`$HOME/.local` — **no sudo, no Aether test
-suite, no contrib**; needs `curl`, no build-from-source fallback) if it's
-missing/too old; checks a Pharo VM + image is present (it does **not**
-auto-install Pharo); then runs `build-native.sh` and `run-tests.sh`. No-op for
-the toolchain when `ae` is already good; on failure it prints the `-fPIC`
-re-install triage. Override `PREFIX` / `AETHER_REF` (pin in CI) / `MIN_AE` /
-`PHARO_DIR` via env.
+It does not install Pharo; a VM + image must already be present (`PHARO_DIR`, default `$HOME/.local/pharo`). Override `PREFIX` / `AETHER_REF` / `AEB_REF` / `MIN_AE` via env.
 
-Everything from here down is what `bootstrap.sh` automates — useful when you
-already have both toolchains.
+Everything from here down is what that leaf automates.
 
 ## Prerequisites
 
-- **A Pharo VM + image** (developed against Pharo 10). `bootstrap.sh` checks
+- **A Pharo VM + image** (developed against Pharo 10). `pharo/run-tests.sh` looks
   for `pharo` + `Pharo.image` under `$HOME/.local/pharo` (override with
-  `PHARO_DIR`) but does not install it. Get one with:
+  `PHARO_DIR`); nothing installs it for you. Get one with:
 
   ```sh
   mkdir -p ~/.local/pharo && cd ~/.local/pharo && curl -fsSL https://get.pharo.org/64/100 | bash
@@ -41,27 +34,28 @@ libservirtium_vcr is built from the in-repo pure-Aether VCR module and its
 C-ABI seam, `core/vcr.ae` + `core/embed.ae`:
 
 ```sh
-./build-native.sh
+aeb core/.build.ae      # from the repo root
 ```
 
-This produces the **host platform's** library into `native/`. libservirtium_vcr lives
+This produces the **host platform's** library into `core/native/`. libservirtium_vcr lives
 in this repo (no Aether source checkout needed beyond the `ae` toolchain
 itself, which supplies the stdlib primitives `core/vcr.ae` builds on). Under
 the hood:
 
 ```sh
 ae build --emit=lib --with=fs,net,extern core/embed.ae --extra core/_embed_strdup.c \
-   -o native/libservirtium_vcr.<ext>
+   -o core/native/libservirtium_vcr.<ext>
 ```
 
 - `--emit=lib` produces a shared library with `aether_*` exports.
 - `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
-  runtime; the whole-tape regex scrubbers need `std.regex` — **Aether ≥
-  0.227.0**.
+  runtime; the whole-tape regex scrubbers need `std.regex` — **Aether
+  0.941.0**, the version `bootstrap.sh` pins.
 
-The native lib is a **git-ignored build artifact** — run `build-native.sh`
-after cloning, or let CI build it.
+The native lib is a **git-ignored build artifact** — run `aeb core/.build.ae`
+after cloning (or `aeb pharo/.tests.ae`, which builds it and runs the suite), or
+let CI build it. `run-tests.sh` finds it through `SERVIRTIUM_VCR_LIB`.
 
 ## Run the headless SUnit suite
 
@@ -112,8 +106,8 @@ ServirtiumLibrary libPath: '/abs/path/to/servirtium-pharo/native/libservirtium_v
 | Platform | Built by | Status |
 |---|---|---|
 | linux-x86_64 | local / ubuntu runner | ✅ |
-| osx-x86_64 | macos runner | build-native supports it |
-| osx-arm64 | macos runner | build-native supports it |
+| osx-x86_64 | macos runner | `core/.build.ae` supports it |
+| osx-arm64 | macos runner | `core/.build.ae` supports it |
 | win-x64 | — | TODO (MSYS2/MINGW Aether build) |
 
 Each arch is a distinct binary. `ServirtiumLibrary` returns the same absolute

@@ -38,8 +38,8 @@ try (VcrServer vcr = Vcr.record("tapes/climate_api.md", "https://climatedataapi.
     HttpClient client = HttpClient.newHttpClient();
     client.send(HttpRequest.newBuilder(URI.create(vcr.baseUrl() + "/api/v1/countries")).build(),
                 HttpResponse.BodyHandlers.ofString());
-    // Close (end of try-with-resources, or in tearDown) forwards nothing more
-    // and writes the markdown tape to disk.
+    vcr.commit();   // writes the markdown tape to disk
+    // Leaving the block without commit() (or discard()) writes nothing and throws.
 }
 ```
 
@@ -53,9 +53,9 @@ automatically.
 Vcr.record(tape, upstream).failIfChanged().start();
 ```
 
-On close, the freshly recorded tape is written **and** a `VcrException` is
+On `commit()`, the freshly recorded tape is written **and** a `VcrException` is
 thrown if it differs from the committed tape — so `git diff` shows the drift
-and CI fails loudly. (Without `failIfChanged`, close just overwrites.)
+and CI fails loudly. (Without `failIfChanged`, `commit()` just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -184,6 +184,7 @@ try (VcrServer vcr = Vcr.record(tape, upstream)
     // ... first request recorded with the note ...
     vcr.note("Overdraft", "Should be refused");   // attaches to the next interaction
     // ... next request ...
+    vcr.commit();
 }
 ```
 
@@ -246,7 +247,7 @@ Vcr.record(tape, upstream)
 
 A rule the core refuses (an empty header name, a bad regex) fails `start()` with
 a `VcrException`. `sortJsonKeys()` / `sortJsonArray*()` without `prettyJson()`
-are refused when the tape is written: `close()` throws a `VcrException`
+are refused when the tape is written: `commit()` throws a `VcrException`
 ("sort_json_keys needs pretty_json ...") and writes nothing.
 
 ## Playback range
@@ -275,7 +276,9 @@ A request outside the range is never served (kind `Outcome.PATH_OR_METHOD_DIFF`,
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `resetCursor()` | rewind replay to interaction 0; clear last-* |
 | `clearLastError()` | clear the last-error slot between sub-cases |
-| `close()` | stop; flush tape if recording; then free the native handle (idempotent; read diagnostics before close) |
+| `commit()` | record: stop and write the tape (throws on drift if `failIfChanged`) |
+| `discard()` | record: stop and drop the recording, writing nothing |
+| `close()` | stop and free the native handle; a recording neither committed nor discarded writes nothing and throws (idempotent; read diagnostics before close) |
 
 ## `Outcome`
 

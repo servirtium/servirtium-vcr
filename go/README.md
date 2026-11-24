@@ -44,7 +44,8 @@ The module is `github.com/servirtium/servirtium-vcr/go/v2`: it lives in the
 no `v2/` directory. A release `vX.Y.Z` is also tagged `go/vX.Y.Z`, which is the
 tag `go get` reads for a subdirectory module. Nothing is on a registry; the
 module proxy fetches it from GitHub, but the native library does not come with
-it, so you fetch that yourself. Run this in your own Go module:
+it, so you fetch that yourself. The module needs Go 1.21 or newer (`go 1.21` in
+`go.mod`) and cgo. Run this in your own Go module:
 
 ```sh
 VER=v2.0.0-alpha.20                      # a release tag of servirtium-vcr
@@ -98,7 +99,8 @@ CI wherever `go build` / `go test` runs; the built binary itself needs nothing (
   `cannot find -lservirtium_vcr` (Linux): `CGO_LDFLAGS` is unset in this shell, or
   `native/` lacks a file literally named `libservirtium_vcr.so` / `.dylib`. The versioned
   release asset name is not enough; copy it to the unversioned name (step 2 does).
-- Go's build cache keys on `CGO_LDFLAGS`; changing the path rebuilds, which is fine.
+- Go's build cache keys on `CGO_LDFLAGS`; changing the path rebuilds, which is fine. Replacing
+  the library in place does not: rebuild with `go build -a` (or `go clean -cache`) after swapping it.
 - Do not `go mod vendor` and expect the native library to follow: vendoring copies Go
   files only. Do not write into `$GOMODCACHE` (read-only by design); `CGO_LDFLAGS` exists
   so you do not need to.
@@ -123,7 +125,7 @@ Both are opt-in builder options; a refused rule or range comes back as an `error
 - **Stable order (record builder):** `.SortJSONKeys()`, `.SortJSONArray(path, by)`,
   `.SortJSONArrayAt(requestRegex, path, by)`, `.SortResponseHeaders()`, `.SortHeaderValue(name)`;
   `Server.SortJSONKeys()` / `SortResponseHeaders()` read the state back and `ClearStableOrder()`
-  turns it off. Sorted JSON is only written pretty-printed: without `.PrettyJSON(2)`, `Close()`
+  turns it off. Sorted JSON is only written pretty-printed: without `.PrettyJSON(2)`, `Commit()`
   returns `sort_json_keys needs pretty_json: ...` and writes nothing.
 - **Playback range (playback only):** `servirtium.Playback(tape).PlaybackRange(from, to)` replays
   only the tape's `## Interaction N` headings `from`..`to` (0-based, inclusive; `to < 0` = through
@@ -165,10 +167,10 @@ official `get.sh` / `install.sh` to `~/.local` if missing — no sudo, no tests,
 no contrib; needs `curl` — then builds everything):
 
 ```sh
-./bootstrap.sh
+./bootstrap.sh        # from the repo root
 ```
 
-Already have `ae` (≥ 0.227.0) and `aeb` on PATH? Just run the build runner from
+Already have `ae` (0.941.0, the version `bootstrap.sh` pins) and `aeb` on PATH? Just run the build runner from
 the repo root:
 
 ```sh

@@ -4,8 +4,9 @@ require 'servirtium/native'
 require 'servirtium/field'
 
 module Servirtium
-  # A running VCR server. Call {#close} to stop it; in record mode {#close}
-  # also flushes the captured tape to disk.
+  # A running VCR server. Call {#close} to stop it. In record mode the captured
+  # tape is written only by {#commit}; {#discard} drops it, and {#close} with
+  # neither writes nothing and raises.
   class Server
     def initialize(handle, host, tape_path, record_mode:, fail_if_changed: false, secret_redactor: nil)
       @handle = handle

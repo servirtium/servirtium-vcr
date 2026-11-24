@@ -20,7 +20,7 @@
 --
 -- In playback, close() stops the server. In record, commit() writes the tape
 -- (stop_and_flush, or the fail-if-changed variant) and discard() drops it;
--- close() with neither writes nothing and raises.
+-- close() with neither writes nothing and returns why.
 -- Servers default to port 0 (the OS picks a free port; read it back via
 -- :base_url() / :port()).
 
@@ -720,7 +720,7 @@ end
 -- Stable ordering (record side, all opt-in; the tape is byte-exact without
 -- them). Sorted JSON is only written pretty-printed: sort_json_keys or
 -- sort_json_array* without pretty_json is refused when the tape is written
--- (close() returns "sort_json_keys needs pretty_json: ...").
+-- (commit() returns "sort_json_keys needs pretty_json: ...").
 -- Sort JSON object keys at every depth in recorded JSON response bodies.
 function RecordBuilder:sort_json_keys(on)
     self._sort_json_keys = (on == nil) or on
@@ -773,7 +773,7 @@ end
 
 -- start() opens the record server, applies config to its handle, stages the
 -- builder note (after open_record reloaded the tape), then begins serving.
--- Returns a Server (whose :close() flushes the tape), or nil + message.
+-- Returns a Server (whose :commit() writes the tape), or nil + message.
 function RecordBuilder:secret_redactor(callback)
     assert(type(callback) == "function"); self._secret_redactor = callback; return self
 end

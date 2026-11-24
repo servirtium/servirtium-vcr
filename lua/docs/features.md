@@ -9,7 +9,7 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Capability | Aether core | embed C-ABI | Lua API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `servirtium.playback(tape)` | ✅ |
-| Record → flush tape | ✅ | ✅ | `servirtium.record(tape, upstream)` | ✅ |
+| Record → write tape on `:commit()` | ✅ | ✅ | `servirtium.record(tape, upstream)` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `:redact(field, …)` | ✅ |
@@ -50,7 +50,7 @@ builder method — a small addition if wanted:
 
 - **`stop_and_flush_or_check`** (`aether_vcr_embed_stop_and_flush_or_check`) —
   the `.actual`-sibling drift variant (writes a `<tape>.actual` and compares
-  instead of overwriting). `Server:close()` uses overwrite
+  instead of overwriting). `Server:commit()` uses overwrite
   (`stop_and_flush`) and the fail-if-changed variant
   (`stop_and_flush_fail_if_changed`) only.
 - **`open_playback_url`** (`aether_vcr_embed_open_playback_url`) — replaying a

@@ -93,11 +93,11 @@ server-first model the Aether VCR is designed around.
 - **JDK 25** (was Java 8/11-era). `java.lang.foreign` is stable since JDK 22;
   no JNA/JNI.
 - Tests pass `--enable-native-access=ALL-UNNAMED` (set in Surefire `argLine`).
-- One active VCR server per process (v1) — run tests serially (JUnit 5's
-  default).
+- N independent VCR servers can run concurrently in one process (one per port),
+  so tests need not run serially.
 
-## Aether-core gaps noticed (candidates to file upstream)
+## C-ABI calls this binding does not wrap
 
 - `flush_or_check` (the `.actual`-sibling drift variant) and `load_url`
-  (replay a tape fetched over HTTP) exist in the core but aren't surfaced by
-  `embed.ae` — small additions if wanted.
+  (replay a tape fetched over HTTP) are exported by `embed.ae` but not wrapped
+  by the Java API.

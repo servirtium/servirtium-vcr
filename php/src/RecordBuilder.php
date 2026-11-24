@@ -165,7 +165,7 @@ final class RecordBuilder extends VcrBuilderBase
     /**
      * Opt-in stable order: write JSON response bodies' object keys sorted at
      * every depth. Sorted JSON is only written pretty-printed: without
-     * prettyJson() the tape is refused when written (stop() throws
+     * prettyJson() the tape is refused when written (commit() throws
      * VcrException, "sort_json_keys needs pretty_json ...").
      */
     public function sortJsonKeys(bool $on = true): static
@@ -217,7 +217,7 @@ final class RecordBuilder extends VcrBuilderBase
     }
 
     /**
-     * On stop, still write the freshly recorded tape but throw if it differs
+     * On commit, still write the freshly recorded tape but throw if it differs
      * from the on-disk one — the Servirtium step-4 drift contract, so a
      * normal `git diff` shows the change and CI fails loudly.
      */

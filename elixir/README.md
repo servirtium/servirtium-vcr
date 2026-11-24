@@ -116,9 +116,9 @@ Until then, in your Mix project:
 VER=v2.0.0-alpha.20                      # a release tag of servirtium-vcr
 RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
 
-# 1. the native app (SRC=main until a release tag contains erlang/build-nif-app.sh)
+# 1. the native app
 mkdir -p beam-libs
-curl -fsSL $RAW/main/erlang/build-nif-app.sh | SRC=main VER=$VER sh -s -- ./beam-libs
+curl -fsSL $RAW/$VER/erlang/build-nif-app.sh | VER=$VER sh -s -- ./beam-libs
 
 # 2. the dependency: the repo's elixir/ subdirectory, straight from GitHub
 #    mix.exs deps:  {:servirtium, github: "servirtium/servirtium-vcr", tag: "<VER>", sparse: "elixir", only: :test}
@@ -162,13 +162,13 @@ supports it for `git`/`github` deps.) A local checkout works too:
 
 ## Building from source
 
-**Casual dev, one command** (installs the Aether toolchain via its official
-`get.sh` to `~/.local` if missing — no sudo, no tests, no contrib; needs `curl`
-— then builds the native lib + NIF and runs the tests; needs Elixir/Mix already
+**Casual dev, one command** (installs the pinned Aether toolchain and `aeb` via
+their official installers to `~/.local` if missing — no sudo; needs `curl` — then
+builds the native lib + NIF and runs the tests; needs Elixir/Mix already
 present):
 
 ```sh
-./bootstrap.sh        # extra args pass through to `mix test`
+./bootstrap.sh elixir/.tests.ae     # from the repo root
 ```
 
 Through the monorepo build (recommended — builds libservirtium_vcr and the shared

@@ -29,6 +29,21 @@ playback("tapes/climate_api.md") { port(0) }.use { vcr ->
 the Java API directly (`Vcr.playback(tape).port(0).start()`) — the DSL is just
 sugar.
 
+A recording is written only by `commit()` and dropped by `discard()`; closing it
+with neither (including when the body throws) writes nothing and throws
+`VcrException`:
+
+```kotlin
+import dev.servirtium.vcr.kotlin.record
+
+record("tapes/climate_api.md", "https://climatedataapi.worldbank.org") { port(0) }.use { vcr ->
+    HttpClient.newHttpClient().send(
+        HttpRequest.newBuilder(URI.create(vcr.baseUrl() + "/api/v1/countries")).build(),
+        HttpResponse.BodyHandlers.ofString())
+    vcr.commit()   // stops the server and writes the tape
+}
+```
+
 ## What this is (and isn't)
 
 Since **2.0**, Servirtium is one libservirtium_vcr (`core/vcr.ae`, built to
@@ -52,14 +67,14 @@ record(tape, upstream) {
     sortJsonArrayAt("^/secrets", "", "name") // only for matching request paths
     sortResponseHeaders()                    // header lines by name
     sortHeaderValue("Allow")                 // "POST, GET" -> "GET, POST"
-}.use { vcr -> /* ... */ }
+}.use { vcr -> /* ... drive the SUT ..., then vcr.commit() */ }
 
 playback(tape) { playbackRange(4, 6) }.use { vcr -> /* interactions 4..6 only */ }
 ```
 
 A rule the core refuses (an empty header name, a bad regex, a bad range) fails
 `record` / `playback` with a `VcrException`. The JSON rules are only written pretty-printed:
-without `prettyJson` the tape is refused when it is written (closing the server
+without `prettyJson` the tape is refused when it is written (`commit()`
 throws `VcrException`, "sort_json_keys needs pretty_json ...") and nothing is
 written. `playbackRange` selects by interaction number only (the `## Interaction N`
 headings, 0-based, inclusive; `to` < 0 means through the last); a request outside

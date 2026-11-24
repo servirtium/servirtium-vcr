@@ -77,7 +77,7 @@
   modes also take the header presets :remove-transport-headers (true),
   :remove-cloud-headers (seq of vendors), :redact-credentials (true) and
   :redact-credential-header (seq of names). Opt-in stable order (record only;
-  needs :pretty-json for the JSON rules, else closing the server throws
+  needs :pretty-json for the JSON rules, else (.commit server) throws
   VcrException \"sort_json_keys needs pretty_json ...\"): :sort-json-keys (true),
   :sort-json-array (seq of [path by]), :sort-json-array-at (seq of
   [request-regex path by]), :sort-response-headers (true), :sort-header-value

@@ -9,7 +9,7 @@ library.
 | Capability | Aether core | embed C-ABI | Ruby API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `Servirtium.playback` | ✅ |
-| Record → flush tape | ✅ | ✅ | `Servirtium.record` | ✅ |
+| Record → write tape on `commit` | ✅ | ✅ | `Servirtium.record` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `.redact(field, …)` | ✅ |
@@ -38,10 +38,10 @@ library.
 | Dynamic (OS-assigned) port | ✅ | ✅ | `.port(0)` → `Server#port` | ✅ |
 | One server per port (N servers/process) | ✅ | ✅ | (one handle per `Server`) | ✅ `core_tests/concurrent_probe.ae` |
 
-## Not (yet) exposed through the C-ABI
+## In the C ABI, not in the Ruby API
 
-Present in the Aether VCR module but not surfaced by `core/embed.ae`, so not in
-the Ruby API. Both are small `embed.ae` additions if wanted:
+Both are exported by `core/embed.ae` (`aether_vcr_embed_stop_and_flush_or_check`,
+`aether_vcr_embed_open_playback_url`), but this layer does not wrap them:
 
 - **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
   `<tape>.actual` and compares, instead of overwriting). The Ruby layer has the

@@ -12,7 +12,7 @@
 ## You point your system-under-test at a local base URL. In **playback** it
 ## replays a recorded markdown tape (no network); in **record** it forwards to
 ## the real upstream, returns the live response, and writes the tape on
-## `close`. Same tape, both directions.
+## `commit`. Same tape, both directions.
 ##
 ## ```nim
 ## let vcr = playback("tapes/my_api.md")
@@ -112,8 +112,8 @@ proc playback*(tapePath: string; host = defaultHost; port: cint = 0): VcrServer 
   openChecked(h, "playback", tapePath, false)
 
 proc record*(tapePath, upstream: string; host = defaultHost; port: cint = 0): VcrServer =
-  ## Open a record server: forwards to `upstream`, writing `tapePath` on
-  ## close. Does not start it yet.
+  ## Open a record server: forwards to `upstream`, writing `tapePath` only on
+  ## `commit`. Does not start it yet.
   let h = native.open_record(cstring("nim"), cstring(tapePath), cstring(upstream),
                              cstring(host), port)
   openChecked(h, "record", tapePath, true)
@@ -380,7 +380,7 @@ proc getPrettyJson*(s: VcrServer): int =
 proc setSortJsonKeys*(s: VcrServer; on: bool) =
   ## Opt-in stable order (record side): sort JSON object keys at every depth in
   ## recorded JSON response bodies. Sorted JSON is only written pretty-printed:
-  ## without prettyJson, `close` raises VcrError "sort_json_keys needs
+  ## without prettyJson, `commit` raises VcrError "sort_json_keys needs
   ## pretty_json: ..." and writes nothing.
   native.set_sort_json_keys(s.handle, cint(if on: 1 else: 0))
 

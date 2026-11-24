@@ -176,7 +176,8 @@ The tape contains the method, path including the query string, headers, and
 JSON body. It is written in your current directory; rerunning overwrites it.
 For your own tests, replace `upstream_url` with your service URL and point your
 application's HTTP client at `server.base_url`. The block form of `.start`
-closes and flushes the recorder even if an assertion raises.
+closes the server on exit and, if an assertion raises, discards the recording; it
+does not commit for you.
 
 ## Docs
 

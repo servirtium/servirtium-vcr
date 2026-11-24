@@ -171,8 +171,8 @@ abstract final class Vcr {
 
   /// Record live interactions: forward to [upstreamBase], return the real
   /// response to the SUT, and capture the exchange. The tape is written to
-  /// [tapePath] when the server is closed. [nativeLib] optionally pins the
-  /// `libservirtium_vcr.so` path explicitly.
+  /// [tapePath] only by [VcrServer.commit]; [VcrServer.discard] drops it.
+  /// [nativeLib] optionally pins the `libservirtium_vcr.so` path explicitly.
   static RecordBuilder record(String tapePath, String upstreamBase,
       {String? nativeLib}) {
     final b = RecordBuilder._(tapePath, upstreamBase);
@@ -639,7 +639,7 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
 
   /// Opt-in stable order: sort JSON object keys at every depth in recorded JSON
   /// response bodies. Sorted JSON is only written pretty-printed: without
-  /// [prettyJson], `close()` throws [VcrException] "sort_json_keys needs
+  /// [prettyJson], `commit()` throws [VcrException] "sort_json_keys needs
   /// pretty_json: ..." and writes nothing.
   RecordBuilder sortJsonKeys([bool on = true]) {
     _sortJsonKeys = on;
@@ -676,7 +676,7 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
     return this;
   }
 
-  /// On close, still write the freshly recorded tape but throw if it differs
+  /// On commit, still write the freshly recorded tape but throw if it differs
   /// from the on-disk one (the drift contract).
   RecordBuilder failIfChanged([bool on = true]) {
     _failIfChanged = on;
@@ -764,8 +764,9 @@ class RecordBuilder extends _BuilderBase<RecordBuilder> {
   }
 }
 
-/// A running VCR server. Call [close] to stop it; in record mode [close] also
-/// flushes the captured tape to disk (and throws on drift if `failIfChanged`).
+/// A running VCR server. Call [close] to stop it. In record mode the captured
+/// tape is written only by [commit] (which throws on drift if `failIfChanged`);
+/// [discard] drops it, and [close] with neither throws.
 class VcrServer {
   VcrServer._(this._handle, this._host, this._tapePath,
       {required bool recordMode, required bool failIfChanged, SecretRedactor? secretRedactor})

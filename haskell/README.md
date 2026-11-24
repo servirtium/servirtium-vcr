@@ -138,31 +138,27 @@ Windows (x86_64, arm64) and FreeBSD (x86_64) assets exist too (`windows-<arch>.d
 - Do not edit the package's `.cabal` to add the path, and do not commit `cabal.project.local`
   (machine-specific absolute paths).
 - In-repo development: `aeb haskell/.tests.ae` from the repo root writes its own
-  `cabal.project.local`. The `build-native.sh` that older docs mention does not exist.
+  `cabal.project.local`.
 
 ## Building from source
 
 Contributors who want to build the lib from source instead (Aether toolchain
-required) can use the scripts below.
+required) work from the repo root.
 
-**Casual dev, one command** (installs the Aether toolchain via its official
-`get.sh` to `~/.local` if missing — no sudo, no tests, no contrib; needs
-`curl` — then builds the native lib and runs the tests; needs GHC + cabal
-already present):
-
-```sh
-./bootstrap.sh
-```
-
-Already have `ae` (≥ 0.227.0), GHC, and cabal on PATH? Drive the two steps
-directly:
+**Casual dev, one command** (installs the pinned Aether toolchain and `aeb` via
+their official installers to `~/.local` if missing — no sudo; needs `curl` — then
+builds the native lib and runs the tests; needs GHC + cabal already present):
 
 ```sh
-./build-native.sh     # builds native/libservirtium_vcr.so + cabal.project.local
-cabal test
+./bootstrap.sh haskell/.tests.ae
 ```
 
-`build-native.sh` bakes an rpath into the test binary, so `cabal test` finds
-and loads libservirtium_vcr with no `LD_LIBRARY_PATH`. (If you skip the rpath, run
-`LD_LIBRARY_PATH=$PWD/native cabal test`.) Details in
+Already have `ae` (0.941.0, the version `bootstrap.sh` pins), `aeb`, GHC, and cabal on PATH?
+
+```sh
+aeb haskell/.tests.ae     # builds core/native/libservirtium_vcr.so, writes cabal.project.local, runs cabal test
+```
+
+The leaf bakes an rpath into the test binary, so `cabal test` finds and loads
+libservirtium_vcr with no `LD_LIBRARY_PATH`. Details in
 [docs/building.md](docs/building.md).

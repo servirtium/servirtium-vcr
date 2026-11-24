@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * markdown tape on close, and the same tape then replays.
  *
  * <p>The upstream deliberately responds with Transfer-Encoding: chunked (no
- * Content-Length) to exercise the Aether client de-chunking fix (ae >= 0.183.0)
+ * Content-Length) to exercise the Aether client de-chunking
  * — the recorder must store the decoded payload, not the chunk framing.
  */
 class RecordTest {
@@ -76,7 +76,7 @@ class RecordTest {
             String body = getString(rec.baseUrl() + "/greeting");
             assertEquals("hello-from-upstream", body);
             rec.commit();
-        } // close flushes the tape
+        } // commit() wrote the tape; close() is then a no-op
 
         assertTrue(Files.exists(tapePath), "record-mode close should write the tape");
 

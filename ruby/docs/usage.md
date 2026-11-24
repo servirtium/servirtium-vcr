@@ -66,7 +66,7 @@ Servirtium.record(tape, upstream).fail_if_changed.start { |s| ... }
 
 On `commit`, the freshly recorded tape is written **and** a `Servirtium::Error` is
 raised if it differs from the one on disk — so `git diff` shows the drift and
-CI fails loudly. (Without `fail_if_changed`, commit just overwrites.)
+CI fails loudly. (Without `fail_if_changed`, `commit` just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -192,6 +192,7 @@ Servirtium.record(tape, upstream)
   # ... first request recorded with the note ...
   server.note('Overdraft', 'Should be refused')   # attaches to the next interaction
   # ... next request ...
+  server.commit
 end
 ```
 
@@ -269,7 +270,9 @@ A request outside the range is never served (kind `:path_or_method_diff`,
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `reset_cursor` | rewind replay to interaction 0; clear last-* |
 | `clear_last_error` | clear the last-error slot between sub-cases |
-| `close` | stop; flush tape if recording (idempotent) |
+| `commit` | record: stop and write the tape (raises on drift if `fail_if_changed`) |
+| `discard` | record: stop and drop the recording, writing nothing |
+| `close` | stop; a recording neither committed nor discarded writes nothing and raises (idempotent) |
 
 ## `Servirtium::Outcome`
 

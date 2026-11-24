@@ -2,30 +2,22 @@
 
 ## Turnkey: `./bootstrap.sh`
 
-For a casual dev, the repo-root `bootstrap.sh` encodes the steps below as one
-idempotent command:
+From the repo root, `bootstrap.sh` installs the pinned `ae` (0.941.0) and `aeb`
+via their official installers to a user prefix (`$HOME/.local`, no sudo; needs
+`curl`) if they are missing, then runs `aeb` on the leaf you name:
 
 ```sh
-./bootstrap.sh        # extra args pass through to `dotnet test`
+./bootstrap.sh dotnet/Servirtium.Vcr.Tests/.tests.ae     # builds libservirtium_vcr, then runs the xunit suite
 ```
 
-It checks for `ae` (≥ 0.227.0) and installs it via aether's official `get.sh`
-remote installer to a user prefix (`$HOME/.local` — **no sudo, no Aether test
-suite, no contrib**; needs `curl`, no build-from-source fallback) if it's
-missing/too old; checks the .NET SDK is present (it does **not** auto-install
-it — that's a large external dependency); then runs `build-native.sh` and
-`dotnet test`. No-op for the toolchain when `ae` is already good; on failure
-it prints the `-fPIC` re-install triage. Override `PREFIX` / `AETHER_REF`
-(pin in CI) / `MIN_AE` / `MIN_DOTNET` via env.
+It does not install the .NET SDK; it must already be present. Override `PREFIX` / `AETHER_REF` / `AEB_REF` / `MIN_AE` via env.
 
-Everything from here down is what `bootstrap.sh` automates — useful when you
-already have both toolchains.
+Everything from here down is what that leaf automates.
 
 ## Prerequisites
 
 - **.NET SDK 8.0+** (the test project targets a current runtime; the
-  library targets `net8.0`). `bootstrap.sh` checks for it but does not
-  install it.
+  library targets `net8.0`). `bootstrap.sh` does not install it.
 - **The Aether toolchain (`ae`) on PATH** — only needed to build the
   *native* library; `bootstrap.sh` installs it via aether's `get.sh` if
   absent (`curl -sSL https://raw.githubusercontent.com/aether-lang-dev/aether/main/get.sh | sh`).
@@ -50,7 +42,7 @@ ae build --emit=lib --with=fs,net,extern core/embed.ae \
 - `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC`
   Aether runtime, and libservirtium_vcr's whole-tape rewrites use `std.regex` —
-  **Aether ≥ 0.227.0**.
+  **Aether 0.941.0**.
 
 This produces the **host platform's** RID only. The native libs are
 **git-ignored build artifacts** — let `aeb` / CI build them after cloning.
@@ -108,7 +100,7 @@ Each arch is a distinct binary (no shared code between x64 and arm64).
 ## CI
 
 `.github/workflows/dotnetcore.yml` runs on push/PR: per-OS matrix builds the
-Aether toolchain, runs `build-native.sh`, then `dotnet test`, and uploads
+Aether toolchain, builds the native lib (`core/.build.ae`), then `dotnet test`, and uploads
 each RID's native lib as an artifact.
 
 ## Releasing to NuGet
@@ -118,7 +110,7 @@ release tagged `<Package>/v<semver>` (e.g. `Servirtium.Vcr/v2.0.0`). Because
 a complete package must bundle **every** RID's native lib, it runs in two
 stages:
 
-1. **build-native** — one runner per OS/arch builds its
+1. **build the native lib** — one runner per OS/arch builds its
    `runtimes/<rid>/native` lib and uploads it.
 2. **pack-and-push** — downloads all RID artifacts into `runtimes/`, then
    `dotnet pack` + `dotnet nuget push`.

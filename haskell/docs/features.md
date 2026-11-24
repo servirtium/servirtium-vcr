@@ -8,7 +8,7 @@ diagnostics), mapped through the stack. "Test" = exercised by the
 | Capability | Aether core | embed C-ABI | Haskell API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `playbackOptions` / `withPlayback` | ✅ |
-| Record → flush tape | ✅ | ✅ | `recordOptions` / `withRecord` | ✅ |
+| Record → write tape on `commit` | ✅ | ✅ | `recordOptions` / `withRecord` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `recRedactions` | ✅ |
@@ -40,15 +40,14 @@ mismatch diagnostics, record→replay against a local upstream, and redaction
 (asserting the tape file content). Header removal is exercised as part of the
 record/redaction tests (stripping client default headers).
 
-## Not (yet) exposed through the C-ABI
+## In the C ABI, not in the Haskell API
 
-Present in the in-repo Aether VCR module (`core/vcr.ae`) but not surfaced by
-`core/embed.ae`, so not in the Haskell API. Both are small `core/embed.ae`
-additions if wanted:
+Both are exported by `core/embed.ae` (`aether_vcr_embed_stop_and_flush_or_check`,
+`aether_vcr_embed_open_playback_url`), but this layer does not wrap them:
 
 - **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
   `<tape>.actual` and compares, instead of overwriting). The Haskell layer has
-  the overwrite (`stop`) and `recFailIfChanged` variants only.
+  the overwrite (`commit`) and `recFailIfChanged` variants only.
 - **`load_url`** — replaying a tape fetched over HTTP rather than from disk.
 
 ## Known limitations (inherited from the core)

@@ -60,7 +60,7 @@ module Servirtium =
         builder.UpstreamCafile(path)
 
     /// Opt-in stable order: write JSON response bodies' object keys sorted at every depth.
-    /// Needs `prettyJson`: without it the tape is refused when written (disposing the server throws).
+    /// Needs `prettyJson`: without it the tape is refused when written (`Commit()` throws).
     /// Record mode: the upstream's base URL becomes the recorder's in what the
     /// client receives, the recorder's becomes the upstream's in what is
     /// forwarded, and the tape holds {{baseUrl}} (docs/vcr-address.md).
@@ -162,9 +162,10 @@ module Servirtium =
 
     // ---- loan patterns ----------------------------------------------------
     // The F#-idiomatic way to scope a VCR: run `body` against a live server and
-    // dispose it on every path, including exceptions. In record mode disposal is
-    // what flushes the tape, so the loan pattern is also what makes a recording
-    // land on disk.
+    // dispose it on every path, including exceptions. In record mode the body
+    // writes the tape with `Commit()` (or drops it with `Discard()`); a body that
+    // throws discards the recording, and one that ends with neither writes
+    // nothing and disposal throws.
 
     /// Replay `tapePath` for the duration of `body`, then dispose.
     let usingPlayback (tapePath: string) (body: VcrServer -> 'a) : 'a =

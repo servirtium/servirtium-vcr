@@ -40,7 +40,8 @@ that core (via [`libloading`](https://crates.io/crates/libloading)); it does
 The crate is **not on crates.io yet**, and the repo has no root `Cargo.toml`, but Cargo finds
 a package by name inside a git dependency, so the release tag is enough. The native library
 is loaded at run time (`libloading`): fetch it from the same release and point
-`SERVIRTIUM_VCR_LIB` at it. In your own crate:
+`SERVIRTIUM_VCR_LIB` at it. The crate is edition 2021, so it needs Rust 1.56 or newer
+(`Cargo.toml` sets no `rust-version`; it is tested with cargo 1.94). In your own crate:
 
 ```sh
 set -eu
@@ -160,8 +161,8 @@ for the model, and `tests/` for worked examples.
 SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so cargo test
 ```
 
-Details (including the `ae build --emit=lib` invocation and the ≥ 0.227.0
-toolchain floor) in [docs/building.md](docs/building.md).
+Details (including the `ae build --emit=lib` invocation and the Aether 0.941.0
+requirement) in [docs/building.md](docs/building.md).
 
 ## License
 

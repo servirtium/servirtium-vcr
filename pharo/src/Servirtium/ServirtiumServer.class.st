@@ -1,8 +1,9 @@
 "
 A running VCR server. The system-under-test talks plain HTTP to `baseUrl`.
-Call `stop` when done; in record mode `stop` also flushes the captured tape
-to disk (and raises a ServirtiumError if failIfChanged was set and the new
-tape drifts from the on-disk one).
+Call `stop` when done. In record mode the captured tape is written only by
+`commit` (which raises a ServirtiumError if failIfChanged was set and the new
+tape drifts from the on-disk one); `discard` drops it, and `stop` with neither
+raises a ServirtiumError.
 
 Per-listener: every diagnostic / config call is scoped to this server's
 handle, so N servers can run at once.

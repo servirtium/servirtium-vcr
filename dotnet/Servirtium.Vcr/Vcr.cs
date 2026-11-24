@@ -99,8 +99,9 @@ public abstract class VcrBuilderBase<TSelf> where TSelf : VcrBuilderBase<TSelf>
     /// <c>HttpClient</c> adds the tracing trio to every
     /// request, so strict matching otherwise fails on a confusing first run.
     /// Each is removed from BOTH the recorded expectation and the live request
-    /// before matching. The companion to <c>StrictIgnoreCommonHeaders</c>
-    /// (User-Agent/Accept/…); call both for the full default-ignore set.
+    /// before matching. To ignore the client's own <c>User-Agent</c> /
+    /// <c>Accept</c> headers as well, use
+    /// <c>RemoveHeader(VcrField.RequestHeaders, name)</c> for each.
     /// Honored in playback and record.
     /// </summary>
     public TSelf IgnoreVolatileHeaders(bool on = true)
@@ -800,7 +801,7 @@ public sealed class RecordBuilder : VcrBuilderBase<RecordBuilder>
     }
 
     /// <summary>
-    /// On dispose, still write the freshly recorded tape but throw if it
+    /// On <see cref="VcrServer.Commit"/>, still write the freshly recorded tape but throw if it
     /// differs from the on-disk one — the Servirtium step-4 drift contract,
     /// so a normal <c>git diff</c> shows the change and CI fails loudly.
     /// </summary>

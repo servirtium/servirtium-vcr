@@ -8,7 +8,7 @@ in `test/` against the real native library.
 | Capability | Aether core | embed C-ABI | Elixir API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `Servirtium.playback/2` | ✅ |
-| Record → flush tape | ✅ | ✅ | `Servirtium.record/3` | ✅ |
+| Record → write tape on `commit/1` | ✅ | ✅ | `Servirtium.record/3` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | — |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | — |
 | Redactions | ✅ | ✅ | `redact:` opt | ✅ |
@@ -39,10 +39,10 @@ the written tape, a builder note asserted against the written tape, static
 content, dynamic port, and per-handle state isolation (no leak between
 servers).
 
-## Not (yet) exposed through the C-ABI
+## In the C ABI, not in the Elixir API
 
-Present in the Aether VCR module but not surfaced by `embed.ae`, so not in the
-Elixir API. Both are small `embed.ae` additions if wanted:
+Both are exported by `core/embed.ae` (`aether_vcr_embed_stop_and_flush_or_check`,
+`aether_vcr_embed_open_playback_url`), but this layer does not wrap them:
 
 - **`flush_or_check`** — the `.actual`-sibling drift variant (writes a
   `<tape>.actual` and compares, instead of overwriting). This layer has the

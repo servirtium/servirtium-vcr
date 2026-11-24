@@ -194,10 +194,8 @@ reference). Quick facts:
   a leaf "passes silently", read the log for the body's `println`.
 - **Never run two top-level `aeb` invocations concurrently** — they clobber the
   shared `target/_ae_build_all` workspace. Run leaves sequentially.
-- **Aether 0.849.0 is pinned ahead of publication by explicit request.** The
-  monitor migration was verified against Aether commit `6d36a042`, including
-  ABI diagnostics, Python/CLI suites and 200 start/immediate-stop cycles.
-  This does not claim verification of the unreleased 0.849.0 binary.
+- **The Aether pin is 0.941.0**: `AE_PIN` == `AE_FETCH` in `bootstrap.sh` and
+  `AETHER_REF` in `release/toolchain.env`, a published release.
 
 ## GhostBSD (FreeBSD) lane
 
@@ -562,7 +560,7 @@ converts a **HAR 1.2** capture — Chrome DevTools / Fiddler / Charles / mitmpro
 Postman export — into a Servirtium markdown tape. It's a pure file→file transform
 (no server handle). The workflow it unlocks: capture real traffic you can't easily
 route through a record-proxy (a browser SPA, a mobile app behind a proxy) →
-`.har` → tape → deterministic replay across all 21 bindings. There's also a **standalone CLI** — `core/cli.ae` (built to `target/servirtium` by
+`.har` → tape → deterministic replay across all 30 bindings. There's also a **standalone CLI** — `core/cli.ae` (built to `target/servirtium` by
 `core/.cli.ae`, or `ae build core/cli.ae -o servirtium`): a thin argv shim,
 statically linking the pure-Aether `vcr` module (self-contained: no `.so`, no
 env var). Subcommands: `serve <tape.md>[,more.md...] [port] [--ordered]`
@@ -1089,7 +1087,7 @@ process launchers; the shared fixture itself stays language-neutral.
 - **base64 lives in `std.encoding`, not `std.cryptography` (ae 0.4x).** (This is
   the last primitive anyone could name as a hard ae requirement, and it used to
   BE the `AE_PIN` floor. It no longer is — `AE_PIN` == `AE_FETCH` == the one ae
-  require, currently 0.849.0; publication pending.) ae 0.413
+  require, currently 0.941.0.) ae 0.413
   moved it and changed `base64_decode` to a `string!` error-union; libservirtium_vcr's
   `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
   with "Undefined function 'cryptography.base64_decode'", something reintroduced

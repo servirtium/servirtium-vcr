@@ -158,29 +158,20 @@ for details, and `Servirtium.Vcr.Tests/` for a worked example.
 
 ## Building from source
 
-**Casual dev, one command** (installs the Aether toolchain via its official
-`get.sh` to `~/.local` if missing — no sudo, no tests, no contrib; needs
-`curl` — then builds the native lib and runs the tests; needs the .NET SDK
-already present):
+**Casual dev, one command** (installs the pinned Aether toolchain and `aeb` via
+their official installers to `~/.local` if missing — no sudo; needs `curl` — then
+builds the native lib and runs the tests; needs the .NET SDK already present):
 
 ```sh
-./bootstrap.sh
+./bootstrap.sh dotnet/Servirtium.Vcr.Tests/.tests.ae     # from the repo root
 ```
 
-Already have `ae` (≥ 0.227.0), `aeb`, and the .NET SDK on PATH? The build is
+Already have `ae` (0.941.0, the version `bootstrap.sh` pins), `aeb`, and the .NET SDK on PATH? The build is
 aeb-native — each project's `.csproj` is generated from its `.build.ae` (never
 checked in), `libservirtium_vcr.so` is built and staged automatically:
 
 ```sh
 aeb dotnet/Servirtium.Vcr.Tests/.tests.ae     # libservirtium_vcr -> library -> xunit
-```
-
-Or drive the raw .NET tools directly (builds the native, then tests against a
-generated csproj):
-
-```sh
-./build-native.sh     # builds the native lib for your platform (needs `ae`)
-dotnet test
 ```
 
 Details in [docs/building.md](docs/building.md).

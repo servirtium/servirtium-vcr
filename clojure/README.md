@@ -21,7 +21,16 @@ wrapper that adds the small idiomatic functions Clojure people expect.
   (= Outcome/OK (.lastKind v)))
 ```
 
-`(record tape upstream opts)` is the recording counterpart. You can also call
+`(record tape upstream opts)` is the recording counterpart; `(.commit server)` inside
+the `with-open` writes the tape:
+
+```clojure
+(with-open [v (vcr/record "tapes/climate_api.md" "https://climatedataapi.worldbank.org" {:port 0})]
+  ;; ... drive the SUT against (.baseUrl v) ...
+  (.commit v))   ; stops the server and writes the tape
+```
+
+You can also call
 the Java API directly (`(-> (Vcr/playback tape) (.port 0) (.start))`) — the
 functions are just sugar. `VcrServer` is `java.lang.AutoCloseable`, so the
 standard `clojure.core/with-open` stops the server on exit. A recording is
@@ -57,7 +66,7 @@ The opts are `:sort-json-keys`, `:sort-json-array`, `:sort-json-array-at`,
 `:sort-response-headers`, `:sort-header-value` (record) and `:playback-range`
 (playback; `[from to]` or a bare `from`). A rule the core refuses (an empty header name, a bad regex, a bad range) fails
 `record` / `playback` with a `VcrException`. The JSON rules are only written pretty-printed:
-without `prettyJson` the tape is refused when it is written (closing the server
+without `prettyJson` the tape is refused when it is written (`commit()`
 throws `VcrException`, "sort_json_keys needs pretty_json ...") and nothing is
 written. `playbackRange` selects by interaction number only (the `## Interaction N`
 headings, 0-based, inclusive; `to` < 0 means through the last); a request outside

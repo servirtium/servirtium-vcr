@@ -30,6 +30,7 @@ with servirtium.record(tape, upstream).secret_redactor(
     ) if key == "password" else None
 ).start() as recorder:
     exercise_client(recorder.base_url)
+    recorder.commit()
 
 with servirtium.playback(tape).secret_resolver(passwords.get).start() as playback:
     exercise_client(playback.base_url)
@@ -42,7 +43,7 @@ Locations are `request.query`, `request.headers`, `request.body`, `response.head
 
 ## Timing and failure behavior
 
-Recording forwards the original traffic and retains the original capture in memory. On close/flush, the core stops and joins the listener, extracts source spans, and the binding invokes your redactor synchronously on the thread/process performing that operation. The ordinary field redactions and header removals run before named redaction; whole-tape normalization runs afterwards. Keep callbacks deterministic.
+Recording forwards the original traffic and retains the original capture in memory. On commit (the flush), the core stops and joins the listener, extracts source spans, and the binding invokes your redactor synchronously on the thread/process performing that operation. The ordinary field redactions and header removals run before named redaction; whole-tape normalization runs afterwards. Keep callbacks deterministic.
 
 Returning no value leaves a recording field unchanged. Returning a string names the token; names contain 1–128 ASCII letters, digits, dots, underscores, colons or dashes. For example, a JSON string becomes `"{{secret:BILLING_PASSWORD|3}}"`; a query value contains the URL-encoded marker. The numeric suffix lets the core restore the field's scalar encoding. Return the name alone from the redactor, without braces or suffixes.
 

@@ -38,12 +38,12 @@ let rec = Vcr::record("tapes/climate_api.md", "https://climatedataapi.worldbank.
     .unwrap();
 
 let _ = ureq::get(&format!("{}/api/v1/countries", rec.base_url())).call();
-rec.commit().unwrap();   // stop + write the markdown tape (or just drop `rec`)
+rec.commit().unwrap();   // stop + write the markdown tape (dropping `rec` without commit() or discard() panics)
 ```
 
 Record forwards each request to the upstream, returns the **real** response
 to your SUT, and captures the exchange. Chunked responses are de-chunked
-(needs the native lib built with Aether ≥ 0.183.0).
+(done by the core).
 
 ### Drift detection
 
@@ -55,9 +55,9 @@ rec.commit()?;   // Err(VcrError) if the freshly recorded tape differs
 
 The freshly recorded tape is written **and** `commit()` returns an error if
 it differs from the committed tape — so `git diff` shows the drift and CI
-fails loudly. (Without `fail_if_changed`, flush just overwrites.) If you let
-the server drop instead of calling `commit()`, a drift causes a **panic**
-(a `Drop` can't return a `Result`), so prefer `commit()` with this option.
+fails loudly. (Without `fail_if_changed`, `commit()` just overwrites.) Dropping the server
+without `commit()` or `discard()` writes nothing and panics (a `Drop` can't
+return a `Result`), so always call `commit()`.
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -176,6 +176,7 @@ let vcr = Vcr::record(tape, upstream)
 // ... first request recorded with the note ...
 vcr.note("Overdraft", "Should be refused")?;   // attaches to the next interaction
 // ... next request ...
+vcr.commit()?;
 ```
 
 ## Static content (UI tests)
@@ -217,8 +218,10 @@ load cleanly.
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `reset_cursor()` | rewind replay to interaction 0; clear last-* |
 | `clear_last_error()` | clear the last-error slot between sub-cases |
-| `commit()` | stop; flush tape if recording, returning the flush result |
-| (drop) | stop; flush tape if recording (panics on a drift error) |
+| `commit()` | record: stop and write the tape, returning the result (an error on drift if `fail_if_changed`) |
+| `discard()` | record: stop and drop the recording, writing nothing |
+| `close()` | stop; a recording neither committed nor discarded writes nothing and returns an error |
+| (drop) | stop; a record server dropped without `commit()` or `discard()` writes nothing and panics (quietly dropped while unwinding) |
 
 ## `Outcome`
 

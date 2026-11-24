@@ -138,10 +138,11 @@ binding does not require it.
 ## Building from source
 
 ```sh
-./bootstrap.sh        # installs `ae` via get.sh if missing, builds the native lib, runs PHPUnit
+./bootstrap.sh php/.tests.ae     # from the repo root: installs `ae` + `aeb` if missing, builds the native lib, runs PHPUnit
 ```
 
-`bootstrap.sh` installs the Aether toolchain via its official `get.sh` to
-`~/.local` (no sudo, no tests, no contrib) if it's missing, checks PHP+FFI,
-runs `build-native.sh`, then PHPUnit. Details in
+`bootstrap.sh` installs the pinned Aether toolchain and `aeb` via their official
+installers to `~/.local` (no sudo) if they are missing, then `aeb php/.tests.ae`
+builds libservirtium_vcr and runs PHPUnit (PHP 8.2+ with FFI must already be
+present). Details in
 [docs/building.md](docs/building.md).

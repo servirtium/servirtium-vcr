@@ -53,7 +53,7 @@ logic.
 - **Builder steps as pipeline functions** — redactions, header presets and the
   opt-in stable order (`sortJsonKeys`, `sortJsonArray`, `sortJsonArrayAt`,
   `sortResponseHeaders`, `sortHeaderValue`; the JSON ones need `prettyJson`,
-  else disposing the recording server throws `VcrException` "sort_json_keys needs
+  else `Commit()` throws `VcrException` "sort_json_keys needs
   pretty_json ...") on a `RecordBuilder`, and `playbackRange from to` on a
   `PlaybackBuilder` (interaction numbers, 0-based, inclusive, `to` < 0 = through
   the last; selection by number only):
@@ -72,9 +72,11 @@ logic.
 ## Layout
 
 - `Servirtium.fs` — the idiomatic F# module (`Servirtium.Vcr.FSharp`).
-- `PlaybackTest.fs` — six xUnit facts over the canonical tape: body, clean
+- `PlaybackTest.fs` — sixteen xUnit facts over the canonical tape: body, clean
   match, tape length + bound port, an off-tape path, loan-pattern disposal,
-  and cursor reset.
+  a missing tape, repeated open/dispose cycles, cursor reset, structured
+  redaction helpers, retained replay diagnostics, named secrets, stable order,
+  playback range, volatile values and the rewritten upstream base.
 - `tapes/single_get.md` — the canonical sample tape (`GET /ok` → `200
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
 

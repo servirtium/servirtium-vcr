@@ -2,21 +2,22 @@
 
 ## Turnkey: `./bootstrap.sh`
 
+From the repo root, `bootstrap.sh` installs the pinned `ae` (0.941.0) and `aeb`
+via their official installers to a user prefix (`$HOME/.local`, no sudo; needs
+`curl`) if they are missing, then runs `aeb` on the leaf you name:
+
 ```sh
-./bootstrap.sh        # extra args pass through to PHPUnit
+./bootstrap.sh php/.tests.ae     # builds libservirtium_vcr, then runs PHPUnit
 ```
 
-Installs `ae` (≥ 0.227.0) via aether's official `get.sh` to `$HOME/.local` if
-missing (no sudo, no Aether test suite, no contrib; needs `curl`, no
-build-from-source fallback); checks PHP 8.4+ with the FFI extension (does
-**not** auto-install it); runs `build-native.sh`; then runs PHPUnit (using
-`vendor/bin/phpunit` if present, else a fetched `phpunit.phar`). Override
-`PREFIX` / `AETHER_REF` (pin in CI) / `MIN_AE` via env.
+It does not install PHP; PHP 8.2+ with the FFI extension must already be present. Override `PREFIX` / `AETHER_REF` / `AEB_REF` / `MIN_AE` via env.
+
+Everything from here down is what that leaf automates.
 
 ## Prerequisites
 
-- **PHP 8.4+ with `ext-ffi`** (Debian/Ubuntu: `php-cli php-ffi`). `bootstrap.sh`
-  checks for it but does not install it.
+- **PHP 8.2+ with `ext-ffi`** (`composer.json` requires `php >=8.2`) (Debian/Ubuntu: `php-cli php-ffi`). `bootstrap.sh`
+  does not install it.
 - **The Aether toolchain (`ae`)** — only to build the native library;
   `bootstrap.sh` installs it via `get.sh` if absent. Consumers of the Composer
   package don't need it. From-source/HEAD flow: aether's
@@ -25,15 +26,15 @@ build-from-source fallback); checks PHP 8.4+ with the FFI extension (does
 ## Build the native library
 
 ```sh
-./build-native.sh
+aeb core/.build.ae      # from the repo root
 ```
 
-Builds `native/libservirtium_vcr.so` from this repo's in-repo libservirtium_vcr
+Builds `core/native/libservirtium_vcr.so` from this repo's in-repo libservirtium_vcr
 `core/embed.ae` (the C-ABI wrapper) + `core/vcr.ae` (the pure-Aether VCR), on
 top of Aether stdlib primitives (`std.http`, `std.regex`, `std.zlib`,
 `std.cryptography`) — no Aether source checkout needed. The `--with=fs,net,extern`
 build needs a `-fPIC` Aether runtime; the `std.regex` whole-tape mutations
-require **Aether ≥ 0.227.0**. The native lib is a git-ignored build artifact.
+require **Aether 0.941.0**. The native lib is a git-ignored build artifact.
 
 ## Test
 

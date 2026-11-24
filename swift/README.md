@@ -67,10 +67,13 @@ marshalling rules to drift from `core/embed.ae`.
   the one FFI declaration the binding needs.
 - `Sources/Servirtium/Servirtium.swift` — the idiomatic surface (`Vcr`,
   `Field`, `Outcome`, `VcrError`, the HAR converters).
-- `Tests/ServirtiumTests/PlaybackTests.swift` — 10 XCTest facts over the
+- `Tests/ServirtiumTests/PlaybackTests.swift` — 27 XCTest facts over the
   canonical tape: body, clean match, tape length + bound port, an off-tape
   path, cursor reset, a throw on a missing tape, scoped-form close, idempotent
-  close, two concurrent servers, and the enum values.
+  close, two concurrent servers, the enum values, a recording closed without
+  flush, stable order, playback range, volatile values, redaction helpers and
+  the rewritten upstream base. `SecretCallbacksTests.swift` adds 1 more
+  (named secret callbacks), 28 in all.
 - `tapes/single_get.md` — the canonical sample tape (`GET /ok` → `200
   text/plain` / `ok-body`), byte-identical to every other binding's copy.
 - `native/` — where the leaf stages `libservirtium_vcr.so` (git-ignored).

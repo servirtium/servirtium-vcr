@@ -35,21 +35,25 @@ function form is `(servirtium/playback tape opts)` + `(servirtium/stop vcr)`.
 
 ```janet
 (servirtium/with-record [vcr "tapes/climate_api.md" "https://climatedataapi.worldbank.org"]
-  (my-client/get-countries (servirtium/base-url vcr)))
+  (my-client/get-countries (servirtium/base-url vcr))
+  (servirtium/flush-tape vcr))   # writes the tape
 ```
 
 Record forwards each request to the upstream, returns the real response to your
-SUT and captures the exchange. When the body finishes normally the tape is
-flushed; if it **raises**, the recording is discarded and the error propagates,
-so a failed test never overwrites a good tape. Chunked responses are
-de-chunked. Without the macro: `(servirtium/flush-tape vcr)` writes the tape
-(and stops), `(servirtium/discard vcr)` stops without writing.
+SUT and captures the exchange. The body writes the tape with
+`(servirtium/flush-tape vcr)` (which stops the server) or drops it with
+`(servirtium/discard vcr)`; if the body ends with neither, nothing is written and
+`with-record` raises. If the body **raises**, the recording is discarded and the
+error propagates, so a failed test never overwrites a good tape. Chunked
+responses are de-chunked. Without the macro: call `flush-tape` / `discard` on the
+server `(servirtium/record tape upstream)` returned.
 
 ### Drift detection
 
 ```janet
 (servirtium/with-record [vcr tape upstream {:flush-mode :fail-if-changed}]
-  ...)                       # raises if the fresh recording differs from the tape on disk
+  ...
+  (servirtium/flush-tape vcr))   # raises if the fresh recording differs from the tape on disk
 ```
 
 `:flush-mode` is `:overwrite` (default), `:fail-if-changed` (the new tape is
@@ -120,12 +124,13 @@ rule is off by default; the tape is byte-exact without them.
                           :sort-json-arrays-at [["^/users" "" "name"]] # [request-regex path by]
                           :sort-response-headers true               # header lines sorted by name
                           :sort-header-values ["Allow"]}]           # one header's comma-separated items
-  ...)
+  ...
+  (servirtium/flush-tape vcr))
 ```
 
 Sorted JSON is only written pretty-printed: a record with `:sort-json-keys` or a
 sort-array rule but without `:pretty-json` is refused when the tape is written,
-so `flush-tape` (and so `with-record`) raises with "sort_json_keys needs
+so `flush-tape` raises with "sort_json_keys needs
 pretty_json: sorted JSON is only written pretty-printed (turn pretty_json on)"
 and writes nothing. A rule the core refuses outright raises from `record`.
 

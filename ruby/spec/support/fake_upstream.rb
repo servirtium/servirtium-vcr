@@ -8,7 +8,7 @@ require 'socket'
 #
 # By default it sends Content-Length (no chunking). Set +chunked: true+ to
 # reply with Transfer-Encoding: chunked instead, exercising the Aether
-# client's de-chunking (needs the native lib built with Aether >= 0.183.0).
+# client's de-chunking.
 class FakeUpstream
   attr_reader :base_url, :last_method, :last_path, :last_body
 

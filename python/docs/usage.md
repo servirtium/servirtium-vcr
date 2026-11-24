@@ -35,8 +35,8 @@ with servirtium.record("tapes/climate_api.md",
 ```
 
 Record forwards each request to the upstream, returns the **real** response to
-your SUT, and captures the exchange. Chunked responses are de-chunked (needs
-the native lib built with Aether ≥ 0.183.0).
+your SUT, and captures the exchange. Chunked responses are de-chunked (done by
+the core).
 
 For a complete example with a local upstream and offline replay, see the
 [README quickstart](../README.md#record-and-replay-a-local-service).
@@ -47,9 +47,9 @@ For a complete example with a local upstream and offline replay, see the
 servirtium.record(tape, upstream).fail_if_changed().start()
 ```
 
-On close, the freshly recorded tape is written **and** a `VcrError` is raised
-if it differs from the committed tape — so `git diff` shows the drift and CI
-fails loudly. (Without `fail_if_changed`, close just overwrites.)
+On `commit()`, the freshly recorded tape is written **and** a `VcrError` is
+raised if it differs from the committed tape — so `git diff` shows the drift
+and CI fails loudly. (Without `fail_if_changed`, `commit()` just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -165,6 +165,7 @@ with servirtium.record(tape, upstream) \
     # ... first request recorded with the note ...
     vcr.note("Overdraft", "Should be refused")   # attaches to the next interaction
     # ... next request ...
+    vcr.commit()
 ```
 
 ## Static content (UI tests)
@@ -215,7 +216,7 @@ vcr = (
 
 A rule the core refuses (an empty header name, a bad regex) raises `VcrError`
 at `start()`. `sort_json_keys` / `sort_json_array*` without `pretty_json` are
-refused when the tape is written: `close()` raises `VcrError` ("sort_json_keys
+refused when the tape is written: `commit()` raises `VcrError` ("sort_json_keys
 needs pretty_json ...") and writes nothing.
 
 ## Playback range
@@ -244,7 +245,9 @@ A request outside the range is never served (kind `PATH_OR_METHOD_DIFF`,
 | `note(title, body)` | stage a note for the next recorded interaction |
 | `reset_cursor()` | rewind replay to interaction 0; clear last-* |
 | `clear_last_error()` | clear the last-error slot between sub-cases |
-| `close()` | stop; flush tape if recording (also runs on `with` exit) |
+| `commit()` | record: stop and write the tape (raises `VcrError` on drift if `fail_if_changed`) |
+| `discard()` | record: stop and drop the recording, writing nothing |
+| `close()` | stop; a recording neither committed nor discarded writes nothing and raises `VcrError` (also runs on `with` exit) |
 
 ## `Outcome`
 

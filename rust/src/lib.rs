@@ -908,8 +908,9 @@ impl RecordBuilder {
     }
 
     /// Open a fresh record handle, apply this fixture's config, and start the
-    /// record server. The returned [`VcrServer`] flushes the tape and frees the
-    /// VCR when dropped.
+    /// record server. Write the tape with [`VcrServer::commit`] (or drop it with
+    /// [`VcrServer::discard`]); dropping the returned [`VcrServer`] with neither
+    /// writes nothing and panics.
     pub fn start(self) -> Result<VcrServer, VcrError> {
         configure(self.common.native_lib.clone());
         let n = native().map_err(VcrError::new)?;

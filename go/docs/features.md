@@ -9,7 +9,7 @@ unless noted as a core probe (libservirtium_vcr's `core_tests/`).
 | Capability | Aether core | embed C-ABI | Go API | Test |
 |---|:---:|:---:|---|:---:|
 | Playback (ordered, multi-interaction) | ✅ | ✅ | `servirtium.Playback(tape)` | ✅ |
-| Record → flush tape | ✅ | ✅ | `servirtium.Record(tape, upstream)` | ✅ |
+| Record → write tape on `Commit()` | ✅ | ✅ | `servirtium.Record(tape, upstream)` | ✅ |
 | Custom HTTP verbs (POST/PUT/…) | ✅ | ✅ | (automatic) | ✅ POST |
 | Request body matching | ✅ | ✅ | (automatic when tape has a body) | ✅ via POST |
 | Redactions | ✅ | ✅ | `.Redact(field, …)` | ✅ |
@@ -49,7 +49,7 @@ not yet wired to a Go method — a small `Server`/builder addition if wanted:
 
 - **`flush_or_check`** (`aether_vcr_embed_stop_and_flush_or_check`) — the
   `.actual`-sibling drift variant (writes a `<tape>.actual` and compares,
-  instead of overwriting). `Close()` uses the overwrite and `FailIfChanged`
+  instead of overwriting). `Commit()` uses the overwrite and `FailIfChanged`
   variants only (`stop_and_flush` / `stop_and_flush_fail_if_changed`).
 - **`load_url`** (`aether_vcr_embed_open_playback_url`) — replaying a tape
   fetched over HTTP rather than from disk; declared but no Go builder yet.

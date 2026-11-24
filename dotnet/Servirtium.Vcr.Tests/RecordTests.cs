@@ -55,9 +55,9 @@ public class RecordTests : IDisposable
             string body = await client.GetStringAsync("/greeting");
             Assert.Equal("hello-from-upstream", body);
             rec.Commit();
-        } // dispose flushes the tape
+        } // Commit() wrote the tape; Dispose() is then a no-op
 
-        Assert.True(File.Exists(_tapePath), "record-mode dispose should write the tape");
+        Assert.True(File.Exists(_tapePath), "record-mode Commit should write the tape");
 
         // ---- replay (offline) ----
         using var play = Vcr.Playback(_tapePath).Port(0).Start();
@@ -182,7 +182,7 @@ public class RecordTests : IDisposable
                 ctx.Response.ContentType = "text/plain";
                 // Deliberately DO NOT set Content-Length: HttpListener then
                 // replies with Transfer-Encoding: chunked. This exercises the
-                // Aether client de-chunking fix (ae 0.183.0) — the recorder
+                // Aether client de-chunking — the recorder
                 // must store the decoded payload, not the chunk framing.
                 ctx.Response.SendChunked = true;
                 ctx.Response.OutputStream.Write(payload, 0, payload.Length);

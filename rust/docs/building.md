@@ -2,9 +2,9 @@
 
 ## Prerequisites
 
-- **A current Rust toolchain** (edition 2021; tested with cargo 1.94).
+- **A current Rust toolchain** (edition 2021, so Rust 1.56 or newer; `Cargo.toml` sets no `rust-version`; tested with cargo 1.94).
 - **The Aether toolchain (`ae`) on PATH** — only needed to build the
-  *native* library (**≥ 0.227.0**, libservirtium_vcr's `std.regex` floor). Consumers
+  *native* library (**0.941.0**, the version `bootstrap.sh` pins). Consumers
   who ship a prebuilt `.so`/`.dylib` (or point `SERVIRTIUM_VCR_LIB` at one)
   don't need it.
 
@@ -24,9 +24,8 @@ ae build --emit=lib --with=fs,net,extern core/embed.ae \
 - `--emit=lib` produces a shared library with `aether_vcr_embed_*` exports.
 - `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC`
-  Aether runtime — **Aether ≥ 0.182.0**; chunked de-chunking needs
-  **≥ 0.183.0**; the whole-tape `std.regex` normalize/redact path needs
-  **≥ 0.227.0**, which is the current floor for libservirtium_vcr.
+  Aether runtime and `std.regex` for the whole-tape normalize/redact path:
+  **Aether 0.941.0**, the version `bootstrap.sh` pins.
 - `--extra core/_embed_strdup.c` links the ~12-line caller-owned-string
   bridge (`vcr_embed_dup`/`free`) — the one malloc/free FFI primitive the
   Aether stdlib can't express; everything else is pure Aether.

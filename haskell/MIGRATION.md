@@ -58,7 +58,7 @@ server-first model the Aether VCR is designed around.
   `withPlayback` / `withRecord` (bracket-style auto-stop), explicit
   `startPlayback` / `startRecord` / `stop`, IO accessors, and the `Field`,
   `Outcome`, `VcrException` types.
-- `build-native.sh` + `bootstrap.sh`, `docs/`, and the test-suite.
+- `.tests.ae` (builds the native lib, writes `cabal.project.local`, runs `cabal test`), `docs/`, and the test-suite.
 
 ## API (new)
 

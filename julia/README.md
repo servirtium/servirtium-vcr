@@ -155,12 +155,12 @@ record("tapes/data.md", upstream) do rec
     set_sort_response_headers(rec, true)
     sort_header_value(rec, "Allow")
     # ... drive the system under test ...
+    flush!(rec)
 end
 ```
 
 A rule the core refuses throws `VcrError`. Sorting JSON without `set_pretty_json`
-is refused when the tape is written, so `flush!` (and the `record do` block's
-exit) throws a `VcrError` containing "sort_json_keys needs pretty_json" and
+is refused when the tape is written, so `flush!` throws a `VcrError` containing "sort_json_keys needs pretty_json" and
 writes nothing. `get_sort_json_keys` / `get_sort_response_headers` read the
 switches back; `clear_stable_order` turns every rule off.
 

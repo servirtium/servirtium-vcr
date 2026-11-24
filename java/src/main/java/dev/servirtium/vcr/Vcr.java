@@ -46,7 +46,7 @@ public final class Vcr {
     /**
      * Record live interactions: forward to {@code upstreamBase}, return the real
      * response to the SUT, and capture the exchange. The tape is written to
-     * {@code tapePath} when the server is closed.
+     * {@code tapePath} only by {@link VcrServer#commit()}.
      */
     public static RecordBuilder record(String tapePath, String upstreamBase) {
         return new RecordBuilder(tapePath, upstreamBase);

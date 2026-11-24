@@ -237,7 +237,7 @@ data PlaybackOptions = PlaybackOptions
 data RecordOptions = RecordOptions
   { recSecretRedactor :: Maybe SecretRedactor
   , recTapePath          :: FilePath
-    -- ^ Where the captured markdown tape is written on stop.
+    -- ^ Where the captured markdown tape is written by 'commit'.
   , recUpstreamBase      :: String
     -- ^ Upstream base URL each request is forwarded to.
   , recHost              :: String
@@ -317,7 +317,7 @@ data RecordOptions = RecordOptions
   , recSortJsonKeys      :: Bool
     -- ^ Sort JSON object keys at every depth in recorded JSON response bodies.
     -- Sorted JSON is only written pretty-printed: without a 'recPrettyJson'
-    -- the tape is refused when it is written ('stop' throws 'VcrException'
+    -- the tape is refused when it is written ('commit' throws 'VcrException'
     -- with @sort_json_keys needs pretty_json@). Default 'False'.
   , recSortJsonArrays    :: [(String, String)]
     -- ^ @(path, by)@: sort the JSON response arrays @path@ selects (a JSON
@@ -434,7 +434,8 @@ recordOptions tape upstream = RecordOptions
 data Mode = Playback | Record Bool  -- ^ @Record failIfChanged@
 
 -- | A running VCR server. Use 'stop' (or, preferably, 'withPlayback' \/
--- 'withRecord') to stop it; in record mode 'stop' also flushes the tape.
+-- 'withRecord') to stop it. In record mode the tape is written only by
+-- 'commit'; 'stop' with neither 'commit' nor 'discard' writes nothing and throws.
 data VcrServer = VcrServer
   { vcrHandle   :: N.Handle
   , vcrHost     :: String
@@ -667,7 +668,7 @@ startPlayback opts = do
 
 -- | Open the record server, apply the options to its handle, stage the note,
 -- then begin serving. Throws 'VcrException' on failure. Prefer 'withRecord',
--- which auto-stops (and flushes the tape).
+-- which auto-stops (the body writes the tape with 'commit').
 startRecord :: RecordOptions -> IO VcrServer
 startRecord opts = do
   handle <-

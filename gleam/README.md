@@ -45,7 +45,8 @@ returns.
 
 - `src/servirtium.gleam` — the idiomatic Gleam API: `playback`, `record`,
   `base_url`, `port`, `tape_length`, `last_kind`, `last_error`, `last_index`,
-  `close`, plus a `curl` test helper.
+  `commit`, `discard`, `close` (a record server writes its tape only on `commit`; `close` with
+  neither writes nothing and returns `CloseError`), plus a `curl` test helper.
 - `test/servirtium_gleam_test.gleam` — gleeunit smoke test (curls the VCR,
   asserts the body + a clean match).
 - `tapes/` — sample markdown tapes.
@@ -67,9 +68,9 @@ RAW=https://raw.githubusercontent.com/servirtium/servirtium-vcr
 # 1. a checkout of that tag (only gleam/ and erlang/ are used)
 git clone --depth 1 --branch $VER https://github.com/servirtium/servirtium-vcr.git vendor-src/servirtium-vcr
 
-# 2. the native app (SRC=main until a release tag contains erlang/build-nif-app.sh)
+# 2. the native app
 mkdir -p beam-libs
-curl -fsSL $RAW/main/erlang/build-nif-app.sh | SRC=main VER=$VER sh -s -- ./beam-libs
+curl -fsSL $RAW/$VER/erlang/build-nif-app.sh | VER=$VER sh -s -- ./beam-libs
 
 # 3. the dependency: a path dependency in gleam.toml, then resolve
 perl -pi -e 's|^\[dependencies\]|[dependencies]\nservirtium_gleam = { path = "vendor-src/servirtium-vcr/gleam" }|' gleam.toml
@@ -136,11 +137,11 @@ let assert Ok(_) = servirtium.sort_json_array_at(rec, "^/users", "", "name")   /
 servirtium.set_sort_response_headers(rec, True)
 let assert Ok(_) = servirtium.sort_header_value(rec, "Allow")
 // ... drive the system under test ...
-let assert servirtium.Closed = servirtium.close(rec)
+let assert servirtium.Closed = servirtium.commit(rec)
 ```
 
 A rule the core refuses comes back as `Error(reason)`. Sorting JSON without
-`set_pretty_json` is refused when the tape is written, so `close` returns
+`set_pretty_json` is refused when the tape is written, so `commit` returns
 `CloseError("sort_json_keys needs pretty_json: ...")` and writes nothing.
 `get_sort_json_keys` / `get_sort_response_headers` read the switches back;
 `clear_stable_order` turns every rule off.

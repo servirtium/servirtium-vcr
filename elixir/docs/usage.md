@@ -60,10 +60,10 @@ automatically.
 Servirtium.record(tape, upstream, fail_if_changed: true)
 ```
 
-On stop, the freshly recorded tape is written **and** `Servirtium.stop/1`
+On `Servirtium.commit/1`, the freshly recorded tape is written **and** it
 returns `{:error, drift_msg}` if it differs from the committed tape — so
 `git diff` shows the drift and CI fails loudly. (Without `:fail_if_changed`,
-stop just overwrites.)
+`commit/1` just overwrites.)
 
 ## Scrubbing secrets out of tapes (redaction)
 
@@ -179,7 +179,7 @@ the first interaction; stage later ones on the running server:
 # ... first request recorded with the note ...
 Servirtium.note(srv, "Overdraft", "Should be refused")   # attaches to the next
 # ... next request ...
-Servirtium.stop(srv)
+:ok = Servirtium.commit(srv)
 ```
 
 ## Static content (UI tests)
@@ -219,7 +219,7 @@ Servirtium.record(tape, upstream,
 
 Sorted JSON is only written pretty-printed: a record with `sort_json_keys` or a
 `sort_json_array*` rule but without `pretty_json` is refused when the tape is
-written: `Servirtium.stop/1` returns `{:error, "sort_json_keys needs pretty_json:
+written: `Servirtium.commit/1` returns `{:error, "sort_json_keys needs pretty_json:
 sorted JSON is only written pretty-printed (turn pretty_json on)"}` and writes
 nothing. A rule the core refuses outright raises `Servirtium.Error` from
 `record/3`.
@@ -268,7 +268,9 @@ cleanly.
 | `Servirtium.note(srv, title, body)` | stage a note for the next recorded interaction |
 | `Servirtium.reset_cursor(srv)` | rewind replay to interaction 0; clear last-* |
 | `Servirtium.clear_last_error(srv)` | clear the last-error slot between sub-cases |
-| `Servirtium.stop(srv)` | stop; flush tape if recording; frees the VCR (idempotent, read diagnostics first) |
+| `Servirtium.commit(srv)` | record: stop and write the tape (`{:error, msg}` on drift if `:fail_if_changed`) |
+| `Servirtium.discard(srv)` | record: stop and drop the recording, writing nothing |
+| `Servirtium.stop(srv)` | stop and free the VCR; a recording neither committed nor discarded writes nothing and returns `{:error, msg}` (idempotent, read diagnostics first) |
 
 ## Outcomes (`last_kind/1`)
 

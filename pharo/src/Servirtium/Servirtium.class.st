@@ -38,7 +38,7 @@ Servirtium class >> playback: aTapePath [
 Servirtium class >> record: aTapePath upstream: anUpstreamBase [
 	"Record live interactions: forward to anUpstreamBase, return the real
 	 response to the SUT, and capture the exchange. The tape is written to
-	 aTapePath when the server is stopped. Answers a builder."
+	 aTapePath only by `commit` (`discard` drops it). Answers a builder."
 
 	^ ServirtiumRecordBuilder tape: aTapePath upstream: anUpstreamBase
 ]
