@@ -1,6 +1,8 @@
 MIT License
 
 Copyright (c) 2026 Paul Hammant and contributors
+Portions copyright Giannis Georgopoulos (Vcr.HttpRecorder, MIT) — the
+JSON-semantic request-body matcher is modelled on its RulesMatcher.ByJsonContent.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
