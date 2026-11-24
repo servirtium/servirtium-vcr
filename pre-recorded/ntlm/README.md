@@ -243,7 +243,7 @@ python ntlm_server.py --port 8099     # the server on its own, logging to stderr
 ```
 
 Every client is Python, pinned in `requirements.txt`; nothing is skipped
-for want of a tool. Last run (Aether 0.939.0, 2026-11-23): macOS arm64, 39 passed and 1 xfailed; cachyos (Python 3.14), 39 passed and 1 xfailed.
+for want of a tool. Last run (Aether 0.941.0, 2026-11-24): macOS arm64, 39 passed and 1 xfailed; cachyos (Python 3.14), 39 passed and 1 xfailed.
 
 ## Re-recording
 

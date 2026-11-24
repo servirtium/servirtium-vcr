@@ -61,7 +61,7 @@ removes what was left of it, in every binding at once:
   anonymous request as that user, and a Type 3 on a new client connection
   succeeded where the server refuses it. Each client connection now gets
   one upstream connection of its own, closed when the client's closes.
-  Needs Aether 0.939.0. See `pre-recorded/ntlm/README.md`, finding (a).
+  Needs Aether 0.939.0 or later (cut on 0.941.0). See `pre-recorded/ntlm/README.md`, finding (a).
 - **`rewrite_upstream_base`** (record mode, opt-in, every binding:
   `RewriteUpstreamBase()` in .NET, `rewrite_upstream_base()` in Python, ...):
   a service that writes its own absolute URLs into responses (TFS's location

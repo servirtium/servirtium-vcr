@@ -170,8 +170,12 @@ set -euo pipefail
 # http.server_on_conn_close; aether#3851), which 0.939.0 is the first to have.
 # NTLM and Negotiate record correctly only with it (pre-recorded/ntlm). aeb
 # unchanged (v0.348).
-AE_PIN="0.939.0"
-AE_FETCH="v0.939.0"
+# 2026-11-24: ae 0.939.0 -> 0.941.0, a tracking-only bump, no new primitive
+# needed. 0.940.0 (std.http client retries only idempotent methods after a
+# failed read, new client error wording, tcp.listen backlog SOMAXCONN) and
+# 0.941.0 (account trip fix) forced no change here. aeb unchanged (v0.348).
+AE_PIN="0.941.0"
+AE_FETCH="v0.941.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

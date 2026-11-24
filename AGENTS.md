@@ -166,7 +166,7 @@ tapes (see "Bruno" below); both return `""` or the error.
 The build runner is **aeb** (sibling repo `../aeb`; its `AGENTS.md` is the deep
 reference). Quick facts:
 
-- Manage Aether with `ae version install 0.939.0` and `ae version use 0.939.0`;
+- Manage Aether with `ae version install 0.941.0` and `ae version use 0.941.0`;
   check `ae version` confirms matching `ae`/`aetherc`. Use the version manager
   for upgrades rather than manually downloading toolchain archives. If aeb picks
   an older private compiler, pass `AETHER=/absolute/path/to/selected/ae`.
