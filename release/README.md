@@ -101,7 +101,7 @@ The required raw-library downloads are:
 | Linux glibc | x86_64, arm64 | `linux-<arch>.so` |
 | Linux musl | x86_64, arm64 | `linux-<arch>-musl.so` |
 | macOS | x86_64, arm64 | `macos-<arch>.dylib` |
-| Windows | x86_64, arm64 | `windows-<arch>.dll` (+ `.dll.lib`) |
+| Windows | x86_64, arm64 | `windows-<arch>.dll` (+ `windows-<arch>.lib`) |
 | FreeBSD | x86_64 | `freebsd-x86_64.so` |
 
 All nine libraries must build successfully. The workflow verifies every
@@ -114,8 +114,9 @@ Each library is published once, as `libservirtium_vcr-<tag>-<platform>` with
 its `.sha256`, and serves two kinds of consumer:
 
 - **Bindings and C/C++ consumers** download it, check it, and copy it to the
-  plain name their linker or loader wants (`libservirtium_vcr.so` /
-  `.dylib`; Windows bindings use `servirtium_vcr.dll`).
+  plain name their linker or loader wants: `libservirtium_vcr.so` /
+  `.dylib` / `.dll`, the same name on every OS. A Windows consumer that links
+  at build time also saves the `.lib` import library as `servirtium_vcr.lib`.
 - **Aether programs** use it as an `ae add` binary package. The release's
   `aether.toml` says `binary = "libservirtium_vcr"`, so
   `ae add github.com/servirtium/servirtium-vcr@<tag>` fetches
@@ -140,6 +141,7 @@ that name up through its rpath when it runs. So:
 |---|---|---|
 | macOS | install name `@rpath/libservirtium_vcr.dylib` (deployment target macOS 13.0) | `release/build.sh`'s zig shim |
 | Linux, FreeBSD | SONAME `libservirtium_vcr.so` | the same shim |
+| Windows | export name `libservirtium_vcr.dll`, recorded in the import library too | `core/.build.ae`'s output name |
 
 `ae build --target` gives zig no link flags of its own: on a Linux host it
 links a macOS dylib with no install name, so zig records the `-o` path, and it
@@ -147,8 +149,28 @@ picks the host's macOS minimum (15.0 on the Linux runner). Every alpha.20
 dylib carried `/home/runner/work/.../libservirtium_vcr.so` and failed at
 start with "Library not loaded". The ELF libraries had no SONAME, which is
 harmless (a consumer records the name it linked with) but is now set too.
-Windows DLLs still call themselves `libservirtium_vcr.so.dll` (in the DLL and
-its import library), which a consumer linking the import library must match.
+
+A DLL's own name is its link output's file name: the linker writes it into
+the export directory and into the import library, and a program linked
+against either asks the loader for it. `core/.build.ae` named every cross
+build's output `libservirtium_vcr.so`, and `ae build` appends `.dll` to an
+`-o` name that lacks it, so every DLL through alpha.20 called itself
+`libservirtium_vcr.so.dll`: a program linked against the import library (C,
+C++, Go's cgo, Zig, Nim, D, Crystal, ...) stopped at start with
+`STATUS_DLL_NOT_FOUND` (0xC0000135, "The code execution cannot proceed
+because libservirtium_vcr.so.dll was not found") beside a DLL staged under
+any other name. The Windows output is now named `libservirtium_vcr.dll`.
+
+Why `libservirtium_vcr.dll` and not `servirtium_vcr.dll`: an `ae add`
+consumer installs the DLL as `<binary stem>.dll`, and the stem is
+`libservirtium_vcr` on every OS (one `aether.toml`); ae links a Windows
+binary package directly, which records the DLL's export name, so only that
+name loads. It is also the name on every other OS (`.so`, `.dylib`), and
+the Java jar already used it. The import library is named for the linker,
+not the loader: `servirtium_vcr.lib` is what `-lservirtium_vcr` finds in
+MinGW's ld and in zig (which does not look for `libservirtium_vcr.lib` or
+`.dll.a`), and what MSVC's `link` takes by name. The release asset is
+`libservirtium_vcr-<tag>-windows-<arch>.lib` (alpha.20: `.dll.lib`).
 
 A cross build compiles std.zlib's real inflate only when it is given a zlib to
 link, otherwise a stub; record mode then answers a gzip upstream with 500
@@ -158,8 +180,9 @@ zig and hands it to each build as `CROSSBUILD_SYSROOT`.
 
 `release/.artifacts.ae` fails a dylib whose install name is anything but
 `@rpath/libservirtium_vcr.dylib`, an ELF library with any SONAME other than
-`libservirtium_vcr.so`, and any library without zlib compiled in (or, for an
-in-tree host build, a shared zlib dependency).
+`libservirtium_vcr.so`, a DLL whose export name or import library's DLL name
+is anything but `libservirtium_vcr.dll`, and any library without zlib compiled
+in (or, for an in-tree host build, a shared zlib dependency).
 
 `release/toolchain.env` pins Aether, aeb, and Zig for the runner. Aether must
 match `bootstrap.sh`'s `AE_FETCH`; the version check enforces this. Toolchain
@@ -199,7 +222,8 @@ Needs `ae` + `zig` on PATH (install the pinned toolchain — see `../bootstrap.s
 - `ae-add/aether.toml` — the `ae add` manifest (its assets are the artifacts)
 
 Each is stripped (`--size`). `so`=linux ELF, `dylib`=macOS Mach-O, `dll`=Windows
-PE. On Windows each DLL also gets a `<dll>.lib` import library beside it — needed
+PE. On Windows each DLL also gets an import library beside it
+(`libservirtium_vcr-<tag>-windows-<arch>.lib`; save it as `servirtium_vcr.lib`) — needed
 only by a consumer that *links* the DLL at build time; the FFI bindings `dlopen`
 at runtime and don't use it, but it's checksummed and shipped so Windows is
 first-class. FreeBSD needs `AETHER_SYSROOT` and skips loudly without it.
@@ -312,8 +336,8 @@ A verifier re-hashes the artifact they hold, matches `sha256`, and trusts the
 
 Release verification is implemented by `release/.artifacts.ae`. Its default mode
 checks the engine files under `release/dist`, including hashes, libc identities,
-install names and SONAMEs, zlib, the ae-add manifest, Windows import libraries
-and Linux ABI exports. Set
+install names, DLL names and SONAMEs, zlib, the ae-add manifest, Windows import
+libraries (and the DLL name each records) and Linux ABI exports. Set
 `SVCR_ARTIFACTS_MODE=bindings` to require the fat Java jar and .NET nupkg too,
 or `version` for the version/toolchain preflight. `SVCR_ARTIFACTS_DIST` selects
 another directory, such as downloaded release assets. These checks run through

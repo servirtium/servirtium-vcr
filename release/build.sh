@@ -232,7 +232,7 @@ for t in $MATRIX; do
   # for freebsd, empty otherwise) is scoped to this run — emit only READS the
   # built .so so it inherits the sysroot cleanly. The cross build leaves the lib
   # at target/build/core/lib/ (name cross-mangled: libservirtium_vcr.so for
-  # linux/freebsd, .so.dll for windows, .so.dylib for macos) and the ae-add trio
+  # linux/freebsd, libservirtium_vcr.dll for windows, .so.dylib for macos) and the ae-add trio
   # under target/build/core/ae-add/. Clean per-triple so nothing leaks between
   # targets (a prior triple's ae-add/ would otherwise be re-collected).
   rm -rf "$ROOT/target/build/core/ae-add" "$ROOT/target/build/core/lib"
@@ -258,12 +258,14 @@ for t in $MATRIX; do
         && codesign -f -s - "$out" >/dev/null 2>&1 || die "could not set the install name of $name"
     fi
     ( cd "$DIST" && sha256sum "$name" > "$name.sha256" ) || die "could not checksum $name"
-    # Windows also emits an import library (<dll>.lib) — ship it (a consumer that
-    # LINKS the DLL at build time needs it; our FFI bindings dlopen and don't).
+    # Windows also emits an import library, libservirtium_vcr.lib — ship it (a
+    # consumer that LINKS the DLL at build time needs it; our FFI bindings load
+    # the DLL by path and don't). Asset: libservirtium_vcr-<tag>-windows-<arch>.lib.
     if [ "$os" = "windows" ]; then
-      [ -s "$libdir/libservirtium_vcr.so.lib" ] || die "missing Windows import library for $t"
-      cp "$libdir/libservirtium_vcr.so.lib" "$out.lib" || die "could not stage Windows import library for $t"
-      ( cd "$DIST" && sha256sum "$name.lib" > "$name.lib.sha256" ) || die "could not checksum Windows import library for $t"
+      implib="${name%.dll}.lib"
+      [ -s "$libdir/libservirtium_vcr.lib" ] || die "missing Windows import library for $t"
+      cp "$libdir/libservirtium_vcr.lib" "$DIST/$implib" || die "could not stage Windows import library for $t"
+      ( cd "$DIST" && sha256sum "$implib" > "$implib.sha256" ) || die "could not checksum Windows import library for $t"
     fi
     # The ae-add asset aeb staged for this triple has the raw library's name;
     # it must be the same bytes (on a macOS host the raw copy was renamed and
@@ -291,7 +293,7 @@ echo
 # sidecars). Named SHA256SUMS.txt so a browser renders it inline. Generated
 # here so the --engine-only pre-check below (which reads this manifest) sees it;
 # it is REGENERATED after the binding packages so the jar + nupkg join it.
-( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib 2>/dev/null > SHA256SUMS.txt || true )
+( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.lib 2>/dev/null > SHA256SUMS.txt || true )
 
 # The ae-add manifest; its per-triple assets are the raw libraries above.
 if [ "$built" -gt 0 ] && [ -f "$AEADD/aether.toml" ]; then
@@ -376,8 +378,8 @@ if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
        stage_rid "libservirtium_vcr-$TAG-linux-arm64-musl.so"   linux-musl-arm64 libservirtium_vcr.so
        stage_rid "libservirtium_vcr-$TAG-macos-x86_64.dylib"    osx-x64          libservirtium_vcr.dylib
        stage_rid "libservirtium_vcr-$TAG-macos-arm64.dylib"     osx-arm64        libservirtium_vcr.dylib
-       stage_rid "libservirtium_vcr-$TAG-windows-x86_64.dll"    win-x64          servirtium_vcr.dll
-       stage_rid "libservirtium_vcr-$TAG-windows-arm64.dll"     win-arm64        servirtium_vcr.dll
+       stage_rid "libservirtium_vcr-$TAG-windows-x86_64.dll"    win-x64          libservirtium_vcr.dll
+       stage_rid "libservirtium_vcr-$TAG-windows-arm64.dll"     win-arm64        libservirtium_vcr.dll
        dotnet pack dotnet/Servirtium.Vcr/Servirtium.Vcr.pkg.csproj -c Release \
          -o target/dist/dotnet/Servirtium.Vcr/nupkg --nologo
      ) >"$DIST/.nupkg.log" 2>&1; then
@@ -425,8 +427,8 @@ if [ "${RELEASE_BINDING_PACKAGES:-0}" = "1" ]; then
        stage_npm "libservirtium_vcr-$TAG-linux-arm64-musl.so"   linux-arm64-musl libservirtium_vcr.so
        stage_npm "libservirtium_vcr-$TAG-macos-x86_64.dylib"    darwin-x64       libservirtium_vcr.dylib
        stage_npm "libservirtium_vcr-$TAG-macos-arm64.dylib"     darwin-arm64     libservirtium_vcr.dylib
-       stage_npm "libservirtium_vcr-$TAG-windows-x86_64.dll"    win32-x64        servirtium_vcr.dll
-       stage_npm "libservirtium_vcr-$TAG-windows-arm64.dll"     win32-arm64      servirtium_vcr.dll
+       stage_npm "libservirtium_vcr-$TAG-windows-x86_64.dll"    win32-x64        libservirtium_vcr.dll
+       stage_npm "libservirtium_vcr-$TAG-windows-arm64.dll"     win32-arm64      libservirtium_vcr.dll
        cd target/npm-pkg
        npm ci --no-audit --no-fund
        npm pack --pack-destination "$ROOT/target/dist/npm"
@@ -459,7 +461,7 @@ fi
 # Regenerate the combined manifest so the jar + nupkg ride it too (a no-op
 # re-list of the engine libs when RELEASE_BINDING_PACKAGES is unset — the glob
 # simply finds no .jar/.nupkg). SHA256SUMS.txt is thus always complete.
-( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.dll.lib ./*.jar ./*.nupkg ./*.tgz ./*.artifactbundle.zip 2>/dev/null > SHA256SUMS.txt || true )
+( cd "$DIST" && sha256sum ./*.so ./*.dylib ./*.dll ./*.lib ./*.jar ./*.nupkg ./*.tgz ./*.artifactbundle.zip 2>/dev/null > SHA256SUMS.txt || true )
 
 say "built $built libservirtium_vcr artifact(s) into release/dist/ ($failed failed)"
 [ "$built" -gt 0 ] || die "no artifacts built"

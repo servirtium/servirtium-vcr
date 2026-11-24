@@ -72,7 +72,7 @@ fi
 # nullglob makes an unmatched glob expand to nothing (not a literal), so an empty
 # dist yields an empty list rather than bogus filenames.
 shopt -s nullglob
-bins=( "$DIST"/*.so "$DIST"/*.dylib "$DIST"/*.dll "$DIST"/*.dll.lib )
+bins=( "$DIST"/*.so "$DIST"/*.dylib "$DIST"/*.dll "$DIST"/*.lib )
 sums=( "$DIST"/*.sha256 )
 manifest=( "$DIST"/SHA256SUMS.txt )   # nullglob: empty if it doesn't exist
 # The `ae add` manifest (subdir, so NOT caught by the globs above). Its binary
@@ -83,16 +83,16 @@ aeadd=( "$DIST"/ae-add/aether.toml )
 shopt -u nullglob
 [ "${#bins[@]}" -gt 0 ] || die "no libservirtium_vcr artifacts in release/dist — run release/build.sh (or drop --no-build)"
 assets=( "${bins[@]}" "${sums[@]}" "${manifest[@]}" "${aeadd[@]}" )
-# Count only the loadable libraries (not the Windows .dll.lib import stubs) for
+# Count only the loadable libraries (not the Windows .lib import libraries) for
 # the "N platform artifacts" note.
-nbin=0; for f in "${bins[@]}"; do case "$f" in *.dll.lib) ;; *) nbin=$((nbin+1)) ;; esac; done
+nbin=0; for f in "${bins[@]}"; do case "$f" in *.lib) ;; *) nbin=$((nbin+1)) ;; esac; done
 
 # The os-arch combinations shipped — derived from the actual libservirtium_vcr libs in dist
 # (their names carry -<os>-<arch>.<ext>), so this stays true as the matrix
 # grows/shrinks rather than hardcoding. Deduped, comma-listed.
 plats="$(
   for f in "${bins[@]}"; do
-    case "$f" in *.dll.lib) continue ;; esac
+    case "$f" in *.lib) continue ;; esac
     b="$(basename "$f")"
     # Take just the trailing <os>-<arch> (the last two dash-segments before the
     # extension), NOT ${b#prefix-*-} — the tag itself can contain a dash

@@ -38,7 +38,7 @@ internal static class NativeLoader
 
 #if NETFRAMEWORK
     // .NET Framework (net48) has no NativeLibrary / custom DllImport resolver.
-    // Instead the CLR resolves a bare [DllImport("servirtium_vcr")] through Win32
+    // Instead the CLR resolves a bare [DllImport("libservirtium_vcr")] through Win32
     // LoadLibrary with the process's DLL search path, so we prepend the right
     // directory via SetDllDirectory before the first P/Invoke. There is no
     // export-level ValidateAbi here (no TryGetExport) — a too-old native library
@@ -158,8 +158,8 @@ internal static class NativeLoader
 
     private static string FileName =>
         RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"{NativeMethods.Lib}.dll"
-        : RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? $"lib{NativeMethods.Lib}.dylib"
-        : $"lib{NativeMethods.Lib}.so";
+        : RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? $"{NativeMethods.Lib}.dylib"
+        : $"{NativeMethods.Lib}.so";
 
     private static IEnumerable<string> Rids
     {

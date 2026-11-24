@@ -194,7 +194,7 @@ jobs:
           gh release create "$RELEASE_TAG" --verify-tag "${flags[@]}" \
             --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" \
             release/dist/*.so release/dist/*.dylib release/dist/*.dll \
-            release/dist/*.dll.lib release/dist/*.jar release/dist/*.nupkg release/dist/*.tgz \
+            release/dist/*.lib release/dist/*.jar release/dist/*.nupkg release/dist/*.tgz \
             release/dist/*.artifactbundle.zip \
             release/dist/*.sha256 release/dist/SHA256SUMS.txt \
             release/dist/ae-add/aether.toml

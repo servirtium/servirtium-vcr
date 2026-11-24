@@ -67,7 +67,7 @@ thing: `koffi.decode(ptr, 'char', -1)` to read the C string, then
    paths.
 
 The file name is computed per-platform: `libservirtium_vcr.so` (Linux) /
-`.dylib` (macOS) / `servirtium_vcr.dll` (Windows). The resolver runs from both
+`.dylib` (macOS) / `libservirtium_vcr.dll` (Windows). The resolver runs from both
 `src/native.ts` (tests) and `dist/native.js` (published) — `../native` is the
 same relative depth from each.
 

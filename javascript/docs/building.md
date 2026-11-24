@@ -46,7 +46,7 @@ in `package.json` includes `dist/` and `native/`, so stage the library under
 loading; it does not copy a library into the tarball.
 
 The bundled filenames are `native/libservirtium_vcr.so` on Linux/FreeBSD,
-`native/libservirtium_vcr.dylib` on macOS, and `native/servirtium_vcr.dll` on
+`native/libservirtium_vcr.dylib` on macOS, and `native/libservirtium_vcr.dll` on
 Windows. A tarball built this way is for the selected OS/architecture. The
 loader does not select between architecture-specific subdirectories; do not
 distribute one architecture's library as a universal package.

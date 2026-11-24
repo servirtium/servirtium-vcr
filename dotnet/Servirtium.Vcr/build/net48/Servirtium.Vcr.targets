@@ -1,6 +1,6 @@
 <Project>
   <!--
-    Servirtium.Vcr on .NET Framework: put the native engine (servirtium_vcr.dll)
+    Servirtium.Vcr on .NET Framework: put the native engine (libservirtium_vcr.dll)
     in the output directory.
 
     Modern .NET finds the engine under runtimes/<rid>/native/ by itself. A .NET
@@ -54,7 +54,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <_ServirtiumVcrAlreadyCopied Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)%(Extension)' == 'servirtium_vcr.dll'" />
+      <_ServirtiumVcrAlreadyCopied Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)%(Extension)' == 'libservirtium_vcr.dll'" />
     </ItemGroup>
 
     <Error Code="SVCR001"
@@ -65,15 +65,15 @@
            Text="Servirtium.Vcr ships Windows native engines for x64 and ARM64 only; this project targets RuntimeIdentifier '$(RuntimeIdentifier)', PlatformTarget '$(_ServirtiumVcrPlatform)'. Set ServirtiumVcrCopyNative to false and point SERVIRTIUM_VCR_LIB at an engine for that platform." />
 
     <ItemGroup Condition="'@(_ServirtiumVcrAlreadyCopied)' == '' and ('$(_ServirtiumVcrArch)' == 'x64' or '$(_ServirtiumVcrArch)' == 'arm64')">
-      <ReferenceCopyLocalPaths Include="$(_ServirtiumVcrNativeRoot)\win-$(_ServirtiumVcrArch)\native\servirtium_vcr.dll">
+      <ReferenceCopyLocalPaths Include="$(_ServirtiumVcrNativeRoot)\win-$(_ServirtiumVcrArch)\native\libservirtium_vcr.dll">
         <DestinationSubDirectory></DestinationSubDirectory>
       </ReferenceCopyLocalPaths>
     </ItemGroup>
     <ItemGroup Condition="'@(_ServirtiumVcrAlreadyCopied)' == '' and '$(_ServirtiumVcrArch)' == 'any'">
-      <ReferenceCopyLocalPaths Include="$(_ServirtiumVcrNativeRoot)\win-x64\native\servirtium_vcr.dll">
+      <ReferenceCopyLocalPaths Include="$(_ServirtiumVcrNativeRoot)\win-x64\native\libservirtium_vcr.dll">
         <DestinationSubDirectory>runtimes\win-x64\native\</DestinationSubDirectory>
       </ReferenceCopyLocalPaths>
-      <ReferenceCopyLocalPaths Include="$(_ServirtiumVcrNativeRoot)\win-arm64\native\servirtium_vcr.dll">
+      <ReferenceCopyLocalPaths Include="$(_ServirtiumVcrNativeRoot)\win-arm64\native\libservirtium_vcr.dll">
         <DestinationSubDirectory>runtimes\win-arm64\native\</DestinationSubDirectory>
       </ReferenceCopyLocalPaths>
     </ItemGroup>

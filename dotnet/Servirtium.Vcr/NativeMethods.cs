@@ -92,12 +92,13 @@ internal static class NativeMethods
 #endif
 
     /// <summary>
-    /// Native library base name. .NET resolves this to
-    /// libservirtium_vcr.so / .dylib / servirtium_vcr.dll via the
+    /// Native library base name, the same on every OS: .NET resolves it to
+    /// libservirtium_vcr.so / .dylib / .dll via the
     /// runtimes/&lt;rid&gt;/native NuGet layout (and the dev-time
-    /// resolver in <see cref="NativeLoader"/>).
+    /// resolver in <see cref="NativeLoader"/>). On Windows it is also the
+    /// DLL's own name, which .NET Framework's LoadLibrary needs.
     /// </summary>
-    internal const string Lib = "servirtium_vcr";
+    internal const string Lib = "libservirtium_vcr";
 
     // ---- lifecycle -----------------------------------------------------
 

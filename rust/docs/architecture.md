@@ -62,7 +62,7 @@ order:
    can resolve it.
 
 The file name is computed per-platform: `libservirtium_vcr.so` /
-`.dylib` / `servirtium_vcr.dll`. Every symbol is resolved up front, so a
+`.dylib` / `libservirtium_vcr.dll`. Every symbol is resolved up front, so a
 missing export fails loudly at load time rather than at the first dispatch.
 
 ## Concurrency: one server per port

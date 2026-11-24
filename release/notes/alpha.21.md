@@ -20,10 +20,23 @@ website, and a documentation sweep.
   answered "gzip response but zlib unavailable". Every library now carries
   zlib 1.3.1.
 - **Linux and FreeBSD libraries have a SONAME**, `libservirtium_vcr.so`.
+- **Windows: a program linked against the import library could not start.**
+  Both alpha.20 DLLs called themselves `libservirtium_vcr.so.dll` (their
+  export name, and the DLL name their `.dll.lib` import library records), so
+  a C, C++, Go, Zig, Nim, D or Crystal program linked against it stopped with
+  `STATUS_DLL_NOT_FOUND` (0xC0000135): "The code execution cannot proceed
+  because libservirtium_vcr.so.dll was not found". Each DLL is now
+  `libservirtium_vcr.dll`, the name on every OS and the name `ae add`
+  installs, and its import library ships as
+  `libservirtium_vcr-<tag>-windows-<arch>.lib` (save it as
+  `servirtium_vcr.lib`, which `-lservirtium_vcr` finds). Every binding that
+  loads the DLL by name now looks for `libservirtium_vcr.dll` (Python, Ruby,
+  JavaScript, Rust, PHP, Dart, Janet, .NET; Java already did), and the
+  NuGet and npm packages carry it under that name.
 
-`release/.artifacts.ae` now checks each library's install name or SONAME
-and that it carries zlib, so a release with either defect fails before it
-is published.
+`release/.artifacts.ae` now checks each library's install name, DLL name
+(and the one its import library records) or SONAME, and that it carries
+zlib, so a release with any of these defects fails before it is published.
 
 ## Release assets
 
@@ -40,7 +53,9 @@ is published.
 ## Bindings
 
 - **Zig**: the consumer example called the removed `Server.stop()`; it
-  closes the playback server now.
+  closes the playback server now. It also ran `curl` with an empty
+  environment (an `Io.Threaded` of its own), which on Windows cannot open a
+  socket; it uses the process's `Io` now.
 - **Haskell**: the package's `LICENSE` file was missing, so the README's
   `source-repository-package` route failed.
 

@@ -72,7 +72,7 @@ fail() { echo "FAIL  $*"; fails=$((fails + 1)); }
 expect_file() { if [ -f "$2" ]; then pass "$1: $(echo "$2" | sed "s|$tree/||")"; else fail "$1: missing $(echo "$2" | sed "s|$tree/||")"; fi; }
 expect_no_file() { if [ -e "$2" ]; then fail "$1: unexpected $(echo "$2" | sed "s|$tree/||")"; else pass "$1: no $(echo "$2" | sed "s|$tree/||")"; fi; }
 
-# How many ReferenceCopyLocalPaths items name servirtium_vcr.dll once the
+# How many ReferenceCopyLocalPaths items name libservirtium_vcr.dll once the
 # references are resolved (the package's target included): one per engine the
 # output gets, never two for one destination.
 count_engines() { # project, extra msbuild args...
@@ -118,9 +118,9 @@ pr() { echo "$tree/sdk-pr-$1/Consumer.SdkPackageReference.csproj"; }
 
 if build i-anycpu "$(pr anycpu)"; then
   out="$tree/sdk-pr-anycpu/bin/Debug/net48"
-  expect_file "(i) AnyCPU" "$out/runtimes/win-x64/native/servirtium_vcr.dll"
-  expect_file "(i) AnyCPU" "$out/runtimes/win-arm64/native/servirtium_vcr.dll"
-  expect_no_file "(i) AnyCPU" "$out/servirtium_vcr.dll"
+  expect_file "(i) AnyCPU" "$out/runtimes/win-x64/native/libservirtium_vcr.dll"
+  expect_file "(i) AnyCPU" "$out/runtimes/win-arm64/native/libservirtium_vcr.dll"
+  expect_no_file "(i) AnyCPU" "$out/libservirtium_vcr.dll"
   n=$(count_engines "$(pr anycpu)")
   [ "$n" = 2 ] && pass "(i) AnyCPU: 2 engine items (x64, arm64)" || fail "(i) AnyCPU: $n engine items, expected 2"
 else
@@ -129,7 +129,7 @@ fi
 
 if build i-rid "$(pr rid-win-x64)" -p:RuntimeIdentifier=win-x64; then
   out="$tree/sdk-pr-rid-win-x64/bin/Debug/net48/win-x64"
-  expect_file "(i) RID win-x64" "$out/servirtium_vcr.dll"
+  expect_file "(i) RID win-x64" "$out/libservirtium_vcr.dll"
   expect_no_file "(i) RID win-x64" "$out/runtimes"
   n=$(count_engines "$(pr rid-win-x64)" -p:RuntimeIdentifier=win-x64)
   # NuGet's own runtimes/win-x64/native item, and nothing more from the targets.
@@ -140,7 +140,7 @@ fi
 
 if build i-x64 "$(pr x64)" -p:PlatformTarget=x64; then
   out="$tree/sdk-pr-x64/bin/Debug/net48"
-  expect_file "(i) x64" "$out/servirtium_vcr.dll"
+  expect_file "(i) x64" "$out/libservirtium_vcr.dll"
   expect_no_file "(i) x64" "$out/runtimes"
 else
   fail "(i) x64 build (log: $work/logs/i-x64.log)"; tail -20 "$work/logs/i-x64.log"
@@ -159,8 +159,8 @@ tests="$tree/sdk-transitive/Tests/Consumer.SdkTransitive.csproj"
 if build ii "$tests"; then
   out="$tree/sdk-transitive/Tests/bin/Debug/net48"
   expect_file "(ii) transitive" "$out/Servirtium.Vcr.dll"
-  expect_file "(ii) transitive" "$out/runtimes/win-x64/native/servirtium_vcr.dll"
-  expect_file "(ii) transitive" "$out/runtimes/win-arm64/native/servirtium_vcr.dll"
+  expect_file "(ii) transitive" "$out/runtimes/win-x64/native/libservirtium_vcr.dll"
+  expect_file "(ii) transitive" "$out/runtimes/win-arm64/native/libservirtium_vcr.dll"
   # NuGet imports buildTransitive/ into both projects, and build/ into neither
   # directly (the one file imports the other), so the target is defined once.
   for g in "$tree/sdk-transitive/Tests/obj/Consumer.SdkTransitive.csproj.nuget.g.targets" \
@@ -211,8 +211,8 @@ else
     out="$pc/bin/Debug"
     expect_file "(iii) packages.config" "$out/Consumer.PackagesConfig.exe"
     expect_file "(iii) packages.config" "$out/Servirtium.Vcr.dll"
-    expect_file "(iii) packages.config" "$out/runtimes/win-x64/native/servirtium_vcr.dll"
-    expect_file "(iii) packages.config" "$out/runtimes/win-arm64/native/servirtium_vcr.dll"
+    expect_file "(iii) packages.config" "$out/runtimes/win-x64/native/libservirtium_vcr.dll"
+    expect_file "(iii) packages.config" "$out/runtimes/win-arm64/native/libservirtium_vcr.dll"
   else
     fail "(iii) packages.config build (log: $work/logs/iii.log)"; tail -20 "$work/logs/iii.log"
   fi
@@ -221,7 +221,7 @@ fi
 # ---- (iv) the binding's own tests, built for net48 against the package --------
 own="$tree/tests/Servirtium.Vcr.Tests.Net48.csproj"
 if build iv "$own" "-p:ServirtiumVcrTestsDir=$(np "$root/dotnet/Servirtium.Vcr.Tests")"; then
-  expect_file "(iv) the binding's tests on net48" "$tree/tests/bin/Debug/net48/servirtium_vcr.dll"
+  expect_file "(iv) the binding's tests on net48" "$tree/tests/bin/Debug/net48/libservirtium_vcr.dll"
 else
   fail "(iv) the binding's tests do not build for net48 (log: $work/logs/iv.log)"; grep -E 'error' "$work/logs/iv.log" | sort -u | head -20
 fi

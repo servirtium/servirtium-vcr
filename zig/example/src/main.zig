@@ -9,7 +9,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(1);
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     const a = std.heap.page_allocator;
 
     var play = try servirtium.Playback.init(a, "tapes/single_get.md").port(0).start();
@@ -21,9 +21,10 @@ pub fn main() !void {
     const url = try std.fmt.allocPrint(a, "{s}/ok", .{base});
     defer a.free(url);
 
-    var io_threaded = std.Io.Threaded.init(a, .{});
-    defer io_threaded.deinit();
-    const io = io_threaded.io();
+    // The process's own Io: it carries the environment, so curl inherits it.
+    // An Io.Threaded made here has an empty one, and on Windows a child with
+    // no SystemRoot cannot load Winsock (curl: "failed to open socket").
+    const io = init.io;
 
     const res = try std.process.run(a, io, .{ .argv = &.{ "curl", "-s", url } });
     defer a.free(res.stdout);

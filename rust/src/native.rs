@@ -206,7 +206,7 @@ fn candidate_paths() -> Vec<PathBuf> {
 
 fn lib_file_name() -> String {
     if cfg!(target_os = "windows") {
-        "servirtium_vcr.dll".to_string()
+        "libservirtium_vcr.dll".to_string()
     } else if cfg!(target_os = "macos") {
         "libservirtium_vcr.dylib".to_string()
     } else {

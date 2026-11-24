@@ -43,7 +43,7 @@ aeb(cap) {
         //    the ELF SONAME carry, and `import servirtium_vcr` finds it through
         //    ae's lib<module> probe). Tag from
         //    AEB_RELEASE_TAG (release/publish.sh sets it), else v0.0.0. output() is
-        //    required on BOTH builders: a cross --emit=lib writes lib….so.dll/.dylib
+        //    required on BOTH builders: a cross --emit=lib may write lib….so.dylib
         //    on disk, and emit_binary_package resolves the real name from its OWN
         //    output() (a separate builder map from shared_lib's), so set it here too.
         //    Needs aeb >= v0.319 + a clean Aether >= 0.681 runtime archive: earlier
@@ -56,19 +56,30 @@ aeb(cap) {
         //    lines bake in. No ae-add (host consumers use dep_artifact / the .so).
         t = os.getenv("SVCR_TARGET")
         if string.length(t) > 0 {
+            // A Windows DLL's own name is its link output's file name: the
+            // linker writes it into the DLL's export directory and the
+            // import library, and a program linked against either asks the
+            // loader for exactly that name. `ae build` keeps an -o name and
+            // only appends .dll, so `libservirtium_vcr.so` gave every DLL
+            // through alpha.20 the name libservirtium_vcr.so.dll, which no
+            // binding stages. Name it libservirtium_vcr.dll, the name `ae add`
+            // installs and every binding loads (the import library comes out
+            // beside it as libservirtium_vcr.lib).
+            lib_name = "libservirtium_vcr.so"
+            if string.contains(t, "windows") == 1 { lib_name = "libservirtium_vcr.dll" }
             aether.shared_lib() {
                 source("embed.ae")
                 extra_source("_embed_strdup.c")
                 caps("fs,net,os,extern")
                 size()
-                output("libservirtium_vcr.so")
+                output(lib_name)
                 target(t)
             }
             // aeb v0.330 preserves the musl suffix; Aether 0.838.0 selects
             // the matching libc when installing. No target needs an exclusion.
             aether.emit_binary_package() {
                 stem("libservirtium_vcr")
-                output("libservirtium_vcr.so")
+                output(lib_name)
                 target(t)
             }
             return 0

@@ -54,7 +54,7 @@ def configure(path: str | None) -> None:
 
 def _file_name() -> str:
     if sys.platform == "win32":
-        return f"{_LIB}.dll"
+        return f"lib{_LIB}.dll"
     if sys.platform == "darwin":
         return f"lib{_LIB}.dylib"
     return f"lib{_LIB}.so"

@@ -197,7 +197,7 @@ final class Native
     private static function fileName(): string
     {
         return match (PHP_OS_FAMILY) {
-            'Windows' => 'servirtium_vcr.dll',
+            'Windows' => 'libservirtium_vcr.dll',
             'Darwin' => 'libservirtium_vcr.dylib',
             default => 'libservirtium_vcr.so',
         };

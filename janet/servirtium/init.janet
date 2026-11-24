@@ -24,7 +24,7 @@
 
 (defn- file-name []
   (case (os/which)
-    :windows (string lib-name ".dll")
+    :windows (string "lib" lib-name ".dll")
     :macos (string "lib" lib-name ".dylib")
     (string "lib" lib-name ".so")))
 

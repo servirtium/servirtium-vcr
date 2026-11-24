@@ -4,6 +4,8 @@
 // The macOS slots are a minimal Mach-O header with one LC_ID_DYLIB (the
 // install name is all the check reads) unless the host is a Mac, where the
 // host's own slot is the host library with the release install name set.
+// The Windows slots are a minimal PE image whose export directory names the
+// DLL, beside an ar import library of short import members naming it.
 // On a non-glibc host (FreeBSD: libc.so.7) the Linux slots get the same bytes
 // with NEEDED libc.so.7 renamed to libc.so.6 (same length), and the host's own
 // slot keeps the unpatched library, which is the one the ABI check dlopens.
@@ -49,6 +51,50 @@ macho(id: string, tail: string) -> string {
     for _k in 0..(size - 24 - string.length(id)) { out = "${out}${string.from_char(0)}" }
     return "${out}${tail}"
 }
+put_le16(v: int) -> string {
+    return "${string.from_char(v & 255)}${string.from_char((v >> 8) & 255)}"
+}
+zeros(count: int) -> string {
+    out = ""
+    for _k in 0..count { out = "${out}${string.from_char(0)}" }
+    return out
+}
+// A PE32+ DLL: DOS header, PE/COFF header, an optional header whose export
+// data directory points into one section holding an export directory named
+// `name`, followed by `tail` (where a real library's zlib code would be).
+pe_dll(name: string, tail: string) -> string {
+    edata = 40 + string.length(name) + 1
+    dos = "MZ${zeros(58)}${put_le32(64)}"
+    coff = "PE${zeros(2)}${put_le16(0x8664)}${put_le16(1)}${put_le32(0)}${put_le32(0)}${put_le32(0)}${put_le16(240)}${put_le16(0x2022)}"
+    opt = "${put_le16(0x20b)}${zeros(110)}${put_le32(0x1000)}${put_le32(edata)}${zeros(120)}"
+    section = ".edata${zeros(2)}${put_le32(edata)}${put_le32(0x1000)}${put_le32(edata)}${put_le32(512)}${zeros(16)}"
+    head = "${dos}${coff}${opt}${section}"
+    export_dir = "${zeros(12)}${put_le32(0x1000 + 40)}${zeros(24)}${name}${string.from_char(0)}"
+    return "${head}${zeros(512 - string.length(head))}${export_dir}${tail}"
+}
+// One ar member: a 60-byte header (only its size field is read) and the data.
+ar_member(data: string) -> string {
+    size = "${string.length(data)}"
+    pad = ""
+    if string.length(data) % 2 == 1 { pad = "\n" }
+    return "x.dll/          ${zeros(32)}${size}${zeros(10 - string.length(size))}`\n${data}${pad}"
+}
+// A short import member: the 20-byte import header, the symbol, the DLL.
+short_import(symbol: string, dll: string) -> string {
+    data_size = string.length(symbol) + string.length(dll) + 2
+    header = "${zeros(2)}${string.from_char(0xff)}${string.from_char(0xff)}${zeros(2)}${put_le16(0x8664)}${put_le32(0)}${put_le32(data_size)}${zeros(4)}"
+    return ar_member("${header}${symbol}${string.from_char(0)}${dll}${string.from_char(0)}")
+}
+// `count` import members, alternately recording `even` and `odd` as the DLL.
+implib(even: string, odd: string, count: int) -> string {
+    out = "!<arch>\n${ar_member("fixture symbol table")}"
+    for i in 0..count {
+        dll = even
+        if i % 2 == 1 { dll = odd }
+        out = "${out}${short_import("aether_vcr_embed_fixture_${i}", dll)}"
+    }
+    return out
+}
 expect_failure(root: string, dist: string, expected: string) {
     error = artifacts.check_artifacts(root, TAG, dist)
     check(string.contains(error, expected) == 1, "expected '${expected}', got '${error}'")
@@ -78,14 +124,17 @@ main() {
     dist = "${root}/dist"
     check(fs.mkdir_p("${dist}/ae-add") == "", "fixture artifacts directory")
     good_macho = macho("@rpath/libservirtium_vcr.dylib", "incorrect header check")
+    good_pe = pe_dll("libservirtium_vcr.dll", "incorrect header check")
+    good_implib = implib("libservirtium_vcr.dll", "libservirtium_vcr.dll", 2)
     host_slot = artifacts.host_slot()
     for i in 0..PLATFORMS.len {
         platform = PLATFORMS[i]; payload = library
         if string.starts_with(platform, "linux-") == 1 { payload = linux_library }
         if string.contains(platform, "-musl") == 1 { payload = musl }
         if string.starts_with(platform, "macos-") == 1 && platform != host_slot { payload = good_macho }
+        if string.starts_with(platform, "windows-") == 1 { payload = good_pe }
         asset("${dist}/libservirtium_vcr-${TAG}-${platform}", payload)
-        if string.starts_with(platform, "windows-") == 1 { asset("${dist}/libservirtium_vcr-${TAG}-${platform}.lib", "fixture import library") }
+        if string.starts_with(platform, "windows-") == 1 { asset("${dist}/libservirtium_vcr-${TAG}-${string.substring(platform, 0, string.length(platform) - 4)}.lib", good_implib) }
     }
     if string.starts_with(host_slot, "macos-") == 1 {
         // The in-tree host build's install name is @rpath/libservirtium_vcr.so
@@ -99,7 +148,8 @@ main() {
     manifest(dist)
     toml = "binary = \"libservirtium_vcr\"\nmodules = \".\"\n"
     write_fixture("${dist}/ae-add/aether.toml", toml)
-    check(artifacts.check_artifacts(root, TAG, dist) == "", "valid artifact matrix")
+    valid = artifacts.check_artifacts(root, TAG, dist)
+    check(valid == "", "valid artifact matrix: ${valid}")
     check(artifacts.check_packages(dist) != "", "missing binding packages")
     asset("${dist}/servirtium-vcr-1-sources.jar", "sources")
     check(artifacts.check_packages(dist) != "", "sources jar is not a fat jar")
@@ -134,6 +184,27 @@ main() {
     asset(mac, macho("@rpath/libservirtium_vcr.dylib", "")); manifest(dist)
     expect_failure(root, dist, "no zlib")
     asset(mac, good_macho); manifest(dist)
+    // A DLL that calls itself libservirtium_vcr.so.dll (every alpha.20 DLL),
+    // one that is not a PE image, and one without zlib; then import libraries
+    // recording that name, a mix of names, none, or not an archive.
+    win = "${dist}/libservirtium_vcr-${TAG}-windows-x86_64.dll"
+    win_lib = "${dist}/libservirtium_vcr-${TAG}-windows-x86_64.lib"
+    asset(win, pe_dll("libservirtium_vcr.so.dll", "incorrect header check")); manifest(dist)
+    expect_failure(root, dist, "wrong DLL name in ${win}: 'libservirtium_vcr.so.dll'")
+    asset(win, "MZ but not a PE image, long enough to read its header offset field......"); manifest(dist)
+    expect_failure(root, dist, "not a PE image")
+    asset(win, pe_dll("libservirtium_vcr.dll", "")); manifest(dist)
+    expect_failure(root, dist, "no zlib")
+    asset(win, good_pe); manifest(dist)
+    asset(win_lib, implib("libservirtium_vcr.so.dll", "libservirtium_vcr.so.dll", 2)); manifest(dist)
+    expect_failure(root, dist, "wrong DLL name in import library ${win_lib}: 'libservirtium_vcr.so.dll'")
+    asset(win_lib, implib("libservirtium_vcr.dll", "servirtium_vcr.dll", 2)); manifest(dist)
+    expect_failure(root, dist, "'libservirtium_vcr.dll, servirtium_vcr.dll'")
+    asset(win_lib, implib("libservirtium_vcr.dll", "servirtium_vcr.dll", 0)); manifest(dist)
+    expect_failure(root, dist, "no import members")
+    asset(win_lib, "fixture import library"); manifest(dist)
+    expect_failure(root, dist, "not an ar archive")
+    asset(win_lib, good_implib); manifest(dist)
     // SONAME: none or the plain name (the readelf text is the check's input).
     elf_ok = "${dist}/libservirtium_vcr-${TAG}-freebsd-x86_64.so"
     check(artifacts.check_link_identity(elf_ok, "freebsd-x86_64.so", " 0x000000000000000e (SONAME)             Library soname: [libservirtium_vcr.so]\n") == "", "plain SONAME")

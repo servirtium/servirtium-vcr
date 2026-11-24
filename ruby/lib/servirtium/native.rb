@@ -57,7 +57,7 @@ module Servirtium
 
     def library_filename
       case RbConfig::CONFIG['host_os']
-      when /mswin|mingw|cygwin/ then 'servirtium_vcr.dll'
+      when /mswin|mingw|cygwin/ then 'libservirtium_vcr.dll'
       when /darwin/             then 'libservirtium_vcr.dylib'
       else                           'libservirtium_vcr.so'
       end

@@ -25,7 +25,7 @@ import 'package:ffi/ffi.dart';
 const String _libBase = 'servirtium_vcr';
 
 String _fileName() {
-  if (Platform.isWindows) return '$_libBase.dll';
+  if (Platform.isWindows) return 'lib$_libBase.dll';
   if (Platform.isMacOS) return 'lib$_libBase.dylib';
   return 'lib$_libBase.so';
 }

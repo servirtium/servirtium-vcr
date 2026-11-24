@@ -24,7 +24,7 @@ const LIB_BASE = 'servirtium_vcr'
 function fileName(): string {
   switch (process.platform) {
     case 'win32':
-      return `${LIB_BASE}.dll`
+      return `lib${LIB_BASE}.dll`
     case 'darwin':
       return `lib${LIB_BASE}.dylib`
     default:

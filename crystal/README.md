@@ -105,7 +105,8 @@ crystal run check.cr
   `undefined reference to 'aether_vcr_embed_...'`. Match the tag to the binding.
 - Do not vendor the `.so`/`.dylib` into git (it is git-ignored in this repo for
   that reason) and do not copy it into the dependency's checkout directory.
-- Windows: use the `.dll` asset (plus its `.dll.lib`) by hand; this recipe is
+- Windows: save the `.dll` asset as `libservirtium_vcr.dll` and its `.lib` import
+  library as `servirtium_vcr.lib` by hand; this recipe is
   for Linux, macOS and FreeBSD.
 - The variable is read at COMPILE time (a macro in `crystal/src/servirtium.cr`)
   and baked into the `-L` and rpath, so the compiled binary does not need it

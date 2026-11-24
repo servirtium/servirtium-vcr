@@ -88,7 +88,7 @@ frees each returned `char*`.
    to a temp file that's deleted on JVM exit.
 
 The file name is computed per-platform: `libservirtium_vcr.so` /
-`.dylib` / `servirtium_vcr.dll`, and `<rid>` from `os.name` / `os.arch`
+`.dylib` / `libservirtium_vcr.dll`, and `<rid>` from `os.name` / `os.arch`
 (e.g. `linux-x64`, `osx-arm64`).
 
 ## Concurrency: one server per port

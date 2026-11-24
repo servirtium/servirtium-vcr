@@ -123,7 +123,9 @@ yourself (`aeb c/.package.ae` writes a `servirtium.pc`; no release asset carries
 - Compile `servirtium.c` as C (`cc`), never with a C++ compiler (the symbols would be mangled);
   C++ users see `cpp/README.md`.
 - Do not vendor the library into git; do keep the two source files at one tag.
-- Windows: use the `.dll` asset with its `.dll.lib` import library by hand.
+- Windows: save the `windows-<arch>.dll` asset as `libservirtium_vcr.dll` (the name the DLL
+  calls itself) and its `windows-<arch>.lib` import library as `servirtium_vcr.lib`, which
+  `-lservirtium_vcr` finds (MinGW gcc, zig) and MSVC links by name.
 
 ### Stable ordering and playback range
 

@@ -56,7 +56,7 @@ so it's active before the first P/Invoke). It looks, in order, at:
 4. the OS loader (`LD_LIBRARY_PATH`, system paths, …).
 
 The file name is computed per-platform: `libservirtium_vcr.so` /
-`.dylib` / `servirtium_vcr.dll`, and `<rid>` from
+`.dylib` / `libservirtium_vcr.dll`, and `<rid>` from
 `RuntimeInformation` (e.g. `linux-x64`, `osx-arm64`).
 
 ## Concurrency: one server per port

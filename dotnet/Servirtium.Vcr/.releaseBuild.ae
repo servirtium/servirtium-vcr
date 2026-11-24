@@ -66,8 +66,8 @@ aeb(cap) {
         linux_musl_arm64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-linux-arm64-musl.so")), "linux-musl-arm64", "libservirtium_vcr.so")
         osx_x64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-macos-x86_64.dylib")), "osx-x64", "libservirtium_vcr.dylib")
         osx_arm64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-macos-arm64.dylib")), "osx-arm64", "libservirtium_vcr.dylib")
-        win_x64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-windows-x86_64.dll")), "win-x64", "servirtium_vcr.dll")
-        win_arm64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-windows-arm64.dll")), "win-arm64", "servirtium_vcr.dll")
+        win_x64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-windows-x86_64.dll")), "win-x64", "libservirtium_vcr.dll")
+        win_arm64 = _stage_release_native(root, string.concat("libservirtium_vcr-", string.concat(tag, "-windows-arm64.dll")), "win-arm64", "libservirtium_vcr.dll")
 
         dotnet.build_project() {
             // Mirror dotnet/Servirtium.Vcr/.build.ae's PropertyGroup EXACTLY so

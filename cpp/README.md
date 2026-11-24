@@ -115,7 +115,9 @@ Link line for your own program: `c++ -std=c++17 -Ithird_party/servirtium yours.c
 - The library must be at least as new as the sources: same tag for all four files, or the
   link fails with `undefined reference to 'aether_vcr_embed_...'`.
 - Errors are `servirtium::Error` exceptions; the check program catches them.
-- Windows: use the `.dll` asset with its `.dll.lib` import library by hand.
+- Windows: save the `windows-<arch>.dll` asset as `libservirtium_vcr.dll` (the name the DLL
+  calls itself) and its `windows-<arch>.lib` import library as `servirtium_vcr.lib`, which
+  `-lservirtium_vcr` finds (MinGW gcc, zig) and MSVC links by name.
 
 ### Stable ordering and playback range
 

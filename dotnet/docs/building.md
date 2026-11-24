@@ -78,8 +78,8 @@ running needs Windows.
 TARGETS="x86_64-windows aarch64-windows" release/build.sh
 # 2. stage them and pack (any host with the .NET SDK)
 mkdir -p dotnet/Servirtium.Vcr/native/win-x64 dotnet/Servirtium.Vcr/native/win-arm64
-cp release/dist/*-windows-x86_64.dll dotnet/Servirtium.Vcr/native/win-x64/servirtium_vcr.dll
-cp release/dist/*-windows-arm64.dll dotnet/Servirtium.Vcr/native/win-arm64/servirtium_vcr.dll
+cp release/dist/*-windows-x86_64.dll dotnet/Servirtium.Vcr/native/win-x64/libservirtium_vcr.dll
+cp release/dist/*-windows-arm64.dll dotnet/Servirtium.Vcr/native/win-arm64/libservirtium_vcr.dll
 dotnet pack dotnet/Servirtium.Vcr/Servirtium.Vcr.pkg.csproj -c Release -o ../nupkg
 # 3. build (and on Windows run) the consumers
 sh dotnet/net48/check.sh ../nupkg ../net48work

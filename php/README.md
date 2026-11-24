@@ -92,7 +92,7 @@ php -d ffi.enable=1 -r 'require "vendor/autoload.php";
 `php/native/`: it copies the directory into `vendor/` at install time.)
 
 Windows (x86_64, arm64) and FreeBSD (x86_64) assets exist too; the Windows file name the
-loader wants is `servirtium_vcr.dll`.
+loader wants is `libservirtium_vcr.dll`.
 
 ### Notes for coding agents
 

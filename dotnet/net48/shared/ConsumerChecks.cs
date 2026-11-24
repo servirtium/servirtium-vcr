@@ -14,7 +14,7 @@ namespace Servirtium.Vcr.Net48Consumer
         public static string Tape(string name) =>
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tapes", name);
 
-        // Where the build put servirtium_vcr.dll: next to the assembly, or
+        // Where the build put libservirtium_vcr.dll: next to the assembly, or
         // under runtimes\win-<arch>\native\ for an AnyCPU build.
         public static string EngineLocation()
         {
@@ -23,12 +23,12 @@ namespace Servirtium.Vcr.Net48Consumer
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string arch = Environment.Is64BitProcess ? (IsArm64() ? "arm64" : "x64") : "x86";
             foreach (string candidate in new[] {
-                         Path.Combine(baseDir, "servirtium_vcr.dll"),
-                         Path.Combine(baseDir, "runtimes", "win-" + arch, "native", "servirtium_vcr.dll") })
+                         Path.Combine(baseDir, "libservirtium_vcr.dll"),
+                         Path.Combine(baseDir, "runtimes", "win-" + arch, "native", "libservirtium_vcr.dll") })
             {
                 if (File.Exists(candidate)) return candidate;
             }
-            throw new FileNotFoundException("no servirtium_vcr.dll for win-" + arch + " under " + baseDir);
+            throw new FileNotFoundException("no libservirtium_vcr.dll for win-" + arch + " under " + baseDir);
         }
 
         private static bool IsArm64() =>

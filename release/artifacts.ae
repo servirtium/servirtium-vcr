@@ -7,7 +7,7 @@ import std.map
 import std.os
 import std.regex
 import std.string
-exports(check_version, check_artifacts, check_packages, check_link_identity, host_slot)
+exports(check_version, check_artifacts, check_packages, check_link_identity, check_import_library, host_slot)
 
 const PLATFORMS[] = ["linux-x86_64.so", "linux-arm64.so", "macos-x86_64.dylib", "macos-arm64.dylib",
     "windows-x86_64.dll", "windows-arm64.dll", "freebsd-x86_64.so", "linux-x86_64-musl.so", "linux-arm64-musl.so"]
@@ -88,8 +88,122 @@ has_bytes(b: byte[], n: int, needle: string) -> bool {
     }
     return false
 }
-// Per platform: the dylib's install name, the ELF SONAME (none, or the plain
-// name; readelf output is passed in where the caller ran it), and zlib.
+// A Windows DLL's own name: the export directory's Name, which the linker
+// copies from the link's output file name. A program linked against the DLL
+// (directly, or through its import library) asks the loader for this name,
+// and `ae add` installs the DLL as libservirtium_vcr.dll, the name every
+// binding loads. Through alpha.20 it was libservirtium_vcr.so.dll.
+const PE_DLL_NAME = "libservirtium_vcr.dll"
+pe_le16(b: byte[], at: int) -> int {
+    return (b[at] as int) | ((b[at + 1] as int) << 8)
+}
+// NUL-terminated text at [start, limit), or "" when it runs past the limit.
+cstring_at(b: byte[], start: int, limit: int) -> string {
+    stop = start
+    while stop < limit && b[stop] != 0 { stop += 1 }
+    if stop >= limit { return "" }
+    out = ""
+    for k in start..stop { out = string.concat(out, string.from_char(b[k] as int)) }
+    return out
+}
+// The export directory's DLL name of a PE (PE32 or PE32+) image; error when
+// the bytes are not a PE image or it exports nothing.
+pe_dll_name(b: byte[], n: int) -> (string, string) {
+    if n < 64 || b[0] != 0x4d || b[1] != 0x5a { return "", "not a PE image" }
+    pe = macho_le32(b, 0x3c)
+    if pe < 0 || pe + 24 > n || b[pe] != 0x50 || b[pe + 1] != 0x45 || b[pe + 2] != 0 || b[pe + 3] != 0 { return "", "not a PE image" }
+    sections = pe_le16(b, pe + 6)
+    opt = pe + 24
+    opt_size = pe_le16(b, pe + 20)
+    if opt + opt_size > n || opt_size < 2 { return "", "truncated PE optional header" }
+    magic = pe_le16(b, opt)
+    dirs = 96
+    if magic == 0x20b { dirs = 112 } else if magic != 0x10b { return "", "unknown PE optional header magic" }
+    if dirs + 8 > opt_size { return "", "PE image has no export directory" }
+    export_rva = macho_le32(b, opt + dirs)
+    if export_rva == 0 { return "", "PE image has no export directory" }
+    // An RVA to a file offset, through the section that holds it.
+    table = opt + opt_size
+    name_rva = -1
+    for step in 0..2 {
+        rva = export_rva
+        if step == 1 { rva = name_rva }
+        found = -1
+        for s in 0..sections {
+            at = table + s * 40
+            if at + 40 > n { return "", "truncated PE section table" }
+            vsize = macho_le32(b, at + 8); va = macho_le32(b, at + 12)
+            raw_size = macho_le32(b, at + 16); raw = macho_le32(b, at + 20)
+            span = vsize
+            if raw_size > span { span = raw_size }
+            if rva >= va && rva < va + span { found = raw + (rva - va) }
+        }
+        if found < 0 || found + 16 > n { return "", "PE export directory outside the image" }
+        if step == 0 {
+            name_rva = macho_le32(b, found + 12)
+        } else {
+            name = cstring_at(b, found, n)
+            if name == "" { return "", "PE export directory has no name" }
+            return name, ""
+        }
+    }
+    return "", "PE export directory has no name"
+}
+// Decimal ASCII field of an ar member header (space padded).
+ar_decimal(b: byte[], start: int, stop: int) -> int {
+    v = 0
+    for k in start..stop {
+        c = b[k] as int
+        if c >= 48 && c <= 57 { v = v * 10 + (c - 48) }
+    }
+    return v
+}
+// The DLL names an import library's short import members record (each
+// member is one imported symbol: a 20-byte header, the symbol, the DLL), as
+// "a" or "a, b" when they disagree; error when it is not an ar archive or
+// holds no import members.
+implib_dll_names(b: byte[], n: int) -> (string, string) {
+    magic = string.bytes("!<arch>\n")
+    if n < 8 { return "", "not an ar archive" }
+    for k in 0..8 {
+        if b[k] != magic[k] { return "", "not an ar archive" }
+    }
+    at = 8
+    names = ""
+    count = 0
+    while at + 60 <= n {
+        size = ar_decimal(b, at + 48, at + 58)
+        d = at + 60
+        if d + size > n { return "", "truncated ar member" }
+        if size >= 20 && b[d] == 0 && b[d + 1] == 0 && b[d + 2] == 0xff && b[d + 3] == 0xff {
+            sym_end = d + 20
+            while sym_end < d + size && b[sym_end] != 0 { sym_end += 1 }
+            dll = cstring_at(b, sym_end + 1, d + size)
+            if dll == "" { return "", "import member without a DLL name" }
+            count += 1
+            if names == "" {
+                names = dll
+            } else if names != dll && string.contains(", ${names}, ", ", ${dll}, ") == 0 {
+                names = "${names}, ${dll}"
+            }
+        }
+        at = d + size + (size & 1)
+    }
+    if count == 0 { return "", "no import members" }
+    return names, ""
+}
+// The DLL name a Windows import library makes its consumers ask the loader for.
+check_import_library(file: string) -> string {
+    data, n, err = fs.read_binary(file)
+    if err != "" || n <= 0 { return "cannot read ${file}" }
+    names, ierr = implib_dll_names(string.bytes(data), n)
+    if ierr != "" { return "${file}: ${ierr}" }
+    if names != PE_DLL_NAME { return "wrong DLL name in import library ${file}: '${names}' (must be ${PE_DLL_NAME})" }
+    return ""
+}
+// Per platform: the dylib's install name, the DLL's export name, the ELF
+// SONAME (none, or the plain name; readelf output is passed in where the
+// caller ran it), and zlib.
 check_link_identity(file: string, platform: string, readelf: string) -> string {
     data, n, err = fs.read_binary(file)
     if err != "" || n <= 0 { return "cannot read ${file}" }
@@ -98,6 +212,11 @@ check_link_identity(file: string, platform: string, readelf: string) -> string {
         id, merr = macho_install_name(b, n)
         if merr != "" { return "${file}: ${merr}" }
         if id != DYLIB_ID { return "wrong install name in ${file}: '${id}' (must be ${DYLIB_ID})" }
+    }
+    if string.starts_with(platform, "windows-") == 1 {
+        name, perr = pe_dll_name(b, n)
+        if perr != "" { return "${file}: ${perr}" }
+        if name != PE_DLL_NAME { return "wrong DLL name in ${file}: '${name}' (must be ${PE_DLL_NAME})" }
     }
     if string.length(readelf) > 0 && string.contains(readelf, "(SONAME)") == 1 {
         soname = replace_pattern("(?s)^.*[(]SONAME[)][^\\[]*\\[([^]]+)\\].*$", readelf, "$1")!
@@ -174,7 +293,10 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
         err = check_link_identity(raw, platform, dynamic)
         if err != "" { return err }
         if string.starts_with(platform, "windows-") == 1 {
-            err = check_manifest("${raw}.lib", manifest)
+            implib = "${string.substring(raw, 0, string.length(raw) - 4)}.lib"
+            err = check_manifest(implib, manifest)
+            if err != "" { return err }
+            err = check_import_library(implib)
             if err != "" { return err }
         }
     }
@@ -195,7 +317,7 @@ check_artifacts(root: string, tag: string, dist: string) -> string {
         symbol, err = dl.symbol(library, "aether_${name}")
         if symbol == null || err != "" { return "missing ABI export in ${slot}: aether_${name}" }
     }
-    println("Verified ${PLATFORMS.len} libraries (install names, SONAMEs, zlib), Windows import libraries, the ae-add manifest, checksums, and ${count} ABI exports (${slot}).")
+    println("Verified ${PLATFORMS.len} libraries (install names, DLL names, SONAMEs, zlib), Windows import libraries (their DLL names), the ae-add manifest, checksums, and ${count} ABI exports (${slot}).")
     return ""
 }
 check_packages(dist: string) -> string {

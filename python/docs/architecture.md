@@ -61,7 +61,7 @@ the handle is a `c_void_p`.
    (`LD_LIBRARY_PATH`, system paths, …).
 
 The file name is computed per-platform: `libservirtium_vcr.so` / `.dylib` /
-`servirtium_vcr.dll`.
+`libservirtium_vcr.dll`.
 
 ## Concurrency: one server per port
 

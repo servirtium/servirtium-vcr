@@ -91,7 +91,7 @@ A `.sha256` sits beside the tarball on the release page if you want to verify it
 - A release older than the one that first attached `servirtium-vcr-<ver>.tgz` has no such
   asset (`curl`/`npm` report 404). Use a later tag, or build the tarball yourself: in a copy
   of `javascript/`, stage the library as
-  `native/<process.platform>-<process.arch>[-musl]/libservirtium_vcr.so` (`.dylib`; `servirtium_vcr.dll`
+  `native/<process.platform>-<process.arch>[-musl]/libservirtium_vcr.so` (`.dylib`; `libservirtium_vcr.dll`
   on Windows), then `npm ci && npm pack`.
 - FreeBSD is not in the tarball: fetch that release asset and set `SERVIRTIUM_VCR_LIB` to its
   absolute path. Loader order: `.nativeLib(path)`, `SERVIRTIUM_VCR_LIB`, the package's `native/`,

@@ -61,7 +61,7 @@ that loads, in order:
 4. the bare library name (OS loader: `LD_LIBRARY_PATH`, system paths).
 
 The file name is computed per-platform: `libservirtium_vcr.so` / `.dylib` /
-`servirtium_vcr.dll` (from `RbConfig::CONFIG['host_os']`).
+`libservirtium_vcr.dll` (from `RbConfig::CONFIG['host_os']`).
 
 ## Concurrency: one server per port
 

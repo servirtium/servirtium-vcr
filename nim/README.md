@@ -135,7 +135,8 @@ there is none today.
 - The binary records the library's directory as an rpath: do not delete `~/.servirtium-vcr/$TAG`
   while binaries built against it are in use; rebuild if you move it.
 - Needs `--threads:on` only if your own code uses threads (the upstream test suites do).
-- Windows: use the `.dll` asset (`servirtium_vcr.dll`) by hand.
+- Windows: save the `.dll` asset as `libservirtium_vcr.dll` and its `.lib` import library as
+  `servirtium_vcr.lib` by hand.
 
 ## Building / testing from source
 

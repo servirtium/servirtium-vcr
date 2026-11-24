@@ -75,7 +75,7 @@ SERVIRTIUM_VCR_LIB=/abs/path/libservirtium_vcr.so mvn test
 | `linux-x64` | `libservirtium_vcr.so` | ✅ committed, tested |
 | `osx-x64` | `libservirtium_vcr.dylib` | build in CI |
 | `osx-arm64` | `libservirtium_vcr.dylib` | build in CI |
-| `win-x64` | `servirtium_vcr.dll` | build in CI |
+| `win-x64` | `libservirtium_vcr.dll` | build in CI |
 
 `NativeLoader` computes the RID from `os.name` / `os.arch` and the file name
 from the OS, so adding a platform is just shipping the right artifact under
