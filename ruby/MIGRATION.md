@@ -60,6 +60,6 @@ Full surface in [docs/usage.md](docs/usage.md).
 ## Compatibility suite
 
 The 1.x `todobackend_compatibility_test.rb` drove the deleted Ruby server and
-was removed in 2.0.0-alpha.20. The TodoBackend browser suite now runs through
+was removed in 2.0.0-alpha.21. The TodoBackend browser suite now runs through
 the gem API in `integration/todobackend/ruby/` (`record.rb`,
 `playback_test.rb`).

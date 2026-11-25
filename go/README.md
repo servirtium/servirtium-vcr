@@ -48,7 +48,7 @@ it, so you fetch that yourself. The module needs Go 1.21 or newer (`go 1.21` in
 `go.mod`) and cgo. Run this in your own Go module:
 
 ```sh
-VER=v2.0.0-alpha.20                      # a release tag of servirtium-vcr
+VER=v2.0.0-alpha.21                      # a release tag of servirtium-vcr
 REL=https://github.com/servirtium/servirtium-vcr/releases/download/$VER
 
 # 1. the Go module (resolves the tag go/$VER; use @main before that tag exists)
