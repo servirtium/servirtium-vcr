@@ -1,7 +1,9 @@
 # Servirtium 2.0.0-alpha.21
 
 Fixes for defects in the alpha.20 release assets, found while writing the
-website, and a documentation sweep.
+website, and a documentation sweep. Built with Aether 0.945.0, which links a
+macOS library cross-built from Linux with its install name and a macOS 13.0
+minimum itself (aether#3874).
 
 ## Fixed in the release libraries
 
@@ -67,7 +69,7 @@ zlib, so a release with any of these defects fails before it is published.
 - The Kotlin, Scala, Clojure and Groovy READMEs have a record example.
 - The root README lists the ABI calls only some bindings wrap
   (`forward_host` is .NET-only, for example).
-- Corrected: minimum versions (Aether 0.941.0, PHP 8.2, Dart 3.8, Go 1.21,
+- Corrected: minimum versions (Aether 0.945.0, PHP 8.2, Dart 3.8, Go 1.21,
   Rust edition 2021), the BEAM install line, the .NET package's platforms in
   the Azure SDK harness README, Python's feature table, test counts, and
   references to scripts that no longer exist.
