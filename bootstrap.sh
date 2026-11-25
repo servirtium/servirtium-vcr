@@ -174,8 +174,16 @@ set -euo pipefail
 # needed. 0.940.0 (std.http client retries only idempotent methods after a
 # failed read, new client error wording, tcp.listen backlog SOMAXCONN) and
 # 0.941.0 (account trip fix) forced no change here. aeb unchanged (v0.348).
-AE_PIN="0.941.0"
-AE_FETCH="v0.941.0"
+# 2026-11-25: ae 0.941.0 -> 0.944.0, a tracking-only bump, no new primitive
+# needed. 0.942.0-0.944.0 are performance only (runtime actor batching, inline
+# std.math scalars, inline slice-view release); no language or stdlib change.
+# Verified on the released 0.944.0 with aeb v0.348: cachyos core_tests plus the
+# python, go, javascript, ruby, php, lua and rust leaves exit 0; ghostbsd (FreeBSD
+# 15.1) go and python exit 0 and core_tests passes but for test_vcr_content_encoding_kept
+# and test_vcr_rewrite_upstream_base ("zlib unavailable", identical on 0.941.0 there).
+# aeb unchanged (v0.348).
+AE_PIN="0.944.0"
+AE_FETCH="v0.944.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

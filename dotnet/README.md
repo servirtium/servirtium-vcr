@@ -166,7 +166,7 @@ builds the native lib and runs the tests; needs the .NET SDK already present):
 ./bootstrap.sh dotnet/Servirtium.Vcr.Tests/.tests.ae     # from the repo root
 ```
 
-Already have `ae` (0.941.0, the version `bootstrap.sh` pins), `aeb`, and the .NET SDK on PATH? The build is
+Already have `ae` (0.944.0, the version `bootstrap.sh` pins), `aeb`, and the .NET SDK on PATH? The build is
 aeb-native — each project's `.csproj` is generated from its `.build.ae` (never
 checked in), `libservirtium_vcr.so` is built and staged automatically:
 

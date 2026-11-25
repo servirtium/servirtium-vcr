@@ -9,7 +9,7 @@
   in-repo Aether core (`core/vcr.ae` + `core/embed.ae`) by `core/.build.ae`.
   No separate Aether source checkout is needed; `core/.build.ae` compiles it
   against the installed toolchain's stdlib. Building libservirtium_vcr needs the Aether
-  toolchain (`ae`) **0.941.0**, the version `bootstrap.sh` pins — see the repo root `bootstrap.sh` / Go binding's
+  toolchain (`ae`) **0.944.0**, the version `bootstrap.sh` pins — see the repo root `bootstrap.sh` / Go binding's
   `building.md` for installing it.
 
 ## Compile the extension
