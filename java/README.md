@@ -137,7 +137,7 @@ The repo is driven by [`aeb`](https://github.com/aether-lang-dev/aeb): the
 (`core/native/libservirtium_vcr.so`) once, then runs `mvn test` against it.
 
 ```sh
-aeb java/.tests.ae   # builds the core libservirtium_vcr (needs ae 0.944.0), then mvn test on JDK 25
+aeb java/.tests.ae   # builds the core libservirtium_vcr (needs ae 0.945.0), then mvn test on JDK 25
 ```
 
 Details — including the raw `ae build` / `mvn` invocations — in

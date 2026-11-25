@@ -65,8 +65,12 @@ aeb(cap) {
             // binding stages. Name it libservirtium_vcr.dll, the name `ae add`
             // installs and every binding loads (the import library comes out
             // beside it as libservirtium_vcr.lib).
+            // A macOS dylib's install name is likewise the -o leaf (Aether 0.945.0,
+            // #3874: -install_name @rpath/<leaf>), so name it libservirtium_vcr.dylib,
+            // the id every binding's loader looks for and release/artifacts.ae checks.
             lib_name = "libservirtium_vcr.so"
             if string.contains(t, "windows") == 1 { lib_name = "libservirtium_vcr.dll" }
+            if string.contains(t, "macos") == 1 { lib_name = "libservirtium_vcr.dylib" }
             aether.shared_lib() {
                 source("embed.ae")
                 extra_source("_embed_strdup.c")

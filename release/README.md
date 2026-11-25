@@ -139,16 +139,23 @@ that name up through its rpath when it runs. So:
 
 | Platform | The library calls itself | Set by |
 |---|---|---|
-| macOS | install name `@rpath/libservirtium_vcr.dylib` (deployment target macOS 13.0) | `release/build.sh`'s zig shim |
-| Linux, FreeBSD | SONAME `libservirtium_vcr.so` | the same shim |
+| macOS | install name `@rpath/libservirtium_vcr.dylib` (deployment target macOS 13.0) | `ae build --target` (Aether 0.945.0, #3874) from `core/.build.ae`'s output name |
+| Linux, FreeBSD | SONAME `libservirtium_vcr.so` | `release/build.sh`'s zig shim |
 | Windows | export name `libservirtium_vcr.dll`, recorded in the import library too | `core/.build.ae`'s output name |
 
-`ae build --target` gives zig no link flags of its own: on a Linux host it
-links a macOS dylib with no install name, so zig records the `-o` path, and it
-picks the host's macOS minimum (15.0 on the Linux runner). Every alpha.20
+`ae build --target` gives zig no link flags of its own. Before Aether 0.945.0 it
+linked a macOS dylib with no install name, so zig recorded the `-o` path, and it
+picked the host's macOS minimum (15.0 on the Linux runner). Every alpha.20
 dylib carried `/home/runner/work/.../libservirtium_vcr.so` and failed at
-start with "Library not loaded". The ELF libraries had no SONAME, which is
-harmless (a consumer records the name it linked with) but is now set too.
+start with "Library not loaded"; `release/build.sh` carried a zig shim that added
+the install name and a versioned triple. Since 0.945.0 (#3874) ae links a zig
+`*-macos-none` library as a Mach-O dylib itself, with `-install_name @rpath/<-o
+leaf>` and minimum macOS 13.0 (`AETHER_MACOS_MIN` overrides), so the macOS half
+of the shim is gone: `core/.build.ae` names the cross output
+`libservirtium_vcr.dylib` (as it names the Windows one) and the install name
+comes out right. The ELF libraries have no SONAME from zig, which is harmless
+(a consumer records the name it linked with) but is still set by the remaining
+shim.
 
 A DLL's own name is its link output's file name: the linker writes it into
 the export directory and into the import library, and a program linked

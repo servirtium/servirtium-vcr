@@ -80,7 +80,7 @@ zlib_src() {
   echo "$_d"
 }
 # zig triple for an ae release triple (glibc spelled out; macOS at the same
-# deployment target as the libraries, see the shim below).
+# deployment target as the libraries, see MACOS_MIN below).
 zig_triple_of() {
   case "$1" in
     *-linux-musl) echo "$1" ;;
@@ -107,20 +107,18 @@ zlib_sysroot() {
   echo "$_sr"
 }
 
-# ---- link identity: a zig shim ------------------------------------------------
+# ---- link identity: a zig shim (Linux/FreeBSD soname only) ------------------------
 # `ae build --target` hands the library link to `zig cc` with no way to add link
-# flags, and on a non-Apple host it links a macOS dylib with no install name, so
-# zig records the -o path: every alpha.20 dylib said
-# /home/runner/work/.../libservirtium_vcr.so, and a link-time binding (Go, C,
-# C++, Zig, Nim, Crystal, D, Lua, ...) then died with "Library not loaded". zig
-# also picks a host-dependent macOS minimum (15.0 on the Linux runner). This
-# shim, first on PATH for this script's builds only, adds to a shared-library
-# link:
-#   macOS          -Wl,-install_name,@rpath/libservirtium_vcr.dylib and a
-#                  versioned triple (macOS $MACOS_MIN, as Package.swift's .v13);
-#   Linux/FreeBSD  -Wl,-soname,libservirtium_vcr.so.
-# These are the names every binding stages the library under (and what `ae add`
-# installs). release/.artifacts.ae fails a library whose name is anything else.
+# flags. Since Aether 0.945.0 (#3874) a zig aarch64-macos-none / x86_64-macos-none
+# link produces a proper Mach-O dylib itself (-install_name @rpath/<leaf>, -x
+# -dead_strip, minimum macOS 13.0, or AETHER_MACOS_MIN), so the macOS half of this
+# shim, which added the install name and a versioned triple, is gone. What stays is
+# the ELF side: on Linux/FreeBSD zig records no SONAME, so a link-time binding (Go,
+# C, C++, Zig, Nim, Crystal, D, Lua, ...) that links libservirtium_vcr.so would
+# record the build path of the library. This shim, first on PATH for this script's
+# builds only, adds -Wl,-soname,libservirtium_vcr.so to a Linux/FreeBSD
+# shared-library link. release/.artifacts.ae fails a library whose name is
+# anything else.
 MACOS_MIN=13.0
 REAL_ZIG="$(command -v zig)"
 SHIM_DIR="$ROOT/target/release-zigshim"
@@ -135,15 +133,8 @@ for a in "\$@"; do
   [ "\$prev" = -target ] && target="\$a"
   prev="\$a"
 done
-n=\$#
-while [ "\$n" -gt 0 ]; do
-  a=\$1; shift; n=\$((n - 1))
-  case "\$a" in *-macos-none) a="\${a%-none}.$MACOS_MIN-none" ;; esac
-  set -- "\$@" "\$a"
-done
 if [ "\$shared" = 1 ]; then
   case "\$target" in
-    *-macos*) set -- "\$@" -Wl,-install_name,@rpath/libservirtium_vcr.dylib ;;
     *-linux*|*-freebsd*) set -- "\$@" -Wl,-soname,libservirtium_vcr.so ;;
   esac
 fi

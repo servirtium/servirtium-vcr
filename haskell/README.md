@@ -153,7 +153,7 @@ builds the native lib and runs the tests; needs GHC + cabal already present):
 ./bootstrap.sh haskell/.tests.ae
 ```
 
-Already have `ae` (0.944.0, the version `bootstrap.sh` pins), `aeb`, GHC, and cabal on PATH?
+Already have `ae` (0.945.0, the version `bootstrap.sh` pins), `aeb`, GHC, and cabal on PATH?
 
 ```sh
 aeb haskell/.tests.ae     # builds core/native/libservirtium_vcr.so, writes cabal.project.local, runs cabal test

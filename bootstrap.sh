@@ -174,16 +174,27 @@ set -euo pipefail
 # needed. 0.940.0 (std.http client retries only idempotent methods after a
 # failed read, new client error wording, tcp.listen backlog SOMAXCONN) and
 # 0.941.0 (account trip fix) forced no change here. aeb unchanged (v0.348).
-# 2026-11-25: ae 0.941.0 -> 0.944.0, a tracking-only bump, no new primitive
-# needed. 0.942.0-0.944.0 are performance only (runtime actor batching, inline
+# 2026-11-25: ae 0.941.0 -> 0.945.0, a tracking-only bump, no new primitive
+# needed. 0.942.0-0.945.0 are performance only (runtime actor batching, inline
 # std.math scalars, inline slice-view release); no language or stdlib change.
-# Verified on the released 0.944.0 with aeb v0.348: cachyos core_tests plus the
+# Verified on the released 0.945.0 with aeb v0.348: cachyos core_tests plus the
 # python, go, javascript, ruby, php, lua and rust leaves exit 0; ghostbsd (FreeBSD
 # 15.1) go and python exit 0 and core_tests passes but for test_vcr_content_encoding_kept
 # and test_vcr_rewrite_upstream_base ("zlib unavailable", identical on 0.941.0 there).
 # aeb unchanged (v0.348).
-AE_PIN="0.944.0"
-AE_FETCH="v0.944.0"
+# 2026-11-25: ae 0.944.0 -> 0.945.0, a tracking-only bump, no new primitive needed.
+# 0.945.0 (#3874) links a zig *-macos-none library as a Mach-O dylib itself
+# (-install_name @rpath/<-o leaf>, minimum macOS 13.0), so release/build.sh's zig
+# shim lost its macOS half and core/.build.ae names the macOS output
+# libservirtium_vcr.dylib. The typechecker fixes (E0301 etc.) forced no source change.
+# Verified on the released 0.945.0 with aeb v0.348: aarch64-macos and x86_64-macos
+# dylibs cross-built from Linux (cachyos) have id @rpath/libservirtium_vcr.dylib and
+# minos 13.0 and pass release/artifacts.ae's check_link_identity; cachyos core_tests,
+# python, go, javascript, ruby exit 0; ghostbsd go and python exit 0 and core_tests
+# fails only the two "zlib unavailable" cases that also fail on 0.941.0 and 0.944.0.
+# aeb unchanged (v0.348).
+AE_PIN="0.945.0"
+AE_FETCH="v0.945.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+
