@@ -138,7 +138,7 @@ image already present, default `$HOME/.local/pharo`):
 ./bootstrap.sh pharo/.tests.ae     # from the repo root
 ```
 
-Already have `ae` (0.945.0, the version `bootstrap.sh` pins), `aeb` and a Pharo VM/image? Drive the
+Already have `ae` (0.946.0, the version `bootstrap.sh` pins), `aeb` and a Pharo VM/image? Drive the
 two steps directly:
 
 ```sh

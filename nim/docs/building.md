@@ -11,7 +11,7 @@ backend (`importc` + a `{.passL.}` link directive), so building is just
   output produced from libservirtium_vcr (`core/vcr.ae` +
   `core/embed.ae`) by `core/.build.ae`, which shells out to
   `ae build --emit=lib --with=fs,net,extern core/embed.ae … -o core/native/libservirtium_vcr.so`.
-  - The Aether toolchain (`ae`) must be **0.945.0**, the version
+  - The Aether toolchain (`ae`) must be **0.946.0**, the version
     `bootstrap.sh` pins (`std.regex` for the whole-tape rewrites, the `-fPIC`
     runtime that `--emit=lib --with=net` needs).
 - No Aether source checkout is needed — libservirtium_vcr lives in this repo.

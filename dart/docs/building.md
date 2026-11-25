@@ -2,7 +2,7 @@
 
 ## Turnkey: `./bootstrap.sh`
 
-From the repo root, `bootstrap.sh` installs the pinned `ae` (0.945.0) and `aeb`
+From the repo root, `bootstrap.sh` installs the pinned `ae` (0.946.0) and `aeb`
 via their official installers to a user prefix (`$HOME/.local`, no sudo; needs
 `curl`) if they are missing, then runs `aeb` on the leaf you name:
 
@@ -31,7 +31,7 @@ aeb core/.build.ae      # from the repo root
 Builds `core/native/libservirtium_vcr.so` from the in-repo `core/embed.ae`
 (C-ABI wrapper) and `core/vcr.ae` (libservirtium_vcr) using the
 **installed** toolchain — no Aether source checkout needed. `--with=fs,net,extern`
-needs a `-fPIC` Aether runtime, and libservirtium_vcr uses `std.regex`, so **ae 0.945.0** is required. The native lib is a git-ignored build artifact.
+needs a `-fPIC` Aether runtime, and libservirtium_vcr uses `std.regex`, so **ae 0.946.0** is required. The native lib is a git-ignored build artifact.
 
 ## Test
 

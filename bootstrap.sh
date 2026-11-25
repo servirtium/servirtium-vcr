@@ -193,8 +193,12 @@ set -euo pipefail
 # python, go, javascript, ruby exit 0; ghostbsd go and python exit 0 and core_tests
 # fails only the two "zlib unavailable" cases that also fail on 0.941.0 and 0.944.0.
 # aeb unchanged (v0.348).
-AE_PIN="0.945.0"
-AE_FETCH="v0.945.0"
+# 2026-11-25: ae 0.945.0 -> 0.946.0, a tracking-only bump, no new primitive needed and no
+# source change. Verified on the released 0.946.0 with aeb v0.348-era dev build on cachyos
+# (Linux x86_64): core_tests plus the python, go, javascript and ruby leaves exit 0. No release
+# cut: only the pins moved.
+AE_PIN="0.946.0"
+AE_FETCH="v0.946.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

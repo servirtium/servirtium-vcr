@@ -161,7 +161,7 @@ for the model, and `tests/` for worked examples.
 SERVIRTIUM_VCR_LIB=../core/native/libservirtium_vcr.so cargo test
 ```
 
-Details (including the `ae build --emit=lib` invocation and the Aether 0.945.0
+Details (including the `ae build --emit=lib` invocation and the Aether 0.946.0
 requirement) in [docs/building.md](docs/building.md).
 
 ## License
