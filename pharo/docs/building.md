@@ -2,7 +2,7 @@
 
 ## Turnkey: `./bootstrap.sh`
 
-From the repo root, `bootstrap.sh` installs the pinned `ae` (0.946.0) and `aeb`
+From the repo root, `bootstrap.sh` installs the pinned `ae` (0.949.0) and `aeb`
 via their official installers to a user prefix (`$HOME/.local`, no sudo; needs
 `curl`) if they are missing, then runs `aeb` on the leaf you name:
 
@@ -51,7 +51,7 @@ ae build --emit=lib --with=fs,net,extern core/embed.ae --extra core/_embed_strdu
 - `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
   runtime; the whole-tape regex scrubbers need `std.regex` — **Aether
-  0.946.0**, the version `bootstrap.sh` pins.
+  0.949.0**, the version `bootstrap.sh` pins.
 
 The native lib is a **git-ignored build artifact** — run `aeb core/.build.ae`
 after cloning (or `aeb pharo/.tests.ae`, which builds it and runs the suite), or

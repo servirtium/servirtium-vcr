@@ -105,10 +105,9 @@ get_ave_annual_rainfall_from(base_url: string, from_year: int, to_year: int, cou
         close_at = string.index_of_from(body_owned, CLOSE, val_start)
         if close_at < 0 { break }
         slice = string.substring(body_owned, val_start, close_at)
-        // string.to_double (not to_float) — float in Aether today is
-        // 32-bit and either truncates these values or interacts oddly
-        // with println formatting; double-precision parses correctly.
-        v, perr = string.to_double(slice)
+        // string.to_float: 64-bit strtod since ae 0.948.0 (it was 32-bit before, which
+        // truncated these values), so these parse correctly.
+        v, perr = string.to_float(slice)
         if perr == "" {
             sum = sum + v
             count = count + 1

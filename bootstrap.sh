@@ -197,8 +197,11 @@ set -euo pipefail
 # source change. Verified on the released 0.946.0 with aeb v0.348-era dev build on cachyos
 # (Linux x86_64): core_tests plus the python, go, javascript and ruby leaves exit 0. No release
 # cut: only the pins moved.
-AE_PIN="0.946.0"
-AE_FETCH="v0.946.0"
+# 2026-11-28: ae 0.946.0 -> 0.949.0, a tracking-only bump, no new primitive needed. The one
+# source change is migrating string.to_double -> string.to_float (integration/climate_interop),
+# since 0.948.0 made to_float 64-bit strtod. Verified on the released 0.949.0 (aeb as installed): cachyos core_tests (61/61), python, go, javascript and ruby leaves pass; ghostbsd go passes and core_tests passes 59/61, the two failures being the "zlib unavailable" cases that also failed on 0.941.0 and 0.944.0. No release cut: only the pins moved.
+AE_PIN="0.949.0"
+AE_FETCH="v0.949.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

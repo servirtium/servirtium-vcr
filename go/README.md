@@ -170,7 +170,7 @@ no contrib; needs `curl` — then builds everything):
 ./bootstrap.sh        # from the repo root
 ```
 
-Already have `ae` (0.946.0, the version `bootstrap.sh` pins) and `aeb` on PATH? Just run the build runner from
+Already have `ae` (0.949.0, the version `bootstrap.sh` pins) and `aeb` on PATH? Just run the build runner from
 the repo root:
 
 ```sh

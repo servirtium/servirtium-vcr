@@ -166,7 +166,7 @@ tapes (see "Bruno" below); both return `""` or the error.
 The build runner is **aeb** (sibling repo `../aeb`; its `AGENTS.md` is the deep
 reference). Quick facts:
 
-- Manage Aether with `ae version install 0.946.0` and `ae version use 0.946.0`;
+- Manage Aether with `ae version install 0.949.0` and `ae version use 0.949.0`;
   check `ae version` confirms matching `ae`/`aetherc`. Use the version manager
   for upgrades rather than manually downloading toolchain archives. If aeb picks
   an older private compiler, pass `AETHER=/absolute/path/to/selected/ae`.
@@ -194,7 +194,7 @@ reference). Quick facts:
   a leaf "passes silently", read the log for the body's `println`.
 - **Never run two top-level `aeb` invocations concurrently** — they clobber the
   shared `target/_ae_build_all` workspace. Run leaves sequentially.
-- **The Aether pin is 0.946.0**: `AE_PIN` == `AE_FETCH` in `bootstrap.sh` and
+- **The Aether pin is 0.949.0**: `AE_PIN` == `AE_FETCH` in `bootstrap.sh` and
   `AETHER_REF` in `release/toolchain.env`, a published release.
 
 ## GhostBSD (FreeBSD) lane
@@ -1087,7 +1087,7 @@ process launchers; the shared fixture itself stays language-neutral.
 - **base64 lives in `std.encoding`, not `std.cryptography` (ae 0.4x).** (This is
   the last primitive anyone could name as a hard ae requirement, and it used to
   BE the `AE_PIN` floor. It no longer is — `AE_PIN` == `AE_FETCH` == the one ae
-  require, currently 0.946.0.) ae 0.413
+  require, currently 0.949.0.) ae 0.413
   moved it and changed `base64_decode` to a `string!` error-union; libservirtium_vcr's
   `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
   with "Undefined function 'cryptography.base64_decode'", something reintroduced
