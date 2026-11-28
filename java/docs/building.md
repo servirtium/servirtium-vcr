@@ -11,7 +11,7 @@
   export JAVA_HOME=/path/to/jdk-25
   ```
 
-- **The Aether toolchain (`ae` 0.949.0, plus `aeb`)** — only needed to
+- **The Aether toolchain (`ae` 0.950.0, plus `aeb`)** — only needed to
   *rebuild* the native library. Not needed to consume a published artifact (the
   `.so`/`.dylib` ships on the classpath).
 
@@ -37,7 +37,7 @@ ae build --emit=lib --with=fs,net,extern core/embed.ae \
   _embed_strdup.c` is the ~12-line `vcr_embed_dup/free` string bridge.
 - It builds only the host's RID (e.g. `linux-x64`); cross-platform builds
   happen in CI (one runner per OS/arch).
-- Requires **Aether 0.949.0** (libservirtium_vcr uses `std.regex`).
+- Requires **Aether 0.950.0** (libservirtium_vcr uses `std.regex`).
 
 For packaging, the host's `libservirtium_vcr.so` is copied under
 `src/main/resources/native/<rid>/`, so it rides into the jar as a classpath

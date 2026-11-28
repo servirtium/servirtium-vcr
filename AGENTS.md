@@ -166,7 +166,7 @@ tapes (see "Bruno" below); both return `""` or the error.
 The build runner is **aeb** (sibling repo `../aeb`; its `AGENTS.md` is the deep
 reference). Quick facts:
 
-- Manage Aether with `ae version install 0.949.0` and `ae version use 0.949.0`;
+- Manage Aether with `ae version install 0.950.0` and `ae version use 0.950.0`;
   check `ae version` confirms matching `ae`/`aetherc`. Use the version manager
   for upgrades rather than manually downloading toolchain archives. If aeb picks
   an older private compiler, pass `AETHER=/absolute/path/to/selected/ae`.
@@ -194,7 +194,7 @@ reference). Quick facts:
   a leaf "passes silently", read the log for the body's `println`.
 - **Never run two top-level `aeb` invocations concurrently** — they clobber the
   shared `target/_ae_build_all` workspace. Run leaves sequentially.
-- **The Aether pin is 0.949.0**: `AE_PIN` == `AE_FETCH` in `bootstrap.sh` and
+- **The Aether pin is 0.950.0**: `AE_PIN` == `AE_FETCH` in `bootstrap.sh` and
   `AETHER_REF` in `release/toolchain.env`, a published release.
 
 ## GhostBSD (FreeBSD) lane
@@ -253,6 +253,10 @@ the Aether PR #3624 build, which shipped as 0.898.0).
 - Portability fixes that came out of the sweep: lua finds `lua54`/`lua-5.4`
   (`lua/lua-detect.sh`), and the release artifact check dlopens the host's own
   slot instead of always `linux-x86_64` (its fixture was Linux-only).
+- **FreeBSD releases of Aether <= 0.949.0 had no zlib or OpenSSL**: `std.zlib`
+  was its stub, so core_tests' test_vcr_content_encoding_kept and test_vcr_rewrite_upstream_base
+  answered "zlib unavailable". Fixed in aether-lang-dev/aether#3886, released in
+  0.950.0, which links FreeBSD base's `-lssl -lcrypto -lz`.
 - `core_tests/tls_probe.ae` imports `std.cryptography.tls13_server` so HTTPS
   works without an OpenSSL link; that was the one servirtium-side gap.
 
@@ -1087,7 +1091,7 @@ process launchers; the shared fixture itself stays language-neutral.
 - **base64 lives in `std.encoding`, not `std.cryptography` (ae 0.4x).** (This is
   the last primitive anyone could name as a hard ae requirement, and it used to
   BE the `AE_PIN` floor. It no longer is — `AE_PIN` == `AE_FETCH` == the one ae
-  require, currently 0.949.0.) ae 0.413
+  require, currently 0.950.0.) ae 0.413
   moved it and changed `base64_decode` to a `string!` error-union; libservirtium_vcr's
   `decode_base64_body` uses `encoding.base64_decode`. If a fresh ae build fails
   with "Undefined function 'cryptography.base64_decode'", something reintroduced

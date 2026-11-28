@@ -2,7 +2,7 @@
 
 ## Turnkey: `./bootstrap.sh`
 
-From the repo root, `bootstrap.sh` installs the pinned `ae` (0.949.0) and `aeb`
+From the repo root, `bootstrap.sh` installs the pinned `ae` (0.950.0) and `aeb`
 via their official installers to a user prefix (`$HOME/.local`, no sudo; needs
 `curl`) if they are missing, then runs `aeb` on the leaf you name:
 
@@ -45,7 +45,7 @@ ae build --emit=lib --with=fs,net,extern core/embed.ae \
 - `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR needs
   (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
   runtime; the whole-tape normalization/redaction features need `std.regex`, so
-  the floor is **Aether 0.949.0**.
+  the floor is **Aether 0.950.0**.
 
 ## The NIF is the shared Erlang app (Elixir doesn't build one)
 

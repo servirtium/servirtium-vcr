@@ -200,8 +200,16 @@ set -euo pipefail
 # 2026-11-28: ae 0.946.0 -> 0.949.0, a tracking-only bump, no new primitive needed. The one
 # source change is migrating string.to_double -> string.to_float (integration/climate_interop),
 # since 0.948.0 made to_float 64-bit strtod. Verified on the released 0.949.0 (aeb as installed): cachyos core_tests (61/61), python, go, javascript and ruby leaves pass; ghostbsd go passes and core_tests passes 59/61, the two failures being the "zlib unavailable" cases that also failed on 0.941.0 and 0.944.0. No release cut: only the pins moved.
-AE_PIN="0.949.0"
-AE_FETCH="v0.949.0"
+# 2026-11-28: ae 0.949.0 -> 0.950.0, a tracking-only bump, no new primitive needed and no
+# source change. 0.950.0's FreeBSD release links FreeBSD base's OpenSSL and zlib (every
+# earlier FreeBSD release shipped std.zlib as its stub), which is what the two ghostbsd
+# "zlib unavailable" core_tests failures were. Verified on ghostbsd with the released
+# 0.950.0: both zlib cases now pass; core_tests ran 60/61, the one failure a build of
+# test_vcr_stable_order that stopped with no compiler error while the ssh session dropped,
+# and that test rebuilt and run alone passes all 8 cases. The Linux, macOS and Windows
+# releases are as 0.949.0. No release cut: only the pins moved.
+AE_PIN="0.950.0"
+AE_FETCH="v0.950.0"
                        # Previous move, kept for the record: BUMPED 0.801/v0.326 -> 0.824/v0.327 (REQUIRED, not tracking).
                        # The family-wide move to 0.824.0, and a required pair
                        # again: aeb v0.326's bldr does not compile on ae 0.818+

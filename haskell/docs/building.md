@@ -2,7 +2,7 @@
 
 ## Turnkey: `./bootstrap.sh`
 
-From the repo root, `bootstrap.sh` installs the pinned `ae` (0.949.0) and `aeb`
+From the repo root, `bootstrap.sh` installs the pinned `ae` (0.950.0) and `aeb`
 via their official installers to a user prefix (`$HOME/.local`, no sudo; needs
 `curl`) if they are missing, then runs `aeb` on the leaf you name:
 
@@ -44,7 +44,7 @@ ae build --emit=lib --with=fs,net,extern core/embed.ae \
 - `--with=fs,net,extern` grants `extern` (required since ae 0.801: libservirtium_vcr declares C externs) plus the filesystem + networking capabilities the VCR
   needs (tape I/O + the embedded HTTP server). This requires a `-fPIC` Aether
   runtime, and the whole-tape normalization passes use `std.regex` — together
-  these need **Aether 0.949.0**.
+  these need **Aether 0.950.0**.
 
 `aeb haskell/.tests.ae` also **generates `haskell/cabal.project.local`** with the
 absolute `core/native/` dir and an rpath (see below). The native lib and
